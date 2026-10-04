@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import struct
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 # ── Capability flags ──────────────────────────────────────────────────────
 
@@ -600,6 +601,16 @@ def build_text_row(values: list, columns: list[ColumnDefinition]) -> bytes:
             encoded = value
         elif isinstance(value, bool):
             encoded = b"1" if value else b"0"
+        elif isinstance(value, timedelta):
+            micros = (value.days * 86400 + value.seconds) * 1_000_000 + value.microseconds
+            sign = "-" if micros < 0 else ""
+            seconds, fraction = divmod(abs(micros), 1_000_000)
+            hours, remainder = divmod(seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            text = f"{sign}{hours:02}:{minutes:02}:{seconds:02}"
+            if fraction:
+                text += f".{fraction:06}"
+            encoded = text.encode("ascii")
         else:
             encoded = str(value).encode("utf-8", errors="surrogateescape")
         payload += encode_length_encoded_int(len(encoded))

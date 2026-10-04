@@ -28,7 +28,7 @@ from app.modules.query.sql_pipeline import prepare_stage_sql, redact_for_output
 from app.modules.task_orchestration.ddl import TaskDDLError, parse_create_task
 from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
 from app.sql_frontend.context import ExecutionContext
-from app.sql_frontend.errors import SemanticError
+from app.sql_frontend.errors import CapabilityUnsupportedError, SemanticError
 from app.sql_frontend.execution.executor import ActionHandler, SQLExecutor
 from app.sql_frontend.execution.stages import StageRuntime
 from app.sql_frontend.parser import ParsedStatement
@@ -244,7 +244,6 @@ class FeatureAdapters:
         session_id, file_id = context.session_id, context.file_id
         executed_sql = normalized_sql
         warnings = []
-        csv_column_names: list[str] | None = None
 
         # 3. Translate @stage → FILES() and inject credentials, through the
         # shared pipeline so this path and ml_engine's cannot drift apart.
@@ -268,6 +267,7 @@ class FeatureAdapters:
                 # columns. I/O, so it happens here and its result is passed into
                 # the pure preparation step.
                 csv_params_by_ref = {}
+                csv_columns_by_ref = {}
                 for index, ref in enumerate(parsed.stage_refs):
                     if parsed.command_type == CommandType.STAGE_EXPORT and index == 0:
                         continue
@@ -279,15 +279,15 @@ class FeatureAdapters:
                     )
                     if params:
                         csv_params_by_ref[ref.start] = params
-                    if len(parsed.stage_refs) == 1:
-                        csv_column_names = columns
+                    if columns:
+                        csv_columns_by_ref[ref.start] = columns
 
                 prepared = await prepare_stage_sql(
                     normalized_sql,
                     parsed=parsed,
                     stage_configs_by_ref=stage_configs_by_ref,
                     csv_params_by_ref=csv_params_by_ref,
-                    csv_columns=csv_column_names,
+                    csv_columns_by_ref=csv_columns_by_ref,
                 )
             except (ValueError, SecretResolutionError) as e:
                 # The statement never reached the engine: no result object is
@@ -327,7 +327,6 @@ class FeatureAdapters:
 
             executed_sql = prepared.engine_sql
             warnings = prepared.warnings
-            csv_column_names = prepared.csv_columns
             await self._host._audit_secret_resolutions(username=username)
         else:
             prepared = await prepare_stage_sql(normalized_sql, parsed=parsed)
@@ -373,11 +372,6 @@ class FeatureAdapters:
             result.executed_sql = redacted_sql
             result.warnings = warnings
 
-            # Rename $1, $2 columns with CSV header names if detected
-            if csv_column_names and result.columns:
-                for i, col_name in enumerate(csv_column_names):
-                    if i < len(result.columns):
-                        result.columns[i] = col_name
             await self._audit(
                 event_type="query",
                 user_name=username,
@@ -432,10 +426,17 @@ class FeatureAdapters:
         tenant: str = "default",
         parsed_frontend=None,
         validated_frontend=None,
+        connection: asyncmy.Connection | None = None,
+        security_context_version: int = 1,
     ) -> QueryResult:
         """Execute Nova CREATE ML_MODEL DDL through the ML engine."""
         start = time.monotonic()
         try:
+            if connection is not None and not encrypted_password:
+                raise CapabilityUnsupportedError(
+                    "CREATE ML_MODEL requires an API session for training. "
+                    "Use bounded ML_PREDICT on a relayed MySQL connection."
+                )
             statement = validated_frontend or parse_create_ml_model(
                 normalized_sql, tokens=parsed_frontend.visible_tokens if parsed_frontend else None
             )
@@ -458,6 +459,7 @@ class FeatureAdapters:
                 username=username,
                 password=password,
                 role=role,
+                security_context_version=security_context_version,
                 timestamp_column=statement.timestamp_column,
                 series_column=statement.series_column,
                 horizon=statement.horizon,
@@ -537,7 +539,7 @@ class FeatureAdapters:
         *,
         sql: str,
         normalized_sql: str,
-        match: MLPredictCall,
+        match: MLPredictCall | None,
         username: str,
         encrypted_password: str,
         database: str | None,
@@ -550,10 +552,15 @@ class FeatureAdapters:
         tenant: str = "default",
         parsed_frontend=None,
         validated_frontend=None,
+        security_context_version: int = 1,
     ) -> QueryResult:
         """Execute Nova ``ML_PREDICT`` as one columnar, vectorized batch."""
         start = time.monotonic()
-        alias = match.group(1)
+        alias = (
+            validated_frontend.alias
+            if validated_frontend is not None
+            else match.group(1) if match is not None else ""
+        )
         feature_sql = ""
         password = "" if connection is not None else self._decrypt(encrypted_password)
         from app.modules.ml_engine.service import ml_engine_service
@@ -577,6 +584,7 @@ class FeatureAdapters:
                 role=role,
                 connection=connection,
                 max_rows=max_rows,
+                security_context_version=security_context_version,
                 **prediction_arguments(rewrite.predictions),
             )
             del metadata

@@ -107,6 +107,7 @@ def translate_stage_query(
     credential_params_by_stage: dict[str, dict[str, str]] | None = None,
     stage_configs_by_ref: dict[int, StorageConfig] | None = None,
     credential_params_by_ref: dict[int, dict[str, str]] | None = None,
+    column_names_by_ref: dict[int, list[str]] | None = None,
 ) -> tuple[str, list[str]]:
     """Translate @stage references in SQL to FILES() calls.
 
@@ -165,6 +166,23 @@ def translate_stage_query(
             or (credential_params_by_stage or {}).get(stage_name),
             extra_params=extra_params,
         )
+        columns = (column_names_by_ref or {}).get(ref.start)
+        if columns and file_format == "csv" and not is_destination:
+            if not all(columns) or len({name.casefold() for name in columns}) != len(columns):
+                raise ValueError("CSV header columns must be nonempty and distinct")
+            projection = ", ".join(
+                f"`${position}` AS `{name.replace('`', '``')}`"
+                for position, name in enumerate(columns, 1)
+            )
+            files_func = f"(SELECT {projection} FROM {files_func})"
+            if not ref.has_alias:
+                files_func += " AS `" + stage_name.replace("`", "``") + "`"
+        elif (
+            ref.has_alias
+            and not is_destination
+            and parsed.command_type != CommandType.STAGE_BROWSE
+        ):
+            files_func = f"(SELECT * FROM {files_func})"
         warnings.append(f"Resolved @{stage_name} reference for execution")
 
         if parsed.original_sql[ref.start : ref.end] != ref.full_match:

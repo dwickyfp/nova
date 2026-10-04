@@ -13,7 +13,7 @@ def transaction_intent(statement: Statement, context: PlanningContext) -> Transa
         "UpdateStatementContext": "update",
         "DeleteStatementContext": "delete",
     }.get(type(node).__name__)
-    if kind is None:
+    if kind is None or node.qualifiedName() is None:
         return None
     target = table_name(node.qualifiedName(), context.database)
     nodes = tuple(walk_nodes(node))

@@ -12,6 +12,7 @@ Flow:
   4. User can now call AI_COMPLETE(), AI_SENTIMENT(), etc. in SQL
 """
 
+import contextlib
 import json
 import logging
 from uuid import uuid4
@@ -19,8 +20,8 @@ from uuid import uuid4
 import asyncmy
 import asyncmy.cursors
 
-from app.core.config import settings
 from app.common.crypto import decrypt as decrypt_api_key
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,44 +34,87 @@ UDF_TEMPLATES: dict[str, dict] = {
     "complete": {
         "function_name": "AI_COMPLETE",
         "params": ["prompt STRING"],
-        "body": 'ai_query(prompt, \'{config}\')',
+        "body": "ai_query(prompt, '{config}')",
         "system_prompt": "",
     },
     "sentiment": {
         "function_name": "AI_SENTIMENT",
         "params": ["txt STRING"],
-        "body": 'ai_query(CONCAT(\'Analyze the sentiment of the following text. Reply with JSON: {"sentiment": "positive|negative|neutral|mixed", "confidence": 0.0-1.0}\\n\\nText: \', txt), \'{config}\')',
-        "system_prompt": 'Analyze the sentiment of the following text. Reply with JSON: {"sentiment": "positive|negative|neutral|mixed", "confidence": 0.0-1.0}\n\nText: ',
+        "body": (
+            "ai_query(CONCAT('Analyze the sentiment of the following text. "
+            'Reply with JSON: {"sentiment": '
+            '"positive|negative|neutral|mixed", "confidence": '
+            "0.0-1.0}\\n\\nText: ', txt), '{config}')"
+        ),
+        "system_prompt": (
+            "Analyze the sentiment of the following text. Reply with JSON: "
+            '{"sentiment": "positive|negative|neutral|mixed", "confidence": '
+            "0.0-1.0}\n\nText: "
+        ),
     },
     "classify": {
         "function_name": "AI_CLASSIFY",
         "params": ["txt STRING", "categories STRING"],
-        "body": 'ai_query(CONCAT(\'Classify the following text into ONE of these categories: [\', categories, \']. Reply with ONLY the category name, nothing else.\\n\\nText: \', txt), \'{config}\')',
-        "system_prompt": 'Classify the following text into ONE of these categories: [{categories}]. Reply with ONLY the category name, nothing else.\n\nText: ',
+        "body": (
+            "ai_query(CONCAT('Classify the following text into ONE of these "
+            "categories: [', categories, ']. Reply with ONLY the category "
+            "name, nothing else.\\n\\nText: ', txt), '{config}')"
+        ),
+        "system_prompt": (
+            "Classify the following text into ONE of these categories: "
+            "[{categories}]. Reply with ONLY the category name, nothing "
+            "else.\n\nText: "
+        ),
     },
     "summarize": {
         "function_name": "AI_SUMMARIZE",
         "params": ["txt STRING"],
-        "body": 'ai_query(CONCAT(\'Summarize the following text concisely in 2-3 sentences:\\n\\n\', txt), \'{config}\')',
-        "system_prompt": 'Summarize the following text concisely in 2-3 sentences:\n\n',
+        "body": (
+            "ai_query(CONCAT('Summarize the following text concisely in 2-3 "
+            "sentences:\\n\\n', txt), '{config}')"
+        ),
+        "system_prompt": "Summarize the following text concisely in 2-3 sentences:\n\n",
     },
     "extract": {
         "function_name": "AI_EXTRACT",
         "params": ["txt STRING", "json_schema STRING"],
-        "body": 'ai_query(CONCAT(\'Extract structured information from the following text. Return as JSON matching this schema: \', json_schema, \'. Reply with ONLY the JSON.\\n\\nText: \', txt), \'{config}\')',
-        "system_prompt": 'Extract structured information from the following text. Return as JSON matching this schema: {json_schema}. Reply with ONLY the JSON.\n\nText: ',
+        "body": (
+            "ai_query(CONCAT('Extract structured information from the "
+            "following text. Return as JSON matching this schema: ', "
+            "json_schema, '. Reply with ONLY the JSON.\\n\\nText: ', txt), "
+            "'{config}')"
+        ),
+        "system_prompt": (
+            "Extract structured information from the following text. Return "
+            "as JSON matching this schema: {json_schema}. Reply with ONLY the "
+            "JSON.\n\nText: "
+        ),
     },
     "translate": {
         "function_name": "AI_TRANSLATE",
         "params": ["txt STRING", "target_lang STRING"],
-        "body": 'ai_query(CONCAT(\'Translate the following text to \', target_lang, \'. Reply with ONLY the translation, no explanation.\\n\\nText: \', txt), \'{config}\')',
-        "system_prompt": 'Translate the following text to {target_lang}. Reply with ONLY the translation, no explanation.\n\nText: ',
+        "body": (
+            "ai_query(CONCAT('Translate the following text to ', target_lang, "
+            "'. Reply with ONLY the translation, no explanation.\\n\\nText: ', "
+            "txt), '{config}')"
+        ),
+        "system_prompt": (
+            "Translate the following text to {target_lang}. Reply with ONLY "
+            "the translation, no explanation.\n\nText: "
+        ),
     },
     "filter": {
         "function_name": "AI_FILTER",
         "params": ["txt STRING", "criteria STRING"],
-        "body": 'ai_query(CONCAT(\'Does the following text match this criteria? Reply with ONLY \"true\" or \"false\".\\nCriteria: \', criteria, \'\\n\\nText: \', txt), \'{config}\')',
-        "system_prompt": 'Does the following text match this criteria? Reply with ONLY "true" or "false".\nCriteria: {criteria}\n\nText: ',
+        "body": (
+            "ai_query(CONCAT('Does the following text match this criteria? "
+            'Reply with ONLY "true" or "false".\\nCriteria: \', criteria, '
+            "'\\n\\nText: ', txt), '{config}')"
+        ),
+        "system_prompt": (
+            "Does the following text match this criteria? Reply with ONLY "
+            '"true" or "false".\nCriteria: {criteria}\n\nText: '
+        ),
     },
 }
 
@@ -261,7 +305,7 @@ class LLMFunctionService:
                 await cur.execute(
                     f"""
                     UPDATE NOVA_SYSTEM.CONFIG_MODEL_ALIASES
-                    SET {', '.join(set_parts)}
+                    SET {", ".join(set_parts)}
                     WHERE id = %s
                     """,
                     tuple(values),
@@ -338,7 +382,7 @@ class LLMFunctionService:
 
         # Also register "empty" UDFs for types without aliases
         # so that SQL queries don't fail with "function not found"
-        for ft, template in UDF_TEMPLATES.items():
+        for ft in UDF_TEMPLATES:
             if ft not in type_to_alias:
                 result = await self._register_placeholder_udf(ft)
                 results.append(result)
@@ -371,12 +415,27 @@ class LLMFunctionService:
         udf_signatures = [
             ("AI_COMPLETE", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
             ("AI_SENTIMENT", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
-            ("AI_CLASSIFY", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            (
+                "AI_CLASSIFY",
+                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
+            ),
             ("AI_SUMMARIZE", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
-            ("AI_EXTRACT", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("AI_TRANSLATE", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("AI_FILTER", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("ML_PREDICT", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            (
+                "AI_EXTRACT",
+                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
+            ),
+            (
+                "AI_TRANSLATE",
+                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
+            ),
+            (
+                "AI_FILTER",
+                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
+            ),
+            (
+                "ML_PREDICT",
+                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
+            ),
         ]
 
         # Roles to grant to (covers all users)
@@ -388,16 +447,17 @@ class LLMFunctionService:
                 for fn_name, sigs in udf_signatures:
                     for sig in sigs:
                         for role in roles:
-                            try:
+                            with contextlib.suppress(Exception):
                                 await cur.execute(
                                     f"GRANT USAGE ON GLOBAL FUNCTION {fn_name}{sig} TO ROLE {role}"
                                 )
-                            except Exception:
-                                pass  # Signature/role might not exist, skip silently
         finally:
             conn.close()
-        logger.info("Granted USAGE on %d UDF signatures to %d roles", 
-                     sum(len(s) for _, s in udf_signatures), len(roles))
+        logger.info(
+            "Granted USAGE on %d UDF signatures to %d roles",
+            sum(len(s) for _, s in udf_signatures),
+            len(roles),
+        )
 
     async def register_udf_for_type(self, function_type: str) -> dict:
         """Register the UDF for a specific function type."""
@@ -410,7 +470,11 @@ class LLMFunctionService:
         if not alias:
             # Try any active alias for this type
             alias = next(
-                (a for a in aliases if a["function_type"] == function_type and a.get("is_active", True)),
+                (
+                    a
+                    for a in aliases
+                    if a["function_type"] == function_type and a.get("is_active", True)
+                ),
                 None,
             )
 
@@ -514,7 +578,8 @@ class LLMFunctionService:
 
         # Drop existing function first (StarRocks doesn't support CREATE OR REPLACE for UDFs)
         # Try multiple type signatures since StarRocks may store as STRING or VARCHAR
-        drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {fn_name}({', '.join('STRING' for _ in template['params'])})"
+        argument_types = ", ".join("STRING" for _ in template["params"])
+        drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {fn_name}({argument_types})"
 
         sql = f"""CREATE GLOBAL FUNCTION {fn_name}({params_str})
         RETURNS {body}"""
@@ -530,8 +595,9 @@ class LLMFunctionService:
             finally:
                 conn.close()
 
-            logger.info("Registered UDF %s (provider=%s, model=%s)",
-                        fn_name, provider["name"], model_name)
+            logger.info(
+                "Registered UDF %s (provider=%s, model=%s)", fn_name, provider["name"], model_name
+            )
             return {
                 "function_name": fn_name,
                 "function_type": function_type,
@@ -542,7 +608,7 @@ class LLMFunctionService:
                 "error": None,
             }
         except Exception as e:
-            logger.error("Failed to register UDF %s: %s", fn_name, e)
+            logger.error("Failed to register UDF %s: %s", fn_name, type(e).__name__)
             return {
                 "function_name": fn_name,
                 "function_type": function_type,
@@ -550,7 +616,7 @@ class LLMFunctionService:
                 "provider_name": provider["name"],
                 "model_name": model_name,
                 "registered": False,
-                "error": str(e),
+                "error": f"UDF registration failed: {type(e).__name__}",
             }
 
     async def _register_placeholder_udf(self, function_type: str) -> dict:
@@ -586,11 +652,16 @@ class LLMFunctionService:
             if param_pairs:
                 param_pairs = param_pairs[:-1]
             flat_parts = ", ".join(param_pairs)
-            body = f"CONCAT('ERROR: {fn_name} not configured. Set up an alias in AI Providers > Functions tab. Input was: ', {flat_parts})"
+            body = (
+                f"CONCAT('ERROR: {fn_name} not configured. "
+                "Set up an alias in AI Providers > Functions tab. Input was: ', "
+                f"{flat_parts})"
+            )
         else:
             body = f"'ERROR: {fn_name} not configured.'"
 
-        drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {fn_name}({', '.join('STRING' for _ in template['params'])})"
+        argument_types = ", ".join("STRING" for _ in template["params"])
+        drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {fn_name}({argument_types})"
 
         sql = f"""CREATE GLOBAL FUNCTION {fn_name}({params_str})
         RETURNS {body}"""
@@ -653,15 +724,17 @@ class LLMFunctionService:
         for ft, template in UDF_TEMPLATES.items():
             fn_name = template["function_name"]
             alias = type_to_alias.get(ft)
-            results.append({
-                "function_name": fn_name,
-                "function_type": ft,
-                "alias_name": alias.get("alias_name") if alias else None,
-                "provider_name": alias.get("provider_name") if alias else None,
-                "model_name": alias.get("model_name") if alias else None,
-                "registered": fn_name in registered_functions,
-                "error": None,
-            })
+            results.append(
+                {
+                    "function_name": fn_name,
+                    "function_type": ft,
+                    "alias_name": alias.get("alias_name") if alias else None,
+                    "provider_name": alias.get("provider_name") if alias else None,
+                    "model_name": alias.get("model_name") if alias else None,
+                    "registered": fn_name in registered_functions,
+                    "error": None,
+                }
+            )
         return results
 
     # ── Internal helpers ────────────────────────────────────────
@@ -681,10 +754,8 @@ class LLMFunctionService:
                     return {}
                 result = dict(row)
                 if result.get("default_params") and isinstance(result["default_params"], str):
-                    try:
+                    with contextlib.suppress(json.JSONDecodeError, TypeError):
                         result["default_params"] = json.loads(result["default_params"])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
                 return result
         finally:
             conn.close()
@@ -704,7 +775,9 @@ class LLMFunctionService:
         finally:
             conn.close()
 
-    def _build_body_with_prompt(self, function_type: str, system_prompt: str, config_str: str) -> str:
+    def _build_body_with_prompt(
+        self, function_type: str, system_prompt: str, config_str: str
+    ) -> str:
         """Build ai_query body with a custom system prompt."""
         template = UDF_TEMPLATES[function_type]
         # Escape single quotes in prompt for SQL string
@@ -719,11 +792,20 @@ class LLMFunctionService:
         elif function_type == "summarize":
             return f"ai_query(CONCAT('{escaped_prompt}', txt), '{config_str}')"
         elif function_type == "extract":
-            return f"ai_query(CONCAT('{escaped_prompt}', json_schema, '. Reply with ONLY the JSON.\\n\\nText: ', txt), '{config_str}')"
+            return (
+                f"ai_query(CONCAT('{escaped_prompt}', json_schema, "
+                f"'. Reply with ONLY the JSON.\\n\\nText: ', txt), '{config_str}')"
+            )
         elif function_type == "translate":
-            return f"ai_query(CONCAT('{escaped_prompt}', target_lang, '. Reply with ONLY the translation.\\n\\nText: ', txt), '{config_str}')"
+            return (
+                f"ai_query(CONCAT('{escaped_prompt}', target_lang, "
+                f"'. Reply with ONLY the translation.\\n\\nText: ', txt), '{config_str}')"
+            )
         elif function_type == "filter":
-            return f"ai_query(CONCAT('{escaped_prompt}', criteria, '\\n\\nText: ', txt), '{config_str}')"
+            return (
+                f"ai_query(CONCAT('{escaped_prompt}', criteria, "
+                f"'\\n\\nText: ', txt), '{config_str}')"
+            )
         else:
             params = [p.split()[0] for p in template["params"]]
             return f"ai_query(CONCAT('{escaped_prompt}', {', '.join(params)}), '{config_str}')"
@@ -733,10 +815,8 @@ class LLMFunctionService:
         """Deserialize a DB row, parsing JSON fields."""
         result = dict(row)
         if result.get("default_params") and isinstance(result["default_params"], str):
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 result["default_params"] = json.loads(result["default_params"])
-            except (json.JSONDecodeError, TypeError):
-                pass
         return result
 
 

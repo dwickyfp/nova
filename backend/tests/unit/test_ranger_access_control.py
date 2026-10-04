@@ -521,3 +521,62 @@ def test_ml_cache_scope_includes_principal_role_and_epoch() -> None:
         username="bob", password="secret", role="marketing", security_context_version=1
     )
     assert len({marketing.scope_key, finance.scope_key, bob.scope_key}) == 3
+
+
+@pytest.mark.parametrize("hierarchy", ["user", "function", "materialized_view", "storage_volume"])
+async def test_other_ranger_resource_hierarchies_cannot_authorize_table_or_stage_access(hierarchy):
+    class Ranger:
+        async def list_policies(self):
+            return [
+                {
+                    "resources": {hierarchy: {"values": ["*"]}},
+                    "policyItems": [{"roles": ["reader"], "accesses": [{"type": "delete"}]}],
+                }
+            ]
+
+        async def get_user_attributes(self, principal):
+            return {}
+
+    result = await AccessControlService(Ranger()).effective_access(
+        principal="alice",
+        active_role="reader",
+        resource="sandbox.public",
+    )
+    assert result["object_access"] == []
+    assert result["policies"] == []
+
+
+@pytest.mark.parametrize("restriction", ["deny", "condition", "exclusion", "column"])
+async def test_ranger_preview_fails_closed_when_full_object_access_cannot_be_proven(restriction):
+    policy = {
+        "resources": {
+            "catalog": {"values": ["default_catalog"]},
+            "database": {"values": ["sandbox"]},
+            "table": {"values": ["public"]},
+        },
+        "policyItems": [{"roles": ["reader"], "accesses": [{"type": "select"}]}],
+    }
+    if restriction == "deny":
+        policy["denyPolicyItems"] = [{"roles": ["reader"], "accesses": [{"type": "select"}]}]
+    elif restriction == "condition":
+        policy["policyItems"][0]["conditions"] = [{"type": "ip-address", "values": ["10.0.0.1"]}]
+    elif restriction == "exclusion":
+        policy["resources"]["table"]["isExcludes"] = True
+    else:
+        policy["resources"]["column"] = {"values": ["phone"]}
+
+    class Ranger:
+        async def list_policies(self):
+            return [policy]
+
+        async def get_user_attributes(self, principal):
+            return {}
+
+    result = await AccessControlService(Ranger()).effective_access(
+        principal="alice",
+        active_role="reader",
+        resource="sandbox.public",
+    )
+    assert result["object_access"] == []
+    assert result["object_access_comparison_supported"] is False
+    assert result["policy_health"] == "UNSUPPORTED"

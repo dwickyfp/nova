@@ -1,0 +1,8333 @@
+{
+  "engine_commit": "4a9848edf03f5c936dac664b2d52527f48e72eb0",
+  "source": "https://github.com/StarRocks/starrocks/blob/4a9848edf03f5c936dac664b2d52527f48e72eb0/gensrc/script/functions.py",
+  "source_sha256": "fea41528d1e1f77e9faf3e29e6a5d55cdc10d74278d1f6cce19d12d6e079a15f",
+  "license": "Apache-2.0; registry facts extracted from StarRocks",
+  "records": [
+    {
+      "fid": 10010,
+      "name": "pi",
+      "return_type": "DOUBLE",
+      "arguments": []
+    },
+    {
+      "fid": 10020,
+      "name": "e",
+      "return_type": "DOUBLE",
+      "arguments": []
+    },
+    {
+      "fid": 10030,
+      "name": "sign",
+      "return_type": "FLOAT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10040,
+      "name": "abs",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10041,
+      "name": "abs",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 10042,
+      "name": "abs",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 10043,
+      "name": "abs",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10044,
+      "name": "abs",
+      "return_type": "BIGINT",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 10045,
+      "name": "abs",
+      "return_type": "INT",
+      "arguments": [
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 10046,
+      "name": "abs",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 10047,
+      "name": "abs",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 100470,
+      "name": "abs",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 100471,
+      "name": "abs",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 100472,
+      "name": "abs",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 100473,
+      "name": "abs",
+      "return_type": "DECIMAL256",
+      "arguments": [
+        "DECIMAL256"
+      ]
+    },
+    {
+      "fid": 10050,
+      "name": "sin",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10060,
+      "name": "asin",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10061,
+      "name": "sinh",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10070,
+      "name": "cos",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10080,
+      "name": "acos",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10081,
+      "name": "cosh",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10090,
+      "name": "tan",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10100,
+      "name": "atan",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10101,
+      "name": "tanh",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10102,
+      "name": "cosine_similarity",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 10103,
+      "name": "cosine_similarity_norm",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 10106,
+      "name": "approx_cosine_similarity",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 10110,
+      "name": "ceil",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10111,
+      "name": "ceiling",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10112,
+      "name": "dceil",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10114,
+      "name": "l2_distance",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 10116,
+      "name": "approx_l2_distance",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 10120,
+      "name": "floor",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10121,
+      "name": "dfloor",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10125,
+      "name": "dround",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 10126,
+      "name": "dround",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10127,
+      "name": "round",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 10128,
+      "name": "round",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10129,
+      "name": "truncate",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10130,
+      "name": "round",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10131,
+      "name": "dround",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10132,
+      "name": "round",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10133,
+      "name": "dround",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10134,
+      "name": "truncate",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10140,
+      "name": "ln",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10141,
+      "name": "dlog1",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10142,
+      "name": "log",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10150,
+      "name": "log",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10160,
+      "name": "log2",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10170,
+      "name": "log10",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10171,
+      "name": "dlog10",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10180,
+      "name": "exp",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10181,
+      "name": "dexp",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10190,
+      "name": "radians",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10200,
+      "name": "degrees",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10210,
+      "name": "sqrt",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10211,
+      "name": "dsqrt",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10220,
+      "name": "pow",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10221,
+      "name": "power",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10222,
+      "name": "dpow",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10223,
+      "name": "fpow",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10224,
+      "name": "atan2",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10225,
+      "name": "cot",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10230,
+      "name": "pmod",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10231,
+      "name": "pmod",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10240,
+      "name": "fmod",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 10241,
+      "name": "fmod",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10250,
+      "name": "mod",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 10251,
+      "name": "mod",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 10252,
+      "name": "mod",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10253,
+      "name": "mod",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10254,
+      "name": "mod",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 10255,
+      "name": "mod",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 10256,
+      "name": "mod",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10257,
+      "name": "mod",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2",
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 102570,
+      "name": "mod",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 102571,
+      "name": "mod",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 102572,
+      "name": "mod",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 102573,
+      "name": "mod",
+      "return_type": "DECIMAL256",
+      "arguments": [
+        "DECIMAL256",
+        "DECIMAL256"
+      ]
+    },
+    {
+      "fid": 10260,
+      "name": "positive",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10261,
+      "name": "positive",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10262,
+      "name": "positive",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 102620,
+      "name": "positive",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 102621,
+      "name": "positive",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 102622,
+      "name": "positive",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 10270,
+      "name": "negative",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10271,
+      "name": "negative",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10272,
+      "name": "negative",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 102720,
+      "name": "negative",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 102721,
+      "name": "negative",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 102722,
+      "name": "negative",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 10288,
+      "name": "least",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "..."
+      ]
+    },
+    {
+      "fid": 10280,
+      "name": "least",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10281,
+      "name": "least",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10282,
+      "name": "least",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10283,
+      "name": "least",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10284,
+      "name": "least",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10285,
+      "name": "least",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10286,
+      "name": "least",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "..."
+      ]
+    },
+    {
+      "fid": 10287,
+      "name": "least",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2",
+        "..."
+      ]
+    },
+    {
+      "fid": 102870,
+      "name": "least",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "..."
+      ]
+    },
+    {
+      "fid": 102871,
+      "name": "least",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "..."
+      ]
+    },
+    {
+      "fid": 102872,
+      "name": "least",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "..."
+      ]
+    },
+    {
+      "fid": 10289,
+      "name": "least",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 10298,
+      "name": "greatest",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "..."
+      ]
+    },
+    {
+      "fid": 10290,
+      "name": "greatest",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10291,
+      "name": "greatest",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10292,
+      "name": "greatest",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10293,
+      "name": "greatest",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10294,
+      "name": "greatest",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10295,
+      "name": "greatest",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "..."
+      ]
+    },
+    {
+      "fid": 10296,
+      "name": "greatest",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "..."
+      ]
+    },
+    {
+      "fid": 10297,
+      "name": "greatest",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2",
+        "..."
+      ]
+    },
+    {
+      "fid": 102970,
+      "name": "greatest",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "..."
+      ]
+    },
+    {
+      "fid": 102971,
+      "name": "greatest",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "..."
+      ]
+    },
+    {
+      "fid": 102972,
+      "name": "greatest",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "..."
+      ]
+    },
+    {
+      "fid": 10299,
+      "name": "greatest",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 10300,
+      "name": "rand",
+      "return_type": "DOUBLE",
+      "arguments": []
+    },
+    {
+      "fid": 10301,
+      "name": "random",
+      "return_type": "DOUBLE",
+      "arguments": []
+    },
+    {
+      "fid": 10302,
+      "name": "rand",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10303,
+      "name": "random",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10311,
+      "name": "bin",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10312,
+      "name": "hex",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 10313,
+      "name": "hex",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 10323,
+      "name": "hex",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARBINARY"
+      ]
+    },
+    {
+      "fid": 10314,
+      "name": "unhex",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 10315,
+      "name": "sm3",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 10316,
+      "name": "hex_decode_binary",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 10317,
+      "name": "hex_decode_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 10320,
+      "name": "conv",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT",
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 10321,
+      "name": "conv",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 10322,
+      "name": "square",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10330,
+      "name": "cbrt",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 10340,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10341,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10342,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10343,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10344,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10345,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10346,
+      "name": "__iceberg_transform_truncate",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "VARBINARY",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10350,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10351,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "BIGINT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10352,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "DATE",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10353,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10359,
+      "name": "__iceberg_transform_timestamptz_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10354,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10355,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "VARBINARY",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10356,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMAL32",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10357,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMAL64",
+        "INT"
+      ]
+    },
+    {
+      "fid": 10358,
+      "name": "__iceberg_transform_bucket",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMAL128",
+        "INT"
+      ]
+    },
+    {
+      "fid": 20010,
+      "name": "bitand",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 20011,
+      "name": "bitand",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 20012,
+      "name": "bitand",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 20013,
+      "name": "bitand",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20014,
+      "name": "bitand",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 20020,
+      "name": "bitor",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 20021,
+      "name": "bitor",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 20022,
+      "name": "bitor",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 20023,
+      "name": "bitor",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20024,
+      "name": "bitor",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 20030,
+      "name": "bitxor",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 20031,
+      "name": "bitxor",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 20032,
+      "name": "bitxor",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 20033,
+      "name": "bitxor",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20034,
+      "name": "bitxor",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 20040,
+      "name": "bitnot",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 20041,
+      "name": "bitnot",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 20042,
+      "name": "bitnot",
+      "return_type": "INT",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 20043,
+      "name": "bitnot",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20044,
+      "name": "bitnot",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 20050,
+      "name": "bit_shift_left",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20051,
+      "name": "bit_shift_left",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20052,
+      "name": "bit_shift_left",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20053,
+      "name": "bit_shift_left",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20054,
+      "name": "bit_shift_left",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20060,
+      "name": "bit_shift_right",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20061,
+      "name": "bit_shift_right",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20062,
+      "name": "bit_shift_right",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20063,
+      "name": "bit_shift_right",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20064,
+      "name": "bit_shift_right",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20070,
+      "name": "bit_shift_right_logical",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20071,
+      "name": "bit_shift_right_logical",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20072,
+      "name": "bit_shift_right_logical",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20073,
+      "name": "bit_shift_right_logical",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 20074,
+      "name": "bit_shift_right_logical",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 30010,
+      "name": "substr",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30011,
+      "name": "substr",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30012,
+      "name": "substring",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30013,
+      "name": "substring",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30020,
+      "name": "left",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30021,
+      "name": "strleft",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30030,
+      "name": "right",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30031,
+      "name": "strright",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30040,
+      "name": "ends_with",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30050,
+      "name": "starts_with",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30060,
+      "name": "null_or_empty",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30061,
+      "name": "null_or_empty",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 30070,
+      "name": "space",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 30080,
+      "name": "repeat",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30090,
+      "name": "lpad",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30100,
+      "name": "rpad",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30110,
+      "name": "append_trailing_char_if_absent",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30120,
+      "name": "length",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30130,
+      "name": "char_length",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30131,
+      "name": "character_length",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30132,
+      "name": "inet_aton",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30140,
+      "name": "lower",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30141,
+      "name": "lcase",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30150,
+      "name": "upper",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30151,
+      "name": "ucase",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30160,
+      "name": "reverse",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30161,
+      "name": "initcap",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30170,
+      "name": "trim",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30171,
+      "name": "trim",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30180,
+      "name": "ltrim",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30181,
+      "name": "ltrim",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30190,
+      "name": "rtrim",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30191,
+      "name": "rtrim",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30200,
+      "name": "ascii",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30500,
+      "name": "char",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 30210,
+      "name": "instr",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30220,
+      "name": "locate",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30221,
+      "name": "locate",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30225,
+      "name": "strpos",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30226,
+      "name": "strpos",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30250,
+      "name": "concat",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 30260,
+      "name": "concat_ws",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 30261,
+      "name": "concat_ws",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 30270,
+      "name": "find_in_set",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30310,
+      "name": "split_part",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30311,
+      "name": "split",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30312,
+      "name": "substring_index",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30316,
+      "name": "str_to_map",
+      "return_type": "MAP_VARCHAR_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30317,
+      "name": "str_to_map",
+      "return_type": "MAP_VARCHAR_VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30320,
+      "name": "regexp_extract",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 30321,
+      "name": "regexp_extract_all",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 30330,
+      "name": "regexp_replace",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30331,
+      "name": "replace_old",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30332,
+      "name": "replace",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30333,
+      "name": "regexp_split",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30334,
+      "name": "regexp_split",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30335,
+      "name": "regexp_count",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30400,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 30401,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 30402,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 304020,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 304021,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 304022,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 30403,
+      "name": "money_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 30410,
+      "name": "parse_url",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30411,
+      "name": "url_extract_parameter",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30412,
+      "name": "url_extract_host",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30420,
+      "name": "strcmp",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30421,
+      "name": "url_encode",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30422,
+      "name": "url_decode",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30430,
+      "name": "translate",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30431,
+      "name": "crc32",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30440,
+      "name": "ngram_search",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30441,
+      "name": "ngram_search_case_insensitive",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 30450,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 30451,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "BOOLEAN",
+        "..."
+      ]
+    },
+    {
+      "fid": 30452,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "TINYINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 30453,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "SMALLINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 30454,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "..."
+      ]
+    },
+    {
+      "fid": 30455,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "BIGINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 30456,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "LARGEINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 30457,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "DOUBLE",
+        "..."
+      ]
+    },
+    {
+      "fid": 30458,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMALV2",
+        "..."
+      ]
+    },
+    {
+      "fid": 304590,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMAL32",
+        "..."
+      ]
+    },
+    {
+      "fid": 304591,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMAL64",
+        "..."
+      ]
+    },
+    {
+      "fid": 304592,
+      "name": "field",
+      "return_type": "INT",
+      "arguments": [
+        "DECIMAL128",
+        "..."
+      ]
+    },
+    {
+      "fid": 30460,
+      "name": "format_bytes",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 30461,
+      "name": "raise_error",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30600,
+      "name": "to_binary",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30601,
+      "name": "to_binary",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30602,
+      "name": "from_binary",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARBINARY",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 30603,
+      "name": "from_binary",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARBINARY"
+      ]
+    },
+    {
+      "fid": 50008,
+      "name": "year",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50009,
+      "name": "year",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50010,
+      "name": "year",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50018,
+      "name": "month",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50019,
+      "name": "month",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50020,
+      "name": "month",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50030,
+      "name": "quarter",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50040,
+      "name": "dayofweek",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50041,
+      "name": "dayofweek_iso",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50042,
+      "name": "yearweek",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50043,
+      "name": "yearweek",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50050,
+      "name": "to_date",
+      "return_type": "DATE",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50051,
+      "name": "date",
+      "return_type": "DATE",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50052,
+      "name": "to_tera_date",
+      "return_type": "DATE",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50053,
+      "name": "to_tera_timestamp",
+      "return_type": "DATETIME",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50057,
+      "name": "day",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50058,
+      "name": "day",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50059,
+      "name": "dayofmonth",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50060,
+      "name": "dayofmonth",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50061,
+      "name": "day",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50062,
+      "name": "dayofyear",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50063,
+      "name": "weekofyear",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50064,
+      "name": "week",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50067,
+      "name": "week",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50068,
+      "name": "week_iso",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50069,
+      "name": "hour",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50070,
+      "name": "hour",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50079,
+      "name": "minute",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50080,
+      "name": "minute",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50089,
+      "name": "second",
+      "return_type": "TINYINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50090,
+      "name": "second",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50100,
+      "name": "weekday",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50110,
+      "name": "years_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50111,
+      "name": "years_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50115,
+      "name": "quarters_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50116,
+      "name": "quarters_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50120,
+      "name": "months_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50121,
+      "name": "months_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50122,
+      "name": "add_months",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50130,
+      "name": "weeks_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50131,
+      "name": "weeks_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50140,
+      "name": "days_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50141,
+      "name": "days_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50142,
+      "name": "date_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50143,
+      "name": "date_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50144,
+      "name": "adddate",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50145,
+      "name": "subdate",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50150,
+      "name": "hours_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50151,
+      "name": "hours_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50160,
+      "name": "minutes_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50161,
+      "name": "minutes_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50170,
+      "name": "seconds_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50171,
+      "name": "seconds_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50175,
+      "name": "milliseconds_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50176,
+      "name": "milliseconds_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50180,
+      "name": "microseconds_add",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50181,
+      "name": "microseconds_sub",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50190,
+      "name": "years_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50191,
+      "name": "months_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50192,
+      "name": "weeks_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50193,
+      "name": "days_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50194,
+      "name": "hours_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50195,
+      "name": "minutes_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50196,
+      "name": "seconds_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50197,
+      "name": "datediff",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50198,
+      "name": "timediff",
+      "return_type": "TIME",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50199,
+      "name": "date_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50200,
+      "name": "now",
+      "return_type": "DATETIME",
+      "arguments": []
+    },
+    {
+      "fid": 50201,
+      "name": "current_timestamp",
+      "return_type": "DATETIME",
+      "arguments": []
+    },
+    {
+      "fid": 50202,
+      "name": "localtime",
+      "return_type": "DATETIME",
+      "arguments": []
+    },
+    {
+      "fid": 50203,
+      "name": "localtimestamp",
+      "return_type": "DATETIME",
+      "arguments": []
+    },
+    {
+      "fid": 50204,
+      "name": "now",
+      "return_type": "DATETIME",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 50205,
+      "name": "current_timestamp",
+      "return_type": "DATETIME",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 50210,
+      "name": "curtime",
+      "return_type": "TIME",
+      "arguments": []
+    },
+    {
+      "fid": 50211,
+      "name": "current_time",
+      "return_type": "TIME",
+      "arguments": []
+    },
+    {
+      "fid": 50220,
+      "name": "curdate",
+      "return_type": "DATE",
+      "arguments": []
+    },
+    {
+      "fid": 50221,
+      "name": "current_date",
+      "return_type": "DATE",
+      "arguments": []
+    },
+    {
+      "fid": 50230,
+      "name": "from_days",
+      "return_type": "DATE",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 50231,
+      "name": "to_days",
+      "return_type": "INT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50241,
+      "name": "date_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATETIME",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50242,
+      "name": "date_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATE",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50245,
+      "name": "milliseconds_diff",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50240,
+      "name": "str_to_date",
+      "return_type": "DATETIME",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50243,
+      "name": "str2date",
+      "return_type": "DATE",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50244,
+      "name": "str_to_jodatime",
+      "return_type": "DATETIME",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50260,
+      "name": "jodatime_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATETIME",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50261,
+      "name": "jodatime_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATE",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50262,
+      "name": "to_iso8601",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50263,
+      "name": "to_iso8601",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50250,
+      "name": "time_to_sec",
+      "return_type": "BIGINT",
+      "arguments": [
+        "TIME"
+      ]
+    },
+    {
+      "fid": 50251,
+      "name": "sec_to_time",
+      "return_type": "TIME",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 50284,
+      "name": "unix_timestamp",
+      "return_type": "BIGINT",
+      "arguments": []
+    },
+    {
+      "fid": 50285,
+      "name": "unix_timestamp",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50286,
+      "name": "unix_timestamp",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50287,
+      "name": "unix_timestamp",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50288,
+      "name": "from_unixtime",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 50289,
+      "name": "from_unixtime",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50290,
+      "name": "from_unixtime_ms",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 50291,
+      "name": "from_unixtime",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50300,
+      "name": "unix_timestamp",
+      "return_type": "INT",
+      "arguments": []
+    },
+    {
+      "fid": 50301,
+      "name": "unix_timestamp",
+      "return_type": "INT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50302,
+      "name": "unix_timestamp",
+      "return_type": "INT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50303,
+      "name": "unix_timestamp",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50304,
+      "name": "from_unixtime",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 50305,
+      "name": "from_unixtime",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50306,
+      "name": "to_datetime",
+      "return_type": "DATETIME",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 50307,
+      "name": "to_datetime",
+      "return_type": "DATETIME",
+      "arguments": [
+        "BIGINT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50308,
+      "name": "to_datetime_ntz",
+      "return_type": "DATETIME",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 50309,
+      "name": "to_datetime_ntz",
+      "return_type": "DATETIME",
+      "arguments": [
+        "BIGINT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50383,
+      "name": "hour_from_unixtime",
+      "return_type": "TINYINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 50310,
+      "name": "dayname",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50311,
+      "name": "monthname",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50320,
+      "name": "convert_tz",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50321,
+      "name": "current_timezone",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 50330,
+      "name": "utc_timestamp",
+      "return_type": "DATETIME",
+      "arguments": []
+    },
+    {
+      "fid": 50331,
+      "name": "utc_time",
+      "return_type": "TIME",
+      "arguments": []
+    },
+    {
+      "fid": 50340,
+      "name": "date_trunc",
+      "return_type": "DATETIME",
+      "arguments": [
+        "VARCHAR",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50350,
+      "name": "date_trunc",
+      "return_type": "DATE",
+      "arguments": [
+        "VARCHAR",
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50360,
+      "name": "timestamp",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50370,
+      "name": "date_slice",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE",
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50371,
+      "name": "date_slice",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE",
+        "INT",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50372,
+      "name": "time_slice",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50373,
+      "name": "time_slice",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "INT",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50400,
+      "name": "next_day",
+      "return_type": "DATE",
+      "arguments": [
+        "DATETIME",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50401,
+      "name": "previous_day",
+      "return_type": "DATE",
+      "arguments": [
+        "DATETIME",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50402,
+      "name": "last_day",
+      "return_type": "DATE",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50403,
+      "name": "last_day",
+      "return_type": "DATE",
+      "arguments": [
+        "DATETIME",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50404,
+      "name": "last_day",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50405,
+      "name": "last_day",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50501,
+      "name": "makedate",
+      "return_type": "DATE",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 50610,
+      "name": "time_format",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "TIME",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 50620,
+      "name": "__iceberg_transform_year",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50621,
+      "name": "__iceberg_transform_year",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50622,
+      "name": "__iceberg_transform_timestamptz_year",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50630,
+      "name": "__iceberg_transform_month",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50631,
+      "name": "__iceberg_transform_month",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50632,
+      "name": "__iceberg_transform_timestamptz_month",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50640,
+      "name": "__iceberg_transform_day",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATE"
+      ]
+    },
+    {
+      "fid": 50641,
+      "name": "__iceberg_transform_day",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50642,
+      "name": "__iceberg_transform_timestamptz_day",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50650,
+      "name": "__iceberg_transform_hour",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 50651,
+      "name": "__iceberg_transform_timestamptz_hour",
+      "return_type": "BIGINT",
+      "arguments": [
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 60010,
+      "name": "LIKE",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 60020,
+      "name": "REGEXP",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 70100,
+      "name": "if",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 70101,
+      "name": "if",
+      "return_type": "TINYINT",
+      "arguments": [
+        "BOOLEAN",
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 70102,
+      "name": "if",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "BOOLEAN",
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 70103,
+      "name": "if",
+      "return_type": "INT",
+      "arguments": [
+        "BOOLEAN",
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 70104,
+      "name": "if",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BOOLEAN",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 70105,
+      "name": "if",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "BOOLEAN",
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 70106,
+      "name": "if",
+      "return_type": "FLOAT",
+      "arguments": [
+        "BOOLEAN",
+        "FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 70107,
+      "name": "if",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "BOOLEAN",
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 70108,
+      "name": "if",
+      "return_type": "DATETIME",
+      "arguments": [
+        "BOOLEAN",
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 70109,
+      "name": "if",
+      "return_type": "DATE",
+      "arguments": [
+        "BOOLEAN",
+        "DATE",
+        "DATE"
+      ]
+    },
+    {
+      "fid": 70110,
+      "name": "if",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "BOOLEAN",
+        "DECIMALV2",
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 701100,
+      "name": "if",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "BOOLEAN",
+        "DECIMAL32",
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 701101,
+      "name": "if",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "BOOLEAN",
+        "DECIMAL64",
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 701102,
+      "name": "if",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "BOOLEAN",
+        "DECIMAL128",
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 70111,
+      "name": "if",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BOOLEAN",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 70112,
+      "name": "if",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BOOLEAN",
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 70113,
+      "name": "if",
+      "return_type": "PERCENTILE",
+      "arguments": [
+        "BOOLEAN",
+        "PERCENTILE",
+        "PERCENTILE"
+      ]
+    },
+    {
+      "fid": 70114,
+      "name": "if",
+      "return_type": "HLL",
+      "arguments": [
+        "BOOLEAN",
+        "HLL",
+        "HLL"
+      ]
+    },
+    {
+      "fid": 70115,
+      "name": "if",
+      "return_type": "TIME",
+      "arguments": [
+        "BOOLEAN",
+        "TIME",
+        "TIME"
+      ]
+    },
+    {
+      "fid": 70116,
+      "name": "if",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "BOOLEAN",
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 70117,
+      "name": "if",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "BOOLEAN",
+        "ANY_MAP",
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 70118,
+      "name": "if",
+      "return_type": "ANY_STRUCT",
+      "arguments": [
+        "BOOLEAN",
+        "ANY_STRUCT",
+        "ANY_STRUCT"
+      ]
+    },
+    {
+      "fid": 70119,
+      "name": "if",
+      "return_type": "JSON",
+      "arguments": [
+        "BOOLEAN",
+        "JSON",
+        "JSON"
+      ]
+    },
+    {
+      "fid": 70200,
+      "name": "ifnull",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BOOLEAN",
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 70201,
+      "name": "ifnull",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 70202,
+      "name": "ifnull",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 70203,
+      "name": "ifnull",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 70204,
+      "name": "ifnull",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 70205,
+      "name": "ifnull",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 70206,
+      "name": "ifnull",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 70207,
+      "name": "ifnull",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 70208,
+      "name": "ifnull",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE",
+        "DATE"
+      ]
+    },
+    {
+      "fid": 70209,
+      "name": "ifnull",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 70210,
+      "name": "ifnull",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2",
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 702100,
+      "name": "ifnull",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 702101,
+      "name": "ifnull",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 702102,
+      "name": "ifnull",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 70211,
+      "name": "ifnull",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 70212,
+      "name": "ifnull",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 70213,
+      "name": "ifnull",
+      "return_type": "PERCENTILE",
+      "arguments": [
+        "PERCENTILE",
+        "PERCENTILE"
+      ]
+    },
+    {
+      "fid": 70214,
+      "name": "ifnull",
+      "return_type": "HLL",
+      "arguments": [
+        "HLL",
+        "HLL"
+      ]
+    },
+    {
+      "fid": 70215,
+      "name": "ifnull",
+      "return_type": "TIME",
+      "arguments": [
+        "TIME",
+        "TIME"
+      ]
+    },
+    {
+      "fid": 70216,
+      "name": "ifnull",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 70217,
+      "name": "ifnull",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_MAP",
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 70218,
+      "name": "ifnull",
+      "return_type": "ANY_STRUCT",
+      "arguments": [
+        "ANY_STRUCT",
+        "ANY_STRUCT"
+      ]
+    },
+    {
+      "fid": 70219,
+      "name": "ifnull",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "JSON"
+      ]
+    },
+    {
+      "fid": 70300,
+      "name": "nullif",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BOOLEAN",
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 70301,
+      "name": "nullif",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 70302,
+      "name": "nullif",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 70303,
+      "name": "nullif",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 70304,
+      "name": "nullif",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 70305,
+      "name": "nullif",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 70306,
+      "name": "nullif",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 70307,
+      "name": "nullif",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 70308,
+      "name": "nullif",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE",
+        "DATE"
+      ]
+    },
+    {
+      "fid": 70309,
+      "name": "nullif",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 70310,
+      "name": "nullif",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2",
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 703100,
+      "name": "nullif",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 703101,
+      "name": "nullif",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 703102,
+      "name": "nullif",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 70311,
+      "name": "nullif",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 70312,
+      "name": "nullif",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 70313,
+      "name": "nullif",
+      "return_type": "PERCENTILE",
+      "arguments": [
+        "PERCENTILE",
+        "PERCENTILE"
+      ]
+    },
+    {
+      "fid": 70314,
+      "name": "nullif",
+      "return_type": "HLL",
+      "arguments": [
+        "HLL",
+        "HLL"
+      ]
+    },
+    {
+      "fid": 70315,
+      "name": "nullif",
+      "return_type": "TIME",
+      "arguments": [
+        "TIME",
+        "TIME"
+      ]
+    },
+    {
+      "fid": 70316,
+      "name": "nullif",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 70317,
+      "name": "nullif",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_MAP",
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 70318,
+      "name": "nullif",
+      "return_type": "ANY_STRUCT",
+      "arguments": [
+        "ANY_STRUCT",
+        "ANY_STRUCT"
+      ]
+    },
+    {
+      "fid": 70319,
+      "name": "nullif",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "JSON"
+      ]
+    },
+    {
+      "fid": 70400,
+      "name": "coalesce",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BOOLEAN",
+        "..."
+      ]
+    },
+    {
+      "fid": 70409,
+      "name": "coalesce",
+      "return_type": "DATE",
+      "arguments": [
+        "DATE",
+        "..."
+      ]
+    },
+    {
+      "fid": 70408,
+      "name": "coalesce",
+      "return_type": "DATETIME",
+      "arguments": [
+        "DATETIME",
+        "..."
+      ]
+    },
+    {
+      "fid": 70401,
+      "name": "coalesce",
+      "return_type": "TINYINT",
+      "arguments": [
+        "TINYINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70402,
+      "name": "coalesce",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70403,
+      "name": "coalesce",
+      "return_type": "INT",
+      "arguments": [
+        "INT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70404,
+      "name": "coalesce",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70405,
+      "name": "coalesce",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70406,
+      "name": "coalesce",
+      "return_type": "FLOAT",
+      "arguments": [
+        "FLOAT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70407,
+      "name": "coalesce",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "..."
+      ]
+    },
+    {
+      "fid": 70410,
+      "name": "coalesce",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "DECIMALV2",
+        "..."
+      ]
+    },
+    {
+      "fid": 704100,
+      "name": "coalesce",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "DECIMAL32",
+        "..."
+      ]
+    },
+    {
+      "fid": 704101,
+      "name": "coalesce",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "DECIMAL64",
+        "..."
+      ]
+    },
+    {
+      "fid": 704102,
+      "name": "coalesce",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "DECIMAL128",
+        "..."
+      ]
+    },
+    {
+      "fid": 70411,
+      "name": "coalesce",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 70412,
+      "name": "coalesce",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "..."
+      ]
+    },
+    {
+      "fid": 70413,
+      "name": "coalesce",
+      "return_type": "PERCENTILE",
+      "arguments": [
+        "PERCENTILE",
+        "..."
+      ]
+    },
+    {
+      "fid": 70414,
+      "name": "coalesce",
+      "return_type": "HLL",
+      "arguments": [
+        "HLL",
+        "..."
+      ]
+    },
+    {
+      "fid": 70416,
+      "name": "coalesce",
+      "return_type": "TIME",
+      "arguments": [
+        "TIME",
+        "..."
+      ]
+    },
+    {
+      "fid": 70417,
+      "name": "coalesce",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "..."
+      ]
+    },
+    {
+      "fid": 70418,
+      "name": "coalesce",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_MAP",
+        "..."
+      ]
+    },
+    {
+      "fid": 70419,
+      "name": "coalesce",
+      "return_type": "ANY_STRUCT",
+      "arguments": [
+        "ANY_STRUCT",
+        "..."
+      ]
+    },
+    {
+      "fid": 70420,
+      "name": "coalesce",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "..."
+      ]
+    },
+    {
+      "fid": 70415,
+      "name": "esquery",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 80010,
+      "name": "hll_cardinality",
+      "return_type": "BIGINT",
+      "arguments": [
+        "HLL"
+      ]
+    },
+    {
+      "fid": 80011,
+      "name": "hll_cardinality",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 80020,
+      "name": "hll_hash",
+      "return_type": "HLL",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 80030,
+      "name": "hll_empty",
+      "return_type": "HLL",
+      "arguments": []
+    },
+    {
+      "fid": 80040,
+      "name": "hll_serialize",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "HLL"
+      ]
+    },
+    {
+      "fid": 80041,
+      "name": "hll_deserialize",
+      "return_type": "HLL",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 90010,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 90011,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 90012,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 90013,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 90014,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 90015,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 90016,
+      "name": "to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 90020,
+      "name": "bitmap_hash",
+      "return_type": "BITMAP",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 90021,
+      "name": "bitmap_hash64",
+      "return_type": "BITMAP",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 90030,
+      "name": "bitmap_count",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90040,
+      "name": "bitmap_empty",
+      "return_type": "BITMAP",
+      "arguments": []
+    },
+    {
+      "fid": 90050,
+      "name": "bitmap_or",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90060,
+      "name": "bitmap_and",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90070,
+      "name": "bitmap_to_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90080,
+      "name": "bitmap_from_string",
+      "return_type": "BITMAP",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 90090,
+      "name": "bitmap_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BITMAP",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 90100,
+      "name": "bitmap_has_any",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90200,
+      "name": "bitmap_andnot",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90300,
+      "name": "bitmap_xor",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90400,
+      "name": "bitmap_remove",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 90500,
+      "name": "bitmap_to_array",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90600,
+      "name": "bitmap_max",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90700,
+      "name": "bitmap_min",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90800,
+      "name": "base64_to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 90801,
+      "name": "bitmap_to_base64",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 90900,
+      "name": "array_to_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 91000,
+      "name": "sub_bitmap",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 91001,
+      "name": "bitmap_subset_limit",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 91002,
+      "name": "bitmap_subset_in_range",
+      "return_type": "BITMAP",
+      "arguments": [
+        "BITMAP",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 91003,
+      "name": "bitmap_to_binary",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "BITMAP"
+      ]
+    },
+    {
+      "fid": 91004,
+      "name": "bitmap_from_binary",
+      "return_type": "BITMAP",
+      "arguments": [
+        "VARBINARY"
+      ]
+    },
+    {
+      "fid": 100010,
+      "name": "murmur_hash3_32",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 100021,
+      "name": "xx_hash3_64",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 100022,
+      "name": "xx_hash3_128",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 100023,
+      "name": "crc32_hash",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 100011,
+      "name": "sleep",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "INT"
+      ]
+    },
+    {
+      "fid": 100012,
+      "name": "version",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 100013,
+      "name": "current_version",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 100014,
+      "name": "last_query_id",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 100015,
+      "name": "uuid",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 100016,
+      "name": "uuid_numeric",
+      "return_type": "LARGEINT",
+      "arguments": []
+    },
+    {
+      "fid": 100017,
+      "name": "assert_true",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 100019,
+      "name": "assert_true",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "BOOLEAN",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 100018,
+      "name": "host_name",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 100020,
+      "name": "get_query_profile",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 100024,
+      "name": "encode_sort_key",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "ANY_ELEMENT",
+        "..."
+      ]
+    },
+    {
+      "fid": 100025,
+      "name": "uuid_v7",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 100026,
+      "name": "uuid_v7_numeric",
+      "return_type": "LARGEINT",
+      "arguments": []
+    },
+    {
+      "fid": 100027,
+      "name": "query_id",
+      "return_type": "VARCHAR",
+      "arguments": []
+    },
+    {
+      "fid": 110022,
+      "name": "get_json_int",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110023,
+      "name": "get_json_int",
+      "return_type": "BIGINT",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110000,
+      "name": "get_json_int",
+      "return_type": "INT",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110001,
+      "name": "get_json_double",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110002,
+      "name": "get_json_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110012,
+      "name": "get_json_int",
+      "return_type": "INT",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110013,
+      "name": "get_json_double",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110014,
+      "name": "get_json_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110015,
+      "name": "get_json_object",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110020,
+      "name": "get_json_object",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110021,
+      "name": "get_json_bool",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110003,
+      "name": "parse_json",
+      "return_type": "JSON",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110004,
+      "name": "json_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "JSON"
+      ]
+    },
+    {
+      "fid": 110005,
+      "name": "json_query",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110007,
+      "name": "json_exists",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110008,
+      "name": "json_object",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "..."
+      ]
+    },
+    {
+      "fid": 110009,
+      "name": "json_array",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "..."
+      ]
+    },
+    {
+      "fid": 110010,
+      "name": "json_object",
+      "return_type": "JSON",
+      "arguments": []
+    },
+    {
+      "fid": 110011,
+      "name": "json_array",
+      "return_type": "JSON",
+      "arguments": []
+    },
+    {
+      "fid": 110016,
+      "name": "json_length",
+      "return_type": "INT",
+      "arguments": [
+        "JSON"
+      ]
+    },
+    {
+      "fid": 110017,
+      "name": "json_length",
+      "return_type": "INT",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110018,
+      "name": "json_keys",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON"
+      ]
+    },
+    {
+      "fid": 110019,
+      "name": "json_keys",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110024,
+      "name": "json_remove",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 110025,
+      "name": "json_set",
+      "return_type": "JSON",
+      "arguments": [
+        "JSON",
+        "JSON",
+        "..."
+      ]
+    },
+    {
+      "fid": 110026,
+      "name": "json_pretty",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "JSON"
+      ]
+    },
+    {
+      "fid": 110100,
+      "name": "to_json",
+      "return_type": "JSON",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 110101,
+      "name": "to_json",
+      "return_type": "JSON",
+      "arguments": [
+        "ANY_STRUCT"
+      ]
+    },
+    {
+      "fid": 110112,
+      "name": "json_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "JSON",
+        "JSON"
+      ]
+    },
+    {
+      "fid": 110200,
+      "name": "variant_query",
+      "return_type": "VARIANT",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110201,
+      "name": "get_variant_bool",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110202,
+      "name": "get_variant_int",
+      "return_type": "BIGINT",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110203,
+      "name": "get_variant_double",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110204,
+      "name": "get_variant_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110206,
+      "name": "get_variant_date",
+      "return_type": "DATE",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110207,
+      "name": "get_variant_datetime",
+      "return_type": "DATETIME",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110208,
+      "name": "get_variant_time",
+      "return_type": "TIME",
+      "arguments": [
+        "VARIANT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 110205,
+      "name": "variant_typeof",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARIANT"
+      ]
+    },
+    {
+      "fid": 120100,
+      "name": "aes_encrypt",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120101,
+      "name": "aes_encrypt",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120102,
+      "name": "aes_encrypt",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120110,
+      "name": "aes_decrypt",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120111,
+      "name": "aes_decrypt",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120112,
+      "name": "aes_decrypt",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120120,
+      "name": "from_base64",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120121,
+      "name": "base64_decode_binary",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120122,
+      "name": "base64_decode_string",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120130,
+      "name": "to_base64",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120140,
+      "name": "md5",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120150,
+      "name": "md5sum",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 120151,
+      "name": "md5sum_numeric",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 120160,
+      "name": "sha2",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "INT"
+      ]
+    },
+    {
+      "fid": 120161,
+      "name": "to_base64",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARBINARY"
+      ]
+    },
+    {
+      "fid": 120162,
+      "name": "encode_fingerprint_sha256",
+      "return_type": "VARBINARY",
+      "arguments": [
+        "ANY_ELEMENT",
+        "..."
+      ]
+    },
+    {
+      "fid": 120000,
+      "name": "ST_Point",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 120001,
+      "name": "ST_X",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120002,
+      "name": "ST_Y",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120003,
+      "name": "ST_Distance_Sphere",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 120004,
+      "name": "ST_AsText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120005,
+      "name": "ST_AsWKT",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120006,
+      "name": "ST_GeometryFromText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120007,
+      "name": "ST_GeomFromText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120008,
+      "name": "ST_LineFromText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120009,
+      "name": "ST_LineStringFromText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120010,
+      "name": "ST_Polygon",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120011,
+      "name": "ST_PolyFromText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120012,
+      "name": "ST_PolygonFromText",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 120013,
+      "name": "ST_Circle",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 120014,
+      "name": "ST_Contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 130000,
+      "name": "percentile_hash",
+      "return_type": "PERCENTILE",
+      "arguments": [
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 130001,
+      "name": "percentile_empty",
+      "return_type": "PERCENTILE",
+      "arguments": []
+    },
+    {
+      "fid": 130002,
+      "name": "percentile_approx_raw",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "PERCENTILE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 140000,
+      "name": "grouping_id",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 140001,
+      "name": "grouping",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150000,
+      "name": "array_length",
+      "return_type": "INT",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 150001,
+      "name": "array_append",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ELEMENT"
+      ]
+    },
+    {
+      "fid": 150002,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ELEMENT"
+      ]
+    },
+    {
+      "fid": 15000201,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 15000202,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 15000203,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 15000204,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 15000205,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 15000206,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 15000207,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 15000208,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 15000209,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 15000210,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 15000211,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 15000212,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 15000213,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 15000214,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATE",
+        "DATE"
+      ]
+    },
+    {
+      "fid": 15000215,
+      "name": "array_contains",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 150003,
+      "name": "array_sum",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150004,
+      "name": "array_sum",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150005,
+      "name": "array_sum",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150006,
+      "name": "array_sum",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150007,
+      "name": "array_sum",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150008,
+      "name": "array_sum",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150011,
+      "name": "array_sum",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150012,
+      "name": "array_sum",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150013,
+      "name": "array_sum",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150014,
+      "name": "array_sum",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150009,
+      "name": "array_sum",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150010,
+      "name": "array_sum",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150023,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150024,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150025,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150026,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150027,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150028,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150031,
+      "name": "array_avg",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150034,
+      "name": "array_avg",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150035,
+      "name": "array_avg",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150036,
+      "name": "array_avg",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150029,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150030,
+      "name": "array_avg",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150043,
+      "name": "array_min",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150044,
+      "name": "array_min",
+      "return_type": "TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150045,
+      "name": "array_min",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150046,
+      "name": "array_min",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150047,
+      "name": "array_min",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150048,
+      "name": "array_min",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150049,
+      "name": "array_min",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150055,
+      "name": "array_min",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150056,
+      "name": "array_min",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150057,
+      "name": "array_min",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150050,
+      "name": "array_min",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150051,
+      "name": "array_min",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150052,
+      "name": "array_min",
+      "return_type": "DATE",
+      "arguments": [
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150053,
+      "name": "array_min",
+      "return_type": "DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150054,
+      "name": "array_min",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150063,
+      "name": "array_max",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150064,
+      "name": "array_max",
+      "return_type": "TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150065,
+      "name": "array_max",
+      "return_type": "SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150066,
+      "name": "array_max",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150067,
+      "name": "array_max",
+      "return_type": "BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150068,
+      "name": "array_max",
+      "return_type": "LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150069,
+      "name": "array_max",
+      "return_type": "FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150075,
+      "name": "array_max",
+      "return_type": "DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150076,
+      "name": "array_max",
+      "return_type": "DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150077,
+      "name": "array_max",
+      "return_type": "DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150070,
+      "name": "array_max",
+      "return_type": "DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150071,
+      "name": "array_max",
+      "return_type": "DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150072,
+      "name": "array_max",
+      "return_type": "DATE",
+      "arguments": [
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150073,
+      "name": "array_max",
+      "return_type": "DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150074,
+      "name": "array_max",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150083,
+      "name": "array_remove",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ELEMENT"
+      ]
+    },
+    {
+      "fid": 150084,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ELEMENT"
+      ]
+    },
+    {
+      "fid": 15008401,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "BOOLEAN"
+      ]
+    },
+    {
+      "fid": 15008402,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 15008403,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 15008404,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 15008405,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 15008406,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 15008407,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "DECIMALV2"
+      ]
+    },
+    {
+      "fid": 15008408,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "DECIMAL32"
+      ]
+    },
+    {
+      "fid": 15008409,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "DECIMAL64"
+      ]
+    },
+    {
+      "fid": 15008410,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "DECIMAL128"
+      ]
+    },
+    {
+      "fid": 15008411,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "FLOAT"
+      ]
+    },
+    {
+      "fid": 15008412,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "DOUBLE"
+      ]
+    },
+    {
+      "fid": 15008413,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 15008414,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DATE",
+        "DATE"
+      ]
+    },
+    {
+      "fid": 15008415,
+      "name": "array_position",
+      "return_type": "INT",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "DATETIME"
+      ]
+    },
+    {
+      "fid": 150090,
+      "name": "array_distinct",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150091,
+      "name": "array_distinct",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150092,
+      "name": "array_distinct",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150093,
+      "name": "array_distinct",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150094,
+      "name": "array_distinct",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150095,
+      "name": "array_distinct",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150096,
+      "name": "array_distinct",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150103,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150104,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150105,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150097,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150098,
+      "name": "array_distinct",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150099,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150100,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150101,
+      "name": "array_distinct",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150107,
+      "name": "array_distinct",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 150110,
+      "name": "array_sort",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150111,
+      "name": "array_sort",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150112,
+      "name": "array_sort",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150113,
+      "name": "array_sort",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150114,
+      "name": "array_sort",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150115,
+      "name": "array_sort",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150116,
+      "name": "array_sort",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150123,
+      "name": "array_sort",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150124,
+      "name": "array_sort",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150125,
+      "name": "array_sort",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150117,
+      "name": "array_sort",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150118,
+      "name": "array_sort",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150119,
+      "name": "array_sort",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150120,
+      "name": "array_sort",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150121,
+      "name": "array_sort",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150122,
+      "name": "array_sort",
+      "return_type": "ARRAY_JSON",
+      "arguments": [
+        "ARRAY_JSON"
+      ]
+    },
+    {
+      "fid": 150126,
+      "name": "array_sort_lambda",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "FUNCTION"
+      ]
+    },
+    {
+      "fid": 150130,
+      "name": "reverse",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150131,
+      "name": "reverse",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150132,
+      "name": "reverse",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150133,
+      "name": "reverse",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150134,
+      "name": "reverse",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150135,
+      "name": "reverse",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150136,
+      "name": "reverse",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150143,
+      "name": "reverse",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150144,
+      "name": "reverse",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150145,
+      "name": "reverse",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150137,
+      "name": "reverse",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150138,
+      "name": "reverse",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150139,
+      "name": "reverse",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150140,
+      "name": "reverse",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150141,
+      "name": "reverse",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150142,
+      "name": "reverse",
+      "return_type": "ARRAY_JSON",
+      "arguments": [
+        "ARRAY_JSON"
+      ]
+    },
+    {
+      "fid": 150146,
+      "name": "reverse",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 150150,
+      "name": "array_join",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 150151,
+      "name": "array_join",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 150160,
+      "name": "array_difference",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150161,
+      "name": "array_difference",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150162,
+      "name": "array_difference",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150163,
+      "name": "array_difference",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150164,
+      "name": "array_difference",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150165,
+      "name": "array_difference",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150166,
+      "name": "array_difference",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150168,
+      "name": "array_difference",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 1501681,
+      "name": "array_difference",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 1501682,
+      "name": "array_difference",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 1501683,
+      "name": "array_difference",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150167,
+      "name": "array_difference",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150170,
+      "name": "array_slice",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150171,
+      "name": "array_slice",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150172,
+      "name": "array_slice",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150173,
+      "name": "array_slice",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150174,
+      "name": "array_slice",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150175,
+      "name": "array_slice",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150176,
+      "name": "array_slice",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150177,
+      "name": "array_slice",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150178,
+      "name": "array_slice",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150184,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150185,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150186,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150179,
+      "name": "array_slice",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150180,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150181,
+      "name": "array_slice",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150182,
+      "name": "array_slice",
+      "return_type": "ARRAY_JSON",
+      "arguments": [
+        "ARRAY_JSON",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150183,
+      "name": "array_slice",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150190,
+      "name": "array_concat",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE",
+        "..."
+      ]
+    },
+    {
+      "fid": 150191,
+      "name": "array_concat",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "..."
+      ]
+    },
+    {
+      "fid": 150192,
+      "name": "array_concat",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "..."
+      ]
+    },
+    {
+      "fid": 150193,
+      "name": "array_concat",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150194,
+      "name": "array_concat",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150195,
+      "name": "array_concat",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150196,
+      "name": "array_concat",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150197,
+      "name": "array_concat",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150198,
+      "name": "array_concat",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150204,
+      "name": "array_concat",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "..."
+      ]
+    },
+    {
+      "fid": 150205,
+      "name": "array_concat",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "..."
+      ]
+    },
+    {
+      "fid": 150206,
+      "name": "array_concat",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "..."
+      ]
+    },
+    {
+      "fid": 150199,
+      "name": "array_concat",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "..."
+      ]
+    },
+    {
+      "fid": 150200,
+      "name": "array_concat",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "..."
+      ]
+    },
+    {
+      "fid": 150201,
+      "name": "array_concat",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 150202,
+      "name": "array_concat",
+      "return_type": "ARRAY_JSON",
+      "arguments": [
+        "ARRAY_JSON",
+        "..."
+      ]
+    },
+    {
+      "fid": 150203,
+      "name": "array_concat",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "..."
+      ]
+    },
+    {
+      "fid": 150207,
+      "name": "arrays_zip",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "..."
+      ]
+    },
+    {
+      "fid": 150210,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATE",
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150211,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150212,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150213,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150214,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150215,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_INT",
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150216,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150217,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150218,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150222,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150223,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150224,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150219,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150220,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150221,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150226,
+      "name": "arrays_overlap",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 150230,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE",
+        "..."
+      ]
+    },
+    {
+      "fid": 150231,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "..."
+      ]
+    },
+    {
+      "fid": 150232,
+      "name": "array_intersect",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "..."
+      ]
+    },
+    {
+      "fid": 150233,
+      "name": "array_intersect",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150234,
+      "name": "array_intersect",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150235,
+      "name": "array_intersect",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150236,
+      "name": "array_intersect",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150237,
+      "name": "array_intersect",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150238,
+      "name": "array_intersect",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "..."
+      ]
+    },
+    {
+      "fid": 150242,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "..."
+      ]
+    },
+    {
+      "fid": 150243,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "..."
+      ]
+    },
+    {
+      "fid": 150244,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "..."
+      ]
+    },
+    {
+      "fid": 150239,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "..."
+      ]
+    },
+    {
+      "fid": 150240,
+      "name": "array_intersect",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "..."
+      ]
+    },
+    {
+      "fid": 150241,
+      "name": "array_intersect",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "..."
+      ]
+    },
+    {
+      "fid": 150246,
+      "name": "array_intersect",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "..."
+      ]
+    },
+    {
+      "fid": 150250,
+      "name": "array_slice",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "ARRAY_DATE",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150251,
+      "name": "array_slice",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150252,
+      "name": "array_slice",
+      "return_type": "ARRAY_BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150253,
+      "name": "array_slice",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150254,
+      "name": "array_slice",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150255,
+      "name": "array_slice",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "ARRAY_INT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150256,
+      "name": "array_slice",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150257,
+      "name": "array_slice",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150258,
+      "name": "array_slice",
+      "return_type": "ARRAY_FLOAT",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150264,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMAL32",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150265,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMAL64",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150266,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMAL128",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150259,
+      "name": "array_slice",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150260,
+      "name": "array_slice",
+      "return_type": "ARRAY_DECIMALV2",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150261,
+      "name": "array_slice",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150262,
+      "name": "array_slice",
+      "return_type": "ARRAY_JSON",
+      "arguments": [
+        "ARRAY_JSON",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150263,
+      "name": "array_slice",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150270,
+      "name": "array_cum_sum",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150271,
+      "name": "array_cum_sum",
+      "return_type": "ARRAY_DOUBLE",
+      "arguments": [
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150282,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 15028201,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 15028202,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 15028203,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 15028204,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_INT",
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 15028205,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 15028206,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 15028207,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 15028208,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 15028209,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 15028210,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 15028211,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 15028212,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 15028213,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 15028214,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATE",
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 15028215,
+      "name": "array_contains_all",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150283,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 15028301,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN",
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 15028302,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_TINYINT",
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 15028303,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_SMALLINT",
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 15028304,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_INT",
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 15028305,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BIGINT",
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 15028306,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_LARGEINT",
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 15028307,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMALV2",
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 15028308,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL32",
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 15028309,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL64",
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 15028310,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DECIMAL128",
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 15028311,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_FLOAT",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 15028312,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DOUBLE",
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 15028313,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_VARCHAR",
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 15028314,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATE",
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 15028315,
+      "name": "array_contains_seq",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_DATETIME",
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150300,
+      "name": "array_filter",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150301,
+      "name": "all_match",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150302,
+      "name": "any_match",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150311,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 150312,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_TINYINT"
+      ]
+    },
+    {
+      "fid": 150313,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_SMALLINT"
+      ]
+    },
+    {
+      "fid": 150314,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_INT"
+      ]
+    },
+    {
+      "fid": 150315,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_BIGINT"
+      ]
+    },
+    {
+      "fid": 150316,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_LARGEINT"
+      ]
+    },
+    {
+      "fid": 150317,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_FLOAT"
+      ]
+    },
+    {
+      "fid": 150324,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DECIMAL32"
+      ]
+    },
+    {
+      "fid": 150325,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DECIMAL64"
+      ]
+    },
+    {
+      "fid": 150326,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DECIMAL128"
+      ]
+    },
+    {
+      "fid": 150318,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DOUBLE"
+      ]
+    },
+    {
+      "fid": 150319,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_VARCHAR"
+      ]
+    },
+    {
+      "fid": 150320,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DECIMALV2"
+      ]
+    },
+    {
+      "fid": 150321,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DATETIME"
+      ]
+    },
+    {
+      "fid": 150322,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_DATE"
+      ]
+    },
+    {
+      "fid": 150323,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ARRAY_JSON"
+      ]
+    },
+    {
+      "fid": 150330,
+      "name": "array_generate",
+      "return_type": "ARRAY_TINYINT",
+      "arguments": [
+        "TINYINT",
+        "TINYINT",
+        "TINYINT"
+      ]
+    },
+    {
+      "fid": 150331,
+      "name": "array_generate",
+      "return_type": "ARRAY_SMALLINT",
+      "arguments": [
+        "SMALLINT",
+        "SMALLINT",
+        "SMALLINT"
+      ]
+    },
+    {
+      "fid": 150332,
+      "name": "array_generate",
+      "return_type": "ARRAY_INT",
+      "arguments": [
+        "INT",
+        "INT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 150333,
+      "name": "array_generate",
+      "return_type": "ARRAY_BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 150334,
+      "name": "array_generate",
+      "return_type": "ARRAY_LARGEINT",
+      "arguments": [
+        "LARGEINT",
+        "LARGEINT",
+        "LARGEINT"
+      ]
+    },
+    {
+      "fid": 150335,
+      "name": "array_sortby",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY",
+        "ANY_ARRAY",
+        "..."
+      ]
+    },
+    {
+      "fid": 150340,
+      "name": "array_repeat",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ELEMENT",
+        "INT"
+      ]
+    },
+    {
+      "fid": 150341,
+      "name": "array_top_n",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_ARRAY",
+        "INT"
+      ]
+    },
+    {
+      "fid": 150345,
+      "name": "array_flatten",
+      "return_type": "ANY_ELEMENT",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 150350,
+      "name": "array_generate",
+      "return_type": "ARRAY_DATETIME",
+      "arguments": [
+        "DATETIME",
+        "DATETIME",
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 150351,
+      "name": "array_generate",
+      "return_type": "ARRAY_DATE",
+      "arguments": [
+        "DATE",
+        "DATE",
+        "INT",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 160100,
+      "name": "array_map",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "FUNCTION",
+        "ANY_ARRAY",
+        "..."
+      ]
+    },
+    {
+      "fid": 170000,
+      "name": "map_size",
+      "return_type": "INT",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170001,
+      "name": "map_keys",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170002,
+      "name": "map_values",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170003,
+      "name": "map_from_arrays",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_ARRAY",
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 170004,
+      "name": "map_apply",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "FUNCTION",
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170005,
+      "name": "map_filter",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_MAP",
+        "ARRAY_BOOLEAN"
+      ]
+    },
+    {
+      "fid": 170006,
+      "name": "distinct_map_keys",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170007,
+      "name": "map_concat",
+      "return_type": "ANY_MAP",
+      "arguments": [
+        "ANY_MAP",
+        "..."
+      ]
+    },
+    {
+      "fid": 170008,
+      "name": "map_entries",
+      "return_type": "ANY_ARRAY",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170100,
+      "name": "cardinality",
+      "return_type": "INT",
+      "arguments": [
+        "ANY_MAP"
+      ]
+    },
+    {
+      "fid": 170101,
+      "name": "cardinality",
+      "return_type": "INT",
+      "arguments": [
+        "ANY_ARRAY"
+      ]
+    },
+    {
+      "fid": 170500,
+      "name": "row",
+      "return_type": "ANY_STRUCT",
+      "arguments": [
+        "ANY_ELEMENT",
+        "..."
+      ]
+    },
+    {
+      "fid": 170501,
+      "name": "named_struct",
+      "return_type": "ANY_STRUCT",
+      "arguments": [
+        "ANY_ELEMENT",
+        "..."
+      ]
+    },
+    {
+      "fid": 180000,
+      "name": "is_role_in_session",
+      "return_type": "BOOLEAN",
+      "arguments": [
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 181000,
+      "name": "bar",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "BIGINT",
+        "BIGINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 181001,
+      "name": "equiwidth_bucket",
+      "return_type": "BIGINT",
+      "arguments": [
+        "BIGINT",
+        "BIGINT",
+        "BIGINT",
+        "BIGINT"
+      ]
+    },
+    {
+      "fid": 190000,
+      "name": "tokenize",
+      "return_type": "ARRAY_VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "VARCHAR"
+      ]
+    },
+    {
+      "fid": 200000,
+      "name": "ai_query",
+      "return_type": "VARCHAR",
+      "arguments": [
+        "VARCHAR",
+        "JSON"
+      ]
+    }
+  ]
+}

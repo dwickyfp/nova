@@ -88,6 +88,55 @@ def _patch_service(monkeypatch, fake: FakeQueryService) -> FakeQueryService:
     return fake
 
 
+async def test_unsupported_frontend_capability_has_a_mysql_refusal_code(monkeypatch):
+    fake = FakeQueryService(
+        [
+            QueryResult(
+                error="CREATE ML_MODEL requires an API session", error_code="capability_unsupported"
+            )
+        ]
+    )
+    _patch_service(monkeypatch, fake)
+    result = await ProxyQueryExecutor(SessionState()).execute(
+        "CREATE ML_MODEL m TYPE=REGRESSION TARGET=y AS SELECT 1 AS y",
+        username="analyst",
+        connection=object(),
+    )
+    assert result.error_code == 1235
+    assert "requires an API session" in result.error
+
+
+async def test_user_variable_expression_is_evaluated_once_as_the_authenticated_caller(monkeypatch):
+    fake = FakeQueryService([QueryResult(columns=["nova_user_variable"], rows=[[2]])])
+    _patch_service(monkeypatch, fake)
+    session = SessionState(
+        database="db", active_role="reader", security_context_version=7, user_variables={"x": "1"}
+    )
+    connection = object()
+    executor = ProxyQueryExecutor(session)
+    result = await executor.execute(
+        "SET @x=@x+1", username="alice", connection=connection, session_id="session"
+    )
+    assert result.is_ok and session.user_variables["x"] == "2"
+    assigned = fake.calls[0]
+    assert assigned["sql"] == "SELECT (1+1) AS nova_user_variable"
+    assert assigned["username"] == "alice" and assigned["connection"] is connection
+    assert assigned["role"] == "reader" and assigned["security_context_version"] == 7
+    assert assigned["session_id"] == "session"
+    await executor.execute("SELECT @x=@x", username="alice", connection=connection)
+    assert fake.last_sql == "SELECT 2=2" and len(fake.calls) == 2
+
+
+async def test_failed_variable_expression_preserves_the_old_value(monkeypatch):
+    fake = FakeQueryService([QueryResult(error="Unknown column missing")])
+    _patch_service(monkeypatch, fake)
+    session = SessionState(user_variables={"x": "1"})
+    result = await ProxyQueryExecutor(session).execute(
+        "SET @x=missing+1", username="alice", connection=object()
+    )
+    assert result.error and session.user_variables == {"x": "1"}
+
+
 class TestRoutingToThePipeline:
     async def test_select_goes_through_execute_statements(self, fake_service):
         executor = ProxyQueryExecutor(SessionState())
@@ -102,7 +151,7 @@ class TestRoutingToThePipeline:
         await executor.execute("SELECT 1", username="u", connection=object())
         assert fake_service.last_database == "NOVA_DEMO"
 
-    async def test_use_updates_context_and_never_reaches_the_engine(self, fake_service):
+    async def test_use_updates_context_after_engine_validation(self, fake_service):
         session = SessionState()
         executor = ProxyQueryExecutor(session)
 
@@ -110,7 +159,34 @@ class TestRoutingToThePipeline:
 
         assert result.is_ok
         assert session.database == "NOVA_DEMO"
+        assert fake_service.last_sql == "USE NOVA_DEMO"
+
+    async def test_failed_use_preserves_previous_database(self, monkeypatch):
+        fake = FakeQueryService([QueryResult(error="Unknown database")])
+        _patch_service(monkeypatch, fake)
+        session = SessionState(database="existing")
+        result = await ProxyQueryExecutor(session).execute(
+            "USE missing", username="u", connection=object()
+        )
+        assert result.error == "Unknown database"
+        assert session.database == "existing"
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1; USE missing; SELECT 2",
+            "SET @x=1; USE existing; SELECT 2",
+            "SELECT 1; SET ROLE ACCOUNTADMIN",
+            "SELECT missing; SET @x=2",
+        ],
+    )
+    async def test_unsupported_script_order_refuses_before_any_effect(self, fake_service, sql):
+        session = SessionState(database="existing", user_variables={"x": "0"})
+        result = await ProxyQueryExecutor(session).execute(sql, username="u", connection=object())
+        assert result.error_code == 1235 and result.error
         assert fake_service.calls == []
+        assert session.database == "existing"
+        assert session.user_variables == {"x": "0"}
 
     async def test_set_is_consumed_and_never_reaches_the_engine(self, fake_service):
         session = SessionState()
@@ -194,6 +270,27 @@ class TestRoutingToThePipeline:
 
 
 class TestResultMapping:
+    async def test_engine_metadata_survives_all_null_and_empty_results(self, monkeypatch):
+        fake = FakeQueryService(
+            [
+                QueryResult(
+                    columns=["integer", "decimal"],
+                    rows=[[None, None]],
+                    column_types=("(3, 11, 0)", "(246, 20, 4)"),
+                )
+            ]
+        )
+        _patch_service(monkeypatch, fake)
+        executor = ProxyQueryExecutor(SessionState())
+        result = await executor.execute("SELECT NULL", username="alice", connection=object())
+        assert [column.type_code for column in result.columns] == [3, 246]
+        assert result.columns[1].decimals == 4
+        fake._results[0].rows = []
+        result = await executor.execute(
+            "SELECT NULL WHERE FALSE", username="alice", connection=object()
+        )
+        assert [column.type_code for column in result.columns] == [3, 246]
+
     async def test_columns_and_rows_become_a_resultset(self, monkeypatch):
         fake = FakeQueryService(
             [

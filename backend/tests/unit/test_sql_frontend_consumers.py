@@ -69,6 +69,47 @@ async def test_proxy_reuses_the_single_tree_for_unchanged_stage_sql(monkeypatch)
     repository.execute_as_user.assert_awaited_once()
 
 
+@pytest.mark.parametrize("relay", [False, True])
+async def test_planned_ml_prediction_reaches_inference_with_the_caller_context(monkeypatch, relay):
+    import pyarrow as pa
+
+    from app.modules.ml_engine.service import ml_engine_service
+
+    inference = AsyncMock(return_value=({}, pa.table({"prediction": [7.0]})))
+    audit = AsyncMock()
+    monkeypatch.setattr(ml_engine_service, "batch_predict_projected", inference)
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", audit)
+    monkeypatch.setattr("app.modules.query.service.decrypt_password", lambda value: "caller-pw")
+    repository = AsyncMock()
+    sql = "SELECT ML_PREDICT('model',CAST(n AS DOUBLE)) AS prediction FROM numbers"
+    connection = object() if relay else None
+    if relay:
+        monkeypatch.setattr(query_service, "_repo", repository)
+        state = SessionState(
+            database="analytics", active_role="analyst", security_context_version=9
+        )
+        result = await ProxyQueryExecutor(state).execute(
+            sql, username="alice", connection=connection
+        )
+    else:
+        service = QueryService()
+        service._repo = repository
+        result = await service.execute(
+            sql, "alice", "enc", database="analytics", role="analyst", security_context_version=9
+        )
+    assert result.error is None and result.rows == [[7.0]]
+    inference.assert_awaited_once()
+    context = inference.await_args.kwargs
+    assert context["model_alias"] == "model"
+    assert context["username"] == "alice" and context["role"] == "analyst"
+    assert context["database_name"] == "analytics" and context["connection"] is connection
+    assert context["password"] == ("" if relay else "caller-pw")
+    assert context["security_context_version"] == 9
+    assert "ML_PREDICT" not in context["prediction_sql"]
+    repository.execute_as_user.assert_not_awaited()
+    assert audit.await_args.kwargs["action"] == "ml_predict_batch"
+
+
 @pytest.mark.parametrize(
     "sql,operation",
     [

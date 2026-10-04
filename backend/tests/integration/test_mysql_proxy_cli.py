@@ -29,7 +29,9 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -105,22 +107,18 @@ def _run_mysql(
     password: str = E2E_PASSWORD,
     database: str | None = None,
 ) -> CliResult:
-    """Run the containerised ``mysql`` CLI and capture its output.
-
-    The password is passed as ``MYSQL_PWD`` rather than ``-p<value>``: the flag
-    form prints a warning to stderr that every test would then have to filter,
-    and it renders the credential in ``ps`` output on a shared host.
-    """
+    """Run mysql with a private option file so errors cannot echo the password."""
     argv = [
         "docker",
         "run",
         "--rm",
         "--network",
         CLIENT_NETWORK,
-        "-e",
-        f"MYSQL_PWD={password}",
+        "--mount",
+        "",
         MYSQL_IMAGE,
         "mysql",
+        "--defaults-extra-file=/run/nova-client.cnf",
         f"--host={host}",
         f"--port={port}",
         f"--user={user}",
@@ -132,12 +130,20 @@ def _run_mysql(
     if database:
         argv.append(f"--database={database}")
 
-    completed = subprocess.run(
-        argv,
-        capture_output=True,
-        text=True,
-        timeout=CLIENT_TIMEOUT_SECONDS,
-    )
+    with tempfile.TemporaryDirectory(prefix="nova-mysql-test-") as directory:
+        options = Path(directory) / "client.cnf"
+        escaped = password.replace("\\", "\\\\").replace('"', '\\"')
+        options.write_text(f'[client]\npassword="{escaped}"\n')
+        options.chmod(0o600)
+        argv[argv.index("--mount") + 1] = (
+            f"type=bind,source={options},target=/run/nova-client.cnf,readonly"
+        )
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=CLIENT_TIMEOUT_SECONDS,
+        )
     return CliResult(
         stdout=completed.stdout,
         stderr=completed.stderr,
@@ -672,6 +678,7 @@ class TestColumnTypeCodes:
                 user=E2E_USER,
                 password=E2E_PASSWORD,
                 database=E2E_DATABASE,
+                autocommit=True,
             )
             try:
                 async with conn.cursor() as cursor:

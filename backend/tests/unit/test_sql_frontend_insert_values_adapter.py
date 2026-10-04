@@ -102,3 +102,27 @@ async def test_insert_values_query_service_keeps_caller_and_dispatches_once(monk
     assert dispatched["username"] == "alice"
     assert dispatched["role"] == "analyst"
     assert dispatched["database"] == "db"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "INSERT INTO FILES('path'='s3://exports/results/', 'format'='parquet') SELECT 1",
+        "INSERT INTO BLACKHOLE() SELECT 1",
+    ],
+)
+async def test_non_table_insert_preserves_native_sql_without_transaction_intent(sql):
+    plan = await SQLPlanner().plan(
+        ast_builders.build(parse_statement(sql)), PlanningContext(database="db")
+    )
+    assert isinstance(plan, EngineSqlPlan)
+    assert plan.engine_sql == sql
+    assert plan.transaction_intent is None
+    capabilities = StarRocksCapabilityProvider().resolve(
+        normalize_identity("4.1.4", deployment_mode="shared_data")
+    )
+    with pytest.raises(SemanticError, match="Transaction requires proven engine DML steps"):
+        await validate_transaction(
+            CompositePlan((plan,), Atomicity.SINGLE_ENGINE_TRANSACTION),
+            ExecutionContext("alice", database="db", capabilities=capabilities),
+        )

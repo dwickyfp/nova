@@ -17,6 +17,8 @@ def stage_view(parsed: ParsedStatement) -> ParsedSQL:
     for node in nodes:
         # Reuse the existing segment decoder for relation and command references.
         class Atom:
+            alias = getattr(node.parentCtx, "alias", None)
+
             def stageReference(self, reference=node):  # noqa: N802
                 return reference
 
@@ -53,6 +55,7 @@ def planned_stages(plan) -> ParsedSQL:
                 start=start,
                 end=start + len(binding.slot),
                 access=binding.access,
+                has_alias=binding.has_alias,
             )
         )
     return ParsedSQL(CommandType(plan.stage_command), refs, sql, sql, [])

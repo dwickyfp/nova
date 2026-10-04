@@ -455,6 +455,7 @@ def is_unscoped_mutation(sql: str) -> bool:
 #: two leading and two trailing characters. Redaction must not depend on the
 #: engine's own masking, so these names are covered here like any other.
 CREDENTIAL_PARAM_SUFFIXES: tuple[str, ...] = (
+    "api_key",
     "access_key",
     "secret_key",
     "session_token",
@@ -484,9 +485,7 @@ _CREDENTIAL_SUFFIX_PATTERN = "|".join(
 #: (``gcp.gcs.service_account_private_key``, ``hive.metastore.password``) match
 #: with one pattern. ``[._]`` between segments is what keeps ``..._key`` from
 #: needing a literal dot the catalog keys do not have.
-_CREDENTIAL_KEY = (
-    rf"(?:[A-Za-z_][\w$]*[._])*(?:{_CREDENTIAL_SUFFIX_PATTERN})"
-)
+_CREDENTIAL_KEY = rf"(?:[A-Za-z_][\w$]*[._])*(?:{_CREDENTIAL_SUFFIX_PATTERN})"
 
 #: One whole property name is a credential when it *is* a credential key — the
 #: full key, anchored, not just its final segment. ``is_credential_property``
@@ -510,6 +509,7 @@ def is_credential_property(key: str) -> bool:
     """
     return bool(_CREDENTIAL_PROPERTY.match(key or ""))
 
+
 #: The placeholder written in place of a redacted value.
 REDACTED_VALUE = "***"
 
@@ -522,7 +522,7 @@ REDACTED_VALUE = "***"
 #: cannot be truncated and leave its tail looking like live SQL.
 _QUOTED_VALUE = (
     r"(?P<val_quote>['\"`])"
-    r"(?P<val>(?:[^'\"`]|(?!(?P=val_quote))['\"`]|(?P=val_quote)(?P=val_quote))*)"
+    r"(?P<val>(?:\\.|[^'\"`\\]|(?!(?P=val_quote))['\"`]|(?P=val_quote)(?P=val_quote))*)"
     r"(?P=val_quote)"
 )
 
@@ -535,6 +535,7 @@ class CredentialsRedactionError(RuntimeError):
     or unrecognised credential form must never turn into a credential leak.
     """
 
+
 # Quoted key: ``'aws.s3.secret_key'='AKIA…'`` — what the injector emits.
 # Named groups: ``key_quote``, ``key``, ``operator``, plus the value groups from
 # ``_QUOTED_VALUE``. ``=>`` is an alternative of the same operator capture rather
@@ -543,7 +544,7 @@ class CredentialsRedactionError(RuntimeError):
 _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
     rf"(?P<key_quote>['\"`])"
     rf"(?P<key>{_CREDENTIAL_KEY})(?P=key_quote)"
-    rf"(?P<operator>\s*(?:=>|=)\s*)"
+    rf"(?P<operator>\s*(?:=>|=|:)\s*)"
     rf"{_QUOTED_VALUE}",
     re.IGNORECASE,
 )
@@ -575,8 +576,8 @@ _CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
 #: and the quotes are stripped before the comparison, which cannot be fooled
 #: that way.
 _POPULATED_CREDENTIAL = re.compile(
-    rf"(?<![\w$.'\"`])(?:['\"`]?{_CREDENTIAL_KEY}['\"`]?\s*(?:=>|=)\s*)"
-    r"(?P<value>[^\s,)]*)",
+    rf"(?<![\w$.'\"`])(?:['\"`]?{_CREDENTIAL_KEY}['\"`]?\s*(?:=>|=|:)\s*)"
+    r"(?P<value>[^\s,)}\]]*)",
     re.IGNORECASE,
 )
 
@@ -611,9 +612,7 @@ def redact_sql_credentials(sql: str) -> str:
         return sql
     sql = _redact_account_credentials(sql)
     for pattern, quoted_key in _CREDENTIAL_PATTERNS:
-        sql = pattern.sub(
-            lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql
-        )
+        sql = pattern.sub(lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql)
     if not _redaction_is_complete(sql):
         raise CredentialsRedactionError(
             "credential parameters remain populated after redaction; refusing to "
@@ -648,13 +647,15 @@ def _redact_account_credentials(sql: str) -> str:
                 if i + 1 < len(sql) and sql[i + 1] == quote:
                     i += 2
                     continue
-                if sql[start + 1:i] not in {"", "***", "<temporary_password>"}:
+                if sql[start + 1 : i] not in {"", "***", "<temporary_password>"}:
                     edits.append((start, i + 1))
                 break
             else:
                 i += 1
         else:
-            raise CredentialsRedactionError("Unterminated account credential; refusing to return SQL.")
+            raise CredentialsRedactionError(
+                "Unterminated account credential; refusing to return SQL."
+            )
     for start, end in reversed(edits):
         sql = sql[:start] + "'***'" + sql[end:]
     return sql
@@ -689,7 +690,8 @@ def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:
         key_quote = match.group("key_quote")
         key = match.group("key")
         operator = match.group("operator")
-        return f"{key_quote}{key}{key_quote}{operator}'{REDACTED_VALUE}'"
+        value_quote = '"' if operator.strip() == ":" else "'"
+        return f"{key_quote}{key}{key_quote}{operator}{value_quote}{REDACTED_VALUE}{value_quote}"
     key = match.group("key")
     operator = match.group("operator")
     return f"{key}{operator}'{REDACTED_VALUE}'"

@@ -598,6 +598,9 @@ class AccessControlService:
         row_restrictions: list[str] = []
         column_restrictions: dict[str, str] = {}
         column_restriction_fingerprints: dict[str, str] = {}
+        object_access_supported = self._object_access_comparison_supported(
+            policies, catalog, database, table,
+        )
         for policy in matching:
             for item in policy.get("policyItems", []):
                 if active_role in item.get("roles", []):
@@ -631,8 +634,12 @@ class AccessControlService:
             "resource": resource,
             "authorization_provider": "Ranger",
             "policies": matching,
-            "policy_health": "ACTIVE" if matching else "NO_MATCH",
-            "object_access": sorted(object_access),
+            "policy_health": (
+                "UNSUPPORTED" if not object_access_supported
+                else "ACTIVE" if matching else "NO_MATCH"
+            ),
+            "object_access": sorted(object_access) if object_access_supported else [],
+            "object_access_comparison_supported": object_access_supported,
             "row_restrictions": row_restrictions,
             "column_restrictions": column_restrictions,
             "column_restriction_fingerprints": column_restriction_fingerprints,
@@ -695,9 +702,60 @@ class AccessControlService:
     @staticmethod
     def _resource_matches(policy: dict, catalog: str, database: str, table: str) -> bool:
         resources = policy.get("resources", {})
+        if not resources or set(resources) - {"catalog", "database", "table", "column"}:
+            return False
         for key, expected in (("catalog", catalog), ("database", database), ("table", table)):
             values = {str(value) for value in resources.get(key, {}).get("values", [])}
             if values and "*" not in values and expected not in values:
+                return False
+        return True
+
+    @classmethod
+    def _object_access_comparison_supported(
+        cls,
+        policies: list[dict],
+        catalog: str,
+        database: str,
+        table: str,
+    ) -> bool:
+        for policy in policies:
+            if (
+                policy.get("service", settings.RANGER_SERVICE_NAME) != settings.RANGER_SERVICE_NAME
+                or not policy.get("isEnabled", True)
+                or int(policy.get("policyType", 0)) != 0
+            ):
+                continue
+            resources = policy.get("resources", {})
+            if not resources or set(resources) - {"catalog", "database", "table", "column"}:
+                continue
+            # The preview cannot evaluate Ranger exclusions, conditions, or
+            # deny precedence. Consumers must not turn those into an allow.
+            if any(
+                resource.get("isExcludes")
+                or resource.get("isRecursive")
+                or any(
+                    value != "*" and any(character in str(value) for character in "*?[]")
+                    for value in resource.get("values", [])
+                )
+                for resource in resources.values()
+            ):
+                return False
+            if not cls._resource_matches(policy, catalog, database, table):
+                continue
+            if resources.get("column", {}).get("values", ["*"]) != ["*"]:
+                return False
+            if any(
+                policy.get(key)
+                for key in (
+                    "conditions",
+                    "validitySchedules",
+                    "policyPriority",
+                    "isDenyAllElse",
+                    "denyPolicyItems",
+                    "denyExceptions",
+                    "allowExceptions",
+                )
+            ) or any(item.get("conditions") for item in policy.get("policyItems", [])):
                 return False
         return True
 

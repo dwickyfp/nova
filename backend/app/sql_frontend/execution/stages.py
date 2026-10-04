@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -179,7 +180,20 @@ class StageRuntime:
                     config=BotoConfig(signature_version="s3v4"),
                     region_name=config.region or "us-east-1",
                 )
-                resp = s3.get_object(Bucket=config.bucket, Key=s3_key, Range="bytes=0-8191")
+                selected_key = s3_key
+                wildcard_positions = [s3_key.index(char) for char in "*?[" if char in s3_key]
+                if wildcard_positions:
+                    prefix = s3_key[:min(wildcard_positions)]
+                    pages = s3.get_paginator("list_objects_v2").paginate(
+                        Bucket=config.bucket, Prefix=prefix
+                    )
+                    selected_key = next(
+                        item["Key"]
+                        for page in pages
+                        for item in page.get("Contents", [])
+                        if fnmatch.fnmatchcase(item["Key"], s3_key)
+                    )
+                resp = s3.get_object(Bucket=config.bucket, Key=selected_key, Range="bytes=0-8191")
                 body = resp["Body"]
                 try:
                     return body.read(8192).decode("utf-8", errors="replace")
