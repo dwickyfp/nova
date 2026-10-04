@@ -4,7 +4,7 @@
 @import "./theme.css";
 
 @custom-variant dark (&:is(.dark *));
-@source inline("font-plex font-system");
+@source inline("font-inter font-plex font-system");
 
 /* A navigation shell owns exactly one filtered layer. Negative stacking keeps
    positioned rails and focus rings above it without restyling its children. */
@@ -215,7 +215,8 @@
   html {
     @apply overflow-x-hidden;
     scrollbar-width: none;
-    font-family: var(--font-plex);
+    font-family: var(--font-inter);
+    font-synthesis-weight: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -227,7 +228,8 @@
     font-size: 0.875rem;
     line-height: 1.25rem;
     font-weight: 400;
-    letter-spacing: 0;
+    /* Inter's own spacing recommendation at 14px. */
+    letter-spacing: -0.006em;
   }
 
   /* Override Radix scroll locking for sticky headers */

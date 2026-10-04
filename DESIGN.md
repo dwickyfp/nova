@@ -158,7 +158,31 @@ gambar backdrop pada chrome, frame, dan pane. Forced colors memakai warna
 sistem dan pilihan aktif yang tetap terbaca. Keterbacaan tidak boleh bergantung
 pada blur.
 
-### 2.4 Grafik
+### 2.4 Tipografi
+
+Satu keluarga huruf untuk seluruh UI: **Inter**, di-host sendiri dari
+`frontend/public/fonts/` dan didefinisikan di `fonts.css`. `--font-sans` menunjuk
+ke `--font-inter`; IBM Plex Sans dan font sistem tetap tersedia lewat
+`src/config/fonts.ts` sebagai pilihan, bukan default. Kode memakai JetBrains Mono.
+
+| Peran | Ukuran | Bobot | Contoh |
+|---|---|---|---|
+| Judul halaman | `text-lg` | 600 | `PageHeader` |
+| Label navigasi, judul baris, kontrol | `text-sm` | 500 | Menu sidebar, judul riwayat Studio, tombol |
+| Body dan isi tabel | `text-sm` (14px) | 400 | Paragraf, sel |
+| Teks sekunder | `text-xs` (12px) | 400 | Timestamp, subjudul brand, label grup |
+
+- **Bobot maksimum 600.** `--font-weight-bold` dipetakan ke 600, jadi `font-bold`
+  tidak pernah lebih berat dari `font-semibold`. Hierarki dibangun dari ukuran
+  dan warna, bukan dari bobot ekstra.
+- **Teks terkecil 12px.** `text-[11px]` dan `text-[10px]` tidak dipakai untuk
+  teks baru; yang tersisa adalah label huruf besar di menu akun.
+- **Letter spacing body `-0.006em`**, rekomendasi Inter untuk 14px. Judul boleh
+  memakai `tracking-tight`; teks kecil tidak dirapatkan lagi.
+- `font-synthesis-weight: none` mencegah browser menebalkan huruf secara
+  sintetis saat berkas font belum termuat.
+
+### 2.5 Grafik
 
 `--chart-1` sampai `--chart-9` dan `--chart-tone-1` sampai `--chart-tone-6`
 hanya untuk seri data di dalam grafik. Warna grafik tidak boleh dipakai sebagai

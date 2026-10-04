@@ -394,10 +394,10 @@ function ThreadRow({
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             )}
           >
-            <span className="w-full truncate leading-tight">{label}</span>
+            <span className="w-full truncate leading-tight font-medium">{label}</span>
             {timestamp ? (
               <span
-                className="text-[11px] leading-none text-sidebar-navigation-muted-foreground"
+                className="text-xs leading-none text-sidebar-navigation-muted-foreground"
               >
                 {timestamp}
               </span>

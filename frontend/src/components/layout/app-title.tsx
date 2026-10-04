@@ -30,7 +30,7 @@ export function AppTitle() {
               <span className='truncate text-lg font-medium leading-none text-primary'>
                 nova
               </span>
-              <span className='truncate text-[11px] font-medium leading-none text-sidebar-navigation-muted-foreground'>
+              <span className='truncate text-xs leading-none text-sidebar-navigation-muted-foreground'>
                 Data warehouse + AI
               </span>
             </span>

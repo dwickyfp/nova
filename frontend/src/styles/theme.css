@@ -203,9 +203,13 @@
 
 @theme inline {
   --font-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-inter: 'Inter', var(--font-system);
   --font-plex: 'IBM Plex Sans', var(--font-system);
-  --font-sans: var(--font-plex);
-  --font-weight-heading: 500;
+  --font-sans: var(--font-inter);
+  /* Weight scale: 400 body, 500 labels and controls, 600 headings and
+     emphasis. Nothing in the UI renders heavier than 600. */
+  --font-weight-heading: 600;
+  --font-weight-bold: 600;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
