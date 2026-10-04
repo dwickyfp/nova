@@ -5,6 +5,7 @@ from typing import Annotated, Generic, Literal, TypeVar
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
+from app.common.news_entitlement import NewsUser
 from app.core.deps import get_current_user
 from app.modules.access_control.business_policy import (
     BusinessPolicy,
@@ -285,7 +286,7 @@ async def run_monitor(monitor_id: str, body: Window, user: CurrentUser):
 
 
 @router.post("/news/{news_id}/investigate")
-async def investigate_news(news_id: str, user: CurrentUser):
+async def investigate_news(news_id: str, user: NewsUser):
     return await intelligence_service.investigate(news_id, user)
 
 
@@ -297,7 +298,7 @@ class NewsOperation(Contract):
 
 
 @router.post("/news/{news_id}/operations")
-async def news_operation(news_id: str, body: NewsOperation, user: CurrentUser):
+async def news_operation(news_id: str, body: NewsOperation, user: NewsUser):
     from fastapi import HTTPException
 
     news = await intelligence_service.get("news", news_id, user)
@@ -521,15 +522,18 @@ async def inspect_graph(
 
 def _register_read_routes(kind, model):
     public_model = PUBLIC_RECORD_MODELS.get(kind, model)
+    # News is an administrator-enabled surface; every other kind keeps the session gate.
+    Reader = NewsUser if kind == "news" else CurrentUser
+
     async def listing(
-        user: CurrentUser,
+        user: Reader,
         after: str = Query(default="", max_length=128),
         limit: int = Query(default=20, ge=1, le=20),
     ):
         page = await intelligence_service.page(kind, user, after=after, limit=limit)
         return {**page, "items": [public_canonical_record(kind, row) for row in page["items"]]}
 
-    async def detail(record_id: str, user: CurrentUser):
+    async def detail(record_id: str, user: Reader):
         record = await intelligence_service.get(kind, record_id, user)
         return public_canonical_record(kind, record)
 

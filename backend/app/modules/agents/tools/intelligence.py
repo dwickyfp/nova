@@ -66,6 +66,10 @@ class ContextGraphTool:
             elif body.record_kind and body.record_id:
                 from app.modules.intelligence.engine import intelligence_service
 
+                if body.record_kind == "news":
+                    from app.common.news_entitlement import require_news_entitlement
+
+                    await require_news_entitlement(context.user, action="TOOL_READ_NEWS")
                 record = await intelligence_service.get(
                     body.record_kind, body.record_id, scoped_user(context)
                 )
