@@ -7,7 +7,10 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from antlr4 import CommonTokenStream, Token
+from antlr4.atn.PredictionMode import PredictionMode
 from antlr4.error.ErrorListener import ErrorListener
+from antlr4.error.Errors import ParseCancellationException
+from antlr4.error.ErrorStrategy import BailErrorStrategy
 
 from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
 from app.sql_frontend.antlr_utils import CaseInsensitiveInputStream
@@ -40,8 +43,24 @@ class _Diagnostics(ErrorListener):
         self.errors: list[SyntaxDiagnostic] = []
 
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):  # noqa: N802
-        # ANTLR messages can echo passwords or storage keys from rejected SQL.
-        self.errors.append(SyntaxDiagnostic(line, column, "Unexpected or missing SQL token"))
+        # ANTLR messages can echo passwords or storage keys from rejected SQL, so
+        # only a keyword or punctuation token is named; identifiers and literals
+        # never are.
+        self.errors.append(
+            SyntaxDiagnostic(line, column, _diagnostic_message(recognizer, offendingSymbol))
+        )
+
+
+def _diagnostic_message(recognizer, token) -> str:
+    message = "Unexpected or missing SQL token"
+    if token is None or not hasattr(recognizer, "literalNames"):
+        return message
+    if token.type == Token.EOF:
+        return message + " at end of input"
+    names = recognizer.literalNames
+    if 0 < token.type < len(names) and names[token.type] not in (None, "<INVALID>"):
+        return f"{message} near {names[token.type]}"
+    return message
 
 
 def tokenize_sql(sql: str) -> tuple[CommonTokenStream, list[SyntaxDiagnostic]]:
@@ -55,11 +74,28 @@ def tokenize_sql(sql: str) -> tuple[CommonTokenStream, list[SyntaxDiagnostic]]:
 
 
 def parse_tree(sql: str) -> tuple[CommonTokenStream, Any, list[SyntaxDiagnostic]]:
+    """Parse with SLL prediction, falling back to full LL only when SLL fails.
+
+    This is the two-stage strategy the engine's own parser uses: SLL is much
+    cheaper on large statements and gives the same tree whenever it succeeds;
+    a statement SLL cannot parse (a genuine error or an SLL conflict) is
+    parsed again with LL, which also produces the diagnostics.
+    """
     stream, errors = tokenize_sql(sql)
+    parser = StarRocksParser(stream)
+    parser.removeErrorListeners()
+    parser._interp.predictionMode = PredictionMode.SLL
+    parser._errHandler = BailErrorStrategy()
+    try:
+        return stream, parser.sqlStatements(), errors
+    except ParseCancellationException:
+        pass
+    stream.seek(0)
     listener = _Diagnostics()
     parser = StarRocksParser(stream)
     parser.removeErrorListeners()
     parser.addErrorListener(listener)
+    parser._interp.predictionMode = PredictionMode.LL
     tree = parser.sqlStatements()
     return stream, tree, errors + listener.errors
 

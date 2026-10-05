@@ -345,6 +345,8 @@ class QueryService:
         tenant: str = "default",
         security_context_version: int = 1,
         allow_stage_export: bool = False,
+        row_sink: Any = None,
+        client_transaction: bool = False,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -408,6 +410,12 @@ class QueryService:
             connection=connection,
             confirm_destructive=confirm_destructive,
             allow_stage_export=allow_stage_export,
+            row_sink=row_sink,
+            # Inside a client's explicit engine transaction the session already
+            # holds its role and database (the engine refuses SET ROLE there),
+            # and statements are audited as executed, not yet committed.
+            engine_session_prepared=client_transaction,
+            transaction_active=client_transaction,
         )
         try:
             if len(split_sql_statements(normalized_sql)) > 1:
@@ -599,6 +607,62 @@ class QueryService:
                 "Could not write the audit row for a pre-engine rejection (user=%r)", username
             )
 
+    async def preflight_script(
+        self,
+        statements: list[str],
+        *,
+        username: str,
+        database: str | None = None,
+        schema: str | None = None,
+        role: str | None = None,
+        session_id: str | None = None,
+        allow_stage_export: bool = False,
+    ) -> QueryResult | None:
+        """Refuse a script before any of its statements runs.
+
+        Applies the guard, syntax, semantic and pure validation checks of
+        ``execute_statements`` to every statement and returns the first
+        refusal (audited), or ``None``. Callers that run statements one at a
+        time (the MySQL proxy, which applies session changes between them) use
+        this so a later invalid statement still stops the script before effects.
+        """
+        stmt_sql = ""
+        analysis = None
+        with parsing_scope():
+            try:
+                for stmt_sql in statements:
+                    analysis = None
+                    normalized = self._normalize_default_schema_qualification(stmt_sql)
+                    guard_user_statement(
+                        normalized,
+                        allow_stage_export=allow_stage_export,
+                        check_confirmation=False,
+                    )
+                    statement = self._builders.build(
+                        self._frontend(normalized, original_sql=stmt_sql)
+                    )
+                    analysis = self._planner.preflight(statement)
+                    self._planner.semantics.validate_preflight(
+                        statement,
+                        PlanningContext(
+                            database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED
+                        ),
+                    )
+            except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=stmt_sql,
+                    username=username,
+                    role=role,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=None,
+                    error_message=_redact_error_message(str(exc)),
+                )
+                return self._error_result(stmt_sql, exc, analysis)
+        return None
+
     async def execute_statements(
         self,
         sql: str,
@@ -616,6 +680,8 @@ class QueryService:
         security_context_version: int = 1,
         allow_stage_export: bool = False,
         source: str = "internal",
+        row_sink: Any = None,
+        client_transaction: bool = False,
     ) -> list[QueryResult]:
         """Split SQL into statements and execute each sequentially.
 
@@ -694,6 +760,8 @@ class QueryService:
                         allow_stage_export=allow_stage_export,
                         file_id=file_id,
                         connection=connection,
+                        **({"row_sink": row_sink} if row_sink is not None else {}),
+                        **({"client_transaction": True} if client_transaction else {}),
                     )
                     results.append(result)
                     if result.error:

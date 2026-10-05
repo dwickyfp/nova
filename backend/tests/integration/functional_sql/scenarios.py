@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from .contracts import Case
+from .contracts import Case, EffectCheck
 from .data_statements import data_statement_cases
 from .geospatial import geospatial_data_cases
+
+_DISTRIBUTION = " DISTRIBUTED BY HASH(k) BUCKETS 1 PROPERTIES('replication_num'='1')"
 
 
 def core_cases(database: str) -> list[Case]:
@@ -209,64 +211,77 @@ def core_cases(database: str) -> list[Case]:
             "session.missing_database",
             "session",
             "USE nova_sql_database_that_does_not_exist",
-            error_code=1064,
+            error_code=5501,
             error_contains="Unknown database",
         ),
+        # A script answers one result per statement; a client reads the first.
+        # Context changes inside it apply to the statements after them.
         Case(
-            "session.reject_context_script",
+            "session.context_script",
             "session",
             f"SELECT 1; USE `{database}`; SELECT 2",
-            error_code=1235,
+            [[1]],
+            effects=(EffectCheck("SELECT DATABASE()", [[database]]),),
         ),
         Case(
-            "session.reject_role_script",
+            "session.role_script",
             "session",
             "SELECT 1; SET ROLE ACCOUNTADMIN",
-            error_code=1235,
+            [[1]],
+            effects=(EffectCheck("SELECT CURRENT_ROLE()", [["ACCOUNTADMIN"]]),),
         ),
         Case(
-            "session.reject_late_assignment",
+            "session.late_assignment",
             "session",
             "SELECT 1; SET @value=2",
-            error_code=1235,
+            [[1]],
+            effects=(EffectCheck("SELECT @value", [[2]]),),
         ),
         Case(
             "session.prefix_assignment_script",
             "session",
             "SET @value=7; SELECT @value",
-            [[7]],
+            [],
+            effects=(EffectCheck("SELECT @value", [[7]]),),
         ),
+        # Transactions run on the client's engine session.
         Case(
-            "session.reject_transaction",
-            "session",
-            "BEGIN",
-            error_code=1235,
-            error_contains="not supported",
-            statement_rules=("beginStatement",),
-        ),
-        Case(
-            "session.reject_commit",
+            "session.transaction_commit",
             "session",
             "COMMIT",
-            error_code=1235,
-            error_contains="not supported",
-            statement_rules=("commitStatement",),
+            [],
+            setup=(
+                "CREATE TABLE committed_values(k INT NOT NULL,v INT) PRIMARY KEY(k)"
+                + _DISTRIBUTION,
+                "BEGIN",
+                "INSERT INTO committed_values VALUES (1,3)",
+            ),
+            statement_rules=("beginStatement", "commitStatement"),
+            effects=(EffectCheck("SELECT k,v FROM committed_values", [[1, 3]]),),
         ),
         Case(
-            "session.reject_rollback",
+            "session.transaction_rollback",
             "session",
             "ROLLBACK",
-            error_code=1235,
-            error_contains="not supported",
-            statement_rules=("rollbackStatement",),
+            [],
+            setup=(
+                "CREATE TABLE rolled_back_values(k INT NOT NULL,v INT) PRIMARY KEY(k)"
+                + _DISTRIBUTION,
+                "BEGIN",
+                "INSERT INTO rolled_back_values VALUES (1,3)",
+            ),
+            statement_rules=("beginStatement", "rollbackStatement"),
+            effects=(EffectCheck("SELECT COUNT(*) FROM rolled_back_values", [[0]]),),
         ),
         Case(
-            "session.reject_autocommit_off",
+            "session.transaction_role_change_refused",
             "session",
-            "SET AUTOCOMMIT=0",
+            "SET ROLE ACCOUNTADMIN",
             error_code=1235,
-            error_contains="not supported",
+            error_contains="inside a transaction",
+            setup=("BEGIN",),
         ),
+        Case("session.autocommit_off", "session", "SET AUTOCOMMIT=0", []),
         Case(
             "session.reject_global",
             "session",
@@ -311,19 +326,19 @@ def core_cases(database: str) -> list[Case]:
             statement_rules=("dropFunctionStatement",),
         ),
         Case(
-            "session.prepared_rejected",
+            "session.prepared",
             "protocol",
-            "PREPARE p FROM 'SELECT 1'",
-            error_code=1235,
-            error_contains="not supported",
-            statement_rules=("prepareStatement",),
+            "EXECUTE p USING @a",
+            [[42]],
+            setup=("PREPARE p FROM 'SELECT ? + 1'", "SET @a = 41"),
+            statement_rules=("prepareStatement", "executeStatement"),
         ),
-        Case("script.last_result", "protocol", "SELECT 1; SELECT 2", [[2]]),
+        Case("script.first_result", "protocol", "SELECT 1; SELECT 2", [[1]]),
         Case(
             "script.stop_on_error",
             "protocol",
             "SELECT * FROM missing_table; SELECT 2",
-            error_code=1064,
+            error_code=5502,
         ),
         Case("query.syntax_error", "query", "SELECT FROM", error_code=1064),
         Case(
@@ -418,19 +433,32 @@ def core_cases(database: str) -> list[Case]:
             ),
             statement_rules=("alterViewStatement",),
         ),
+        # A MySQL client's destructive statement is its explicit request. Each
+        # case uses its own table so the shared fixtures are never touched.
         Case(
-            "ddl.destructive_refused",
+            "ddl.truncate",
             "ddl",
-            "TRUNCATE TABLE numbers",
-            error_code=1064,
+            "TRUNCATE TABLE truncated_values",
+            [],
+            setup=(
+                "CREATE TABLE truncated_values(k INT NOT NULL,v INT) PRIMARY KEY(k)"
+                + _DISTRIBUTION,
+                "INSERT INTO truncated_values VALUES (1,3)",
+            ),
             statement_rules=("truncateTableStatement",),
+            effects=(EffectCheck("SELECT COUNT(*) FROM truncated_values", [[0]]),),
         ),
         Case(
-            "ddl.drop_refused",
+            "ddl.drop",
             "ddl",
-            "DROP TABLE numbers",
-            error_code=1064,
+            "DROP TABLE dropped_values",
+            [],
+            setup=(
+                "CREATE TABLE dropped_values(k INT NOT NULL,v INT) PRIMARY KEY(k)"
+                + _DISTRIBUTION,
+            ),
             statement_rules=("dropTableStatement",),
+            effects=(EffectCheck("SHOW TABLES LIKE 'dropped_values'", []),),
         ),
         Case(
             "stage.missing",

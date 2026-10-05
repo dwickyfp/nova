@@ -98,10 +98,6 @@ _NATIVE_EFFECTS: dict[str, PlanEffects] = {}
 def _native_effects(statement: ast.Statement) -> PlanEffects:
     root = type(statement.parsed.statement_context).__name__
     nodes = {type(node).__name__ for node in walk_nodes(statement.parsed.statement_context)}
-    if root == "NovaPlanAdvisorStatementContext":
-        return PlanEffects(
-            reads_data=True, writes_metadata=statement.parsed.statement_context.ALTER() is not None
-        )
     if "ExplainDescContext" in nodes:
         return PlanEffects(reads_data=True)
     effects = _NATIVE_EFFECTS.get(root, PlanEffects())
@@ -122,6 +118,61 @@ def _native_effects(statement: ast.Statement) -> PlanEffects:
     if root == "NovaCopyStatementContext":
         effects |= PlanEffects(writes_data=True)
     return effects
+
+
+#: Statements that change only this session, or nothing: transaction control,
+#: session settings, database/catalog selection and help. ``QueryStatement``
+#: effects come from its structure in ``_native_effects``.
+_SESSION_STATEMENTS = frozenset(
+    {
+        "QueryStatementContext",
+        "BeginStatementContext",
+        "CommitStatementContext",
+        "RollbackStatementContext",
+        "SetStatementContext",
+        "SetCatalogStatementContext",
+        "SetRoleStatementContext",
+        "SetWarehouseStatementContext",
+        "UseCatalogStatementContext",
+        "UseDatabaseStatementContext",
+        "HelpStatementContext",
+        "TranslateStatementContext",
+        "PrepareStatementContext",
+        "ExecuteStatementContext",
+        "DeallocateStatementContext",
+    }
+)
+
+#: Engine statements whose name prefix does not describe what they do.
+_ENGINE_STATEMENT_EFFECTS: dict[str, PlanEffects] = {
+    "AdminShowAutomatedSnapshotStatementContext": PlanEffects(reads_data=True),
+    "AdminShowConfigStatementContext": PlanEffects(reads_data=True),
+    "AdminShowReplicaDistributionStatementContext": PlanEffects(reads_data=True),
+    "AdminShowReplicaStatusStatementContext": PlanEffects(reads_data=True),
+    "AdminShowTabletStatusStatementContext": PlanEffects(reads_data=True),
+    "AnalyzeProfileStatementContext": PlanEffects(reads_data=True),
+    "DataCacheSelectStatementContext": PlanEffects(reads_data=True, writes_metadata=True),
+    "BackupStatementContext": PlanEffects(reads_data=True, external_io=True, writes_metadata=True),
+    "RestoreStatementContext": PlanEffects(
+        writes_data=True,
+        replaces_data=True,
+        changes_schema=True,
+        external_io=True,
+        writes_metadata=True,
+    ),
+    "ExportStatementContext": PlanEffects(reads_data=True, external_io=True, writes_metadata=True),
+    "CallProcedureStatementContext": PlanEffects(writes_data=True, writes_metadata=True),
+    "ExecuteAsStatementContext": PlanEffects(changes_security=True),
+    "SetUserPropertyStatementContext": PlanEffects(changes_security=True),
+    "SetDefaultStorageVolumeStatementContext": PlanEffects(changes_schema=True),
+    "InstallPluginStatementContext": PlanEffects(changes_schema=True),
+    "UninstallPluginStatementContext": PlanEffects(changes_schema=True, drops_objects=True),
+    "CleanTemporaryTableStatementContext": PlanEffects(drops_objects=True),
+    "RefreshDictionaryStatementContext": PlanEffects(reads_data=True, writes_data=True),
+    "AlterPlanAdvisorAddStatementContext": PlanEffects(reads_data=True, writes_metadata=True),
+    "AlterPlanAdvisorDropStatementContext": PlanEffects(writes_metadata=True),
+    "TruncatePlanAdvisorStatementContext": PlanEffects(writes_metadata=True),
+}
 
 
 def _security_effects(statement: ast.Statement) -> PlanEffects:
@@ -176,6 +227,16 @@ def default_semantics() -> StatementSemanticsRegistry:
             "NovaListStatementContext": PlanEffects(reads_data=True, external_io=True),
         }
     )
+    _NATIVE_EFFECTS.update(_ENGINE_STATEMENT_EFFECTS)
+    for name, effects in list(_NATIVE_EFFECTS.items()):
+        # An engine statement nobody classified still changes something on the
+        # engine; reporting it as effect-free would understate it.
+        if (
+            effects == PlanEffects()
+            and name.endswith(("StatementContext", "StmtContext"))
+            and name not in _SESSION_STATEMENTS
+        ):
+            _NATIVE_EFFECTS[name] = PlanEffects(writes_metadata=True)
     registry = StatementSemanticsRegistry()
     from app.sql_frontend.streams import stream_effects, validate_stream
 
@@ -184,7 +245,7 @@ def default_semantics() -> StatementSemanticsRegistry:
         StatementSemantics(stream_effects, validator=validate_stream, preflight_safe=True),
     )
     native = StatementSemantics(
-        _native_effects, validator=validation._native_session_settings, preflight_safe=True
+        _native_effects, validator=validation._native_statement_checks, preflight_safe=True
     )
     registry.register(ast.NativeStatement, native)
     registry.register(ast.StageAwareStatement, native)

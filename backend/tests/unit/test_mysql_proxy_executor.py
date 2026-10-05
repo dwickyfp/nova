@@ -31,11 +31,18 @@ class FakeQueryService:
 
     def __init__(self, results: list[QueryResult] | None = None) -> None:
         self.calls: list[dict] = []
-        self._results = results or [QueryResult()]
+        self.preflights: list[list[str]] = []
+        self._results = list(results or [QueryResult()])
+
+    async def preflight_script(self, statements, **kwargs) -> QueryResult | None:
+        self.preflights.append(list(statements))
+        return None
 
     async def execute_statements(self, **kwargs) -> list[QueryResult]:
+        """Each call runs one statement; queued results are consumed in order."""
         self.calls.append(kwargs)
-        return self._results
+        result = self._results.pop(0) if len(self._results) > 1 else self._results[0]
+        return [result]
 
     @property
     def last_sql(self) -> str:
@@ -171,22 +178,53 @@ class TestRoutingToThePipeline:
         assert result.error == "Unknown database"
         assert session.database == "existing"
 
-    @pytest.mark.parametrize(
-        "sql",
-        [
-            "SELECT 1; USE missing; SELECT 2",
-            "SET @x=1; USE existing; SELECT 2",
-            "SELECT 1; SET ROLE ACCOUNTADMIN",
-            "SELECT missing; SET @x=2",
-        ],
-    )
-    async def test_unsupported_script_order_refuses_before_any_effect(self, fake_service, sql):
+    async def test_script_session_changes_apply_to_later_statements(self, fake_service):
+        session = SessionState(database="first")
+        result = await ProxyQueryExecutor(session).execute(
+            "SET @x = 1; USE second; SELECT @x; SET @x = 2; SELECT @x",
+            username="u",
+            connection=object(),
+        )
+        assert result.error is None
+        assert [(call["sql"], call["database"]) for call in fake_service.calls] == [
+            ("USE second", "first"),
+            ("SELECT 1", "second"),
+            ("SELECT 2", "second"),
+        ]
+        assert len(result.preceding) == 4
+        assert session.database == "second"
+
+    async def test_script_refusal_runs_nothing(self, monkeypatch):
+        class Refusing(FakeQueryService):
+            async def preflight_script(self, statements, **kwargs):
+                return QueryResult(error="Invalid SQL: 1:7 Unexpected or missing SQL token")
+
+        fake = _patch_service(monkeypatch, Refusing())
         session = SessionState(database="existing", user_variables={"x": "0"})
-        result = await ProxyQueryExecutor(session).execute(sql, username="u", connection=object())
-        assert result.error_code == 1235 and result.error
-        assert fake_service.calls == []
+        result = await ProxyQueryExecutor(session).execute(
+            "SET @x = 1; USE other; SELEC 2", username="u", connection=object()
+        )
+        assert result.error and result.preceding == []
+        assert fake.calls == []
         assert session.database == "existing"
         assert session.user_variables == {"x": "0"}
+
+    async def test_script_stops_at_the_first_error(self, monkeypatch):
+        fake = _patch_service(
+            monkeypatch,
+            FakeQueryService(
+                [QueryResult(), QueryResult(error="SQL error: (5502) no t", engine_error_code=5502)]
+            ),
+        )
+        session = SessionState(user_variables={"x": "0"})
+        result = await ProxyQueryExecutor(session).execute(
+            "INSERT INTO a VALUES (1); SELECT * FROM t; SET @x = 9",
+            username="u",
+            connection=object(),
+        )
+        assert result.error_code == 5502
+        assert len(fake.calls) == 2
+        assert session.user_variables["x"] == "0"
 
     async def test_set_is_consumed_and_never_reaches_the_engine(self, fake_service):
         session = SessionState()
@@ -800,14 +838,12 @@ class TestMySQLClientCompatibility:
         assert fake.last_sql == 'SELECT "a;b", \'c\\\';d\''
 
     async def test_a_trailing_line_comment_cannot_swallow_the_next_statement(self, monkeypatch):
-        from app.common.sql_guard import split_sql_statements
-
         fake = _patch_service(monkeypatch, FakeQueryService([QueryResult(), QueryResult()]))
         executor = ProxyQueryExecutor(SessionState())
 
         await executor.execute("SELECT 1 -- note\n; SELECT 2", username="u", connection=object())
 
-        assert split_sql_statements(fake.last_sql) == ["SELECT 1 -- note", "SELECT 2"]
+        assert [call["sql"] for call in fake.calls] == ["SELECT 1 -- note", "SELECT 2"]
 
     async def test_results_over_the_row_limit_are_refused_not_truncated(self, monkeypatch):
         from app.core.config import settings
@@ -894,16 +930,18 @@ class TestMySQLClientCompatibility:
         assert result.error is None
         assert session.database is None
 
-    async def test_catalog_switch_inside_a_script_is_refused(self, monkeypatch):
+    async def test_catalog_switch_inside_a_script_applies_in_order(self, monkeypatch):
         fake = _patch_service(monkeypatch, FakeQueryService())
-        executor = ProxyQueryExecutor(SessionState())
+        session = SessionState()
+        session.set_database("audit_db")
+        executor = ProxyQueryExecutor(session)
 
         result = await executor.execute(
             "SET CATALOG hive; SELECT 1", username="u", connection=object()
         )
 
-        assert result.error_code == 1235
-        assert fake.calls == []
+        assert result.error is None
+        assert [call["database"] for call in fake.calls] == ["audit_db", None]
 
 
 class TestTypedUserVariables:
@@ -956,3 +994,134 @@ class TestTypedUserVariables:
 
         assert session.user_variables["a"] == "5"
         assert "a" not in session.engine_variables
+
+
+class TestStreamedResults:
+    """Engine rows reach the sink batch by batch, in statement order."""
+
+    class StreamingService(FakeQueryService):
+        def __init__(self, batches, *, columns=("id",)):
+            super().__init__()
+            self._batches = batches
+            self._columns = list(columns)
+
+        async def execute_statements(self, **kwargs):
+            self.calls.append(kwargs)
+            sink = kwargs["row_sink"]
+            await sink.begin(self._columns, tuple("(8, 20, 0)" for _ in self._columns))
+            for batch in self._batches:
+                await sink.rows(batch)
+            return [QueryResult(columns=self._columns, streamed=True)]
+
+    async def test_rows_stream_into_one_result_set(self, monkeypatch):
+        _patch_service(monkeypatch, self.StreamingService([[[1], [2]], [[3]]]))
+        result = await ProxyQueryExecutor(SessionState()).execute(
+            "SELECT id FROM t", username="u", connection=object()
+        )
+        assert result.rows == [[1], [2], [3]]
+        assert [column.name for column in result.columns] == ["id"]
+
+    async def test_row_cap_ends_with_an_error_after_partial_rows(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "PROXY_MAX_ROWS", 2)
+        _patch_service(monkeypatch, self.StreamingService([[[1], [2]], [[3]]]))
+        result = await ProxyQueryExecutor(SessionState()).execute(
+            "SELECT id FROM t", username="u", connection=object()
+        )
+        assert result.error_code == 1235 and "limit of 2 rows" in result.error
+
+    async def test_hidden_databases_are_filtered_while_streaming(self, monkeypatch):
+        service = self.StreamingService(
+            [[["NOVA_SYSTEM"], ["sales"]], [["information_schema"], ["ops"]]],
+            columns=("Database",),
+        )
+        _patch_service(monkeypatch, service)
+        result = await ProxyQueryExecutor(SessionState()).execute(
+            "SHOW DATABASES LIKE '%'", username="u", connection=object()
+        )
+        assert result.rows == [["sales"], ["ops"]]
+        assert service.last_sql == "SHOW DATABASES LIKE '%'"
+
+
+class TestSQLPreparedStatements:
+    async def test_prepare_execute_deallocate(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        session = SessionState()
+        executor = ProxyQueryExecutor(session)
+
+        prepared = await executor.execute(
+            "PREPARE s FROM 'SELECT * FROM t WHERE id = ? AND note = ?'",
+            username="u",
+            connection=object(),
+        )
+        await executor.execute("SET @a = 7", username="u", connection=object())
+        await executor.execute("SET @b = 'x''y'", username="u", connection=object())
+        run = await executor.execute("EXECUTE s USING @a, @b", username="u", connection=object())
+        dropped = await executor.execute("DEALLOCATE PREPARE s", username="u", connection=object())
+
+        assert prepared.is_ok and run.error is None and dropped.is_ok
+        assert fake.last_sql == "SELECT * FROM t WHERE id = 7 AND note = 'x''y'"
+        assert session.prepared == {}
+
+    async def test_wrong_argument_count_is_refused(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        executor = ProxyQueryExecutor(SessionState())
+        await executor.execute("PREPARE s FROM 'SELECT ?'", username="u", connection=object())
+
+        result = await executor.execute("EXECUTE s", username="u", connection=object())
+
+        assert result.error_code == 1210
+        assert fake.calls == []
+
+    async def test_unknown_statement_is_refused(self, monkeypatch):
+        _patch_service(monkeypatch, FakeQueryService())
+        result = await ProxyQueryExecutor(SessionState()).execute(
+            "EXECUTE missing", username="u", connection=object()
+        )
+        assert result.error_code == 1243
+
+    async def test_placeholders_inside_literals_are_not_parameters(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        executor = ProxyQueryExecutor(SessionState())
+        await executor.execute(
+            "PREPARE s FROM 'SELECT ''?'' AS q, ? AS v'", username="u", connection=object()
+        )
+        await executor.execute("SET @v = 1", username="u", connection=object())
+        await executor.execute("EXECUTE s USING @v", username="u", connection=object())
+        assert fake.last_sql == "SELECT '?' AS q, 1 AS v"
+
+
+class TestClientTransactions:
+    async def test_statements_inside_a_transaction_reuse_the_engine_session(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        session = SessionState()
+        executor = ProxyQueryExecutor(session)
+
+        for sql in ("BEGIN", "INSERT INTO t VALUES (1)", "COMMIT", "SELECT 1"):
+            result = await executor.execute(sql, username="u", connection=object())
+            assert result.error is None
+
+        assert [call["client_transaction"] for call in fake.calls] == [False, True, True, False]
+        assert session.in_transaction is False
+
+    async def test_failed_begin_does_not_open_a_transaction(self, monkeypatch):
+        _patch_service(monkeypatch, FakeQueryService([QueryResult(error="SQL error: (5305) no")]))
+        session = SessionState()
+        await ProxyQueryExecutor(session).execute("BEGIN", username="u", connection=object())
+        assert session.in_transaction is False
+
+    async def test_rollback_closes_the_transaction_even_when_it_fails(self, monkeypatch):
+        _patch_service(monkeypatch, FakeQueryService([QueryResult(error="SQL error: (1) no")]))
+        session = SessionState(in_transaction=True)
+        await ProxyQueryExecutor(session).execute("ROLLBACK", username="u", connection=object())
+        assert session.in_transaction is False
+
+    async def test_role_changes_are_refused_inside_a_transaction(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        session = SessionState(in_transaction=True)
+        result = await ProxyQueryExecutor(session).execute(
+            "SET ROLE analyst", username="u", connection=object()
+        )
+        assert result.error_code == 1235
+        assert fake.calls == []

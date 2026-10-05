@@ -195,34 +195,51 @@ class TestSetStatements:
             "SET autocommit = 1",
             "SET @@session.autocommit = 1",
             "SET SESSION autocommit = ON",
-        ],
-    )
-    def test_autocommit_on_compatibility(self, statement):
-        session = SessionState()
-        result = handle_set_statement(statement, session)
-        assert result.handled is True
-        assert result.error is None
-
-    @pytest.mark.parametrize(
-        "statement",
-        [
+            "SET AUTOCOMMIT=0",
+            "SET @@session.autocommit=0",
+            "SET SESSION AUTOCOMMIT=FALSE",
+            "SET foreign_key_checks=0",
             "BEGIN",
             "START TRANSACTION",
             "COMMIT",
             "ROLLBACK",
-            "SET AUTOCOMMIT=0",
-            "SET @@session.autocommit=0",
-            "SET GLOBAL TRANSACTION READ ONLY",
-            "SET foreign_key_checks=0",
             "/* client */ BEGIN",
-            "SET SESSION AUTOCOMMIT=FALSE",
         ],
     )
-    def test_unsupported_session_effects_are_refused(self, statement):
+    def test_transaction_statements_and_autocommit_reach_the_engine(self, statement):
+        """The engine owns transactions and answers for these settings itself."""
         result = handle_set_statement(statement, SessionState())
         assert result.handled is False
-        assert result.error_code == 1235
-        assert "not supported" in result.error
+        assert result.error is None
+
+    @pytest.mark.parametrize(
+        "statement",
+        ["SET GLOBAL TRANSACTION READ ONLY", "SET GLOBAL query_timeout = 10", "SET @@global.x = 1"],
+    )
+    def test_global_settings_are_refused(self, statement):
+        result = handle_set_statement(statement, SessionState())
+        assert result.handled is False
+        assert result.error == "SET GLOBAL is not supported through the Nova MySQL proxy"
+
+    @pytest.mark.parametrize(
+        ("statement", "kind"),
+        [
+            ("BEGIN", "begin"),
+            ("begin work", "begin"),
+            ("START TRANSACTION WITH CONSISTENT SNAPSHOT", "begin"),
+            ("COMMIT", "end"),
+            ("COMMIT WORK", "end"),
+            ("ROLLBACK", "end"),
+            ("ROLLBACK AND NO CHAIN", "end"),
+            ("SELECT 1", None),
+            ("SET autocommit = 0", None),
+            ("ROLLBACK TO SAVEPOINT s", None),
+        ],
+    )
+    def test_transaction_control(self, statement, kind):
+        from app.proxy.session import transaction_control
+
+        assert transaction_control(statement) == kind
 
     @pytest.mark.parametrize(
         "statement",
@@ -757,6 +774,9 @@ class TestShowDatabasesDetection:
             "SHOW DATABASES;",
             "  SHOW  DATABASES  ",
             "SHOW SCHEMAS",
+            "SHOW DATABASES LIKE 'N%'",
+            "SHOW SCHEMAS WHERE `Database` LIKE 'N%'",
+            "SHOW DATABASES FROM default_catalog",
         ],
     )
     def test_recognised(self, statement):
@@ -764,7 +784,12 @@ class TestShowDatabasesDetection:
 
     @pytest.mark.parametrize(
         "statement",
-        ["SHOW TABLES", "SHOW DATABASES LIKE 'N%'", "SELECT 1", "SHOW CREATE DATABASE x"],
+        [
+            "SHOW TABLES",
+            "SHOW DATABASES FROM hive_catalog",
+            "SELECT 1",
+            "SHOW CREATE DATABASE x",
+        ],
     )
     def test_not_recognised(self, statement):
         assert is_show_databases(statement) is False
@@ -818,3 +843,42 @@ def test_engine_owned_variables_are_left_for_the_engine():
 
     assert result.sql == "SELECT element_at(@arr, 2)"
     assert result.unknown == []
+
+
+class TestParameterBinding:
+    @pytest.mark.parametrize(
+        ("value", "literal"),
+        [
+            (None, "NULL"),
+            (True, "TRUE"),
+            (42, "42"),
+            (1.5, "1.5e0"),
+            (1e-05, "1e-05"),
+            ("it's \\ ok", "'it''s \\\\ ok'"),
+            (b"\x00\xff", "X'00ff'"),
+            (__import__("datetime").date(2024, 2, 29), "CAST('2024-02-29' AS DATE)"),
+        ],
+    )
+    def test_literals(self, value, literal):
+        from app.proxy.session import sql_literal
+
+        assert sql_literal(value) == literal
+
+    def test_a_bound_string_cannot_end_its_literal(self):
+        from app.proxy.session import bind_placeholders, sql_literal
+
+        bound = bind_placeholders("SELECT ?", [sql_literal("x'; DROP TABLE t; --")])
+        assert bound == "SELECT 'x''; DROP TABLE t; --'"
+
+    def test_markers_in_literals_comments_and_names_are_ignored(self):
+        from app.proxy.session import placeholder_spans
+
+        sql = "SELECT '?', \"?\", `?`, ? /* ? */ -- ?\n, ?"
+        assert [sql[offset] for offset in placeholder_spans(sql)] == ["?", "?"]
+        assert len(placeholder_spans(sql)) == 2
+
+    def test_unquote_literal(self):
+        from app.proxy.session import unquote_literal
+
+        assert unquote_literal("'a''b\\nc'") == "a'b\nc"
+        assert unquote_literal("'unterminated") is None

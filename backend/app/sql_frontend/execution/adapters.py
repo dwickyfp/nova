@@ -19,7 +19,7 @@ from app.common.ml_intercept import (
 )
 from app.common.sql_guard import CredentialsRedactionError
 from app.core.database import db
-from app.core.exceptions import ForbiddenSQLError
+from app.core.exceptions import ForbiddenSQLError, StarRocksError
 from app.modules.query.dialect.force_password_change import parse_force_password_change
 from app.modules.query.dialect.ml_model import parse_create_ml_model
 from app.modules.query.dialect.parser import CommandType, ParsedSQL
@@ -55,6 +55,54 @@ def _redact_error_message(message: str) -> str:
         return redact_for_output(message)
     except CredentialsRedactionError:
         return "[redacted: unredactable error message]"
+
+
+def _stage_location_map(parsed, configs_by_ref) -> list[tuple[str, str]]:
+    """Physical stage roots (``s3://bucket/prefix``) and their ``@stage`` names.
+
+    Longest roots first, so a stage nested under another's prefix maps to its
+    own name. Endpoints map to a placeholder: they are deployment detail.
+    """
+    mapping: dict[str, str] = {}
+    for ref in parsed.stage_refs:
+        config = configs_by_ref.get(ref.start)
+        if config is None:
+            continue
+        root = f"s3://{config.bucket}/{config.base_prefix.strip('/')}".rstrip("/")
+        mapping[root] = "@" + ref.stage_name
+        if config.endpoint:
+            from app.core.config import to_docker_endpoint
+
+            for endpoint in {config.endpoint, to_docker_endpoint(config.endpoint)}:
+                mapping[endpoint.rstrip("/")] = "<storage endpoint>"
+    return sorted(mapping.items(), key=lambda item: -len(item[0]))
+
+
+def _logical_location(text: str, location_map: list[tuple[str, str]]) -> str:
+    for physical, logical in location_map:
+        text = text.replace(physical, logical)
+    return text
+
+
+def _logical_row(row: list, location_map: list[tuple[str, str]]) -> list:
+    return [
+        _logical_location(value, location_map) if isinstance(value, str) else value
+        for value in row
+    ]
+
+
+class _LogicalLocationSink:
+    """Rewrites physical stage paths in ``LIST @stage`` rows as they stream."""
+
+    def __init__(self, sink, location_map: list[tuple[str, str]]) -> None:
+        self._sink = sink
+        self._map = location_map
+
+    async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None:
+        await self._sink.begin(columns, column_types)
+
+    async def rows(self, rows: list[list]) -> None:
+        await self._sink.rows([_logical_row(row, self._map) for row in rows])
 
 
 class FeatureAdapters:
@@ -274,6 +322,7 @@ class FeatureAdapters:
         session_id, file_id = context.session_id, context.file_id
         executed_sql = normalized_sql
         warnings = []
+        location_map: list[tuple[str, str]] = []
 
         # 3. Translate @stage → FILES() and inject credentials, through the
         # shared pipeline so this path and ml_engine's cannot drift apart.
@@ -319,6 +368,7 @@ class FeatureAdapters:
                     csv_params_by_ref=csv_params_by_ref,
                     csv_columns_by_ref=csv_columns_by_ref,
                 )
+                location_map = _stage_location_map(parsed, stage_configs_by_ref)
             except (ValueError, SecretResolutionError) as e:
                 # The statement never reached the engine: no result object is
                 # built by the repository, so this is the only place the failure
@@ -386,6 +436,10 @@ class FeatureAdapters:
         # ``QueryResult`` redacts ``executed_sql`` as well, so the value the
         # repository hands back is independently safe.
         redacted_sql = redact_for_output(executed_sql)
+        browse = bool(location_map) and parsed.command_type == CommandType.STAGE_BROWSE
+        row_sink = context.row_sink
+        if browse and row_sink is not None:
+            row_sink = _LogicalLocationSink(row_sink, location_map)
         try:
             result = await self._repo.execute_as_user(
                 sql=executed_sql,
@@ -396,8 +450,13 @@ class FeatureAdapters:
                 max_rows=max_rows,
                 connected=connection,
                 **({"session_prepared": True} if context.engine_session_prepared else {}),
+                **({"row_sink": row_sink} if row_sink is not None else {}),
             )
 
+            if browse:
+                result.rows = [_logical_row(row, location_map) for row in result.rows]
+            if location_map and result.error:
+                result.error = _logical_location(result.error, location_map)
             result.original_sql = redact_for_output(sql)
             result.executed_sql = redacted_sql
             result.warnings = warnings
@@ -439,6 +498,13 @@ class FeatureAdapters:
                 schema_name=schema,
                 active_role=role,
             )
+            if location_map and isinstance(exc, StarRocksError):
+                # Storage errors name the physical bucket path; the client knows
+                # the stage, not the bucket.
+                raise StarRocksError(
+                    _logical_location(str(exc), location_map),
+                    engine_code=exc.engine_code,
+                ) from exc
             raise
 
     async def _execute_create_ml_model(

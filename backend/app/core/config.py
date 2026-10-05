@@ -43,11 +43,12 @@ class Settings(BaseSettings):
     PROXY_MAX_CONNECTIONS: int = 100
     PROXY_CONNECT_TIMEOUT: int = 10
     PROXY_READ_TIMEOUT: int = 300
-    #: Largest result set the proxy returns for one statement. The proxy
-    #: buffers a result before writing it, so this bounds its memory. A larger
-    #: result is refused with an explicit error instead of being truncated:
-    #: a MySQL client cannot tell a silently shortened result from a complete one.
-    PROXY_MAX_ROWS: int = Field(default=100_000, ge=1)
+    #: Optional cap on the rows the proxy returns for one statement; 0 means no
+    #: cap, as on a MySQL server. Results are streamed, so memory does not grow
+    #: with the result. A capped result is refused with an explicit error
+    #: instead of being truncated: a client cannot tell a silently shortened
+    #: result from a complete one.
+    PROXY_MAX_ROWS: int = Field(default=0, ge=0)
     #: Host clients should use to reach the proxy. Empty means "infer from the
     #: request" (the browser host), which is correct for the common single-host
     #: deployment. Set it when the proxy is reached through a different

@@ -187,12 +187,21 @@ class StageRuntime:
                     pages = s3.get_paginator("list_objects_v2").paginate(
                         Bucket=config.bucket, Prefix=prefix
                     )
+                    # A default is required: StopIteration raised in a worker
+                    # thread cannot cross into the awaiting future, which then
+                    # never completes and the statement hangs.
                     selected_key = next(
-                        item["Key"]
-                        for page in pages
-                        for item in page.get("Contents", [])
-                        if fnmatch.fnmatchcase(item["Key"], s3_key)
+                        (
+                            item["Key"]
+                            for page in pages
+                            for item in page.get("Contents", [])
+                            if fnmatch.fnmatchcase(item["Key"], s3_key)
+                        ),
+                        None,
                     )
+                    if selected_key is None:
+                        # Nothing to sample; the engine reports the empty match.
+                        return ""
                 resp = s3.get_object(Bucket=config.bucket, Key=selected_key, Range="bytes=0-8191")
                 body = resp["Body"]
                 try:

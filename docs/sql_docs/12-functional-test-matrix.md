@@ -198,9 +198,12 @@ mode. Restart/fault/shared-data/global trials also belong in disposable stacks.
 Never seed the active governed Nova deployment or remove another checkout's
 containers or volumes.
 
-Proxy transactions and unsupported session changes must return explicit errors.
-Supported system settings execute on the caller connection. Mixed scripts that
-cannot preserve real session semantics are refused before effects. Bounded ML
+Proxy transactions run on the caller's engine session: committed rows persist,
+rolled-back rows do not, and a role change inside a transaction is refused.
+Unsupported session changes must return explicit errors. Supported system
+settings execute on the caller connection. A script answers one result per
+statement; `USE`, role changes and assignments inside it apply to the statements
+after them. Destructive cases run on their own tables, never on shared fixtures. Bounded ML
 prediction and API materialization retain their existing relay contract.
 User-variable expressions are evaluated once through the caller's SQL path;
 later reads use the saved value. Assignment failures preserve the previous value.

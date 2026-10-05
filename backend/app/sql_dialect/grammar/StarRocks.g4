@@ -73,6 +73,12 @@ def _nova_is_stage_path_atom(parser):
     if lookahead == Token.EOF:
         return False
     return _nova_stage_path_token_ok(parser._input.LT(1).text)
+
+def _nova_tokens_adjacent(parser):
+    previous, following = parser._input.LT(-1), parser._input.LT(1)
+    if previous is None or following is None or following.type == Token.EOF:
+        return False
+    return previous.stop + 1 == following.start
 }
 // NOVA-END
 sqlStatements
@@ -141,7 +147,6 @@ statement
     | novaSecurityShowStatement
     | novaStreamStatement
     | novaForecastStatement
-    | novaPlanAdvisorStatement
 
     // NOVA-END
     // Partition Statement
@@ -2813,7 +2818,7 @@ relationPrimary
 // Grammar:
 //   stageReference        : AT stageSegment (stageSeparator stageSegment | decimalAtom)* '/'?
 //   stageSeparator        : '.' | '/'
-//   stageSegment          : stagePathAtom (MINUS_SYMBOL stagePathAtom)*
+//   stageSegment          : stagePathAtom stageGluedAtom* (MINUS_SYMBOL stagePathAtom stageGluedAtom*)*
 //   stagePathAtom         : identifier | ASTERISK_SYMBOL | INTEGER_VALUE | decimalAtom
 //
 // * the first `stageSegment` is the stage name; the rest are the dotted path
@@ -2889,7 +2894,16 @@ stageSeparator
     ;
 
 stageSegment
-    : stagePathAtom (MINUS_SYMBOL stagePathAtom)*
+    : stagePathAtom stageGluedAtom* (MINUS_SYMBOL stagePathAtom stageGluedAtom*)*
+    ;
+
+// A further atom written with no space before it, so a glob can sit inside a
+// segment (`sales_*.csv`, `*_2024.csv`): the lexer splits `sales_*` into an
+// identifier and `*`. Adjacency is what keeps a table alias (`FROM @s.data t`)
+// from being read as path text. A fused `.2024` token is not an atom here: its
+// leading dot is a separator, handled by `fusedDecimal` in `stageReference`.
+stageGluedAtom
+    : {_nova_tokens_adjacent(self)}? (identifier | ASTERISK_SYMBOL | INTEGER_VALUE | stagePathToken)
     ;
 
 stagePathAtom
@@ -3718,7 +3732,6 @@ nonReserved
     // keeps them usable as ordinary identifiers, so a column or table named
     // `cron`, `finalize` or `overlap_policy` still parses.
     | CRON
-    | 'ADVISOR'
     // NOVA-END
     | DATA | DATE | DATACACHE | DATETIME | DAY | DAYS | DECOMMISSION | DIALECT | DIGEST | DISABLE | DISK | DISTRIBUTION | DUPLICATE | DYNAMIC | DISTRIBUTED | DICTIONARY | DICTIONARY_GET | DEALLOCATE
     | ENABLE | END | ENGINE | ENGINES | ERRORS | EVENTS | EXECUTE | EXTERNAL | EXTRACT | EVERY | ENCLOSE | ESCAPE | EXPORT
@@ -3761,10 +3774,3 @@ nonReserved
     | PERSISTENT
     | EXCLUDE | EXCEPT
     ;
-// NOVA-BEGIN: optional pinned StarRocks query feedback surface.
-novaPlanAdvisorStatement
-    : SHOW PLAN 'ADVISOR'
-    | ALTER PLAN 'ADVISOR' ADD queryRelation
-    | ALTER PLAN 'ADVISOR' DROP string
-    ;
-// NOVA-END

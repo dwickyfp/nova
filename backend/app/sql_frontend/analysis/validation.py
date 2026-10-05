@@ -73,6 +73,43 @@ _password_context = _with_context(_password)
 _SUPPORTED_SQL_DIALECTS = frozenset({"starrocks"})
 
 
+def _native_statement_checks(statement: ast.Statement, context: Any = None) -> None:
+    """Refuse native statements Nova would misread or that would mislead the engine."""
+    _stage_paths_end_cleanly(statement)
+    _native_session_settings(statement)
+    return None
+
+
+def _stage_paths_end_cleanly(statement: ast.Statement) -> None:
+    """Refuse a block comment glued to the end of an ``@stage`` path.
+
+    ``@stage/*.csv`` reads ``/*`` as the start of a comment: with a later
+    ``*/`` in the statement the glob becomes part of the comment and the
+    reference silently names the whole stage. The dotted spelling
+    (``@stage.*.csv``) has no such reading.
+    """
+    parsed = statement.parsed
+    if "@" not in parsed.normalized_sql:
+        return
+    from app.sql_frontend.antlr_utils import walk_nodes
+
+    for node in walk_nodes(parsed.statement_context):
+        if type(node).__name__ != "StageReferenceContext":
+            continue
+        stop = node.stop
+        tokens = parsed.tokens.tokens
+        following = tokens[stop.tokenIndex + 1] if stop.tokenIndex + 1 < len(tokens) else None
+        if following is not None and following.start == stop.stop + 1 and (
+            following.text.startswith("/*")
+        ):
+            from app.sql_frontend.errors import SemanticError
+
+            raise SemanticError(
+                "A comment starts directly after a stage path; write a glob after a dot "
+                "(@stage.*.csv) instead of after a slash"
+            )
+
+
 def _native_session_settings(statement: ast.Statement, context: Any = None) -> None:
     """Refuse native ``SET`` forms that change how the engine parses SQL."""
     root = statement.parsed.statement_context

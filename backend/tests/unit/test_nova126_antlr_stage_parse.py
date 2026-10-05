@@ -873,3 +873,50 @@ def test_non_keyword_segment_control_still_resolves() -> None:
     assert result.command_type == CommandType.STAGE_QUERY
     ref = result.stage_refs[0]
     assert (ref.stage_name, ref.path_parts, ref.file_name) == ("stage1", ["data"], "foo.csv")
+
+
+# Partial-segment globs: the lexer splits ``sales_*`` into an identifier and
+# ``*``, so the grammar joins atoms written with no space between them.
+
+
+@pytest.mark.parametrize(
+    ("sql", "full_match", "path"),
+    [
+        (
+            "SELECT * FROM @stage1.sales_*.csv",
+            "@stage1.sales_*.csv",
+            "s3://nova-stages/datalake/bronze/stage1/sales_*.csv",
+        ),
+        (
+            "SELECT * FROM @stage1.data.*_2024.csv",
+            "@stage1.data.*_2024.csv",
+            "s3://nova-stages/datalake/bronze/stage1/data/*_2024.csv",
+        ),
+        (
+            "SELECT * FROM @stage1.daily-load-2024*.parquet",
+            "@stage1.daily-load-2024*.parquet",
+            "s3://nova-stages/datalake/bronze/stage1/daily-load-2024*.parquet",
+        ),
+    ],
+)
+def test_partial_segment_glob_is_one_reference(sql: str, full_match: str, path: str) -> None:
+    result = parse_sql(sql)
+
+    assert [ref.full_match for ref in result.stage_refs] == [full_match]
+    assert path in _translate(sql)
+
+
+@pytest.mark.parametrize(
+    ("sql", "alias"),
+    [
+        ("SELECT * FROM @stage1.sales_*.csv s", "s"),
+        ("SELECT t.* FROM @stage1.data.csv t", "t"),
+        ("SELECT * FROM @stage1.sales_*.csv AS x JOIN y ON 1 = 1", "x"),
+    ],
+)
+def test_a_spaced_alias_is_never_glued_to_the_path(sql: str, alias: str) -> None:
+    result = parse_sql(sql)
+
+    ref = result.stage_refs[0]
+    assert not ref.full_match.endswith(alias)
+    assert ref.has_alias

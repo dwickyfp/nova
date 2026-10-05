@@ -84,12 +84,16 @@ async def test_drop_confirmation_precedes_admission(monkeypatch, conditional, co
 
 
 @pytest.mark.parametrize("sql", ["DROP STREAM analytics.s", "DROP STREAM IF EXISTS analytics.s"])
-async def test_proxy_drop_is_refused_without_engine_submission(monkeypatch, sql):
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_proxy_drop_reaches_admission_without_engine_submission(monkeypatch, sql, enabled):
+    # A MySQL client has no confirmation exchange, so the proxy submits its
+    # statement as confirmed; stream admission still decides, before the engine.
+    monkeypatch.setattr("app.modules.streams.runtime.settings.STREAMS_ENABLED", enabled)
     monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
     repository = AsyncMock()
     monkeypatch.setattr(query_service, "_repo", repository)
     result = await ProxyQueryExecutor(
         SessionState(database="analytics", active_role="reader"),
     ).execute(sql, username="alice", connection=object())
-    assert result.error and "confirm" in result.error.lower()
+    assert result.error and ("unavailable" if enabled else "disabled") in result.error
     repository.execute_as_user.assert_not_awaited()

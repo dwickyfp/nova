@@ -52,7 +52,8 @@ docker compose --env-file docker/.env \
 ```
 
 It verifies connection-time `nova_role`, role switching, row filtering,
-masking, invalid-role rejection, the public `root` guard, and Nova Studio's
+masking, a client transaction that keeps its role and refuses a role switch,
+invalid-role rejection, the public `root` guard, and Nova Studio's
 `query_execute` tool against the live Ranger and patched FE.
 
 The stack contains Ranger Admin 2.9.0, its PostgreSQL database, a health-checked

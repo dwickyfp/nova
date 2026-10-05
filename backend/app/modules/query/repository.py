@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from functools import partial
+from typing import Protocol
 
 import asyncmy
 import asyncmy.cursors
@@ -69,6 +70,18 @@ def _decode_result_rows(cursor, raw_rows):
                     values[index] = value.decode("utf-8")
         rows.append(values)
     return rows
+
+
+#: Rows fetched per round trip when a result is streamed to a row sink.
+_STREAM_BATCH_ROWS = 1000
+
+
+class RowSink(Protocol):
+    """Receives a result set as it arrives instead of after it is complete."""
+
+    async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None: ...
+
+    async def rows(self, rows: list[list]) -> None: ...
 
 
 def _starrocks_error(exc: Exception) -> StarRocksError:
@@ -141,6 +154,8 @@ class QueryResult:
     correlation_status: str = "unavailable"
     column_types: tuple[str, ...] = ()
     truncated: bool = False
+    #: Rows were handed to a row sink as they arrived instead of kept in ``rows``.
+    streamed: bool = False
     engine_error_code: int | None = None
     fetch_ms: float | None = None
     engine_roundtrip_ms: float | None = None
@@ -230,6 +245,7 @@ class QueryRepository:
         max_rows: int | None = None,
         connected: asyncmy.Connection | None = None,
         session_prepared: bool = False,
+        row_sink: RowSink | None = None,
     ) -> QueryResult:
         """Execute SQL as an authenticated user (RBAC-respecting).
 
@@ -259,6 +275,7 @@ class QueryRepository:
                 start=start,
                 session_prepared=session_prepared,
                 binary_results=True,
+                row_sink=row_sink,
             )
         try:
             async with db.user_conn(
@@ -267,7 +284,13 @@ class QueryRepository:
                 database=None,
             ) as conn:
                 return await self._execute_on(
-                    conn, sql, role=role, database=database, max_rows=max_rows, start=start
+                    conn,
+                    sql,
+                    role=role,
+                    database=database,
+                    max_rows=max_rows,
+                    start=start,
+                    row_sink=row_sink,
                 )
         except asyncmy.errors.DatabaseError as e:
             raise _starrocks_error(e) from e
@@ -283,6 +306,7 @@ class QueryRepository:
         database: str | None = None,
         session_prepared: bool = False,
         binary_results: bool = False,
+        row_sink: RowSink | None = None,
     ) -> QueryResult:
         from app.modules.query_autopilot.telemetry import EXECUTION, collector
         from app.sql_frontend.session_functions import CORRELATION_SESSION, preserve_last_query_id
@@ -310,7 +334,15 @@ class QueryRepository:
                 except Exception:
                     identity.profile_enabled = False
 
-            cursor_type = asyncmy.cursors.SSDictCursor if max_rows else asyncmy.cursors.DictCursor
+            # A streamed result is read as tuples: one dict per row is the
+            # largest per-row cost on that path, and the sink needs positions only.
+            cursor_type = (
+                asyncmy.cursors.SSCursor
+                if row_sink is not None
+                else asyncmy.cursors.SSDictCursor
+                if max_rows
+                else asyncmy.cursors.DictCursor
+            )
             with _binary_result_mode(conn, binary_results) as raw_text:
                 async with conn.cursor(cursor_type) as cur:
                     if role and not session_prepared:
@@ -328,19 +360,38 @@ class QueryRepository:
                         result.column_types = tuple(
                             str((desc[1], desc[4], desc[5])) for desc in cur.description
                         )
-                        raw_rows = (
-                            await cur.fetchmany(max_rows + 1) if max_rows else await cur.fetchall()
-                        )
-                        result.truncated = bool(max_rows and len(raw_rows) > max_rows)
-                        if max_rows:
-                            raw_rows = raw_rows[:max_rows]
-                        result.rows = (
-                            _decode_result_rows(cur, raw_rows) if raw_text else [
-                                list(r.values()) if isinstance(r, Mapping) else list(r)
-                                for r in raw_rows
-                            ]
-                        )
-                        result.row_count = len(result.rows)
+                        if row_sink is not None:
+                            await row_sink.begin(result.columns, result.column_types)
+                            while batch := await cur.fetchmany(_STREAM_BATCH_ROWS):
+                                rows = (
+                                    _decode_result_rows(cur, batch)
+                                    if raw_text
+                                    else [
+                                        list(r.values()) if isinstance(r, Mapping) else list(r)
+                                        for r in batch
+                                    ]
+                                )
+                                result.row_count += len(rows)
+                                await row_sink.rows(rows)
+                            result.streamed = True
+                            raw_rows = None
+                        else:
+                            raw_rows = (
+                                await cur.fetchmany(max_rows + 1)
+                                if max_rows
+                                else await cur.fetchall()
+                            )
+                        if raw_rows is not None:
+                            result.truncated = bool(max_rows and len(raw_rows) > max_rows)
+                            if max_rows:
+                                raw_rows = raw_rows[:max_rows]
+                            result.rows = (
+                                _decode_result_rows(cur, raw_rows) if raw_text else [
+                                    list(r.values()) if isinstance(r, Mapping) else list(r)
+                                    for r in raw_rows
+                                ]
+                            )
+                            result.row_count = len(result.rows)
                     else:
                         result.affected_rows = cur.rowcount
             result.fetch_ms = (time.monotonic() - fetched) * 1000
