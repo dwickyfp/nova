@@ -195,6 +195,7 @@ class AgentControl:
         return [
             {
                 **candidate.prompt_view(),
+                "abilities": list(candidate.abilities),
                 "semantic_matches": [
                     match for match in matches if match["agent_id"] == candidate.agent_id
                 ],

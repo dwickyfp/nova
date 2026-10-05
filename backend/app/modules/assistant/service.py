@@ -280,6 +280,13 @@ class LoopContext:
 #: argument slip from ending the turn at a later, unrelated error.
 #: Tools that work on results already gathered and read no data themselves.
 _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
+#: Read-only analysis an owner can enable on a Studio agent, usable after its query.
+_ANALYSIS_TOOLS = ("compute_metrics", "data_to_chart", "diagnose_change", "ml_execute")
+#: Tool-call syntax some providers leak into the text channel.
+_TOOL_MARKUP = re.compile(
+    r"<\s*[\uff5c|]{1,2}\s*DSML\s*[\uff5c|]|<\s*(?:function_calls|tool_call)\s*>|<\s*invoke\s+name\s*=",
+    re.I,
+)
 
 REPAIR_LIMITS = {
     "composer_tool_call": 1,
@@ -983,6 +990,18 @@ class AssistantLoop:
                     *(name for name in _RESULT_TOOLS if self._registry.get(name) is not None),
                 )))
             context.selected_tools = list(selected_tools)
+        if (
+            self._iterative and context.agent_scope is not None and route.needs_data
+            and not context.collaboration_root
+        ):
+            # An analyst turn may go from its query to a forecast, a diagnosis, a
+            # computation or a chart. The owner enabled these; the planner's choice
+            # only orders them, it does not take them away.
+            selected_tools = tuple(dict.fromkeys((
+                *selected_tools,
+                *(name for name in _ANALYSIS_TOOLS if self._registry.get(name) is not None),
+            )))
+            context.selected_tools = list(selected_tools)
         selected_actions = ", ".join(selected_tools[:5])
         if len(selected_tools) > 5:
             selected_actions += f" and {len(selected_tools) - 5} more"
@@ -1319,6 +1338,21 @@ class AssistantLoop:
                 finish_reason=message.get("finish_reason"),
             )
             tool_calls = list(decision.tool_calls)
+            if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
+                # The model wrote a tool call as text. It is never an answer.
+                if repairs.take("composer_tool_call"):
+                    messages.append({"role": "system", "content": (
+                        "Tools are disabled during final composition. Answer from the "
+                        "recorded evidence only." if composing_final else
+                        "Call a tool through the tool interface, never as text. If no tool "
+                        "is needed, write the answer."
+                    )})
+                    continue
+                yield events.error(
+                    "unexpected_tool_call", "The response contained a tool call as text."
+                )
+                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                return
             if composing_final and tool_calls:
                 if repairs.take("composer_tool_call"):
                     messages.append(
@@ -1379,7 +1413,9 @@ class AssistantLoop:
                 if answer_claims is not None:
                     buffered_text = [draft]
                 language = _turn_language(context)
-                if clarification_requested:
+                # A turn that already holds results answers from them, verified like any
+                # other answer, even when a later step could not be expressed.
+                if clarification_requested and not evidence.business_tables:
                     answer_text = "".join(buffered_text).strip() or say(
                         "loop.clarify", language
                     )

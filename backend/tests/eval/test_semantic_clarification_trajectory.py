@@ -134,3 +134,36 @@ async def test_an_unbacked_number_after_a_failed_query_is_still_refused(monkeypa
     joined, _execute = await _studio_refusal(monkeypatch, "Total penjualan 1.250.000.")
     assert '"finish_reason":"out_of_scope"' not in joined
     assert "1.250.000" not in joined
+
+
+async def test_a_turn_that_holds_results_answers_from_them_even_after_a_clarification():
+    """A later step that cannot be expressed does not turn verified results into a
+    free-text clarification: the numbers are still checked and the evidence kept."""
+    from app.modules.assistant.tools import ToolOutcome
+    from tests.eval.harness import EvalTool
+
+    table = {"columns": ["month", "total_expense"], "rows": [["2026-09", "4805"]]}
+    tool = EvalTool("query_execute", outcomes=[
+        ToolOutcome(ok=True, summary="1 row", table=table,
+                    metadata={"metrics": ["total_expense"], "dimensions": ["month"]}),
+        ToolOutcome(ok=False, summary="", error="Cannot express the request.",
+                    error_class="CLARIFICATION_REQUIRED", recoverable=False),
+    ])
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = ScriptedProvider(script=[
+        tool_call_frame("s1", sql="SELECT month, total_expense FROM t"),
+        tool_call_frame("s2", sql="SELECT month, total_expense FROM t LIMIT 6"),
+        text_frame("September expense was 4805, about 77 more than planned."),
+        text_frame("September expense was 4805."),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["query_execute"],
+                  "required_tools": ["query_execute"]})
+    context = LoopContext(user_name="alice")
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, iterative=True, max_iterations=10,
+    ).run(thread=AssistantThread(thread_id="clarify", user_name="alice", title="Eval"),
+          user_content="Expense per month?", context=context, resolve_consent=allow)]
+    joined = "".join(frames)
+    assert '"finish_reason": "stop"' in joined or '"finish_reason":"stop"' in joined
+    assert "4805" in joined and "77 more" not in joined
+    assert context.verified_evidence["tables"]

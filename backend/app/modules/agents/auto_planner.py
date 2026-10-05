@@ -15,6 +15,14 @@ from app.modules.agents.semantic.access import bound_view_ids
 from app.modules.assistant.provider import AssistantProviderClient, assistant_provider
 from app.modules.assistant.security import session_security
 
+#: Tools an owner can enable that change what a specialist can be asked for.
+ABILITIES = {
+    "ml_execute": "forecast, anomaly detection, classification, clustering",
+    "diagnose_change": "explain why a measure changed between two periods",
+    "ai_search": "search documents",
+    "semantic_search": "look up names of customers, products, or other entities",
+}
+
 MAX_CANDIDATES = 16
 MAX_CHILDREN = 4
 
@@ -36,6 +44,8 @@ class Candidate:
     owner_name: str = ""
     release_manifest_id: str | None = None
     view_ids: tuple[str, ...] = ()
+    #: What the owner enabled beyond querying, in words the root can route on.
+    abilities: tuple[str, ...] = ()
 
     def prompt_view(self) -> dict[str, Any]:
         return {
@@ -193,6 +203,10 @@ async def authorized_candidates(user: dict) -> list[Candidate]:
                         owner_name=agent["owner_name"],
                         release_manifest_id=agent.get("release_manifest_id"),
                         view_ids=tuple(bound_view_ids(agent)),
+                        abilities=tuple(
+                            label for tool, label in ABILITIES.items()
+                            if tool in (agent.get("default_tools") or [])
+                        ),
                     )
                 )
             if result or attempt == 2:

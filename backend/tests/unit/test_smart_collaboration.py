@@ -732,6 +732,8 @@ def test_a_scope_statement_or_clarification_completes_a_turn():
     assert {"stop", "out_of_scope", "clarification"} == harness_worker.ANSWERED
     assert harness_worker.MAX_ROOT_TOKENS < harness_worker.SMART_ROOT_TOKENS
     assert harness_worker.SMART_ROOT_TOKENS < harness_worker.MAX_SESSION_TOKENS
+    assert harness_worker.MAX_CHILD_TOKENS < harness_worker.SMART_CHILD_TOKENS
+    assert harness_worker.SMART_CHILD_TOKENS < harness_worker.SMART_ROOT_TOKENS
 
 
 @pytest.mark.asyncio
@@ -749,3 +751,44 @@ async def test_a_participant_answers_to_its_task_or_agent_name_only_when_unambig
         await root._target("finance")
     with pytest.raises(ValueError, match="not visible"):
         await root._target("payroll")
+
+
+@pytest.mark.asyncio
+async def test_discovery_lists_what_each_owner_enabled(collaboration, monkeypatch):
+    from app.modules.agents import agent_control
+    from app.modules.agents.auto_planner import ABILITIES
+
+    _, root = collaboration
+    candidates = [
+        Candidate(agent_id="finance", name="Finance", manifest=CapabilityManifest(), metrics=(),
+                  abilities=(ABILITIES["ml_execute"],)),
+        Candidate(agent_id="hr", name="HR", manifest=CapabilityManifest(), metrics=()),
+    ]
+    monkeypatch.setattr(agent_control, "authorized_candidates", AsyncMock(return_value=candidates))
+    found = {item["agent_id"]: item["abilities"] for item in await root.discover_agents("forecast")}
+    assert found == {"finance": [ABILITIES["ml_execute"]], "hr": []}
+
+
+@pytest.mark.asyncio
+async def test_a_candidate_has_only_the_abilities_its_owner_selected(monkeypatch):
+    from app.modules.agents import auto_planner
+
+    agents = [
+        {"agent_id": "finance", "owner_name": "alice", "name": "Finance",
+         "default_tools": ["semantic_query", "ml_execute"], "semantic_view_ids": []},
+        {"agent_id": "hr", "owner_name": "alice", "name": "HR",
+         "default_tools": ["semantic_query"], "semantic_view_ids": []},
+    ]
+    monkeypatch.setattr(auto_planner.agent_repository, "list_agents",
+                        AsyncMock(return_value=agents))
+    monkeypatch.setattr(auto_planner.agent_repository, "list_shared_agents",
+                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(auto_planner, "has_verified_access", AsyncMock(return_value=True))
+    monkeypatch.setattr(auto_planner.capability_repository, "get",
+                        AsyncMock(return_value=CapabilityManifest()))
+    found = await auto_planner.authorized_candidates(
+        {"username": "alice", "active_role": "analyst", "assigned_roles": ["analyst"]}
+    )
+    assert {item.agent_id: item.abilities for item in found} == {
+        "finance": (auto_planner.ABILITIES["ml_execute"],), "hr": (),
+    }

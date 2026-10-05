@@ -339,3 +339,32 @@ async def test_root_relates_two_specialists_results_with_verified_arithmetic():
     text = answer_text(result)
     assert "300 per active employee" in text and "77" not in text
     assert context.last_result["columns"][-1] == "total_expense_per_active_headcount"
+
+
+MARKUP = ('<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="semantic_query">'
+          "\n</｜｜DSML｜｜ invoke>")
+
+
+@pytest.mark.asyncio
+async def test_a_tool_call_written_as_text_is_never_the_answer():
+    result, _, _, _ = await run([
+        call("discover_agents", capability=QUESTION),
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        call("wait_agent", targets=["/root/data"]),
+        text_frame(MARKUP),
+        text_frame("Mobile App recognized revenue is 3368049065451.00."),
+    ])
+    assert result.finish_reason == "stop", result.error_codes
+    assert answer_text(result).startswith("Mobile App recognized revenue is 3368049065451.00.")
+
+
+@pytest.mark.asyncio
+async def test_a_model_that_keeps_writing_tool_calls_as_text_ends_the_turn_without_an_answer():
+    result, _, _, _ = await run([
+        call("discover_agents", capability=QUESTION),
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        call("wait_agent", targets=["/root/data"]),
+        text_frame(MARKUP),
+    ])
+    assert result.finish_reason == "unexpected_tool_call"
+    assert not any(frame.startswith("event: text_delta") for frame in result.frames)

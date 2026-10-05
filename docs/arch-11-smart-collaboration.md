@@ -193,6 +193,17 @@ per unit of another. A figure that relates two specialists, such as expense per
 employee by department, is therefore computed evidence rather than model
 arithmetic.
 
+Discovery lists what each owner enabled beyond querying (forecasting and other
+ML, change diagnosis, document and entity search). The root asks the specialist
+that owns the data and lists the ability, in one plain sentence, and says so
+plainly when no owner has it; it never enables a tool for an owner. A Smart
+specialist runs iteratively, as a direct turn does, and keeps the read-only
+analysis tools its owner enabled whatever the planner selected, so it can go from
+its query to a forecast. An ML result is evidence the answer may state. A turn
+that already holds results is verified and keeps its evidence even when a later
+step ended in a clarification, and a tool call a provider writes as text is
+never an answer.
+
 The tables and charts the root computes are saved as steps of its final message
 and travel in its `agent_completed` event, at most six, so Studio shows them with
 the answer both live and on reload. A comparison such as "the fewest" is wrong
@@ -283,8 +294,9 @@ Settings may lower these bounds; root creation records the effective limits.
 Per-agent context, step, time, consent, and tool limits remain in force. Tree
 token totals are checked at admission and worker checkpoints. Concurrent provider
 requests already in flight may complete before the next aggregate check.
-The Smart root uses a 60,000-token limit; a specialist uses its 20,000-token
-limit. The root pays for discovery, one spawn and wait per specialist, and the
+The Smart root uses a 60,000-token limit and a Smart specialist 40,000: a
+specialist that queries and then forecasts spends about 25,000 tokens when asked
+directly, and it runs with the same iterative limits as a direct turn. The root pays for discovery, one spawn and wait per specialist, and the
 synthesis, so the legacy coordinator's 30,000 tokens end a two-specialist answer
 before it is written. The root must not inherit the smaller specialist limit when
 resuming after a wait.

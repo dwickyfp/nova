@@ -424,3 +424,21 @@ def test_a_claimed_change_is_not_rechecked_without_its_claim() -> None:
     assert not check_numeric_answer(
         answer, question="Revenue trend", tables=tables, claims=(risen,),
     ).accepted
+
+
+def test_a_forecast_the_runtime_computed_is_evidence_the_answer_may_state() -> None:
+    from app.modules.assistant.intelligence import EvidenceTracker
+
+    evidence = EvidenceTracker()
+    item = evidence.add("ml_execute", "forecast completed", table={
+        "columns": ["timestamp", "prediction", "lower_bound"],
+        "rows": [["2026-10-31T00:00:00+00:00", 4805000000.0, 2497114486.1684604]],
+    })
+    check = check_numeric_answer(
+        "Prediksi Oktober 2026 sebesar 4.805.000.000, batas bawah 2.497.114.486.",
+        question="Prediksi expense bulan depan", tables=evidence.business_tables, language="id",
+    )
+    assert check.accepted, check.unsupported
+    assert {claim.evidence_id for claim in check.claims if claim.evidence_id} == {
+        item.evidence_id
+    }

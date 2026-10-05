@@ -6,7 +6,7 @@ import pytest
 
 from app.modules.agents.tools.describe_agent import DescribeAgentTool
 from app.modules.assistant.service import AssistantLoop, LoopContext
-from app.modules.assistant.tools import ToolRegistry
+from app.modules.assistant.tools import ToolOutcome, ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, text_frame, thread, tool_call_frame
 from tests.eval.harness import EvalTool, TurnResult
 
@@ -116,3 +116,36 @@ async def test_smart_catalog_trajectory_aggregates_two_specialists(monkeypatch):
             for view in context.collaboration_catalog["views"]] == [
         ("Marketing", "Marketing"), ("Sales", "Sales"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_an_analyst_turn_keeps_the_analysis_tools_its_owner_enabled(monkeypatch):
+    """The planner picked only the query; the forecast the owner enabled is still callable."""
+    table = {"columns": ["month", "total_expense"], "rows": [["2026-09", "4805"]]}
+    forecast = {"columns": ["timestamp", "prediction"], "rows": [["2026-10-31", 4805.0]]}
+    registry = ToolRegistry()
+    query = EvalTool("semantic_query", outcomes=[ToolOutcome(
+        ok=True, summary="1 row", table=table,
+        data={"semantic_plan": {"metrics": ["total_expense"]}, "sql": "SELECT 1"},
+    )])
+    ml = EvalTool("ml_execute", outcomes=[ToolOutcome(
+        ok=True, summary="forecast completed", table=forecast, trace_detail={"run_id": "run-1"},
+    )])
+    registry.register(query)
+    registry.register(ml)
+    registry.register(DescribeAgentTool(registry, name="Finance"))
+    provider = ScriptedProvider([
+        tool_call_frame("q", name="semantic_query", arguments={"sql": "monthly expense"}),
+        tool_call_frame("f", name="ml_execute", arguments={"sql": "forecast"}),
+        text_frame("October is forecast at 4805."),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["semantic_query"],
+                  "required_tools": ["semantic_query"]})
+    context = LoopContext("reader", agent_id="finance")
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, system_prompt="Finance", max_iterations=8,
+        iterative=True,
+    ).run(thread=thread(read_only_grant=True), user_content="Forecast expense next month",
+          context=context, resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert len(query.runs) == 1 and len(ml.runs) == 1
+    assert "ml_execute" in context.selected_tools

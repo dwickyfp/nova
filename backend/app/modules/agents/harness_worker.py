@@ -41,7 +41,7 @@ from app.modules.agents.resource_delegation import (
     restore_resource_checkpoint,
 )
 from app.modules.agents.semantic.access import bound_view_ids
-from app.modules.agents.service import agent_service
+from app.modules.agents.service import BUDGET_PROFILES, agent_service, loop_limits
 from app.modules.assistant.answer_contract import (
     check_numeric_answer,
     finalize_verified_answer,
@@ -71,6 +71,9 @@ MAX_ROOT_TOKENS = 30_000
 #: A Smart root pays for discovery, one spawn and wait per specialist, and synthesis.
 #: The legacy coordinator limit ends a two-specialist answer before it is written.
 SMART_ROOT_TOKENS = 60_000
+#: A specialist that queries and then forecasts or diagnoses spends about 25,000
+#: tokens when asked directly; the legacy child limit stops it before it answers.
+SMART_CHILD_TOKENS = 40_000
 #: Earlier thread turns a Smart root sees, so a follow-up keeps its subject.
 ROOT_HISTORY_MESSAGES = 6
 ROOT_HISTORY_CHARS = 4000
@@ -1098,10 +1101,14 @@ class AgentHarnessWorker:
             context.start_new_mission = bool(child.get("payload", {}).get("new_mission"))
         step_limit = 32 if smart else 12
         time_limit = min(float(seconds), 600.0 if is_root else 300.0)
-        participant_token_limit = (
-            (SMART_ROOT_TOKENS if smart else MAX_ROOT_TOKENS) if is_root else MAX_CHILD_TOKENS
-        )
+        if is_root:
+            participant_token_limit = SMART_ROOT_TOKENS if smart else MAX_ROOT_TOKENS
+        else:
+            participant_token_limit = SMART_CHILD_TOKENS if smart else MAX_CHILD_TOKENS
         context_limit = min(token_budget or 24000, participant_token_limit)
+        # A specialist works as it does when asked directly: after its required query
+        # it may go on to a forecast, a diagnosis or a computation it has enabled.
+        limits = loop_limits(agent) if smart and not is_root else None
         loop = AssistantLoop(
             provider=assistant_provider,
             registry=registry,
@@ -1109,6 +1116,10 @@ class AgentHarnessWorker:
             time_budget_seconds=time_limit,
             system_prompt=system_prompt,
             context_manager=ContextManager(token_budget=context_limit),
+            **({
+                "max_calls_per_tool": limits.max_calls_per_tool,
+                "iterative": limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
+            } if limits else {}),
         )
         await self.repository.event(
             root["run_id"],

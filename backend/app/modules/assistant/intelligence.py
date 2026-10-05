@@ -210,6 +210,9 @@ class EvidenceTracker:
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
                 "compute_metrics", "analyze_documents",
                 "canonical_investigation",
+                # A forecast or score the runtime computed is a result the answer may
+                # state; without it every ML answer is rebuilt from the input table.
+                "ml_execute",
             }
             and table
         ):
