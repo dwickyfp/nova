@@ -278,6 +278,9 @@ class LoopContext:
 
 #: Repairs per kind of mistake in one turn. Separate budgets stop an early
 #: argument slip from ending the turn at a later, unrelated error.
+#: Tools that work on results already gathered and read no data themselves.
+_RESULT_TOOLS = ("compute_metrics", "data_to_chart")
+
 REPAIR_LIMITS = {
     "composer_tool_call": 1,
     "missing_required": 1,
@@ -285,6 +288,7 @@ REPAIR_LIMITS = {
     "tool_not_allowed": 2,
     "invalid_args": 2,
     "recoverable_tool": 2,
+    "unverified_number": 1,
 }
 
 
@@ -972,6 +976,12 @@ class AssistantLoop:
         selected_tools = turn_plan.selected_tools
         if context.collaboration_tools and route.intent != TurnIntent.AGENT_CATALOG:
             selected_tools = tuple(dict.fromkeys((*selected_tools, *context.collaboration_tools)))
+            if context.collaboration_root:
+                # The root computes and charts over what its specialists returned.
+                selected_tools = tuple(dict.fromkeys((
+                    *selected_tools,
+                    *(name for name in _RESULT_TOOLS if self._registry.get(name) is not None),
+                )))
             context.selected_tools = list(selected_tools)
         selected_actions = ", ".join(selected_tools[:5])
         if len(selected_tools) > 5:
@@ -1500,6 +1510,38 @@ class AssistantLoop:
                     if all(not table.get("rows") for table in answer_tables.values()):
                         answer_text = say("loop.no_rows", language)
                     await _localized(language, context)
+                    from app.modules.assistant.answer_contract import check_numeric_answer
+
+                    draft = check_numeric_answer(
+                        answer_text, question=user_content, tables=answer_tables,
+                        claims=answer_claims, language=language,
+                    )
+                    rewrite = {"role": "system", "content": (
+                        "Your draft stated numbers the results do not contain: "
+                        + ", ".join(draft.unsupported[:10])
+                        + ". Write the answer again. State only numbers that appear in "
+                        "the results. For a ratio, share, growth, difference or total, "
+                        "call compute_metrics first when it is available, otherwise "
+                        "leave that statement out."
+                    )}
+                    # One rewrite before anything is removed, when the request still fits:
+                    # the model can state the number from a result, compute it, or drop it.
+                    # A canonical investigation answer keeps its single composing call.
+                    if (
+                        draft.unsupported
+                        and not any(claim.kind == "hypothesis" for claim in answer_claims or ())
+                        and estimate_messages_tokens([*messages, rewrite])
+                        + len(json.dumps(tool_schemas, separators=(",", ":"), default=str)) // 4
+                        <= self._context_manager.token_budget
+                        and repairs.take("unverified_number")
+                    ):
+                        composing_final = False
+                        _record_step(context, {
+                            "kind": "runtime_decision", "answer_repair": "unverified_number",
+                            "unsupported": list(draft.unsupported)[:10], "status": "done",
+                        })
+                        messages.append(rewrite)
+                        continue
                     verified_answer = finalize_verified_answer(
                         answer_text, question=user_content, tables=answer_tables,
                         tables_shown=any(item.kind == "table" for item in pending_artifacts),
@@ -2280,11 +2322,21 @@ class AssistantLoop:
                                   trace_detail={**(outcome.trace_detail or {}),
                                                 "canonical_business_result": observation})
                 _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
+            collected_results: list[dict[str, Any]] = []
             if invocation.tool_name in {"list_agents", "wait_agent"} and isinstance(
                 outcome.data, dict
             ):
                 for participant in outcome.data.get("agents", []):
-                    evidence.import_results(participant)
+                    for item in evidence.import_results(participant):
+                        table = evidence.tables.get(item.evidence_id) or {}
+                        # The result tools (compute_metrics, data_to_chart) address a
+                        # specialist's table by the id it has in this turn.
+                        collected_results.append({
+                            "evidence_id": item.evidence_id,
+                            "columns": list(table.get("columns") or [])[:24],
+                            "row_count": len(table.get("rows") or []),
+                        })
+                        context.last_result = {**table, "title": item.summary}
             context.quality_facts.setdefault("evidence", []).append(
                 {
                     "id": evidence_item.evidence_id,
@@ -2325,6 +2377,8 @@ class AssistantLoop:
                 tool_name=invocation.tool_name,
                 evidence_id=evidence_item.evidence_id,
             )
+            if collected_results:
+                envelope["collected_results"] = collected_results
             envelope["metadata"] = {
                 **(envelope.get("metadata") or {}),
                 "artifact_note": artifact_note,

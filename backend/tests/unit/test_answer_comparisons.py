@@ -90,8 +90,9 @@ def test_a_wrong_comparison_is_replaced_and_corrected_in_the_user_language():
         claims=claims, language="id",
     )
     assert "Website lebih tinggi" not in result.text
-    assert "[perbandingan dikoreksi di bawah]" in result.text
-    assert "Marketplace (146.353.000) > Website (140.847.000)" in result.text
+    assert result.text == (
+        "Selisihnya 5.506.000 (Marketplace (146.353.000) > Website (140.847.000))."
+    )
     assert result.check.accepted
 
 
@@ -123,7 +124,7 @@ def test_a_replacement_does_not_repeat_a_table_already_on_screen():
     )
     assert result.replaced
     assert "| city |" not in result.text
-    assert result.text.startswith("Angka berikut diambil langsung dari hasil query.")
+    assert result.text.startswith("Berikut angkanya.")
 
 
 def test_a_replacement_uses_the_users_language_and_number_format():
@@ -137,14 +138,13 @@ def test_a_replacement_uses_the_users_language_and_number_format():
     assert "1.200.250" in result.text  # German grouping
 
 
-def test_mostly_verified_prose_is_kept_with_only_bad_numbers_removed():
+def test_mostly_verified_prose_is_kept_and_the_unsupported_clause_dropped():
     result = finalize_verified_answer(
         "Medan 1.200, Jakarta 900, Bandung 400, total 9.999.",
         question="Penjualan per kota?", tables=CITIES, language="id",
     )
     assert not result.replaced
-    assert "Medan 1.200" in result.text and "9.999" not in result.text
-    assert "[angka tidak terverifikasi]" in result.text
+    assert result.text == "Medan 1.200, Jakarta 900, Bandung 400."
 
 
 SCALAR = {"e1": {"columns": ["order_count"], "rows": [[878]]}}
@@ -236,3 +236,38 @@ def test_the_claims_block_never_reaches_the_user():
         text, question="x", tables=CITIES, claims=claims, language="id"
     )
     assert "<claims>" not in result.text and result.check.accepted
+
+
+@pytest.mark.parametrize(("answer", "expected"), [
+    ("Medan 1.200.\n\nJakarta 900, sekitar 77 kali lipat Bandung.", "Medan 1.200.\n\nJakarta 900."),
+    ("- Medan: 1.200\n- Total: 9.999\n- Jakarta: 900", "- Medan: 1.200\n- Jakarta: 900"),
+    ("Medan 1.200. Totalnya 9.999. Jakarta 900.", "Medan 1.200. Jakarta 900."),
+])
+def test_an_unsupported_number_leaves_no_marker(answer, expected):
+    result = finalize_verified_answer(
+        answer, question="Penjualan per kota?", tables=CITIES, language="id",
+    )
+    assert result.text == expected
+    assert result.check.unsupported
+
+
+def test_an_unsupported_table_cell_rebuilds_the_answer_from_cells():
+    result = finalize_verified_answer(
+        "| Kota | Penjualan |\n|---|---|\n| Medan | 1.200 |\n| Jakarta | 901 |",
+        question="Penjualan per kota?", tables=CITIES, language="id",
+    )
+    assert result.replaced and "901" not in result.text and "900" in result.text
+
+
+def test_a_repeated_value_is_judged_where_it_stands():
+    tables = {"e1": {"columns": ["department", "headcount"],
+                     "rows": [["Sales", 23], ["Engineering", 18], ["Marketing", 18]]}}
+    answer = (
+        "| Sales | 23 |\n| Engineering | 18 |\n| Marketing | 18 |\n\n"
+        "Sales memimpin dengan 23 orang, rata-rata gabungan 18 orang lebih rendah."
+    )
+    claims = (Claim(text="18", kind="derived"),)
+    result = finalize_verified_answer(
+        answer, question="Karyawan per departemen?", tables=tables, claims=claims, language="id",
+    )
+    assert "| Engineering | 18 |" in result.text and "| Marketing | 18 |" in result.text

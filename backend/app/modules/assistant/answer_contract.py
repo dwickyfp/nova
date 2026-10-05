@@ -101,6 +101,10 @@ class AnswerCheck:
     claims: tuple[NumericClaim, ...]
     unsupported: tuple[str, ...]
     unsupported_hypotheses: tuple[str, ...] = ()
+    #: Where each unsupported number stands in the answer: (start, end, text).
+    unsupported_spans: tuple[tuple[int, int, str], ...] = ()
+    #: Where each verified number stands, in the order of ``claims``.
+    verified_spans: tuple[tuple[int, int], ...] = ()
 
 
 def split_claims(answer: str) -> tuple[str, tuple[Claim, ...] | None]:
@@ -575,22 +579,25 @@ def check_numeric_answer(
             )
         )
     }
-    retry = {text for text in check.unsupported if _key(text) not in stated_by_claim}
+    retry = [span for span in check.unsupported_spans if _key(span[2]) not in stated_by_claim]
     if not retry:
         return check
     plain = _check_numeric_answer(
         answer, question=question, tables=tables, claims=None, language=language
     )
-    # Recovered only when the plain reading verified that very text.
-    recovered = (retry - set(plain.unsupported)) & {item.text for item in plain.claims}
+    # Recovered only where the plain reading verified the number at that very position.
+    verified = dict(zip(plain.verified_spans, plain.claims, strict=True))
+    recovered = [span for span in retry if span[:2] in verified]
     if not recovered:
         return check
-    unsupported = tuple(text for text in check.unsupported if text not in recovered)
+    remaining = tuple(span for span in check.unsupported_spans if span not in recovered)
     return AnswerCheck(
-        accepted=not unsupported,
-        claims=check.claims + tuple(item for item in plain.claims if item.text in recovered),
-        unsupported=unsupported,
+        accepted=not remaining,
+        claims=check.claims + tuple(verified[span[:2]] for span in recovered),
+        unsupported=tuple(dict.fromkeys(span[2] for span in remaining)),
         unsupported_hypotheses=check.unsupported_hypotheses,
+        unsupported_spans=remaining,
+        verified_spans=check.verified_spans + tuple(span[:2] for span in recovered),
     )
 
 
@@ -634,6 +641,17 @@ def _check_numeric_answer(
     counts: set[Decimal] | None = None
     found: list[NumericClaim] = []
     unsupported: list[str] = []
+    bad_spans: list[tuple[int, int, str]] = []
+    good_spans: list[tuple[int, int]] = []
+
+    def reject(token: NumberToken) -> None:
+        unsupported.append(token.text)
+        bad_spans.append((token.start, token.end, token.text))
+
+    def accept(token: NumberToken, evidence_id: str | None, column: str | None) -> None:
+        found.append(NumericClaim(token.text, evidence_id, column))
+        good_spans.append((token.start, token.end))
+
     for token in number_tokens(_mask_dates(answer, language), language):
         queue = by_text.get(_key(token.text)) or by_text.get(_key(token.core)) or []
         spoken_first = _prose_label(answer, token, table_labels) if len(queue) > 1 else None
@@ -651,17 +669,17 @@ def _check_numeric_answer(
         if claim is not None and claim.value is not None and not display_matches(
             claim.value, token
         ):
-            unsupported.append(token.text)  # the claim names another number than the text
+            reject(token)  # the claim names another number than the text
             continue
         kind = claim.kind if claim else None
         integers = {value for value in token.values if value == value.to_integral_value()}
         if kind in {None, "position"} and _list_marker(answer, token) and any(
             1 <= value <= 20 for value in integers
         ):
-            found.append(NumericClaim(token.text, None, None))
+            accept(token, None, None)
             continue
         if kind == "date" and any(1 <= value <= 31 or value in years for value in integers):
-            found.append(NumericClaim(token.text, None, None))
+            accept(token, None, None)
             continue
         # A number that only repeats the question is not a result, unless claimed so;
         # a small whole number from it ("top 5", "7 days") needs no claim.
@@ -671,23 +689,23 @@ def _check_numeric_answer(
                 1 <= value <= 20 for value in integers
             ))
         ) and any(value * (token.scale or 1) in question_values for value in token.values):
-            found.append(NumericClaim(token.text, None, None))
+            accept(token, None, None)
             continue
         if kind in {None, "count"} and not token.percent and token.scale is None:
             if counts is None:
                 counts = _table_counts(tables)
             if integers & counts:
-                found.append(NumericClaim(token.text, None, "row_count"))
+                accept(token, None, "row_count")
                 continue
         if kind not in {None, "cell", "derived"}:
-            unsupported.append(token.text)
+            reject(token)
             continue
         claimed = claim.row_label.casefold() if claim and claim.row_label else None
         if claimed is not None and claimed not in row_labels:
             claimed = None  # a translated or unknown name binds nothing
         spoken = _prose_label(answer, token, table_labels)
         if claimed is not None and spoken is not None and claimed != spoken:
-            unsupported.append(token.text)  # the claim and the prose name different rows
+            reject(token)  # the claim and the prose name different rows
             continue
         label = claimed or spoken
         named_columns = (
@@ -708,7 +726,7 @@ def _check_numeric_answer(
             )
         ), None)
         if cell is not None:
-            found.append(NumericClaim(token.text, cell.evidence_id, cell.column))
+            accept(token, cell.evidence_id, cell.column)
             continue
         if kind != "cell":
             if derived is None:
@@ -724,16 +742,18 @@ def _check_numeric_answer(
                 ),
             )
             if match is not None:
-                found.append(NumericClaim(token.text, match.evidence_id, match.column))
+                accept(token, match.evidence_id, match.column)
                 continue
         if kind is None and token.scale is None and integers & years:
-            found.append(NumericClaim(token.text, None, None))
+            accept(token, None, None)
             continue
-        unsupported.append(token.text)
+        reject(token)
     return AnswerCheck(
         accepted=not unsupported,
         claims=tuple(found),
         unsupported=tuple(dict.fromkeys(unsupported)),
+        unsupported_spans=tuple(bad_spans),
+        verified_spans=tuple(good_spans),
     )
 
 
@@ -862,15 +882,49 @@ class VerifiedAnswer:
 _MAX_ANNOTATED = 2
 
 
-def annotate_unverified(answer: str, unsupported: tuple[str, ...], *, language: str) -> str:
-    """Keep the verified prose; replace only numbers no result cell supports."""
-    marker = say("verify.unverified", language)
-    for literal in unsupported:
-        answer = re.sub(
-            r"(?<![A-Za-z0-9.,])" + re.escape(literal) + r"(?![A-Za-z0-9]|[.,]\d)",
-            marker, answer,
-        )
-    return answer.rstrip() + "\n\n" + say("verify.removed_note", language)
+_LIST_MARKER = re.compile(r"\s*(?:[-*\u2022]|\d+[.)])\s+")
+
+
+def remove_unverified(answer: str, spans: tuple[tuple[int, int, str], ...]) -> str | None:
+    """Drop each clause that states a number no result cell supports.
+
+    The rest of the answer stays as written, with no marker where the clause
+    stood. ``None`` when the number sits in a table row or nothing would be left:
+    a table is rebuilt from cells rather than shown with a hole.
+    """
+    cuts: list[tuple[int, int]] = []
+    for start, end, _ in spans:
+        line_start = answer.rfind("\n", 0, start) + 1
+        line_end = answer.find("\n", end)
+        line_end = len(answer) if line_end < 0 else line_end
+        line = answer[line_start:line_end]
+        if line.lstrip().startswith("|"):
+            return None
+        marker = _LIST_MARKER.match(line)
+        first = line_start + (marker.end() if marker else 0)
+        breaks = [first] + [
+            line_start + match.end() for match in _CLAUSE_END.finditer(line)
+            if line_start + match.end() > first
+        ] + [line_end]
+        cuts.append((
+            max(point for point in breaks if point <= start),
+            min(point for point in breaks if point >= end),
+        ))
+    kept, cursor = [], 0
+    for cut_start, cut_end in sorted(cuts):
+        if cut_start > cursor:
+            kept.append(answer[cursor:cut_start])
+        cursor = max(cursor, cut_end)
+    kept.append(answer[cursor:])
+    lines = []
+    for line in "".join(kept).split("\n"):
+        if _LIST_MARKER.fullmatch(line + " "):
+            continue  # a list item that held nothing else
+        # A clause removed from the end of a sentence leaves its comma behind.
+        line = re.sub(r"\s*[,;:]\s*$", ".", line.rstrip()) if line.strip() else ""
+        lines.append(re.sub(r"\s*[,;]\s*([.!?])", r"\1", line))
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return text if re.search(r"\w", text) else None
 
 
 def _has_label_and_measure(tables: dict[str, dict[str, Any]]) -> bool:
@@ -907,7 +961,7 @@ def finalize_verified_answer(
     * A comparison answered with no number: the comparison rendered from cells.
     * Every number verified: the draft is kept. A comparison also gets the
       highest/lowest lines computed from cells.
-    * A few numbers unsupported: only those numbers are removed.
+    * A few numbers unsupported: the sentences stating them are dropped.
     * Otherwise: the result rendered from cells, in the user's language.
       ``tables_shown`` means the tables are already on screen, so the rendering
       is sentences only.
@@ -936,13 +990,10 @@ def finalize_verified_answer(
         ), True, comparison)
     mistakes = check_comparisons(answer, tables, claims, language)
     if mistakes:
-        # A wrong "higher than" or "highest" is replaced in place and corrected
-        # from result cells, even when every number in the draft is right.
+        # A wrong "higher than" or "highest" is replaced in place by the statement
+        # the result cells support, even when every number in the draft is right.
         for mistake in mistakes:
-            answer = answer.replace(mistake.claim, say("verify.corrected", language))
-        answer = answer.rstrip() + "\n\n" + say("verify.correction_heading", language) + "\n" + (
-            "\n".join(f"- {mistake.correction}" for mistake in mistakes)
-        )
+            answer = answer.replace(mistake.claim, mistake.correction)
         check = check_numeric_answer(
             answer, question=question, tables=tables, claims=claims, language=language
         )
@@ -968,10 +1019,12 @@ def finalize_verified_answer(
         and len(check.unsupported) <= max(_MAX_ANNOTATED, len(data_claims))
         and headline not in check.unsupported
     ):
-        # Mostly verified prose stays; only the unsupported numbers are removed.
-        # A wrong headline number is not patched around: the answer is rebuilt.
-        text = annotate_unverified(answer, check.unsupported, language=language)
-        return VerifiedAnswer(text, check, False, comparison)
+        # Mostly verified prose stays; a sentence stating an unsupported number is
+        # dropped. A wrong headline number or table cell is not patched around: the
+        # answer is rebuilt from cells.
+        text = remove_unverified(answer, check.unsupported_spans)
+        if text is not None:
+            return VerifiedAnswer(text, check, False, comparison)
     replacement, replacement_claims = render_with_claims(
         tables, language=language, include_table=not tables_shown
     )

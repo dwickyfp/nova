@@ -897,7 +897,8 @@ class AgentHarnessWorker:
                 "owner_name": child["owner_name"],
                 "name": "Smart",
                 "description": "Solve requests directly or collaborate with governed specialists.",
-                "default_tools": ["load_skill"],
+                # Result tools read nothing: they compute and chart what specialists return.
+                "default_tools": ["load_skill", "compute_metrics", "data_to_chart"],
                 "policy": "auto_read_only",
                 "budget_seconds": 600,
                 "budget_tokens": 30000,

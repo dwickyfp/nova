@@ -166,8 +166,24 @@ reading verifies it against a result cell, with the row and column the sentence
 names. A claim never widens what passes. A change, its direction, and a value the
 claim gives differently from the text are judged by the claim alone. A day number
 beside a month name is a date, and a computed average may be stated rounded to two
-decimals, or to a whole number in the thousands. A value that equals no cell is
-still removed.
+decimals, or to a whole number in the thousands.
+
+Each number is judged where it stands, so a value repeated in a table and in a
+sentence is kept in one place and dropped in the other. A draft with an
+unsupported number gets one rewrite when the request still fits the context
+budget. If the number remains, the clause stating it is dropped and nothing marks
+the gap; a wrong table cell or headline number rebuilds the answer from result
+cells. A wrong comparison is replaced in place by the statement the cells support.
+A value that equals no cell is never shown.
+
+The Smart root also holds `compute_metrics` and `data_to_chart`. They read no
+data: their input is the results specialists returned, which the root lists to the
+model as `collected_results` with the evidence id each has in this turn.
+`compute_metrics` gained `combine`, which joins two such results on the one label
+column they share and keeps only labels present in both, and `ratio`, one column
+per unit of another. A figure that relates two specialists, such as expense per
+employee by department, is therefore computed evidence rather than model
+arithmetic.
 
 `wait_agent`, `send_message`, `followup_task`, and `interrupt_agent` accept a
 participant's path, and also its task name, agent id, or agent name when exactly

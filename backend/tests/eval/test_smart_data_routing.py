@@ -237,3 +237,100 @@ async def test_smart_cannot_state_a_value_when_no_specialist_owns_the_request():
     result = await uncovered("Stok gudang saat ini 1200 unit.")
     assert result.finish_reason == "data_evidence_incomplete", result.error_codes
     assert not any(frame.startswith("event: text_delta") for frame in result.frames)
+
+
+@pytest.mark.asyncio
+async def test_an_unsupported_number_gets_one_rewrite_before_anything_is_removed():
+    result, _, context, _ = await run([
+        call("discover_agents", capability=QUESTION),
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        call("wait_agent", targets=["/root/data"]),
+        text_frame("Mobile App recognized revenue is 3368049065451.00, about 9 times Store."),
+        text_frame("Mobile App recognized revenue is 3368049065451.00."),
+    ])
+    assert result.finish_reason == "stop", result.error_codes
+    text = "".join(
+        frame for frame in result.frames if frame.startswith("event: text_delta")
+    )
+    assert "3368049065451.00" in text and "9 times" not in text
+    repairs = [step for step in context.steps if step.get("answer_repair")]
+    assert [step["unsupported"] for step in repairs] == [["9"]]
+
+
+@pytest.mark.asyncio
+async def test_a_model_that_repeats_an_unsupported_number_still_cannot_show_it():
+    result, _, _, _ = await run([
+        call("discover_agents", capability=QUESTION),
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        call("wait_agent", targets=["/root/data"]),
+        text_frame("Mobile App recognized revenue is 3368049065451.00, about 9 times Store."),
+    ])
+    assert result.finish_reason == "stop", result.error_codes
+    text = "".join(
+        frame for frame in result.frames if frame.startswith("event: text_delta")
+    )
+    assert "9 times" not in text and "unverified" not in text
+
+
+def specialist(turn: str, agent_id: str, table: dict, metric: str) -> dict:
+    evidence = EvidenceTracker()
+    evidence.add("semantic_query", "Authorized query", table=copy.deepcopy(table), metadata={
+        "metrics": [metric], "dimensions": ["department"], "semantic_model_id": f"{agent_id}-model",
+        "semantic_plan": {"time": {"range": "2025"}},
+    })
+    return {"agent_id": agent_id, "current_turn_id": turn, "depth": 1, "status": "idle",
+            "evidence": evidence.snapshot()}
+
+
+@pytest.mark.asyncio
+async def test_root_relates_two_specialists_results_with_verified_arithmetic():
+    from app.modules.agents.tools.compute_metrics import compute_metrics_tool
+
+    question = "Expense per active employee by department for 2025?"
+    owners = [
+        {"agent_id": "finance", "name": "Finance", "dimension_matches": ["department"],
+         "semantic_matches": [{"metric": "total_expense", "matched_alias": "expense"}]},
+        {"agent_id": "hr", "name": "HR", "dimension_matches": ["department"],
+         "semantic_matches": [{"metric": "active_headcount", "matched_alias": "active employee"}]},
+    ]
+    expense = {"columns": ["department", "total_expense"],
+               "rows": [["Sales", "1200.00"], ["Finance", "900.00"]]}
+    headcount = {"columns": ["department", "active_headcount"],
+                 "rows": [["Finance", 3], ["Sales", 4]]}
+    registry = ToolRegistry()
+    for name, data in (
+        ("discover_agents", {"agents": owners}), ("spawn_agent", owners[0]),
+        ("wait_agent", {"agents": [specialist("t1", "finance", expense, "total_expense"),
+                                   specialist("t2", "hr", headcount, "active_headcount")]}),
+    ):
+        registry.register(EvalTool(name, parameters=COLLABORATION_TOOLS[name][1], data=data))
+    registry.register(compute_metrics_tool)
+    script = [
+        call("discover_agents", capability=question),
+        call("spawn_agent", agent="finance", task_name="expense", objective=question),
+        call("wait_agent", targets=["/root/expense"]),
+        tool_call_frame("combine", name="compute_metrics", arguments={
+            "operation": "combine", "evidence_id": "evidence_4",
+            "with_evidence_id": "evidence_5"}),
+        tool_call_frame("ratio", name="compute_metrics", arguments={
+            "operation": "ratio", "value_column": "total_expense",
+            "compare_column": "active_headcount"}),
+        text_frame("Sales spends 300 per active employee and Finance 300, about 77 in savings."),
+        text_frame("Sales spends 300 per active employee and Finance 300."),
+    ]
+    provider = ScriptedProvider(script, turn_plan={
+        "intent": "semantic_analytics", "tools": ["discover_agents"],
+        "required_tools": ["discover_agents"],
+        "intent_frame": {"language": "en", "range": "2025", "compares_groups": True},
+    })
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=12,
+    ).run(thread=thread(read_only_grant=True), user_content=question, context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert {"compute_metrics"} <= set(context.selected_tools)
+    text = "".join(frame for frame in result.frames if frame.startswith("event: text_delta"))
+    assert "300 per active employee" in text and "77" not in text
+    assert context.last_result["columns"][-1] == "total_expense_per_active_headcount"

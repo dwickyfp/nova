@@ -131,3 +131,68 @@ def test_date_labels_match_their_midnight_timestamps_and_errors_list_labels():
     with pytest.raises(ComputeError, match="Available: '2026-07-01 00:00:00'"):
         compute(table, {"operation": "pct_change", "value_column": "total_revenue",
                         "from_label": "2026-02-01", "to_label": "2026-08-01"})
+
+
+EXPENSE = {"columns": ["department", "total_expense"],
+           "rows": [["Sales", "12404000000.00"], ["Finance", "11553000000.00"], ["Legal", "5.00"]]}
+HEADCOUNT = {"columns": ["Department", "active_headcount"],
+             "rows": [["finance", 22], ["Sales", 23], ["Support", 4]]}
+
+
+def test_combine_joins_two_results_on_their_shared_label_only_where_both_have_it():
+    from app.modules.agents.tools.compute_metrics import combine
+
+    result = combine(EXPENSE, HEADCOUNT)
+    assert result["columns"] == ["department", "total_expense", "active_headcount"]
+    assert result["rows"] == [["Sales", "12404000000.00", 23], ["Finance", "11553000000.00", 22]]
+    assert "2 row(s) had no match" in result["summary"]
+
+
+@pytest.mark.parametrize(("second", "message"), [
+    ({"columns": ["region", "active_headcount"], "rows": [["West", 3]]}, "share exactly one"),
+    ({"columns": ["department", "active_headcount"], "rows": [["Sales", 1], ["sales", 2]]},
+     "more than one row"),
+    ({"columns": ["department", "active_headcount"], "rows": [["Support", 4]]}, "appears in both"),
+])
+def test_combine_never_guesses_a_join(second, message):
+    from app.modules.agents.tools.compute_metrics import ComputeError, combine
+
+    with pytest.raises(ComputeError, match=message):
+        combine(EXPENSE, second)
+
+
+def test_ratio_divides_one_column_by_another_and_leaves_a_zero_divisor_empty():
+    from app.modules.agents.tools.compute_metrics import compute
+
+    table = {"columns": ["department", "total_expense", "active_headcount"],
+             "rows": [["Sales", "1000", 4], ["Finance", "900", 0]]}
+    result = compute(table, {"operation": "ratio", "value_column": "total_expense",
+                             "compare_column": "active_headcount"})
+    assert result["columns"][-1] == "total_expense_per_active_headcount"
+    assert result["rows"] == [["Sales", "1000.0000", "4.0000", "250.0000"],
+                              ["Finance", "900.0000", "0.0000", None]]
+
+
+@pytest.mark.asyncio
+async def test_the_tool_combines_two_held_results_and_continues_from_the_new_table():
+    from types import SimpleNamespace
+
+    from app.modules.agents.tools.compute_metrics import compute_metrics_tool
+    from app.modules.assistant.tools import ToolInvocation
+
+    context = SimpleNamespace(
+        evidence_tables={"evidence_3": EXPENSE, "evidence_4": HEADCOUNT}, last_result=None,
+    )
+    outcome = await compute_metrics_tool.run(ToolInvocation(
+        tool_call_id="c", tool_name="compute_metrics",
+        arguments={"operation": "combine", "evidence_id": "evidence_3",
+                   "with_evidence_id": "evidence_4"},
+    ), context)
+    assert outcome.ok and outcome.table["columns"][-1] == "active_headcount"
+    assert context.last_result["rows"] == outcome.table["rows"]
+    missing = await compute_metrics_tool.run(ToolInvocation(
+        tool_call_id="c", tool_name="compute_metrics",
+        arguments={"operation": "combine", "evidence_id": "evidence_3",
+                   "with_evidence_id": "someone-else"},
+    ), context)
+    assert not missing.ok and missing.recoverable

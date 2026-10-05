@@ -305,8 +305,11 @@ _SMART_INSTRUCTIONS = (
     "Any request for actual values (a total, count, average, breakdown, trend, ranking, or "
     "comparison), including a follow-up that refines an earlier one, is semantic_analytics, "
     "or compound_analytics when it spans several analyses or subject areas, with "
-    "discover_agents as the only required tool. Never route a request for values to "
-    "agent_catalog or clarification because Smart lacks semantic_query."
+    "discover_agents as the only required tool. A chart or a derived number (growth, share, "
+    "rank, ratio across subject areas) is the same: discover_agents is required, and "
+    "compute_metrics and data_to_chart may be selected to work on what is returned. Never "
+    "route a request for values to agent_catalog or clarification because Smart lacks "
+    "semantic_query."
 )
 
 

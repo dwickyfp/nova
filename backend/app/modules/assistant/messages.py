@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 VERSION = 1
 
 MESSAGES: dict[str, str] = {
-    "render.lead": "These figures come straight from the query result.",
-    "render.heading": "Comparison from the authorized query result:",
+    "render.lead": "Here are the figures.",
+    "render.heading": "Here is the breakdown:",
     "render.no_result": "No authorized query result is available.",
     "render.omitted": "Some result rows or columns were omitted from this preview.",
     "render.no_rows": "The authorized query returned no rows.",
@@ -34,16 +34,10 @@ MESSAGES: dict[str, str] = {
     "render.down": "down {amount}",
     "render.unchanged": "unchanged",
     "render.extremes": "highest {high}; lowest {low}",
-    "verify.unverified": "[unverified number]",
-    "verify.removed_note": (
-        "Some numbers were removed because the query result does not support them."
-    ),
     "verify.cannot_verify": (
         "I could not verify every number in the drafted answer against the authorized "
         "query result. Review the result table below."
     ),
-    "verify.corrected": "[comparison corrected below]",
-    "verify.correction_heading": "Correction from the query result:",
     "verify.is_highest": "{label} ({value}) is the highest",
     "verify.is_lowest": "{label} ({value}) is the lowest",
     "loop.no_rows": "The authorized query returned no rows for this request.",
@@ -71,8 +65,8 @@ MESSAGES: dict[str, str] = {
 #: Translations that ship with Nova.
 BUILTIN: dict[str, dict[str, str]] = {
     "id": {
-        "render.lead": "Angka berikut diambil langsung dari hasil query.",
-        "render.heading": "Perbandingan berdasarkan hasil query terotorisasi:",
+        "render.lead": "Berikut angkanya.",
+        "render.heading": "Berikut rinciannya:",
         "render.no_result": "Tidak ada hasil query terotorisasi yang dapat ditampilkan.",
         "render.omitted": "Sebagian baris atau kolom hasil tidak ditampilkan di pratinjau ini.",
         "render.no_rows": "Query terotorisasi tidak mengembalikan baris.",
@@ -82,16 +76,10 @@ BUILTIN: dict[str, dict[str, str]] = {
         "render.down": "turun {amount}",
         "render.unchanged": "tetap",
         "render.extremes": "tertinggi {high}; terendah {low}",
-        "verify.unverified": "[angka tidak terverifikasi]",
-        "verify.removed_note": (
-            "Sebagian angka dihapus karena tidak dapat diverifikasi dari hasil query."
-        ),
         "verify.cannot_verify": (
             "Saya tidak dapat memverifikasi semua angka pada jawaban terhadap hasil query. "
             "Lihat tabel hasil di bawah."
         ),
-        "verify.corrected": "[perbandingan dikoreksi di bawah]",
-        "verify.correction_heading": "Koreksi dari hasil query:",
         "verify.is_highest": "{label} ({value}) adalah yang tertinggi",
         "verify.is_lowest": "{label} ({value}) adalah yang terendah",
         "loop.no_rows": "Query terotorisasi tidak mengembalikan baris untuk permintaan ini.",

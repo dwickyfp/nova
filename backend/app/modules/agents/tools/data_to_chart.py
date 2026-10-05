@@ -50,6 +50,10 @@ _PARAMETERS = {
                 "'monthly trend'. Used to pick the mark and encoding."
             ),
         },
+        "evidence_id": {
+            "type": "string",
+            "description": "Result to chart; defaults to the latest data result.",
+        },
     },
 }
 
@@ -85,6 +89,10 @@ class DataToChartTool:
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         intent = _arg(invocation, "intent") or "visualise the data"
         last = getattr(context, "last_result", None)
+        chosen = _arg(invocation, "evidence_id")
+        if chosen:
+            # Only a result this turn already holds under the caller's access.
+            last = (getattr(context, "evidence_tables", None) or {}).get(chosen)
         if not last or not last.get("columns"):
             return ToolOutcome(
                 ok=False,
