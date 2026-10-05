@@ -1357,9 +1357,16 @@ class AgentHarnessWorker:
                     )
             return incoming
 
+        if is_root and smart:
+            context.collect_results = control.list_agents
         prompt = child["objective"]
         if child["payload"].get("context"):
-            prompt += "\n\nRelevant delegated context:\n" + child["payload"]["context"]
+            # The requester's wider question is background. Read as part of the task, it
+            # makes a specialist ask about measures another specialist was given.
+            prompt += (
+                "\n\nBackground only, not part of your task (other specialists answer "
+                "what your data does not cover):\n" + child["payload"]["context"]
+            )
         parts: list[str] = []
         evidence_tables: list[dict[str, Any]] = (
             list(

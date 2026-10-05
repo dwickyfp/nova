@@ -195,7 +195,9 @@ def collaboration_prompt(control: AgentControl) -> str:
         "only when another specialist provides expertise or data outside your own coverage. "
         "Do exactly the delegated task and stop: one query when one answers it, no chart, "
         "total, ranking, or extra breakdown unless the task asks for it. The requester "
-        "computes and charts from your result. "
+        "computes and charts from your result. When your data covers the task, answer it "
+        "without asking a question back; a part of the wider request that your data does "
+        "not cover belongs to another specialist, so leave it out without comment. "
     )
     return (
         f"\n\nYou are {path.value} in a governed Smart collaboration. "

@@ -376,6 +376,12 @@ Studio agent list also returns the caller's own agents it left out for that
 reason, and Studio names them with a link to the agent, because only the owner
 can verify access. Another owner's unverified agent is left out without comment.
 
+Before the root's answer is verified, the results of every finished participant
+are taken as evidence, not only those a wait named, so a specialist that finished
+unobserved still supports the figures the answer states. The requester's wider
+question reaches a specialist marked as background: its task is its objective,
+and it does not ask about measures another specialist was given.
+
 `diagnose_change` explains a move between two periods from the last result. It
 takes the result's own period and measure columns, matches a period by prefix
 (`2026-04` is the row labelled `2026-04-01 00:00:00`), lists both period totals

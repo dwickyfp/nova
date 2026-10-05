@@ -467,3 +467,47 @@ async def test_smart_drafts_a_schedule_and_creates_nothing(monkeypatch):
     assert not discovery.runs and not spawn.runs
     create.assert_not_awaited()
     assert "confirm" in answer_text(result)
+
+
+@pytest.mark.asyncio
+async def test_an_answer_is_checked_against_a_specialist_no_wait_named():
+    question = "2025 expense and active employees by department?"
+    owners = [
+        {"agent_id": "finance", "name": "Finance", "dimension_matches": ["department"],
+         "semantic_matches": [{"metric": "total_expense", "matched_alias": "expense"}]},
+        {"agent_id": "hr", "name": "HR", "dimension_matches": ["department"],
+         "semantic_matches": [{"metric": "active_headcount", "matched_alias": "active employee"}]},
+    ]
+    expense = {"columns": ["department", "total_expense"],
+               "rows": [["Sales", "1200.00"], ["Finance", "900.00"]]}
+    headcount = {"columns": ["department", "active_headcount"],
+                 "rows": [["Finance", 3], ["Sales", 4]]}
+    finance = specialist("t1", "finance", expense, "total_expense")
+    hr = specialist("t2", "hr", headcount, "active_headcount")
+    registry = ToolRegistry()
+    for name, data in (
+        ("discover_agents", {"agents": owners}), ("spawn_agent", owners[0]),
+        # The model waited for Finance alone; HR finished without being named.
+        ("wait_agent", {"agents": [finance]}),
+    ):
+        registry.register(EvalTool(name, parameters=COLLABORATION_TOOLS[name][1], data=data))
+    answer = "Sales spent 1,200 with 4 active employees; Finance spent 900 with 3."
+    provider = ScriptedProvider([
+        call("discover_agents", capability=question),
+        call("spawn_agent", agent="finance", task_name="expense", objective=question),
+        call("wait_agent", targets=["/root/expense"]),
+        text_frame(answer),
+    ], turn_plan={
+        "intent": "semantic_analytics", "tools": ["discover_agents"],
+        "required_tools": ["discover_agents"],
+        "intent_frame": {"language": "en", "range": "2025", "compares_groups": False},
+    })
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS),
+                          collect_results=AsyncMock(return_value=[finance, hr]))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=12,
+    ).run(thread=thread(read_only_grant=True), user_content=question, context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert answer_text(result).startswith(answer)

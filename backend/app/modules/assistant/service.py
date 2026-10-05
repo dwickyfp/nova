@@ -197,6 +197,9 @@ class LoopContext:
     authorized_semantic_models: list[dict[str, Any]] | None = None
     #: A recurring report or alert Smart drafted this turn for the user to confirm.
     automation_proposal: dict[str, Any] | None = None
+    #: Smart root only: every participant of the run with its results, so an answer
+    #: is checked against all finished work, not only the specialists a wait named.
+    collect_results: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None
     #: Smart root only: the combined specialist catalog, read once per turn.
     collaboration_catalog: dict[str, Any] | None = None
     agent_scope: dict[str, Any] | None = None
@@ -1444,6 +1447,11 @@ class AssistantLoop:
                             for update in updates
                         )
                         continue
+                if context.collaboration_root and context.collect_results is not None:
+                    for participant in await context.collect_results():
+                        for item in evidence.import_results(participant):
+                            table = evidence.tables.get(item.evidence_id) or {}
+                            context.last_result = {**table, "title": item.summary}
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
                 draft, answer_claims = split_claims("".join(buffered_text))

@@ -44,7 +44,9 @@ A case passes only when all of these hold for its last turn:
 - the chart, table or schedule proposal the case requires came with the answer;
 - the stream carried no error and every turn completed;
 - the judge model, reading as that business person, gives at least 4 of 5 for
-  accuracy, completeness, nativeness and groundedness.
+  accuracy, completeness, nativeness and groundedness. It reads each answer three
+  times and the middle score per dimension counts, because a single reading
+  sometimes miscounts digits (58,851,000,000 read as millions).
 
 Smart is accepted when every case passes in three consecutive passes on the same
 code. A failure resets the count. Do not relax a case to make it pass.

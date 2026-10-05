@@ -114,6 +114,22 @@ async def _verdict(provider, payload: dict) -> dict:
     return {"judge_error": "no usable verdict"}
 
 
+READINGS = 3
+
+
+async def _median(provider, payload: dict) -> dict:
+    """Three readings, the middle score per dimension: one misread does not decide a case."""
+    readings = [await _verdict(provider, payload) for _ in range(READINGS)]
+    scored = [item for item in readings if "judge_error" not in item]
+    if len(scored) < 2:
+        return {"judge_error": "fewer than two usable verdicts"}
+    verdict = {name: sorted(item[name] for item in scored)[len(scored) // 2]
+               for name in DIMENSIONS}
+    verdict["readings"] = [[item[name] for name in DIMENSIONS] for item in scored]
+    verdict["issues"] = [issue for item in scored for issue in item.get("issues") or []][:8]
+    return verdict
+
+
 async def judge(path: Path) -> dict:
     from app.core.database import db
     from app.modules.assistant.provider import assistant_provider
@@ -130,7 +146,7 @@ async def judge(path: Path) -> dict:
         last = turns[-1]
         answer = last.get("answer") or ""
         missing = gold_missing(f"{answer}\n{last.get('shown', '')}", item["gold"], gold)
-        verdict = await _verdict(provider, {
+        verdict = await _median(provider, {
             "conversation": [{"user": turn["question"], "assistant": turn.get("answer", "")}
                              for turn in turns[:-1]] + [{"user": last["question"]}],
             "expectation": item["expect"],
