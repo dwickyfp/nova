@@ -9,6 +9,7 @@ from typing import Any
 
 
 class TargetOutcome(StrEnum):
+    COMMITTED = "COMMITTED"
     VISIBLE = "VISIBLE"
     FAILED = "FAILED"
     VERIFICATION_REQUIRED = "VERIFICATION_REQUIRED"
@@ -21,6 +22,7 @@ class TargetIdentity:
     label: str
     principal: str
     load_id: int | None = None
+    transaction_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +31,7 @@ class CommitReceipt:
     reason: str
     load_id: int | None = None
     sink_rows: int | None = None
+    transaction_id: int | None = None
 
 
 def interpret_receipt(
@@ -61,12 +64,31 @@ def interpret_receipt(
         return CommitReceipt(unknown, "invalid_evidence")
     if target.load_id is not None and target.load_id != load_id:
         return CommitReceipt(unknown, "load_identity_mismatch")
+    transaction_id = row.get("TRANSACTION_ID")
+    if transaction_id is not None:
+        try:
+            transaction_id = int(transaction_id)
+        except (TypeError, ValueError, OverflowError):
+            return CommitReceipt(unknown, "invalid_transaction_identity")
+        if transaction_id < 0:
+            return CommitReceipt(unknown, "invalid_transaction_identity")
+    if target.transaction_id is not None and target.transaction_id != transaction_id:
+        return CommitReceipt(unknown, "transaction_identity_mismatch")
     state = row.get("STATE")
     if state == "FINISHED":
-        return CommitReceipt(TargetOutcome.VISIBLE, "verified_visible", load_id, sink_rows)
+        return CommitReceipt(
+            TargetOutcome.VISIBLE, "verified_visible", load_id, sink_rows, transaction_id
+        )
     if state == "CANCELLED":
-        return CommitReceipt(TargetOutcome.FAILED, "verified_failed", load_id)
-    return CommitReceipt(unknown, "nonterminal_evidence", load_id)
+        # A cancelled load job alone cannot establish whether aborting its
+        # transaction succeeded. The verifier must inspect the transaction.
+        return CommitReceipt(
+            unknown, "transaction_verification_required", load_id,
+            transaction_id=transaction_id,
+        )
+    return CommitReceipt(
+        unknown, "nonterminal_evidence", load_id, transaction_id=transaction_id
+    )
 
 
 MetadataReader = Callable[[str, tuple], Awaitable[dict]]
@@ -89,7 +111,8 @@ class TargetCommitVerifier:
     async def verify(self, target: TargetIdentity) -> CommitReceipt:
         try:
             result = await self._read(
-                "SELECT ID, LABEL, DB_NAME, TABLE_NAME, USER, TYPE, STATE, SINK_ROWS "
+                "SELECT ID, LABEL, DB_NAME, TABLE_NAME, USER, TYPE, STATE, SINK_ROWS, "
+                "CAST(RUNTIME_DETAILS->'txn_id' AS BIGINT) AS TRANSACTION_ID "
                 "FROM information_schema.loads WHERE DB_NAME = %s AND LABEL = %s LIMIT 2",
                 (target.database, target.label),
             )
@@ -97,4 +120,41 @@ class TargetCommitVerifier:
             rows = [dict(zip(columns, row, strict=True)) for row in result["rows"]]
         except Exception:  # Evidence unavailable is never permission to replay.
             return CommitReceipt(TargetOutcome.VERIFICATION_REQUIRED, "evidence_unavailable")
-        return interpret_receipt(target, rows)
+        receipt = interpret_receipt(target, rows)
+        if receipt.outcome == TargetOutcome.VISIBLE or receipt.reason not in {
+            "transaction_verification_required", "nonterminal_evidence",
+        } or receipt.transaction_id is None:
+            return receipt
+        database = "`" + target.database.replace("`", "``") + "`"
+        try:
+            result = await self._read(
+                f"SHOW TRANSACTION FROM {database} WHERE ID = %s", (receipt.transaction_id,)
+            )
+            transactions = [
+                dict(zip(result["columns"], row, strict=True)) for row in result["rows"]
+            ]
+            if len(transactions) != 1:
+                return CommitReceipt(TargetOutcome.VERIFICATION_REQUIRED, "transaction_unavailable")
+            transaction = transactions[0]
+            if (
+                int(transaction["TransactionId"]) != receipt.transaction_id
+                or transaction["Label"] != target.label
+                or transaction["LoadJobSourceType"] != "INSERT_STREAMING"
+            ):
+                return CommitReceipt(
+                    TargetOutcome.VERIFICATION_REQUIRED, "transaction_identity_mismatch"
+                )
+        except Exception:
+            return CommitReceipt(TargetOutcome.VERIFICATION_REQUIRED, "transaction_unavailable")
+        outcomes = {
+            "VISIBLE": TargetOutcome.VISIBLE,
+            "COMMITTED": TargetOutcome.COMMITTED,
+            "ABORTED": TargetOutcome.FAILED,
+        }
+        outcome = outcomes.get(
+            transaction.get("TransactionStatus"), TargetOutcome.VERIFICATION_REQUIRED
+        )
+        return CommitReceipt(
+            outcome, "verified_transaction", receipt.load_id,
+            receipt.sink_rows, receipt.transaction_id,
+        )

@@ -494,9 +494,13 @@ async def init_nova_system() -> None:
 
         await ensure_schema()
         from app.modules.streams.claims import CLAIMS_DDL
-        from app.modules.streams.repository import STREAMS_DDL
+        from app.modules.streams.journal import CONSUMPTION_OPERATIONS_DDL, CONSUMPTIONS_DDL
+        from app.modules.streams.repository import NAMESPACE_OPERATIONS_DDL, STREAMS_DDL
 
-        for ddl in (CLAIMS_DDL, STREAMS_DDL):
+        for ddl in (
+            CLAIMS_DDL, STREAMS_DDL, NAMESPACE_OPERATIONS_DDL,
+            CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL,
+        ):
             await db.execute_system(ddl)
 
 
