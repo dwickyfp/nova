@@ -27,6 +27,7 @@ EXPECTED_SKILLS = {
     "create-user",
     "debug-sql",
     "native-ml",
+    "nova-streams",
     "scope-boundary",
     "sql-reference",
     "stage-query",
