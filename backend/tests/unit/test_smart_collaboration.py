@@ -830,3 +830,24 @@ async def test_smart_can_fetch_data_after_a_chart_request_found_none():
     alone = await data_to_chart_tool.run(
         call, SimpleNamespace(last_result=None, collaboration_root=False))
     assert not alone.ok and not alone.recoverable
+
+
+def test_a_smart_chart_of_two_measures_draws_both():
+    from app.modules.agents.tools.data_to_chart import _two_measure_spec, sanitize_chart_spec
+
+    columns = ["department", "total_expense", "active_headcount"]
+    rows = [["Sales", "12404000000.00", 23], ["Finance", "11553000000.00", 22]]
+    one = {"mark": "bar", "encoding": {
+        "x": {"field": "active_headcount", "type": "quantitative"},
+        "y": {"field": "department", "type": "nominal"},
+    }}
+    both = _two_measure_spec(columns, rows, "Expense and headcount", one)
+    drawn = {channel["field"] for channel in both["encoding"].values()}
+    assert drawn == set(columns)
+    assert sanitize_chart_spec(both, title="Expense and headcount")["encoding"] == both["encoding"]
+    # A spec that already draws both, or a table that is not label + two measures, is kept.
+    scatter = {"mark": "point", "encoding": {
+        "x": {"field": "total_expense"}, "y": {"field": "active_headcount"},
+    }}
+    assert _two_measure_spec(columns, rows, "t", scatter) is None
+    assert _two_measure_spec(columns[:2], [row[:2] for row in rows], "t", one) is None

@@ -387,7 +387,10 @@ takes the result's own period and measure columns, matches a period by prefix
 (`2026-04` is the row labelled `2026-04-01 00:00:00`), lists both period totals
 with the contributions, and a call it cannot use is recoverable. The semantic
 planner plans two named periods as one range grouped by their unit, not as a
-previous-period comparison of the whole range. When a turn that needs a
+previous-period comparison of the whole range; a plan that still compares a range
+of exactly two whole months with the period before is read as those two months.
+A Smart chart of a label and two measures draws both, as bar length and colour,
+when the designed spec drew one. When a turn that needs a
 diagnosis gets a result of two periods broken down by one to three dimensions,
 the loop runs `diagnose_change` on it without a model call. A change the answer
 states is accepted when a result holds it as a cell of the same sign, a computed
