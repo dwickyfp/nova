@@ -40,6 +40,9 @@ QUERIES = {
         "GROUP BY job_level ORDER BY job_level",
     "expense_april_2026": MONTH.format(start="2026-04-01", end="2026-05-01"),
     "expense_may_2026": MONTH.format(start="2026-05-01", end="2026-06-01"),
+    "expense_by_month":
+        f"SELECT DATE_FORMAT(entry_date, '%Y-%m'), SUM(amount) FROM {LEDGER} "
+        "WHERE account_type='Expense' GROUP BY 1 ORDER BY 1",
     "expense_change_april_to_may_2026_by_category": CHANGE.format(by="category"),
     "expense_change_april_to_may_2026_by_department": CHANGE.format(by="department"),
 }

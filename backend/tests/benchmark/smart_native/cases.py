@@ -68,9 +68,9 @@ CASES = (
          "gold, with the right direction.",
          ("expense_growth_april_to_may_2026",)),
     Case("why", ("Kenapa total expense Mei 2026 berubah dibanding April 2026?",),
-         "States how total expense moved between April and May 2026 and names the departments "
-         "or categories that drove the change, from data. It must not refuse or speculate "
-         "without figures.",
+         "States how total expense moved between April and May 2026 and names what drove the "
+         "change, from data: a breakdown by category, by department, or by both is each a "
+         "complete answer. It must not refuse or speculate without figures.",
          ("expense_april_2026", "expense_may_2026"),
          reference=("expense_change_april_to_may_2026_by_category",
                     "expense_change_april_to_may_2026_by_department")),
@@ -83,7 +83,11 @@ CASES = (
          ("expense_2025_by_department", "active_headcount_by_department"), ("chart",)),
     Case("forecast", ("Prediksi total expense untuk 3 bulan ke depan",),
          "Gives predicted total expense for the next three months from the forecast shown, in "
-         "plain words. It must not refuse.", direct=("finance",)),
+         "plain words. The data ends in September 2026, so the months are October, November "
+         "and December 2026; any other months are wrong. It must not refuse. The predicted "
+         "values come from a model and have no gold: judge them as plausible against the "
+         "monthly history in GOLD, and hold any past month the answer states to GOLD.",
+         reference=("expense_by_month",), direct=("finance",)),
     Case("forecast_unavailable", ("Prediksi jumlah karyawan aktif untuk 6 bulan ke depan",),
          "Says plainly that forecasting is not set up for the employee data yet, invents no "
          "predicted numbers, and offers what it can answer."),
