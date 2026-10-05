@@ -71,7 +71,10 @@ async def test_ranger_outage_never_uses_native_grants(monkeypatch):
     native.assert_not_awaited()
 
 
-async def test_semantic_probes_batch_without_sharing_delegated_connections(monkeypatch):
+@pytest.mark.parametrize("source_count", [1, 4, 8, 23])
+async def test_semantic_probes_batch_without_sharing_delegated_connections(
+    monkeypatch, source_count,
+):
     import asyncio
     from types import SimpleNamespace
 
@@ -92,7 +95,9 @@ async def test_semantic_probes_batch_without_sharing_delegated_connections(monke
         return SimpleNamespace(error=None)
 
     monkeypatch.setattr(query_service, "execute", probe)
-    definition = {"datasets": [{"source": f"sales.table_{index}"} for index in range(23)]}
+    definition = {
+        "datasets": [{"source": f"sales.table_{index}"} for index in range(source_count)]
+    }
     user = {
         "username": "reader",
         "encrypted_password": "opaque",
@@ -102,7 +107,7 @@ async def test_semantic_probes_batch_without_sharing_delegated_connections(monke
     }
     with delegated_connection("reader", object()):
         assert await SemanticViewService._source_access(definition, user)
-    assert peak == 1 and len(calls) == 23
+    assert peak == 1 and len(calls) == source_count
     assert all(
         call["security_context_version"] == 7 and call["session_id"] == "current" for call in calls
     )
@@ -112,8 +117,10 @@ async def test_semantic_probes_batch_without_sharing_delegated_connections(monke
     )
     assert all(call["max_rows"] == 0 for call in calls)
     calls.clear()
+    peak = 0
     assert await SemanticViewService._source_access(definition, user)
-    assert peak == 3
+    assert len(calls) == source_count
+    assert peak == min(4, source_count)
 
 
 async def test_semantic_source_timeout_cancels_work_and_never_grants_access(monkeypatch):

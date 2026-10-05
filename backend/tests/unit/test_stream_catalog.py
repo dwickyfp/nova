@@ -95,6 +95,7 @@ async def test_losing_or_uncertain_claim_cannot_publish():
     repo = StreamRepository(execute)
     record = StreamRecord(NAME, 0, "id", SOURCE, "source", "reader", ChangeCursor(1, 2))
     repo.current = AsyncMock(return_value=None)
+    repo._prepare = AsyncMock()
     repo.claims.acquire = AsyncMock(return_value=ClaimResult(ClaimOutcome.VERIFICATION_REQUIRED))
     with pytest.raises(StreamError, match="verification"):
         await repo.publish(record)
@@ -106,6 +107,7 @@ async def test_exact_readback_recovers_namespace_response_loss():
     repo = StreamRepository(execute)
     record = StreamRecord(NAME, 0, "id", SOURCE, "source", "reader", ChangeCursor(1, 2))
     repo.current = AsyncMock(return_value=record)
+    repo._prepare = AsyncMock()
     repo.claims.acquire = AsyncMock(return_value=ClaimResult(ClaimOutcome.ACQUIRED))
     assert await repo.publish(record) == record
     repo.current.return_value = replace(record, stream_id="different")
@@ -140,3 +142,48 @@ async def test_missing_and_tombstoned_streams(catalog, dropped):
         assert error.value.code == "STREAM_NOT_FOUND"
     await catalog.drop(NAME, if_exists=True)
     catalog.repository.publish.assert_not_awaited()
+
+
+async def test_namespace_recovery_uses_winner_facts_not_new_request():
+    from app.modules.streams.claims import Claim
+    from app.modules.streams.schemas import operation_id
+
+    record = StreamRecord(NAME, 0, "first", SOURCE, "source", "reader", ChangeCursor(1, 2))
+    claim = Claim(operation_id("stream_namespace", *NAME.key), 0, 0, "a" * 64,
+                  operation_id(*record.values))
+    repo = StreamRepository(AsyncMock())
+    repo.claims.inspect = AsyncMock(return_value=ClaimResult(ClaimOutcome.EXISTING, claim))
+    repo._operation = AsyncMock(return_value=record)
+    repo.current = AsyncMock(return_value=None)
+    repo._publish_winner = AsyncMock(return_value=record)
+    assert await repo.recover_namespace(NAME, 0) == record
+    repo._operation.assert_awaited_once_with(claim.operation_digest)
+    repo._publish_winner.assert_awaited_once_with(record, claim)
+
+
+@pytest.mark.parametrize("fault", ["no_claim", "no_facts", "wrong_name", "wrong_generation", "gap"])
+async def test_namespace_recovery_blocks_incomplete_or_inconsistent_facts(fault):
+    from app.modules.streams.claims import Claim
+    from app.modules.streams.schemas import operation_id
+
+    record = StreamRecord(NAME, 0, "first", SOURCE, "source", "reader", ChangeCursor(1, 2))
+    generation = 2 if fault == "gap" else 0
+    if fault in {"wrong_generation", "gap"}:
+        record = replace(record, generation=2)
+    if fault == "wrong_name":
+        record = replace(record, name=SOURCE)
+    claim = Claim(operation_id("stream_namespace", *NAME.key), 0, generation, "a" * 64,
+                  operation_id(*record.values))
+    result = ClaimResult(ClaimOutcome.EXISTING, claim) if fault != "no_claim" else ClaimResult(
+        ClaimOutcome.VERIFICATION_REQUIRED
+    )
+    repo = StreamRepository(AsyncMock())
+    repo.claims.inspect = AsyncMock(return_value=result)
+    repo._operation = AsyncMock(return_value=record)
+    if fault == "no_facts":
+        repo._operation.side_effect = StreamError("STREAM_NAMESPACE_BUSY", "Missing facts")
+    repo.current = AsyncMock(return_value=None)
+    repo._publish_winner = AsyncMock()
+    with pytest.raises(StreamError):
+        await repo.recover_namespace(NAME, generation)
+    repo._publish_winner.assert_not_awaited()

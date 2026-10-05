@@ -83,6 +83,64 @@ async def load_receipt(database, label):
     return rows[0]
 
 
+async def metadata(sql, params):
+    conn = await connect()
+    try:
+        async with conn.cursor() as cursor:
+            await cursor.execute(sql, params)
+            return {
+                "columns": [column[0] for column in cursor.description],
+                "rows": await cursor.fetchall(),
+            }
+    finally:
+        conn.close()
+
+
+async def test_receipt_binds_restricted_writer_principal_and_target(source):
+    import secrets
+    from dataclasses import replace
+
+    principal = "stream_writer_" + uuid4().hex[:12]
+    role = "stream_role_" + uuid4().hex[:12]
+    password = secrets.token_urlsafe(24)
+    label = "nova_restricted_" + uuid4().hex
+    await execute(f"CREATE ROLE `{role}`")
+    try:
+        await execute(f"CREATE USER '{principal}' IDENTIFIED BY %s", (password,))
+        try:
+            await execute(f"GRANT INSERT ON TABLE `{source}`.target TO ROLE `{role}`")
+            await execute(f"GRANT `{role}` TO USER '{principal}'")
+            connection = await asyncmy.connect(
+                host=os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1"),
+                port=engine_port(
+                    os.getenv("NOVA_ORCH_SR_PORT"), "NOVA_TEST_FE_MYSQL_PORT", 29030
+                ),
+                user=principal, password=password, autocommit=True, connect_timeout=10,
+            )
+            try:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(f"SET ROLE `{role}`")
+                    await cursor.execute(
+                        f"INSERT INTO `{source}`.target WITH LABEL {label} VALUES (1, 'caller')"
+                    )
+            finally:
+                connection.close()
+            target = TargetIdentity(source, "target", label, principal)
+            verifier = TargetCommitVerifier(metadata)
+            receipt = await verifier.verify(target)
+            assert receipt.outcome == TargetOutcome.VISIBLE
+            assert receipt.transaction_id is not None
+            for altered in (replace(target, principal="root"), replace(target, table="claims")):
+                refused = await verifier.verify(altered)
+                assert refused.outcome == TargetOutcome.VERIFICATION_REQUIRED
+                assert refused.reason == "identity_mismatch"
+            assert await execute(f"SELECT COUNT(*) AS n FROM `{source}`.target") == ({"n": 1},)
+        finally:
+            await execute(f"DROP USER '{principal}'")
+    finally:
+        await execute(f"DROP ROLE `{role}`")
+
+
 async def test_committed_label_recovers_without_target_replay(source):
     label = "nova_consume_" + uuid4().hex
     await execute(f"INSERT INTO `{source}`.target WITH LABEL {label} VALUES (1, 'first')")
@@ -90,14 +148,16 @@ async def test_committed_label_recovers_without_target_replay(source):
     receipt = await load_receipt(source, label)
     assert receipt["STATE"] == "FINISHED", receipt
     assert receipt["TABLE_NAME"] == "target", receipt
-    async def metadata(sql, params):
-        rows = await execute(sql, params)
-        return {"columns": list(rows[0]), "rows": [list(row.values()) for row in rows]}
-
     verified = await TargetCommitVerifier(metadata).verify(
         TargetIdentity(source, "target", label, os.getenv("NOVA_ORCH_SR_USER", "root"))
     )
     assert verified.outcome == TargetOutcome.VISIBLE
+    assert verified.transaction_id is not None
+    transaction = await execute(
+        f"SHOW TRANSACTION FROM `{source}` WHERE ID = %s", (verified.transaction_id,)
+    )
+    assert transaction[0]["TransactionStatus"] == "VISIBLE"
+    assert transaction[0]["Label"] == label
     with pytest.raises(asyncmy.errors.Error):
         await execute(f"INSERT INTO `{source}`.target WITH LABEL {label} VALUES (2, 'replay')")
     assert await execute(f"SELECT id, payload FROM `{source}`.target") == (
@@ -114,6 +174,87 @@ async def test_successful_filtered_insert_has_recoverable_receipt(source):
     assert receipt["STATE"] == "FINISHED", receipt
     assert receipt["TABLE_NAME"] == "target", receipt
     assert await execute(f"SELECT COUNT(*) AS n FROM `{source}`.target") == ({"n": 0},)
+
+
+async def test_running_insert_and_cancellation_require_transaction_evidence(source):
+    label = "nova_cancel_" + uuid4().hex
+    await execute(f"INSERT INTO `{source}`.target VALUES (1, 'seed')")
+    conn = await connect()
+    task = None
+    try:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT CONNECTION_ID()")
+            connection_id = int((await cursor.fetchone())[0])
+
+        async def submit():
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    f"INSERT INTO `{source}`.target WITH LABEL {label} "
+                    f"SELECT id + sleep(20), payload FROM `{source}`.target"
+                )
+
+        task = asyncio.create_task(submit())
+        target = TargetIdentity(source, "target", label, os.getenv("NOVA_ORCH_SR_USER", "root"))
+        verifier = TargetCommitVerifier(metadata)
+        async with asyncio.timeout(10):
+            while True:
+                receipt = await verifier.verify(target)
+                if receipt.transaction_id is not None:
+                    break
+                await asyncio.sleep(0.05)
+        assert receipt.outcome == TargetOutcome.VERIFICATION_REQUIRED
+        await execute(f"KILL QUERY {connection_id}")
+        with pytest.raises(asyncmy.errors.Error):
+            await asyncio.wait_for(task, timeout=10)
+        failed = await verifier.verify(target)
+        assert failed.outcome == TargetOutcome.FAILED
+        assert failed.transaction_id == receipt.transaction_id
+        assert failed.load_id == receipt.load_id
+        assert await execute(f"SELECT id, payload FROM `{source}`.target") == (
+            {"id": 1, "payload": "seed"},
+        )
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        conn.close()
+
+
+async def test_committed_transaction_is_distinct_from_visible_data(source):
+    if os.getenv("NOVA_STREAM_GATE_DELAYED_PUBLICATION") != "1":
+        pytest.skip("Requires an isolated FE with delayed publication")
+    config = await execute("ADMIN SHOW FRONTEND CONFIG LIKE 'publish_version_interval_ms'")
+    assert int(config[0]["Value"]) >= 10000, "Publication delay is not configured"
+    label = "nova_visibility_" + uuid4().hex
+    target = TargetIdentity(source, "target", label, os.getenv("NOVA_ORCH_SR_USER", "root"))
+    verifier = TargetCommitVerifier(metadata)
+    task = asyncio.create_task(execute(
+        f"INSERT INTO `{source}`.target WITH LABEL {label} VALUES (1, 'pending')"
+    ))
+    try:
+        async with asyncio.timeout(15):
+            while True:
+                receipt = await verifier.verify(target)
+                if receipt.outcome != TargetOutcome.VERIFICATION_REQUIRED:
+                    break
+                await asyncio.sleep(0.05)
+        assert receipt.outcome == TargetOutcome.COMMITTED
+        assert receipt.transaction_id is not None
+        assert await execute(f"SELECT COUNT(*) AS n FROM `{source}`.target") == ({"n": 0},)
+        await asyncio.wait_for(task, timeout=90)
+        async with asyncio.timeout(90):
+            while True:
+                visible = await verifier.verify(target)
+                if visible.outcome == TargetOutcome.VISIBLE:
+                    break
+                await asyncio.sleep(0.1)
+        assert visible.transaction_id == receipt.transaction_id
+        assert visible.load_id == receipt.load_id
+        assert await execute(f"SELECT COUNT(*) AS n FROM `{source}`.target") == ({"n": 1},)
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_label_arbitrates_different_claimants(source):
@@ -301,6 +442,7 @@ async def test_expired_label_cannot_overwrite_durable_claim(source):
             "SELECT 1, 'first' WHERE NOT EXISTS "
             f"(SELECT 1 FROM `{source}`.claims WHERE generation = 1)"
         )
+        first = await load_receipt(source, label)
         # Wait for actual receipt eviction, not an assumed sleep duration.
         for _ in range(30):
             rows = await execute(
@@ -317,8 +459,87 @@ async def test_expired_label_cannot_overwrite_durable_claim(source):
             "SELECT 1, 'late_worker' WHERE NOT EXISTS "
             f"(SELECT 1 FROM `{source}`.claims WHERE generation = 1)"
         )
+        renewed = await load_receipt(source, label)
+        assert renewed["ID"] != first["ID"], "The label was not actually reused"
         assert await execute(f"SELECT generation, winner FROM `{source}`.claims") == (
             {"generation": 1, "winner": "first"},
         )
     finally:
         await execute(f'ADMIN SET FRONTEND CONFIG ("label_keep_max_second" = "{original}")')
+
+
+async def test_distinct_consumptions_share_one_durable_stream_generation(source):
+    from dataclasses import replace
+
+    from app.modules.streams.claims import CLAIMS_DDL, ClaimRepository
+    from app.modules.streams.consumption import (
+        Consumption,
+        ConsumptionState,
+        StreamConsumptionService,
+    )
+    from app.modules.streams.journal import (
+        CONSUMPTION_OPERATIONS_DDL,
+        CONSUMPTIONS_DDL,
+        StarRocksConsumptionJournal,
+    )
+    from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, StreamError, operation_id
+
+    async def isolated_metadata(sql, params=()):
+        conn = await connect()
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql.replace("NOVA_SYSTEM.", f"`{source}`."), params)
+                return {
+                    "columns": [column[0] for column in cursor.description or ()],
+                    "rows": await cursor.fetchall() if cursor.description else (),
+                    "affected": cursor.rowcount,
+                }
+        finally:
+            conn.close()
+
+    for ddl in (CLAIMS_DDL, CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL):
+        await isolated_metadata(ddl)
+    stream_id = operation_id(source, "stream")
+    first = Consumption(
+        operation_id(source, "consume_first"), stream_id, 0,
+        ChangeSnapshot(source, ChangeCursor(1, 0), ChangeCursor(1, 1), 1),
+        TargetIdentity(source, "target", "nova_first", "root"), operation_id("first SQL"),
+    )
+    second = replace(
+        first, consume_id=operation_id(source, "consume_second"),
+        target=replace(first.target, label="nova_second"),
+        operation_digest=operation_id("second SQL"),
+    )
+    journal = StarRocksConsumptionJournal(isolated_metadata)
+    services = [
+        StreamConsumptionService(
+            ClaimRepository(isolated_metadata), journal, TargetCommitVerifier(metadata)
+        )
+        for _ in range(2)
+    ]
+
+    async def submit(consume):
+        await execute(
+            f"INSERT INTO `{source}`.target WITH LABEL {consume.target.label} VALUES (1, 'row')"
+        )
+
+    results = await asyncio.gather(*(
+        service.dispatch(consume, attempt_id=operation_id(source, str(index)), submit=submit)
+        for index, (service, consume) in enumerate(zip(services, (first, second), strict=True))
+    ), return_exceptions=True)
+    assert results.count(ConsumptionState.OFFSET_COMMITTED) == 1, results
+    assert sum(isinstance(result, StreamError) for result in results) == 1, results
+    assert await execute(f"SELECT COUNT(*) AS n FROM `{source}`.target") == ({"n": 1},)
+    assert await journal.committed_cursor(stream_id, first.snapshot.after) == first.snapshot.through
+
+    async def expired_engine_evidence(sql, params):
+        raise AssertionError("Persisted terminal evidence must suffice for recovery")
+
+    restarted = StreamConsumptionService(
+        ClaimRepository(isolated_metadata), StarRocksConsumptionJournal(isolated_metadata),
+        TargetCommitVerifier(expired_engine_evidence),
+    )
+    assert await restarted.recover_claim(
+        first.decision_claim(operation_id(source, "restarted"), "submit")
+    ) == ConsumptionState.OFFSET_COMMITTED
+    assert await execute(f"SELECT COUNT(*) AS n FROM `{source}`.target") == ({"n": 1},)

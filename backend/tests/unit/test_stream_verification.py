@@ -35,9 +35,9 @@ def test_nonterminal_state_never_authorizes_cursor_advance(state):
     assert receipt.outcome == TargetOutcome.VERIFICATION_REQUIRED
 
 
-def test_cancelled_is_definitive_failure():
+def test_cancelled_load_without_transaction_evidence_remains_uncertain():
     assert interpret_receipt(TARGET, [{**ROW, "STATE": "CANCELLED"}]).outcome == (
-        TargetOutcome.FAILED
+        TargetOutcome.VERIFICATION_REQUIRED
     )
 
 
@@ -93,3 +93,67 @@ async def test_reader_error_is_redacted_and_unknown():
     result = await TargetCommitVerifier(read).verify(TARGET)
     assert result.outcome == TargetOutcome.VERIFICATION_REQUIRED
     assert "private-storage-secret" not in repr(result)
+
+
+@pytest.mark.parametrize("job_state", ["CANCELLED", "LOADING"])
+@pytest.mark.parametrize("state,outcome", [
+    ("ABORTED", TargetOutcome.FAILED),
+    ("COMMITTED", TargetOutcome.COMMITTED),
+    ("VISIBLE", TargetOutcome.VISIBLE),
+    ("PREPARE", TargetOutcome.VERIFICATION_REQUIRED),
+])
+async def test_transaction_evidence_controls_terminal_outcome(job_state, state, outcome):
+    calls = []
+    load = {**ROW, "STATE": job_state, "TRANSACTION_ID": 987}
+    transaction = {
+        "TransactionId": "987", "Label": TARGET.label,
+        "LoadJobSourceType": "INSERT_STREAMING", "TransactionStatus": state,
+        "Reason": "private-storage-secret",
+    }
+
+    async def read(sql, params):
+        calls.append((sql, params))
+        row = load if len(calls) == 1 else transaction
+        return {"columns": list(row), "rows": [list(row.values())]}
+
+    receipt = await TargetCommitVerifier(read).verify(TARGET)
+    assert receipt.outcome == outcome
+    assert receipt.load_id == 123
+    assert receipt.transaction_id == 987
+    assert calls[1] == ("SHOW TRANSACTION FROM `sales` WHERE ID = %s", (987,))
+    assert "private-storage-secret" not in repr(receipt)
+
+
+@pytest.mark.parametrize("transaction_id", [None, -1, "invalid", 456])
+def test_known_transaction_identity_must_match(transaction_id):
+    receipt = interpret_receipt(
+        replace(TARGET, transaction_id=987), [{**ROW, "TRANSACTION_ID": transaction_id}]
+    )
+    assert receipt.outcome == TargetOutcome.VERIFICATION_REQUIRED
+
+
+@pytest.mark.parametrize(
+    "fault", ["missing", "duplicate", "error", "label", "id", "source", "state"]
+)
+async def test_cancelled_load_does_not_release_fence_with_invalid_transaction(fault):
+    load = {**ROW, "STATE": "CANCELLED", "TRANSACTION_ID": 987}
+    transaction = {
+        "TransactionId": "987", "Label": TARGET.label,
+        "LoadJobSourceType": "INSERT_STREAMING", "TransactionStatus": "ABORTED",
+    }
+    for key, field in {"label": "Label", "id": "TransactionId", "source": "LoadJobSourceType",
+                       "state": "TransactionStatus"}.items():
+        if fault == key:
+            transaction[field] = "other"
+
+    async def read(sql, params):
+        if sql.startswith("SELECT"):
+            return {"columns": list(load), "rows": [list(load.values())]}
+        if fault == "error":
+            raise OSError("private-storage-secret")
+        count = 0 if fault == "missing" else 2 if fault == "duplicate" else 1
+        return {"columns": list(transaction), "rows": [list(transaction.values())] * count}
+
+    receipt = await TargetCommitVerifier(read).verify(TARGET)
+    assert receipt.outcome == TargetOutcome.VERIFICATION_REQUIRED
+    assert "private-storage-secret" not in repr(receipt)

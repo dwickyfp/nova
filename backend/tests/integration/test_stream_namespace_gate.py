@@ -8,7 +8,12 @@ import pytest
 
 from app.modules.streams.claims import CLAIMS_DDL
 from app.modules.streams.namespace import StreamName
-from app.modules.streams.repository import STREAMS_DDL, StreamRecord, StreamRepository
+from app.modules.streams.repository import (
+    NAMESPACE_OPERATIONS_DDL,
+    STREAMS_DDL,
+    StreamRecord,
+    StreamRepository,
+)
 from app.modules.streams.schemas import ChangeCursor, StreamError, operation_id
 from tests.integration import test_stream_durability_gate as gate
 
@@ -38,7 +43,11 @@ async def test_fresh_upgrade_repeat_and_concurrent_namespace_claim(source):
         for sql in migration.read_text().split(";"):
             if sql.strip():
                 await execute(sql)
-        for ddl in (CLAIMS_DDL, STREAMS_DDL):
+        recovery = migration.with_name("20261005_stream_namespace_recovery.sql")
+        for sql in recovery.read_text().split(";"):
+            if sql.strip():
+                await execute(sql)
+        for ddl in (CLAIMS_DDL, STREAMS_DDL, NAMESPACE_OPERATIONS_DDL):
             await execute(ddl)
 
     name = StreamName(source, "orders_stream")
@@ -69,3 +78,59 @@ async def test_fresh_upgrade_repeat_and_concurrent_namespace_claim(source):
     with pytest.raises(StreamError):
         await repositories[0].publish(winner)
     assert await repositories[0].current(name) == recreated
+
+
+async def test_crash_after_claim_recovers_immutable_namespace_winner(source, monkeypatch):
+    async def execute(sql, params=()):
+        return await executor(source, sql, params)
+
+    for ddl in (CLAIMS_DDL, STREAMS_DDL, NAMESPACE_OPERATIONS_DDL):
+        await execute(ddl)
+    record = StreamRecord(
+        StreamName(source, "crash_stream"), 0, operation_id("winner"),
+        StreamName(source, "target"), operation_id("source"), "reader", ChangeCursor(1, 0),
+    )
+    writer = StreamRepository(execute)
+
+    async def crash(*args):
+        raise ConnectionError("worker stopped after claim")
+
+    monkeypatch.setattr(writer, "_publish_winner", crash)
+    with pytest.raises(ConnectionError):
+        await writer.publish(record)
+    recovery = StreamRepository(execute)
+    assert await recovery.current(record.name) is None
+    assert await recovery.recover_namespace(record.name, 0) == record
+    assert await recovery.recover_namespace(record.name, 0) == record
+    assert await recovery.current(record.name) == record
+    with pytest.raises(StreamError):
+        await recovery.publish(replace(record, stream_id=operation_id("losing retry")))
+    assert await recovery.current(record.name) == record
+
+
+async def test_upgrade_preserves_published_legacy_namespace_rows(source):
+    async def execute(sql, params=()):
+        return await executor(source, sql, params)
+
+    migration = Path(__file__).parents[2] / "migrations/20261005_stream_namespace.sql"
+    for sql in migration.read_text().split(";"):
+        if sql.strip():
+            await execute(sql)
+    legacy = StreamRecord(
+        StreamName(source, "legacy_stream"), 0, operation_id("legacy identity"),
+        StreamName(source, "target"), operation_id("legacy source"), "reader", ChangeCursor(2, 7),
+    )
+    await execute(
+        "INSERT INTO NOVA_SYSTEM.CONFIG_STREAMS VALUES ("
+        + ",".join(["%s"] * 13) + ",NOW())", legacy.values,
+    )
+    for _ in range(2):
+        recovery = migration.with_name("20261005_stream_namespace_recovery.sql")
+        for sql in recovery.read_text().split(";"):
+            if sql.strip():
+                await execute(sql)
+    repository = StreamRepository(execute)
+    assert await repository.current(legacy.name) == legacy
+    dropped = replace(legacy, generation=1, status="DROPPED")
+    assert await repository.publish(dropped) == dropped
+    assert await repository.current(legacy.name) == dropped

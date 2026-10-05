@@ -268,8 +268,8 @@ class SemanticViewService:
                 return all(
                     await asyncio.gather(
                         *(
-                            check_sources(sources[index : index + 8])
-                            for index in range(0, len(sources), 8)
+                            check_sources([source])
+                            for source in sources
                         )
                     )
                 )
