@@ -496,6 +496,14 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
             if item["run_id"] == root_run_id and item["type"] == "agent_completed":
                 answer = str(item["payload"].get("answer") or "")
                 if base + 1 > after:
+                    for artifact in item["payload"].get("artifacts") or []:
+                        kind = artifact.get("kind")
+                        if kind in {"table", "chart"}:
+                            yield _auto_frame(kind, {
+                                **{name: value for name, value in artifact.items()
+                                   if name != "kind"},
+                                "run_id": root_run_id, "sequence": base + 1,
+                            })
                     yield _auto_frame(
                         "text_delta",
                         {

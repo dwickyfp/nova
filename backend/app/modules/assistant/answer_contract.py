@@ -827,38 +827,53 @@ def check_comparisons(
         if claim.kind != "comparison" or not claim.relation or not claim.labels:
             continue
         names = [label.casefold() for label in claim.labels]
+        # Several results can hold the same rows (expense and headcount by department).
+        # The statement is wrong only when no measure it could mean supports it.
+        correction: str | None = None
         for values in _label_values(tables, claim.column):
             if not all(name in values for name in names):
                 continue
-            first = names[0]
-            if claim.relation in {"greater", "less"} and len(names) >= 2:
-                second = names[1]
-                holds = (
-                    values[first] > values[second] if claim.relation == "greater"
-                    else values[first] < values[second]
-                )
-                if not holds and values[first] != values[second]:
-                    winner, loser = (
-                        (first, second) if values[first] > values[second] else (second, first)
-                    )
-                    errors.append(ComparisonError(
-                        claim.text,
-                        f"{_display_label(answer, winner)} "
-                        f"({format_number(values[winner], language, _places(values[winner]))}) > "
-                        f"{_display_label(answer, loser)} "
-                        f"({format_number(values[loser], language, _places(values[loser]))})",
-                    ))
-            elif claim.relation in {"max", "min"}:
-                top = claim.relation == "max"
-                best = max(values, key=values.get) if top else min(values, key=values.get)
-                if values[first] != values[best]:
-                    errors.append(ComparisonError(claim.text, say(
-                        "verify.is_highest" if top else "verify.is_lowest", language,
-                        label=_display_label(answer, best),
-                        value=format_number(values[best], language, _places(values[best])),
-                    )))
-            break
+            found = _comparison_error(answer, claim, names, values, language)
+            if found is None:
+                correction = None
+                break
+            correction = correction or found
+        if correction is not None:
+            errors.append(ComparisonError(claim.text, correction))
     return errors
+
+
+def _comparison_error(
+    answer: str, claim: Claim, names: list[str], values: dict[str, Decimal], language: str
+) -> str | None:
+    """What the cells support instead of the claim, or ``None`` when it holds."""
+    first = names[0]
+    if claim.relation in {"greater", "less"} and len(names) >= 2:
+        second = names[1]
+        holds = (
+            values[first] > values[second] if claim.relation == "greater"
+            else values[first] < values[second]
+        )
+        if holds or values[first] == values[second]:
+            return None
+        winner, loser = (first, second) if values[first] > values[second] else (second, first)
+        return (
+            f"{_display_label(answer, winner)} "
+            f"({format_number(values[winner], language, _places(values[winner]))}) > "
+            f"{_display_label(answer, loser)} "
+            f"({format_number(values[loser], language, _places(values[loser]))})"
+        )
+    if claim.relation in {"max", "min"}:
+        top = claim.relation == "max"
+        best = max(values, key=values.get) if top else min(values, key=values.get)
+        if values[first] == values[best]:
+            return None
+        return say(
+            "verify.is_highest" if top else "verify.is_lowest", language,
+            label=_display_label(answer, best),
+            value=format_number(values[best], language, _places(values[best])),
+        )
+    return None
 
 
 def _display_label(answer: str, label: str) -> str:

@@ -553,3 +553,56 @@ async def test_nested_worker_restart_preserves_mailbox_and_completes_root(
         == 1
     )
     assert len(saved) == 1
+
+
+@pytest.mark.asyncio
+async def test_root_answer_carries_the_tables_and_charts_it_computed(collaboration, monkeypatch):
+    from app.modules.agents import harness_worker as module
+
+    repo, root = collaboration
+    row = repo.runs[root.root_id]
+    row.update(status="running", lease_owner="test", generation=1)
+    saved = []
+
+    async def append(*args, **kwargs):
+        saved.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(module.assistant_repository, "append_message", append)
+    monkeypatch.setattr(module.assistant_repository, "list_messages",
+                        AsyncMock(side_effect=lambda *args, **kwargs: saved))
+    artifacts = [
+        {"kind": "table", "content_id": "content-1", "title": "Expense per employee",
+         "columns": ["department", "per_employee"], "rows": [["Sales", Decimal("300.5")]]},
+        {"kind": "chart", "content_id": "content-2", "tool_call_id": "c",
+         "chart_spec": "{\"mark\":\"bar\"}"},
+    ]
+    await AgentHarnessWorker(repo)._finish_root(row, USER, "Sales spends the most.", [], {},
+                                                artifacts)
+
+    assert [step["kind"] for step in saved[0]["steps"]] == ["table", "chart"]
+    completed = next(event for event in repo.events if event["type"] == "agent_completed")
+    assert completed["payload"]["artifacts"][0]["rows"] == [["Sales", "300.5"]]
+    assert completed["payload"]["artifacts"][1]["chart_spec"] == "{\"mark\":\"bar\"}"
+
+
+@pytest.mark.asyncio
+async def test_root_withholds_artifacts_that_carry_a_credential_shape(collaboration, monkeypatch):
+    from app.modules.agents import harness_worker as module
+
+    repo, root = collaboration
+    row = repo.runs[root.root_id]
+    row.update(status="running", lease_owner="test", generation=1)
+    saved = []
+
+    async def append(*args, **kwargs):
+        saved.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(module.assistant_repository, "append_message", append)
+    monkeypatch.setattr(module.assistant_repository, "list_messages",
+                        AsyncMock(side_effect=lambda *args, **kwargs: saved))
+    leaked = [{"kind": "table", "columns": ["key"], "rows": [["sk-" + "a" * 40]]}]
+    await AgentHarnessWorker(repo)._finish_root(row, USER, "Done.", [], {}, leaked)
+    assert saved[0]["steps"] == []
+

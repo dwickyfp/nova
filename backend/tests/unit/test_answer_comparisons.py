@@ -271,3 +271,16 @@ def test_a_repeated_value_is_judged_where_it_stands():
         answer, question="Karyawan per departemen?", tables=tables, claims=claims, language="id",
     )
     assert "| Engineering | 18 |" in result.text and "| Marketing | 18 |" in result.text
+
+
+def test_a_comparison_is_wrong_only_when_no_result_it_could_mean_supports_it():
+    tables = {
+        "e1": {"columns": ["department", "total_expense"],
+               "rows": [["Sales", 124], ["Engineering", 121], ["Operations", 111]]},
+        "e2": {"columns": ["department", "active_headcount"],
+               "rows": [["Sales", 23], ["Engineering", 18], ["Operations", 22]]},
+    }
+    fewest = comparison("Engineering paling sedikit", "min", "Engineering")
+    assert not check_comparisons("Engineering paling sedikit.", tables, (fewest,))
+    wrong = comparison("Sales paling sedikit", "min", "Sales")
+    assert check_comparisons("Sales paling sedikit.", tables, (wrong,))

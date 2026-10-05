@@ -75,6 +75,8 @@ SMART_ROOT_TOKENS = 60_000
 ROOT_HISTORY_MESSAGES = 6
 ROOT_HISTORY_CHARS = 4000
 ANSWERED = frozenset({"stop", "out_of_scope", "clarification"})
+#: Tables and charts a Smart root may attach to its answer.
+MAX_ROOT_ARTIFACTS = 6
 MAX_CHILD_TOKENS = 20_000
 MAX_SESSION_SECONDS = 600
 MAX_EVIDENCE_TABLES = 3
@@ -797,9 +799,14 @@ class AgentHarnessWorker:
         answer: str,
         children: list[dict],
         usage: dict | None = None,
+        artifacts: list[dict] | None = None,
     ) -> None:
         if contains_credential_shape(answer) or is_credential_value(answer):
             answer = "The answer contained sensitive content and was withheld."
+        artifacts = artifacts or []
+        serialized = json.dumps(artifacts, default=_json_default)
+        if contains_credential_shape(serialized) or is_credential_value(serialized):
+            artifacts = []
         await self.repository.reconcile_terminal_children(root["run_id"], children)
         message_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root['run_id']}"))
         existing = await assistant_repository.list_messages(
@@ -819,6 +826,7 @@ class AgentHarnessWorker:
                 content=answer,
                 message_id=message_id,
                 agent_id=root["agent_id"],
+                steps=artifacts,
                 usage={
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
@@ -853,6 +861,8 @@ class AgentHarnessWorker:
                 "agent_completed",
                 {
                     "answer": answer,
+                    # The tables and charts the root computed, shown with its answer.
+                    "artifacts": json.loads(json.dumps(artifacts, default=_json_default)),
                 },
             )
 
@@ -1335,7 +1345,9 @@ class AgentHarnessWorker:
                     return
                 await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
                 await self._finish_root(
-                    child, user, answer, [row for row in tree if row["depth"]], context.usage
+                    child, user, answer, [row for row in tree if row["depth"]], context.usage,
+                    [step for step in context.steps or []
+                     if step.get("kind") in {"table", "chart"}][-MAX_ROOT_ARTIFACTS:],
                 )
             return
         latest_child = await self.repository.get(child["run_id"])

@@ -185,6 +185,13 @@ per unit of another. A figure that relates two specialists, such as expense per
 employee by department, is therefore computed evidence rather than model
 arithmetic.
 
+The tables and charts the root computes are saved as steps of its final message
+and travel in its `agent_completed` event, at most six, so Studio shows them with
+the answer both live and on reload. A comparison such as "the fewest" is wrong
+only when no result it could mean supports it, since two specialists often return
+the same rows for different measures. The root gives each specialist only the
+period and filters that apply to its own measure.
+
 `wait_agent`, `send_message`, `followup_task`, and `interrupt_agent` accept a
 participant's path, and also its task name, agent id, or agent name when exactly
 one participant of the collaboration answers to it.
