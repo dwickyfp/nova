@@ -2499,6 +2499,11 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#stageGluedAtom.
+    def visitStageGluedAtom(self, ctx:StarRocksParser.StageGluedAtomContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#stagePathAtom.
     def visitStagePathAtom(self, ctx:StarRocksParser.StagePathAtomContext):
         return self.visitChildren(ctx)
@@ -3456,11 +3461,6 @@ class StarRocksVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by StarRocksParser#nonReserved.
     def visitNonReserved(self, ctx:StarRocksParser.NonReservedContext):
-        return self.visitChildren(ctx)
-
-
-    # Visit a parse tree produced by StarRocksParser#novaPlanAdvisorStatement.
-    def visitNovaPlanAdvisorStatement(self, ctx:StarRocksParser.NovaPlanAdvisorStatementContext):
         return self.visitChildren(ctx)
 
 

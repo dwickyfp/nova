@@ -21,7 +21,7 @@ of the destination Stream's namespace.
 | Statement | Current behavior |
 | --- | --- |
 | `CREATE STREAM [IF NOT EXISTS] name ON TABLE source APPEND_ONLY = TRUE` | Typed action; disabled/provider-unavailable at execution |
-| `DROP STREAM [IF EXISTS] name` | Requires destructive confirmation; still unavailable after confirmation |
+| `DROP STREAM [IF EXISTS] name` | Requires destructive confirmation (a MySQL client's statement counts as confirmed); still unavailable after confirmation |
 | `DESCRIBE STREAM name` / `DESC STREAM name` | Typed action; unavailable |
 | `SHOW STREAMS` | Requires active database; unavailable |
 | `SHOW STREAM STATUS name` | Typed action; unavailable |

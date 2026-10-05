@@ -26,10 +26,13 @@ import decimal
 import logging
 import math
 from ast import literal_eval
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from app.common.sql_guard import redact_sql_credentials
+from app.core.config import settings
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
@@ -44,28 +47,31 @@ from app.proxy.protocol import (
     TYPE_DOUBLE,
     TYPE_LONGLONG,
     TYPE_NEWDECIMAL,
+    TYPE_STRING,
     TYPE_TIME,
     TYPE_VAR_STRING,
     ColumnDefinition,
 )
 from app.proxy.session import (
     HIDDEN_DATABASES,
+    PreparedSQL,
     SessionState,
+    bind_placeholders,
     handle_set_statement,
+    is_catalog_switch,
     is_show_databases,
+    parse_prepared_statement,
     parse_role_statement,
     parse_use_statement,
+    placeholder_spans,
     split_statements,
     substitute_user_variables,
+    transaction_control,
+    unquote_literal,
 )
 from app.sql_frontend.session_functions import CORRELATION_SESSION
 
 logger = logging.getLogger(__name__)
-
-#: Rows the proxy will pull per statement. Matches the HTTP API's ceiling
-#: (``backend/app/modules/query/router.py``) so the same query returns the same
-#: volume whichever surface it arrives through.
-DEFAULT_MAX_ROWS = 500
 
 _INTEGER_COLUMNS = frozenset(
     {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "largeint"}
@@ -80,6 +86,11 @@ class WireResult:
     Exactly one of ``columns``/``rows`` (a result set) or ``error`` (an ERR
     packet) is set. ``ok_affected`` is the OK-packet row count for statements
     that produced no result set.
+
+    ``preceding`` holds the responses of the earlier statements of a
+    multi-statement ``COM_QUERY``, in order. MySQL answers such a command with
+    one result per statement, so a client reading the first result must get
+    the first statement's, not the last one's.
     """
 
     columns: list[ColumnDefinition] = field(default_factory=list)
@@ -88,6 +99,7 @@ class WireResult:
     error: str | None = None
     error_code: int = 1064
     warnings: list[str] = field(default_factory=list)
+    preceding: list[WireResult] = field(default_factory=list)
 
     @property
     def is_resultset(self) -> bool:
@@ -160,6 +172,167 @@ def _column_definition(
     return ColumnDefinition(name=name, type_code=TYPE_VAR_STRING, charset=CHARSET_UTF8)
 
 
+def _client_error_code(result: QueryResult) -> int:
+    """The MySQL error number for a failed statement.
+
+    An engine failure keeps the engine's own number (unknown database, unknown
+    table, access denied, ...), which clients and drivers dispatch on.
+    """
+    code = result.engine_error_code
+    if isinstance(code, int) and 0 < code <= 65535 and not 2000 <= code < 3000:
+        return code
+    return 1235 if result.error_code == "capability_unsupported" else 1064
+
+
+def _client_message(result: QueryResult) -> str:
+    """The engine's own message; its number travels in the ERR packet."""
+    message = result.error or "Query failed"
+    prefix = f"SQL error: ({result.engine_error_code}) "
+    if result.engine_error_code is not None and message.startswith(prefix):
+        return message.removeprefix(prefix)
+    return message
+
+
+class StatementStream:
+    """One statement's response, written as it is produced.
+
+    ``begin``/``rows`` make it a ``RowSink`` for the query pipeline, so an engine
+    result set reaches the client batch by batch instead of after the whole
+    result is in memory. ``finish`` completes the response from the statement's
+    ``QueryResult``: the result-set terminator, an OK packet, or an ERR packet
+    (which may follow rows already sent, as a MySQL server's does).
+
+    Column definitions wait for the first batch so binary columns (geometry,
+    VARBINARY) can still be recognised from their values.
+    """
+
+    def __init__(
+        self,
+        sink: ResponseSink,
+        *,
+        more: bool,
+        row_limit: int,
+        row_filter: Callable[[list], bool] | None = None,
+    ) -> None:
+        self._sink = sink
+        self._more = more
+        self._row_limit = row_limit
+        self._row_filter = row_filter
+        self._names: list[str] | None = None
+        self._types: tuple[str, ...] = ()
+        self._columns: list[ColumnDefinition] | None = None
+        self._sent = 0
+        self._overflow = False
+
+    @property
+    def overflowed(self) -> bool:
+        return self._overflow
+
+    async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None:
+        self._names, self._types = list(columns), tuple(column_types)
+
+    async def rows(self, rows: list[list]) -> None:
+        if self._row_filter is not None:
+            rows = [row for row in rows if self._row_filter(row)]
+        if self._columns is None:
+            self._columns = self._definitions(rows)
+            await self._sink.columns(self._columns, more=self._more)
+        if self._overflow or not rows:
+            return
+        if self._row_limit and self._sent + len(rows) > self._row_limit:
+            # The remainder is drained by the pipeline and discarded.
+            self._overflow = True
+            return
+        self._sent += len(rows)
+        await self._sink.rows(rows, self._columns)
+
+    def _definitions(self, samples: list[list]) -> list[ColumnDefinition]:
+        names = self._names or []
+        return [
+            _column_definition(
+                name,
+                [row[index] for row in samples[:20]],
+                self._types[index] if index < len(self._types) else None,
+            )
+            for index, name in enumerate(names)
+        ]
+
+    async def finish(self, part: WireResult) -> None:
+        if self._names is None:
+            await self._sink.emit(part, more=self._more)
+            return
+        if self._columns is None:
+            await self.rows([])
+        if part.error is not None:
+            await self._sink.emit(part, more=False)
+        elif self._overflow:
+            await self._sink.emit(_row_limit_error(self._row_limit), more=False)
+        else:
+            await self._sink.end_rows(more=self._more)
+
+
+def _visible_database(row: list) -> bool:
+    return not row or str(row[0]) not in HIDDEN_DATABASES
+
+
+def _row_limit_error(limit: int) -> WireResult:
+    return WireResult(
+        error=(
+            f"Result set exceeds the Nova MySQL proxy limit of {limit} rows; "
+            "add a LIMIT clause or raise PROXY_MAX_ROWS"
+        ),
+        error_code=1235,
+    )
+
+
+class ResponseSink(Protocol):
+    """Where the responses of one ``COM_QUERY`` go, in statement order.
+
+    ``emit`` writes a complete response (OK, buffered result set or ERR); an
+    error ends the command. ``columns``/``rows``/``end_rows`` write a result set
+    incrementally. ``more`` marks every response but the last of a
+    multi-statement command.
+    """
+
+    async def emit(self, part: WireResult, *, more: bool) -> None: ...
+
+    async def columns(self, columns: list[ColumnDefinition], *, more: bool) -> None: ...
+
+    async def rows(self, rows: list[list], columns: list[ColumnDefinition]) -> None: ...
+
+    async def end_rows(self, *, more: bool) -> None: ...
+
+
+class CollectingSink:
+    """Collects responses into a ``WireResult`` chain (``preceding`` + final)."""
+
+    def __init__(self) -> None:
+        self.parts: list[WireResult] = []
+        self._open: WireResult | None = None
+
+    async def emit(self, part: WireResult, *, more: bool) -> None:
+        self.parts.append(part)
+
+    async def columns(self, columns: list[ColumnDefinition], *, more: bool) -> None:
+        self._open = WireResult(columns=list(columns))
+
+    async def rows(self, rows: list[list], columns: list[ColumnDefinition]) -> None:
+        assert self._open is not None
+        self._open.rows.extend(list(row) for row in rows)
+
+    async def end_rows(self, *, more: bool) -> None:
+        assert self._open is not None
+        self.parts.append(self._open)
+        self._open = None
+
+    def result(self) -> WireResult:
+        if not self.parts:
+            return WireResult(ok_affected=0)
+        final = self.parts[-1]
+        final.preceding = self.parts[:-1]
+        return final
+
+
 class ProxyQueryExecutor:
     """Executes client SQL through the Nova query pipeline."""
 
@@ -174,29 +347,47 @@ class ProxyQueryExecutor:
         connection,
         session_id: str | None = None,
     ) -> WireResult:
+        """Run one ``COM_QUERY`` payload and return its responses as one chain."""
+        sink = CollectingSink()
+        await self.execute_to(
+            sql, sink, username=username, connection=connection, session_id=session_id
+        )
+        return sink.result()
+
+    async def execute_to(
+        self,
+        sql: str,
+        sink: ResponseSink,
+        *,
+        username: str,
+        connection,
+        session_id: str | None = None,
+    ) -> None:
+        """Run one ``COM_QUERY`` payload, writing each response to ``sink``."""
         from app.sql_frontend.parser import parsing_scope
 
         with parsing_scope():
-            return await self._execute(
-                sql, username=username, connection=connection, session_id=session_id
+            await self._execute(
+                sql, sink, username=username, connection=connection, session_id=session_id
             )
 
     async def _execute(
         self,
         sql: str,
+        sink: ResponseSink,
         *,
         username: str,
         connection,
         session_id: str | None = None,
-    ) -> WireResult:
-        """Run one ``COM_QUERY`` payload and return the response.
+    ) -> None:
+        """Run the statements of one payload in order, as a MySQL server does.
 
-        The payload is split by the proxy first so that ``SET``, ``USE`` and
-        ``SHOW DATABASES`` can be handled locally. Everything else is handed to
-        ``QueryService.execute_statements`` *as a unit* rather than statement by
-        statement: the service already splits internally and stops at the first
-        error, and re-splitting here would double-execute the audit and guard
-        paths.
+        Session statements the proxy owns (``SET @x``, ``SET ROLE``, ``USE``)
+        apply between statements, so a later statement sees the database, role
+        and variables set before it. A script is first checked as a whole —
+        guard, syntax, semantics and session-setting refusals — so an invalid
+        statement stops it before anything runs. Each statement then runs
+        through ``QueryService`` on its own; execution stops at the first error.
 
         ``connection`` is the relay-authenticated StarRocks connection for this
         client. It is passed to the pipeline instead of a password because the
@@ -204,121 +395,255 @@ class ProxyQueryExecutor:
         """
         statements = split_statements(sql)
         if not statements:
-            return WireResult(error="Empty query", error_code=1064)
-
+            await sink.emit(WireResult(error="Empty query", error_code=1064), more=False)
+            return
         if len(statements) > 1:
-            preview = deepcopy(self._session)
-            engine_seen = False
-            for statement in statements:
-                try:
-                    context_change = (
-                        parse_role_statement(statement) is not None
-                        or parse_use_statement(statement) is not None
-                    )
-                except ValueError as exc:
-                    return WireResult(error=str(exc), error_code=1064)
-                if context_change:
-                    return WireResult(
-                        error="Send database and role changes as separate MySQL commands",
-                        error_code=1235,
-                    )
-                inspected = handle_set_statement(statement, preview)
-                if inspected.error:
-                    return WireResult(error=inspected.error, error_code=inspected.error_code)
-                if inspected.handled and engine_seen:
-                    return WireResult(
-                        error="Session assignments after queries require separate MySQL commands",
-                        error_code=1235,
-                    )
-                engine_seen = engine_seen or not inspected.handled
+            refusal = await self._preflight(statements, username=username, session_id=session_id)
+            if refusal is not None:
+                await sink.emit(refusal, more=False)
+                return
+        last = len(statements) - 1
+        for index, statement in enumerate(statements):
+            ok = await self._run_statement(
+                statement,
+                sink,
+                more=index < last,
+                username=username,
+                connection=connection,
+                session_id=session_id,
+            )
+            if not ok:
+                return
 
+    async def _preflight(
+        self, statements: list[str], *, username: str, session_id: str | None
+    ) -> WireResult | None:
+        """Refuse a script before its first statement runs."""
+        preview = deepcopy(self._session)
         engine_statements: list[str] = []
         for statement in statements:
             try:
-                requested_role = parse_role_statement(statement)
+                if parse_role_statement(statement) is not None:
+                    continue
             except ValueError as exc:
                 return WireResult(error=str(exc), error_code=1064)
-            if requested_role is not None:
-                activated = await self._activate_role(
-                    requested_role,
+            if parse_use_statement(statement) is not None:
+                engine_statements.append(statement)
+                continue
+            inspected = handle_set_statement(statement, preview)
+            if inspected.error:
+                return WireResult(error=inspected.error, error_code=inspected.error_code)
+            if inspected.handled or parse_prepared_statement(statement) is not None:
+                continue
+            engine_statements.append(statement)
+        if not engine_statements:
+            return None
+        refusal = await query_service.preflight_script(
+            engine_statements,
+            username=username,
+            database=self._session.database,
+            role=self._session.active_role,
+            session_id=session_id,
+        )
+        return None if refusal is None else self._to_wire([refusal])
+
+    async def _run_statement(
+        self,
+        statement: str,
+        sink: ResponseSink,
+        *,
+        more: bool,
+        username: str,
+        connection,
+        session_id: str | None,
+    ) -> bool:
+        """Run one statement and write its response; ``False`` stops the script."""
+        try:
+            requested_role = parse_role_statement(statement)
+        except ValueError as exc:
+            await sink.emit(WireResult(error=str(exc), error_code=1064), more=False)
+            return False
+        if requested_role is not None:
+            if self._session.in_transaction:
+                part = WireResult(
+                    error="Role changes are not allowed inside a transaction", error_code=1235
+                )
+            else:
+                part = await self._activate_role(
+                    requested_role, username=username, connection=connection
+                )
+            return await self._emit(sink, part, more)
+
+        use_result = await self._handle_use(
+            statement, username=username, connection=connection, session_id=session_id
+        )
+        if use_result is not None:
+            return await self._emit(sink, use_result, more)
+
+        set_result = handle_set_statement(statement, self._session)
+        if set_result.error:
+            part = WireResult(error=set_result.error, error_code=set_result.error_code)
+            return await self._emit(sink, part, more)
+        if set_result.handled:
+            part = WireResult()
+            if set_result.assignment is not None:
+                part = await self._assign_user_variable(
+                    *set_result.assignment,
                     username=username,
                     connection=connection,
+                    session_id=session_id,
                 )
-                if activated.error:
-                    return activated
-                continue
+            return await self._emit(sink, part, more)
 
-            use_result = await self._handle_use(
-                statement, username=username, connection=connection, session_id=session_id
+        prepared = parse_prepared_statement(statement)
+        if prepared is not None:
+            return await self._run_prepared_sql(
+                prepared, sink, more=more, username=username, connection=connection,
+                session_id=session_id,
             )
-            if use_result is not None:
-                return use_result
 
-            set_result = handle_set_statement(statement, self._session)
-            if set_result.error:
-                return WireResult(error=set_result.error, error_code=set_result.error_code)
-            if set_result.handled:
-                if set_result.assignment is not None:
-                    assigned = await self._assign_user_variable(
-                        *set_result.assignment,
-                        username=username,
-                        connection=connection,
-                        session_id=session_id,
-                    )
-                    if assigned.error:
-                        return assigned
-                continue
+        # The read half of ``SET @x = …``: substitution happens here, after the
+        # statements before it applied their assignments (NOVA-25).
+        substituted = substitute_user_variables(statement, self._session).sql
+        return await self.run_engine_statement(
+            substituted,
+            sink,
+            more=more,
+            username=username,
+            connection=connection,
+            session_id=session_id,
+            catalog_switch=is_catalog_switch(statement),
+            hide_databases=is_show_databases(statement),
+        )
 
-            # The read half of ``SET @x = …``. Substitution happens after the
-            # ``SET``/``USE`` classification so a statement the proxy owns never
-            # reaches the engine, and before it is queued so the engine sees the
-            # value rather than a reference Nova's own parser would claim as a
-            # stage (NOVA-25).
-            substituted = substitute_user_variables(statement, self._session)
-            if substituted.sql.lstrip().upper().startswith(("PREPARE ", "EXECUTE ")):
-                return WireResult(
-                    error="Prepared statements are not supported by the Nova MySQL proxy",
-                    error_code=1235,
-                )
-            engine_statements.append(substituted.sql)
-
-        if not engine_statements:
-            # Every statement was session-local (a script of ``SET``s, say).
-            return WireResult(ok_affected=0)
-
-        sql_to_run = "; ".join(engine_statements)
-
-        if len(engine_statements) == 1 and is_show_databases(engine_statements[0]):
-            return await self._show_databases(username=username, connection=connection)
-
+    async def run_engine_statement(
+        self,
+        sql: str,
+        sink: ResponseSink,
+        *,
+        more: bool,
+        username: str,
+        connection,
+        session_id: str | None,
+        catalog_switch: bool = False,
+        hide_databases: bool = False,
+    ) -> bool:
+        """Run one statement through ``QueryService``, streaming its rows."""
+        row_limit = settings.PROXY_MAX_ROWS
+        stream = StatementStream(
+            sink,
+            more=more,
+            row_limit=row_limit,
+            row_filter=_visible_database if hide_databases else None,
+        )
         correlation_token = CORRELATION_SESSION.set(self._session.correlation)
         try:
+            # A MySQL client has no confirmation exchange: the statement the user
+            # sent is the explicit request, as with any MySQL server. The guard,
+            # engine authorization and audit still apply to destructive SQL.
             results = await query_service.execute_statements(
                 source="mysql_proxy",
-                sql=sql_to_run,
+                sql=sql,
                 username=username,
                 encrypted_password="",
                 database=self._session.database,
                 role=self._session.active_role,
                 security_context_version=self._session.security_context_version,
-                max_rows=DEFAULT_MAX_ROWS,
+                max_rows=row_limit or None,
                 session_id=session_id,
+                confirm_destructive=True,
                 connection=connection,
+                client_transaction=self._session.in_transaction,
+                row_sink=stream,
             )
         except Exception as exc:
-            # A failure *outside* the per-statement loop — the connection dying,
-            # or the pipeline raising before it builds a result. The exception's
-            # own message can carry engine detail, so it is logged and the client
-            # gets a generic 1064.
+            # A failure outside the per-statement loop (the connection dying, or
+            # the pipeline raising before it builds a result). The message can
+            # carry engine detail, so it is logged and the client gets 1064.
             logger.exception("Proxy query execution failed")
-            return WireResult(
-                error=f"Query execution failed: {type(exc).__name__}", error_code=1064
-            )
-
+            results = [QueryResult(error=f"Query execution failed: {type(exc).__name__}")]
         finally:
             CORRELATION_SESSION.reset(correlation_token)
+        part = self._to_wire(results[-1:], row_limit=row_limit or None)
+        control = transaction_control(sql)
+        if control == "end":
+            self._session.in_transaction = False
+        elif control == "begin" and part.error is None:
+            self._session.in_transaction = True
+        if hide_databases and part.is_resultset:
+            part.rows = [row for row in part.rows if _visible_database(row)]
+        await stream.finish(part)
+        if part.error is None and catalog_switch:
+            # The selected database belonged to the previous catalog.
+            self._session.set_database("")
+        return part.error is None and not stream.overflowed
 
-        return self._to_wire(results)
+    async def _run_prepared_sql(
+        self,
+        command: PreparedSQL,
+        sink: ResponseSink,
+        *,
+        more: bool,
+        username: str,
+        connection,
+        session_id: str | None,
+    ) -> bool:
+        """``PREPARE``/``EXECUTE``/``DEALLOCATE PREPARE`` kept on the proxy session.
+
+        The prepared text never reaches the engine as a prepared statement:
+        ``EXECUTE`` binds the arguments as literals and runs the result like any
+        statement the client sent, so it gets the same guard, parsing,
+        authorization and audit.
+        """
+        prepared = self._session.prepared
+        if command.kind == "deallocate":
+            if prepared.pop(command.name, None) is None:
+                part = WireResult(error="Unknown prepared statement handler", error_code=1243)
+            else:
+                part = WireResult()
+            return await self._emit(sink, part, more)
+        if command.kind == "prepare":
+            source = command.source or ""
+            text = unquote_literal(source)
+            if text is None and source.startswith("@"):
+                stored = self._session.user_variables.get(source[1:].strip().lower())
+                text = unquote_literal(stored) if stored else None
+            if text is None:
+                part = WireResult(
+                    error="PREPARE needs a string literal or a string user variable",
+                    error_code=1064,
+                )
+                return await self._emit(sink, part, more)
+            if len(split_statements(text)) != 1 or parse_prepared_statement(text) is not None:
+                part = WireResult(error="A prepared statement holds one statement", error_code=1064)
+                return await self._emit(sink, part, more)
+            prepared[command.name] = text
+            return await self._emit(sink, WireResult(), more)
+        text = prepared.get(command.name)
+        if text is None:
+            part = WireResult(error="Unknown prepared statement handler", error_code=1243)
+            return await self._emit(sink, part, more)
+        arguments = [
+            self._session.user_variables.get(name)
+            or (f"@{name}" if name in self._session.engine_variables else "NULL")
+            for name in command.arguments
+        ]
+        if len(arguments) != len(placeholder_spans(text)):
+            part = WireResult(error="Incorrect arguments to EXECUTE", error_code=1210)
+            return await self._emit(sink, part, more)
+        return await self._run_statement(
+            bind_placeholders(text, arguments),
+            sink,
+            more=more,
+            username=username,
+            connection=connection,
+            session_id=session_id,
+        )
+
+    @staticmethod
+    async def _emit(sink: ResponseSink, part: WireResult, more: bool) -> bool:
+        await sink.emit(part, more=more and part.error is None)
+        return part.error is None
 
     async def _assign_user_variable(
         self, name: str, expression: str, *, username: str, connection, session_id: str | None
@@ -337,6 +662,7 @@ class ProxyQueryExecutor:
                 max_rows=2,
                 session_id=session_id,
                 connection=connection,
+                client_transaction=self._session.in_transaction,
             )
             result = self._to_wire(results)
             if result.error:
@@ -358,16 +684,52 @@ class ProxyQueryExecutor:
                 ):
                     return WireResult(error="Non-finite user-variable value", error_code=1235)
                 literal = str(value)
+            elif isinstance(value, str) and result.columns[0].type_code == TYPE_STRING:
+                # ARRAY, MAP, STRUCT, JSON and LARGEINT arrive as text with the
+                # STRING type code. A quoted literal would turn them into VARCHAR,
+                # so the engine session keeps the typed value instead.
+                return await self._assign_engine_variable(
+                    name, expression, username=username, connection=connection,
+                    session_id=session_id,
+                )
             elif isinstance(value, str):
                 literal = "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
             else:
                 return WireResult(error="Unsupported user-variable value type", error_code=1235)
             self._session.user_variables[name] = literal
+            self._session.engine_variables.discard(name)
             return WireResult()
         except Exception as exc:
             return WireResult(error=f"User-variable assignment failed: {type(exc).__name__}")
         finally:
             CORRELATION_SESSION.reset(token)
+
+    async def _assign_engine_variable(
+        self, name: str, expression: str, *, username: str, connection, session_id: str | None
+    ) -> WireResult:
+        """Store a typed value as an engine session variable.
+
+        The central parser reads ``@name`` in an expression as a user variable,
+        never a stage, so later references reach the engine unchanged and it
+        resolves them with their original type.
+        """
+        results = await query_service.execute_statements(
+            source="mysql_proxy",
+            sql=f"SET @{name} = {expression}",
+            username=username,
+            encrypted_password="",
+            database=self._session.database,
+            role=self._session.active_role,
+            security_context_version=self._session.security_context_version,
+            session_id=session_id,
+            connection=connection,
+            client_transaction=self._session.in_transaction,
+        )
+        result = self._to_wire(results)
+        if result.error is None:
+            self._session.user_variables.pop(name, None)
+            self._session.engine_variables.add(name)
+        return result
 
     async def _activate_role(self, requested: str, *, username: str, connection) -> WireResult:
         target = self._session.default_role if requested.upper() == "DEFAULT" else requested
@@ -402,9 +764,10 @@ class ProxyQueryExecutor:
                 database=self._session.database,
                 role=self._session.active_role,
                 security_context_version=self._session.security_context_version,
-                max_rows=DEFAULT_MAX_ROWS,
+                max_rows=settings.PROXY_MAX_ROWS,
                 session_id=session_id,
                 connection=connection,
+                client_transaction=self._session.in_transaction,
             )
         except Exception as exc:
             return WireResult(error=f"Database selection failed: {type(exc).__name__}")
@@ -414,87 +777,58 @@ class ProxyQueryExecutor:
         self._session.set_database(database)
         return result
 
-    async def _show_databases(self, *, username: str, connection) -> WireResult:
-        """Answer ``SHOW DATABASES`` with Nova-internal databases filtered out.
+    def _to_wire(self, results: list[QueryResult], *, row_limit: int | None = None) -> WireResult:
+        """Map ``QueryResult`` objects to the response of one ``COM_QUERY``.
 
-        Runs through ``QueryService`` like any other statement, so the
-        ``SHOW DATABASES`` is itself guarded and audited; only the filtering
-        happens here. The statement runs as the authenticated user (the relayed
-        connection *is* that user's session), so the list is exactly what that
-        user may see minus the names in ``HIDDEN_DATABASES``.
-        """
-        correlation_token = CORRELATION_SESSION.set(self._session.correlation)
-        try:
-            results = await query_service.execute_statements(
-                source="mysql_proxy",
-                sql="SHOW DATABASES",
-                username=username,
-                encrypted_password="",
-                database=self._session.database,
-                role=self._session.active_role,
-                security_context_version=self._session.security_context_version,
-                max_rows=DEFAULT_MAX_ROWS,
-                connection=connection,
-            )
-        except Exception as exc:
-            logger.exception("SHOW DATABASES through proxy failed")
-            return WireResult(
-                error=f"Query execution failed: {type(exc).__name__}", error_code=1064
-            )
-
-        finally:
-            CORRELATION_SESSION.reset(correlation_token)
-
-        wire = self._to_wire(results)
-        if not wire.is_resultset:
-            return wire
-
-        first = results[0]
-        kept_rows = [row for row in first.rows if row and str(row[0]) not in HIDDEN_DATABASES]
-        return WireResult(
-            columns=[
-                ColumnDefinition(name="Database", type_code=TYPE_VAR_STRING, charset=CHARSET_UTF8)
-            ],
-            rows=kept_rows,
-        )
-
-    def _to_wire(self, results: list[QueryResult]) -> WireResult:
-        """Map ``QueryResult`` objects to one response.
-
-        A single statement's result becomes that statement's response. A
-        multi-statement script collapses to the *last* result set (or OK), which
-        is what the MySQL text protocol can express without ``CLIENT_MULTI_RESULTS``
-        bookkeeping; an error at any point wins, because the first error is
-        where the engine stopped and later statements never ran.
+        Each statement becomes its own result set or OK packet; the earlier
+        ones ride in ``preceding``. The pipeline stops at the first error, so an
+        error is always the final response, after the results of the statements
+        that did run — the same shape a MySQL server sends.
         """
         if not results:
             return WireResult(ok_affected=0)
-
+        parts: list[WireResult] = []
         for result in results:
-            if result.error:
-                return WireResult(
-                    error=self._safe_message(result.error),
-                    error_code=1235 if result.error_code == "capability_unsupported" else 1064,
-                )
+            part = self._result_to_wire(result, row_limit=row_limit)
+            parts.append(part)
+            if part.error:
+                break
+        final = parts.pop()
+        final.preceding = parts
+        return final
 
-        last = results[-1]
-        if last.columns:
+    def _result_to_wire(self, result: QueryResult, *, row_limit: int | None) -> WireResult:
+        if result.error:
+            return WireResult(
+                error=self._safe_message(_client_message(result)),
+                error_code=_client_error_code(result),
+            )
+        if row_limit is not None and result.truncated:
+            return WireResult(
+                error=(
+                    f"Result set exceeds the Nova MySQL proxy limit of {row_limit} rows; "
+                    "add a LIMIT clause or raise PROXY_MAX_ROWS"
+                ),
+                error_code=1235,
+            )
+        if result.columns:
             columns = [
                 _column_definition(
                     name,
-                    [row[index] for row in last.rows[:20]] if last.rows else [],
-                    last.column_types[index] if index < len(last.column_types) else None,
+                    [row[index] for row in result.rows[:20]] if result.rows else [],
+                    result.column_types[index] if index < len(result.column_types) else None,
                 )
-                for index, name in enumerate(last.columns)
+                for index, name in enumerate(result.columns)
             ]
             return WireResult(
                 columns=columns,
-                rows=[list(row) for row in last.rows],
-                warnings=self._safe_warnings(last),
+                rows=[list(row) for row in result.rows],
+                warnings=self._safe_warnings(result),
             )
-
-        affected = sum(int(result.affected_rows or 0) for result in results)
-        return WireResult(ok_affected=max(affected, 0), warnings=self._safe_warnings(last))
+        return WireResult(
+            ok_affected=max(int(result.affected_rows or 0), 0),
+            warnings=self._safe_warnings(result),
+        )
 
     @staticmethod
     def _safe_message(message: str) -> str:
@@ -522,7 +856,6 @@ class ProxyQueryExecutor:
 
 
 __all__ = [
-    "DEFAULT_MAX_ROWS",
     "ProxyQueryExecutor",
     "WireResult",
 ]

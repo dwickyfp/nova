@@ -34,6 +34,8 @@ class ExecutionContext:
     allow_stage_export: bool = False
     encrypted_password: str = field(default="", repr=False)
     connection: Any = field(default=None, repr=False)
+    #: Receives an engine result set as it arrives (``RowSink``); ``None`` buffers.
+    row_sink: Any = field(default=None, repr=False)
     capabilities: Any = None
     engine_session_prepared: bool = False
     transaction_active: bool = False

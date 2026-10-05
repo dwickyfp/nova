@@ -243,6 +243,31 @@ def verify_proxy() -> None:
         _assert_cities(bob.query("SELECT id, city, amount FROM analytics.sales"), {"Bandung"})
     print("Proxy: bob / marketing -> Bandung")
 
+    # A client transaction runs on the session prepared before BEGIN: the role
+    # cannot change inside it, so Ranger keeps filtering for the role in force.
+    with MySQLClient("alice", "NovaAlice2026!", role="marketing") as transaction:
+        transaction.query("BEGIN")
+        _assert_cities(
+            transaction.query("SELECT id, city, amount FROM analytics.sales"), {"Jakarta"}
+        )
+        try:
+            transaction.query("USE ROLE regional_manager")
+        except MySQLError:
+            pass
+        else:
+            raise AssertionError("A role change was accepted inside a transaction")
+        assert transaction.query("SELECT CURRENT_ROLE()") == [["marketing"]]
+        _assert_cities(
+            transaction.query("SELECT id, city, amount FROM analytics.sales"), {"Jakarta"}
+        )
+        transaction.query("ROLLBACK")
+        transaction.query("USE ROLE regional_manager")
+        _assert_cities(
+            transaction.query("SELECT id, city, amount FROM analytics.sales"),
+            {"Jakarta", "Bandung"},
+        )
+    print("Transaction: alice / marketing kept its row filter; role switch refused until ROLLBACK")
+
     with MySQLClient("alice", "NovaAlice2026!", database=None, role="finance") as finance:
         assert finance.query("SELECT CURRENT_ROLE()") == [["finance"]]
         _assert_metadata_visibility(finance, sales_visible=False)

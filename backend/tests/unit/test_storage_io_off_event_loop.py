@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 from types import SimpleNamespace
 
@@ -55,6 +56,55 @@ async def test_csv_header_read_runs_off_event_loop_and_closes_body(monkeypatch):
     assert seen["get_thread"] == seen["read_thread"] != loop_thread
     assert seen["read_size"] == 8192
     assert seen["closed"] is True
+
+
+@pytest.mark.asyncio
+async def test_csv_header_glob_without_match_returns_untuned(monkeypatch):
+    """An empty glob must not raise StopIteration out of the worker thread.
+
+    StopIteration cannot cross into the awaiting future, so the statement used
+    to hang instead of letting the engine report the empty match.
+    """
+    import boto3
+
+    fetched = []
+
+    class Paginator:
+        def paginate(self, **kwargs):
+            return [{"Contents": [{"Key": "prefix/other.csv"}]}, {}]
+
+    class Client:
+        def get_paginator(self, name):
+            return Paginator()
+
+        def get_object(self, **kwargs):
+            fetched.append(kwargs["Key"])
+            raise AssertionError("no object matches the glob")
+
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: Client())
+    ref = SimpleNamespace(
+        stage_name="source", file_name="nothing_*.csv", path_parts=[], start=0
+    )
+    config = SimpleNamespace(
+        base_prefix="prefix",
+        storage_connection=None,
+        endpoint="http://storage.invalid",
+        access_key="access",
+        secret_key="secret",
+        region="us-east-1",
+        bucket="bucket",
+    )
+
+    params, columns = await asyncio.wait_for(
+        QueryService()._detect_csv_params(
+            SimpleNamespace(stage_refs=[ref]), {"source": config}
+        ),
+        timeout=5,
+    )
+
+    assert params == {}
+    assert columns is None
+    assert fetched == []
 
 
 @pytest.mark.asyncio

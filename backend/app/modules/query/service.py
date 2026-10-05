@@ -139,15 +139,19 @@ def _redact_error_message(message: str) -> str:
 #: table reference) are the same token shape and cannot be told apart; with it,
 #: only a position the engine would read as a table is rewritten.
 #:
-#: Identifier quoting accepted on each segment, matching the rest of the dialect.
+#: Identifier quoting is accepted on the database and table segments.
 _SEGMENT = r"`?[A-Za-z_][\w$]*`?"
 
 #: A position the engine reads as a table: after ``FROM``/``JOIN``/``INTO``/
 #: ``UPDATE``/``TABLE``, or after a comma separating entries in a table list.
 #:
-#: The middle segment must be exactly ``default`` (bare or backticked) — that
+#: The middle segment must be exactly an *unquoted* ``default`` — that
 #: placeholder is the whole point, and requiring it keeps the routine from
-#: touching ordinary three-part names such as ``mydb.bronze.orders``.
+#: touching ordinary three-part names such as ``mydb.bronze.orders``. ``DEFAULT``
+#: is reserved in StarRocks, so the bare spelling can only be the placeholder.
+#: A backquoted ``\`default\``` is a real database name — Hive, Iceberg and Paimon
+#: catalogs expose one, addressed as ``catalog.\`default\`.table`` — and is passed
+#: to the engine unchanged.
 #:
 #: The comma alternative is intentionally *not* anchored to a FROM clause: doing
 #: so needs real clause tracking, which is the parser's job, not this routine's.
@@ -158,7 +162,7 @@ _SEGMENT = r"`?[A-Za-z_][\w$]*`?"
 #: recorded here rather than hidden.
 _DEFAULT_SCHEMA_TABLE_REF = re.compile(
     rf"""(?:\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+|,\s*)
-         (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
+         (?P<db>{_SEGMENT})\s*\.\s*default\s*\.\s*(?P<table>{_SEGMENT})""",
     re.IGNORECASE | re.VERBOSE,
 )
 
@@ -181,7 +185,7 @@ _DEFAULT_SCHEMA_TABLE_REF = re.compile(
 _DESCRIBE_TABLE_REF = re.compile(
     rf"""\b(?:DESCRIBE|DESC)\s+
          (?:{_SEGMENT}\s*\.\s*)?
-         (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
+         (?P<db>{_SEGMENT})\s*\.\s*default\s*\.\s*(?P<table>{_SEGMENT})""",
     re.IGNORECASE | re.VERBOSE,
 )
 
@@ -195,8 +199,8 @@ def _mask_literals_and_comments(sql: str) -> str:
     text. ``\\x00`` cannot occur in SQL text and is not whitespace, so it can
     never create or destroy a word boundary around live SQL.
 
-    Backtick-quoted *identifiers* are deliberately **not** masked: a backticked
-    ``db.default.table`` is exactly what this routine exists to rewrite. Single
+    Backtick-quoted *identifiers* are deliberately **not** masked: the database
+    and table segments around the placeholder may be quoted. Single
     quotes are always a string literal. Double quotes are ambiguous in StarRocks
     (identifier or string depending on ``ANSI_QUOTES``), and masking them is the
     safe direction — a genuine string must never be rewritten, and an identifier
@@ -341,6 +345,8 @@ class QueryService:
         tenant: str = "default",
         security_context_version: int = 1,
         allow_stage_export: bool = False,
+        row_sink: Any = None,
+        client_transaction: bool = False,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -404,6 +410,12 @@ class QueryService:
             connection=connection,
             confirm_destructive=confirm_destructive,
             allow_stage_export=allow_stage_export,
+            row_sink=row_sink,
+            # Inside a client's explicit engine transaction the session already
+            # holds its role and database (the engine refuses SET ROLE there),
+            # and statements are audited as executed, not yet committed.
+            engine_session_prepared=client_transaction,
+            transaction_active=client_transaction,
         )
         try:
             if len(split_sql_statements(normalized_sql)) > 1:
@@ -595,6 +607,62 @@ class QueryService:
                 "Could not write the audit row for a pre-engine rejection (user=%r)", username
             )
 
+    async def preflight_script(
+        self,
+        statements: list[str],
+        *,
+        username: str,
+        database: str | None = None,
+        schema: str | None = None,
+        role: str | None = None,
+        session_id: str | None = None,
+        allow_stage_export: bool = False,
+    ) -> QueryResult | None:
+        """Refuse a script before any of its statements runs.
+
+        Applies the guard, syntax, semantic and pure validation checks of
+        ``execute_statements`` to every statement and returns the first
+        refusal (audited), or ``None``. Callers that run statements one at a
+        time (the MySQL proxy, which applies session changes between them) use
+        this so a later invalid statement still stops the script before effects.
+        """
+        stmt_sql = ""
+        analysis = None
+        with parsing_scope():
+            try:
+                for stmt_sql in statements:
+                    analysis = None
+                    normalized = self._normalize_default_schema_qualification(stmt_sql)
+                    guard_user_statement(
+                        normalized,
+                        allow_stage_export=allow_stage_export,
+                        check_confirmation=False,
+                    )
+                    statement = self._builders.build(
+                        self._frontend(normalized, original_sql=stmt_sql)
+                    )
+                    analysis = self._planner.preflight(statement)
+                    self._planner.semantics.validate_preflight(
+                        statement,
+                        PlanningContext(
+                            database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED
+                        ),
+                    )
+            except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=stmt_sql,
+                    username=username,
+                    role=role,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=None,
+                    error_message=_redact_error_message(str(exc)),
+                )
+                return self._error_result(stmt_sql, exc, analysis)
+        return None
+
     async def execute_statements(
         self,
         sql: str,
@@ -612,6 +680,8 @@ class QueryService:
         security_context_version: int = 1,
         allow_stage_export: bool = False,
         source: str = "internal",
+        row_sink: Any = None,
+        client_transaction: bool = False,
     ) -> list[QueryResult]:
         """Split SQL into statements and execute each sequentially.
 
@@ -690,6 +760,8 @@ class QueryService:
                         allow_stage_export=allow_stage_export,
                         file_id=file_id,
                         connection=connection,
+                        **({"row_sink": row_sink} if row_sink is not None else {}),
+                        **({"client_transaction": True} if client_transaction else {}),
                     )
                     results.append(result)
                     if result.error:
@@ -731,6 +803,7 @@ class QueryService:
             if analysis
             else None,
             execution_failure=getattr(exc, "execution_failure", None),
+            engine_error_code=getattr(exc, "engine_code", None),
         )
 
     async def get_history(

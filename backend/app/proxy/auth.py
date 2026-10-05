@@ -89,6 +89,7 @@ class StarRocksChallenge:
     scramble: bytes
     plugin: bytes
     capabilities: int
+    connection_id: int = 0
 
 
 @dataclass
@@ -109,6 +110,11 @@ class StarRocksLogin:
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
     _session: asyncmy.Connection | None = field(default=None, repr=False)
+    #: The engine's id for this connection. The proxy announces it as its own
+    #: thread id, so ``CONNECTION_ID()`` and a client's ``KILL QUERY <id>``
+    #: (the mysql CLI sends one on Ctrl+C) name the engine session that runs
+    #: this client's statements.
+    connection_id: int = 0
 
     async def finish(
         self, *, username: str, auth_response: bytes, database: str | None = None
@@ -258,6 +264,7 @@ async def open_starrocks_login(
         capabilities=challenge.capabilities,
         reader=reader,
         writer=writer,
+        connection_id=challenge.connection_id,
     )
 
 
@@ -279,7 +286,10 @@ def parse_starrocks_handshake(body: bytes) -> StarRocksChallenge:
         raise AuthenticationError("Malformed StarRocks handshake")
     index = end + 1  # server version
 
-    index += 4  # connection id
+    if index + 4 > len(body):
+        raise AuthenticationError("Malformed StarRocks handshake")
+    connection_id = struct.unpack("<I", body[index : index + 4])[0]
+    index += 4
     first_half = body[index : index + 8]
     index += 8
     index += 1  # filler
@@ -332,6 +342,7 @@ def parse_starrocks_handshake(body: bytes) -> StarRocksChallenge:
         scramble=scramble,
         plugin=plugin or NATIVE_PLUGIN_NAME,
         capabilities=capabilities,
+        connection_id=connection_id,
     )
 
 

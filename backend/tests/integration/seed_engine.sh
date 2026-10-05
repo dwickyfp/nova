@@ -33,9 +33,10 @@ fe_sql() {
 }
 
 echo "== system schema =="
-# The repo's init script is authoritative for NOVA_SYSTEM. It currently aborts
-# partway through (see the ML_MODEL_ALIASES note below), so failures are
-# tolerated here and the tables afterwards are created explicitly.
+# The repo's init script is authoritative for NOVA_SYSTEM. On this stock test
+# FE it stops at the built-in UDF section (CREATE GLOBAL FUNCTION needs
+# enable_udf=true, which docker/fe.conf sets and this stack does not), so
+# failures are tolerated here and the tables afterwards are created explicitly.
 if [ -f "$INIT_SQL" ]; then
   fe_sql < "$INIT_SQL" || true
 else
@@ -90,7 +91,7 @@ DISTRIBUTED BY HASH(log_id) BUCKETS 8
 PROPERTIES('replication_num'='1');
 "
 
-# StarRocks 4.0 (used by this legacy L3 stack) has no ADD COLUMN IF NOT EXISTS.
+# StarRocks 4.1.4 (this L3 stack) has no ADD COLUMN IF NOT EXISTS.
 # New tables already contain these fields; tolerate duplicate-column errors when
 # upgrading a persisted local test volume created before the Ranger migration.
 fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN active_role VARCHAR(128)" || true

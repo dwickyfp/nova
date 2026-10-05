@@ -80,8 +80,9 @@ DROP STREAM IF EXISTS analytics.orders_stream;
 
 DROP is destructive and requires the existing confirmation flow. Confirmation
 does not establish runtime availability: confirmed DROP still fails while Streams
-is disabled or its provider is unavailable. The MySQL proxy retains its destructive
-statement refusal. Loading this skill grants no permission to execute SQL.
+is disabled or its provider is unavailable. A MySQL client has no confirmation
+exchange, so the proxy submits its DROP as confirmed and it fails at the same
+admission check. Loading this skill grants no permission to execute SQL.
 
 For an execution request, explain the current limitation. Do not submit repeated
 mutations, replay an uncertain result, write control-plane rows in `NOVA_SYSTEM`,

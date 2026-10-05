@@ -29,7 +29,8 @@ from __future__ import annotations
 import hashlib
 import struct
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 # ── Capability flags ──────────────────────────────────────────────────────
 
@@ -97,6 +98,9 @@ CHARSET_UTF8MB4 = 45
 CHARSET_UTF8 = 33
 
 SERVER_STATUS_AUTOCOMMIT = 1 << 1
+#: Set on every response of a multi-statement ``COM_QUERY`` except the last, so
+#: the client reads the next result instead of treating the command as done.
+SERVER_MORE_RESULTS_EXISTS = 1 << 3
 
 #: Status flags the proxy reports.
 #:
@@ -119,9 +123,11 @@ COM_PING = 0x0E
 COM_CHANGE_USER = 0x11
 COM_STMT_PREPARE = 0x16
 COM_STMT_EXECUTE = 0x17
+COM_STMT_SEND_LONG_DATA = 0x18
 COM_STMT_CLOSE = 0x19
 COM_STMT_RESET = 0x1A
 COM_SET_OPTION = 0x1B
+COM_STMT_FETCH = 0x1C
 
 # ── Field types and flags ─────────────────────────────────────────────────
 
@@ -140,6 +146,13 @@ TYPE_DATETIME = 0x0C
 TYPE_YEAR = 0x0D
 TYPE_VARCHAR = 0x0F
 TYPE_BIT = 0x10
+TYPE_ENUM = 0xF7
+TYPE_SET = 0xF8
+TYPE_TINY_BLOB = 0xF9
+TYPE_MEDIUM_BLOB = 0xFA
+TYPE_LONG_BLOB = 0xFB
+TYPE_GEOMETRY = 0xFF
+TYPE_DECIMAL = 0x00
 TYPE_JSON = 0xF5
 TYPE_NEWDECIMAL = 0xF6
 TYPE_BLOB = 0xFC
@@ -156,6 +169,7 @@ ER_ACCESS_DENIED_ERROR = 1045
 ER_NO_DB_ERROR = 1046
 ER_UNKNOWN_COM_ERROR = 1047
 ER_PARSE_ERROR = 1064
+ER_UNKNOWN_STMT_HANDLER = 1243
 ER_NOT_SUPPORTED_YET = 1235
 
 #: SQLSTATE paired with every error the proxy produces. ``HY000`` is the
@@ -169,6 +183,11 @@ SQLSTATE_SYNTAX = "42000"
 #: follows". The proxy refuses anything above 16 MiB rather than reading an
 #: unbounded amount into memory on the say-so of a peer.
 MAX_PACKET_SIZE = 16 * 1024 * 1024
+
+#: Largest command the proxy reassembles from continuation frames (a client
+#: splits a statement longer than 0xFFFFFF bytes). It bounds memory the same way
+#: ``max_allowed_packet`` does on a MySQL server.
+MAX_COMMAND_SIZE = 64 * 1024 * 1024
 
 
 class ProtocolError(Exception):
@@ -287,6 +306,27 @@ def encode_packet(payload: bytes, sequence_id: int) -> bytes:
         raise ValueError("packet payload exceeds the 3-byte length field")
     header = len(payload).to_bytes(3, "little") + bytes([sequence_id & 0xFF])
     return header + payload
+
+
+#: Largest payload one frame can carry. A longer payload continues in further
+#: frames, and a payload that is an exact multiple ends with an empty frame.
+MAX_FRAME_PAYLOAD = (1 << 24) - 1
+
+
+def frame_payload(payload: bytes, sequence_id: int) -> tuple[bytes, int]:
+    """Frame a payload of any size; returns the frames and the next sequence id."""
+    if len(payload) < MAX_FRAME_PAYLOAD:
+        header = len(payload).to_bytes(3, "little") + bytes([sequence_id & 0xFF])
+        return header + payload, (sequence_id + 1) % 256
+    frames = bytearray()
+    offset = 0
+    while True:
+        chunk = payload[offset : offset + MAX_FRAME_PAYLOAD]
+        frames += len(chunk).to_bytes(3, "little") + bytes([sequence_id & 0xFF]) + chunk
+        sequence_id = (sequence_id + 1) % 256
+        offset += len(chunk)
+        if len(chunk) < MAX_FRAME_PAYLOAD:
+            return bytes(frames), sequence_id
 
 
 def decode_packet(data: bytes) -> tuple[int, int, bytes]:
@@ -623,6 +663,7 @@ def build_resultset(
     rows: list[list],
     *,
     capabilities: int = DEFAULT_PROTOCOL_CAPABILITIES,
+    status_flags: int = DEFAULT_SERVER_STATUS,
 ) -> list[bytes]:
     """Build the framed packets of a complete text result set.
 
@@ -651,8 +692,238 @@ def build_resultset(
         payloads.append(build_text_row(list(row), columns))
 
     if capabilities & CLIENT_DEPRECATE_EOF:
-        payloads.append(build_ok_packet(0, 0, capabilities=capabilities))
+        payloads.append(
+            build_ok_packet(0, 0, status_flags=status_flags, capabilities=capabilities)
+        )
     else:
-        payloads.append(build_eof_packet())
+        payloads.append(build_eof_packet(status_flags=status_flags))
 
     return payloads
+
+
+# ── Prepared statements (binary protocol) ─────────────────────────────────
+
+
+def build_prepare_ok(statement_id: int, num_params: int, *, capabilities: int) -> list[bytes]:
+    """``COM_STMT_PREPARE_OK`` plus one definition per parameter.
+
+    No column definitions are announced: the columns are known only once the
+    statement runs, and the execute response carries them, which every client
+    reads before rows.
+    """
+    payloads = [
+        b"\x00"
+        + struct.pack("<I", statement_id)
+        + struct.pack("<H", 0)
+        + struct.pack("<H", num_params)
+        + b"\x00"
+        + struct.pack("<H", 0)
+    ]
+    if num_params:
+        payloads.extend(
+            build_column_definition(ColumnDefinition(name="?", type_code=TYPE_VAR_STRING))
+            for _ in range(num_params)
+        )
+        if not capabilities & CLIENT_DEPRECATE_EOF:
+            payloads.append(build_eof_packet())
+    return payloads
+
+
+_BLOB_TYPES = frozenset({TYPE_TINY_BLOB, TYPE_MEDIUM_BLOB, TYPE_LONG_BLOB, TYPE_BLOB})
+_LENGTH_ENCODED_TYPES = frozenset(
+    {
+        TYPE_DECIMAL,
+        TYPE_NEWDECIMAL,
+        TYPE_VARCHAR,
+        TYPE_BIT,
+        TYPE_JSON,
+        TYPE_ENUM,
+        TYPE_SET,
+        TYPE_VAR_STRING,
+        TYPE_STRING,
+        TYPE_GEOMETRY,
+    }
+    | _BLOB_TYPES
+)
+_INTEGER_FORMATS = {
+    TYPE_TINY: ("b", "B", 1),
+    TYPE_SHORT: ("h", "H", 2),
+    TYPE_YEAR: ("h", "H", 2),
+    TYPE_LONG: ("i", "I", 4),
+    TYPE_INT24: ("i", "I", 4),
+    TYPE_LONGLONG: ("q", "Q", 8),
+}
+
+
+@dataclass(frozen=True)
+class ExecuteRequest:
+    statement_id: int
+    flags: int
+    values: list
+    types: list[tuple[int, int]]
+
+
+def _read_temporal(reader: PacketReader, type_code: int):
+    length = reader.read(1)[0]
+    data = reader.read(length)
+    if type_code == TYPE_TIME:
+        if length == 0:
+            return timedelta(0)
+        negative = data[0] == 1
+        days = struct.unpack("<I", data[1:5])[0]
+        hours, minutes, seconds = data[5], data[6], data[7]
+        micros = struct.unpack("<I", data[8:12])[0] if length >= 12 else 0
+        value = timedelta(
+            days=days, hours=hours, minutes=minutes, seconds=seconds, microseconds=micros
+        )
+        return -value if negative else value
+    if length == 0:
+        return datetime(1, 1, 1) if type_code != TYPE_DATE else date(1, 1, 1)
+    year = struct.unpack("<H", data[0:2])[0]
+    month, day = data[2], data[3]
+    if type_code == TYPE_DATE and length == 4:
+        return date(year, month, day)
+    hour, minute, second = (data[4], data[5], data[6]) if length >= 7 else (0, 0, 0)
+    micros = struct.unpack("<I", data[7:11])[0] if length >= 11 else 0
+    return datetime(year, month, day, hour, minute, second, micros)
+
+
+def _read_lenenc_bytes(reader: PacketReader) -> bytes:
+    first = reader.read(1)[0]
+    if first < 0xFB:
+        length = first
+    elif first == 0xFC:
+        length = struct.unpack("<H", reader.read(2))[0]
+    elif first == 0xFD:
+        length = int.from_bytes(reader.read(3), "little")
+    elif first == 0xFE:
+        length = struct.unpack("<Q", reader.read(8))[0]
+    else:
+        raise ProtocolError("invalid length-encoded parameter")
+    return reader.read(length)
+
+
+def _decode_parameter(reader: PacketReader, type_code: int, unsigned: bool):
+    if type_code in _INTEGER_FORMATS:
+        signed_format, unsigned_format, size = _INTEGER_FORMATS[type_code]
+        fmt = "<" + (unsigned_format if unsigned else signed_format)
+        return struct.unpack(fmt, reader.read(size))[0]
+    if type_code == TYPE_FLOAT:
+        return struct.unpack("<f", reader.read(4))[0]
+    if type_code == TYPE_DOUBLE:
+        return struct.unpack("<d", reader.read(8))[0]
+    if type_code in (TYPE_DATE, TYPE_DATETIME, TYPE_TIMESTAMP, TYPE_TIME):
+        return _read_temporal(reader, type_code)
+    if type_code == TYPE_NULL:
+        return None
+    if type_code in _LENGTH_ENCODED_TYPES:
+        raw = _read_lenenc_bytes(reader)
+        if type_code in (TYPE_DECIMAL, TYPE_NEWDECIMAL):
+            return Decimal(raw.decode("ascii"))
+        if type_code in _BLOB_TYPES or type_code == TYPE_GEOMETRY:
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return raw
+        return raw.decode("utf-8", errors="surrogateescape")
+    raise ProtocolError(f"unsupported parameter type {type_code}")
+
+
+def parse_stmt_execute(
+    payload: bytes,
+    *,
+    num_params: int,
+    previous_types: list[tuple[int, int]] | None,
+    long_data: dict[int, bytes] | None = None,
+) -> ExecuteRequest:
+    """Decode a ``COM_STMT_EXECUTE`` body (without the command byte)."""
+    reader = PacketReader(payload)
+    statement_id = struct.unpack("<I", reader.read(4))[0]
+    flags = reader.read(1)[0]
+    reader.read(4)  # iteration count, always 1
+    values: list = []
+    types = list(previous_types or [])
+    if num_params:
+        null_bitmap = reader.read((num_params + 7) // 8)
+        if reader.read(1)[0] == 1:
+            types = []
+            for _ in range(num_params):
+                type_code, type_flags = reader.read(1)[0], reader.read(1)[0]
+                types.append((type_code, type_flags))
+        if len(types) != num_params:
+            raise ProtocolError("parameter types were never bound")
+        long_data = long_data or {}
+        for index, (type_code, type_flags) in enumerate(types):
+            if null_bitmap[index // 8] & (1 << (index % 8)):
+                values.append(None)
+            elif index in long_data:
+                raw = long_data[index]
+                try:
+                    values.append(raw.decode("utf-8"))
+                except UnicodeDecodeError:
+                    values.append(raw)
+            else:
+                values.append(_decode_parameter(reader, type_code, bool(type_flags & 0x80)))
+    return ExecuteRequest(statement_id, flags, values, types)
+
+
+def _binary_temporal(value) -> bytes:
+    if isinstance(value, timedelta):
+        negative = value < timedelta(0)
+        value = -value if negative else value
+        days = value.days
+        seconds = value.seconds
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        body = bytes([1 if negative else 0]) + struct.pack("<I", days)
+        body += bytes([hours, minutes, seconds])
+        if value.microseconds:
+            body += struct.pack("<I", value.microseconds)
+        return bytes([len(body)]) + body
+    if isinstance(value, datetime):
+        body = struct.pack("<H", value.year) + bytes(
+            [value.month, value.day, value.hour, value.minute, value.second]
+        )
+        if value.microsecond:
+            body += struct.pack("<I", value.microsecond)
+        return bytes([len(body)]) + body
+    body = struct.pack("<H", value.year) + bytes([value.month, value.day])
+    return bytes([len(body)]) + body
+
+
+def _binary_value(value, column: ColumnDefinition) -> bytes:
+    type_code = column.type_code
+    if type_code in _INTEGER_FORMATS:
+        signed_format, unsigned_format, _ = _INTEGER_FORMATS[type_code]
+        fmt = unsigned_format if column.flags & UNSIGNED_FLAG else signed_format
+        return struct.pack("<" + fmt, int(value))
+    if type_code == TYPE_FLOAT:
+        return struct.pack("<f", float(value))
+    if type_code == TYPE_DOUBLE:
+        return struct.pack("<d", float(value))
+    if type_code in (TYPE_DATE, TYPE_DATETIME, TYPE_TIMESTAMP, TYPE_TIME):
+        if isinstance(value, (date, timedelta)):
+            return _binary_temporal(value)
+        # A zero date has no Python value; length 0 is its binary encoding.
+        return b"\x00"
+    if isinstance(value, (bytes, bytearray)):
+        encoded = bytes(value)
+    elif isinstance(value, bool):
+        encoded = b"1" if value else b"0"
+    else:
+        encoded = str(value).encode("utf-8", errors="surrogateescape")
+    return encode_length_encoded_int(len(encoded)) + encoded
+
+
+def build_binary_row(values: list, columns: list[ColumnDefinition]) -> bytes:
+    """Encode one ``ProtocolBinary::ResultsetRow``."""
+    bitmap = bytearray((len(values) + 7 + 2) // 8)
+    body = bytearray()
+    for index, value in enumerate(values):
+        if value is None:
+            position = index + 2
+            bitmap[position // 8] |= 1 << (position % 8)
+            continue
+        column = columns[index] if index < len(columns) else ColumnDefinition(name="")
+        body += _binary_value(value, column)
+    return b"\x00" + bytes(bitmap) + bytes(body)

@@ -57,10 +57,15 @@ class SetupRequiredError(NovaException):
 
 
 class StarRocksError(NovaException):
-    """StarRocks query execution error."""
+    """StarRocks query execution error.
 
-    def __init__(self, message: str, status_code: int = 400):
+    ``engine_code`` is the MySQL-protocol error number the engine returned, when
+    the failure came from the engine rather than from the connection itself.
+    """
+
+    def __init__(self, message: str, status_code: int = 400, *, engine_code: int | None = None):
         super().__init__(message, status_code=status_code)
+        self.engine_code = engine_code
 
 
 class StorageError(NovaException):

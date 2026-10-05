@@ -152,7 +152,11 @@ def _stage_segment_parts(segment) -> list[str]:
 
     for child in segment.children or []:
         name = type(child).__name__
-        if name == "StagePathAtomContext":
+        if name == "StageGluedAtomContext":
+            # One token written with no space before it (``sales_`` + ``*``)
+            # continues the current segment.
+            current.append(child.getText())
+        elif name == "StagePathAtomContext":
             closed, opened = _stage_path_atom_glue(child)
             current.extend(closed)
             if opened:

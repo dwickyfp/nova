@@ -32,7 +32,12 @@ FILES('path'='s3://bucket/db/schema/stage1/data.csv', 'format'='csv', creds…)
 ```
 
 - `name` starts with a letter or underscore and may contain letters, digits, underscores, and hyphens.
-- The path may mix `.` and `/` separators, contain letters, digits, underscores, and hyphens, and include a `*` glob segment.
+- The path may mix `.` and `/` separators, contain letters, digits, underscores, and hyphens, and include `*`
+  globs, either as a whole segment (`@name.*.csv`) or inside one (`@name.sales_*.csv`, `@name/2024/q*.parquet`).
+  The parts of a partial segment must touch: `@name.sales_ *.csv` is not one path.
+- Write a glob that starts a segment after a `.` (`@name.*.csv`, `@name/folder.*.csv`), not after a `/`. In SQL
+  `/*` opens a block comment: the `mysql` CLI strips `@name/*.csv …` before sending it. When `/*` reaches Nova
+  directly after a stage path, the statement is refused rather than reading the whole stage.
 - A trailing `/` marks a directory.
 
 ### `@stage` is not `@@variable`
@@ -70,7 +75,7 @@ A reference inside a string literal or a comment is not a stage: the lexer emits
 | `STAGE_EXPORT` | `COPY INTO @stage FROM <table>` |
 | `REGULAR` | Anything else, **or** any statement with no stage reference |
 
-`LIST` and `COPY INTO` are Nova surfaces the StarRocks 4.1 grammar does not model, so their references are scanned from the token stream (`_nova_surface_stage_refs`). `LIST` is a special case: Nova parses `LIST @stage1` as `STAGE_BROWSE`, but **nothing implements `LIST` and StarRocks has no `LIST` statement**, so any `LIST` that reaches execution fails at the engine. A `LIST` carrying a stage is reported as `STAGE_BROWSE`; a bare `LIST` with no stage falls back to `REGULAR` and travels untouched, failing visibly with the engine's own syntax error.
+`LIST` and `COPY INTO` are Nova surfaces the StarRocks 4.1 grammar does not model, so their references are scanned from the token stream (`_nova_surface_stage_refs`). `LIST` is a special case: StarRocks has no `LIST` statement, so Nova parses `LIST [FILES] @stage1` as `STAGE_BROWSE` and translates the whole statement to `SELECT * FROM FILES(... 'list_files_only'='true', 'list_recursively'='true')`. Physical paths in the listing are shown as `@stage1/...`. A bare `LIST` with no stage falls back to `REGULAR` and travels untouched, failing visibly with the engine's own syntax error.
 
 A syntax error does not raise from `parse_sql`: it is recorded in `ParsedSQL.errors` with the exact `line:col`, and the registry stays empty so a malformed statement is never partially rewritten.
 
@@ -221,8 +226,8 @@ SELECT * FROM t WHERE name = 'FROM @stage1'
 | Unknown stage name | `ValueError("Stage '<name>' not found")`; the workspace returns it as the statement error and audits `ERROR`. |
 | No file extension | Defaults to `csv` + warning. |
 | CSV pre-read fails | Defaults; query runs, logs the cause. |
-| `LIST @stage` | Translated, then rejected by the engine (no native `LIST`). |
-| `@stage` with a `/` in the dotted path | Only a single trailing `/` is supported; path segments use dots. |
+| `LIST @stage` | Translated to a `FILES()` listing; paths are shown as `@stage/...`. |
+| Storage error naming a path | The bucket path is shown as `@stage/...` and the endpoint as `<storage endpoint>`. |
 
 ### `db.default.table` normalization (related)
 

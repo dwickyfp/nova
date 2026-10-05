@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import struct
 import uuid
 from dataclasses import dataclass
 
@@ -37,9 +38,10 @@ from app.proxy.auth import (
     StarRocksLogin,
     open_starrocks_login,
 )
-from app.proxy.executor import ProxyQueryExecutor
+from app.proxy.executor import ProxyQueryExecutor, WireResult
 from app.proxy.protocol import (
     CLIENT_DEPRECATE_EOF,
+    CLIENT_MULTI_RESULTS,
     COM_CHANGE_USER,
     COM_FIELD_LIST,
     COM_INIT_DB,
@@ -49,29 +51,56 @@ from app.proxy.protocol import (
     COM_SET_OPTION,
     COM_STMT_CLOSE,
     COM_STMT_EXECUTE,
+    COM_STMT_FETCH,
     COM_STMT_PREPARE,
     COM_STMT_RESET,
+    COM_STMT_SEND_LONG_DATA,
+    DEFAULT_SERVER_STATUS,
     ER_ACCESS_DENIED_ERROR,
     ER_NO_DB_ERROR,
     ER_NOT_SUPPORTED_YET,
     ER_UNKNOWN_COM_ERROR,
-    MAX_PACKET_SIZE,
+    ER_UNKNOWN_STMT_HANDLER,
+    MAX_COMMAND_SIZE,
+    MAX_FRAME_PAYLOAD,
     SERVER_CAPABILITIES,
+    SERVER_MORE_RESULTS_EXISTS,
+    ColumnDefinition,
     ProtocolError,
+    build_binary_row,
+    build_column_definition,
+    build_eof_packet,
     build_error_packet,
     build_handshake_packet,
     build_ok_packet,
-    build_resultset,
+    build_prepare_ok,
+    build_text_row,
+    encode_length_encoded_int,
     encode_packet,
+    frame_payload,
     parse_handshake_response,
+    parse_stmt_execute,
 )
-from app.proxy.session import SessionState
+from app.proxy.session import (
+    SessionState,
+    bind_placeholders,
+    parse_prepared_statement,
+    placeholder_spans,
+    quote_database_target,
+    split_statements,
+    sql_literal,
+)
 
 logger = logging.getLogger(__name__)
 
-#: Advertised thread id. StarRocks' own connection ids are not visible here, so
-#: the proxy mints its own; clients only use it for ``KILL``.
-_START_CONNECTION_ID = 1000
+class PreparedStatement:
+    """A ``COM_STMT_PREPARE`` statement held by the proxy until it is closed."""
+
+    def __init__(self, sql: str, num_params: int) -> None:
+        self.sql = sql
+        self.num_params = num_params
+        self.types: list[tuple[int, int]] | None = None
+        self.long_data: dict[int, bytes] = {}
 
 
 @dataclass
@@ -109,6 +138,12 @@ class ProxyConnection:
         )
         self._executor = ProxyQueryExecutor(self._ctx.session)
         self._closing = False
+        #: Sequence id the next response starts at: one past the client's
+        #: last frame of the current command.
+        self._response_sequence = 1
+        #: Binary-protocol prepared statements of this connection.
+        self._statements: dict[int, PreparedStatement] = {}
+        self._next_statement_id = 0
 
     @staticmethod
     def _peer_name(writer: asyncio.StreamWriter) -> str:
@@ -123,40 +158,58 @@ class ProxyConnection:
     # ── Socket helpers ────────────────────────────────────────────────────
 
     async def _read_packet(self) -> bytes:
-        """Read one framed packet payload.
+        """Read one logical packet, reassembling continuation frames.
 
-        Reads the 4-byte header first, then exactly the advertised body. The
-        length is bounded before the body is read so a peer cannot make the
-        proxy allocate an arbitrary buffer by lying in the header.
+        A client splits a payload longer than 0xFFFFFF bytes into frames of
+        exactly that length followed by a shorter (possibly empty) one. Each
+        header is read first and the running total bounded before the body is
+        read, so a peer cannot make the proxy allocate an arbitrary buffer.
+        The response to this packet continues the client's sequence numbers.
         """
-        header = await asyncio.wait_for(self._reader.readexactly(4), timeout=self._read_timeout)
-        length = int.from_bytes(header[:3], "little")
-        if length > MAX_PACKET_SIZE:
-            raise ProtocolError(f"packet of {length} bytes exceeds the proxy limit")
-        if length == 0:
-            return b""
-        return await asyncio.wait_for(self._reader.readexactly(length), timeout=self._read_timeout)
+        payload = bytearray()
+        while True:
+            header = await asyncio.wait_for(
+                self._reader.readexactly(4), timeout=self._read_timeout
+            )
+            length = int.from_bytes(header[:3], "little")
+            if len(payload) + length > MAX_COMMAND_SIZE:
+                total = len(payload) + length
+                raise ProtocolError(f"packet of {total} bytes exceeds the proxy limit")
+            if length:
+                payload += await asyncio.wait_for(
+                    self._reader.readexactly(length), timeout=self._read_timeout
+                )
+            self._response_sequence = (header[3] + 1) % 256
+            if length < MAX_FRAME_PAYLOAD:
+                return bytes(payload)
 
-    async def _write_payloads(self, payloads: list[bytes], *, start_sequence: int = 1) -> None:
-        sequence = start_sequence
+    async def _write_payloads(
+        self, payloads: list[bytes], *, start_sequence: int | None = None
+    ) -> int:
+        """Write payloads as consecutive packets; returns the next sequence id."""
+        sequence = self._response_sequence if start_sequence is None else start_sequence
+        # One write per batch: a transport write per packet costs a syscall per
+        # result row.
+        buffer = bytearray()
         for payload in payloads:
-            self._writer.write(encode_packet(payload, sequence))
-            sequence = (sequence + 1) % 256
+            frames, sequence = frame_payload(payload, sequence)
+            buffer += frames
+        self._writer.write(bytes(buffer))
         await self._writer.drain()
+        return sequence
 
-    async def _write_error(self, code: int, message: str, *, sequence: int = 1) -> None:
+    async def _write_error(self, code: int, message: str, *, sequence: int | None = None) -> None:
         """Write an ERR packet.
 
-        ``sequence`` defaults to 1, which is right for a command response: the
-        client's command was sequence 0. Handshake-phase failures are sequence
+        ``sequence`` defaults to the command's response sequence (1 for a
+        single-frame command, which was sequence 0). Handshake-phase failures are sequence
         2 instead — the server handshake was 0 and the client's response was 1
         — so those call sites pass it explicitly. A sequence the client does not
         expect makes it discard the packet and report a lost connection instead
         of the error Nova actually sent.
         """
         payload = build_error_packet(code, message, capabilities=self._ctx.capabilities)
-        self._writer.write(encode_packet(payload, sequence))
-        await self._writer.drain()
+        await self._write_payloads([payload], start_sequence=sequence)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -229,6 +282,8 @@ class ProxyConnection:
             )
             return False
 
+        if upstream.connection_id:
+            self._ctx.connection_id = upstream.connection_id
         try:
             handshake = build_handshake_packet(self._ctx.connection_id, upstream.scramble)
             self._writer.write(encode_packet(handshake, 0))
@@ -361,6 +416,34 @@ class ProxyConnection:
             if command == COM_INIT_DB:
                 await self._on_init_db(body)
                 continue
+            if command == COM_STMT_PREPARE:
+                await self._on_stmt_prepare(body)
+                continue
+            if command == COM_STMT_EXECUTE:
+                await self._on_stmt_execute(body)
+                continue
+            if command == COM_STMT_SEND_LONG_DATA:
+                # No response, by protocol.
+                self._on_stmt_long_data(body)
+                continue
+            if command == COM_STMT_CLOSE:
+                # No response, by protocol.
+                if len(body) >= 4:
+                    self._statements.pop(int.from_bytes(body[:4], "little"), None)
+                continue
+            if command == COM_STMT_RESET:
+                statement = self._statements.get(int.from_bytes(body[:4], "little"))
+                if statement is None:
+                    await self._write_error(ER_UNKNOWN_STMT_HANDLER, "Unknown prepared statement")
+                else:
+                    statement.long_data.clear()
+                    await self._write_payloads(
+                        [build_ok_packet(0, 0, capabilities=self._ctx.capabilities)]
+                    )
+                continue
+            if command == COM_FIELD_LIST:
+                await self._on_field_list(body)
+                continue
             if command == COM_SET_OPTION:
                 # Connection-level option changes (multi-statement toggle).
                 # Acknowledged, not applied: the proxy already handles multi
@@ -374,47 +457,141 @@ class ProxyConnection:
         assert self._ctx.user is not None
         assert self._ctx.connection is not None
         sql = body.decode("utf-8", errors="surrogateescape")
+        sink = WireSink(self)
         try:
-            result = await self._executor.execute(
+            await self._executor.execute_to(
                 sql,
+                sink,
                 username=self._ctx.user.username,
                 connection=self._ctx.connection,
                 session_id=self._ctx.session_id,
             )
+        except (ConnectionError, asyncio.IncompleteReadError):
+            raise
         except Exception:
             logger.exception("[%s] query dispatch failed", self._ctx.connection_id)
-            PROXY_QUERIES.labels(status="error").inc()
-            await self._write_error(1064, "Query execution failed")
-            return
-
-        if result.error is not None:
-            PROXY_QUERIES.labels(status="error").inc()
-            await self._write_error(result.error_code, result.error)
-            return
-
-        PROXY_QUERIES.labels(status="success").inc()
-        if result.is_resultset:
-            payloads = build_resultset(
-                result.columns,
-                result.rows,
-                capabilities=self._ctx.capabilities,
-            )
-            await self._write_payloads(payloads)
-            return
-
-        # No column metadata: a single OK packet, with the affected row count
-        # written as a length-encoded integer (see protocol.build_ok_packet).
-        await self._write_payloads(
-            [build_ok_packet(result.ok_affected, 0, capabilities=self._ctx.capabilities)]
-        )
+            if sink.complete:
+                return
+            sink.errored = True
+            await sink.emit(WireResult(error="Query execution failed"), more=False)
+        PROXY_QUERIES.labels(status="error" if sink.errored else "success").inc()
 
     async def _on_init_db(self, body: bytes) -> None:
+        """``COM_INIT_DB`` — what the mysql CLI sends for ``use <db>``.
+
+        It is answered by running ``USE`` through the same path as a ``USE``
+        statement, so the engine validates the database before the session
+        records it; an unknown database is refused here rather than failing
+        every later statement.
+        """
         database = body.decode("utf-8", errors="surrogateescape").strip()
         if not database:
             await self._write_error(ER_NO_DB_ERROR, "No database selected")
             return
-        self._ctx.session.set_database(database)
-        await self._write_payloads([build_ok_packet(0, 0, capabilities=self._ctx.capabilities)])
+        statement = f"USE {quote_database_target(database)}"
+        await self._on_query(statement.encode("utf-8", errors="surrogateescape"))
+
+    async def _on_stmt_prepare(self, body: bytes) -> None:
+        """``COM_STMT_PREPARE``: keep the text; nothing reaches the engine yet.
+
+        The statement is syntax-checked with its markers in place (the grammar
+        accepts ``?``). Execution binds the parameters as literals and runs the
+        text through the same pipeline as ``COM_QUERY``.
+        """
+        sql = body.decode("utf-8", errors="surrogateescape").strip().rstrip(";").strip()
+        statements = split_statements(sql)
+        if len(statements) != 1 or parse_prepared_statement(sql) is not None:
+            await self._write_error(1064, "A prepared statement holds exactly one statement")
+            return
+        try:
+            from app.sql_frontend.parser import parse_statement
+
+            parse_statement(sql)
+        except ValueError as exc:
+            await self._write_error(1064, str(exc))
+            return
+        self._next_statement_id += 1
+        statement_id = self._next_statement_id
+        num_params = len(placeholder_spans(sql))
+        self._statements[statement_id] = PreparedStatement(sql, num_params)
+        await self._write_payloads(
+            build_prepare_ok(statement_id, num_params, capabilities=self._ctx.capabilities)
+        )
+
+    def _on_stmt_long_data(self, body: bytes) -> None:
+        if len(body) < 6:
+            return
+        statement = self._statements.get(int.from_bytes(body[:4], "little"))
+        if statement is not None:
+            index = int.from_bytes(body[4:6], "little")
+            statement.long_data[index] = statement.long_data.get(index, b"") + body[6:]
+
+    async def _on_stmt_execute(self, body: bytes) -> None:
+        assert self._ctx.user is not None
+        statement_id = int.from_bytes(body[:4], "little") if len(body) >= 4 else -1
+        statement = self._statements.get(statement_id)
+        if statement is None:
+            await self._write_error(ER_UNKNOWN_STMT_HANDLER, "Unknown prepared statement")
+            return
+        try:
+            request = parse_stmt_execute(
+                body,
+                num_params=statement.num_params,
+                previous_types=statement.types,
+                long_data=statement.long_data,
+            )
+            sql = bind_placeholders(statement.sql, [sql_literal(value) for value in request.values])
+        except (ProtocolError, ValueError, IndexError, struct.error) as exc:
+            await self._write_error(1210, f"Incorrect arguments to EXECUTE: {exc}")
+            return
+        statement.types = request.types
+        statement.long_data.clear()
+        sink = WireSink(self, row_encoder=build_binary_row)
+        try:
+            await self._executor.execute_to(
+                sql,
+                sink,
+                username=self._ctx.user.username,
+                connection=self._ctx.connection,
+                session_id=self._ctx.session_id,
+            )
+        except (ConnectionError, asyncio.IncompleteReadError):
+            raise
+        except Exception:
+            logger.exception("[%s] prepared execution failed", self._ctx.connection_id)
+            if not sink.complete:
+                sink.errored = True
+                await sink.emit(WireResult(error="Query execution failed"), more=False)
+        PROXY_QUERIES.labels(status="error" if sink.errored else "success").inc()
+
+    async def _on_field_list(self, body: bytes) -> None:
+        """``COM_FIELD_LIST``: the column list the mysql CLI uses for completion."""
+        assert self._ctx.user is not None
+        table, _, _ = body.partition(b"\x00")
+        name = table.decode("utf-8", errors="surrogateescape")
+        if not name:
+            await self._write_error(ER_NO_DB_ERROR, "No table name")
+            return
+        result = await self._executor.execute(
+            "SHOW COLUMNS FROM `" + name.replace("`", "``") + "`",
+            username=self._ctx.user.username,
+            connection=self._ctx.connection,
+            session_id=self._ctx.session_id,
+        )
+        if result.error is not None:
+            await self._write_error(result.error_code, result.error)
+            return
+        payloads = [
+            build_column_definition(ColumnDefinition(name=str(row[0])))
+            for row in result.rows
+            if row
+        ]
+        payloads.append(
+            build_ok_packet(0, 0, capabilities=self._ctx.capabilities)
+            if self._ctx.capabilities & CLIENT_DEPRECATE_EOF
+            else build_eof_packet()
+        )
+        await self._write_payloads(payloads)
 
     async def _on_unsupported(self, command: int) -> None:
         """Refuse a command Nova does not implement, in MySQL's own idiom.
@@ -424,17 +601,11 @@ class ProxyConnection:
         interpret as "use text protocol instead" — MySQL Connector/J and
         friends fall back cleanly on it. Anything genuinely unknown gets 1047.
         """
-        if command in (COM_STMT_PREPARE, COM_STMT_EXECUTE, COM_STMT_CLOSE, COM_STMT_RESET):
+        if command == COM_STMT_FETCH:
             await self._write_error(
                 ER_NOT_SUPPORTED_YET,
-                "Prepared statements are not supported by the Nova MySQL proxy; "
-                "use the text protocol",
-            )
-            return
-        if command == COM_FIELD_LIST:
-            await self._write_error(
-                ER_NOT_SUPPORTED_YET,
-                "COM_FIELD_LIST is not supported by the Nova MySQL proxy",
+                "Server-side cursors are not supported by the Nova MySQL proxy; "
+                "results are returned in full",
             )
             return
         if command == COM_CHANGE_USER:
@@ -444,6 +615,93 @@ class ProxyConnection:
             )
             return
         await self._write_error(ER_UNKNOWN_COM_ERROR, f"Unknown command {command}")
+
+
+class WireSink:
+    """Writes the responses of one command to the client, in order.
+
+    Sequence ids run on across every packet of the command. A client that did
+    not negotiate ``CLIENT_MULTI_RESULTS`` can read one response per command,
+    so responses flagged ``more`` are dropped for it and it receives the final
+    one, as a single-result server would answer. ``row_encoder`` switches the
+    result rows to the binary protocol for prepared statements.
+    """
+
+    def __init__(self, connection: ProxyConnection, *, row_encoder=None):
+        self._connection = connection
+        self._capabilities = connection._ctx.capabilities
+        self._multi = bool(self._capabilities & CLIENT_MULTI_RESULTS)
+        self._sequence = connection._response_sequence
+        self._row_encoder = row_encoder or build_text_row
+        self._suppressed = False
+        self.errored = False
+        self.complete = False
+
+    def _status(self, more: bool) -> int:
+        return DEFAULT_SERVER_STATUS | (SERVER_MORE_RESULTS_EXISTS if more else 0)
+
+    async def _write(self, payloads: list[bytes]) -> None:
+        self._sequence = await self._connection._write_payloads(
+            payloads, start_sequence=self._sequence
+        )
+
+    def _terminator(self, more: bool) -> bytes:
+        if self._capabilities & CLIENT_DEPRECATE_EOF:
+            return build_ok_packet(
+                0, 0, status_flags=self._status(more), capabilities=self._capabilities
+            )
+        return build_eof_packet(status_flags=self._status(more))
+
+    async def emit(self, part: WireResult, *, more: bool) -> None:
+        if part.error is not None:
+            self.errored = True
+            self.complete = True
+            await self._write(
+                [build_error_packet(part.error_code, part.error, capabilities=self._capabilities)]
+            )
+            return
+        if not more:
+            self.complete = True
+        elif not self._multi:
+            return
+        if part.is_resultset:
+            await self.columns(part.columns, more=more)
+            await self.rows(part.rows, part.columns)
+            await self.end_rows(more=more)
+            return
+        await self._write(
+            [
+                build_ok_packet(
+                    part.ok_affected,
+                    0,
+                    status_flags=self._status(more),
+                    capabilities=self._capabilities,
+                )
+            ]
+        )
+
+    async def columns(self, columns: list[ColumnDefinition], *, more: bool) -> None:
+        self._suppressed = more and not self._multi
+        if self._suppressed:
+            return
+        payloads = [encode_length_encoded_int(len(columns))]
+        payloads.extend(build_column_definition(column) for column in columns)
+        if not self._capabilities & CLIENT_DEPRECATE_EOF:
+            payloads.append(build_eof_packet())
+        await self._write(payloads)
+
+    async def rows(self, rows: list[list], columns: list[ColumnDefinition]) -> None:
+        if self._suppressed or not rows:
+            return
+        await self._write([self._row_encoder(list(row), columns) for row in rows])
+
+    async def end_rows(self, *, more: bool) -> None:
+        if self._suppressed:
+            self._suppressed = False
+            return
+        if not more:
+            self.complete = True
+        await self._write([self._terminator(more)])
 
 
 def build_eof_packet_payload(capabilities: int) -> bytes:

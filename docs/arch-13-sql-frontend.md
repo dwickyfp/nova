@@ -56,6 +56,11 @@ lines are one-based and columns zero-based. SQL fragments come from source
 slices. `getText()` is used only for metadata such as identifiers, never to
 reconstruct executable SQL.
 
+The parser first tries SLL prediction with a bail-out error strategy and
+reparses with full LL prediction only when SLL cannot decide. SLL accepts a
+subset of what LL accepts and builds the same tree when it succeeds, so the
+fallback changes speed, not results; diagnostics always come from the LL pass.
+
 Both lexer and parser default error listeners are removed. Errors report a
 position and a generic message; rejected tokens and literals are omitted.
 Direct execution accepts exactly one complete statement. Script execution keeps
@@ -73,7 +78,9 @@ discarded at request exit and has no process-wide source retention.
 
 AST builders and planners reject duplicate registration. Native context fallback
 is restricted to engine statement contexts. Unregistered Nova contexts and
-statement types fail closed. Classification checks task creation before native
+statement types fail closed. An engine statement whose grammar context has no
+explicit effect mapping is treated as writing metadata, so an unclassified
+administrative form is never reported as read-only. Classification checks task creation before native
 task submission, and prediction/forecast forms before ordinary queries.
 `EXPLAIN` remains an engine request.
 
@@ -96,7 +103,9 @@ The HTTP response keeps legacy fields and adds `error_code`, `statement_kind`,
 `effects` and optional `execution_failure`. `destructive` describes statement
 policy; `needs_confirmation` describes the current wait for approval. The worksheet
 uses the server response and resubmits the immutable SQL/tab/namespace snapshot.
-The proxy returns its existing ERR refusal without a new confirmation syntax.
+MySQL clients have no confirmation exchange, so the proxy submits the statement as
+confirmed: the statement the client sent is the explicit request, as with any MySQL
+server. The guard, engine authorization and audit still apply.
 
 `LogicalPlan` carries the statement and analysis. Lowering produces one of:
 
@@ -131,6 +140,12 @@ response or failed rollback produces `unknown` and discards the connection.
 Statements inside a transaction are audited as EXECUTED, with a separate committed,
 rolled_back or unknown transaction event. Proxy sessions are never borrowed for a
 composite transaction; missing credentials for a dedicated connection cause refusal.
+
+A MySQL client's own `BEGIN`/`COMMIT`/`ROLLBACK` is a different path: the proxy
+forwards them to that client's engine session and, while the transaction is
+open, runs each statement on that session without re-selecting role and database
+(`client_transaction`). StarRocks refuses `SET ROLE` inside a transaction, and
+so does the proxy.
 Cross-system coordination and compensation are outside this contract.
 
 ### Credentials and stage execution
@@ -236,6 +251,18 @@ Unsupported managed governance forms are rejected; they are never forwarded as
 native grants. Native user-account operations retain their prior routing.
 The ACCOUNTADMIN/root/UDF/egress guard runs before parsing and Ranger actions.
 Ranger-disabled security SQL keeps native execution.
+Native `SET sql_dialect` to anything other than StarRocks is refused with
+`capability_unsupported`: the engine would parse later statements with another
+grammar while Nova classified them with the pinned StarRocks grammar.
+A block comment glued to the end of an `@stage` path (`@stage/*.csv /* ... */`)
+is refused: the comment would swallow the glob and the reference would name the
+whole stage.
+
+Engine results can stream: `ExecutionContext.row_sink` receives column names and
+row batches as the engine produces them, and the MySQL proxy writes them to the
+client without holding the whole result. Stage listings and storage errors are
+rewritten so physical bucket roots appear as `@stage` and endpoints as
+`<storage endpoint>`.
 
 Compatibility APIs remain in `modules/query/dialect/parser.py`, the compact ML
 and task parsers, and the old security statement router for existing callers.

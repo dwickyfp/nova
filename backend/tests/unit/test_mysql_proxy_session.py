@@ -17,9 +17,11 @@ from app.proxy.session import (
     HIDDEN_DATABASES,
     SessionState,
     handle_set_statement,
+    is_catalog_switch,
     is_show_databases,
     parse_role_statement,
     parse_use_statement,
+    quote_database_target,
     split_statements,
     substitute_user_variables,
 )
@@ -55,6 +57,26 @@ class TestSplitStatements:
 
     def test_empty_input(self):
         assert split_statements("   ") == []
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            'SELECT "dq;semi"',
+            "SELECT 'back\\'slash;semi'",
+            "SELECT `odd;name` FROM t",
+            'INSERT INTO t VALUES ("typeA;typeB", 1)',
+            "SELECT 'a\\\\'; ",
+        ],
+    )
+    def test_quoted_semicolons_are_not_boundaries(self, sql):
+        assert split_statements(sql) == [sql.strip().rstrip(";").strip()]
+
+    def test_boundaries_match_the_query_service_splitter(self):
+        from app.common.sql_guard import split_sql_statements
+
+        sql = "SELECT \"a;b\"; SELECT 'c\\';d'; SELECT `e;f` -- g;\n; SELECT 2"
+        assert split_statements(sql) == split_sql_statements(sql)
+        assert len(split_statements(sql)) == 4
 
 
 class TestSetStatements:
@@ -173,34 +195,51 @@ class TestSetStatements:
             "SET autocommit = 1",
             "SET @@session.autocommit = 1",
             "SET SESSION autocommit = ON",
-        ],
-    )
-    def test_autocommit_on_compatibility(self, statement):
-        session = SessionState()
-        result = handle_set_statement(statement, session)
-        assert result.handled is True
-        assert result.error is None
-
-    @pytest.mark.parametrize(
-        "statement",
-        [
+            "SET AUTOCOMMIT=0",
+            "SET @@session.autocommit=0",
+            "SET SESSION AUTOCOMMIT=FALSE",
+            "SET foreign_key_checks=0",
             "BEGIN",
             "START TRANSACTION",
             "COMMIT",
             "ROLLBACK",
-            "SET AUTOCOMMIT=0",
-            "SET @@session.autocommit=0",
-            "SET TRANSACTION READ ONLY",
-            "SET foreign_key_checks=0",
             "/* client */ BEGIN",
-            "SET SESSION AUTOCOMMIT=FALSE",
         ],
     )
-    def test_unsupported_session_effects_are_refused(self, statement):
+    def test_transaction_statements_and_autocommit_reach_the_engine(self, statement):
+        """The engine owns transactions and answers for these settings itself."""
         result = handle_set_statement(statement, SessionState())
         assert result.handled is False
-        assert result.error_code == 1235
-        assert "not supported" in result.error
+        assert result.error is None
+
+    @pytest.mark.parametrize(
+        "statement",
+        ["SET GLOBAL TRANSACTION READ ONLY", "SET GLOBAL query_timeout = 10", "SET @@global.x = 1"],
+    )
+    def test_global_settings_are_refused(self, statement):
+        result = handle_set_statement(statement, SessionState())
+        assert result.handled is False
+        assert result.error == "SET GLOBAL is not supported through the Nova MySQL proxy"
+
+    @pytest.mark.parametrize(
+        ("statement", "kind"),
+        [
+            ("BEGIN", "begin"),
+            ("begin work", "begin"),
+            ("START TRANSACTION WITH CONSISTENT SNAPSHOT", "begin"),
+            ("COMMIT", "end"),
+            ("COMMIT WORK", "end"),
+            ("ROLLBACK", "end"),
+            ("ROLLBACK AND NO CHAIN", "end"),
+            ("SELECT 1", None),
+            ("SET autocommit = 0", None),
+            ("ROLLBACK TO SAVEPOINT s", None),
+        ],
+    )
+    def test_transaction_control(self, statement, kind):
+        from app.proxy.session import transaction_control
+
+        assert transaction_control(statement) == kind
 
     @pytest.mark.parametrize(
         "statement",
@@ -209,6 +248,10 @@ class TestSetStatements:
             "SET @@session.time_zone='+07:00'",
             "SET sql_mode = 'STRICT_ALL_TABLES'",
             "SET @@session.query_timeout=10",
+            # Drivers send these on connect; the engine accepts them as no-ops.
+            "SET TRANSACTION READ ONLY",
+            "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
+            "SET LOCAL TRANSACTION ISOLATION LEVEL SERIALIZABLE, READ WRITE",
         ],
     )
     def test_engine_session_assignments_are_forwarded(self, statement):
@@ -657,13 +700,47 @@ class TestUseStatement:
     def test_backticked(self):
         assert parse_use_statement("USE `NOVA_DEMO`") == "NOVA_DEMO"
 
-    def test_qualified_use_keeps_the_first_segment(self):
-        """``USE DATALAKE.bronze`` is what the design doc's UI example writes.
+    def test_catalog_qualified_use_is_kept_whole(self):
+        """StarRocks reads ``USE a.b`` as catalog ``a``, database ``b``.
 
-        The engine resolves the qualified form; the proxy tracks the database
-        context that later statements are scoped to.
+        The proxy re-selects this target before every statement, so keeping only
+        ``a`` selected a database named after the catalog.
         """
-        assert parse_use_statement("USE DATALAKE.bronze") == "DATALAKE"
+        assert parse_use_statement("USE default_catalog.audit_db") == "default_catalog.audit_db"
+        assert parse_use_statement("USE `hive`.`default`") == "hive.default"
+
+    def test_escaped_backquote_in_a_name(self):
+        assert parse_use_statement("USE `odd``name`") == "odd`name"
+
+    @pytest.mark.parametrize("statement", ["USE 'hive'", "USE a.b.c", "USE a.", "USE a b"])
+    def test_non_database_targets_are_not_tracked(self, statement):
+        assert parse_use_statement(statement) is None
+
+    @pytest.mark.parametrize(
+        ("statement", "expected"),
+        [
+            ("USE 'hive_catalog'", True),
+            ('USE "hive_catalog"', True),
+            ("SET CATALOG hive_catalog", True),
+            ("set catalog `hive`;", True),
+            ("USE audit_db", False),
+            ("SET catalog_x = 1", False),
+        ],
+    )
+    def test_catalog_switch(self, statement, expected):
+        assert is_catalog_switch(statement) is expected
+
+    @pytest.mark.parametrize(
+        ("target", "expected"),
+        [
+            ("audit_db", "`audit_db`"),
+            ("default_catalog.audit_db", "`default_catalog`.`audit_db`"),
+            ("odd`name", "`odd``name`"),
+        ],
+    )
+    def test_init_db_targets_round_trip(self, target, expected):
+        assert quote_database_target(target) == expected
+        assert parse_use_statement(f"USE {expected}") == target
 
     def test_case_insensitive_keyword(self):
         assert parse_use_statement("use nova_demo") == "nova_demo"
@@ -697,6 +774,9 @@ class TestShowDatabasesDetection:
             "SHOW DATABASES;",
             "  SHOW  DATABASES  ",
             "SHOW SCHEMAS",
+            "SHOW DATABASES LIKE 'N%'",
+            "SHOW SCHEMAS WHERE `Database` LIKE 'N%'",
+            "SHOW DATABASES FROM default_catalog",
         ],
     )
     def test_recognised(self, statement):
@@ -704,7 +784,12 @@ class TestShowDatabasesDetection:
 
     @pytest.mark.parametrize(
         "statement",
-        ["SHOW TABLES", "SHOW DATABASES LIKE 'N%'", "SELECT 1", "SHOW CREATE DATABASE x"],
+        [
+            "SHOW TABLES",
+            "SHOW DATABASES FROM hive_catalog",
+            "SELECT 1",
+            "SHOW CREATE DATABASE x",
+        ],
     )
     def test_not_recognised(self, statement):
         assert is_show_databases(statement) is False
@@ -717,10 +802,83 @@ class TestShowDatabasesDetection:
 
 
 @pytest.mark.parametrize(
-    "statement", ["SET NAMES latin1", "SET CHARSET ascii", "SET NAMES utf8mb4 COLLATE utf8mb4_bin"]
+    "statement",
+    [
+        "SET NAMES latin1",
+        "SET CHARSET ascii",
+        "SET NAMES utf8mb4 COLLATE latin1_swedish_ci",
+        "SET NAMES utf8mb4 COLLATE utf8mb4_bin, time_zone = '+00:00'",
+    ],
 )
 def test_unsupported_client_encoding_is_not_acknowledged(statement):
     result = handle_set_statement(statement, SessionState())
     assert not result.handled
     assert result.error_code == 1235
     assert "UTF-8" in result.error
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "SET NAMES utf8mb4 COLLATE utf8mb4_general_ci",
+        "SET NAMES utf8mb4 COLLATE utf8mb4_bin",
+        "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'",
+        "SET NAMES utf8 COLLATE utf8_general_ci",
+        "SET NAMES utf8mb4 COLLATE DEFAULT",
+    ],
+)
+def test_utf8_collation_from_drivers_is_acknowledged(statement):
+    """Drivers send a collation on connect; the engine ignores it as well."""
+    result = handle_set_statement(statement, SessionState())
+    assert result.handled
+    assert result.error is None
+
+
+def test_engine_owned_variables_are_left_for_the_engine():
+    session = SessionState()
+    session.engine_variables.add("arr")
+    session.user_variables["n"] = "2"
+
+    result = substitute_user_variables("SELECT element_at(@arr, @n)", session)
+
+    assert result.sql == "SELECT element_at(@arr, 2)"
+    assert result.unknown == []
+
+
+class TestParameterBinding:
+    @pytest.mark.parametrize(
+        ("value", "literal"),
+        [
+            (None, "NULL"),
+            (True, "TRUE"),
+            (42, "42"),
+            (1.5, "1.5e0"),
+            (1e-05, "1e-05"),
+            ("it's \\ ok", "'it''s \\\\ ok'"),
+            (b"\x00\xff", "X'00ff'"),
+            (__import__("datetime").date(2024, 2, 29), "CAST('2024-02-29' AS DATE)"),
+        ],
+    )
+    def test_literals(self, value, literal):
+        from app.proxy.session import sql_literal
+
+        assert sql_literal(value) == literal
+
+    def test_a_bound_string_cannot_end_its_literal(self):
+        from app.proxy.session import bind_placeholders, sql_literal
+
+        bound = bind_placeholders("SELECT ?", [sql_literal("x'; DROP TABLE t; --")])
+        assert bound == "SELECT 'x''; DROP TABLE t; --'"
+
+    def test_markers_in_literals_comments_and_names_are_ignored(self):
+        from app.proxy.session import placeholder_spans
+
+        sql = "SELECT '?', \"?\", `?`, ? /* ? */ -- ?\n, ?"
+        assert [sql[offset] for offset in placeholder_spans(sql)] == ["?", "?"]
+        assert len(placeholder_spans(sql)) == 2
+
+    def test_unquote_literal(self):
+        from app.proxy.session import unquote_literal
+
+        assert unquote_literal("'a''b\\nc'") == "a'b\nc"
+        assert unquote_literal("'unterminated") is None

@@ -51,7 +51,8 @@ async def compatibility_cases(target: Target, database: str, stages: list[dict])
             "0x" + ORIGIN_POINT_BYTES.hex().upper(),
             None,
         ),
-        ("missing_table", "SELECT * FROM nova_sql_absent_table; SELECT 2;", "", "ERROR 1064"),
+        # The engine's own error number reaches the client, as with a direct connection.
+        ("missing_table", "SELECT * FROM nova_sql_absent_table; SELECT 2;", "", "ERROR 5502"),
     ]
     if stages:
         checks.append(

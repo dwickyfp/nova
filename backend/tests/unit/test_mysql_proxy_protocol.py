@@ -467,3 +467,22 @@ class TestResultsetLayout:
         assert payloads[0] == p.encode_length_encoded_int(4)
         # count + 4 metadata + metadata-closing EOF + row-block-closing EOF
         assert len(payloads) == 1 + 4 + 1 + 1
+
+
+class TestMultiResultStatus:
+    def test_result_set_terminator_carries_more_results(self):
+        payloads = p.build_resultset(
+            [p.ColumnDefinition(name="a")],
+            [[1]],
+            capabilities=0,
+            status_flags=p.DEFAULT_SERVER_STATUS | p.SERVER_MORE_RESULTS_EXISTS,
+        )
+        terminator = payloads[-1]
+        assert terminator[0] == 0xFE
+        status = struct.unpack("<H", terminator[3:5])[0]
+        assert status & p.SERVER_MORE_RESULTS_EXISTS
+
+    def test_single_result_set_does_not_claim_more_results(self):
+        payloads = p.build_resultset([p.ColumnDefinition(name="a")], [[1]], capabilities=0)
+        status = struct.unpack("<H", payloads[-1][3:5])[0]
+        assert not status & p.SERVER_MORE_RESULTS_EXISTS

@@ -73,31 +73,33 @@ def data_statement_cases() -> list[Case]:
                     ),
                 ),
             ),
+            # A MySQL client has no confirmation exchange; the statement it sends
+            # is the explicit request, so the proxy runs UPDATE/DELETE directly.
             Case(
-                "dml.update_confirmation_required",
+                "dml.update",
                 "dml",
                 "UPDATE update_values SET v=9 WHERE k=1",
-                error_code=1064,
+                [],
                 setup=(
                     "CREATE TABLE update_values(k INT NOT NULL,v INT) PRIMARY KEY(k)"
                     + distribution,
                     "INSERT INTO update_values VALUES (1,3)",
                 ),
                 statement_rules=("updateStatement",),
-                effects=(EffectCheck("SELECT k,v FROM update_values", [[1, 3]]),),
+                effects=(EffectCheck("SELECT k,v FROM update_values", [[1, 9]]),),
             ),
             Case(
-                "dml.delete_confirmation_required",
+                "dml.delete",
                 "dml",
                 "DELETE FROM delete_values WHERE k=1",
-                error_code=1064,
+                [],
                 setup=(
                     "CREATE TABLE delete_values(k INT NOT NULL,v INT) PRIMARY KEY(k)"
                     + distribution,
-                    "INSERT INTO delete_values VALUES (1,3)",
+                    "INSERT INTO delete_values VALUES (1,3),(2,4)",
                 ),
                 statement_rules=("deleteStatement",),
-                effects=(EffectCheck("SELECT k,v FROM delete_values", [[1, 3]]),),
+                effects=(EffectCheck("SELECT k,v FROM delete_values", [[2, 4]]),),
             ),
             Case(
                 "query.union_all",

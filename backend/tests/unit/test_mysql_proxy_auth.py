@@ -79,6 +79,11 @@ class TestHandshakeParsing:
         parsed = parse_starrocks_handshake(_handshake())
         assert parsed.capabilities == p.SERVER_CAPABILITIES
 
+    def test_reads_the_engine_connection_id(self):
+        """The proxy announces this id, so ``KILL QUERY <id>`` reaches the engine."""
+        parsed = parse_starrocks_handshake(_handshake())
+        assert parsed.connection_id == 7
+
     def test_a_different_scramble_each_time_is_what_makes_the_relay_single_use(self):
         first = parse_starrocks_handshake(_handshake(scramble=bytes(range(20))))
         second = parse_starrocks_handshake(_handshake(scramble=bytes(range(1, 21))))

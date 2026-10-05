@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from app.common.sql_guard import strip_sql_comments
+from app.common.sql_guard import split_sql_statements, strip_sql_comments
 from app.sql_frontend.session_functions import QueryCorrelationSession
 
 #: Role assignment, e.g. ``SET ROLE ACCOUNTADMIN`` / ``SET ROLE 'analyst'``.
@@ -50,22 +50,39 @@ _PINNED = re.compile(
     r"^\s*SET\s+(?:NAMES|CHARACTER\s+SET|CHARSET)\b",
     re.IGNORECASE,
 )
+#: A UTF-8 ``COLLATE`` is accepted with ``SET NAMES`` because drivers send it
+#: on connect (Connector/J ``connectionCollation``, Go ``collation``); the engine
+#: accepts it too. The proxy always speaks UTF-8, so only UTF-8 collations fit.
 _UTF8_CHARSET = re.compile(
     r"^\s*SET\s+(?:NAMES|CHARACTER\s+SET|CHARSET)\s+"
-    r"(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT|'(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT)')\s*;?\s*$",
+    r"(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT|'(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT)')"
+    r"(?:\s+COLLATE\s+(?:'?UTF8(?:MB[34])?_[A-Z0-9_]+'?|DEFAULT))?\s*;?\s*$",
     re.IGNORECASE,
 )
 
-_AUTOCOMMIT_ON = re.compile(
-    r"^\s*SET\s+(?:(?:SESSION|LOCAL)\s+|@@(?:(?:SESSION|LOCAL)\s*\.\s*)?)?"
-    r"AUTOCOMMIT\s*=\s*(?:1|ON|TRUE)\s*;?\s*$",
-    re.IGNORECASE,
+#: ``SET GLOBAL …``: a server-scope change the proxy does not make on behalf of
+#: one connection. Session settings — ``autocommit``, transaction
+#: characteristics and the rest — reach the engine, which answers for them.
+_GLOBAL_SETTING = re.compile(r"^\s*SET\s+GLOBAL\b", re.IGNORECASE)
+
+_TRANSACTION_START = re.compile(
+    r"^\s*(?:BEGIN(?:\s+WORK)?|START\s+TRANSACTION\b.*)\s*;?\s*$", re.IGNORECASE | re.DOTALL
 )
-_UNSUPPORTED_SESSION = re.compile(
-    r"^\s*(?:(?:BEGIN|COMMIT|ROLLBACK)\b|START\s+TRANSACTION\b|"
-    r"SET\s+(?:(?:SESSION|LOCAL|GLOBAL)\s+)?(?:TRANSACTION|AUTOCOMMIT|FOREIGN_KEY_CHECKS)\b)",
-    re.IGNORECASE,
+_TRANSACTION_END = re.compile(
+    r"^\s*(?:COMMIT|ROLLBACK)\b(?:\s+WORK)?(?:\s+AND\s+(?:NO\s+)?CHAIN)?"
+    r"(?:\s+(?:NO\s+)?RELEASE)?\s*;?\s*$",
+    re.IGNORECASE | re.DOTALL,
 )
+
+
+def transaction_control(statement: str) -> str | None:
+    """``"begin"`` or ``"end"`` for explicit transaction control, else ``None``."""
+    text = strip_sql_comments(statement)
+    if _TRANSACTION_START.match(text):
+        return "begin"
+    if _TRANSACTION_END.match(text):
+        return "end"
+    return None
 
 _QUOTED_VALUE = re.compile(r"^'(?P<body>.*)'$|^\"(?P<body2>.*)\"$|^`(?P<body3>.*)`$", re.DOTALL)
 
@@ -99,6 +116,14 @@ class SessionState:
     active_role: str | None = None
     security_context_version: int = 1
     user_variables: dict[str, str] = field(default_factory=dict)
+    #: Variables whose typed value lives on the engine session (ARRAY, MAP,
+    #: STRUCT, JSON, LARGEINT); references to them are left for the engine.
+    engine_variables: set[str] = field(default_factory=set)
+    #: SQL-level prepared statements (``PREPARE name FROM ...``), by lowered name.
+    prepared: dict[str, str] = field(default_factory=dict)
+    #: An explicit engine transaction (``BEGIN`` … ``COMMIT``/``ROLLBACK``) is open
+    #: on this connection's engine session.
+    in_transaction: bool = False
 
     def set_database(self, database: str) -> None:
         self.database = database or None
@@ -155,8 +180,8 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
     ``SET @x = 1`` is stored and later substituted back by
     :func:`substitute_user_variables`. ``SET ROLE`` updates the active role,
     which is the one session variable with real security weight: it is what the
-    engine receives as the role for subsequent queries. Charset and autocommit-on
-    commands are compatibility commands; other session settings reach the engine.
+    engine receives as the role for subsequent queries. Charset commands are
+    compatibility commands; other session settings reach the engine.
     """
     text = strip_sql_comments(statement).strip()
 
@@ -169,15 +194,8 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
             error_code=1235,
         )
 
-    if _AUTOCOMMIT_ON.fullmatch(text):
-        return SetStatementResult(True)
-
-    if _UNSUPPORTED_SESSION.match(text):
-        return SetStatementResult(
-            False,
-            "Transactions and this session setting are not supported through the Nova MySQL proxy",
-            error_code=1235,
-        )
+    if _GLOBAL_SETTING.match(text):
+        return SetStatementResult(False, "SET GLOBAL is not supported through the Nova MySQL proxy")
 
     role_match = _SET_ROLE.match(text)
     if role_match:
@@ -200,16 +218,11 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
             )
         name = assignment.group("name").lower()
         if assignment.group("scope").startswith("@@"):
-            if name in {"autocommit", "foreign_key_checks"}:
-                return SetStatementResult(
-                    False,
-                    "This session setting is not supported through the Nova MySQL proxy",
-                    error_code=1235,
-                )
             return SetStatementResult(False)
         if not _LITERAL_VALUE.fullmatch(raw_value):
             return SetStatementResult(True, assignment=(name, raw_value))
         session.user_variables[name] = _store_value(raw_value)
+        session.engine_variables.discard(name)
         return SetStatementResult(True)
 
     return SetStatementResult(False)
@@ -383,6 +396,10 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
                     substituted.append(name)
                     index = match.end()
                     continue
+                if name in session.engine_variables:
+                    out.append(statement[index : match.end()])
+                    index = match.end()
+                    continue
                 unknown.append(name)
                 out.append(statement[index : match.end()])
                 index = match.end()
@@ -449,105 +466,259 @@ def _skip_backquoted(statement: str, start: int) -> int:
 def split_statements(sql: str) -> list[str]:
     """Split a ``COM_QUERY`` payload into statements, respecting literals.
 
-    The proxy needs its own splitter (rather than reusing
-    ``app.common.sql_guard.split_sql_statements``) because it must classify
-    each statement *before* deciding whether to hand it to ``QueryService``:
-    a script of ``SET @x = 1; SELECT @x`` has to have its ``SET`` removed
-    before the rest is executed, or the engine sees it too.
+    The proxy splits before ``QueryService`` does because it must classify
+    each statement first: a script of ``SET @x = 1; SELECT @x`` has to have its
+    ``SET`` removed before the rest is executed, or the engine sees it too.
 
-    Semantics match the guard's splitter — semicolons inside single-quoted
-    literals, ``--`` line comments and ``/* */`` block comments are text.
+    The boundaries must be exactly the ones ``QueryService`` and the engine
+    use, so this delegates to the guard's splitter. A separate scanner that
+    knew only single-quoted literals cut ``SELECT "a;b"``, ``'it\\'s; x'`` and
+    backquoted names at the inner ``;``; the pieces were then re-joined with a
+    different separator, which silently changed the user's data.
     """
-    statements: list[str] = []
-    current: list[str] = []
-    index = 0
-    length = len(sql)
-    while index < length:
-        char = sql[index]
+    return split_sql_statements(sql)
 
-        if char == "'":
-            current.append(char)
-            index += 1
-            while index < length:
-                literal = sql[index]
-                current.append(literal)
-                if literal == "'":
-                    if index + 1 < length and sql[index + 1] == "'":
-                        current.append("'")
-                        index += 2
-                        continue
-                    index += 1
-                    break
-                index += 1
-            continue
 
-        if char == "/" and sql.startswith("/*", index):
-            end = sql.find("*/", index + 2)
-            if end < 0:
-                current.append(sql[index:])
-                index = length
-                continue
-            current.append(sql[index : end + 2])
-            index = end + 2
-            continue
-
-        if char == "-" and sql.startswith("--", index):
-            newline = sql.find("\n", index)
-            if newline < 0:
-                current.append(sql[index:])
-                index = length
-                continue
-            current.append(sql[index:newline])
-            index = newline
-            continue
-
-        if char == ";":
-            statement = "".join(current).strip()
-            if statement:
-                statements.append(statement)
-            current = []
-            index += 1
-            continue
-
-        current.append(char)
-        index += 1
-
-    tail = "".join(current).strip()
-    if tail:
-        statements.append(tail)
-    return statements
+#: Separator used to hand proxy-classified statements back to ``QueryService``
+#: as one script. The newline before ``;`` ends a trailing ``--`` comment so the
+#: boundary is not swallowed by it.
+STATEMENT_SEPARATOR = "\n;\n"
 
 
 _USE_PATTERN = re.compile(r"^\s*USE\s+(?P<database>.+?)\s*;?\s*$", re.IGNORECASE | re.DOTALL)
 
 
-def parse_use_statement(statement: str) -> str | None:
-    """Return the database named by ``USE <db>``, or ``None``.
+#: One segment of a ``USE`` target: a backquoted name (``` `` ``` escapes a
+#: backquote) or a bare name.
+_USE_SEGMENT = re.compile(r"\s*(?:`(?P<quoted>(?:[^`]|``)+)`|(?P<bare>[^\s.`'\";]+))\s*")
 
-    Also accepts ``USE \`db\``` and ``USE db.schema`` — the latter because
-    Nova's UI writes ``USE DATALAKE.bronze`` (see ``docs/arch-07-mysql-proxy.md``),
-    and the engine resolves the qualified form itself, so only the first
-    segment is tracked locally.
+_CATALOG_SWITCH = re.compile(
+    r"^\s*(?:USE\s+(?:'[^']*'|\"[^\"]*\")|SET\s+CATALOG\s+\S+)\s*;?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def parse_use_statement(statement: str) -> str | None:
+    """Return the target of ``USE <db>`` or ``USE <catalog>.<db>``, or ``None``.
+
+    The qualified form is StarRocks' ``catalog.database`` and is kept whole:
+    the proxy re-selects this value before every statement, and the engine's
+    database selection resolves ``catalog.database`` itself. Recording only the
+    first segment selected a database named after the catalog and broke every
+    later statement. ``USE 'catalog'`` switches catalogs and is not a database
+    (see :func:`is_catalog_switch`).
     """
     match = _USE_PATTERN.match(statement)
     if not match:
         return None
-    raw = match.group("database").strip().strip(";").strip()
-    if not raw:
+    raw = match.group("database").strip().rstrip(";").strip()
+    parts: list[str] = []
+    index = 0
+    while index < len(raw):
+        segment = _USE_SEGMENT.match(raw, index)
+        if segment is None or segment.end() == index:
+            return None
+        quoted = segment.group("quoted")
+        parts.append(quoted.replace("``", "`") if quoted is not None else segment.group("bare"))
+        index = segment.end()
+        if index < len(raw):
+            if raw[index] != ".":
+                return None
+            index += 1
+            if index == len(raw):
+                return None
+    if not parts or len(parts) > 2:
         return None
-    raw = raw.strip("`")
-    if "." in raw:
-        raw = raw.split(".", 1)[0].strip().strip("`")
-    return raw or None
+    return ".".join(parts)
+
+
+def is_catalog_switch(statement: str) -> bool:
+    """True for ``USE 'catalog'`` and ``SET CATALOG <name>``.
+
+    After a catalog switch the previously selected database belongs to another
+    catalog, so the proxy must stop re-selecting it.
+    """
+    return bool(_CATALOG_SWITCH.match(strip_sql_comments(statement)))
+
+
+def quote_database_target(target: str) -> str:
+    """``USE`` target text for a ``COM_INIT_DB`` name (``db`` or ``catalog.db``)."""
+    parts = target.split(".", 1) if target.count(".") == 1 else [target]
+    return ".".join("`" + part.replace("`", "``") + "`" for part in parts)
+
+
+_SHOW_DATABASES = re.compile(
+    r"^\s*SHOW\s+(?:DATABASES|SCHEMAS)"
+    r"(?:\s+(?:FROM|IN)\s+`?default_catalog`?)?"
+    r"(?:\s+(?:LIKE|WHERE)\s+.+?)?\s*;?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def is_show_databases(statement: str) -> bool:
-    """True for ``SHOW DATABASES`` and its ``SHOW SCHEMAS`` alias."""
-    normalized = " ".join(statement.strip().rstrip(";").split())
-    return normalized.upper() in ("SHOW DATABASES", "SHOW SCHEMAS")
+    """True for ``SHOW DATABASES``/``SCHEMAS`` over the internal catalog.
+
+    ``LIKE`` and ``WHERE`` filters are included; an external catalog
+    (``FROM hive``) is not, since the hidden names belong to the internal one.
+    """
+    return bool(_SHOW_DATABASES.match(strip_sql_comments(statement)))
 
 
 #: Database names the client must never see. ``NOVA_SYSTEM`` holds Nova's own
 #: configuration and audit tables; ``information_schema``, ``sys`` and
 #: ``_statistics_`` are engine internals the HTTP API already hides.
 HIDDEN_DATABASES = frozenset({"NOVA_SYSTEM", "information_schema", "sys", "_statistics_"})
+
+
+# ── Prepared statements ────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class PreparedSQL:
+    """One SQL-level prepared-statement command."""
+
+    kind: str  # "prepare", "execute" or "deallocate"
+    name: str
+    source: str | None = None  # PREPARE: a quoted literal or ``@variable``
+    arguments: tuple[str, ...] = ()  # EXECUTE ... USING: variable names
+
+
+_NAME = r"(?P<name>`(?:[^`]|``)+`|[A-Za-z_][\w$]*)"
+_PREPARE = re.compile(
+    rf"^\s*PREPARE\s+{_NAME}\s+FROM\s+(?P<source>.+?)\s*;?\s*$", re.IGNORECASE | re.DOTALL
+)
+_EXECUTE = re.compile(
+    rf"^\s*EXECUTE\s+{_NAME}(?:\s+USING\s+(?P<args>@[A-Za-z_][\w$]*"
+    r"(?:\s*,\s*@[A-Za-z_][\w$]*)*))?\s*;?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+_DEALLOCATE = re.compile(
+    rf"^\s*(?:DEALLOCATE|DROP)\s+PREPARE\s+{_NAME}\s*;?\s*$", re.IGNORECASE | re.DOTALL
+)
+
+
+def _statement_name(raw: str) -> str:
+    return (raw[1:-1].replace("``", "`") if raw.startswith("`") else raw).lower()
+
+
+def parse_prepared_statement(statement: str) -> PreparedSQL | None:
+    """Recognise ``PREPARE``/``EXECUTE``/``DEALLOCATE PREPARE``, or ``None``."""
+    text = strip_sql_comments(statement).strip()
+    if match := _PREPARE.match(text):
+        return PreparedSQL("prepare", _statement_name(match.group("name")), match["source"])
+    if match := _EXECUTE.match(text):
+        arguments = tuple(
+            name.strip()[1:].lower() for name in (match.group("args") or "").split(",") if name
+        )
+        return PreparedSQL("execute", _statement_name(match.group("name")), arguments=arguments)
+    if match := _DEALLOCATE.match(text):
+        return PreparedSQL("deallocate", _statement_name(match.group("name")))
+    return None
+
+
+def unquote_literal(text: str) -> str | None:
+    """The value of one complete single- or double-quoted SQL string literal."""
+    text = text.strip()
+    if len(text) < 2 or text[0] not in "'\"" or text[-1] != text[0]:
+        return None
+    quote = text[0]
+    out: list[str] = []
+    index = 1
+    escapes = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "b": "\b", "Z": "\x1a"}
+    while index < len(text) - 1:
+        char = text[index]
+        if char == "\\" and index + 1 < len(text) - 1:
+            following = text[index + 1]
+            out.append(escapes.get(following, following))
+            index += 2
+            continue
+        if char == quote:
+            if index + 1 < len(text) - 1 and text[index + 1] == quote:
+                out.append(quote)
+                index += 2
+                continue
+            return None
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def placeholder_spans(sql: str) -> list[int]:
+    """Offsets of ``?`` parameter markers outside literals, names and comments."""
+    offsets: list[int] = []
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        if char == "'":
+            index = _skip_single_quoted(sql, index)
+        elif char == '"':
+            index = _skip_double_quoted(sql, index)
+        elif char == "`":
+            index = _skip_backquoted(sql, index)
+        elif sql.startswith("/*", index):
+            end = sql.find("*/", index + 2)
+            index = length if end < 0 else end + 2
+        elif sql.startswith("--", index):
+            newline = sql.find("\n", index)
+            index = length if newline < 0 else newline
+        else:
+            if char == "?":
+                offsets.append(index)
+            index += 1
+    return offsets
+
+
+def bind_placeholders(sql: str, literals: list[str]) -> str:
+    """Replace each ``?`` marker with an already-rendered SQL literal."""
+    offsets = placeholder_spans(sql)
+    if len(offsets) != len(literals):
+        raise ValueError("Incorrect arguments to EXECUTE")
+    out = sql
+    for offset, literal in zip(reversed(offsets), reversed(literals), strict=True):
+        out = out[:offset] + literal + out[offset + 1 :]
+    return out
+
+
+def sql_literal(value) -> str:
+    """Render a Python value as a StarRocks SQL literal for parameter binding.
+
+    Strings escape both the quote and the backslash, which StarRocks treats as
+    an escape character, so a bound value can never end its literal early.
+    """
+    import datetime
+    import decimal
+    import math
+
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("Non-finite parameter value")
+        # An exponent makes it a DOUBLE literal; ``1.25`` alone is a DECIMAL.
+        text = repr(value)
+        return text if "e" in text else text + "e0"
+    if isinstance(value, decimal.Decimal):
+        if not value.is_finite():
+            raise ValueError("Non-finite parameter value")
+        return str(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"X'{bytes(value).hex()}'"
+    if isinstance(value, datetime.datetime):
+        return "CAST('" + value.isoformat(sep=" ") + "' AS DATETIME)"
+    if isinstance(value, datetime.date):
+        return "CAST('" + value.isoformat() + "' AS DATE)"
+    if isinstance(value, datetime.time):
+        return "'" + value.isoformat() + "'"
+    if isinstance(value, datetime.timedelta):
+        total = int(value.total_seconds())
+        sign = "-" if total < 0 else ""
+        hours, remainder = divmod(abs(total), 3600)
+        return f"'{sign}{hours:02d}:{remainder // 60:02d}:{remainder % 60:02d}'"
+    if isinstance(value, str):
+        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
+    raise ValueError(f"Unsupported parameter type {type(value).__name__}")

@@ -3034,14 +3034,16 @@ class StarRocksLexer(Lexer):
     # constant on the Nova path, not session state.
     #
     # StarRocks MODE_DEFAULT is 32, and the only bit read below is
-    # MODE_PIPES_AS_CONCAT (1 shifted left 1 = 2), which is never set. Nova cannot
-    # turn it on either: the MySQL proxy answers SET sql_mode and SET SESSION
-    # sql_mode itself as a no-op and never forwards it to the engine
-    # (backend/app/proxy/session.py line 64, _NOOP_PREFIXES), and SessionState
-    # carries no sql_mode field (backend/app/proxy/session.py lines 88-96).
+    # MODE_PIPES_AS_CONCAT (1 shifted left 1 = 2). A session may set it (the proxy
+    # forwards SET sql_mode to the engine), and the engine then reads `||` as
+    # CONCAT where this lexer reads LOGICAL_OR. Nova does not depend on which:
+    # both are binary operator expressions, statement classification and effects
+    # never look at the operator, and executable SQL is sliced from the source, so
+    # the engine receives the text the client wrote. ANSI_QUOTES needs no handling:
+    # StarRocks 4.1.4 ignores it and keeps double-quoted text a string.
     #
-    # REOPEN TRIGGER: if SET sql_mode ever stops being a proxy no-op, this constant
-    # is wrong and must become per-session Python state instead.
+    # REOPEN TRIGGER: if a Nova analysis starts reading `||` operands (types,
+    # binding), this constant must become per-session state.
     # NOVA-END
 
 
