@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
+from app.common.news_entitlement import NEWS_ENABLED
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
@@ -111,6 +112,13 @@ async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monk
             ) as bh,
         ):
             alice, bob = StudioClient(ah), StudioClient(bh)
+            # News is off for every account until an administrator enables it.
+            for reader in ("alice", "bob"):
+                await db.execute_system(
+                    "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
+                    "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
+                    [reader, NEWS_ENABLED],
+                )
             await alice.login("alice", "NovaAlice2026!", "marketing")
             await bob.login("bob", "NovaBob2026!", "marketing")
 

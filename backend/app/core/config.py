@@ -152,6 +152,13 @@ class Settings(BaseSettings):
     FERNET_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     SESSION_TTL_SECONDS: int = 3600
+    # A reader's News access proof is reused for this long; 0 proves on every read.
+    NEWS_PROOF_CACHE_SECONDS: int = 300
+    # Older than this, a proof is still used but refreshed in the background.
+    NEWS_PROOF_REFRESH_SECONDS: int = 60
+    NEWS_PROOF_REFRESH_INTERVAL_SECONDS: int = 30
+    # A session that has not read News for this long is no longer kept warm.
+    NEWS_PROOF_READER_IDLE_SECONDS: int = 900
 
     # --- Centralized authorization (Apache Ranger) ---
     # Disabled only for migration/bootstrap. A production Nova deployment is

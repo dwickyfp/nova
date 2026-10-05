@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.common.news_entitlement import is_news_enabled
 from app.core.database import db
 from app.core.studio_capabilities import (
     StudioRuntimeCapabilities,
@@ -85,6 +86,7 @@ class StudioService:
             active_role=user.get("active_role"),
             warehouses=warehouses,
             active_warehouse=prefs.warehouse or (warehouses[0] if warehouses else None),
+            news_enabled=await is_news_enabled(username),
         )
 
     async def settings(self, user: dict) -> StudioSettingsResponse:

@@ -58,6 +58,8 @@ class UserUpdate(BaseModel):
     database: str | None = None
     session_properties: dict[str, str] = Field(default_factory=dict)
     clear_properties: list[str] = Field(default_factory=list)
+    #: Administrator switch for the Studio News surface; ``None`` leaves it as is.
+    news_enabled: bool | None = None
 
     @model_validator(mode="after")
     def validate_payload(self) -> "UserUpdate":
@@ -169,6 +171,7 @@ class UserDetailResponse(BaseModel):
     last_login: str | None = None
     properties: dict[str, str] = Field(default_factory=dict)
     grants: list[UserGrantRow] = Field(default_factory=list)
+    news_enabled: bool = False
 
 
 class RoleCreate(BaseModel):

@@ -53,6 +53,10 @@ class AccessControlService:
         object_name: str,
         ranger_ids: list[int | str] | None = None,
     ) -> None:
+        # Every managed access change retires cached News access proofs at once.
+        from app.modules.intelligence.newsroom_cache import proof_cache
+
+        await proof_cache.bump()
         await write_audit_log(
             event_type="security_admin",
             user_name=security.principal,

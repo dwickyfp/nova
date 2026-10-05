@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS (
     active_version INT,
     status VARCHAR(32) NOT NULL,
     created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL,
+    news_enabled BOOLEAN,
+    news_config JSON,
+    news_updated_by VARCHAR(128),
+    news_updated_at DATETIME
 ) PRIMARY KEY(catalog_name,database_name,schema_name,name)
 DISTRIBUTED BY HASH(catalog_name,database_name,schema_name,name) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -37,15 +41,25 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """,
 )
 
+#: Columns added after the first release; existing deployments gain them at startup.
+SEMANTIC_VIEW_COLUMNS = (
+    "visibility VARCHAR(16)",
+    "news_enabled BOOLEAN",
+    "news_config JSON",
+    "news_updated_by VARCHAR(128)",
+    "news_updated_at DATETIME",
+)
+
 
 async def ensure_semantic_view_schema() -> None:
     for ddl in SEMANTIC_VIEW_DDL:
         await db.execute_system(ddl)
-    try:
-        await db.execute_system(
-            "ALTER TABLE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS ADD COLUMN visibility VARCHAR(16)"
-        )
-    except Exception as exc:
-        message = str(exc).lower()
-        if "already exists" not in message and "duplicate" not in message:
-            raise
+    for column in SEMANTIC_VIEW_COLUMNS:
+        try:
+            await db.execute_system(
+                f"ALTER TABLE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS ADD COLUMN {column}"
+            )
+        except Exception as exc:
+            message = str(exc).lower()
+            if "already exists" not in message and "duplicate" not in message:
+                raise

@@ -1,0 +1,67 @@
+version: 0.1.1
+name: news_retail_sales
+description: >-
+  Daily retail sales of the News demonstration retailer by city, sales channel,
+  and product category. Revenue is recognized on the order date in IDR.
+question_routing_instructions: >-
+  Route questions about daily revenue and order volume by city, channel, or
+  category to this model.
+query_generation_instructions: >-
+  Use sale_date as the time dimension. Revenue is IDR. A regional manager is
+  accountable for one city; national figures belong to the head office.
+datasets:
+  - name: sales
+    source: news_demo.retail_sales
+    description: One row per day, city, channel, and category.
+    primary_key: [sale_date, city, channel, category]
+    fields:
+      - name: sale_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sale_date}]}
+        datatype: Date
+        description: Calendar date of the orders.
+        dimension: {is_time: true}
+        search_strategy: range
+      - name: city
+        expression: {dialects: [{dialect: ANSI_SQL, expression: city}]}
+        datatype: String
+        description: City of the store or delivery address. Each regional manager owns one city.
+        dimension:
+          sample_values: [Jakarta, Surabaya, Bandung, Medan, Semarang, Makassar, Palembang, Denpasar]
+        search_strategy: exact
+      - name: channel
+        expression: {dialects: [{dialect: ANSI_SQL, expression: channel}]}
+        datatype: String
+        description: Sales channel that took the order.
+        dimension: {sample_values: [Store, Online, Marketplace, Wholesale]}
+        search_strategy: exact
+      - name: category
+        expression: {dialects: [{dialect: ANSI_SQL, expression: category}]}
+        datatype: String
+        description: Product category of the order lines.
+        dimension:
+          sample_values: [Grocery, Electronics, Fashion, Home, Beauty, Collectibles]
+        search_strategy: exact
+      - name: revenue
+        expression: {dialects: [{dialect: ANSI_SQL, expression: revenue}]}
+        datatype: Decimal
+        description: Net revenue of the row in IDR.
+      - name: orders
+        expression: {dialects: [{dialect: ANSI_SQL, expression: orders}]}
+        datatype: Integer
+        description: Number of orders in the row.
+metrics:
+  - name: revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.revenue)}]}
+    base_dataset: sales
+    datatype: Decimal
+    unit: IDR
+    description: >-
+      Net revenue after discounts. A daily move of more than ten percent against
+      the same weekday must be explained in the weekly business review.
+    default_time_dimension: sale_date
+  - name: order_count
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.orders)}]}
+    base_dataset: sales
+    datatype: Integer
+    description: Number of orders placed.
+    default_time_dimension: sale_date

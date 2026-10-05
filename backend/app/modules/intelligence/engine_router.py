@@ -1,10 +1,12 @@
 """Typed Intelligence operations; all identities and evidence are server-derived."""
 
+from datetime import date
 from typing import Annotated, Generic, Literal, TypeVar
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from pydantic import Field
 
+from app.common.news_entitlement import NewsUser
 from app.core.deps import get_current_user
 from app.modules.access_control.business_policy import (
     BusinessPolicy,
@@ -284,8 +286,35 @@ async def run_monitor(monitor_id: str, body: Window, user: CurrentUser):
     return await intelligence_service.run_monitor(monitor_id, body, user)
 
 
+@router.get("/newspaper")
+async def read_newspaper(user: NewsUser, edition: date | None = None):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.newspaper(user, day=edition)
+
+
+@router.get("/stories/{story_id}")
+async def read_story(story_id: Annotated[str, Path(max_length=64)], user: NewsUser):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.story(story_id, user)
+
+
+class StoryReaction(Contract):
+    reaction: Literal["like", "dislike"] | None = None
+
+
+@router.put("/stories/{story_id}/feedback")
+async def react_to_story(
+    story_id: Annotated[str, Path(max_length=64)], body: StoryReaction, user: NewsUser
+):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.react(story_id, body.reaction, user)
+
+
 @router.post("/news/{news_id}/investigate")
-async def investigate_news(news_id: str, user: CurrentUser):
+async def investigate_news(news_id: str, user: NewsUser):
     return await intelligence_service.investigate(news_id, user)
 
 
@@ -297,7 +326,7 @@ class NewsOperation(Contract):
 
 
 @router.post("/news/{news_id}/operations")
-async def news_operation(news_id: str, body: NewsOperation, user: CurrentUser):
+async def news_operation(news_id: str, body: NewsOperation, user: NewsUser):
     from fastapi import HTTPException
 
     news = await intelligence_service.get("news", news_id, user)
@@ -521,15 +550,18 @@ async def inspect_graph(
 
 def _register_read_routes(kind, model):
     public_model = PUBLIC_RECORD_MODELS.get(kind, model)
+    # News is an administrator-enabled surface; every other kind keeps the session gate.
+    Reader = NewsUser if kind == "news" else CurrentUser
+
     async def listing(
-        user: CurrentUser,
+        user: Reader,
         after: str = Query(default="", max_length=128),
         limit: int = Query(default=20, ge=1, le=20),
     ):
         page = await intelligence_service.page(kind, user, after=after, limit=limit)
         return {**page, "items": [public_canonical_record(kind, row) for row in page["items"]]}
 
-    async def detail(record_id: str, user: CurrentUser):
+    async def detail(record_id: str, user: Reader):
         record = await intelligence_service.get(kind, record_id, user)
         return public_canonical_record(kind, record)
 

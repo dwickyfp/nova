@@ -1,0 +1,65 @@
+version: 0.1.1
+name: news_operating_expenses
+description: >-
+  Daily operating expenses of Nusantara Retail by city, cost center and expense type, as posted to the general ledger in IDR.
+question_routing_instructions: >-
+  Route questions about operating expense, spend and cost centers by city to this model.
+query_generation_instructions: >-
+  Use posting_date as the time dimension. Amounts are IDR. A cost center owner is accountable for spend against budget.
+datasets:
+  - name: facts
+    source: news_demo.operating_expenses
+    description: One row per day, city, cost center and expense type.
+    primary_key: [posting_date, city, cost_center, expense_type]
+    fields:
+      - name: posting_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: posting_date}]}
+        datatype: Date
+        description: Date the expense was posted.
+        dimension: {is_time: true}
+        search_strategy: range
+      - name: city
+        expression: {dialects: [{dialect: ANSI_SQL, expression: city}]}
+        datatype: String
+        description: City of the branch that incurred the expense.
+        dimension:
+          sample_values: [Jakarta, Surabaya, Bandung, Medan, Semarang, Makassar, Palembang, Denpasar]
+        search_strategy: exact
+      - name: cost_center
+        expression: {dialects: [{dialect: ANSI_SQL, expression: cost_center}]}
+        datatype: String
+        description: Cost center that owns the budget.
+        dimension:
+          sample_values: [Logistics, Marketing, Store Operations, IT, Facilities, Legal]
+        search_strategy: exact
+      - name: expense_type
+        expression: {dialects: [{dialect: ANSI_SQL, expression: expense_type}]}
+        datatype: String
+        description: Whether the expense recurs.
+        dimension:
+          sample_values: [Recurring, One-off]
+        search_strategy: exact
+      - name: transactions
+        expression: {dialects: [{dialect: ANSI_SQL, expression: transactions}]}
+        datatype: Integer
+        description: Number of postings.
+      - name: amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
+        datatype: Decimal
+        description: Posted amount in IDR.
+metrics:
+  - name: operating_expense
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.amount)}]}
+    base_dataset: facts
+    datatype: Decimal
+    unit: IDR
+    description: >-
+      Operating expense posted to the ledger. Spend above the usual level erodes margin and must be explained by the cost center owner against budget.
+    default_time_dimension: posting_date
+  - name: transaction_count
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.transactions)}]}
+    base_dataset: facts
+    datatype: Integer
+    description: >-
+      Number of expense postings.
+    default_time_dimension: posting_date

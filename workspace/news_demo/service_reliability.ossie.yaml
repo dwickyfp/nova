@@ -1,0 +1,77 @@
+version: 0.1.1
+name: news_service_reliability
+description: >-
+  Daily reliability of Nusantara Retail's customer-facing services by service, owning team and environment.
+question_routing_instructions: >-
+  Route questions about incidents, downtime and service reliability by service or team to this model.
+query_generation_instructions: >-
+  Use event_date as the time dimension. Downtime is in minutes. Each service has one owning team.
+datasets:
+  - name: facts
+    source: news_engineering.service_reliability
+    description: One row per day, service, owning team and environment.
+    primary_key: [event_date, service, team, environment]
+    fields:
+      - name: event_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: event_date}]}
+        datatype: Date
+        description: Date the incidents occurred.
+        dimension: {is_time: true}
+        search_strategy: range
+      - name: service
+        expression: {dialects: [{dialect: ANSI_SQL, expression: service}]}
+        datatype: String
+        description: Customer-facing service.
+        dimension:
+          sample_values: [payments-api, checkout-web, catalog-search, mobile-gateway, order-service, inventory-sync, legacy-reports]
+        search_strategy: exact
+      - name: team
+        expression: {dialects: [{dialect: ANSI_SQL, expression: team}]}
+        datatype: String
+        description: Engineering team that owns the service.
+        dimension:
+          sample_values: [Platform, Payments, Commerce, Data]
+        search_strategy: exact
+      - name: environment
+        expression: {dialects: [{dialect: ANSI_SQL, expression: environment}]}
+        datatype: String
+        description: Deployment environment.
+        dimension:
+          sample_values: [production, staging]
+        search_strategy: exact
+      - name: checks
+        expression: {dialects: [{dialect: ANSI_SQL, expression: checks}]}
+        datatype: Integer
+        description: Monitoring checks executed.
+      - name: incidents
+        expression: {dialects: [{dialect: ANSI_SQL, expression: incidents}]}
+        datatype: Integer
+        description: Incidents opened.
+      - name: downtime_minutes
+        expression: {dialects: [{dialect: ANSI_SQL, expression: downtime_minutes}]}
+        datatype: Decimal
+        description: Minutes the service was unavailable.
+metrics:
+  - name: incident_count
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.incidents)}]}
+    base_dataset: facts
+    datatype: Integer
+    unit: incidents
+    description: >-
+      Incidents opened against the service. More incidents mean customers hit errors, and a sharp rise triggers a post-incident review by the owning team.
+    default_time_dimension: event_date
+  - name: downtime_minutes
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.downtime_minutes)}]}
+    base_dataset: facts
+    datatype: Decimal
+    unit: minutes
+    description: >-
+      Minutes a service was unavailable. Downtime counts against the availability objective agreed with the business.
+    default_time_dimension: event_date
+  - name: monitored_checks
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.checks)}]}
+    base_dataset: facts
+    datatype: Integer
+    description: >-
+      Number of monitoring checks executed.
+    default_time_dimension: event_date

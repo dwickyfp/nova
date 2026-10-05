@@ -58,6 +58,33 @@ describe("StudioSidebar", () => {
     expect(retry).toHaveBeenCalledOnce();
   });
 
+  it("hides News for an account without the entitlement and keeps the rest", async () => {
+    const mount = (newsEnabled: boolean) =>
+      render(
+        <TooltipProvider>
+          <StudioSidebar
+            view="chat"
+            onView={() => {}}
+            threads={[]}
+            activeThreadId={null}
+            onOpenThread={() => {}}
+            onNewChat={() => {}}
+            newsEnabled={newsEnabled}
+            open
+            onToggle={() => {}}
+          />
+        </TooltipProvider>,
+      );
+
+    const withNews = await mount(true);
+    await expect.element(withNews.getByRole("button", { name: "News" })).toBeVisible();
+    await withNews.unmount();
+
+    const withoutNews = await mount(false);
+    await expect.element(withoutNews.getByRole("button", { name: "Decisions" })).toBeVisible();
+    expect(withoutNews.getByRole("button", { name: "News" }).query()).toBeNull();
+  });
+
   it("treats New chat as an action and never as the active view", async () => {
     const onNewChat = vi.fn();
     const onView = vi.fn();
