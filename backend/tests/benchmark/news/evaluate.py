@@ -212,3 +212,134 @@ def failures(report: dict) -> list[str]:
         for name, limit in THRESHOLDS.items()
         if (report[name] < limit if name in floor else report[name] > limit)
     ]
+
+
+async def evaluate_desks(seed: int = dataset.SEED) -> dict:
+    """Score the three extra desks, alone and read together with sales."""
+    from tests.benchmark.news import domains
+
+    @asynccontextmanager
+    async def lock(_key, **_kwargs):
+        yield
+
+    async def schedule(*_args, **_kwargs):
+        return {}
+
+    async def judge(_ir, metric):
+        return "better" if metric == "revenue" else "worse"
+
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(newsroom, "metadata_lock", lock))
+        stack.enter_context(patch.object(newsroom, "write_audit_log", AsyncMock()))
+        stack.enter_context(patch.object(engine, "write_audit_log", AsyncMock()))
+        stack.enter_context(patch.object(newsroom, "configure_schedule", schedule))
+        tables = {"sales": warehouse.RETAIL}
+        houses = [warehouse.Warehouse(dataset.generate(seed))]
+        for domain in domains.DOMAINS:
+            tables[domain.key] = warehouse.domain_table(domain)
+            houses.append(
+                warehouse.Warehouse(domains.generate(domain, seed), table=tables[domain.key])
+            )
+        estate, journal = warehouse.Estate(houses), warehouse.Journal()
+        service = NewsroomService(
+            IntelligenceService(journal, estate),
+            estate,
+            journal,
+            warehouse.Bindings(),
+            judge=judge,
+            feedback=warehouse.Reactions(),
+        )
+        manager = estate.principals["news_manager"].user()
+        await service.configure(
+            warehouse.VIEW_ID, NewsSettings(enabled=True, config=config()), manager
+        )
+        for domain in domains.DOMAINS:
+            await service.configure(
+                tables[domain.key].view_id,
+                NewsSettings(
+                    enabled=True,
+                    config=config().model_copy(
+                        update={
+                            "metrics": list(domain.watched),
+                            "count_metric": domain.count_metric,
+                            "slice_dimensions": list(domain.slices),
+                            "time_dimension": domain.date_column,
+                            "narrative": "model",
+                        }
+                    ),
+                ),
+                manager,
+            )
+        report: dict = {"desks": {}, "leaks": 0, "wrongly_hidden": 0, "access_checks": 0}
+        latencies: list[float] = []
+        for offset in domains.OFFSETS:
+            day = dataset.LAST_DAY - timedelta(days=offset)
+            now = datetime.combine(day + timedelta(days=1), time(9), ZoneInfo("Asia/Jakarta"))
+            for table in tables.values():
+                await service.run_cycle(table.view_id, warehouse.SERVICE.user(), now=now)
+            stories = [
+                row for (kind, _), row in journal.rows.items()
+                if kind == "stories" and row.edition_date == day
+            ]
+            for domain in domains.DOMAINS:
+                pressed = {
+                    _story_key(row) for row in stories
+                    if row.semantic.view_id == tables[domain.key].view_id
+                }
+                expected = domains.expectations(domain, offset)
+                required = {key for key, verdict in expected.items() if verdict == "required"}
+                score = report["desks"].setdefault(
+                    domain.key,
+                    {"required": 0, "found": 0, "unexpected": 0, "wrong_impact": 0},
+                )
+                score["required"] += len(required)
+                score["found"] += len(required & pressed)
+                score["unexpected"] += len(pressed - set(expected))
+                score["wrong_impact"] += sum(
+                    1 for row in stories
+                    if row.semantic.view_id == tables[domain.key].view_id
+                    and row.impact != ("unfavorable" if row.change > 0 else "favorable")
+                )
+            for principal in estate.principals.values():
+                if not principal.news_enabled:
+                    continue
+                started = perf_counter()
+                paper = await service.newspaper(principal.user(), day=day)
+                latencies.append((perf_counter() - started) * 1000)
+                shown = {
+                    (section["view_id"], story["metric"],
+                     story["slice"]["dimension"] if story["slice"] else None,
+                     story["slice"]["value"] if story["slice"] else None)
+                    for section in paper["sections"]
+                    for story in section["stories"]
+                }
+                for table in tables.values():
+                    for row in stories:
+                        if row.semantic.view_id != table.view_id:
+                            continue
+                        key = _story_key(row)
+                        subject = (table.view_id, *key[:3])
+                        allowed = warehouse.may_see(principal, key[1], key[2], table)
+                        report["access_checks"] += 1
+                        report["leaks"] += subject in shown and not allowed
+                        report["wrongly_hidden"] += subject not in shown and allowed
+        report["reader_overhead_ms_p50"] = round(median(latencies), 2)
+        report["reader_overhead_ms_p95"] = round(_percentile(latencies, 0.95), 2)
+        return report
+
+
+def desk_failures(report: dict) -> list[str]:
+    broken = [
+        f"{key}: {name}={score[name]}"
+        for key, score in report["desks"].items()
+        for name in ("unexpected", "wrong_impact")
+        if score[name]
+    ]
+    broken += [
+        f"{key}: found {score['found']} of {score['required']} required"
+        for key, score in report["desks"].items()
+        if score["found"] < score["required"]
+    ]
+    return broken + [
+        f"{name}={report[name]}" for name in ("leaks", "wrongly_hidden") if report[name]
+    ]

@@ -326,6 +326,69 @@ it("orders stories the way the server ranked them for this reader", async () => 
     .toHaveAttribute("aria-pressed", "true");
 });
 
+it("names each story's desk and narrows the edition to one desk", async () => {
+  const overtime = story({
+    id: "story-overtime",
+    view_id: "workforce",
+    view_name: "news_workforce",
+    metric: "overtime_hours",
+    metric_label: "Overtime hours",
+    unit: "hours",
+    after: 312.4,
+    before: 215.1,
+    change: 97.3,
+    relative_change: 0.452,
+    impact: "unfavorable",
+    score: 2.1,
+    head: false,
+    narrative: { ...story().narrative, headline: "Overtime hours rose 45.2% in Bandung" },
+  });
+  vi.spyOn(newspaperApi, "read").mockResolvedValue({
+    edition_date: "2026-10-04",
+    sections: [
+      { ...paper.sections[0], stories: [story({ view_name: "news_retail_sales" })] },
+      {
+        view_id: "workforce",
+        name: "news_workforce",
+        edition_date: "2026-10-04",
+        pressed_at: "2026-10-05T02:05:00Z",
+        stories: [overtime],
+      },
+    ],
+  });
+  const screen = await mount();
+
+  await expect.element(screen.getByText("2 views covered", { exact: false })).toBeVisible();
+  await expect.element(screen.getByText("News workforce ·")).toBeVisible();
+  await expect.element(screen.getByText("312.4 hours")).toBeVisible();
+  // A rise in overtime is bad for the business, so it is not coloured as a gain.
+  const tones = [...document.querySelectorAll("[data-tone]")].map((node) =>
+    node.getAttribute("data-tone"),
+  );
+  expect(tones).toEqual(["bad", "bad"]);
+
+  await screen.getByRole("button", { name: /News workforce\s*1/ }).click();
+
+  expect(document.querySelectorAll('[data-slot="news-entry"]').length).toBe(1);
+  await expect
+    .element(screen.getByRole("heading", { level: 2, name: "Overtime hours rose 45.2% in Bandung" }))
+    .toBeVisible();
+  expect(screen.getByText("Top story for you").query()).toBeNull();
+  await expect.element(screen.getByText("1 story")).toBeVisible();
+
+  await screen.getByRole("button", { name: /All desks/ }).click();
+  expect(document.querySelectorAll('[data-slot="news-entry"]').length).toBe(2);
+  await expect.element(screen.getByText("Top story for you")).toBeVisible();
+});
+
+it("offers no desk filter when the edition has one desk", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
+  const screen = await mount();
+
+  await expect.element(screen.getByText("Edition at a glance")).toBeVisible();
+  expect(screen.getByRole("group", { name: "Desks" }).query()).toBeNull();
+});
+
 it("opens a story from anywhere in its block", async () => {
   vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
   const onOpen = vi.fn();

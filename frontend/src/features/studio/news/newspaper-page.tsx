@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingLines } from "@/components/ui/loading-overlay";
 import { useAuthStore } from "@/stores/auth-store";
-import { byPriority, humanize, kicker, longDate } from "./format";
+import { byPriority, desk, humanize, kicker, longDate } from "./format";
 import { Highlighted } from "./highlight";
 import {
   newspaperApi,
@@ -52,7 +53,7 @@ function Entry({
       className="group -mx-4 cursor-pointer border-t px-4 py-10 transition-colors first:border-t-0 hover:bg-muted/40 sm:-mx-6 sm:px-6"
       onClick={() => onOpen(story.id)}
     >
-      {lead && (
+      {lead && story.head !== false && (
         <p className="mb-4 text-xs font-medium tracking-wide text-primary uppercase">
           Top story for you
           {story.reason ? (
@@ -62,6 +63,7 @@ function Entry({
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {desk(story) ? <span className="text-foreground">{desk(story)} · </span> : null}
           {kicker(story)}
         </span>
         <Severity story={story} />
@@ -131,6 +133,8 @@ function Edition({
   onOpen: Props["onOpen"];
   onReact: React_;
 }) {
+  // Which desk the reader narrowed the edition to; every desk when null.
+  const [only, setOnly] = useState<string | null>(null);
   if (!stories.length)
     return (
       <EmptyState
@@ -139,22 +143,57 @@ function Edition({
         description="No metric you can read moved beyond its threshold. The next edition is pressed on the view's schedule."
       />
     );
-  const critical = stories.filter((story) => story.severity === "critical").length;
-  const views = new Map(paper.sections.map((section) => [section.view_id, section.name]));
+  const desks = paper.sections
+    .map((section) => ({
+      id: section.view_id,
+      name: humanize(section.name),
+      count: stories.filter((story) => story.view_id === section.view_id).length,
+    }))
+    .filter((item) => item.count > 0);
+  const active = desks.some((item) => item.id === only) ? only : null;
+  const shown = active ? stories.filter((story) => story.view_id === active) : stories;
+  const critical = shown.filter((story) => story.severity === "critical").length;
   return (
     <>
-      <p className="flex flex-wrap gap-x-6 gap-y-1 border-b-2 border-foreground py-3 text-sm">
-        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Edition at a glance
-        </span>
-        <span className="tabular-nums">
-          {stories.length} {stories.length === 1 ? "story" : "stories"}
-        </span>
-        <span className="tabular-nums">{critical} critical</span>
-        <span className="tabular-nums">{stories.length - critical} material</span>
-      </p>
+      <div className="border-b-2 border-foreground py-3">
+        <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Edition at a glance
+          </span>
+          <span className="tabular-nums">
+            {shown.length} {shown.length === 1 ? "story" : "stories"}
+          </span>
+          <span className="tabular-nums">{critical} critical</span>
+          <span className="tabular-nums">{shown.length - critical} material</span>
+        </p>
+        {desks.length > 1 && (
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Desks">
+            <Button
+              variant={active ? "outline" : "secondary"}
+              size="sm"
+              aria-pressed={!active}
+              onClick={() => setOnly(null)}
+            >
+              All desks
+              <span className="text-muted-foreground tabular-nums">{stories.length}</span>
+            </Button>
+            {desks.map((item) => (
+              <Button
+                key={item.id}
+                variant={active === item.id ? "secondary" : "outline"}
+                size="sm"
+                aria-pressed={active === item.id}
+                onClick={() => setOnly(item.id)}
+              >
+                {item.name}
+                <span className="text-muted-foreground tabular-nums">{item.count}</span>
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
       <div>
-        {stories.map((story, index) => (
+        {shown.map((story, index) => (
           <Entry
             key={story.id}
             story={story}
@@ -165,11 +204,7 @@ function Edition({
         ))}
       </div>
       <p className="border-t-2 border-foreground pt-3 text-xs text-muted-foreground">
-        End of edition ·{" "}
-        {[...new Set(stories.map((story) => views.get(story.view_id)))]
-          .filter((name): name is string => !!name)
-          .map(humanize)
-          .join(" · ")}
+        End of edition · {desks.map((item) => item.name).join(" · ")}
       </p>
     </>
   );

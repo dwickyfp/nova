@@ -44,7 +44,9 @@ function Body({
     <article className="min-w-0">
       <div className="flex flex-wrap items-center gap-2 text-xs tracking-wide text-muted-foreground uppercase">
         <Severity story={story} />
-        <span>{kicker(story)}</span>
+        <span>
+          {humanize(story.view_name)} · {kicker(story)}
+        </span>
       </div>
       <SheetTitle className="mt-3 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
         {story.narrative.headline}

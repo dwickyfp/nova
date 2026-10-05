@@ -1,18 +1,49 @@
 # News demonstration fixture
 
-This fixture exercises Studio News end to end: a Semantic View with News
-switched on, an edition pressed by a scheduled execution account, and readers
-whose row scopes decide which stories exist for them. The data is synthetic.
+This fixture exercises Studio News end to end for one fictional company,
+Nusantara Retail, whose morning edition combines four desks. Each desk is one
+Semantic View with News switched on; the edition is pressed by a scheduled
+execution account, and a reader's row scopes decide which stories exist for
+them. The data is synthetic.
+
+| Desk | Table | Semantic View | Watched metrics | Sliced by |
+| --- | --- | --- | --- | --- |
+| Sales | `news_demo.retail_sales` | `news_retail_sales` | `revenue` | city, channel, category |
+| Workforce | `news_demo.workforce_daily` | `news_workforce` | `overtime_hours`, `absence_hours` | city, department |
+| Finance | `news_demo.operating_expenses` | `news_operating_expenses` | `operating_expense` | city, cost center |
+| Engineering | `news_engineering.service_reliability` | `news_service_reliability` | `incident_count`, `downtime_minutes` | service, team |
+
+Three of the four desks watch metrics where a rise is bad for the business, so
+the model's judgement of each metric decides the colour of a change: overtime up
+reads as unfavourable, expense down as favourable.
 
 | Object | Name | Purpose |
 | --- | --- | --- |
-| Table | `news_demo.retail_sales` | 70 days by city, channel and category: 13,440 rows |
-| Semantic View | `news_retail_sales` | `revenue` and `order_count` over the table |
-| Publishing role | `news_editor` | SELECT without a row scope; bound to `nova_task_service_news` |
-| Reader role | `news_reader` | SELECT with a per-user `city` scope |
+| Publishing role | `news_editor` | SELECT on every desk without a row scope; bound to `nova_task_service_news` |
+| Reader role | `news_reader` | SELECT on `news_demo` only, with a per-user `city` scope on its three tables |
 | Users | `news_manager`, `news_bandung`, `news_jakarta`, `news_off`, `news_outsider` | The access matrix below |
 
-## Labelled situations
+Ranger accepts one access policy per resource, so the two roles are granted at
+different levels (table and database), and Engineering sits in its own database
+that the reader role is not granted.
+
+## Other desks
+
+The generator in `backend/tests/benchmark/news/domains.py` builds the three
+extra desks and derives what each edition must report from the design alone.
+
+| Day (from newest) | Workforce | Finance | Engineering |
+| --- | --- | --- | --- |
+| 0 | Overtime in Bandung +45% | Marketing spend +26% | Incidents on `payments-api` ×3 (and its owning team) |
+| 1 | Absence in Warehouse +25% | Surabaya expense −22% | Platform downtime +40% (and its two services) |
+| 2 | Quiet | Jakarta expense +18% | A 7% rise, under the threshold |
+| Decoys | A 60% swing on a department of a few people; a 6% dip | A 60% swing on a cost center with a few postings; a baseline-week outlier | A 60% swing on a barely monitored service |
+
+A city reader gets their city on Sales, Workforce and Finance and no Engineering
+desk at all. A change that spans every city, such as the Marketing rise, is not
+shown to a one-city reader.
+
+## Labelled situations: Sales
 
 The generator in `backend/tests/benchmark/news/dataset.py` places one situation
 on each of the last seven days. The labels come from how the data is built, so

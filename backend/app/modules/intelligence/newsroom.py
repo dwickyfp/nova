@@ -1028,21 +1028,21 @@ class NewsroomService:
         )
 
     async def newspaper(self, user: dict, *, day: date | None = None) -> dict:
-        sections = []
-        for view in (await self.semantic.news_views())[:_MAX_VIEWS]:
-            found = await self._visible(view, user, day)
-            if found is None:
-                continue
-            edition, stories = found
-            sections.append(
-                {
-                    "view_id": view["id"],
-                    "name": view["name"],
-                    "edition_date": edition.edition_date.isoformat(),
-                    "pressed_at": edition.pressed_at.isoformat(),
-                    "stories": [public_story(story) for story in stories],
-                }
+        views = (await self.semantic.news_views())[:_MAX_VIEWS]
+        # Each view is proven on its own budget, so the views are read side by side.
+        found = await asyncio.gather(*(self._visible(view, user, day) for view in views))
+        sections = [
+            {
+                "view_id": view["id"],
+                "name": view["name"],
+                "edition_date": edition.edition_date.isoformat(),
+                "pressed_at": edition.pressed_at.isoformat(),
+                "stories": [public_story(story) | {"view_name": view["name"]} for story in stories],
+            }
+            for view, (edition, stories) in (
+                (view, result) for view, result in zip(views, found, strict=True) if result
             )
+        ]
         # One order across every view the reader can see; the first is their head story.
         ranked = rank(
             [story for section in sections for story in section["stories"]],

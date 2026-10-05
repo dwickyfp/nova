@@ -1,7 +1,7 @@
 """Run the News demonstration end to end through the API and check the access matrix.
 
-Signs in as an administrator, publishes the demo Semantic View, switches News on
-for the view and for the demo readers, waits for the scheduled execution account
+Signs in as an administrator, publishes the four demo Semantic Views, switches News
+on for each view and for the demo readers, waits for the scheduled execution account
 to press an edition, then reads the newspaper as every demo user.
 
     NOVA_ADMIN_PASSWORD=... uv run python scripts/verify_news_demo.py
@@ -25,8 +25,27 @@ import httpx
 BASE_URL = os.environ.get("NOVA_API_URL", "http://127.0.0.1:8000")
 ADMIN = os.environ.get("NOVA_ADMIN_USER", "nova_admin")
 CREDENTIAL_PATH = Path(os.environ.get("NEWS_DEMO_CREDENTIAL_FILE", "/tmp/nova-news-demo.env"))
-MODEL_PATH = Path(__file__).resolve().parents[2] / "workspace/news_demo/retail_sales.ossie.yaml"
-VIEW_NAME = "news_retail_sales"
+MODELS = Path(__file__).resolve().parents[2] / "workspace/news_demo"
+#: view name -> (model file, database, News configuration)
+VIEWS = {
+    "news_retail_sales": ("retail_sales.ossie.yaml", "news_demo", {
+        "metrics": ["revenue"], "count_metric": "order_count",
+        "slice_dimensions": ["city", "channel", "category"], "time_dimension": "sale_date",
+    }),
+    "news_workforce": ("workforce.ossie.yaml", "news_demo", {
+        "metrics": ["overtime_hours", "absence_hours"], "count_metric": "headcount_days",
+        "slice_dimensions": ["city", "department"], "time_dimension": "work_date",
+    }),
+    "news_operating_expenses": ("operating_expenses.ossie.yaml", "news_demo", {
+        "metrics": ["operating_expense"], "count_metric": "transaction_count",
+        "slice_dimensions": ["city", "cost_center"], "time_dimension": "posting_date",
+    }),
+    "news_service_reliability": ("service_reliability.ossie.yaml", "news_engineering", {
+        "metrics": ["incident_count", "downtime_minutes"], "count_metric": "monitored_checks",
+        "slice_dimensions": ["service", "team"], "time_dimension": "event_date",
+    }),
+}
+ENGINEERING = "news_service_reliability"
 ENTITLED = ("news_manager", "news_bandung", "news_jakarta", "news_outsider")
 #: Who must see the Bandung story on the newest edition.
 EXPECT_BANDUNG = {
@@ -37,10 +56,6 @@ EXPECT_BANDUNG = {
 }
 CONFIG = {
     "execution_role": "news_editor",
-    "metrics": ["revenue"],
-    "count_metric": "order_count",
-    "slice_dimensions": ["city", "channel", "category"],
-    "time_dimension": "sale_date",
     "cadence_minutes": 15,
     "max_stories": 24,
     "narrative": "model",
@@ -58,15 +73,16 @@ async def login(client: httpx.AsyncClient, username: str, password: str) -> dict
     return {"Authorization": f"Bearer {body['access_token']}"}
 
 
-async def publish_view(client: httpx.AsyncClient, admin: dict[str, str]) -> str:
+async def publish_view(client: httpx.AsyncClient, admin: dict[str, str], name: str) -> str:
+    model_file, database, _config = VIEWS[name]
     views = (await client.get("/api/v1/semantic-views", headers=admin)).json()
-    view = next((row for row in views if row["name"] == VIEW_NAME), None)
+    view = next((row for row in views if row["name"] == name), None)
     if view is None:
         created = await client.post(
             "/api/v1/semantic-views",
             headers=admin,
-            json={"name": VIEW_NAME, "database": "news_demo",
-                  "definition": MODEL_PATH.read_text()},
+            json={"name": name, "database": database,
+                  "definition": (MODELS / model_file).read_text()},
         )
         created.raise_for_status()
         view = created.json()
@@ -98,21 +114,22 @@ async def run(wait_minutes: int) -> int:
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=180) as client:
         admin = await login(client, ADMIN, password)
-        view_id = await publish_view(client, admin)
+        view_ids = {name: await publish_view(client, admin, name) for name in VIEWS}
         for name in users:
             response = await client.put(
                 f"/api/v1/users/{name}", headers=admin, json={"news_enabled": name in ENTITLED}
             )
             response.raise_for_status()
-        enabled = await client.put(
-            f"/api/v1/semantic-views/{view_id}/news",
-            headers=admin,
-            json={"enabled": True, "config": CONFIG},
-        )
-        check("news switched on for the view", enabled.status_code == 200, enabled.text[:200])
-        if enabled.status_code != 200:
-            print(json.dumps(report, indent=2))
-            return 1
+        for name, view_id in view_ids.items():
+            enabled = await client.put(
+                f"/api/v1/semantic-views/{view_id}/news",
+                headers=admin,
+                json={"enabled": True, "config": CONFIG | VIEWS[name][2]},
+            )
+            check(f"news switched on for {name}", enabled.status_code == 200, enabled.text[:160])
+            if enabled.status_code != 200:
+                print(json.dumps(report, indent=2))
+                return 1
 
         sessions = {name: await login(client, name, secret) for name, secret in users.items()}
         deadline = time.monotonic() + wait_minutes * 60
@@ -123,21 +140,27 @@ async def run(wait_minutes: int) -> int:
             )
             response.raise_for_status()
             paper = response.json()
-            if subjects(paper):
+            if sum(1 for section in paper["sections"] if section["stories"]) == len(VIEWS):
                 break
             await asyncio.sleep(30)
         stories = subjects(paper)
-        check("an edition was pressed by the scheduled account", bool(stories),
-              f"{len(stories)} stories for news_manager")
+        desks = {section["name"]: len(section["stories"]) for section in paper["sections"]}
+        check("the edition carries all four desks for the manager",
+              set(desks) == set(VIEWS) and all(desks.values()), json.dumps(desks))
+        retail = next(
+            (section["stories"] for section in paper["sections"]
+             if section["name"] == "news_retail_sales"), [],
+        )
         bandung = next(
-            (row for row in stories
+            (row for row in retail
              if row["slice"] and row["slice"]["value"] == "Bandung" and row["change"] < 0),
             None,
         )
         check("the Bandung drop is in the edition", bandung is not None)
         report["edition_date"] = paper.get("edition_date")
         report["manager_stories"] = [
-            {"headline": row["narrative"]["headline"], "severity": row["severity"],
+            {"desk": row.get("view_name"), "headline": row["narrative"]["headline"],
+             "severity": row["severity"], "impact": row.get("impact"),
              "written_by": row["narrative_source"]}
             for row in stories
         ]
@@ -145,8 +168,25 @@ async def run(wait_minutes: int) -> int:
             started = time.monotonic()
             response = await client.get("/api/v1/intelligence/newspaper", headers=sessions[name])
             elapsed = round((time.monotonic() - started) * 1000)
-            shown = subjects(response.json()) if response.status_code == 200 else []
-            sees = any(row["slice"] and row["slice"]["value"] == "Bandung" for row in shown)
+            body = response.json() if response.status_code == 200 else {"sections": []}
+            shown = subjects(body)
+            sees = any(
+                row["slice"] and row["slice"]["value"] == "Bandung"
+                for section in body["sections"]
+                if section["name"] == "news_retail_sales"
+                for row in section["stories"]
+            )
+            names = {section["name"] for section in body["sections"]}
+            if name != "news_manager":
+                check(f"{name} gets no engineering desk", ENGINEERING not in names)
+            if name in ("news_bandung", "news_jakarta"):
+                city = "Bandung" if name == "news_bandung" else "Jakarta"
+                others = [
+                    row["slice"]["value"] for row in shown
+                    if row["slice"] and row["slice"]["dimension"] == "city"
+                    and row["slice"]["value"] != city
+                ]
+                check(f"{name} sees no other city on any desk", not others, ",".join(others))
             check(f"{name} {'sees' if expected else 'does not see'} the Bandung story",
                   response.status_code == 200 and sees == expected,
                   f"{len(shown)} stories, {elapsed} ms")

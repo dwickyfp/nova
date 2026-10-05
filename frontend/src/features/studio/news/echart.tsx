@@ -92,9 +92,17 @@ export function EChart({
           typeof ResizeObserver === "undefined"
             ? null
             : new ResizeObserver(() => chart.resize());
-        observer?.observe(container.current);
+        const node = container.current;
+        observer?.observe(node);
+        // A click that opens a panel over the chart never sends a mouse-out, so
+        // the tooltip would stay on top of it.
+        const hide = () => chart.dispatchAction({ type: "hideTip" });
+        node.addEventListener("pointerleave", hide);
+        node.addEventListener("pointerdown", hide);
         dispose = () => {
           observer?.disconnect();
+          node.removeEventListener("pointerleave", hide);
+          node.removeEventListener("pointerdown", hide);
           chart.dispose();
         };
         setFailed(false);

@@ -45,6 +45,11 @@ export function kicker(story: Story): string {
     : "Whole view";
 }
 
+/** The desk a story belongs to: its Semantic View, named for a reader. */
+export function desk(story: Pick<Story, "view_name">): string {
+  return story.view_name ? humanize(story.view_name) : "";
+}
+
 /** The reader's own order from the server; the edition's order when absent. */
 export function byPriority(a: Story, b: Story): number {
   if (a.score != null && b.score != null && a.score !== b.score)

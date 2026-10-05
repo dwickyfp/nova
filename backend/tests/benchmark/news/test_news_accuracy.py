@@ -5,7 +5,7 @@ import json
 import pytest
 
 from tests.benchmark.news import dataset
-from tests.benchmark.news.evaluate import evaluate, failures
+from tests.benchmark.news.evaluate import desk_failures, evaluate, evaluate_desks, failures
 from tests.benchmark.news.run import GOLD_PATH, gold_file
 
 pytestmark = pytest.mark.benchmark
@@ -39,3 +39,13 @@ def test_every_label_names_who_may_read_it():
     total = next(item for item in stories if item["type"] == "total")
     assert total["visible_to"] == ["news_manager", "nova_task_service_news"]
     assert all("news_off" not in item["visible_to"] for item in stories)
+
+
+@pytest.mark.parametrize("seed", [dataset.SEED, 7])
+async def test_the_extra_desks_report_their_designed_situations_and_leak_nothing(seed):
+    report = await evaluate_desks(seed)
+
+    assert desk_failures(report) == [], report
+    assert set(report["desks"]) == {"workforce", "expenses", "reliability"}
+    assert all(score["required"] >= 2 for score in report["desks"].values())
+    assert report["access_checks"] > 150

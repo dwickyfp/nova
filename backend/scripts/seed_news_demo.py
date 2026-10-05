@@ -1,9 +1,10 @@
 """Provision the News demonstration fixture on the local governed stack.
 
-Creates ``news_demo.retail_sales`` from the labelled benchmark dataset, the
+Creates the four desks of the fictional retailer (sales, workforce and operating
+expenses in ``news_demo``, service reliability in ``news_engineering``), the
 roles and users of the access matrix, their Ranger grants and row scopes, and
-the scheduled execution account for the publishing role. The Semantic View, the
-News switch and the per-user entitlements are then set through the API by
+the scheduled execution account for the publishing role. The Semantic Views, the
+News switches and the per-user entitlements are then set through the API by
 ``verify_news_demo.py``, the same way an administrator would.
 
     uv run python scripts/seed_news_demo.py [--last-day YYYY-MM-DD]
@@ -33,7 +34,7 @@ from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import access_control_service
 from app.modules.users.service import user_service
 from scripts.provision_task_schedule_role import bind
-from tests.benchmark.news import dataset
+from tests.benchmark.news import dataset, domains
 
 OWNER = "nova_admin"
 DATABASE = "news_demo"
@@ -80,6 +81,35 @@ async def audit(action: str, object_type: str, object_name: str) -> None:
     )
 
 
+async def load_domain(domain: domains.Domain, last_day: date) -> int:
+    """Create and fill one extra desk's table from its deterministic generator."""
+    rows = domains.generate(domain, last_day=last_day)
+    target = f"{domain.database}.{domain.table}"
+    columns = [f"{domain.date_column} DATE NOT NULL"]
+    columns += [f"{name} VARCHAR(64) NOT NULL" for name in domain.dimensions]
+    columns += [
+        f"{item.column} {'BIGINT' if item.integer else 'DECIMAL(18, 2)'} NOT NULL"
+        for item in domain.measures
+    ]
+    keys = ", ".join([domain.date_column, *domain.dimensions])
+    await db.execute_system(f"CREATE DATABASE IF NOT EXISTS {domain.database}")
+    await db.execute_system(
+        f"CREATE TABLE IF NOT EXISTS {target} ({', '.join(columns)}) "
+        f"PRIMARY KEY({keys}) DISTRIBUTED BY HASH({domain.date_column}) BUCKETS 1 "
+        'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
+    )
+    await db.execute_system(f"TRUNCATE TABLE {target}")
+    marks = "(" + ",".join(["%s"] * len(domain.columns)) + ")"
+    for start in range(0, len(rows), BATCH):
+        chunk = rows[start : start + BATCH]
+        await db.execute_system(
+            f"INSERT INTO {target} VALUES " + ",".join([marks] * len(chunk)),
+            [value for row in chunk for value in row],
+        )
+    await audit("SEED", "TABLE", target)
+    return len(rows)
+
+
 async def load(last_day: date) -> int:
     rows = dataset.generate(last_day=last_day)
     await db.execute_system(f"CREATE DATABASE IF NOT EXISTS {DATABASE}")
@@ -108,6 +138,8 @@ async def seed(last_day: date) -> None:
     try:
         admin = SecurityContext(principal=OWNER, active_role="ACCOUNTADMIN")
         loaded = await load(last_day)
+        for domain in domains.DOMAINS:
+            loaded += await load_domain(domain, last_day)
         for role, purpose in (
             (EDITOR_ROLE, "Reads all News demo sales and publishes the edition"),
             (READER_ROLE, "Reads News demo sales for an assigned city"),
@@ -141,12 +173,24 @@ async def seed(last_day: date) -> None:
                 admin, role=role, catalog="default_catalog", database=DATABASE,
                 table=resource, accesses=["select"],
             )
+        # The publishing role reads every desk; each table is its own resource.
+        for domain in domains.DOMAINS:
+            await access_control_service.grant_access(
+                admin, role=EDITOR_ROLE, catalog="default_catalog", database=domain.database,
+                table=domain.table, accesses=["select"],
+            )
+        # A city reader keeps their city on every desk that has one. Engineering
+        # lives in another database the reader role is not granted at all.
+        scoped = [(DATABASE, TABLE)] + [
+            (domain.database, domain.table) for domain in domains.DOMAINS if domain.scoped_by
+        ]
         for name, (role, city) in USERS.items():
             if city:
-                await access_control_service.put_data_scope(
-                    admin, principal=name, role=role, catalog="default_catalog",
-                    database=DATABASE, table=TABLE, bindings=[("city", "city", [city])],
-                )
+                for database, table in scoped:
+                    await access_control_service.put_data_scope(
+                        admin, principal=name, role=role, catalog="default_catalog",
+                        database=database, table=table, bindings=[("city", "city", [city])],
+                    )
         # The publishing role carries no row scope, so its execution account
         # reads the whole table. Readers never inherit that visibility.
         await bind(EDITOR_ROLE, SERVICE_ACCOUNT, OWNER)

@@ -53,6 +53,8 @@ export type Story = {
   score?: number;
   head?: boolean;
   reason?: string;
+  /** The Semantic View the story comes from; the desk it belongs to. */
+  view_name?: string;
 };
 export type Reaction = "like" | "dislike";
 export type StoryDetail = Story & { view_name: string; pressed_at: string };

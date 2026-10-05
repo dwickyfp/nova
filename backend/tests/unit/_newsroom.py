@@ -106,3 +106,62 @@ def subject(story) -> tuple:
     if isinstance(sliced, dict):
         return (sliced["dimension"], sliced["value"])
     return (sliced.dimension, sliced.value)
+
+
+class Desks(Newsroom):
+    """The newsroom over four desks: sales plus the three extra domains."""
+
+    def __init__(self, monkeypatch):
+        super().__init__(monkeypatch)
+        from tests.benchmark.news import domains
+
+        self.domains = {item.key: item for item in domains.DOMAINS}
+        self.tables = {"sales": warehouse.RETAIL}
+        houses = [self.warehouse]
+        for domain in domains.DOMAINS:
+            table = warehouse.domain_table(domain)
+            self.tables[domain.key] = table
+            houses.append(warehouse.Warehouse(domains.generate(domain), table=table))
+        self.estate = warehouse.Estate(houses)
+        self.service = NewsroomService(
+            IntelligenceService(self.journal, self.estate),
+            self.estate,
+            self.journal,
+            self.bindings,
+            None,
+            self.judge_for_desks,
+            self.reactions,
+        )
+
+    @staticmethod
+    async def judge_for_desks(ir, metric):
+        return "better" if metric == "revenue" else "worse"
+
+    async def enable_all(self):
+        await self.enable(narrative="model")
+        for key, domain in self.domains.items():
+            await self.service.configure(
+                self.tables[key].view_id,
+                NewsSettings(
+                    enabled=True,
+                    config=config(
+                        metrics=list(domain.watched),
+                        count_metric=domain.count_metric,
+                        slice_dimensions=list(domain.slices),
+                        time_dimension=domain.date_column,
+                        narrative="model",
+                    ),
+                ),
+                self.user("news_manager"),
+            )
+
+    async def press_all(self, day: date) -> dict[str, dict]:
+        return {
+            key: await self.service.run_cycle(
+                table.view_id, warehouse.SERVICE.user(), now=press_time(day)
+            )
+            for key, table in self.tables.items()
+        }
+
+    async def paper(self, name: str, day: date | None = None) -> dict:
+        return await self.service.newspaper(self.user(name), day=day)

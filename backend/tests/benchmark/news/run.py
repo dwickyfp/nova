@@ -13,7 +13,13 @@ import json
 from pathlib import Path
 
 from tests.benchmark.news import dataset, warehouse
-from tests.benchmark.news.evaluate import THRESHOLDS, evaluate, failures
+from tests.benchmark.news.evaluate import (
+    THRESHOLDS,
+    desk_failures,
+    evaluate,
+    evaluate_desks,
+    failures,
+)
 
 GOLD_PATH = Path(__file__).parent / "gold" / "anomalies.json"
 
@@ -51,7 +57,12 @@ def main() -> int:
         print(f"wrote {GOLD_PATH}")
         return 0
     report = asyncio.run(evaluate())
-    broken = failures(report)
+    desks = asyncio.run(evaluate_desks())
+    report["desks"] = desks["desks"]
+    report["desk_access_checks"] = desks["access_checks"]
+    report["desk_leaks"] = desks["leaks"]
+    report["desk_wrongly_hidden"] = desks["wrongly_hidden"]
+    broken = failures(report) + desk_failures(desks)
     if args.json:
         print(json.dumps(report | {"failures": broken}, indent=2))
     else:
