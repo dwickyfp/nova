@@ -26,6 +26,8 @@ class StudioIdentity(BaseModel):
     active_role: str | None = None
     warehouses: list[str] = Field(default_factory=list)
     active_warehouse: str | None = None
+    #: Administrator-enabled access to Studio News; the News routes enforce it.
+    news_enabled: bool = False
 
 
 class StudioPreferences(BaseModel):

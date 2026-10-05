@@ -50,6 +50,8 @@ class SessionInfo(BaseModel):
     #: routes them to the change-password screen on load if this is set, so a
     #: reload cannot skip the requirement.
     must_change_password: bool = False
+    #: Administrator-enabled access to Studio News; the server enforces it too.
+    news_enabled: bool = False
 
 
 class SwitchRoleRequest(BaseModel):

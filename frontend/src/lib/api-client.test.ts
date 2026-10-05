@@ -113,3 +113,19 @@ describe('API base prefixing', () => {
     expect(requestedUrl()).not.toContain('/api/v1/api/v1')
   })
 })
+
+describe('errorDetail', () => {
+  it('reads a validation error list instead of printing objects', async () => {
+    const { errorDetail } = await import('./api-client')
+
+    expect(
+      errorDetail([
+        { loc: ['body', 'title'], msg: 'String should have at most 256 characters', type: 'string_too_long' },
+      ])
+    ).toBe('String should have at most 256 characters')
+    expect(errorDetail('Record unavailable')).toBe('Record unavailable')
+    expect(errorDetail({ message: 'Denied' })).toBe('Denied')
+    expect(errorDetail(undefined)).toBe('Request failed')
+    expect(errorDetail([{}], 'Upload failed')).toBe('Upload failed')
+  })
+})

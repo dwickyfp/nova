@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
+from app.common.news_entitlement import is_news_enabled
 from app.common.user_flags import is_must_change_password
 from app.core.deps import get_current_user
 from app.modules.auth.profile import ProfileFields, ProfileResponse, get_profile, save_profile
@@ -101,6 +102,7 @@ async def get_me(user: CurrentUser):
         security_context_version=user.get("security_context_version", 1),
         session_id=user["session_id"],
         must_change_password=await is_must_change_password(user["username"]),
+        news_enabled=await is_news_enabled(user["username"]),
     )
 
 

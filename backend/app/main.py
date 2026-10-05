@@ -251,11 +251,19 @@ async def lifespan(app: FastAPI):
     autopilot_flush = asyncio.create_task(
         autopilot_collector.run(autopilot_stop, autopilot_repository)
     )
+    from app.modules.intelligence import newsroom_refresher
+
+    news_stop = asyncio.Event()
+    news_refresh = asyncio.create_task(newsroom_refresher.run(news_stop))
     SERVICE_UP.labels(service="backend").set(1)
     try:
         yield
     finally:
         SERVICE_UP.labels(service="backend").set(0)
+        news_stop.set()
+        news_refresh.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await news_refresh
         ml_cleanup.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await ml_cleanup

@@ -17,6 +17,9 @@ const searchSchema = z.object({
   thread: z.string().optional(),
   view: z.enum(['chat', 'artifacts', 'dashboards', 'shared', 'capabilities', 'news', 'decisions']).optional(),
   item: z.string().max(64).optional(),
+  story: z.string().max(64).optional(),
+  edition: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  desk: z.enum(['alerts']).optional(),
 })
 
 export const Route = createFileRoute('/studio')({

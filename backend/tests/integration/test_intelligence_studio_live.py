@@ -7,6 +7,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from app.common.news_entitlement import NEWS_ENABLED
 from app.core.database import db
 from app.main import create_app
 from app.modules.agents.memory import memory_repository
@@ -54,6 +55,12 @@ async def studio_engine(intelligence_db, tmp_path):
     await db.execute_system(f"GRANT SELECT ON ALL TABLES IN DATABASE {DATABASE} TO ROLE `{role}`")
     await db.execute_system(f"GRANT `{role}` TO USER '{username}'")
     await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{username}'")
+    # News is off for every account until an administrator enables it.
+    await db.execute_system(
+        "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
+        "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
+        [username, NEWS_ENABLED],
+    )
     app = create_app()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://nova.test", timeout=180
@@ -69,6 +76,11 @@ async def studio_engine(intelligence_db, tmp_path):
             finally:
                 await db.execute_system(f"DROP USER '{username}'")
                 await db.execute_system(f"DROP ROLE `{role}`")
+                await db.execute_system(
+                    "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
+                    "WHERE user_name=%s AND pref_key=%s",
+                    [username, NEWS_ENABLED],
+                )
 
 
 async def test_randomized_analysis_uses_complete_assignment_cohort(studio_engine, monkeypatch):

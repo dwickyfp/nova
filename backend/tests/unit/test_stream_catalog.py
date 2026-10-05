@@ -111,3 +111,32 @@ async def test_exact_readback_recovers_namespace_response_loss():
     repo.current.return_value = replace(record, stream_id="different")
     with pytest.raises(StreamError):
         await repo.publish(record)
+
+
+async def test_get_duplicate_and_drop_recheck_access(catalog):
+    record = await catalog.create(NAME, SOURCE, "reader")
+    catalog.repository.current.return_value = record
+    catalog.repository.publish.reset_mock()
+    assert await catalog.get(NAME) == record
+    with pytest.raises(StreamError) as duplicate:
+        await catalog.create(NAME, SOURCE, "reader")
+    assert duplicate.value.code == "STREAM_ALREADY_EXISTS"
+    catalog.access.stream.side_effect = PermissionError("revoked")
+    for operation in (catalog.get, catalog.drop):
+        with pytest.raises(PermissionError):
+            await operation(NAME)
+    catalog.repository.publish.assert_not_awaited()
+
+
+@pytest.mark.parametrize("dropped", [False, True])
+async def test_missing_and_tombstoned_streams(catalog, dropped):
+    if dropped:
+        catalog.repository.current.return_value = StreamRecord(
+            NAME, 1, "id", SOURCE, "source", "reader", ChangeCursor(1, 2), "DROPPED",
+        )
+    for operation in (catalog.get, catalog.drop):
+        with pytest.raises(StreamError) as error:
+            await operation(NAME)
+        assert error.value.code == "STREAM_NOT_FOUND"
+    await catalog.drop(NAME, if_exists=True)
+    catalog.repository.publish.assert_not_awaited()

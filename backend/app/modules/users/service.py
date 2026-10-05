@@ -60,6 +60,13 @@ PRIVILEGE_OPTIONS: dict[str, list[str]] = {
 }
 
 
+async def _retire_news_proofs() -> None:
+    """A role change alters what a reader can prove, so cached proofs go now."""
+    from app.modules.intelligence.newsroom_cache import proof_cache
+
+    await proof_cache.bump()
+
+
 class UserService:
     """Manage StarRocks users, roles, memberships, and privileges."""
 
@@ -633,11 +640,13 @@ class UserService:
         role_sql = self._quote_ident(role)
         identity = self._user_identity(username, host)
         await db.execute_system(f"GRANT {role_sql} TO USER {identity}")
+        await _retire_news_proofs()
 
     async def revoke_role(self, username: str, role: str, host: str = "%") -> None:
         role_sql = self._quote_ident(role)
         identity = self._user_identity(username, host)
         await db.execute_system(f"REVOKE {role_sql} FROM USER {identity}")
+        await _retire_news_proofs()
 
     async def list_roles(self) -> list[dict]:
         result = await db.execute_system("SHOW ROLES")
