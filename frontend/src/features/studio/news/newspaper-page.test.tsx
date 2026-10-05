@@ -137,7 +137,9 @@ it.each([
   await expect.element(screen.getByText("1 critical")).toBeVisible();
   // One long column: every story is its own block, divided from the one before.
   const entries = [...document.querySelectorAll('[data-slot="news-entry"]')];
-  expect(document.body.textContent).not.toMatch(/\b0[12]\b/);
+  expect(entries).toHaveLength(2);
+  // Match standalone story numbers, not the masthead's locale-formatted time.
+  expect(screen.getByRole("article").getByText(/^0[12]$/).all()).toHaveLength(0);
   await expect.element(screen.getByText("Top story for you")).toBeVisible();
   await expect.element(screen.getByText(/Largest move in this edition/)).toBeVisible();
   // The head figure leads each story; its change is coloured by business impact.
