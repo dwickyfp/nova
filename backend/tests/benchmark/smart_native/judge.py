@@ -20,7 +20,8 @@ answer, and the result table or chart the product displays beside it. That table
 shown by the product, not the assistant's prose: do not penalize its formatting, and count its
 figures as stated. `gold_figures_all_stated` is an exact arithmetic check already done for you;
 trust it over your own digit counting. Indonesian writes the decimal mark as a comma and
-groups thousands with dots: "12,404 miliar" is 12.404 billion, the same as 12.404.000.000. GOLD may hold more rows than the answer needs; a
+groups thousands with dots: "12,404 miliar" is 12.404 billion, the same as 12.404.000.000.
+GOLD may hold more rows than the answer needs; a
 figure GOLD does not cover is not invented when the displayed result holds it. Score each
 dimension 0-5 (5 = flawless):
 - accuracy: every number stated matches GOLD (formatting, currency symbols, thousand separators
