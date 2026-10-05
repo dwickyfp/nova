@@ -3,31 +3,77 @@
 
 # Nova
 
-**Governed analytics and AI on StarRocks.**
+**Enterprise Intelligence OS**
 
-Nova brings SQL development, data operations, access control, machine learning,
-and agent workflows into one platform. Apache Ranger governs access to user
-data; StarRocks runs the queries.
+Turn governed enterprise data into understanding, decisions, actions, and learning.
 
-[Explore the app](#the-nova-app) · [Architecture](#architecture) · [Run locally](#run-locally) · [Documentation](#documentation) · [Brand assets](frontend/public/images/BRAND.md)
+Nova unifies governed data, business semantics, organizational context, AI agents,
+decision intelligence, and governed execution in one platform.
+
+[See the app](#the-nova-app) · [Architecture](#architecture) · [Run locally](#run-locally) · [Documentation](#documentation) · [Brand assets](frontend/public/images/BRAND.md)
 </div>
 
-## What Nova does
+## What Nova is
 
-Nova has two connected surfaces:
+Nova is an Enterprise Intelligence Operating System for people and agents to
+understand what is happening, investigate why, decide what to do, act under
+review, and learn from observed outcomes. It connects that work to governed
+data, shared business definitions, and organizational context.
 
-| Surface          | Work you can do                                                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Nova Console** | Write SQL, explore the catalog, work with stages, manage access, run tasks and ML models, inspect monitoring data, and build Intelligence objects.   |
-| **Nova Studio**  | Ask governed questions through agents, inspect their work, save results as artifacts, arrange dashboards, and manage personal skills and connectors. |
+The warehouse, SQL, stages, and ML form its data foundation. StarRocks provides
+Nova's analytical query and storage engine and authenticates users. Nova owns
+SQL semantics and execution routing, business context, and governed workflows.
+In Ranger-enabled deployments, Apache Ranger policies govern user-data access
+through the patched StarRocks frontend.
 
-Both surfaces use the same authenticated StarRocks identity and active role.
-SQL clients can also connect through Nova's MySQL protocol proxy on port `4406`.
+## The enterprise intelligence loop
 
-### SQL and stages
+```text
+Governed data
+      ↓
+Business semantics
+      ↓
+Business context
+      ↓
+Understand → Investigate → Decide → Act → Observe outcome → Learn
+     ↑                                                       │
+     └────────── Reviewed knowledge and improvements ─────────┘
+```
 
-The SQL Workspace uses Monaco and runs Nova SQL through a shared pipeline. A
-stage reference keeps file locations and storage credentials out of the query:
+Semantic Views define business meaning; investigations retain evidence and
+assumptions; Decisions record options and policy review. Supported Actions
+require approval and consent. Outcomes distinguish observed results from causal
+effects, and learning produces scoped knowledge or proposals for review.
+Availability depends on deployment controls and the supported adapters described
+below; the loop is the product model, not a claim of unattended execution.
+
+## Nova Console and Nova Studio
+
+| Surface | Role |
+| --- | --- |
+| **Nova Console** | The data and control foundation: SQL Workspace, catalog and Database Explorer, stages, ingestion/export, ML, tasks, security, Semantic Views, Intelligence objects, and monitoring. |
+| **Nova Studio** | The intelligence workspace: agents and Smart collaboration, Missions, investigations, evidence, scenarios, Decisions, governed Actions, Outcomes, artifacts, dashboards, skills, and connectors. |
+
+Both surfaces operate on the same governed enterprise foundation and authenticated
+StarRocks identity with one active role. Studio is where people and agents
+investigate, plan, decide, and act using governed business context. Chat, process
+traces, tables, charts, and citations make that work accessible and reviewable.
+SQL clients also use Nova's SQL path through the MySQL protocol proxy on port `4406`.
+
+## Core capabilities
+
+### Data foundation
+
+SQL development, catalog exploration, stages, data loading/export, scheduled
+tasks, monitoring, and native ML remain core platform capabilities. ML supports
+classification, regression, forecasting, anomaly detection, and clustering,
+with versioned models and run metadata in `NOVA_SYSTEM`. SQL AI functions such
+as `AI_COMPLETE` and `AI_SENTIMENT` require a configured provider and the
+corresponding StarRocks functions.
+
+The SQL Workspace uses Monaco and runs Nova SQL through a shared pipeline.
+Stage references keep physical file locations and storage credentials out of
+user queries:
 
 ```sql
 SELECT order_id, total_amount
@@ -35,43 +81,86 @@ FROM @sales_stage.orders.2026.parquet
 WHERE total_amount > 100;
 ```
 
-Nova resolves `@stage` to StarRocks `FILES(...)`, detects the format, injects
-storage credentials for execution, and records a redacted audit entry. The same
-pipeline guards, translates, and redacts user SQL across the supported API,
-proxy, and ML paths. Nova-specific SQL belongs in the Workspace, Query API, or
-Nova proxy; the native StarRocks port does not parse it.
+Nova authorizes stage access, resolves `@stage` to StarRocks `FILES(...)`, detects
+the format, resolves storage credentials for execution, and records a redacted
+audit entry. The same pipeline guards, translates, and redacts user SQL across
+the supported API, proxy, and ML paths. Nova-specific SQL belongs in the
+Workspace, Query API, or Nova proxy; the native StarRocks port does not parse it.
 
-### Intelligence and ML
+### Semantic layer
 
-- **Intelligence** connects entity identities, AI Search, versioned Semantic
-  Views, and Feature Views. Search rechecks source rows under the caller's role;
-  semantic validation compares candidate definitions through that caller's
-  StarRocks session.
-- **Native ML** supports classification, regression, forecasting, anomaly
-  detection, and clustering. A bounded worker performs extraction and fitting;
-  model versions, aliases, and run metadata are tracked in `NOVA_SYSTEM`.
-- **AI functions** such as `AI_COMPLETE` and `AI_SENTIMENT` are available in SQL
-  when an AI provider and the corresponding StarRocks functions are configured.
+Entity identities, versioned Semantic Views, metrics, relationships, and verified
+queries define governed business meaning. Semantic validation compares candidate
+definitions through the caller's StarRocks session before publication. AI Search
+rechecks source rows under the caller's role; Feature Views provide versioned
+features for ML.
 
-### Nova Studio
+### Business context
 
-Studio is a full-page workspace with agents, saved conversations, process
-traces, tables, charts, and citations. Its bounded assistant loop lives in
-`backend/app/modules/assistant/`; Agent Studio configures that same loop rather
-than running a second one. Studio also supports saved SQL artifacts, personal
-skills, dashboards, scoped agent memory, and explicitly selected MCP tools with
-per-call consent. Data tools retain the signed-in user's active role.
+Context Graph links published semantic definitions with knowledge and decision
+revisions. Traversal checks access to each referenced object. Scoped agent
+memory preserves provenance and separates private inferred knowledge from
+reviewed shared definitions.
+
+### Intelligence runtime
+
+Agents and Smart specialists use the shared bounded assistant engine. Tools,
+personal skills, scoped memory, artifacts, dashboards, and explicitly selected
+MCP connectors support their work. Data tools retain the signed-in user's active
+role; external tool calls retain per-call consent. Missions persist business
+work and its run, evidence, and object references when the workflow is enabled.
+
+### Decisions and governed actions
+
+Investigations connect analytical evidence to hypotheses and registered
+scenarios. Decisions retain assumptions, uncertainty, policy, and approval.
+Current Action adapters create and verify governed monitors/schedules or internal
+Studio automations. Execution requires current authorization, reviewer approval,
+and separate consent. Inventory transfers and rollbacks remain recommendations;
+these adapters do not execute them or deliver externally.
+
+### Outcomes and learning
+
+Outcomes record observation windows, completeness, and attribution limits.
+Complete observations can produce private inferred knowledge pinned to an
+Outcome revision. Agent Quality Lab evaluates cases and regressions, and
+produces reviewable improvement proposals. Publishing shared business meaning
+or a manifested agent release still requires review and evaluation.
+
+### Availability and limits
 
 The [governed Studio workflow](docs/arch-15-governed-studio.md) adds release
-manifests, quality cases, Missions, evidence health, and supervised monitor
-Actions. Its new workflow, action, production scoring, and analytical workspace
-controls default to disabled. See the [operator guide](docs/governed-studio-operations.md)
-for migration and acceptance gates; this documentation does not establish rollout
-completion.
+manifests, Quality Lab, Missions, evidence health, and supervised Actions.
+Workflow, Action execution, production quality scoring, and analytical workspace
+controls default to disabled. The analytical workspace remains
+`BLOCKED_BY_INFRASTRUCTURE` when enabled because no isolated executor ships.
+External model and MCP behavior remains mutable even with pinned release
+contracts. Verified Action setup does not prove a business intervention or
+causal improvement.
+
+See the [operator guide](docs/governed-studio-operations.md) for migrations,
+controls, and acceptance gates. Local deterministic checks do not establish
+patched-FE Ranger enforcement, live-provider quality, or production readiness.
+
+### The Nova platform stack
+
+This is a conceptual product view. These layers share existing runtime owners;
+they do not represent separate physical services.
+
+| Layer | Capabilities |
+| --- | --- |
+| Nova Studio | Missions, investigations, Decisions, Actions, Outcomes, artifacts |
+| Intelligence runtime | Agents, Smart collaboration, skills, tools, memory |
+| Business context | Context Graph, knowledge, business policies |
+| Semantic layer | Semantic Views, metrics, relationships, verified queries |
+| Data foundation | SQL, warehouse, catalog, stages, ML, StarRocks |
+| Control plane across the stack | Security, Ranger, Quality, audit, `NOVA_SYSTEM`, Redis runtime coordination |
+
+Nova Console exposes the data and control foundation across these layers.
 
 ## The Nova app
 
-The Studio chat image is a frontend preview using sample Sales Agent metadata
+The Studio workspace image is a frontend preview using sample Sales Agent metadata
 from this repository; it does not show a live query result. The other images are
 checked-in app and Studio UI captures.
 
@@ -83,9 +172,9 @@ checked-in app and Studio UI captures.
 
 ![Nova Database Explorer browsing stage files](docs/assets/readme/database-explorer.png)
 
-### Nova Studio chat
+### Nova Studio: governed intelligence workspace
 
-![Nova Studio chat home with a sample Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
+![Nova Studio workspace home with a sample Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
 
 ### Nova Studio capabilities
 
@@ -96,6 +185,10 @@ checked-in app and Studio UI captures.
 ![Nova Studio skill upload dialog](docs/assets/readme/nova-studio-skill-upload.png)
 
 ## Architecture
+
+StarRocks owns physical planning and distributed analytical execution. Nova
+composes that engine with its SQL frontend, shared assistant runtime, and
+governed control plane:
 
 ```mermaid
 flowchart LR
@@ -227,14 +320,16 @@ nova/
 
 ## Documentation
 
-| Topic                   | Read                                                                                                                                                                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Product and local setup | [Overview](docs/01-overview.md), [run guide](HOW_TO_RUN.md)                                                                                                                                                                    |
-| SQL and stages          | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md)                                                                 |
-| Security                | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md)                                                                                          |
-| Studio and agents       | [Smart collaboration](docs/arch-11-smart-collaboration.md), [governed workflow](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md), [Decision Mode](docs/arch-12-studio-decision-mode.md) |
-| Intelligence and ML     | [Intelligence foundation](docs/28-intelligence-foundation.md), [native ML runtime](docs/28-native-ml-runtime.md)                                                                                                               |
-| Tasks and state         | [Task manager](docs/08-task-manager.md), [NOVA_SYSTEM architecture](docs/arch-06-nova-system-database.md)                                                                                                                      |
+| Topic | Read |
+| --- | --- |
+| Platform overview | [Product model, principles, and terminology](docs/01-overview.md) |
+| Data and SQL | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md) |
+| Semantics and business context | [Intelligence foundation](docs/28-intelligence-foundation.md) |
+| Studio and agents | [Smart collaboration](docs/arch-11-smart-collaboration.md), [Decision Mode for runtime routing](docs/arch-12-studio-decision-mode.md) |
+| Decisions and governed workflows | [Governed Studio](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md) |
+| Security and governance | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md) |
+| ML | [Native ML runtime](docs/28-native-ml-runtime.md) |
+| Operations | [Run guide](HOW_TO_RUN.md), [task manager](docs/08-task-manager.md), [NOVA_SYSTEM architecture](docs/arch-06-nova-system-database.md) |
 
 Nova is under active development. The linked module documents describe
 capabilities, configuration, and known limitations in more detail. In the local

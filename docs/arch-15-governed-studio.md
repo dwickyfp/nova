@@ -3,6 +3,7 @@
 The [operator guide](governed-studio-operations.md) covers migrations, rollout
 controls, recovery, and acceptance checks for these contracts.
 
+Nova Studio is the intelligence workspace in Nova's Enterprise Intelligence OS.
 The workflow connects a question to investigation, evidence, scenarios, a
 Decision, supervised action execution, verification, outcome observation, and
 reviewable improvements. Each step extends its existing owner:

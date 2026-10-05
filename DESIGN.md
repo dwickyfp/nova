@@ -183,7 +183,14 @@ ke `--font-inter`; IBM Plex Sans dan font sistem tetap tersedia lewat
   tebal daripada bobot yang sama dalam keadaan terbalik. `--weight-medium` dan
   `--weight-semibold` bernilai 450/550 di tema terang dan 500/600 di tema gelap;
   `font-medium`, `font-semibold`, `font-bold`, dan `font-heading` membacanya.
+  Di dalam chrome navigasi tema terang keduanya turun sekali lagi ke 400/500
+  (`--sidebar-navigation-weight-*`): teks di atas tint tetap terasa tebal pada 450.
   Komponen tidak menulis angka bobot sendiri.
+- **Teks utama tema terang adalah slate, bukan hitam.** `--foreground` bernilai
+  `#1e293b` (14.6:1 di atas putih). Hampir-hitam di atas putih membuat seluruh
+  halaman terasa tebal walau bobotnya 400. `--card-foreground`,
+  `--popover-foreground`, `--secondary-foreground`, dan teks navigasi mengikuti
+  token yang sama.
 - **Bobot maksimum 600.** `--font-weight-bold` dipetakan ke 600, jadi `font-bold`
   tidak pernah lebih berat dari `font-semibold`. Hierarki dibangun dari ukuran
   dan warna, bukan dari bobot ekstra.
