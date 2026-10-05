@@ -91,6 +91,9 @@ class Edition(Record):
     pressed_at: datetime
     config_digest: str = Field(min_length=64, max_length=64)
     story_ids: list[str] = Field(default_factory=list, max_length=24)
+    #: Changes whenever any story's proven rows change, so a reader's cached
+    #: proof of an earlier pressing is never matched against new stories.
+    proofs_digest: str = Field(default="", max_length=64)
     #: Whether a higher value of each metric is better for the business, as the
     #: model judged it from the published definition. Absent means not judged.
     polarity: dict[str, Literal["better", "worse", "neutral"]] = Field(default_factory=dict)

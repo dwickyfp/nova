@@ -29,6 +29,7 @@ type Props = {
   onFollowUp: (prompt: string) => void;
 };
 type React_ = (id: string, reaction: Reaction | null) => void;
+const REFRESH_MS = 60_000;
 
 /**
  * One story of the edition. The whole block opens the story; the headline is
@@ -233,6 +234,10 @@ export function NewspaperPage({
     staleTime: 0,
     gcTime: 0,
     retry: false,
+    // A new pressing appears by itself while the page is on screen; the server
+    // answers from the reader's recent access proof, so this stays cheap.
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
   // The order is the one the page loaded with. A reaction marks the story at
   // once and reshapes the order on the next load, so nothing jumps under the

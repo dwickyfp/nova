@@ -38,6 +38,7 @@ from app.modules.intelligence.contracts import (
 )
 from app.modules.intelligence.engine import CycleBudget, intelligence_service
 from app.modules.intelligence.engine_repository import intelligence_repository, metadata_lock
+from app.modules.intelligence.newsroom_cache import proof_cache
 from app.modules.intelligence.newsroom_contracts import (
     BusinessRule,
     Driver,
@@ -523,6 +524,7 @@ class NewsroomService:
         writer=None,
         judge=None,
         feedback=feedback_store,
+        cache=None,
     ):
         self.service = service
         self.semantic = semantic
@@ -531,6 +533,7 @@ class NewsroomService:
         self.writer = writer
         self.judge = judge
         self.feedback = feedback
+        self.cache = cache
 
     # ── Settings ────────────────────────────────────────────────────────────
 
@@ -825,7 +828,14 @@ class NewsroomService:
                 )
             edition = await self.repository.save(
                 "editions",
-                edition.model_copy(update={"story_ids": [story.id for story in stories]}),
+                edition.model_copy(
+                    update={
+                        "story_ids": [story.id for story in stories],
+                        "proofs_digest": fingerprint(
+                            [[proof.digest for proof in story.proofs] for story in stories]
+                        ),
+                    }
+                ),
                 expected_revision=prior.revision if prior else 0,
             )
         known_values = {
@@ -991,6 +1001,55 @@ class NewsroomService:
             Edition,
         )
 
+    async def _prove(
+        self, view: dict, edition: Edition, config: NewsConfig, user: dict
+    ) -> tuple[bool, dict]:
+        """Run the reader's proof of one edition and remember its outcome.
+
+        Returns whether the reader can read the view and the digest of every
+        proof group as their own queries returned it. Only this outcome is
+        cached; it never contains rows.
+        """
+        budget = CycleBudget()
+        try:
+            await self.service.authorize_semantic(edition.semantic, user, budget=budget)
+        except HTTPException:
+            readable, digests = False, {}
+        else:
+            readable = True
+            digests = await self._reader_digests(edition, config, user, budget)
+        if self.cache is not None:
+            await self.cache.put(user, view["id"], edition, readable=readable, digests=digests)
+        return readable, digests
+
+    async def _proof(
+        self, view: dict, edition: Edition, config: NewsConfig, user: dict
+    ) -> tuple[bool, dict]:
+        """The reader's proof of this edition: a recent one, or a new one."""
+        if self.cache is not None:
+            await self.cache.touch(user.get("session_id"))
+            cached = await self.cache.get(user, view["id"], edition)
+            if cached is not None:
+                # A stale proof is still used; the refresher renews it shortly.
+                return cached["readable"], cached["digests"]
+        return await self._prove(view, edition, config, user)
+
+    async def refresh_reader(self, user: dict) -> int:
+        """Renew this reader's proofs of the newest editions; returns how many ran."""
+        renewed = 0
+        for view in (await self.semantic.news_views())[:_MAX_VIEWS]:
+            config = self._stored_config(view)
+            if config is None or not config.execution_user:
+                continue
+            edition = await self._edition(view, config, None)
+            if edition is None:
+                continue
+            cached = await self.cache.get(user, view["id"], edition) if self.cache else None
+            if cached is None or cached["stale"]:
+                await self._prove(view, edition, config, user)
+                renewed += 1
+        return renewed
+
     async def _visible(
         self, view: dict, user: dict, day: date | None, *, only: str | None = None
     ) -> tuple[Edition, list[Story]] | None:
@@ -1001,27 +1060,32 @@ class NewsroomService:
         edition = await self._edition(view, config, day)
         if edition is None or (only is not None and only not in edition.story_ids):
             return None
-        budget = CycleBudget()
-        try:
-            await self.service.authorize_semantic(edition.semantic, user, budget=budget)
-        except HTTPException:
-            return None
+        target = None
         if only is not None:
-            # The detail route needs only the groups this story's proofs name.
             target = await self.repository.get("stories", only, edition.scope, Story)
             if target is None:
                 return None
+        if target is not None and (self.cache is None or not self.cache.enabled):
+            # Nothing is kept, so prove only the groups this one story names.
             needed = {proof.group_key for proof in target.proofs}
-            checked = edition.model_copy(
-                update={"groups": [group for group in edition.groups if group.key in needed]}
+            readable, digests = await self._prove(
+                view,
+                edition.model_copy(
+                    update={"groups": [group for group in edition.groups if group.key in needed]}
+                ),
+                config,
+                user,
             )
+        else:
+            readable, digests = await self._proof(view, edition, config, user)
+        if not readable:
+            return None
+        if target is not None:
             stories = [target]
         else:
-            checked = edition
             stories = await self.repository.edition_stories(
                 edition.story_ids, edition.scope, Story
             )
-        digests = await self._reader_digests(checked, config, user, budget)
         return edition, sorted(
             (story for story in stories if self._proven(story, digests)),
             key=lambda story: story.rank,
@@ -1116,4 +1180,4 @@ async def _model_judge(ir, metric):
     return await judge_polarity(ir, metric)
 
 
-newsroom_service = NewsroomService(writer=_model_writer, judge=_model_judge)
+newsroom_service = NewsroomService(writer=_model_writer, judge=_model_judge, cache=proof_cache)
