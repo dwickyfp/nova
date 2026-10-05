@@ -1,8 +1,9 @@
 """Typed Intelligence operations; all identities and evidence are server-derived."""
 
+from datetime import date
 from typing import Annotated, Generic, Literal, TypeVar
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from pydantic import Field
 
 from app.common.news_entitlement import NewsUser
@@ -283,6 +284,20 @@ async def update_monitor(monitor_id: str, body: MonitorUpdate, user: CurrentUser
 @router.post("/monitors/{monitor_id}/run")
 async def run_monitor(monitor_id: str, body: Window, user: CurrentUser):
     return await intelligence_service.run_monitor(monitor_id, body, user)
+
+
+@router.get("/newspaper")
+async def read_newspaper(user: NewsUser, edition: date | None = None):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.newspaper(user, day=edition)
+
+
+@router.get("/stories/{story_id}")
+async def read_story(story_id: Annotated[str, Path(max_length=64)], user: NewsUser):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.story(story_id, user)
 
 
 @router.post("/news/{news_id}/investigate")

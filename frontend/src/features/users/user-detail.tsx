@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, MoreHorizontal, RefreshCw, Shield } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -19,6 +19,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api-client";
 
 type DefaultRoleMode = "explicit" | "all" | "none";
@@ -36,6 +38,7 @@ type UserDetailResponse = {
   password_enabled: boolean;
   last_login: string | null;
   properties: Record<string, string>;
+  news_enabled?: boolean;
 };
 
 function formatLastLogin(value: string | null) {
@@ -76,6 +79,19 @@ export function UserDetailPage({ username }: { username: string }) {
   });
 
   const detail = detailQuery.data;
+  const news = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.put(
+        `/users/${encodeURIComponent(username)}?host=${encodeURIComponent(detail?.host ?? "%")}`,
+        { news_enabled: enabled },
+      ),
+    onSuccess: (_result, enabled) => {
+      toast.success(enabled ? "News switched on for this user" : "News switched off for this user");
+      void detailQuery.refetch();
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "News access could not be changed"),
+  });
   const filteredRoles = useMemo(() => {
     const roles = detail?.roles ?? [];
     const query = searchQuery.trim().toLowerCase();
@@ -170,6 +186,26 @@ export function UserDetailPage({ username }: { username: string }) {
           ) : detail ? (
             <div className="grid gap-x-8 gap-y-8 md:grid-cols-2 xl:grid-cols-3">
               <DetailField label="Login name" value={detail.username} />
+              <DetailField
+                label="Studio News"
+                value={
+                  <span className="flex flex-wrap items-center gap-3">
+                    <Switch
+                      checked={detail.news_enabled === true}
+                      disabled={news.isPending}
+                      onCheckedChange={(enabled) => news.mutate(enabled)}
+                      aria-label={`Studio News for ${detail.username}`}
+                    />
+                    <StatusBadge tone={detail.news_enabled ? "success" : "neutral"}>
+                      {detail.news_enabled ? "On" : "Off"}
+                    </StatusBadge>
+                    <span className="basis-full text-xs text-muted-foreground">
+                      Shows the News page in Studio. Stories still follow the
+                      user&apos;s data access.
+                    </span>
+                  </span>
+                }
+              />
               <DetailField label="Display name" value={detail.username} />
               <DetailField
                 label="Default role"

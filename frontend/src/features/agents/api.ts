@@ -506,6 +506,8 @@ export type StudioIdentity = {
   active_role: string | null;
   warehouses: string[];
   active_warehouse: string | null;
+  /** Administrator-enabled access to Studio News; the server enforces it too. */
+  news_enabled?: boolean;
 };
 
 export type StudioPreferences = {

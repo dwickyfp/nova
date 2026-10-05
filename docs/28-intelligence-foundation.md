@@ -62,6 +62,38 @@ current principal's authorized role execution binding; the default cadence is
 history. See the [learning and operating guide](benchmarks/business-intelligence/operations.md)
 for review, recovery and evaluation boundaries.
 
+## News editions
+
+A manager switches News on per Semantic View (`PUT /semantic-views/{id}/news`).
+The switch stores what the edition covers (up to three additive metrics, a
+record count metric, up to three slice dimensions, a time dimension, thresholds
+and cadence) and schedules the allowlisted `intelligence.newsroom` handler under
+the execution account bound to the chosen role. Enabling requires managing the
+view, holding that role or a task administration role, and an existing execution
+binding; administration roles cannot be the publishing role.
+
+Each cycle runs one daily-grain query per metric and dimension, covering the
+last complete local day and the same weekday of the baseline weeks. Detection is
+the same matched-weekday median/MAD rule monitors use, applied per slice value.
+A story stores its figures, its series and access proofs: digests of exactly the
+rows it reports. Narrative text starts as deterministic wording. When the view
+allows it, the default model rewrites at most three stories per cycle; figures
+are placeholders the server fills, a structural check rejects digits and other
+segments' names, and a second model call must return a clean verdict on stated
+causes and spelled-out quantities. A rejected draft keeps the deterministic text.
+
+Reading (`GET /intelligence/newspaper`, `GET /intelligence/stories/{id}`) first
+requires the per-user News entitlement, which an administrator sets under Users
+& Roles and which is off by default. The reader then runs every proof query of
+the edition under their own active role. A story is returned only when each of
+its proofs is reproduced exactly, so Ranger row filters and masks decide
+visibility in the engine. A reader with partial access sees slice stories they
+can reproduce and never a total. Unavailable, unauthorized and revised stories
+all return 404. No story data is cached across requests.
+
+The fixture, labels and offline benchmark are described in
+[workspace/news_demo](../workspace/news_demo/README.md).
+
 ## Operations
 
 API examples below use the authenticated `/api/v1` base. Create a shared identity before a Feature View:

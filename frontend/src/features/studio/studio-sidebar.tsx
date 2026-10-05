@@ -74,7 +74,10 @@ export function StudioSidebar({
   footer,
   open,
   onToggle,
+  newsEnabled = true,
 }: {
+  /** False hides News for an account without the entitlement. */
+  newsEnabled?: boolean;
   view: StudioView;
   onView: (view: StudioView) => void;
   /** Conversations across all accessible agents, newest first. */
@@ -171,7 +174,7 @@ export function StudioSidebar({
           open={open}
           onClick={onNewChat}
         />
-        {NAV.map((item) => (
+        {NAV.filter((item) => item.id !== "news" || newsEnabled).map((item) => (
           <SidebarNavButton
             key={item.id}
             label={item.label}

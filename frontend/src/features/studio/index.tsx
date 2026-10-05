@@ -14,6 +14,7 @@ import { StudioCapabilities } from "./studio-capabilities";
 import { StudioDashboards } from "./studio-dashboards";
 import { StudioShared } from "./studio-shared";
 import { StudioIntelligence } from "./studio-intelligence";
+import { NewspaperPage } from "./news/newspaper-page";
 import { ShareDialog } from "./share-dialog";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 
@@ -266,6 +267,7 @@ function StudioAppContent() {
         }
       >
         <StudioSidebar
+          newsEnabled={settingsQuery.data?.identity.news_enabled === true}
           view={view}
           onView={(nextView) => {
             setView(nextView);
@@ -350,10 +352,22 @@ function StudioAppContent() {
             newChatNonce={newChatNonce}
             initialPrompt={initialPrompt}
           />
+        ) : view === "news" && !search.item && search.desk !== "alerts" ? (
+          <NewspaperPage
+            story={search.story}
+            onOpen={(story) => navigate({ to: "/studio", search: { view: "news", story }, replace: true })}
+            onAlerts={() => navigate({ to: "/studio", search: { view: "news", desk: "alerts" }, replace: true })}
+            onFollowUp={(prompt) => {
+              setInitialPrompt(prompt);
+              setFreshChat(true);
+              setNewChatNonce((value) => value + 1);
+              setView("chat");
+              navigate({ to: "/studio", search: { agent: agentId ?? undefined }, replace: true });
+            }} />
         ) : view === "news" || view === "decisions" ? (
           <StudioIntelligence view={view} item={search.item}
             onDecision={(item) => { setView("decisions"); navigate({ to: "/studio", search: { view: "decisions", item }, replace: true }); }}
-            onOpen={(item) => navigate({ to: "/studio", search: { view, item }, replace: true })}
+            onOpen={(item) => navigate({ to: "/studio", search: view === "news" ? { view, item, desk: "alerts" } : { view, item }, replace: true })}
             onFollowUp={(prompt) => {
               setInitialPrompt(prompt);
               setFreshChat(true);

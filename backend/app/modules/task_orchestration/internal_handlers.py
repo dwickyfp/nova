@@ -17,7 +17,13 @@ from app.modules.task_orchestration.credentials import CredentialUnavailable
 from app.modules.task_orchestration.execution import TaskSpec, _dict_cursor
 
 HANDLERS = frozenset(
-    {"intelligence.monitor", "intelligence.consolidate", "intelligence.outcome", "agents.quality"}
+    {
+        "intelligence.monitor",
+        "intelligence.consolidate",
+        "intelligence.outcome",
+        "intelligence.newsroom",
+        "agents.quality",
+    }
 )
 
 
@@ -49,6 +55,10 @@ async def run_once(
             from app.modules.agents.quality_monitoring import score_production
 
             return await score_production(config.record_id, user)
+        if handler == "intelligence.newsroom":
+            from app.modules.intelligence.newsroom import newsroom_service
+
+            return await newsroom_service.run_cycle(config.record_id, user, now=now)
         if handler == "intelligence.monitor":
             monitor = await intelligence_service.get("monitors", config.record_id, user)
             if not monitor.enabled:

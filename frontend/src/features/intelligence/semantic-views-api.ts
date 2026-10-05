@@ -104,6 +104,31 @@ export type SemanticView = {
   status: string
   created_at: string
   updated_at: string
+  news_enabled?: boolean
+  /** Present only for a caller who can manage the view. */
+  news_config?: NewsConfig | null
+  news_updated_by?: string | null
+  news_updated_at?: string | null
+}
+
+export type NewsConfig = {
+  execution_role: string
+  execution_user?: string | null
+  metrics: string[]
+  count_metric: string
+  slice_dimensions: string[]
+  time_dimension: string
+  timezone?: string
+  baseline_weeks?: number
+  relative_threshold?: number
+  minimum_samples?: number
+  max_stories?: number
+  cadence_minutes?: number
+  narrative?: 'template' | 'model'
+}
+
+export type NewsDefaults = NewsConfig & {
+  available: { metrics: string[]; dimensions: string[]; time_dimensions: string[] }
 }
 
 export type SemanticValidation = {
@@ -209,6 +234,9 @@ export const semanticViewsApi = {
     named_filters: string[]
     version: number | null
   }) => api.post<Record<string, unknown>>(`${viewPath(id)}/query`, body),
+  newsDefaults: (id: string) => api.get<NewsDefaults>(`${viewPath(id)}/news/defaults`),
+  setNews: (id: string, body: { enabled: boolean; config?: NewsConfig }) =>
+    api.put<SemanticViewDetail>(`${viewPath(id)}/news`, body),
   deprecate: (id: string) => api.post(`${viewPath(id)}/deprecate`, {}),
   remove: (id: string) => api.delete(viewPath(id)),
 }
