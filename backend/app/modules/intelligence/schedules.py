@@ -21,13 +21,37 @@ async def require_execution_binding(user: dict) -> None:
 
 
 async def configure_schedule(
-    record, user: dict, *, handler: str, enabled: bool, cadence: int = 15
+    record,
+    user: dict,
+    *,
+    handler: str,
+    enabled: bool,
+    cadence: int = 15,
+    execution_scope: Scope | None = None,
 ) -> dict:
-    if enabled:
-        await require_execution_binding(user)
+    """Create or update the schedule that runs ``handler`` for ``record``.
+
+    By default the caller must be the role's bound execution account. A caller
+    that has already authorized a manager to publish on behalf of that account
+    passes ``execution_scope``; the binding is still verified, and the schedule
+    is owned by the bound account so the worker's identity checks hold.
+    """
     repository = task_orchestration_repository
-    scope = Scope.from_user(user)
-    name = "intelligence_" + fingerprint([handler, record.id])[:32]
+    if execution_scope is None:
+        if enabled:
+            await require_execution_binding(user)
+        scope = Scope.from_user(user)
+        name = "intelligence_" + fingerprint([handler, record.id])[:32]
+    else:
+        scope = execution_scope
+        bound = await repository.get_role_execution_user(scope.active_role)
+        if enabled and bound != scope.principal:
+            raise HTTPException(
+                status_code=409, detail="Scheduled execution account binding changed"
+            )
+        name = "intelligence_" + fingerprint(
+            [handler, record.id, scope.principal, scope.active_role]
+        )[:32]
     schedule = {
         "schedule_kind": "interval" if enabled else "manual",
         "schedule_expr": f"{cadence} minutes" if enabled else None,

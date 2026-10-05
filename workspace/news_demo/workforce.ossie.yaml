@@ -1,0 +1,77 @@
+version: 0.1.1
+name: news_workforce
+description: >-
+  Daily workforce hours of Nusantara Retail by city, department and employment type. Overtime and absence are tracked against each branch's staffing plan.
+question_routing_instructions: >-
+  Route questions about overtime, absence and staffing by city or department to this model.
+query_generation_instructions: >-
+  Use work_date as the time dimension. Hours are person-hours. A branch head is accountable for the overtime of one city.
+datasets:
+  - name: facts
+    source: news_demo.workforce_daily
+    description: One row per day, city, department and employment type.
+    primary_key: [work_date, city, department, employment_type]
+    fields:
+      - name: work_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: work_date}]}
+        datatype: Date
+        description: Calendar date the hours were worked.
+        dimension: {is_time: true}
+        search_strategy: range
+      - name: city
+        expression: {dialects: [{dialect: ANSI_SQL, expression: city}]}
+        datatype: String
+        description: City of the branch. Each branch head owns one city.
+        dimension:
+          sample_values: [Jakarta, Surabaya, Bandung, Medan, Semarang, Makassar, Palembang, Denpasar]
+        search_strategy: exact
+      - name: department
+        expression: {dialects: [{dialect: ANSI_SQL, expression: department}]}
+        datatype: String
+        description: Department the employees belong to.
+        dimension:
+          sample_values: [Store Operations, Warehouse, Delivery, Customer Care, Head Office, Executive Office]
+        search_strategy: exact
+      - name: employment_type
+        expression: {dialects: [{dialect: ANSI_SQL, expression: employment_type}]}
+        datatype: String
+        description: Contract type of the employees.
+        dimension:
+          sample_values: [Permanent, Contract, Intern]
+        search_strategy: exact
+      - name: headcount_days
+        expression: {dialects: [{dialect: ANSI_SQL, expression: headcount_days}]}
+        datatype: Integer
+        description: Employees rostered on the day.
+      - name: overtime_hours
+        expression: {dialects: [{dialect: ANSI_SQL, expression: overtime_hours}]}
+        datatype: Decimal
+        description: Hours worked beyond the rostered shift.
+      - name: absence_hours
+        expression: {dialects: [{dialect: ANSI_SQL, expression: absence_hours}]}
+        datatype: Decimal
+        description: Rostered hours not worked.
+metrics:
+  - name: overtime_hours
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.overtime_hours)}]}
+    base_dataset: facts
+    datatype: Decimal
+    unit: hours
+    description: >-
+      Hours worked beyond the rostered shift. Overtime costs a premium rate and signals understaffing, so a rise above the usual level must be approved by the branch head.
+    default_time_dimension: work_date
+  - name: absence_hours
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.absence_hours)}]}
+    base_dataset: facts
+    datatype: Decimal
+    unit: hours
+    description: >-
+      Rostered hours that were not worked. Rising absence reduces service capacity and is reviewed with HR business partners.
+    default_time_dimension: work_date
+  - name: headcount_days
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(facts.headcount_days)}]}
+    base_dataset: facts
+    datatype: Integer
+    description: >-
+      Number of rostered employee-days.
+    default_time_dimension: work_date

@@ -42,6 +42,14 @@ else
   echo "  init script not found at $INIT_SQL; relying on explicit DDL below"
 fi
 
+# Stock test FEs can reject optional UDF bootstrap before reaching Streams DDL.
+# Apply the additive migrations explicitly and fail seeding if either fails.
+for migration in \
+  "$BACKEND_DIR/migrations/20261005_stream_namespace.sql" \
+  "$BACKEND_DIR/migrations/20261005_stream_namespace_recovery.sql"; do
+  fe_sql < "$migration"
+done
+
 # AUDIT_LOG is missing whenever init-nova.sql aborts before it, and the proxy
 # writes an audit row for every statement, so nothing works without it.
 #

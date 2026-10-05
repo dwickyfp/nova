@@ -1128,6 +1128,44 @@ LEFT JOIN NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS r ON m.memory_id=r.memory_id
 WHERE r.memory_id IS NULL;
 -- End Nova Intelligence Engine schema
 
+-- Nova News: shared editions over Semantic Views and their access-proven stories
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_INTELLIGENCE_EDITIONS (
+    id VARCHAR(64) NOT NULL,
+    revision BIGINT NOT NULL,
+    operation_id VARCHAR(32) NOT NULL,
+    principal VARCHAR(128) NOT NULL,
+    active_role VARCHAR(128) NOT NULL,
+    security_context_version BIGINT NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(id, revision, operation_id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_INTELLIGENCE_STORIES (
+    id VARCHAR(64) NOT NULL,
+    revision BIGINT NOT NULL,
+    operation_id VARCHAR(32) NOT NULL,
+    principal VARCHAR(128) NOT NULL,
+    active_role VARCHAR(128) NOT NULL,
+    security_context_version BIGINT NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(id, revision, operation_id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_INTELLIGENCE_STORY_FEEDBACK (
+    user_name VARCHAR(128) NOT NULL,
+    story_id VARCHAR(64) NOT NULL,
+    reaction VARCHAR(8) NOT NULL,
+    features JSON NOT NULL,
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(user_name, story_id)
+DISTRIBUTED BY HASH(user_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+-- End Nova News schema
+
 -- ============================================================================
 -- Nova Built-in AI/ML UDFs
 -- ============================================================================
@@ -1817,4 +1855,70 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAMS (
     created_at DATETIME NOT NULL
 ) PRIMARY KEY(catalog_name, database_name, schema_name, name, generation)
 DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
+PROPERTIES ('replication_num'='1');
+
+-- Streams namespace recovery: immutable operation facts for durable claim winners.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_NAMESPACE_OPERATIONS (
+    operation_digest VARCHAR(64) NOT NULL,
+    catalog_name VARCHAR(128) NOT NULL,
+    database_name VARCHAR(128) NOT NULL,
+    schema_name VARCHAR(128) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    generation BIGINT NOT NULL,
+    stream_id VARCHAR(64) NOT NULL,
+    source_database VARCHAR(128) NOT NULL,
+    source_name VARCHAR(128) NOT NULL,
+    source_id VARCHAR(64) NOT NULL,
+    owner_role VARCHAR(128) NOT NULL,
+    cursor_epoch BIGINT NOT NULL,
+    cursor_sequence BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(operation_digest)
+DISTRIBUTED BY HASH(operation_digest) BUCKETS 1
+PROPERTIES ('replication_num'='1');
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS (
+    event_id VARCHAR(64) NOT NULL,
+    consume_id VARCHAR(64) NOT NULL,
+    stream_id VARCHAR(64) NOT NULL,
+    epoch BIGINT NOT NULL,
+    generation BIGINT NOT NULL,
+    sequence_from BIGINT NOT NULL,
+    sequence_to BIGINT NOT NULL,
+    operation_digest VARCHAR(64) NOT NULL,
+    target_database VARCHAR(256) NOT NULL,
+    target_object VARCHAR(256) NOT NULL,
+    engine_label VARCHAR(128) NOT NULL,
+    principal VARCHAR(256) NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    receipt JSON,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(event_id)
+DISTRIBUTED BY HASH(event_id) BUCKETS 1
+PROPERTIES ('replication_num'='1');
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS (
+    consume_id VARCHAR(64) NOT NULL,
+    stream_id VARCHAR(64) NOT NULL,
+    generation BIGINT NOT NULL,
+    source_id VARCHAR(64) NOT NULL,
+    epoch BIGINT NOT NULL,
+    sequence_from BIGINT NOT NULL,
+    sequence_to BIGINT NOT NULL,
+    schema_version BIGINT NOT NULL,
+    operation_digest VARCHAR(64) NOT NULL,
+    target_database VARCHAR(256) NOT NULL,
+    target_object VARCHAR(256) NOT NULL,
+    engine_label VARCHAR(128) NOT NULL,
+    principal VARCHAR(256) NOT NULL,
+    target_load_id BIGINT,
+    target_transaction_id BIGINT,
+    active_role VARCHAR(128),
+    security_context_version BIGINT,
+    submission_digest VARCHAR(64) NOT NULL,
+    cancellation_digest VARCHAR(64) NOT NULL,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(consume_id)
+DISTRIBUTED BY HASH(consume_id) BUCKETS 1
 PROPERTIES ('replication_num'='1');

@@ -1,5 +1,7 @@
 """Auth service — StarRocks native authentication + session management."""
 
+from contextlib import suppress
+
 import asyncmy
 import asyncmy.errors
 
@@ -207,6 +209,7 @@ class AuthService:
             status="SUCCESS",
             session_id=session_id,
         )
+        await self._warm_news(username, session_id)
 
         return {
             "status": "AUTHENTICATED",
@@ -317,6 +320,20 @@ class AuthService:
     async def logout(self, session_id: str) -> None:
         """Delete session from Redis."""
         await session_store.delete(session_id)
+        from app.modules.intelligence.newsroom_cache import proof_cache
+
+        with suppress(Exception):
+            await proof_cache.forget(session_id)
+
+    @staticmethod
+    async def _warm_news(username: str, session_id: str) -> None:
+        """Queue a News reader's first access proof so their first open is quick."""
+        from app.common.news_entitlement import is_news_enabled
+        from app.modules.intelligence.newsroom_cache import proof_cache
+
+        with suppress(Exception):
+            if await is_news_enabled(username):
+                await proof_cache.touch(session_id)
 
     @staticmethod
     def _parse_roles(grants_rows: list) -> list[str]:

@@ -14,6 +14,7 @@ none of them get 403 from ``require_role`` before any SQL is built.
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.common.news_entitlement import is_news_enabled, set_news_enabled
 from app.core.config import settings
 from app.core.exceptions import ForbiddenSQLError
 from app.core.role_gates import require_active_role
@@ -50,6 +51,22 @@ require_admin = Depends(_admin)
 
 def _security(user: dict) -> SecurityContext:
     return SecurityContext.from_session(user)
+
+
+def _has_engine_update(body: UserUpdate) -> bool:
+    return any(
+        (
+            body.password is not None,
+            bool(body.granted_roles_add),
+            bool(body.granted_roles_remove),
+            body.default_role_mode is not None,
+            body.max_user_connections is not None,
+            body.catalog is not None,
+            body.database is not None,
+            bool(body.session_properties),
+            bool(body.clear_properties),
+        )
+    )
 
 
 def _ranger_table(body: RolePrivilegeChange) -> tuple[str, str]:
@@ -167,7 +184,9 @@ async def update_user(
     user: dict = require_admin,
 ):
     try:
-        if not settings.RANGER_ENABLED:
+        if body.news_enabled is not None and not _has_engine_update(body):
+            executed = []
+        elif not settings.RANGER_ENABLED:
             executed = await user_service.update_user(
                 username=username,
                 host=host,
@@ -224,6 +243,10 @@ async def update_user(
                 )
             if not executed:
                 raise ValueError("No update fields provided")
+        if body.news_enabled is not None:
+            await user_service.get_user_detail(username, host=host)
+            await set_news_enabled(username, enabled=body.news_enabled, actor=user)
+            executed.append(f"SET NEWS {'ON' if body.news_enabled else 'OFF'}")
         return {"username": username, "host": host, "updated": executed}
     except PermissionError as e:
         raise ForbiddenSQLError(str(e)) from e
@@ -285,7 +308,8 @@ async def get_user_detail(
     user: dict = require_admin,
 ):
     try:
-        return UserDetailResponse(**await user_service.get_user_detail(username, host=host))
+        detail = await user_service.get_user_detail(username, host=host)
+        return UserDetailResponse(**detail, news_enabled=await is_news_enabled(username))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:

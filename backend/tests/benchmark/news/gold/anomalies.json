@@ -1,0 +1,421 @@
+{
+  "dataset": {
+    "seed": 20261005,
+    "days": 70,
+    "last_day": "2026-10-04"
+  },
+  "injections": [
+    {
+      "id": "bandung-drop",
+      "day": "2026-10-04",
+      "dimension": "city",
+      "value": "Bandung",
+      "factor": 0.65,
+      "kind": "anomaly",
+      "note": "Bandung revenue falls 35% on the newest edition day."
+    },
+    {
+      "id": "collectibles-low-volume",
+      "day": "2026-10-04",
+      "dimension": "category",
+      "value": "Collectibles",
+      "factor": 0.4,
+      "kind": "decoy_low_volume",
+      "note": "A 60% swing on a category with a few orders a day."
+    },
+    {
+      "id": "national-rise",
+      "day": "2026-10-03",
+      "dimension": null,
+      "value": null,
+      "factor": 1.15,
+      "kind": "anomaly",
+      "note": "Every city, channel and category rises 15%."
+    },
+    {
+      "id": "online-drop",
+      "day": "2026-10-02",
+      "dimension": "channel",
+      "value": "Online",
+      "factor": 0.8,
+      "kind": "anomaly",
+      "note": "The Online channel falls 20% in every city."
+    },
+    {
+      "id": "surabaya-spike",
+      "day": "2026-10-01",
+      "dimension": "city",
+      "value": "Surabaya",
+      "factor": 1.4,
+      "kind": "anomaly",
+      "note": "Surabaya revenue rises 40%."
+    },
+    {
+      "id": "semarang-below-threshold",
+      "day": "2026-09-29",
+      "dimension": "city",
+      "value": "Semarang",
+      "factor": 0.94,
+      "kind": "decoy_below_threshold",
+      "note": "A 6% dip, under the 10% materiality threshold."
+    },
+    {
+      "id": "makassar-dip",
+      "day": "2026-09-28",
+      "dimension": "city",
+      "value": "Makassar",
+      "factor": 0.86,
+      "kind": "anomaly",
+      "note": "Makassar revenue falls 14%: a small but material change."
+    },
+    {
+      "id": "medan-baseline-outlier",
+      "day": "2026-09-24",
+      "dimension": "city",
+      "value": "Medan",
+      "factor": 1.8,
+      "kind": "decoy_baseline_outlier",
+      "note": "One outlier in a baseline week of the Surabaya edition."
+    }
+  ],
+  "expected_stories": [
+    {
+      "anomaly": "bandung-drop",
+      "edition_date": "2026-10-04",
+      "metric": "revenue",
+      "direction": "decrease",
+      "magnitude": 0.35,
+      "expected_severity": "critical",
+      "dimension": "city",
+      "value": "Bandung",
+      "type": "slice",
+      "visible_to": [
+        "news_bandung",
+        "news_manager",
+        "news_west_java",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": null,
+      "value": null,
+      "type": "total",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Jakarta",
+      "type": "national_component",
+      "visible_to": [
+        "news_jakarta",
+        "news_manager",
+        "news_west_java",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Surabaya",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Bandung",
+      "type": "national_component",
+      "visible_to": [
+        "news_bandung",
+        "news_manager",
+        "news_west_java",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Medan",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Semarang",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Makassar",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Palembang",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Denpasar",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "channel",
+      "value": "Store",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "channel",
+      "value": "Online",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "news_online",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "channel",
+      "value": "Marketplace",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "channel",
+      "value": "Wholesale",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "category",
+      "value": "Grocery",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "category",
+      "value": "Electronics",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "category",
+      "value": "Fashion",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "category",
+      "value": "Home",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "national-rise",
+      "edition_date": "2026-10-03",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.15,
+      "expected_severity": "warning",
+      "dimension": "category",
+      "value": "Beauty",
+      "type": "national_component",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "online-drop",
+      "edition_date": "2026-10-02",
+      "metric": "revenue",
+      "direction": "decrease",
+      "magnitude": 0.2,
+      "expected_severity": "warning",
+      "dimension": "channel",
+      "value": "Online",
+      "type": "slice",
+      "visible_to": [
+        "news_manager",
+        "news_online",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "surabaya-spike",
+      "edition_date": "2026-10-01",
+      "metric": "revenue",
+      "direction": "increase",
+      "magnitude": 0.4,
+      "expected_severity": "critical",
+      "dimension": "city",
+      "value": "Surabaya",
+      "type": "slice",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    },
+    {
+      "anomaly": "makassar-dip",
+      "edition_date": "2026-09-28",
+      "metric": "revenue",
+      "direction": "decrease",
+      "magnitude": 0.14,
+      "expected_severity": "warning",
+      "dimension": "city",
+      "value": "Makassar",
+      "type": "slice",
+      "visible_to": [
+        "news_manager",
+        "nova_task_service_news"
+      ]
+    }
+  ]
+}

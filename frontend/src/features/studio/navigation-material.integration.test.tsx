@@ -40,6 +40,9 @@ vi.mock("./studio-artifacts", () => ({
 vi.mock("./studio-intelligence", () => ({
   StudioIntelligence: () => <section>News workspace</section>,
 }));
+vi.mock("./news/newspaper-page", () => ({
+  NewspaperPage: () => <section>News workspace</section>,
+}));
 vi.mock("./studio-capabilities", () => ({
   StudioCapabilities: () => <section>Capabilities workspace</section>,
 }));
@@ -84,6 +87,8 @@ beforeEach(async () => {
       username: "studio-navigation-test",
       active_role: "ANALYST",
       roles: ["ANALYST"],
+      // News is off for an account until an administrator enables it.
+      news_enabled: true,
     },
     preferences: {},
   } as never);

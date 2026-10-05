@@ -33,6 +33,7 @@ from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools import policy
 from app.modules.intelligence.access import can_manage
 from app.modules.intelligence.entities import entity_registry
+from app.modules.intelligence.newsroom_contracts import NewsSettings
 from app.modules.intelligence.semantic_regression import (
     MAX_RESULT_ROWS,
     MAX_VERIFIED_QUERIES,
@@ -106,6 +107,26 @@ def _json(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
+def _view_row(result: dict, row: list) -> dict[str, Any]:
+    view = _record(result, row)
+    view["created_at"] = str(view["created_at"])
+    view["updated_at"] = str(view["updated_at"])
+    view["news_enabled"] = bool(view.get("news_enabled"))
+    view["news_config"] = _json(view["news_config"]) if view.get("news_config") else None
+    view["news_updated_at"] = (
+        str(view["news_updated_at"]) if view.get("news_updated_at") else None
+    )
+    return view
+
+
+def _public_view(view: dict, user: dict) -> dict[str, Any]:
+    """Only a manager sees how News is configured; everyone sees whether it is on."""
+    if can_manage(view["owner_name"], user):
+        return view
+    hidden = {"news_config", "news_updated_by", "news_updated_at"}
+    return {key: value for key, value in view.items() if key not in hidden}
+
+
 def _legacy_review_draft(view: dict, row: dict, user: dict) -> bool:
     migration = (row.get("validation") or {}).get("migration") or {}
     return (
@@ -139,16 +160,36 @@ class SemanticViewService:
     async def _get(view_id: str) -> dict | None:
         result = await db.execute_system(
             "SELECT id,catalog_name,database_name,schema_name,name,owner_name,"
-            "visibility,active_version,status,created_at,updated_at "
+            "visibility,active_version,status,created_at,updated_at,"
+            "news_enabled,news_config,news_updated_by,news_updated_at "
             "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS WHERE id=%s",
             [view_id],
         )
         if not result["rows"]:
             return None
-        row = _record(result, result["rows"][0])
-        row["created_at"] = str(row["created_at"])
-        row["updated_at"] = str(row["updated_at"])
-        return row
+        return _view_row(result, result["rows"][0])
+
+    @staticmethod
+    async def news_views() -> list[dict]:
+        """Views with News switched on; metadata only, the reader authorizes each."""
+        result = await db.execute_system(
+            "SELECT id,catalog_name,database_name,schema_name,name,owner_name,"
+            "visibility,active_version,status,created_at,updated_at,"
+            "news_enabled,news_config,news_updated_by,news_updated_at "
+            "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
+            "WHERE news_enabled=TRUE AND status<>'DEPRECATED' ORDER BY name"
+        )
+        return [_view_row(result, row) for row in result["rows"]]
+
+    @staticmethod
+    async def save_news(
+        view_id: str, *, enabled: bool, config: dict | None, username: str
+    ) -> None:
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS SET news_enabled=%s,news_config=%s,"
+            "news_updated_by=%s,news_updated_at=NOW() WHERE id=%s",
+            [enabled, json.dumps(config) if config is not None else None, username, view_id],
+        )
 
     @staticmethod
     async def _version(view_id: str, version: int) -> dict | None:
@@ -227,8 +268,8 @@ class SemanticViewService:
                 return all(
                     await asyncio.gather(
                         *(
-                            check_sources(sources[index : index + 8])
-                            for index in range(0, len(sources), 8)
+                            check_sources([source])
+                            for source in sources
                         )
                     )
                 )
@@ -293,7 +334,7 @@ class SemanticViewService:
         visible = []
         for row in result["rows"]:
             try:
-                visible.append(await self._visible(row[0], user))
+                visible.append(_public_view(await self._visible(row[0], user), user))
             except HTTPException:
                 continue
         return visible
@@ -323,7 +364,7 @@ class SemanticViewService:
                     continue
             versions = accessible_versions
         return {
-            **view,
+            **_public_view(view, user),
             "versions": versions,
         }
 
@@ -1158,6 +1199,20 @@ async def publish_semantic_view(
 @router.post("/{view_id}/query", response_class=SanitizingJSONResponse)
 async def query_semantic_view(view_id: str, body: SemanticViewQuery, user: CurrentUser):
     return await semantic_view_service.query(view_id, body, user)
+
+
+@router.get("/{view_id}/news/defaults", response_class=SanitizingJSONResponse)
+async def semantic_view_news_defaults(view_id: str, user: CurrentUser):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.defaults(view_id, user)
+
+
+@router.put("/{view_id}/news", response_class=SanitizingJSONResponse)
+async def configure_semantic_view_news(view_id: str, body: NewsSettings, user: CurrentUser):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.configure(view_id, body, user)
 
 
 @router.post("/{view_id}/deprecate", status_code=204)
