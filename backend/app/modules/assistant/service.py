@@ -1339,7 +1339,14 @@ class AssistantLoop:
             )
             tool_calls = list(decision.tool_calls)
             if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
-                # The model wrote a tool call as text. It is never an answer.
+                # The model wrote a tool call as text. It is never an answer. Outside
+                # final composition a well-formed call to an offered tool is the call
+                # the model meant, and runs through the same gates as any other.
+                written = None if composing_final else _markup_tool_call("".join(buffered_text))
+                if written and written["function"]["name"] in selected_tools:
+                    tool_calls = [written]
+                    buffered_text = []
+            if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
                 if repairs.take("composer_tool_call"):
                     messages.append({"role": "system", "content": (
                         "Tools are disabled during final composition. Answer from the "
@@ -3019,6 +3026,33 @@ def _structured_action_prompt(required: str, tool_schemas: list[dict[str, Any]])
         + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
         + "\n</NOVA_STRUCTURED_ACTION>"
     )
+
+
+_MARKUP_INVOKE = re.compile(r'invoke\s+name\s*=\s*"([A-Za-z0-9_:-]{1,80})"', re.I)
+_MARKUP_PARAMETER = re.compile(
+    r'parameter\s+name\s*=\s*"(\w{1,64})"([^>]*)>(.*?)<\s*/[^>]*parameter\s*>', re.S | re.I
+)
+
+
+def _markup_tool_call(text: str) -> dict[str, Any] | None:
+    """The one tool call a provider wrote as markup, or ``None`` when it is not one call."""
+    names = _MARKUP_INVOKE.findall(text)
+    if len(names) != 1:
+        return None
+    arguments: dict[str, Any] = {}
+    for name, attributes, raw in _MARKUP_PARAMETER.findall(text):
+        arguments[name] = raw.strip()
+        if 'string="true"' not in attributes.replace(" ", ""):
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
+                arguments[name] = json.loads(raw.strip())
+    return {
+        "id": str(uuid4()),
+        "type": "function",
+        "function": {
+            "name": names[0],
+            "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
+        },
+    }
 
 
 def _structured_action_call(content: str) -> dict[str, Any] | None:

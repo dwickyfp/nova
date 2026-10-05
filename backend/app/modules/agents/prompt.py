@@ -135,6 +135,8 @@ def build_system_prompt(
 
 
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
+#: The product's name for a governed dataset; a reader just calls it data.
+_PRODUCT_TERM = re.compile(r"\bsemantic views?\b", re.I)
 _BACKTICKED = re.compile(r"`([^`\n]{1,80})`")
 _IDENTIFIER = re.compile(
     r"(?<![\w./@:-])[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+(?![\w/@:-]|\.\w)"
@@ -149,6 +151,7 @@ def business_wording(text: str) -> str:
     """
     def plain(part: str) -> str:
         part = _BACKTICKED.sub(lambda match: match.group(1), part)
+        part = _PRODUCT_TERM.sub("data", part)
         return _IDENTIFIER.sub(lambda match: match.group(0).replace("_", " "), part)
 
     pieces, cursor = [], 0

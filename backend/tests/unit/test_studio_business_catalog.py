@@ -399,6 +399,7 @@ async def test_only_smart_is_planned_with_specialist_routing(smart):
 @pytest.mark.parametrize(("written", "read"), [
     ("Metrik `total_expense` per `department`.", "Metrik total expense per department."),
     ("| department | active_headcount |", "| department | active headcount |"),
+    ("Dari Semantic View keuangan dan semantic views lain.", "Dari data keuangan dan data lain."),
     ("Total Rp12.404.000.000,00 pada 2025-01-01.", "Total Rp12.404.000.000,00 pada 2025-01-01."),
     ("Kirim ke ops_team@example.com atau lihat /data/raw_file.csv",
      "Kirim ke ops_team@example.com atau lihat /data/raw_file.csv"),

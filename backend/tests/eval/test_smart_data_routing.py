@@ -368,3 +368,35 @@ async def test_a_model_that_keeps_writing_tool_calls_as_text_ends_the_turn_witho
     ])
     assert result.finish_reason == "unexpected_tool_call"
     assert not any(frame.startswith("event: text_delta") for frame in result.frames)
+
+
+@pytest.mark.asyncio
+async def test_a_well_formed_tool_call_written_as_markup_runs_as_that_call():
+    tag = "\uff5c\uff5cDSML\uff5c\uff5c"
+    written = (
+        f'<{tag} calls>\n<{tag} invoke name="wait_agent">\n'
+        f'<{tag} parameter name="targets" string="false">["/root/data"]</{tag} parameter>\n'
+        f"</{tag} invoke>"
+    )
+    result, _, context, _ = await run([
+        call("discover_agents", capability=QUESTION),
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        text_frame(written),
+        text_frame("Mobile App recognized revenue is 3368049065451.00."),
+    ])
+    assert result.finish_reason == "stop", result.error_codes
+    assert answer_text(result).startswith("Mobile App recognized revenue is 3368049065451.00.")
+    assert not [step for step in context.steps if step.get("kind") == "error"]
+
+
+def test_markup_that_is_not_one_call_is_not_run():
+    from app.modules.assistant.service import _markup_tool_call
+
+    assert _markup_tool_call('<invoke name="a"></invoke><invoke name="b"></invoke>') is None
+    assert _markup_tool_call("plain text") is None
+    parsed = _markup_tool_call(
+        '<invoke name="semantic_query"><parameter name="question" string="true">'
+        "total expense per month</parameter></invoke>"
+    )
+    assert parsed["function"]["name"] == "semantic_query"
+    assert parsed["function"]["arguments"] == '{"question":"total expense per month"}'
