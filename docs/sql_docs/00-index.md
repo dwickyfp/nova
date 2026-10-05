@@ -151,3 +151,9 @@ uv run pytest tests/unit/test_sql_guard.py tests/unit/test_sql_guard_bypass.py \
 Set A ⊎ Set B = 8 files, 331 tests. `09-guardrails-invariants.md` also reports "192 passed", but over **a different set** (it adds `test_audit_credential_redaction.py` and `test_defense_in_depth_hardening.py` while dropping some of Set B's files) — that is the other 192 and should not be added to these. Each document states the files it ran.
 
 `08-native-starrocks-sql.md` describes StarRocks-native behaviour that Nova does not re-implement; upstream questions are now cross-referenced to `10-starrocks-reference-comparison.md`, and anything still unanswered is marked `[BELUM TERVERIFIKASI]` there.
+
+## Nova Streams
+
+[13 — Nova Streams](13-nova-streams.md) documents the implemented namespace and
+recognized syntax, current disabled/provider-unavailable execution, and the
+boundary between parser tests and production acceptance.

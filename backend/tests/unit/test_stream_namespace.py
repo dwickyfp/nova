@@ -42,8 +42,11 @@ def test_names_are_database_scoped():
     assert parse_stream_name("s", "one") != parse_stream_name("s", "two")
 
 
+@pytest.mark.parametrize("name", ["s", "db.s", "db.default.s"])
 @pytest.mark.parametrize("sql,operation", [
     ("CREATE STREAM IF NOT EXISTS db.default.s ON TABLE orders APPEND_ONLY=TRUE", "create"),
+    ("CREATE STREAM db.s ON TABLE orders APPEND_ONLY=TRUE", "create"),
+    ("DROP STREAM db.s", "drop"),
     ("DROP STREAM IF EXISTS db.s", "drop"),
     ("DESCRIBE STREAM db.default.s", "describe"),
     ("DESC STREAM db.s", "describe"),
@@ -51,7 +54,8 @@ def test_names_are_database_scoped():
     ("SHOW STREAM BACKLOG db.default.s", "backlog"),
     ("SHOW STREAMS", "list"),
 ])
-async def test_typed_planning_freezes_scope_without_io(sql, operation):
+async def test_typed_planning_freezes_scope_without_io(sql, operation, name):
+    sql = sql.replace("db.default.s", name).replace("db.s", name)
     statement = ast_builders.build(parse_statement(sql))
     assert isinstance(statement, StreamStatement)
     binder = AsyncMock(side_effect=AssertionError("planning requested I/O"))
@@ -61,14 +65,15 @@ async def test_typed_planning_freezes_scope_without_io(sql, operation):
     assert plan.payload.source_key == 7
     assert plan.payload.operation == operation
     if operation != "list":
-        assert plan.payload.name == StreamName("db", "s")
+        assert plan.payload.name == StreamName("session" if name == "s" else "db", "s")
     if operation == "create":
         assert plan.payload.source == StreamName("session", "orders")
-        assert plan.payload.if_not_exists
+        assert plan.payload.if_not_exists == ("IF NOT EXISTS" in sql)
+    assert plan.payload.if_exists == ("IF EXISTS" in sql)
     assert plan.effects.writes_metadata == (operation in {"create", "drop"})
     assert plan.requires_confirmation == (operation == "drop")
     context.database = "changed"
-    assert plan.payload.database == ("session" if operation == "list" else "db")
+    assert plan.payload.database == ("session" if operation == "list" or name == "s" else "db")
     assert "password" not in str(asdict(plan))
     assert not binder.mock_calls
 
@@ -78,6 +83,9 @@ async def test_typed_planning_freezes_scope_without_io(sql, operation):
     "CREATE STREAM s ON TABLE t",
     "CREATE STREAM TABLE s ON TABLE t APPEND_ONLY=TRUE",
     "CREATE STREAM s ON TABLE t APPEND_ONLY=TRUE garbage",
+    "DROP STREAM", "DROP STREAM IF NOT EXISTS db.s", "DROP STREAM db.s CASCADE",
+    "DESCRIBE STREAM db..s", "DESC STREAM db.s extra", "SHOW STREAMS db",
+    "SHOW STREAM STATUS", "SHOW STREAM BACKLOG", "SHOW STREAM BACKLOG db.s extra",
 ])
 def test_invalid_grammar(sql):
     with pytest.raises(SQLFrontendError):
@@ -151,3 +159,10 @@ async def test_relation_cte_precedes_stream_lookup_and_alias_is_retained():
     stream.assert_awaited_once_with(StreamName("db", "s"))
     assert binder.stream_bindings[0].alias == "alias"
     engine.resolve_table.assert_not_awaited()
+
+
+async def test_describe_table_named_stream_retains_native_meaning():
+    sql = "DESCRIBE STREAM"
+    statement = ast_builders.build(parse_statement(sql))
+    assert isinstance(statement, NativeStatement)
+    assert (await SQLPlanner().plan(statement, PlanningContext())).engine_sql == sql

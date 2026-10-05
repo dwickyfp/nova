@@ -58,3 +58,7 @@ CREATE TASK refresh_orders
 - Draft without execution when requested. For explicit execution use query_mutate
   with approval. Inspect Tasks for the saved schedule and authorized run history;
   a successful DDL response proves metadata creation, not a completed task run.
+
+- Tasks using `NOVA_STREAM_HAS_DATA` cannot run in the current Streams
+  implementation. Load `nova-streams` for namespace and availability details;
+  do not offer a Stream-triggered task as a working capture pipeline.
