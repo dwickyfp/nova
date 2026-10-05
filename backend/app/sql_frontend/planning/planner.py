@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 class NativePlanner:
     async def plan(self, logical: LogicalPlan, context: PlanningContext) -> EngineSqlPlan:
+        from app.sql_frontend.streams import stream_functions
+
         sql = logical.statement.parsed.normalized_sql
         from app.sql_frontend.stages import stage_view
 
@@ -70,6 +72,7 @@ class NativePlanner:
             stage_command=command,
             transaction_intent=transaction_intent(logical.statement, context),
             private_bindings=private,
+            stream_functions=stream_functions(logical.statement.parsed, context.database),
         )
 
 
@@ -108,6 +111,7 @@ def default_registry() -> PlannerRegistry:
     registry.register(ast.StageAwareStatement, NativePlanner())
     registry.register(ast.SecurityStatement, SecurityPlanner(ActionKind.SECURITY))
     for node, action in {
+        ast.StreamStatement: ActionKind.STREAM,
         ast.CreateTaskStatement: ActionKind.CREATE_TASK,
         ast.CreateMLModelStatement: ActionKind.CREATE_ML_MODEL,
         ast.MLPredictStatement: ActionKind.ML_PREDICT,

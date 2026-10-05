@@ -369,6 +369,16 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#novaStreamStatement.
+    def visitNovaStreamStatement(self, ctx:StarRocksParser.NovaStreamStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaStreamName.
+    def visitNovaStreamName(self, ctx:StarRocksParser.NovaStreamNameContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#novaSecurityShowStatement.
     def visitNovaSecurityShowStatement(self, ctx:StarRocksParser.NovaSecurityShowStatementContext):
         return self.visitChildren(ctx)

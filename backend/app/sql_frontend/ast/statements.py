@@ -17,6 +17,15 @@ class NativeStatement(Statement):
 
 
 @dataclass(frozen=True, slots=True)
+class StreamStatement(Statement):
+    operation: str
+    name: tuple[str, ...] | None = None
+    source: tuple[str, ...] | None = None
+    if_exists: bool = False
+    if_not_exists: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class StageAwareStatement(Statement):
     pass
 

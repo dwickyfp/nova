@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from app.sql_frontend.planning.execution import (
@@ -14,6 +15,7 @@ from app.sql_frontend.planning.execution import (
 )
 
 _PAYLOADS: dict[ActionKind, Callable[[int, Any], SourcePayload]] = {
+    ActionKind.STREAM: lambda key, value: replace(value, source_key=key),
     ActionKind.CREATE_TASK: lambda key, value: TaskPayload(
         key, value.name, value.database_name, value.schema_name, value.schedule_kind, value
     ),

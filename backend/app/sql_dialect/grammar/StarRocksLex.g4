@@ -504,6 +504,9 @@ TASK: 'TASK';
 // (StarRocks.g4) so an identifier spelled `target`, `input`, `series`, etc. still
 // parses as a column or table name.
 ML_MODEL: 'ML_MODEL';
+STREAMS: 'STREAMS';
+APPEND_ONLY: 'APPEND_ONLY';
+BACKLOG: 'BACKLOG';
 INPUT: 'INPUT';
 TARGET: 'TARGET';
 SERIES: 'SERIES';

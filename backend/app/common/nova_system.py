@@ -493,6 +493,11 @@ async def init_nova_system() -> None:
         from app.modules.query_autopilot.schema import ensure_schema
 
         await ensure_schema()
+        from app.modules.streams.claims import CLAIMS_DDL
+        from app.modules.streams.repository import STREAMS_DDL
+
+        for ddl in (CLAIMS_DDL, STREAMS_DDL):
+            await db.execute_system(ddl)
 
 
 async def is_setup_complete() -> bool:

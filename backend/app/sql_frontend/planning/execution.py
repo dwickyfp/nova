@@ -9,10 +9,12 @@ if TYPE_CHECKING:
     from app.modules.query.dialect.ml_model import CreateMLModelStatement
     from app.modules.task_orchestration.ddl import LoweredTask
 
+from app.modules.streams.namespace import StreamName
 from app.sql_frontend.analysis.effects import PlanEffects
 
 
 class ActionKind(Enum):
+    STREAM = "stream"
     CREATE_TASK = "create_task"
     CREATE_ML_MODEL = "create_ml_model"
     ML_PREDICT = "ml_predict"
@@ -39,6 +41,32 @@ class TransactionIntent:
 @dataclass(frozen=True, slots=True)
 class SourcePayload:
     source_key: int
+
+
+@dataclass(frozen=True, slots=True)
+class StreamPayload(SourcePayload):
+    operation: str
+    database: str
+    name: StreamName | None = None
+    source: StreamName | None = None
+    if_exists: bool = False
+    if_not_exists: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class StreamBinding:
+    name: StreamName
+    stream_id: str
+    start: int
+    end: int
+    alias: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamFunctionBinding:
+    name: StreamName
+    start: int
+    end: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +150,7 @@ class EngineSqlPlan:
     stage_command: str = "stage_query"
     transaction_intent: TransactionIntent | None = None
     private_bindings: tuple[PrivateSqlBinding, ...] = ()
+    stream_functions: tuple[StreamFunctionBinding, ...] = ()
 
     def __post_init__(self) -> None:
         from app.common.sql_guard import redact_sql_credentials
