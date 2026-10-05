@@ -1,100 +1,114 @@
-import { useMemo } from "react";
-import { ChartBlock } from "@/features/agents/chart-block";
-import { readToken } from "@/lib/read-token";
+import { useCallback } from "react";
+import { EChart, type ChartTokens } from "./echart";
 import { calendarDay, formatValue, humanize } from "./format";
 import type { Story } from "./newspaper-api";
 
 const day = (value: string) =>
   calendarDay(value).toLocaleDateString("en", { day: "numeric", month: "short" });
+const compact = (value: number) =>
+  new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+
+function tooltip(t: ChartTokens) {
+  return {
+    backgroundColor: t.surface,
+    borderColor: t.border,
+    borderWidth: 1,
+    padding: [8, 10],
+    textStyle: { color: t.text, fontSize: 12, fontFamily: "inherit" },
+    extraCssText: "box-shadow:none;border-radius:8px;",
+  };
+}
 
 /**
  * The story's metric by day: one line, the typical level it is compared with,
- * and the days that formed that comparison. One series, so it needs no legend.
+ * the days that formed that comparison, and the edition day. One series, so the
+ * caption names it and no legend is drawn.
  */
-export function TrendChart({ story, height = 260 }: { story: Story; height?: number }) {
-  const spec = useMemo(() => {
-    const series = readToken("--chart-4", "#4f7ee8");
-    const muted = readToken("--muted-foreground", "#71717a");
-    const surface = readToken("--background", "#ffffff");
-    const baseline = new Set(story.baseline_dates);
-    const values = story.series.map((point) => ({
-      date: point.date,
-      value: point.value,
-      label: day(point.date),
-      figure: formatValue(point.value, story.unit),
-      role:
-        point.date === story.edition_date
-          ? "This edition"
-          : baseline.has(point.date)
-            ? "Compared day"
-            : "",
-    }));
-    const tooltip = [
-      { field: "label", title: "Day" },
-      { field: "figure", title: story.metric_label },
-    ];
-    const position = {
-      x: {
-        field: "date",
-        type: "temporal",
-        axis: { title: null, format: "%d %b", grid: false, tickCount: 6 },
-      },
-      y: {
-        field: "value",
-        type: "quantitative",
-        axis: { title: null, format: "~s", tickCount: 4 },
-        scale: { zero: false, nice: true },
-      },
-    };
-    return JSON.stringify({
-      $schema: "https://vega.github.io/schema/vega-lite/v6.json",
-      height,
-      data: { values },
-      layer: [
-        {
-          data: { values: [{ level: story.before }] },
-          mark: { type: "rule", color: muted, strokeDash: [4, 4], strokeWidth: 1 },
-          encoding: { y: { field: "level", type: "quantitative" } },
-        },
-        { mark: { type: "line", color: series, strokeWidth: 2 }, encoding: position },
-        {
-          transform: [{ filter: "datum.role === 'Compared day'" }],
-          mark: {
-            type: "point",
-            color: series,
-            fill: surface,
-            size: 70,
-            strokeWidth: 2,
-            opacity: 1,
+export function TrendChart({
+  story,
+  height = 260,
+  detailed = true,
+}: {
+  story: Story;
+  height?: number;
+  /** A compact chart drops the caption and the figures table. */
+  detailed?: boolean;
+}) {
+  const build = useCallback(
+    (t: ChartTokens) => {
+      const compared = new Set(story.baseline_dates);
+      return {
+        animation: false,
+        textStyle: { fontFamily: "inherit" },
+        grid: { left: 4, right: 12, top: 12, bottom: 4, containLabel: true },
+        tooltip: {
+          ...tooltip(t),
+          trigger: "axis",
+          axisPointer: { type: "line", lineStyle: { color: t.border } },
+          formatter: (items: { dataIndex: number }[]) => {
+            const point = story.series[items[0].dataIndex];
+            const role =
+              point.date === story.edition_date
+                ? " · this edition"
+                : compared.has(point.date)
+                  ? " · compared day"
+                  : "";
+            return `${day(point.date)}${role}<br/><strong>${formatValue(point.value, story.unit)}</strong>`;
           },
-          encoding: { ...position, tooltip },
         },
-        {
-          transform: [{ filter: "datum.role === 'This edition'" }],
-          mark: {
-            type: "point",
-            color: series,
-            filled: true,
-            size: 130,
-            stroke: surface,
-            strokeWidth: 2,
-            opacity: 1,
+        xAxis: {
+          type: "category",
+          boundaryGap: false,
+          data: story.series.map((point) => day(point.date)),
+          axisLine: { lineStyle: { color: t.border } },
+          axisTick: { show: false },
+          axisLabel: { color: t.muted, fontSize: 11, interval: 6, hideOverlap: true },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          splitNumber: 3,
+          axisLabel: { color: t.muted, fontSize: 11, formatter: compact },
+          splitLine: { lineStyle: { color: t.border, opacity: 0.6 } },
+        },
+        series: [
+          {
+            type: "line",
+            data: story.series.map((point) => ({
+              value: point.value,
+              symbol: "circle",
+              symbolSize:
+                point.date === story.edition_date ? 11 : compared.has(point.date) ? 8 : 0,
+              itemStyle:
+                point.date === story.edition_date
+                  ? { color: t.series, borderColor: t.surface, borderWidth: 2 }
+                  : { color: t.surface, borderColor: t.series, borderWidth: 2 },
+            })),
+            showSymbol: true,
+            lineStyle: { color: t.series, width: 2 },
+            areaStyle: { color: t.series, opacity: 0.06 },
+            emphasis: { disabled: true },
+            markLine: {
+              silent: true,
+              symbol: "none",
+              label: { show: false },
+              lineStyle: { color: t.muted, type: [4, 4], width: 1 },
+              data: [{ yAxis: story.before }],
+            },
           },
-          encoding: { ...position, tooltip },
-        },
-        {
-          mark: { type: "point", size: 400, opacity: 0 },
-          encoding: { ...position, tooltip },
-        },
-      ],
-    });
-  }, [story, height]);
+        ],
+      };
+    },
+    [story],
+  );
   const weekday = calendarDay(story.edition_date).toLocaleDateString("en", {
     weekday: "long",
   });
+  const label = `${story.metric_label} by day, ending ${day(story.edition_date)} at ${formatValue(story.after, story.unit)} against a typical ${weekday} of ${formatValue(story.before, story.unit)}`;
+  if (!detailed) return <EChart build={build} height={height} label={label} />;
   return (
     <figure className="min-w-0">
-      <ChartBlock spec={spec} />
+      <EChart build={build} height={height} label={label} />
       <figcaption className="mt-2 text-xs text-muted-foreground">
         {story.metric_label} by day. The dashed line is the typical {weekday} (
         {formatValue(story.before, story.unit)}); open circles are the{" "}
@@ -133,79 +147,64 @@ export function TrendChart({ story, height = 260 }: { story: Story; height?: num
 
 /** Change by segment for a whole-view story, largest movement first. */
 export function DriverChart({ story }: { story: Story }) {
-  const spec = useMemo(() => {
-    const values = story.drivers.map((driver) => ({
-      segment: driver.value,
-      change: driver.change,
-      figure: formatValue(driver.change, story.unit),
-    }));
-    return JSON.stringify({
-      $schema: "https://vega.github.io/schema/vega-lite/v6.json",
-      height: Math.max(120, values.length * 30),
-      data: { values },
-      mark: {
-        type: "bar",
-        color: readToken("--chart-4", "#4f7ee8"),
-        cornerRadiusEnd: 4,
-        height: { band: 0.6 },
-      },
-      encoding: {
-        y: {
-          field: "segment",
-          type: "nominal",
-          sort: null,
-          axis: { title: null, ticks: false, domain: false },
+  const build = useCallback(
+    (t: ChartTokens) => {
+      const drivers = [...story.drivers].reverse();
+      return {
+        animation: false,
+        textStyle: { fontFamily: "inherit" },
+        grid: { left: 4, right: 16, top: 4, bottom: 4, containLabel: true },
+        tooltip: {
+          ...tooltip(t),
+          trigger: "item",
+          formatter: (item: { dataIndex: number }) => {
+            const driver = drivers[item.dataIndex];
+            return `${driver.value}<br/><strong>${formatValue(driver.change, story.unit)}</strong>`;
+          },
         },
-        x: {
-          field: "change",
-          type: "quantitative",
-          axis: { title: null, format: "~s", tickCount: 4 },
+        xAxis: {
+          type: "value",
+          splitNumber: 3,
+          axisLabel: { color: t.muted, fontSize: 11, formatter: compact },
+          splitLine: { lineStyle: { color: t.border, opacity: 0.6 } },
         },
-        tooltip: [
-          { field: "segment", title: humanize(story.drivers[0]?.dimension ?? "Segment") },
-          { field: "figure", title: "Change" },
+        yAxis: {
+          type: "category",
+          data: drivers.map((driver) => driver.value),
+          axisLine: { lineStyle: { color: t.border } },
+          axisTick: { show: false },
+          axisLabel: { color: t.text, fontSize: 12 },
+        },
+        series: [
+          {
+            type: "bar",
+            data: drivers.map((driver) => ({
+              value: driver.change,
+              itemStyle: {
+                color: t.series,
+                borderRadius: driver.change >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4],
+              },
+            })),
+            barWidth: 14,
+          },
         ],
-      },
-    });
-  }, [story]);
+      };
+    },
+    [story],
+  );
   if (!story.drivers.length) return null;
+  const dimension = humanize(story.drivers[0].dimension).toLowerCase();
   return (
     <figure className="min-w-0">
-      <ChartBlock spec={spec} />
+      <EChart
+        build={build}
+        height={Math.max(120, story.drivers.length * 30)}
+        label={`Change against the typical day by ${dimension}`}
+      />
       <figcaption className="mt-2 text-xs text-muted-foreground">
-        Change against the typical day by {humanize(story.drivers[0].dimension).toLowerCase()}.
-        This shows where the movement is, not what caused it.
+        Change against the typical day by {dimension}. This shows where the
+        movement is, not what caused it.
       </figcaption>
     </figure>
-  );
-}
-
-/** A small trend for a story card; decorative, the card states the figures. */
-export function Sparkline({ story }: { story: Story }) {
-  const points = story.series;
-  if (points.length < 2) return null;
-  const values = points.map((point) => point.value);
-  const low = Math.min(...values);
-  const span = Math.max(...values) - low || 1;
-  const at = (index: number, value: number) =>
-    `${((index / (points.length - 1)) * 116 + 2).toFixed(1)},${(30 - ((value - low) / span) * 26).toFixed(1)}`;
-  const last = at(points.length - 1, values[values.length - 1]).split(",");
-  return (
-    <svg
-      viewBox="0 0 120 32"
-      aria-hidden="true"
-      className="h-8 w-28 shrink-0 text-chart-4"
-      preserveAspectRatio="none"
-    >
-      <polyline
-        points={values.map((value, index) => at(index, value)).join(" ")}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-      <circle cx={last[0]} cy={last[1]} r="2.5" fill="currentColor" />
-    </svg>
   );
 }

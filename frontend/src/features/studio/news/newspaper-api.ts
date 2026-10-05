@@ -59,8 +59,11 @@ export type Newspaper = {
 };
 
 export const newspaperApi = {
-  read: (signal?: AbortSignal) =>
-    api.get<Newspaper>("/intelligence/newspaper", signal),
+  read: (edition?: string, signal?: AbortSignal) =>
+    api.get<Newspaper>(
+      `/intelligence/newspaper${edition ? `?edition=${encodeURIComponent(edition)}` : ""}`,
+      signal,
+    ),
   story: (id: string, signal?: AbortSignal) =>
     api.get<StoryDetail>(
       `/intelligence/stories/${encodeURIComponent(id)}`,

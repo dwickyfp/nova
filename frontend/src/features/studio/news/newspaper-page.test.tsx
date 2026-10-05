@@ -119,10 +119,21 @@ it.each([
   await expect
     .element(screen.getByRole("heading", { level: 3, name: "Revenue rose 14.3% in Online" }))
     .toBeVisible();
-  await screen.getByRole("button", { name: "Read the full story" }).click();
+  await expect.element(screen.getByText("2 stories")).toBeVisible();
+  await expect.element(screen.getByText("1 critical")).toBeVisible();
+  // One long column: every story is its own block, divided from the one before.
+  const entries = [...document.querySelectorAll('[data-slot="news-entry"]')];
+  expect(entries.map((entry) => entry.querySelector("span")?.textContent)).toEqual(["01", "02"]);
+  expect(getComputedStyle(entries[0]).borderTopWidth).toBe("0px");
+  expect(getComputedStyle(entries[1]).borderTopWidth).toBe("1px");
+  expect(entries[1].getBoundingClientRect().top).toBeGreaterThan(
+    entries[0].getBoundingClientRect().bottom - 1,
+  );
+  await expect.poll(() => document.querySelectorAll('[data-testid="news-chart"] svg').length).toBe(2);
+  await screen.getByRole("button", { name: "Revenue fell 34.6% in Bandung" }).click();
   expect(onOpen).toHaveBeenCalledWith("story-bandung");
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
-  for (const element of document.querySelectorAll("article, aside, figure"))
+  for (const element of document.querySelectorAll("article, figure"))
     expect(element.getBoundingClientRect().right).toBeLessThanOrEqual(width);
   await page.screenshot();
 });
@@ -182,6 +193,36 @@ it("drops the cached edition when the signed-in principal changes", async () => 
   expect(screen.getByText("Revenue fell 34.6% in Bandung").query()).toBeNull();
 });
 
+it("opens a story from anywhere in its block", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
+  const onOpen = vi.fn();
+  const screen = await mount({ onOpen });
+
+  await screen.getByText("Channel · Online").click();
+
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith("story-online");
+});
+
+it("moves between edition days from the masthead", async () => {
+  const read = vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
+  const onEdition = vi.fn();
+  const screen = await mount({ onEdition });
+
+  await screen.getByRole("button", { name: "Previous day" }).click();
+  expect(onEdition).toHaveBeenCalledWith("2026-10-03");
+  expect(read.mock.calls[0][0]).toBeUndefined();
+
+  await cleanup();
+  read.mockResolvedValue({ edition_date: null, sections: [] });
+  const past = await mount({ onEdition, edition: "2026-09-30" });
+  await expect.element(past.getByText("No edition for this day")).toBeVisible();
+  expect(read.mock.calls[read.mock.calls.length - 1][0]).toBe("2026-09-30");
+  await past.getByRole("button", { name: "Next day" }).click();
+  expect(onEdition).toHaveBeenCalledWith("2026-10-01");
+  await past.getByRole("button", { name: "Latest edition" }).click();
+  expect(onEdition).toHaveBeenLastCalledWith();
+});
+
 it("opens the monitor alerts desk", async () => {
   vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
   const onAlerts = vi.fn();
@@ -207,33 +248,43 @@ const detail: StoryDetail = {
 it.each([
   { width: 320, dark: false },
   { width: 1280, dark: true },
-])("tells the full story at $width px", async ({ width, dark }) => {
+])("tells the full story in a panel beside the edition at $width px", async ({ width, dark }) => {
   await page.viewport(width, 900);
   document.documentElement.classList.toggle("dark", dark);
+  vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
   vi.spyOn(newspaperApi, "story").mockResolvedValue(detail);
   const onFollowUp = vi.fn();
   const onOpen = vi.fn();
   const screen = await mount({ story: "story-bandung", onFollowUp, onOpen });
 
-  await expect
-    .element(screen.getByRole("heading", { level: 1, name: "Revenue fell 34.6% in Bandung" }))
-    .toBeVisible();
+  const panel = screen.getByRole("dialog", { name: "Revenue fell 34.6% in Bandung" });
+  await expect.element(panel).toBeVisible();
+  // The edition stays mounted behind the panel, so the reader keeps their place.
+  expect(document.querySelectorAll('[data-slot="news-entry"]').length).toBe(2);
   for (const name of ["What happened", "Why it matters", "What to check", "Where it moved", "Business rules"])
-    await expect.element(screen.getByRole("heading", { level: 2, name })).toBeVisible();
-  await expect.element(screen.getByText("Whole view")).toBeVisible();
+    await expect.element(panel.getByRole("heading", { level: 3, name })).toBeVisible();
+  await expect.element(panel.getByText("Whole view")).toBeVisible();
+  await expect.element(panel.getByText("1 of 2")).toBeVisible();
+  await expect.element(panel.getByRole("button", { name: "Previous" })).toBeDisabled();
+  await panel.getByRole("button", { name: "Next" }).click();
+  expect(onOpen).toHaveBeenLastCalledWith("story-online");
   await expect
     .element(screen.getByText(/Written by the default model from verified figures/))
     .toBeVisible();
   await expect.element(screen.getByText(/must be explained in the weekly review/)).toBeVisible();
   await screen.getByRole("button", { name: "Ask Studio about this" }).click();
   expect(onFollowUp.mock.calls[0][0]).toContain("Revenue fell 34.6% in Bandung");
-  await screen.getByRole("button", { name: "Back to News" }).click();
-  expect(onOpen).toHaveBeenCalledWith();
+  await screen.getByRole("button", { name: "Close" }).click();
+  expect(onOpen).toHaveBeenLastCalledWith();
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
   await page.screenshot();
 });
 
 it("does not reveal whether a hidden story exists", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue({
+    ...paper,
+    sections: [{ ...paper.sections[0], stories: [] }],
+  });
   vi.spyOn(newspaperApi, "story").mockRejectedValue(new ApiError(404, "Record unavailable"));
   const screen = await mount({ story: "story-bandung" });
 

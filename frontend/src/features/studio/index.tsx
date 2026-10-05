@@ -356,7 +356,9 @@ function StudioAppContent() {
         ) : view === "news" && !search.item && search.desk !== "alerts" ? (
           <NewspaperPage
             story={search.story}
-            onOpen={(story) => navigate({ to: "/studio", search: { view: "news", story }, replace: true })}
+            edition={search.edition}
+            onEdition={(edition) => navigate({ to: "/studio", search: { view: "news", edition }, replace: true })}
+            onOpen={(story) => navigate({ to: "/studio", search: { view: "news", story, edition: search.edition }, replace: true })}
             onAlerts={() => navigate({ to: "/studio", search: { view: "news", desk: "alerts" }, replace: true })}
             onFollowUp={(prompt) => {
               setInitialPrompt(prompt);
