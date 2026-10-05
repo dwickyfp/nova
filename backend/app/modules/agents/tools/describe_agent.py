@@ -36,6 +36,12 @@ def _text(value: Any, limit: int = 240) -> str:
     return str(redact_row(["metadata"], [redact_sql_credentials(str(value or ""))])[0])[:limit]
 
 
+def business_label(name: Any) -> str:
+    """An identifier as a reader would say it: ``total_expense`` -> ``Total expense``."""
+    words = _text(name, 128).replace("_", " ").replace("-", " ").split()
+    return " ".join(words).capitalize() if words else ""
+
+
 def semantic_catalog(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = []
     for record in models:
@@ -46,12 +52,15 @@ def semantic_catalog(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
         result.append({
             "view_id": _text(record.get("semantic_model_id"), 128),
             "name": _text(record.get("name") or model.name, 128),
+            "label": business_label(record.get("name") or model.name),
             "version": _text(record.get("version") or model.version, 64),
             "description": _text(model.description),
             "metrics": [{"name": _text(metric.name, 128),
+                         "label": business_label(metric.name),
                          "description": _text(metric.description),
                          "unit": _text(metric.unit, 64)} for metric in metrics[:FIELD_LIMIT]],
             "dimensions": [{"name": _text(field.name, 128),
+                            "label": business_label(field.name),
                             "description": _text(field.description)}
                            for field in dimensions[:FIELD_LIMIT]],
             "fields_truncated": len(metrics) > FIELD_LIMIT or len(dimensions) > FIELD_LIMIT,

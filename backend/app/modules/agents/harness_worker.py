@@ -1308,6 +1308,11 @@ class AgentHarnessWorker:
                 {"event_type": "omitted", "reason": "activity_limit"},
             )
         answer = "".join(parts).strip()
+        if is_root and smart:
+            from app.modules.agents.prompt import business_wording
+
+            # The reader knows the business, not the model's identifiers.
+            answer = business_wording(answer)
         if attachments:
             answer = reference_checkpoint(
                 {"answer": answer}, prompt=prompt, attachments=attachments, refs=resource_refs

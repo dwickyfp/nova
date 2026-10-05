@@ -249,9 +249,7 @@ async def test_an_unsupported_number_gets_one_rewrite_before_anything_is_removed
         text_frame("Mobile App recognized revenue is 3368049065451.00."),
     ])
     assert result.finish_reason == "stop", result.error_codes
-    text = "".join(
-        frame for frame in result.frames if frame.startswith("event: text_delta")
-    )
+    text = answer_text(result)
     assert "3368049065451.00" in text and "9 times" not in text
     repairs = [step for step in context.steps if step.get("answer_repair")]
     assert [step["unsupported"] for step in repairs] == [["9"]]
@@ -266,10 +264,17 @@ async def test_a_model_that_repeats_an_unsupported_number_still_cannot_show_it()
         text_frame("Mobile App recognized revenue is 3368049065451.00, about 9 times Store."),
     ])
     assert result.finish_reason == "stop", result.error_codes
-    text = "".join(
-        frame for frame in result.frames if frame.startswith("event: text_delta")
-    )
+    text = answer_text(result)
     assert "9 times" not in text and "unverified" not in text
+
+
+def answer_text(result: TurnResult) -> str:
+    import json
+
+    return "".join(
+        json.loads(frame.split("data: ", 1)[1])["text"]
+        for frame in result.frames if frame.startswith("event: text_delta")
+    )
 
 
 def specialist(turn: str, agent_id: str, table: dict, metric: str) -> dict:
@@ -331,6 +336,6 @@ async def test_root_relates_two_specialists_results_with_verified_arithmetic():
           resolve_consent=AsyncMock(return_value=False))])
     assert result.finish_reason == "stop", result.error_codes
     assert {"compute_metrics"} <= set(context.selected_tools)
-    text = "".join(frame for frame in result.frames if frame.startswith("event: text_delta"))
+    text = answer_text(result)
     assert "300 per active employee" in text and "77" not in text
     assert context.last_result["columns"][-1] == "total_expense_per_active_headcount"

@@ -138,6 +138,14 @@ root delegates to that specialist. The specialist queries its own semantic
 coverage directly; the root's routing instruction is not inherited as an
 instruction to recursively delegate the same question.
 
+Smart answers a reader who knows the business and not the product. The catalog
+carries a plain label for every View, metric and dimension, the root prompt asks
+for business names and sources by subject, and the root's final text is passed
+through `business_wording`, which writes an identifier such as `total_expense`
+as "total expense" outside fenced code. The Semantic View and the serving agent
+are named only when the user asks where a figure comes from; the timeline still
+shows every agent and tool.
+
 Catalog questions ("what data do you have?") are answered by `describe_agent`
 without spawning anyone. The root reads each authorized specialist's Semantic
 Views the way that specialist's own turn resolves them: the caller's principal

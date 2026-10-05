@@ -394,3 +394,25 @@ async def test_only_smart_is_planned_with_specialist_routing(smart):
                     agent_scope=tool.planning_scope(context))
     instructions = provider.messages[0]["content"]
     assert ("discover_agents as the only required tool" in instructions) is smart
+
+
+@pytest.mark.parametrize(("written", "read"), [
+    ("Metrik `total_expense` per `department`.", "Metrik total expense per department."),
+    ("| department | active_headcount |", "| department | active headcount |"),
+    ("Total Rp12.404.000.000,00 pada 2025-01-01.", "Total Rp12.404.000.000,00 pada 2025-01-01."),
+    ("Kirim ke ops_team@example.com atau lihat /data/raw_file.csv",
+     "Kirim ke ops_team@example.com atau lihat /data/raw_file.csv"),
+    ("Lihat:\n```sql\nSELECT total_expense FROM t\n```\nlalu `net_income`.",
+     "Lihat:\n```sql\nSELECT total_expense FROM t\n```\nlalu net income."),
+])
+def test_identifiers_are_written_as_a_reader_says_them(written, read):
+    from app.modules.agents.prompt import business_wording
+
+    assert business_wording(written) == read
+
+
+def test_the_catalog_carries_a_business_label_for_every_item(models):
+    view = semantic_catalog(models)[0]
+    assert view["label"] and "_" not in view["label"]
+    assert all(item["label"] and "_" not in item["label"]
+               for item in (*view["metrics"], *view["dimensions"]))
