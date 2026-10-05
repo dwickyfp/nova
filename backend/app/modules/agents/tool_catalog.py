@@ -22,6 +22,9 @@ from app.modules.agents.tools.compute_metrics import PARAMETERS as COMPUTE_PARAM
 from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
 from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
 from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
+from app.modules.agents.tools.propose_automation import (
+    DESCRIPTION as PROPOSE_AUTOMATION_DESCRIPTION,
+)
 from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 from app.modules.assistant.analysis_workspace import analysis_workspace_tool
@@ -33,6 +36,7 @@ from app.modules.intelligence.action_contracts import (
 
 COMPUTE_DESCRIPTION = ComputeMetricsTool.description
 SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
+PROPOSE_DESCRIPTION = PROPOSE_AUTOMATION_DESCRIPTION
 
 #: name -> (description, input_schema)
 
@@ -197,6 +201,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     ),
     "compute_metrics": (COMPUTE_DESCRIPTION, COMPUTE_PARAMETERS),
     "schedule_automation": (SCHEDULE_DESCRIPTION, SCHEDULE_PARAMETERS),
+    "propose_automation": (PROPOSE_DESCRIPTION, SCHEDULE_PARAMETERS),
     "analyze_documents": (ANALYZE_DESCRIPTION, ANALYZE_PARAMETERS),
     "ml_execute": (
         "Run Nova's bounded ML runtime for forecast, classification, regression, anomaly "

@@ -433,3 +433,37 @@ async def test_root_discovers_and_waits_without_spending_model_calls_on_it():
     assert discovery.runs[0].arguments["capability"] == QUESTION
     assert wait.runs[0].arguments["targets"] == ["/root/data"]
     assert provider.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_smart_drafts_a_schedule_and_creates_nothing(monkeypatch):
+    from app.modules.agents import automations
+    from app.modules.agents.tools.propose_automation import propose_automation_tool
+
+    create = AsyncMock()
+    monkeypatch.setattr(automations.automation_repository, "create", create)
+    discovery = EvalTool("discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+                         data={"agents": [OWNER]})
+    spawn = EvalTool("spawn_agent", parameters=COLLABORATION_TOOLS["spawn_agent"][1], data=OWNER)
+    registry = ToolRegistry()
+    for tool in (discovery, spawn, propose_automation_tool):
+        registry.register(tool)
+    provider = ScriptedProvider([
+        tool_call_frame("p", name="propose_automation", arguments={
+            "title": "Weekly revenue", "prompt": "Recognized revenue per channel last week?",
+            "schedule_kind": "cron", "schedule_expr": "0 8 * * 1"}),
+        text_frame("I drafted a weekly report for Mondays at 08:00. It starts once you confirm."),
+    ], turn_plan={"intent": "ui_operation", "tools": ["propose_automation"],
+                  "required_tools": ["propose_automation"]})
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=6,
+    ).run(thread=thread(read_only_grant=True),
+          user_content="Send me recognized revenue per channel every Monday morning",
+          context=context, resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert context.automation_proposal["schedule_expr"] == "0 8 * * 1"
+    assert not discovery.runs and not spawn.runs
+    create.assert_not_awaited()
+    assert "confirm" in answer_text(result)

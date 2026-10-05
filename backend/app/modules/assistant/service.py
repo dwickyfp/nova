@@ -195,6 +195,8 @@ class LoopContext:
     #: Model id -> logical dataset names the caller may expose to a provider.
     authorized_semantic_datasets: dict[str, list[str]] | None = None
     authorized_semantic_models: list[dict[str, Any]] | None = None
+    #: A recurring report or alert Smart drafted this turn for the user to confirm.
+    automation_proposal: dict[str, Any] | None = None
     #: Smart root only: the combined specialist catalog, read once per turn.
     collaboration_catalog: dict[str, Any] | None = None
     agent_scope: dict[str, Any] | None = None

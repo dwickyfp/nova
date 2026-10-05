@@ -27,7 +27,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { skillsApi, studioApi, type Skill } from "@/features/agents/api";
+import { AUTO_AGENT_ID, skillsApi, studioApi, type Skill } from "@/features/agents/api";
+import { AgentAutomationsTab } from "@/features/agents/agent-detail/automations-tab";
 import { SkillEditor } from "./skill-editor";
 import { skillDocument } from "./skill-document";
 import { SkillUpload } from "./skill-upload";
@@ -95,6 +96,7 @@ export function StudioCapabilities({
               { id: "skills", label: "Skills" },
               { id: "connectors", label: "MCP Connectors" },
               { id: "business", label: "Business workflow" },
+              { id: "schedules", label: "Scheduled reports" },
             ].map((item) => (
               <Button
                 key={item.id}
@@ -127,7 +129,9 @@ export function StudioCapabilities({
                   ? "Your skills"
                   : tab === "business"
                     ? "Business capabilities"
-                    : "MCP Connectors"}
+                    : tab === "schedules"
+                      ? "Scheduled reports"
+                      : "MCP Connectors"}
               </h2>
               {tab === "connectors" ? (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -135,7 +139,7 @@ export function StudioCapabilities({
                 </p>
               ) : null}
             </div>
-            {tab !== "business" ? (
+            {tab !== "business" && tab !== "schedules" ? (
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 <div className="relative min-w-0 flex-1 sm:w-40">
                   <Search
@@ -252,6 +256,9 @@ export function StudioCapabilities({
                 </div>
               )}
             </section>
+          ) : tab === "schedules" ? (
+            // Reports and alerts that Smart runs on a schedule, across all your data.
+            <AgentAutomationsTab agentId={AUTO_AGENT_ID} />
           ) : tab === "business" ? (
             <section aria-labelledby="capability-heading">
               {caps.isPending ? (

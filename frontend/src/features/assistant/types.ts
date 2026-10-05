@@ -135,6 +135,8 @@ export type AssistantEvent = (
   | ({ type: "citation"; payload: CitationBlock } & ContentPosition)
   /** Catalog-bound follow-up questions offered after a Studio answer. */
   | { type: "suggestions"; suggestions: string[] }
+  /** A recurring report or alert Smart drafted; nothing exists until the user confirms. */
+  | { type: "automation_proposal"; proposal: AutomationProposal }
   | {
       type: "content_block_done";
       content_index: number;
@@ -179,3 +181,14 @@ export type ConsentDecisionPayload = "allow_once" | "allow_session" | "deny";
 
 /** Outcome of a turn, so the transcript can mark a cancelled partial answer. */
 export type TurnState = "streaming" | "done" | "cancelled" | "error";
+
+/** A schedule Smart drafted for the user to confirm. */
+export type AutomationProposal = {
+  title: string;
+  prompt: string;
+  schedule_kind: "cron" | "interval";
+  schedule_expr: string;
+  timezone: string;
+  condition: { metric: string; operator: string; value: number } | null;
+  next_run?: string;
+};

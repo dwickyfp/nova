@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import traceback
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -31,7 +31,7 @@ from app.modules.agents.collaboration_tools import (
 )
 from app.modules.agents.harness_repository import TERMINAL, HarnessRepository, harness_repository
 from app.modules.agents.harness_tools import RequestSpecialistTool, SendAgentMessageTool
-from app.modules.agents.identity import SMART_AGENT_ID, participant_id
+from app.modules.agents.identity import AUTOMATION_SESSION, SMART_AGENT_ID, participant_id
 from app.modules.agents.memory import memory_prompt, memory_repository, select_relevant_memories
 from app.modules.agents.mission import mission_service
 from app.modules.agents.repository import agent_repository
@@ -92,7 +92,7 @@ MAX_DISCOVERY_ATTEMPTS = 6
 MAX_START_EVENT_ATTEMPTS = 6
 
 
-def _root_artifacts(steps: list[dict]) -> list[dict]:
+def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dict]:
     """The table and chart a Smart answer shows: the last of each, headed in plain words.
 
     Earlier tables are the inputs of the last one (two results, then their
@@ -110,7 +110,11 @@ def _root_artifacts(steps: list[dict]) -> list[dict]:
             latest["columns"] = [business_label(column) for column in latest.get("columns") or []]
             latest["title"] = business_label(latest.get("title") or "")
         shown.append(latest)
-    return shown[:MAX_ROOT_ARTIFACTS]
+    shown = shown[:MAX_ROOT_ARTIFACTS]
+    if proposal:
+        # A schedule Smart drafted; Studio shows it with a button that creates it.
+        shown.append({"kind": "automation_proposal", **proposal})
+    return shown
 
 
 class AuthenticationUnavailable(RuntimeError):
@@ -233,6 +237,8 @@ class AgentHarnessWorker:
         self.waiting_runs: set[str] = set()
 
     async def _user_for(self, run: dict) -> dict:
+        if str(run.get("session_id") or "").startswith(AUTOMATION_SESSION):
+            return await self._automation_user(run)
         session = await session_store.get(str(run["session_id"]))
         if (
             not session
@@ -243,6 +249,69 @@ class AgentHarnessWorker:
         ):
             raise AuthenticationUnavailable("Session or role changed")
         return {**session, "session_id": run["session_id"]}
+
+    @staticmethod
+    async def _automation_user(run: dict) -> dict:
+        """The identity of a scheduled Smart run: its automation, checked again each time.
+
+        The run was created by the automation runner for an automation its owner
+        confirmed. It stays valid only while that automation is enabled and still
+        names this owner, role and agent, the same contract a scheduled agent run has.
+        """
+        from app.modules.agents.automations import (
+            automation_execution_user,
+            automation_repository,
+        )
+
+        automation_id = str(run["session_id"])[len(AUTOMATION_SESSION):]
+        automation = await automation_repository.get(automation_id, owner_name=run["owner_name"])
+        if (
+            not automation
+            or not automation.get("enabled")
+            or automation.get("agent_id") != SMART_AGENT_ID
+            or automation.get("role_name") != run["role_name"]
+        ):
+            raise AuthenticationUnavailable("Scheduled run is no longer authorized")
+        return {
+            **automation_execution_user(automation, str(run["thread_id"])),
+            "session_id": run["session_id"],
+        }
+
+    @asynccontextmanager
+    async def _identity(self, run: dict):
+        """Bind a scheduled run to its owner's delegated connection; else nothing."""
+        if not str(run.get("session_id") or "").startswith(AUTOMATION_SESSION):
+            yield
+            return
+        from app.core.config import settings
+        from app.modules.query.service import delegated_connection
+        from app.modules.task_orchestration.execution import (
+            CredentialUnavailable,
+            DelegateExecutor,
+            TaskSpec,
+            _dict_cursor,
+        )
+
+        if not settings.WORKER_IMPERSONATION_USER:
+            raise AuthenticationUnavailable("Scheduled runs need the worker execution account")
+        executor = DelegateExecutor(
+            None,
+            impersonation_user=settings.WORKER_IMPERSONATION_USER,
+            impersonation_password=settings.WORKER_IMPERSONATION_PASSWORD,
+            impersonation_role=settings.WORKER_IMPERSONATION_ROLE,
+        )
+        owner = run["owner_name"]
+        try:
+            async with executor.owner_connection(owner) as connection:
+                async with _dict_cursor(connection) as cursor:
+                    # Exactly one named active role, as for a scheduled task.
+                    await executor._prepare_task_session(
+                        cursor, TaskSpec(name="smart", body="", active_role=run["role_name"])
+                    )
+                with delegated_connection(owner, connection):
+                    yield
+        except CredentialUnavailable as exc:
+            raise AuthenticationUnavailable("Scheduled run could not authenticate") from exc
 
     async def process(self, run_id: str, worker_id: str) -> None:
         lease_id = f"{worker_id[:27]}:{uuid4().hex}"
@@ -324,15 +393,26 @@ class AgentHarnessWorker:
                         await self._defer_unstarted_run(run, root_id, exc)
                         return
                     await asyncio.sleep(0.2 * (2 ** attempt))
-            user = await self._user_for(run)
-            if run["depth"] == 0 and run.get("agent_id") != SMART_AGENT_ID:
-                await self._coordinate(run, user, cancelled)
-            else:
-                await self._execute_child(run, user, cancelled)
+            async with self._identity(run):
+                user = await self._user_for(run)
+                if run["depth"] == 0 and run.get("agent_id") != SMART_AGENT_ID:
+                    await self._coordinate(run, user, cancelled)
+                else:
+                    await self._execute_child(run, user, cancelled)
         except (RunCancelled, RunLeaseLost):
             pass
         except AuthenticationUnavailable:
-            if await self.repository.transition(
+            if str(run.get("session_id") or "").startswith(AUTOMATION_SESSION):
+                # Nobody signs in to resume a scheduled run: it ends here.
+                if await self.repository.transition(
+                    run_id, from_status="running", to_status="failed",
+                    lease_owner=lease_id, generation=run["generation"],
+                    error_class="scheduled_run_unauthorized",
+                ):
+                    await self.repository.event(root_id, run_id, "agent_failed", {
+                        "error_class": "scheduled_run_unauthorized",
+                    })
+            elif await self.repository.transition(
                 run_id,
                 from_status="running",
                 to_status="waiting_for_auth",
@@ -1016,6 +1096,10 @@ class AgentHarnessWorker:
                 self.repository, child, user, on_wait=mark_waiting, enforce_lease=True
             )
             register_collaboration_tools(registry, control)
+            if is_root:
+                from app.modules.agents.tools.propose_automation import propose_automation_tool
+
+                registry.register(propose_automation_tool)
             system_prompt += collaboration_prompt(control)
         else:
             registry.register(SendAgentMessageTool(self.repository, child, root))
@@ -1383,7 +1467,7 @@ class AgentHarnessWorker:
                 await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
                 await self._finish_root(
                     child, user, answer, [row for row in tree if row["depth"]], context.usage,
-                    _root_artifacts(context.steps or []),
+                    _root_artifacts(context.steps or [], context.automation_proposal),
                 )
             return
         latest_child = await self.repository.get(child["run_id"])

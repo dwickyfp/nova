@@ -4,7 +4,7 @@ import {
   parseAssistantEvent,
   readSseFrames,
 } from "@/features/assistant/events";
-import type { AssistantEvent, WorkflowProvenance } from "@/features/assistant/types";
+import type { AssistantEvent, AutomationProposal, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
@@ -962,6 +962,8 @@ export type TraceStep =
       tool_call_id: string;
       chart_spec: string;
     }
+  /** A schedule Smart drafted for the user to confirm. */
+  | ({ kind: "automation_proposal" } & AutomationProposal)
   /** Sources a semantic search cited. */
   | {
       kind: "citation";

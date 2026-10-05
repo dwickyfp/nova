@@ -313,7 +313,9 @@ _SMART_INSTRUCTIONS = (
     "an anomaly check, or a why-did-it-change question is also semantic_analytics for Smart, "
     "never machine_learning: a specialist runs it. Never "
     "route a request for values to agent_catalog or clarification because Smart lacks "
-    "semantic_query."
+    "semantic_query. A request to schedule a recurring report or to be alerted when a "
+    "measure passes a threshold is ui_operation with propose_automation as the only "
+    "required tool; Smart drafts the schedule and the user confirms it."
 )
 
 

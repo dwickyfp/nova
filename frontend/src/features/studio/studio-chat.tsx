@@ -44,6 +44,7 @@ import { DeepResearchCard } from "./deep-research-card";
 import { deepResearchApi } from "@/features/agents/studio-intelligence-api";
 import { UserMessageFooter } from "./user-message-footer";
 import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
+import { AutomationProposalCard } from "./automation-proposal-card";
 import { AutoTurnRail } from "./auto-turn-rail";
 import { rootRunForTurn } from "./auto-run-timeline";
 import {
@@ -1160,6 +1161,10 @@ const TurnView = memo(function TurnView({
           reconsidering={deepening}
           reconsiderDisabled={reconsiderDisabled}
         />
+      ) : null}
+
+      {!running && turn.automationProposal ? (
+        <AutomationProposalCard proposal={turn.automationProposal} />
       ) : null}
 
       {!running && onAsk && turn.suggestions?.length ? (

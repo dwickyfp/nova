@@ -500,7 +500,7 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
                 if base + 1 > after:
                     for artifact in item["payload"].get("artifacts") or []:
                         kind = artifact.get("kind")
-                        if kind in {"table", "chart"}:
+                        if kind in {"table", "chart", "automation_proposal"}:
                             yield _auto_frame(kind, {
                                 **{name: value for name, value in artifact.items()
                                    if name != "kind"},
@@ -1978,6 +1978,15 @@ async def _require_owned_agent(agent_id: str, user: dict) -> dict:
     return agent
 
 
+async def _require_automation_agent(agent_id: str, user: dict) -> dict:
+    """An agent whose schedules the caller manages: one they own, or their own Smart."""
+    if agent_id == SMART_AGENT_ID:
+        # Smart has no stored record; every user schedules their own.
+        session_security(user)
+        return _auto_agent(user["username"])
+    return await _require_owned_agent(agent_id, user)
+
+
 @router.get("/{agent_id}/verified-query-candidates")
 async def list_verified_query_candidates(
     agent_id: str, status: str | None = None, user: dict = Depends(get_current_user)
@@ -2033,7 +2042,7 @@ async def decide_verified_query_candidate(
 async def list_agent_automations(agent_id: str, user: dict = Depends(get_current_user)) -> dict:
     from app.modules.agents.automations import automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     items = await automation_repository.list(agent_id=agent_id, owner_name=user["username"])
     return {"automations": items, "count": len(items)}
 
@@ -2044,7 +2053,7 @@ async def create_agent_automation(
 ) -> dict:
     from app.modules.agents.automations import AutomationError, automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     try:
         created = await automation_repository.create(
             agent_id=agent_id, owner_name=user["username"],
@@ -2067,7 +2076,7 @@ async def update_agent_automation(
 ) -> dict:
     from app.modules.agents.automations import AutomationError, automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     automation = await automation_repository.get(automation_id, owner_name=user["username"])
     if automation is None or automation["agent_id"] != agent_id:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -2089,7 +2098,7 @@ async def delete_agent_automation(
 ) -> None:
     from app.modules.agents.automations import automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     automation = await automation_repository.get(automation_id, owner_name=user["username"])
     if automation is None or automation["agent_id"] != agent_id:
         raise HTTPException(status_code=404, detail="Automation not found")

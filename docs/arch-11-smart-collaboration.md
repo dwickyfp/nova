@@ -245,6 +245,41 @@ interrupted when its result is no longer needed. Public activity includes
 intentional messages, actions, tools, and results; Smart thinking/plan frames are
 not published as private reasoning.
 
+### Scheduled reports and alerts
+
+Smart drafts a schedule and the user creates it. `propose_automation` validates a
+title, question, schedule, timezone and optional threshold with the automation
+contract and writes nothing; the draft travels with the answer as an
+`automation_proposal` artifact. Studio shows it as a card whose **Schedule**
+button calls `POST /api/v1/agents/__smart__/automations`, the automation endpoint
+every agent uses. Consent is that click: a Smart turn is unattended and cannot
+ask. Schedules are listed, paused and deleted under Capabilities, Scheduled
+reports.
+
+A fire is one Smart run. The automation worker stores the question, queues a root
+whose `session_id` is `automation:<automation id>` instead of a login session,
+waits for it within `SMART_MAX_WALL_TIME`, then evaluates the condition on the
+root's verified result tables and delivers as any automation does.
+
+The Smart worker gives such a run the identity a scheduled agent run has:
+
+- `_user_for` resolves the marker to the automation and checks it again at every
+  checkpoint. The run stays authorized only while the automation is enabled and
+  still names that owner, that role and Smart.
+- Each participant executes inside `DelegateExecutor.owner_connection`, with the
+  automation's role as the one active role, bound through `delegated_connection`.
+  The worker account needs scoped impersonation of the owner, provisioned with
+  `scripts/provision_task_worker_access.py`; a native grant is not enough under
+  Ranger.
+- A worker without the execution account, an automation that changed, or an
+  impersonation the engine refuses ends the run as `scheduled_run_unauthorized`.
+  It does not wait for a sign-in and nothing falls back to a service identity.
+- Tools that need approval stay denied. `ml_execute` uses the session password
+  and is not available to a scheduled run.
+
+A login session id is a UUID, so it can never take this path, and the marker is
+only ever written by the automation runner.
+
 ### Cancellation
 
 Targeted interruption affects the selected participant's outstanding turns;

@@ -630,6 +630,18 @@ cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.agent_worker
 ```
 
+Scheduled Smart reports also run in this worker, as the owner of the schedule.
+Give it the same `WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD` and
+`WORKER_IMPERSONATION_ROLE` as `nova-worker`, and grant that account scoped
+impersonation of each owner whose schedules should run:
+
+```bash
+uv run python scripts/provision_task_worker_access.py --owner <username>
+```
+
+Without it a scheduled Smart run ends as `scheduled_run_unauthorized`. The
+`nova-worker` process (Terminal 5) fires the schedules.
+
 The four Studio rollout controls default to `false` in `backend/.env.example`
 and `docker/.env.example`: `STUDIO_BUSINESS_WORKFLOW_ENABLED`,
 `STUDIO_ACTIONS_ENABLED`, `STUDIO_QUALITY_ENABLED`, and

@@ -8,6 +8,9 @@ from dataclasses import dataclass
 SMART_AGENT_ID = "__smart__"
 LEGACY_AUTO_AGENT_ID = "__auto__"
 SMART_AGENT_IDS = frozenset({SMART_AGENT_ID, LEGACY_AUTO_AGENT_ID})
+#: Session marker of a Smart run a confirmed automation started, followed by its id.
+#: A login session id is a UUID, so the two can never be confused.
+AUTOMATION_SESSION = "automation:"
 _SEGMENT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 
 
