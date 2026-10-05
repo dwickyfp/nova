@@ -284,3 +284,16 @@ def test_a_comparison_is_wrong_only_when_no_result_it_could_mean_supports_it():
     assert not check_comparisons("Engineering paling sedikit.", tables, (fewest,))
     wrong = comparison("Sales paling sedikit", "min", "Sales")
     assert check_comparisons("Sales paling sedikit.", tables, (wrong,))
+
+
+def test_the_extremes_are_not_repeated_when_the_answer_already_names_them():
+    kept = finalize_verified_answer(
+        "Medan 1.200, Jakarta 900, Bandung 400. Medan tertinggi dan Bandung terendah.",
+        question="Penjualan per kota?", tables=CITIES, language="id", compares_groups=True,
+    )
+    assert kept.text.count("Medan") == 2 and "tertinggi Medan" not in kept.text
+    added = finalize_verified_answer(
+        "Medan 1.200, Jakarta 900.", question="Penjualan per kota?", tables=CITIES,
+        language="id", compares_groups=True,
+    )
+    assert "Bandung" in added.text

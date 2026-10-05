@@ -149,3 +149,39 @@ async def test_an_analyst_turn_keeps_the_analysis_tools_its_owner_enabled(monkey
     assert result.finish_reason == "stop", result.error_codes
     assert len(query.runs) == 1 and len(ml.runs) == 1
     assert "ml_execute" in context.selected_tools
+
+
+@pytest.mark.asyncio
+async def test_the_model_is_shown_the_rows_it_is_asked_to_write_about():
+    """A result that only reports its row count makes the model write blind."""
+    seen: list[list[dict]] = []
+
+    class Recording(ScriptedProvider):
+        async def stream(self, *, messages, **kwargs):
+            seen.append([dict(message) for message in messages])
+            async for frame in super().stream(messages=messages, **kwargs):
+                yield frame
+
+    table = {"columns": ["total_expense"], "rows": [["58851000000.00"]]}
+    registry = ToolRegistry()
+    registry.register(EvalTool("semantic_query", outcomes=[ToolOutcome(
+        ok=True, summary="1 row", table=table,
+        data={"semantic_plan": {"metrics": ["total_expense"]}, "sql": "SELECT 1",
+              "row_count": 1},
+    )]))
+    registry.register(DescribeAgentTool(registry, name="Finance"))
+    provider = Recording([
+        tool_call_frame("q", name="semantic_query", arguments={"sql": "total expense"}),
+        text_frame("Total expense is 58851000000.00."),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["semantic_query"],
+                  "required_tools": ["semantic_query"]})
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, system_prompt="Finance", max_iterations=6,
+        iterative=True,
+    ).run(thread=thread(read_only_grant=True), user_content="Total expense?",
+          context=LoopContext("reader", agent_id="finance"),
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    tool_message = next(m for m in seen[-1] if "semantic_query" in str(m.get("content"))
+                        and "row_count" in str(m.get("content")))
+    assert '"rows":[["58851000000.00"]]' in str(tool_message["content"]).replace(" ", "")

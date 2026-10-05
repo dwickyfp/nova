@@ -204,6 +204,19 @@ that already holds results is verified and keeps its evidence even when a later
 step ended in a clarification, and a tool call a provider writes as text is
 never an answer.
 
+A tool result that carries a table shows the model a bounded preview of its
+rows (40 rows, 12 columns, less when the context budget is tight). Without it an
+iterative turn only learned the row count and wrote about a result it had not
+seen, which ended in a rebuilt answer. The rows are the caller's own and already
+redacted.
+
+Two steps of a Smart data turn cost no model call: discovery runs before the
+root's first call, and once every specialist that owns a requested measure has
+started, the root waits for them. The model decides whom to start and how to
+answer. `ml_execute` takes the `evidence_id` of a `semantic_query` result and runs
+on that result's compiled query, so a forecast no longer depends on SQL the model
+writes; a query the engine rejects is a repairable error.
+
 The tables and charts the root computes are saved as steps of its final message
 and travel in its `agent_completed` event, at most six, so Studio shows them with
 the answer both live and on reload. A comparison such as "the fewest" is wrong

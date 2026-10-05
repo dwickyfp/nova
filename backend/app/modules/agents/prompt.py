@@ -213,7 +213,7 @@ _TOOL_DESCRIPTIONS = {
         "recurring report or threshold alert when the user asks for one."
     ),
     "ml_execute": (
-        "ml_execute(task, input_sql, ...) — run bounded deterministic ML as the "
+        "ml_execute(task, evidence_id, ...) — run bounded deterministic ML as the "
         "requesting user; keep one-off analysis ephemeral."
     ),
     "create_agent": (

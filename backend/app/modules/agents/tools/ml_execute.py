@@ -19,7 +19,8 @@ class MLExecuteTool:
         "Run Nova's bounded ML runtime for forecast, classification, regression, "
         "anomaly detection, or clustering over caller-authorized SQL features. "
         "Do not approximate these tasks with prose or arbitrary SQL. Use persist=false "
-        "for on-the-fly analysis."
+        "for on-the-fly analysis. Pass evidence_id of a semantic_query result from this "
+        "turn to use that governed query as the input instead of writing input_sql."
     )
     parameters = {
         "type": "object",
@@ -35,6 +36,11 @@ class MLExecuteTool:
                 ],
             },
             "input_sql": {"type": "string"},
+            "evidence_id": {
+                "type": "string",
+                "description": "A semantic_query result of this turn whose compiled query "
+                "is the input; preferred over input_sql.",
+            },
             "feature_columns": {"type": "array", "items": {"type": "string"}},
             "target": {"type": "string"},
             "timestamp": {"type": "string"},
@@ -47,7 +53,7 @@ class MLExecuteTool:
             "model_name": {"type": "string"},
             "parameters": {"type": "object"},
         },
-        "required": ["task", "input_sql"],
+        "required": ["task"],
     }
     requires_consent = True
 
@@ -79,12 +85,25 @@ class MLExecuteTool:
             return ToolOutcome(
                 ok=False, summary="", error=f"User connection is unavailable: {type(exc).__name__}"
             )
+        governed = getattr(context, "evidence_sql", None) or {}
+        chosen = str(arguments.get("evidence_id") or "")
+        input_sql = str(arguments.get("input_sql") or "")
+        if chosen:
+            # The compiled query of a result this turn already ran under the caller.
+            input_sql = governed.get(chosen, "")
+        if not input_sql.strip():
+            return ToolOutcome(
+                ok=False, summary="", error="No input query for this ML run.",
+                error_class="INVALID_TOOL_ARGUMENTS", recoverable=True,
+                safe_detail="Pass evidence_id of a semantic_query result from this turn.",
+                repair_context={"evidence_ids": list(governed)[-8:]},
+            )
         report_tool_progress(context, stage="ml_extracting", text="Reading ML features")
         try:
             result = await ml_engine_service.execute(
                 MLExecutionSpec(
                     task=MLTask(str(arguments.get("task"))),
-                    input_sql=str(arguments.get("input_sql") or ""),
+                    input_sql=input_sql,
                     security=MLSecurityContext(
                         username=username,
                         password=password,
@@ -113,10 +132,14 @@ class MLExecuteTool:
                 summary="",
                 error=(f"ML execution failed: {type(exc).__name__}: {redact_for_output(str(exc))}"),
                 error_class="ML_EXECUTION_ERROR",
-                recoverable=isinstance(exc, (TypeError, ValueError)),
-                safe_detail="Check the task-specific ML parameters and feature schema.",
+                # A query the engine rejected can be replaced; other runtime faults cannot.
+                recoverable=isinstance(exc, (TypeError, ValueError))
+                or "during extraction" in str(exc),
+                safe_detail="Check the task-specific ML parameters and feature schema. If the "
+                "input query failed, pass evidence_id of a semantic_query result instead.",
                 repair_context={
                     "task": arguments.get("task"),
+                    "evidence_ids": list(governed)[-8:],
                     "required": self.parameters.get("required", []),
                 },
             )

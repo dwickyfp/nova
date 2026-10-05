@@ -1023,7 +1023,9 @@ def finalize_verified_answer(
         ).accepted:
             return VerifiedAnswer(rendered, check, True, comparison)
     if check.accepted:
-        leaders = verified_leaders(tables, language=language) if comparison else []
+        leaders = (
+            verified_leaders(tables, language=language, answer=answer) if comparison else []
+        )
         text = answer.rstrip() + ("\n\n" + "\n".join(leaders) if leaders else "")
         return VerifiedAnswer(text, check, False, comparison)
     data_claims = [claim for claim in check.claims if claim.evidence_id]
@@ -1124,9 +1126,15 @@ def render_verified_comparison(
     return render_with_claims(tables, language=language, include_table=include_table)[0]
 
 
-def verified_leaders(tables: dict[str, dict[str, Any]], *, language: str = "en") -> list[str]:
-    """Highest/lowest lines computed from result cells, in the user's language."""
+def verified_leaders(
+    tables: dict[str, dict[str, Any]], *, language: str = "en", answer: str = ""
+) -> list[str]:
+    """Highest/lowest lines computed from result cells, in the user's language.
+
+    A line is left out when ``answer`` already names both rows: the reader was told.
+    """
     rendering = _Rendering(language)
+    said = answer.casefold()
     lines = []
     for evidence_id, table in tables.items():
         columns, rows, labels, measures = _layout(table)
@@ -1146,6 +1154,11 @@ def verified_leaders(tables: dict[str, dict[str, Any]], *, language: str = "en")
                 )
                 return f"{label} ({value})"
 
+            ends = [
+                str(row[labels[0]]).strip().casefold() for row in (ordered[0], ordered[-1])
+            ]
+            if said and all(end and end in said for end in ends):
+                continue
             lines.append(f"{columns[index].replace('_', ' ')}: " + say(
                 "render.extremes", language, high=describe(ordered[0]), low=describe(ordered[-1]),
             ) + ".")

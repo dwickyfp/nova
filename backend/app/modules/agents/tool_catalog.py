@@ -216,6 +216,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                     ],
                 },
                 "input_sql": {"type": "string"},
+                "evidence_id": {"type": "string"},
                 "feature_columns": {"type": "array", "items": {"type": "string"}},
                 "target": {"type": "string"},
                 "timestamp": {"type": "string"},
@@ -226,7 +227,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                 "model_name": {"type": "string"},
                 "parameters": {"type": "object"},
             },
-            "required": ["task", "input_sql"],
+            "required": ["task"],
         },
     ),
     "load_skill": (

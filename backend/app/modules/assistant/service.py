@@ -223,6 +223,9 @@ class LoopContext:
     #: This turn's verified result tables by evidence id, for ``compute_metrics``.
     #: Set before each tool call; never persisted or sent upstream.
     evidence_tables: dict[str, dict[str, Any]] | None = None
+    #: The compiled query behind each ``semantic_query`` result of this turn, so
+    #: ``ml_execute`` can take a governed result as its input. Never sent upstream.
+    evidence_sql: dict[str, str] | None = None
     #: Token usage summed across the turn's model calls, written by the loop as
     #: each response reports it. Read by the router to persist on the assistant
     #: message for Observability. Never sent to the provider.
@@ -280,6 +283,11 @@ class LoopContext:
 #: argument slip from ending the turn at a later, unrelated error.
 #: Tools that work on results already gathered and read no data themselves.
 _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
+#: The part of a result table the model is shown with the tool result.
+_PREVIEW_ROWS = 40
+_PREVIEW_COLUMNS = 12
+#: How long the root waits for its specialists when it starts waiting on its own.
+_AUTO_WAIT_SECONDS = 60
 #: Read-only analysis an owner can enable on a Studio agent, usable after its query.
 _ANALYSIS_TOOLS = ("compute_metrics", "data_to_chart", "diagnose_change", "ml_execute")
 #: Tool-call syntax some providers leak into the text channel.
@@ -765,6 +773,7 @@ class AssistantLoop:
         #: them serially, preserving the bounded single-tool-at-a-time rule
         #: without silently discarding calls after the first.
         deferred_calls: list[dict[str, Any]] = []
+        spawned: dict[str, str] = {}
         pending_artifacts: list[PendingArtifact] = []
         context.pending_output = []
 
@@ -978,6 +987,21 @@ class AssistantLoop:
                         "arguments": json.dumps({"question": user_content}, ensure_ascii=False),
                     },
                 })
+        if (
+            context.collaboration_root and route.needs_data
+            and route.intent != TurnIntent.AGENT_CATALOG
+            and self._registry.get("discover_agents") is not None
+        ):
+            # Every Smart data turn starts by finding who owns what was asked. Doing it
+            # before the first model call saves that call; the result is the same.
+            deferred_calls.append({
+                "id": f"primary-{uuid4()}",
+                "type": "function",
+                "function": {
+                    "name": "discover_agents",
+                    "arguments": json.dumps({"capability": user_content}, ensure_ascii=False),
+                },
+            })
         context.selected_tools = list(turn_plan.selected_tools)
         context.selected_skills = list(turn_plan.selected_skills)
         selected_tools = turn_plan.selected_tools
@@ -2365,6 +2389,36 @@ class AssistantLoop:
                                   trace_detail={**(outcome.trace_detail or {}),
                                                 "canonical_business_result": observation})
                 _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
+            if invocation.tool_name == "semantic_query" and isinstance(outcome.data, dict):
+                compiled = str(outcome.data.get("sql") or "")
+                if compiled:
+                    context.evidence_sql = {
+                        **(context.evidence_sql or {}), evidence_item.evidence_id: compiled,
+                    }
+            if (
+                context.collaboration_root and invocation.tool_name == "spawn_agent"
+                and isinstance(outcome.data, dict) and outcome.data.get("agent_path")
+            ):
+                spawned[str(outcome.data.get("agent_id") or "")] = str(outcome.data["agent_path"])
+                owners = {str(agent["agent_id"]) for agent in metric_owners(evidence)}
+                if (
+                    owners and owners <= set(spawned) and not deferred_calls
+                    and self._registry.get("wait_agent") is not None
+                    and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
+                ):
+                    # Every specialist that owns a requested measure has started. Waiting
+                    # for them is not a decision the model has to spend a call on.
+                    deferred_calls.append({
+                        "id": f"primary-{uuid4()}",
+                        "type": "function",
+                        "function": {
+                            "name": "wait_agent",
+                            "arguments": json.dumps({
+                                "targets": list(spawned.values()), "condition": "all",
+                                "timeout": _AUTO_WAIT_SECONDS,
+                            }),
+                        },
+                    })
             collected_results: list[dict[str, Any]] = []
             if invocation.tool_name in {"list_agents", "wait_agent"} and isinstance(
                 outcome.data, dict
@@ -2422,6 +2476,26 @@ class AssistantLoop:
             )
             if collected_results:
                 envelope["collected_results"] = collected_results
+            shown = evidence.tables.get(evidence_item.evidence_id)
+            if shown and shown.get("rows") and not isinstance(
+                (envelope.get("data") or {}).get("rows"), list
+            ):
+                # The model writes about this result, so it has to see it. The rows are
+                # the caller's own, already redacted, and bounded here; a result that
+                # does not fit the context budget is left to the answer's artifact.
+                room = self._context_manager.token_budget - estimate_messages_tokens(messages)
+                limit = _PREVIEW_ROWS
+                while limit:
+                    preview = {
+                        "columns": list(shown.get("columns") or [])[:_PREVIEW_COLUMNS],
+                        "rows": [list(row)[:_PREVIEW_COLUMNS] for row in shown["rows"][:limit]],
+                        "truncated": bool(shown.get("truncated")) or len(shown["rows"]) > limit,
+                    }
+                    cost = len(json.dumps(preview, default=str)) // 3
+                    if cost * 4 <= room:
+                        envelope["result"] = preview
+                        break
+                    limit //= 2
             envelope["metadata"] = {
                 **(envelope.get("metadata") or {}),
                 "artifact_note": artifact_note,
@@ -2449,7 +2523,10 @@ class AssistantLoop:
                 remaining_time = deadline - _budget_time()
                 if required_done and not analysis_noted:
                     analysis_noted = True
-                    messages.append({"role": "system", "content": _ANALYSIS_PROMPT})
+                    messages.append({"role": "system", "content": (
+                        _DELEGATED_ANALYSIS_PROMPT if context.collaboration_tools
+                        else _ANALYSIS_PROMPT
+                    )})
                 if completed_capabilities and (
                     remaining_steps <= _COMPOSE_RESERVE_STEPS
                     or remaining_time < _COMPOSE_RESERVE_SECONDS
@@ -2701,7 +2778,9 @@ def _ml_parameters_for_task(parameters: dict[str, Any], task: str) -> dict[str, 
     """Narrow the ML-facing schema to the routed task."""
     properties = dict(parameters.get("properties") or {})
     properties["task"] = {"type": "string", "enum": [task]}
-    common = {"task", "input_sql", "feature_columns", "mode", "persist", "model_name"}
+    common = {
+        "task", "input_sql", "evidence_id", "feature_columns", "mode", "persist", "model_name",
+    }
     task_specific = {
         "forecast": {"target", "timestamp", "series", "horizon", "frequency", "parameters"},
         "classification": {"target", "parameters"},
@@ -2710,7 +2789,8 @@ def _ml_parameters_for_task(parameters: dict[str, Any], task: str) -> dict[str, 
         "clustering": {"row_identifier", "parameters"},
     }.get(task, {"parameters"})
     allowed = common | task_specific
-    required = ["task", "input_sql"]
+    # The input is a governed result (evidence_id) or a query; the tool requires one.
+    required = ["task"]
     if task in {"classification", "regression", "forecast"}:
         required.append("target")
     if task == "forecast":
@@ -2850,6 +2930,13 @@ _ANALYSIS_PROMPT = (
     "answer. Do not repeat a query that already ran."
 )
 
+#: A specialist working for Smart finishes its task; the requester adds the rest.
+_DELEGATED_ANALYSIS_PROMPT = (
+    "The required evidence is in. If the delegated task itself needs one more step you "
+    "have a tool for (a forecast, an explanation of a change), take it now. Otherwise "
+    "answer. Do not add charts, totals, or breakdowns the task did not ask for, and do "
+    "not repeat a query that already ran."
+)
 
 #: Upper bound for a window-derived context budget (tokens).
 MAX_WINDOW_CONTEXT_BUDGET = 120_000

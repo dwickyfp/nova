@@ -114,3 +114,71 @@ async def _run_semantic_clustering_scenario(monkeypatch):
     ]
     assert len(ml.runs) == 1
     assert '"finish_reason":"stop"' in "".join(frames).replace(" ", "")
+
+
+def test_a_forecast_may_name_a_governed_result_instead_of_a_query():
+    forecast = _ml_parameters_for_task(MLExecuteTool.parameters, "forecast")
+    assert validate_json_arguments(forecast, {
+        "task": "forecast", "evidence_id": "evidence_1", "target": "total",
+        "timestamp": "day", "horizon": 3,
+    }) == []
+
+
+def test_the_ml_tool_runs_on_the_compiled_query_of_a_result_this_turn_holds(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.modules.agents.tools import ml_execute as module
+    from app.modules.assistant.tools import ToolInvocation
+
+    seen = {}
+
+    async def execute(spec):
+        seen["sql"] = spec.input_sql
+        return SimpleNamespace(
+            results=[{"timestamp": "2026-10-31", "prediction": 4805.0}], task="forecast",
+            selected_algorithm="Naive", training_rows=21, run_id="run-1", mode="interactive",
+            selected_engine="local", cache_hit=False,
+        )
+
+    monkeypatch.setattr(module.ml_engine_service, "execute", execute)
+    monkeypatch.setattr(module, "decrypt_password", lambda _value: "secret")
+    context = SimpleNamespace(
+        user={"username": "ana", "encrypted_password": "x", "active_role": "analyst"},
+        evidence_sql={"evidence_1": "SELECT month, total FROM governed"},
+        database=None, schema_name=None,
+    )
+
+    def call(**arguments):
+        return asyncio.run(module.ml_execute_tool.run(ToolInvocation(
+            tool_call_id="m", tool_name="ml_execute", arguments={"task": "forecast", **arguments},
+        ), context))
+
+    outcome = call(evidence_id="evidence_1", target="total", timestamp="month", horizon=1)
+    assert outcome.ok and seen["sql"] == "SELECT month, total FROM governed"
+    # A result this turn does not hold is not an input, and nothing runs.
+    seen.clear()
+    missing = call(evidence_id="evidence_9", target="total", timestamp="month", horizon=1)
+    assert not missing.ok and missing.recoverable and not seen
+    assert missing.repair_context["evidence_ids"] == ["evidence_1"]
+
+
+def test_a_query_the_engine_rejects_can_be_replaced(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.modules.agents.tools import ml_execute as module
+    from app.modules.assistant.tools import ToolInvocation
+
+    async def execute(_spec):
+        raise RuntimeError("ML worker failed during extraction (OperationalError)")
+
+    monkeypatch.setattr(module.ml_engine_service, "execute", execute)
+    monkeypatch.setattr(module, "decrypt_password", lambda _value: "secret")
+    context = SimpleNamespace(
+        user={"username": "ana", "encrypted_password": "x"}, evidence_sql={},
+        database=None, schema_name=None,
+    )
+    outcome = asyncio.run(module.ml_execute_tool.run(ToolInvocation(
+        tool_call_id="m", tool_name="ml_execute",
+        arguments={"task": "forecast", "input_sql": "SELECT broken"},
+    ), context))
+    assert not outcome.ok and outcome.recoverable

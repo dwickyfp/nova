@@ -400,3 +400,36 @@ def test_markup_that_is_not_one_call_is_not_run():
     )
     assert parsed["function"]["name"] == "semantic_query"
     assert parsed["function"]["arguments"] == '{"question":"total expense per month"}'
+
+
+@pytest.mark.asyncio
+async def test_root_discovers_and_waits_without_spending_model_calls_on_it():
+    """The model only decides whom to start; finding owners and waiting are automatic."""
+    discovery = EvalTool("discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+                         data={"agents": [OWNER]})
+    spawn = EvalTool("spawn_agent", parameters=COLLABORATION_TOOLS["spawn_agent"][1],
+                     data={**OWNER, "agent_path": "/root/data"})
+    wait = EvalTool("wait_agent", parameters=COLLABORATION_TOOLS["wait_agent"][1],
+                    data={"agents": [participant()]})
+    registry = ToolRegistry()
+    for tool in (discovery, spawn, wait):
+        registry.register(tool)
+    provider = ScriptedProvider([
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        text_frame("Mobile App recognized revenue is 3368049065451.00."),
+    ], turn_plan={
+        "intent": "semantic_analytics", "tools": ["discover_agents"],
+        "required_tools": ["discover_agents"],
+        "intent_frame": {"language": "en", "range": "2025", "compares_groups": True},
+    })
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=8, time_budget_seconds=300,
+    ).run(thread=thread(read_only_grant=True), user_content=QUESTION, context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert len(discovery.runs) == 1 and len(spawn.runs) == 1 and len(wait.runs) == 1
+    assert discovery.runs[0].arguments["capability"] == QUESTION
+    assert wait.runs[0].arguments["targets"] == ["/root/data"]
+    assert provider.calls == 2
