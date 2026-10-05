@@ -68,6 +68,9 @@ function StudioAppContent() {
     : agentsQuery.isError || search.agent === AUTO_AGENT_ID
       ? [AUTO_WHILE_CATALOG_LOADS]
       : [];
+  // The owner's agents that Studio and Smart leave out until access is verified.
+  const waiting = agentsQuery.data?.needs_access ?? [];
+  const [waitingDismissed, setWaitingDismissed] = useState(false);
   const authorQuery = useQuery({
     queryKey: ["studio", "skill-author"],
     queryFn: studioApi.skillAuthor,
@@ -342,6 +345,22 @@ function StudioAppContent() {
             <span>Specialists are temporarily unavailable. Smart can still try your question.</span>
             <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>
               Retry specialists
+            </Button>
+          </div>
+        ) : waiting.length && !waitingDismissed ? (
+          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+            <span>
+              {waiting.length === 1
+                ? `${waiting[0].name} is not available here yet. Verify its access for your current role.`
+                : `${waiting.length} of your agents are not available here yet. Verify their access for your current role.`}
+            </span>
+            {waiting.slice(0, 3).map((item) => (
+              <Button key={item.agent_id} type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void navigate({ to: "/agents/$agentId", params: { agentId: item.agent_id } })}>
+                {waiting.length === 1 ? "Open access settings" : item.name}
+              </Button>
+            ))}
+            <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setWaitingDismissed(true)}>
+              Dismiss
             </Button>
           </div>
         ) : null}

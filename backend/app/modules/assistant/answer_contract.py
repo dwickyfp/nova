@@ -309,6 +309,35 @@ def _mask_dates(answer: str, language: str = "en") -> str:
     return _spoken_date(language).sub(blank_day, answer)
 
 
+def _signed_cells(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
+    cells: set[Decimal] = set()
+    for table in tables.values():
+        for row in (table.get("rows") or [])[:200]:
+            for cell in row if isinstance(row, (list, tuple)) else []:
+                number = _number(cell)
+                if number is not None:
+                    cells.add(number)
+    return cells
+
+
+def _written_as_cell(claim: Claim, cells: set[Decimal], language: str) -> bool:
+    """The claimed change is itself a result cell, falling when the claim says it fell."""
+    for token in number_tokens(claim.text, language):
+        if token.percent:
+            continue
+        for value in token.values:
+            size = abs(value * (token.scale or 1))
+            if claim.direction == "down":
+                found = -size in cells
+            elif claim.direction == "up":
+                found = size in cells
+            else:
+                found = size in cells or -size in cells
+            if found and size:
+                return True
+    return False
+
+
 def _table_years(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
     """Years that appear in result labels ("2026-08-01", "2025-Q2") are data, not claims."""
     years: set[Decimal] = set()
@@ -562,16 +591,24 @@ def check_numeric_answer(
     id, a row label noted for the neighbouring row. Such a number is accepted only if
     the answer without any claim would have been, so a claim never widens what passes.
     A change, its direction, or a value the claim gives differently from the text is
-    stated by the claim alone and is not rechecked.
+    stated by the claim alone and is not rechecked, unless a result already holds that
+    change as a cell of the same sign: a decomposition lists each contribution.
     """
     check = _check_numeric_answer(
         answer, question=question, tables=tables, claims=claims, language=language
     )
     if check.accepted or not claims:
         return check
+    signed = _signed_cells(tables)
+    cell_backed = {
+        _key(item.text) for item in claims
+        if (item.kind == "derived" or item.direction)
+        and _written_as_cell(item, signed, language)
+    }
     stated_by_claim = {
         _key(item.text) for item in claims
-        if item.kind == "derived" or item.direction or (
+        if ((item.kind == "derived" or item.direction) and _key(item.text) not in cell_backed)
+        or (
             # The claim gives another number than the text shows: the claim stands.
             item.value is not None and not any(
                 display_matches(item.value, token)
@@ -587,13 +624,17 @@ def check_numeric_answer(
     )
     # Recovered only where the plain reading verified the number at that very position.
     verified = dict(zip(plain.verified_spans, plain.claims, strict=True))
-    recovered = [span for span in retry if span[:2] in verified]
+    recovered = [
+        span for span in retry if span[:2] in verified or _key(span[2]) in cell_backed
+    ]
     if not recovered:
         return check
     remaining = tuple(span for span in check.unsupported_spans if span not in recovered)
     return AnswerCheck(
         accepted=not remaining,
-        claims=check.claims + tuple(verified[span[:2]] for span in recovered),
+        claims=check.claims + tuple(
+            verified.get(span[:2]) or NumericClaim(span[2], None, None) for span in recovered
+        ),
         unsupported=tuple(dict.fromkeys(span[2] for span in remaining)),
         unsupported_hypotheses=check.unsupported_hypotheses,
         unsupported_spans=remaining,

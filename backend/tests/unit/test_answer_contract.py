@@ -442,3 +442,42 @@ def test_a_forecast_the_runtime_computed_is_evidence_the_answer_may_state() -> N
     assert {claim.evidence_id for claim in check.claims if claim.evidence_id} == {
         item.evidence_id
     }
+
+
+def test_a_follow_up_may_repeat_the_year_the_user_named_earlier() -> None:
+    from types import SimpleNamespace
+
+    from app.modules.assistant.service import _asked
+
+    thread = SimpleNamespace(messages=[
+        SimpleNamespace(role="user", content="Berapa total expense tahun 2025?"),
+        SimpleNamespace(role="assistant", content="Rp 58.851.000.000 (lihat 2031)."),
+    ])
+    asked = _asked(thread, "kalau dipecah per kategori?")
+    tables = {"e1": {"columns": ["category", "total_expense"], "rows": [["Travel", "1200"]]}}
+    answer = "Total expense tahun 2025 per kategori: Travel 1.200."
+    assert check_numeric_answer(answer, question=asked, tables=tables, language="id").accepted
+    assert not check_numeric_answer(
+        answer, question="kalau dipecah per kategori?", tables=tables, language="id",
+    ).accepted
+    # Only what the user said counts, not an earlier answer.
+    assert "2031" not in asked
+
+
+def test_a_change_a_decomposition_lists_is_accepted_however_the_model_noted_it() -> None:
+    tables = {"evidence_2": {"columns": ["component", "change"], "rows": [
+        ['["Travel", "Finance"]', "224000000.00"], ['["Office", "Operations"]', "-237000000.00"],
+    ]}}
+    answer = "Travel di Finance naik 224.000.000, sedangkan Office di Operations turun 237.000.000."
+    noted = (
+        Claim(text="224.000.000", kind="derived", direction="up"),
+        Claim(text="237.000.000", kind="derived", direction="down"),
+    )
+    assert check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=noted, language="id",
+    ).accepted
+    # The direction still has to be the cell's own.
+    wrong = (noted[0], Claim(text="237.000.000", kind="derived", direction="up"))
+    assert not check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=wrong, language="id",
+    ).accepted

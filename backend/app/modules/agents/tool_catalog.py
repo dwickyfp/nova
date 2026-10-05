@@ -21,6 +21,8 @@ from app.modules.agents.tools.analyze_documents_spec import PARAMETERS as ANALYZ
 from app.modules.agents.tools.compute_metrics import PARAMETERS as COMPUTE_PARAMETERS
 from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
 from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
+from app.modules.agents.tools.diagnose_change import DESCRIPTION as DIAGNOSE_DESCRIPTION
+from app.modules.agents.tools.diagnose_change import PARAMETERS as DIAGNOSE_PARAMETERS
 from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
 from app.modules.agents.tools.propose_automation import (
     DESCRIPTION as PROPOSE_AUTOMATION_DESCRIPTION,
@@ -182,23 +184,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             },
         },
     ),
-    "diagnose_change": (
-        "Reconcile a two-period authorized result into arithmetic volume, unit-value, "
-        "interaction, and returns contributions. Unavailable drivers stay unassigned; "
-        "the tool does not prove causes.",
-        {
-            "type": "object",
-            "properties": {
-                "prior_period": {"type": "string"},
-                "current_period": {"type": "string"},
-                "revenue_column": {"type": "string"},
-                "units_column": {"type": "string"},
-                "returns_column": {"type": "string"},
-            },
-            "required": ["prior_period", "current_period", "revenue_column"],
-            "additionalProperties": False,
-        },
-    ),
+    "diagnose_change": (DIAGNOSE_DESCRIPTION, DIAGNOSE_PARAMETERS),
     "compute_metrics": (COMPUTE_DESCRIPTION, COMPUTE_PARAMETERS),
     "schedule_automation": (SCHEDULE_DESCRIPTION, SCHEDULE_PARAMETERS),
     "propose_automation": (PROPOSE_DESCRIPTION, SCHEDULE_PARAMETERS),

@@ -78,3 +78,35 @@ def test_diagnostic_plan_keeps_data_evidence_requirement() -> None:
     )
     assert plan.route.needs_data and plan.route.needs_diagnosis
     assert plan.route.required_capabilities == ("semantic_query", "diagnose_change")
+
+
+MONTHLY = {
+    "columns": ["entry_date", "department", "total_expense"],
+    "rows": [
+        ["2026-04-01 00:00:00", "Sales", "100"], ["2026-04-01 00:00:00", "Finance", "50"],
+        ["2026-05-01 00:00:00", "Sales", "180"], ["2026-05-01 00:00:00", "Finance", "40"],
+    ],
+}
+
+
+def test_any_measure_is_explained_by_its_own_period_column_and_month_prefix():
+    result = decompose_change(
+        MONTHLY, prior_period="2026-04", current_period="2026-05",
+        period_column="entry_date", revenue_column="total_expense",
+        dimension_columns=["department"],
+    )
+    assert result["net_change"] == "70"
+    assert result["components"][0] == {"name": '["Sales"]', "change": "80"}
+    assert result["reconciled"]
+
+
+@pytest.mark.asyncio
+async def test_a_call_that_names_no_usable_column_can_be_repaired():
+    outcome = await diagnose_change_tool.run(
+        ToolInvocation(tool_call_id="d", tool_name="diagnose_change", arguments={
+            "prior_period": "2026-04", "current_period": "2026-05", "revenue_column": "revenue",
+        }),
+        SimpleNamespace(last_result=MONTHLY),
+    )
+    assert not outcome.ok and outcome.recoverable
+    assert "entry_date, department, total_expense" in outcome.safe_detail

@@ -339,7 +339,10 @@ class AssistantLoop:
         max_calls_per_tool: int = MAX_CALLS_PER_TOOL,
         iterative: bool = False,
         summarize_history: bool = False,
+        spend_limit: int | None = None,
     ) -> None:
+        #: Total tokens the turn may use; near it the loop composes its answer.
+        self._spend_limit = spend_limit
         self._provider = provider
         self._registry = registry
         self._max_iterations = max_iterations
@@ -1582,7 +1585,7 @@ class AssistantLoop:
                     from app.modules.assistant.answer_contract import check_numeric_answer
 
                     draft = check_numeric_answer(
-                        answer_text, question=user_content, tables=answer_tables,
+                        answer_text, question=_asked(thread, user_content), tables=answer_tables,
                         claims=answer_claims, language=language,
                     )
                     rewrite = {"role": "system", "content": (
@@ -1612,7 +1615,7 @@ class AssistantLoop:
                         messages.append(rewrite)
                         continue
                     verified_answer = finalize_verified_answer(
-                        answer_text, question=user_content, tables=answer_tables,
+                        answer_text, question=_asked(thread, user_content), tables=answer_tables,
                         tables_shown=any(item.kind == "table" for item in pending_artifacts),
                         claims=answer_claims, language=language,
                         compares_groups=bool(
@@ -2520,7 +2523,19 @@ class AssistantLoop:
                 and "query_mutate" not in required_available
                 and required_available <= completed_capabilities
             )
-            if self._iterative and not context.collaboration_root:
+            spent = int((context.usage or {}).get("total_tokens") or 0)
+            if (
+                self._spend_limit
+                and not composing_final
+                and spent >= self._spend_limit * _SPEND_COMPOSE_SHARE
+            ):
+                # Close to the turn's token allowance: answer from what is known
+                # now, rather than spend the rest on a call that ends the turn empty.
+                composing_final = True
+                messages.append(
+                    {"role": "system", "content": _final_composer_prompt(evidence)}
+                )
+            elif self._iterative and not context.collaboration_root:
                 remaining_steps = self._max_iterations - _iteration - 1
                 remaining_time = deadline - _budget_time()
                 if required_done and not analysis_noted:
@@ -2920,10 +2935,23 @@ def _turn_context_prompt(
     return "\n".join(parts)
 
 
+def _asked(thread: Any, user_content: str) -> str:
+    """The request with the user's earlier turns: a follow-up keeps their year and limits."""
+    earlier = [
+        str(message.content or "") for message in thread.messages[-_ASKED_LOOKBACK:]
+        if message.role == "user"
+    ]
+    return "\n".join([*earlier, user_content])
+
+
+#: Earlier messages whose numbers a follow-up answer may repeat.
+_ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
 _COMPOSE_RESERVE_STEPS = 2
 _COMPOSE_RESERVE_SECONDS = 15.0
+#: Share of a turn's token allowance after which it stops calling tools and answers.
+_SPEND_COMPOSE_SHARE = 0.7
 
 _ANALYSIS_PROMPT = (
     "The required evidence is in. If one more read-only step would materially "
@@ -3473,7 +3501,8 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
         if message.role != "assistant":
             continue
         for step in reversed(message.steps or []):
-            if step.get("kind") != "table":
+            # ``result`` is a table a Smart answer kept without displaying it.
+            if step.get("kind") not in {"table", "result"}:
                 continue
             raw_columns = step.get("columns")
             raw_rows = step.get("rows")

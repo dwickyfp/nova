@@ -70,10 +70,10 @@ MAX_SESSION_TOKENS = 120_000
 MAX_ROOT_TOKENS = 30_000
 #: A Smart root pays for discovery, one spawn and wait per specialist, and synthesis.
 #: The legacy coordinator limit ends a two-specialist answer before it is written.
-SMART_ROOT_TOKENS = 60_000
+SMART_ROOT_TOKENS = 90_000
 #: A specialist that queries and then forecasts or diagnoses spends about 25,000
 #: tokens when asked directly; the legacy child limit stops it before it answers.
-SMART_CHILD_TOKENS = 40_000
+SMART_CHILD_TOKENS = 60_000
 #: Earlier thread turns a Smart root sees, so a follow-up keeps its subject.
 ROOT_HISTORY_MESSAGES = 6
 ROOT_HISTORY_CHARS = 4000
@@ -115,6 +115,23 @@ def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dic
         # A schedule Smart drafted; Studio shows it with a button that creates it.
         shown.append({"kind": "automation_proposal", **proposal})
     return shown
+
+
+def _carried_result(evidence: dict | None, shown: list[dict]) -> dict | None:
+    """The newest result of a Smart answer that showed no table of its own.
+
+    It is kept with the message, not displayed, so the next turn can chart or
+    refine "that" without asking a specialist for the same rows again.
+    """
+    if any(item.get("kind") == "table" for item in shown):
+        return None
+    tables = [table for table in ((evidence or {}).get("tables") or {}).values()
+              if isinstance(table, dict) and table.get("columns") and table.get("rows")]
+    if not tables:
+        return None
+    latest = tables[-1]
+    return {"kind": "result", "title": str(latest.get("title") or "query result"),
+            "columns": list(latest["columns"])[:50], "rows": list(latest["rows"])[:200]}
 
 
 class AuthenticationUnavailable(RuntimeError):
@@ -904,13 +921,14 @@ class AgentHarnessWorker:
         children: list[dict],
         usage: dict | None = None,
         artifacts: list[dict] | None = None,
+        carried: dict | None = None,
     ) -> None:
         if contains_credential_shape(answer) or is_credential_value(answer):
             answer = "The answer contained sensitive content and was withheld."
         artifacts = artifacts or []
-        serialized = json.dumps(artifacts, default=_json_default)
+        serialized = json.dumps([*artifacts, carried], default=_json_default)
         if contains_credential_shape(serialized) or is_credential_value(serialized):
-            artifacts = []
+            artifacts, carried = [], None
         await self.repository.reconcile_terminal_children(root["run_id"], children)
         message_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root['run_id']}"))
         existing = await assistant_repository.list_messages(
@@ -930,7 +948,7 @@ class AgentHarnessWorker:
                 content=answer,
                 message_id=message_id,
                 agent_id=root["agent_id"],
-                steps=artifacts,
+                steps=[*artifacts, carried] if carried else artifacts,
                 usage={
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
@@ -1221,6 +1239,7 @@ class AgentHarnessWorker:
             time_budget_seconds=time_limit,
             system_prompt=system_prompt,
             context_manager=ContextManager(token_budget=context_limit),
+            spend_limit=participant_token_limit if smart else None,
             **({
                 "max_calls_per_tool": limits.max_calls_per_tool,
                 "iterative": limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
@@ -1465,9 +1484,10 @@ class AgentHarnessWorker:
                     )
                     return
                 await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
+                shown = _root_artifacts(context.steps or [], context.automation_proposal)
                 await self._finish_root(
                     child, user, answer, [row for row in tree if row["depth"]], context.usage,
-                    _root_artifacts(context.steps or [], context.automation_proposal),
+                    shown, _carried_result(context.verified_evidence, shown),
                 )
             return
         latest_child = await self.repository.get(child["run_id"])

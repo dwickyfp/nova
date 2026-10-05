@@ -227,6 +227,33 @@ describe("StudioApp thread routing", () => {
     }
   });
 
+  it("tells an owner which of their agents wait for access verification", async () => {
+    mocks.search = {};
+    const listStudio = vi.mocked(agentsApi.listStudio);
+    const normalStudio = listStudio.getMockImplementation();
+    listStudio.mockResolvedValue({
+      agents: [],
+      count: 0,
+      needs_access: [{ agent_id: "sales", name: "Sales Agent" }],
+    });
+    try {
+      const screen = await renderStudio();
+
+      await expect.element(screen.getByRole("status")).toHaveTextContent(
+        "Sales Agent is not available here yet.",
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Open access settings" }));
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/agents/$agentId",
+        params: { agentId: "sales" },
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await expect.element(screen.getByText(/not available here yet/)).not.toBeInTheDocument();
+    } finally {
+      if (normalStudio) listStudio.mockImplementation(normalStudio);
+    }
+  });
+
   it("asks for a role instead of reporting load failures when none is active", async () => {
     mocks.search = {};
     const settings = vi.mocked(studioApi.settings);

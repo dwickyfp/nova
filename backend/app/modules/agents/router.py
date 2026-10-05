@@ -72,6 +72,7 @@ from app.modules.agents.repository import AgentMetadataUnavailable, agent_reposi
 from app.modules.agents.rule_proposals import candidate_definition, rule_proposal_repository
 from app.modules.agents.run_journal import run_journal
 from app.modules.agents.schemas import (
+    AgentAccessGap,
     AgentCreateRequest,
     AgentListResponse,
     AgentUpdateRequest,
@@ -606,19 +607,22 @@ async def list_agents(
             and (not database or agent.get("database_name") == database)
             and (not search or search.lower() in agent["name"].lower())
         )
+        gaps: list[AgentAccessGap] = []
         if studio:
-            agents = [
-                agent
-                for agent in agents
-                if await has_verified_access(agent, role_name=role, user=user)
-            ]
-            agents.insert(0, _auto_agent(user["username"]))
+            usable = []
+            for agent in agents:
+                if await has_verified_access(agent, role_name=role, user=user):
+                    usable.append(agent)
+                elif agent["owner_name"] == user["username"]:
+                    # Only its owner can verify access, so only its owner is told.
+                    gaps.append(AgentAccessGap(agent_id=agent["agent_id"], name=agent["name"]))
+            agents = [_auto_agent(user["username"]), *usable]
     except AgentMetadataUnavailable:
         raise HTTPException(
             status_code=503, detail="Agent metadata is temporarily unavailable"
         ) from None
     views = [_agent_view(a) for a in agents]
-    return AgentListResponse(agents=views, count=len(views))
+    return AgentListResponse(agents=views, count=len(views), needs_access=gaps)
 
 
 @router.get("/capabilities")

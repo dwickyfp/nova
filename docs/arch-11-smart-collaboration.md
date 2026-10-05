@@ -102,8 +102,16 @@ worker lease and generation fence all checkpoint writes. A stale Smart turn with
 a safe snapshot returns to the queue. A crash across an unconfirmed mutating tool
 boundary interrupts the turn instead of automatically replaying that mutation.
 
+The engine applies an `UPDATE` by rewriting the whole row it read, so two
+overlapping statements on one run can undo each other: a heartbeat can put back
+the `running` status a completion just replaced, and the turn is then recovered
+and answered a second time. The harness repository therefore writes a run row in
+turn within a process. Statements from another process, such as a cancellation
+from the API, are not covered and still rely on the status and generation checks.
+
 Completion notifications are reconstructed from terminal turns with stable
-message IDs. Message events also have stable IDs; retrying a send repairs a crash
+message IDs. When a recovered turn answers again in other words, the completion
+its parent already received stands. Message events also have stable IDs; retrying a send repairs a crash
 between mailbox insertion and timeline publication. Terminal events and the
 root's final answer retain their existing deterministic identities. Finalization
 checks for outstanding turns and unseen root steering under the admission lock.
@@ -159,7 +167,12 @@ still appear. The combined catalog is metadata, not business evidence.
 The turn planner routes a Smart request for values to discovery, never to the
 catalog: Smart owns no `semantic_query`, and its data is what its specialists
 serve. The root reads at most the six most recent user and assistant messages of
-its Studio thread, each bounded, so a follow-up keeps its subject. When discovery
+its Studio thread, each bounded, so a follow-up keeps its subject. A year or
+limit the user named in an earlier turn may be repeated by the answer. When a
+Smart answer showed no table of its own, its newest specialist result is kept
+with the message as a `result` step, which Studio does not display, so "chart
+that" in the next turn has the rows. A chart request that finds no data is
+recoverable for Smart: it asks the owner first. When discovery
 finds no owner and nothing else ran, Smart may state which data is missing; that
 answer carries no number and ends as `out_of_scope`. A turn that ends as
 `out_of_scope` or `clarification` is a completed turn, not a failure. Catalog
@@ -335,16 +348,18 @@ break replay or compatibility. They do not create another selector entry.
 | `SMART_MAX_CONCURRENT_AGENTS` | 8 specialists, excluding the root |
 | `SMART_MAX_TOTAL_AGENT_SESSIONS` | 32, including the root |
 | `SMART_MAX_TOTAL_TURNS` | 128, including the root |
-| `SMART_MAX_TOTAL_TOKENS` | 120,000 reported prompt + completion tokens |
+| `SMART_MAX_TOTAL_TOKENS` | 240,000 reported prompt + completion tokens |
 | `SMART_MAX_WALL_TIME` | 600 seconds |
 
 Settings may lower these bounds; root creation records the effective limits.
 Per-agent context, step, time, consent, and tool limits remain in force. Tree
 token totals are checked at admission and worker checkpoints. Concurrent provider
 requests already in flight may complete before the next aggregate check.
-The Smart root uses a 60,000-token limit and a Smart specialist 40,000: a
+The Smart root uses a 90,000-token limit and a Smart specialist 60,000: a
 specialist that queries and then forecasts spends about 25,000 tokens when asked
-directly, and it runs with the same iterative limits as a direct turn. The root pays for discovery, one spawn and wait per specialist, and the
+directly, and it runs with the same iterative limits as a direct turn. At 70% of
+its limit a Smart participant stops calling tools and answers from the evidence
+it holds, so a turn that explored too long ends with an answer, not empty. The root pays for discovery, one spawn and wait per specialist, and the
 synthesis, so the legacy coordinator's 30,000 tokens end a two-specialist answer
 before it is written. The root must not inherit the smaller specialist limit when
 resuming after a wait.
@@ -356,6 +371,19 @@ there is no destructive rewrite, new database, foreign key, or additional index.
 The additive change follows StarRocks's documented
 [ALTER TABLE syntax](https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/ALTER_TABLE/).
 
+Studio lists only agents whose access is verified for the active role. The
+Studio agent list also returns the caller's own agents it left out for that
+reason, and Studio names them with a link to the agent, because only the owner
+can verify access. Another owner's unverified agent is left out without comment.
+
+`diagnose_change` explains a move between two periods from the last result. It
+takes the result's own period and measure columns, matches a period by prefix
+(`2026-04` is the row labelled `2026-04-01 00:00:00`), lists both period totals
+with the contributions, and a call it cannot use is recoverable. The semantic
+planner plans two named periods as one range grouped by their unit, not as a
+previous-period comparison of the whole range. A change the answer states is
+accepted when a result holds it as a cell of the same sign.
+
 ## Limitations and validation
 
 Deterministic worker tests use the real control layer and shared assistant loop
@@ -366,6 +394,10 @@ components with mocked APIs. Live local UI testing additionally exercises the
 configured provider, StarRocks, Redis, and workers: direct Sales and Smart return
 the same 15 metric cells for the reported 2025 comparison. English paraphrasing,
 non-data requests, replay, and narrow viewports are covered in the linked report.
+`backend/tests/benchmark/smart_native/` holds a live acceptance lab for Smart as
+one analyst: a Finance and an HR agent, SQL gold values, and a pass rule that
+combines the gold figures, plain business wording, the artifacts shown, and an
+LLM judge. It needs a provider and is not part of CI.
 Production deployment and a production cluster upgrade were not performed. A
 team message board remains outside this direct-mailbox implementation.
 

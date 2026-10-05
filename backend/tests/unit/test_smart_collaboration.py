@@ -792,3 +792,41 @@ async def test_a_candidate_has_only_the_abilities_its_owner_selected(monkeypatch
     assert {item.agent_id: item.abilities for item in found} == {
         "finance": (auto_planner.ABILITIES["ml_execute"],), "hr": (),
     }
+
+
+def test_a_smart_answer_keeps_its_newest_result_for_the_next_turn():
+    from types import SimpleNamespace
+
+    from app.modules.agents.harness_worker import _carried_result
+    from app.modules.assistant.service import _latest_thread_result
+
+    evidence = {"tables": {
+        "evidence_1": {"columns": ["department", "total_expense"], "rows": [["Sales", "12"]]},
+        "evidence_2": {"columns": ["category", "total_expense"], "rows": [["Travel", "9"]]},
+    }}
+    carried = _carried_result(evidence, [])
+    assert carried["kind"] == "result" and carried["columns"] == ["category", "total_expense"]
+    # A table the answer already shows is the one the next turn charts.
+    assert _carried_result(evidence, [{"kind": "table", "columns": ["a"], "rows": [[1]]}]) is None
+    assert _carried_result({"tables": {}}, []) is None
+    thread = SimpleNamespace(messages=[
+        SimpleNamespace(role="assistant", steps=[carried], content="Travel 9."),
+    ])
+    restored = _latest_thread_result(thread)
+    assert restored["rows"] == [["Travel", "9"]] and restored["source"] == "previous_turn"
+
+
+@pytest.mark.asyncio
+async def test_smart_can_fetch_data_after_a_chart_request_found_none():
+    from types import SimpleNamespace
+
+    from app.modules.agents.tools.data_to_chart import data_to_chart_tool
+    from app.modules.assistant.tools import ToolInvocation
+
+    call = ToolInvocation(tool_call_id="c", tool_name="data_to_chart", arguments={"intent": "x"})
+    smart = await data_to_chart_tool.run(
+        call, SimpleNamespace(last_result=None, collaboration_root=True))
+    assert not smart.ok and smart.recoverable
+    alone = await data_to_chart_tool.run(
+        call, SimpleNamespace(last_result=None, collaboration_root=False))
+    assert not alone.ok and not alone.recoverable

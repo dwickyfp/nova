@@ -94,13 +94,19 @@ class DataToChartTool:
             # Only a result this turn already holds under the caller's access.
             last = (getattr(context, "evidence_tables", None) or {}).get(chosen)
         if not last or not last.get("columns"):
+            detail = (
+                "There is no recent data to chart in this conversation. Fetch "
+                "the data first (a query or semantic_query), then chart it."
+            )
+            # Smart holds no data of its own: it can ask the specialist that owns
+            # it and chart the result, so the turn goes on.
+            smart = bool(getattr(context, "collaboration_root", False))
             return ToolOutcome(
-                ok=False,
-                summary="",
-                error=(
-                    "There is no recent data to chart in this conversation. Fetch "
-                    "the data first (a query or semantic_query), then chart it."
-                ),
+                ok=False, summary="", error=detail, recoverable=smart,
+                **({"error_class": "INVALID_TOOL_ARGUMENTS", "safe_detail": (
+                    "No data is held yet. Ask the specialist that owns it, then chart "
+                    "the result by its evidence_id."
+                )} if smart else {}),
             )
 
         columns: list[str] = list(last.get("columns") or [])

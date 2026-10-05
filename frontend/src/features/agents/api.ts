@@ -245,7 +245,10 @@ export type AgentMessage = {
 
 export const agentsApi = {
   list: () => api.get<{ agents: Agent[]; count: number }>("/agents"),
-  listStudio: () => api.get<{ agents: Agent[]; count: number }>("/agents?studio=true"),
+  listStudio: () =>
+    api.get<{ agents: Agent[]; count: number; needs_access?: { agent_id: string; name: string }[] }>(
+      "/agents?studio=true",
+    ),
   getAutoRunTree: (rootRunId: string) =>
     api.get<{ runs: AutoRun[] }>(`/agents/smart/runs/${encodeURIComponent(rootRunId)}`),
   getAutoRunEvents: (rootRunId: string, after = -1) =>

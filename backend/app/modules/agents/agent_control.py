@@ -28,7 +28,7 @@ class CollaborationLimits:
     max_concurrent_agents: int = 8
     max_total_agent_sessions: int = 32
     max_total_turns: int = 128
-    max_total_tokens: int = 120_000
+    max_total_tokens: int = 240_000
     max_wall_time: int = 600
 
     @classmethod

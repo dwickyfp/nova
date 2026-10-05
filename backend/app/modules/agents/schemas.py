@@ -73,9 +73,16 @@ class AgentView(BaseModel):
     evaluation_status: str = "unevaluated"
 
 
+class AgentAccessGap(BaseModel):
+    agent_id: str
+    name: str
+
+
 class AgentListResponse(BaseModel):
     agents: list[AgentView]
     count: int
+    #: The caller's own agents Studio leaves out until the active role's access is verified.
+    needs_access: list[AgentAccessGap] = Field(default_factory=list)
 
 
 class AgentCreateRequest(BaseModel):

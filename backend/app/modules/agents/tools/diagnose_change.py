@@ -22,12 +22,18 @@ def _decimal(value: Any) -> Decimal:
     return number
 
 
+def _same_period(label: str, period: str) -> bool:
+    """A month asked for as 2026-04 is the row the engine labels 2026-04-01 00:00:00."""
+    return bool(period) and (label == period or label.startswith(period))
+
+
 def decompose_change(
     table: dict[str, Any],
     *,
     prior_period: str,
     current_period: str,
     revenue_column: str,
+    period_column: str | None = None,
     units_column: str | None = None,
     returns_column: str | None = None,
     dimension_columns: list[str] | None = None,
@@ -36,9 +42,14 @@ def decompose_change(
     columns = [str(column) for column in table.get("columns") or []]
     if not columns or len(columns) > 100:
         raise ValueError("The result has no usable columns.")
-    period_column = next((name for name in columns if name.lower() == "period"), None)
-    if period_column is None or revenue_column not in columns:
-        raise ValueError("The result needs period and revenue columns.")
+    period_column = period_column if period_column in columns else next(
+        (name for name in columns if name.lower() == "period"), None
+    )
+    if period_column is None or revenue_column not in columns or revenue_column == period_column:
+        raise ValueError(
+            "Name the period column and the measure column of the result. "
+            f"Its columns are: {', '.join(columns[:20])}."
+        )
     if units_column and units_column not in columns:
         raise ValueError("The selected units column is missing.")
     if returns_column and returns_column not in columns:
@@ -59,10 +70,17 @@ def decompose_change(
             revenue_column, returns_column, dimension_columns,
         )
     labels = [str(row[columns.index(period_column)]) for row in rows]
-    if labels.count(prior_period) != 1 or labels.count(current_period) != 1:
-        raise ValueError("Each selected period must appear exactly once.")
-    prior = rows[labels.index(prior_period)]
-    current = rows[labels.index(current_period)]
+    before_rows = [row for row, label in zip(rows, labels, strict=True)
+                   if _same_period(label, prior_period)]
+    after_rows = [row for row, label in zip(rows, labels, strict=True)
+                  if _same_period(label, current_period)]
+    if len(before_rows) != 1 or len(after_rows) != 1:
+        raise ValueError(
+            "Each selected period must appear exactly once. The result holds: "
+            f"{', '.join(sorted(set(labels))[:12])}. For a grouped result, pass "
+            "dimension_columns."
+        )
+    prior, current = before_rows[0], after_rows[0]
     gross_prior = _decimal(prior[columns.index(revenue_column)])
     gross_current = _decimal(current[columns.index(revenue_column)])
     returns_prior = _decimal(prior[columns.index(returns_column)]) if returns_column else Decimal(0)
@@ -112,8 +130,9 @@ def decompose_change(
 def _dimension_change(rows, columns, period, prior, current, revenue, returns, dimensions):
     periods = {prior: {}, current: {}}
     for row in rows:
-        label = str(row[columns.index(period)])
-        if label not in periods:
+        label = next((name for name in periods
+                      if _same_period(str(row[columns.index(period)]), name)), None)
+        if label is None:
             continue
         key = json.dumps([row[columns.index(name)] for name in dimensions], default=str)
         if key in periods[label]:
@@ -141,27 +160,51 @@ def _dimension_change(rows, columns, period, prior, current, revenue, returns, d
     }
 
 
+DESCRIPTION = (
+    "Explain why a measure moved between two periods, from the last authorized result. "
+    "Query the measure by period and by the dimensions that may explain it first, then "
+    "pass those as dimension_columns to rank what contributed most. With units or returns "
+    "columns it splits the change into volume, unit-value, interaction and returns. "
+    "Unexplained change stays unassigned; arithmetic contribution is not causal proof."
+)
+PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "prior_period": {
+            "type": "string",
+            "description": "Earlier period as the result labels it; a prefix such as "
+                           "2026-04 matches.",
+        },
+        "current_period": {"type": "string"},
+        "period_column": {
+            "type": "string",
+            "description": "Result column holding the period. Defaults to one named period.",
+        },
+        "revenue_column": {
+            "type": "string",
+            "description": "Result column holding the measure, whatever it measures.",
+        },
+        "units_column": {"type": "string"},
+        "returns_column": {"type": "string"},
+        "dimension_columns": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+    },
+    "required": ["prior_period", "current_period", "revenue_column"],
+    "additionalProperties": False,
+}
+
+
+def _refused(detail: str) -> ToolOutcome:
+    # The model can repair its call, or answer from the result it already holds.
+    return ToolOutcome(
+        ok=False, summary="", error=detail, error_class="INVALID_TOOL_ARGUMENTS",
+        recoverable=True, safe_detail=detail,
+    )
+
+
 class DiagnoseChangeTool:
     name = "diagnose_change"
-    description = (
-        "Decompose the last authorized two-period result into exact volume, unit-value, "
-        "interaction, and returns contributions when those columns exist. "
-        "For grouped comparisons, rank dimensional contributions using dimension_columns. "
-        "Unexplained change stays unassigned; arithmetic contribution is not causal proof."
-    )
-    parameters = {
-        "type": "object",
-        "properties": {
-            "prior_period": {"type": "string"},
-            "current_period": {"type": "string"},
-            "revenue_column": {"type": "string"},
-            "units_column": {"type": "string"},
-            "returns_column": {"type": "string"},
-            "dimension_columns": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
-        },
-        "required": ["prior_period", "current_period", "revenue_column"],
-        "additionalProperties": False,
-    }
+    description = DESCRIPTION
+    parameters = PARAMETERS
     classification: ToolClassification = "read_only"
     requires_consent = True
 
@@ -176,7 +219,7 @@ class DiagnoseChangeTool:
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         table = getattr(context, "last_result", None)
         if not isinstance(table, dict):
-            return ToolOutcome(ok=False, summary="", error="Run a two-period data query first.")
+            return _refused("Run a two-period data query first.")
         args = invocation.arguments or {}
         try:
             result = decompose_change(
@@ -184,20 +227,27 @@ class DiagnoseChangeTool:
                 prior_period=str(args.get("prior_period") or ""),
                 current_period=str(args.get("current_period") or ""),
                 revenue_column=str(args.get("revenue_column") or ""),
+                period_column=str(args["period_column"]) if args.get("period_column") else None,
                 units_column=str(args["units_column"]) if args.get("units_column") else None,
                 returns_column=str(args["returns_column"]) if args.get("returns_column") else None,
                 dimension_columns=args.get("dimension_columns"),
             )
         except ValueError as exc:
-            return ToolOutcome(ok=False, summary="", error=str(exc))
-        rows = [[item["name"], item["change"]] for item in result["components"]]
-        rows.append(["net_change", result["net_change"]])
+            return _refused(str(exc))
+        # Both period totals are cells, so an answer may state them as verified figures.
+        rows = [
+            [f"total {result['prior_period']}", result["prior_net"]],
+            [f"total {result['current_period']}", result["current_net"]],
+            *([item["name"], item["change"]] for item in result["components"]),
+            ["net_change", result["net_change"]],
+        ]
         return ToolOutcome(
             ok=True,
             summary=(
                 f"Net change {result['net_change']} from {result['prior_period']} to "
                 f"{result['current_period']}. Components reconcile exactly. "
-                "These are arithmetic contributions, not proven root causes."
+                "These are arithmetic contributions, not proven root causes. "
+                "The breakdown is complete; answer from it."
             ),
             data=result,
             table={
