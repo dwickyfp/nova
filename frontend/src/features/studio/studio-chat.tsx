@@ -488,6 +488,8 @@ export function StudioChat({
       }
       const controller = new AbortController();
       abortRef.current = controller;
+      // Sending is a request to see the reply, wherever the reader had scrolled.
+      followOutputRef.current = true;
       const turnId = nextTurnId();
       setTurns((prev) => [
         ...prev,

@@ -161,6 +161,8 @@ _active_run_tasks: set[asyncio.Task[None]] = set()
 router = APIRouter()
 
 AUTO_AGENT_ID = SMART_AGENT_ID
+#: Half-second checks before a new Smart message is refused as a concurrent run.
+SMART_SETTLE_ATTEMPTS = 6
 
 
 class AutoMessageRequest(BaseModel):
@@ -2411,7 +2413,14 @@ async def send_agent_message(
             raise HTTPException(status_code=422, detail="Invalid Smart message")
         async with _auto_admission(thread_id, user_name) as assert_owned:
             thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
-            if await harness_repository.active_for_thread(thread_id, user_name):
+            # A follow-up sent the moment an answer lands can still see the finished
+            # run as active; give it a moment to settle before refusing.
+            for attempt in range(SMART_SETTLE_ATTEMPTS):
+                if not await harness_repository.active_for_thread(thread_id, user_name):
+                    break
+                if attempt + 1 < SMART_SETTLE_ATTEMPTS:
+                    await asyncio.sleep(0.5)
+            else:
                 raise HTTPException(status_code=409, detail="A Smart run is already active")
             await assert_owned()
             user_message = await assistant_repository.append_message(

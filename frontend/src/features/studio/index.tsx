@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getCookie, setCookie } from "@/lib/cookies";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { agentsApi, studioApi, AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
+import { api } from "@/lib/api-client";
 import { StudioChat } from "./studio-chat";
 import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
@@ -77,6 +78,16 @@ function StudioAppContent() {
     queryKey: ["studio", "settings"],
     queryFn: () => studioApi.settings(),
   });
+
+  // Without an active role nothing loads; say so instead of showing load errors.
+  const identity = settingsQuery.data?.identity;
+  const roleChoices = identity?.roles ?? [];
+  const needsRole = Boolean(identity && !identity.active_role && roleChoices.length);
+  const chooseRole = async (role: string) => {
+    await api.post("/auth/switch-role", { role });
+    await queryClient.invalidateQueries({ queryKey: ["studio", "settings"] });
+    window.location.reload();
+  };
 
   const requestedAgentId = search.agent === "__auto__" ? AUTO_AGENT_ID : search.agent;
   const agentId = requestedAgentId && (
@@ -293,7 +304,7 @@ function StudioAppContent() {
           }
           onShareThread={(thread) => setSharing({ id: thread.thread_id, title: thread.title })}
           threadsLoading={threadsQuery.isLoading}
-          threadsError={threadsQuery.isError}
+          threadsError={threadsQuery.isError && !needsRole}
           onRetryThreads={() => void threadsQuery.refetch()}
           hasMoreThreads={threadsQuery.hasNextPage}
           loadingMoreThreads={threadsQuery.isFetchingNextPage}
@@ -316,7 +327,17 @@ function StudioAppContent() {
       </div>
 
       <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-        {agentsQuery.isError ? (
+        {needsRole ? (
+          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+            <span>Choose a role to see your data and conversations.</span>
+            {roleChoices.slice(0, 4).map((role) => (
+              <Button key={role} type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void chooseRole(role)}>
+                {role}
+              </Button>
+            ))}
+            {roleChoices.length > 4 ? <span>More roles are in the account menu.</span> : null}
+          </div>
+        ) : agentsQuery.isError ? (
           <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <span>Specialists are temporarily unavailable. Smart can still try your question.</span>
             <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>

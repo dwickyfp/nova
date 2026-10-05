@@ -606,3 +606,22 @@ async def test_root_withholds_artifacts_that_carry_a_credential_shape(collaborat
     await AgentHarnessWorker(repo)._finish_root(row, USER, "Done.", [], {}, leaked)
     assert saved[0]["steps"] == []
 
+
+
+def test_a_smart_answer_shows_its_last_table_and_chart_in_plain_headings():
+    from app.modules.agents.harness_worker import _root_artifacts
+
+    steps = [
+        {"kind": "table", "title": "combine of results",
+         "columns": ["department", "total_expense"], "rows": [["Sales", "1200"]]},
+        {"kind": "answer"},
+        {"kind": "chart", "chart_spec": "{}"},
+        {"kind": "table", "title": "ratio of total_expense",
+         "columns": ["department", "total_expense_per_active_headcount"],
+         "rows": [["Sales", "300"]]},
+    ]
+    shown = _root_artifacts(steps)
+    assert [item["kind"] for item in shown] == ["table", "chart"]
+    assert shown[0]["columns"] == ["Department", "Total expense per active headcount"]
+    assert shown[0]["rows"] == [["Sales", "300"]]
+    assert steps[3]["columns"][1] == "total_expense_per_active_headcount"

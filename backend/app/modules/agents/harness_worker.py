@@ -79,7 +79,7 @@ ROOT_HISTORY_MESSAGES = 6
 ROOT_HISTORY_CHARS = 4000
 ANSWERED = frozenset({"stop", "out_of_scope", "clarification"})
 #: Tables and charts a Smart root may attach to its answer.
-MAX_ROOT_ARTIFACTS = 6
+MAX_ROOT_ARTIFACTS = 2
 MAX_CHILD_TOKENS = 20_000
 MAX_SESSION_SECONDS = 600
 MAX_EVIDENCE_TABLES = 3
@@ -90,6 +90,27 @@ MAX_CHILD_ACTIVITY_EVENTS = 200
 FINAL_MESSAGE_VISIBILITY_ATTEMPTS = 20
 MAX_DISCOVERY_ATTEMPTS = 6
 MAX_START_EVENT_ATTEMPTS = 6
+
+
+def _root_artifacts(steps: list[dict]) -> list[dict]:
+    """The table and chart a Smart answer shows: the last of each, headed in plain words.
+
+    Earlier tables are the inputs of the last one (two results, then their
+    combination, then a ratio over it), so showing them repeats the answer.
+    """
+    from app.modules.agents.tools.describe_agent import business_label
+
+    shown: list[dict] = []
+    for kind in ("table", "chart"):
+        latest = next((step for step in reversed(steps) if step.get("kind") == kind), None)
+        if latest is None:
+            continue
+        latest = dict(latest)
+        if kind == "table":
+            latest["columns"] = [business_label(column) for column in latest.get("columns") or []]
+            latest["title"] = business_label(latest.get("title") or "")
+        shown.append(latest)
+    return shown[:MAX_ROOT_ARTIFACTS]
 
 
 class AuthenticationUnavailable(RuntimeError):
@@ -1362,8 +1383,7 @@ class AgentHarnessWorker:
                 await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
                 await self._finish_root(
                     child, user, answer, [row for row in tree if row["depth"]], context.usage,
-                    [step for step in context.steps or []
-                     if step.get("kind") in {"table", "chart"}][-MAX_ROOT_ARTIFACTS:],
+                    _root_artifacts(context.steps or []),
                 )
             return
         latest_child = await self.repository.get(child["run_id"])
