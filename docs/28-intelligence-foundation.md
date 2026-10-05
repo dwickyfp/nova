@@ -1,6 +1,6 @@
 # Module 28: Intelligence Foundation
 
-> Entity identities, AI Search, Semantic Views, and Feature Store share Nova governance and StarRocks metadata.
+> Entity identities, AI Search, Semantic Views, and Feature Store provide the governed data and business meaning foundation of Nova, the Enterprise Intelligence OS.
 
 ---
 
@@ -20,9 +20,10 @@ Publishing a new View version changes the agent access fingerprint. Bound agents
 
 The [governed Studio architecture](arch-15-governed-studio.md) extends this
 lifecycle with chat-originated comparisons, registered scenarios, an Action
-ledger, scoped context/usage, and Mission links. The first Action adapter creates
-and verifies a governed monitor/schedule. Verification establishes monitoring
-setup, not a business intervention or causal effect. New controls default to
+ledger, scoped context/usage, and Mission links. Current Action adapters create
+and verify a governed monitor/schedule or an internal Studio automation.
+Verification establishes configuration, not a business intervention or causal
+effect. New controls default to
 disabled; see [migration and acceptance](governed-studio-operations.md).
 
 The Intelligence Engine extends these owners with Context Graph references,

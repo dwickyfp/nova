@@ -111,7 +111,7 @@ describe("StudioSidebar", () => {
       .element(screen.getByText("Studio", { exact: true }))
       .toBeVisible();
     await expect
-      .element(screen.getByText("Data warehouse + AI"))
+      .element(screen.getByText("Enterprise Intelligence OS"))
       .not.toBeInTheDocument();
     await expect.element(button).not.toHaveAttribute("aria-current");
     await userEvent.click(button);

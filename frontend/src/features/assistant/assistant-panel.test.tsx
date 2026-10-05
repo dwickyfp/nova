@@ -114,7 +114,7 @@ describe("AssistantPanel", () => {
     );
 
     const logo = document.querySelector<HTMLImageElement>(
-      'img[src="/images/nova-mark.svg"]',
+      'img[src="/images/nova-mark-128.png"]',
     );
     expect(logo).not.toBeNull();
     expect(logo?.getAttribute("aria-hidden")).toBe("true");

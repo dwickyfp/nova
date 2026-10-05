@@ -88,6 +88,7 @@ class FeatureAdapters:
 
     def executor(self) -> SQLExecutor:
         from app.sql_frontend.execution.transactions import TransactionRunner
+        from app.sql_frontend.planning.execution import StreamPayload
 
         executor = SQLExecutor(
             self.execute_engine,
@@ -104,7 +105,29 @@ class FeatureAdapters:
             executor.register(action, self._handler(method))
         executor.register(MaterializePayload, self.materialize)
         executor.register(SecurityPayload, self.security)
+        executor.register(StreamPayload, self.stream_unavailable)
         return executor
+
+    async def stream_unavailable(self, plan, context) -> QueryResult:
+        from app.modules.streams.runtime import require_stream_runtime
+
+        key = plan.payload.source_key if isinstance(plan, NovaActionPlan) else plan.source_key
+        source = context.statements[key].parsed
+        try:
+            require_stream_runtime()
+        except CapabilityUnsupportedError as exc:
+            await self._audit(
+                event_type="query", user_name=context.username, action="stream",
+                object_type="stream", object_name="stream", status="ERROR",
+                sql_text=source.original_sql, error_message=str(exc),
+                active_role=context.role, session_id=context.session_id,
+                database_name=context.database, schema_name=context.schema,
+            )
+            return QueryResult(
+                error=str(exc), error_code=exc.code,
+                original_sql=source.original_sql, executed_sql=source.original_sql,
+            )
+        raise SemanticError("Stream runtime admission must have an execution adapter")
 
     @asynccontextmanager
     async def _transaction_connection(self, context):
@@ -211,6 +234,11 @@ class FeatureAdapters:
                 raise SemanticError("Action payload requires a validated definition")
             statement = context.statements[plan.payload.source_key]
             parsed = statement.parsed
+            if isinstance(plan.payload, TaskPayload):
+                from app.sql_frontend.streams import stream_functions
+
+                if stream_functions(parsed, plan.payload.database or context.database):
+                    return await self.stream_unavailable(plan, context)
             kwargs = vars_context(context)
             kwargs.update(
                 sql=parsed.original_sql,
@@ -226,6 +254,8 @@ class FeatureAdapters:
         return handle
 
     async def execute_engine(self, plan: EngineSqlPlan, context: ExecutionContext) -> QueryResult:
+        if plan.stream_functions:
+            return await self.stream_unavailable(plan, context)
         statement = context.statements[plan.source_key]
         source = statement.parsed
         sql = source.original_sql

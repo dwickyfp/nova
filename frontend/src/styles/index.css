@@ -4,22 +4,212 @@
 @import "./theme.css";
 
 @custom-variant dark (&:is(.dark *));
-@source inline("font-plex font-system");
+@source inline("font-inter font-plex font-system");
 
-.studio-sidebar {
-  --foreground: #27272a;
-  --muted: #f4f4f5;
-  --muted-foreground: #62626a;
-  --accent: #e9e9ec;
-  --accent-foreground: #18181b;
+/* A navigation shell owns exactly one filtered layer. Negative stacking keeps
+   positioned rails and focus rings above it without restyling its children. */
+.sidebar-navigation-material {
+  isolation: isolate;
+  background: transparent;
+  color: var(--sidebar-foreground);
+  --sidebar-foreground: var(--sidebar-navigation-foreground);
+  --weight-medium: var(--sidebar-navigation-weight-medium);
+  --weight-semibold: var(--sidebar-navigation-weight-semibold);
+  --sidebar-accent: var(--sidebar-navigation-hover);
+  --sidebar-accent-foreground: var(--sidebar-foreground);
+  --sidebar-border: var(--sidebar-navigation-edge);
+  --sidebar-ring: var(--sidebar-navigation-ring);
 }
 
-.dark .studio-sidebar {
-  --foreground: #e4e4e7;
-  --muted: #18181b;
-  --muted-foreground: #a1a1aa;
-  --accent: #303034;
-  --accent-foreground: #fafafa;
+.sidebar-navigation-material::before,
+.sidebar-navigation-material::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+
+/* Viewport coordinates keep the backdrop continuous across the sidebar, the
+   inset frame, and the workspace pane. */
+.sidebar-navigation-material::before {
+  z-index: -2;
+  background: var(--shell-backdrop);
+  background-size: 100vw 100svh;
+  background-position: left top;
+  background-attachment: fixed;
+}
+
+.sidebar-navigation-material::after {
+  z-index: -1;
+  background: var(--sidebar-navigation-fallback);
+  box-shadow: var(--sidebar-navigation-shadow);
+}
+
+/* The exposed inset frame shares the navigation composition. Keep it
+   unfiltered so the opaque workspace never sits inside a backdrop layer. */
+[data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) {
+  background: var(--sidebar-navigation-fallback);
+  background-size: 100vw 100svh;
+  background-position: left top;
+  background-attachment: fixed;
+}
+
+/* In the inset layout the sidebar paints nothing of its own: it is a clear
+   column over the wrapper's frame, so navigation and frame are one surface
+   with no edge to line up. The workspace panel's border is the only divider. */
+[data-material="navigation"][data-variant="inset"] .sidebar-navigation-material::before,
+[data-material="navigation"][data-variant="inset"] .sidebar-navigation-material::after {
+  display: none;
+}
+
+/* The workspace pane is the same backdrop under a thicker tint. It is a
+   static composite over an opaque --background, never a filtered layer, so
+   data surfaces inside it keep their measured contrast. */
+[data-slot="sidebar-wrapper"]:has(> [data-material="navigation"]) > [data-slot="sidebar-inset"],
+.shell-pane {
+  background-image: linear-gradient(var(--shell-pane-tint), var(--shell-pane-tint)), var(--shell-backdrop);
+  background-size: 100vw 100svh;
+  background-position: left top;
+  background-attachment: fixed;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar-navigation-material::after {
+    background: var(--sidebar-navigation-tint);
+    -webkit-backdrop-filter: blur(12px) saturate(1.08);
+    backdrop-filter: blur(12px) saturate(1.08);
+  }
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) {
+    background-image: linear-gradient(var(--sidebar-navigation-tint), var(--sidebar-navigation-tint)), var(--shell-backdrop);
+  }
+}
+
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand]):hover,
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand]):active,
+.sidebar-navigation-material .sidebar-navigation-item[data-state="open"],
+.sidebar-navigation-material .sidebar-navigation-item:has([data-state="open"]) {
+  background: var(--sidebar-navigation-hover);
+  color: var(--sidebar-foreground);
+}
+
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand])[data-active="true"],
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand])[aria-current] {
+  background: var(--sidebar-navigation-selected);
+  box-shadow: var(--sidebar-navigation-selected-shadow);
+  color: var(--sidebar-foreground);
+}
+
+/* Full-opacity focus avoids losing contrast on selected navigation plates. */
+.sidebar-navigation-material :is(.sidebar-navigation-item, button, a, input):focus-visible {
+  outline: 2px solid var(--sidebar-ring);
+  outline-offset: 2px;
+}
+
+/* A Sheet animates opacity/transform, creating a backdrop root. Filter the
+   drawer itself so its backdrop is the workspace rather than its own children. */
+.sidebar-navigation-material[data-mobile="true"],
+[data-mobile-navigation="true"] .sidebar-navigation-material {
+  background: var(--sidebar-navigation-fallback);
+  box-shadow: var(--sidebar-navigation-shadow);
+  transition-property: width, transform, opacity;
+}
+.sidebar-navigation-material[data-mobile="true"]::before,
+.sidebar-navigation-material[data-mobile="true"]::after,
+[data-mobile-navigation="true"] .sidebar-navigation-material::before,
+[data-mobile-navigation="true"] .sidebar-navigation-material::after {
+  display: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    background: var(--sidebar-navigation-tint);
+    -webkit-backdrop-filter: blur(12px) saturate(1.08);
+    backdrop-filter: blur(12px) saturate(1.08);
+  }
+  .sidebar-navigation-material[data-mobile="true"]::before,
+  [data-mobile-navigation="true"] .sidebar-navigation-material::before {
+    display: block;
+    background: linear-gradient(var(--sidebar-navigation-tint), var(--sidebar-navigation-tint)), var(--shell-backdrop);
+    box-shadow: var(--sidebar-navigation-shadow);
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]),
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"]) > [data-slot="sidebar-inset"],
+  .shell-pane {
+    background-image: none;
+  }
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    background: var(--sidebar-navigation-fallback);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sidebar-navigation-material::before,
+  .sidebar-navigation-material[data-mobile="true"]::before,
+  [data-mobile-navigation="true"] .sidebar-navigation-material::before {
+    display: none;
+  }
+  .sidebar-navigation-material::after {
+    background: var(--sidebar-navigation-fallback);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) {
+    background: Canvas;
+  }
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"]) > [data-slot="sidebar-inset"],
+  .shell-pane {
+    background-image: none;
+  }
+  .sidebar-navigation-material {
+    --sidebar-foreground: CanvasText;
+    --sidebar-ring: Highlight;
+    --sidebar-navigation-edge: ButtonBorder;
+    --sidebar-navigation-hover: ButtonFace;
+    --sidebar-navigation-selected: Highlight;
+    box-shadow: none;
+  }
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sidebar-navigation-material::before,
+  .sidebar-navigation-material[data-mobile="true"]::before,
+  [data-mobile-navigation="true"] .sidebar-navigation-material::before {
+    display: none;
+  }
+  .sidebar-navigation-material::after {
+    background: Canvas;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sidebar-navigation-material .sidebar-navigation-item[data-active="true"],
+  .sidebar-navigation-material .sidebar-navigation-item[aria-current],
+  .sidebar-navigation-material .sidebar-navigation-item[data-active="true"] *,
+  .sidebar-navigation-material .sidebar-navigation-item[aria-current] * {
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
 }
 
 @layer base {
@@ -31,7 +221,8 @@
   html {
     @apply overflow-x-hidden;
     scrollbar-width: none;
-    font-family: var(--font-plex);
+    font-family: var(--font-inter);
+    font-synthesis-weight: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -43,7 +234,8 @@
     font-size: 0.875rem;
     line-height: 1.25rem;
     font-weight: 400;
-    letter-spacing: 0;
+    /* Inter's own spacing recommendation at 14px. */
+    letter-spacing: -0.006em;
   }
 
   /* Override Radix scroll locking for sticky headers */
@@ -169,85 +361,6 @@ input:-webkit-autofill:active {
   to {
     height: 0;
     opacity: 0;
-  }
-}
-
-@keyframes nova-pulse {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.04);
-  }
-}
-
-@keyframes nova-drift-left {
-  0%,
-  100% {
-    transform: translate(0);
-  }
-  50% {
-    transform: translate(-3px, -5px);
-  }
-}
-
-@keyframes nova-drift-right {
-  0%,
-  100% {
-    transform: translate(0);
-  }
-  50% {
-    transform: translate(3px, -5px);
-  }
-}
-
-@keyframes nova-rise {
-  0%,
-  100% {
-    opacity: 0.62;
-    transform: translateY(3px);
-  }
-  50% {
-    opacity: 0.9;
-    transform: translateY(-5px);
-  }
-}
-
-.nova-core {
-  transform-origin: 330px 327px;
-  animation: nova-pulse 4.8s ease-in-out infinite;
-}
-
-.nova-wing-left {
-  animation: nova-drift-left 7s ease-in-out infinite;
-}
-
-.nova-wing-right {
-  animation: nova-drift-right 7s ease-in-out infinite;
-}
-
-.nova-tail,
-.nova-data-plane {
-  animation: nova-rise 6s ease-in-out infinite;
-}
-
-.nova-data-node {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: nova-pulse 3.6s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nova-core,
-  .nova-wing-left,
-  .nova-wing-right,
-  .nova-tail,
-  .nova-data-plane,
-  .nova-data-node {
-    animation: none;
   }
 }
 

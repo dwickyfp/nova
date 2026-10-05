@@ -1,6 +1,6 @@
 """Nova Backend — FastAPI App Factory.
 
-StarRocks management console backend with domain-driven modular architecture.
+Nova Enterprise Intelligence OS backend with domain-driven modular architecture.
 """
 
 import asyncio
@@ -277,7 +277,10 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Nova",
         version="0.1.0",
-        description="Management console backend for StarRocks",
+        description=(
+            "Enterprise Intelligence OS for governed data, AI agents, "
+            "decisions, actions, and learning."
+        ),
         lifespan=lifespan,
     )
 

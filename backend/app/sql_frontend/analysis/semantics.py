@@ -177,6 +177,12 @@ def default_semantics() -> StatementSemanticsRegistry:
         }
     )
     registry = StatementSemanticsRegistry()
+    from app.sql_frontend.streams import stream_effects, validate_stream
+
+    registry.register(
+        ast.StreamStatement,
+        StatementSemantics(stream_effects, validator=validate_stream, preflight_safe=True),
+    )
     native = StatementSemantics(_native_effects)
     registry.register(ast.NativeStatement, native)
     registry.register(ast.StageAwareStatement, native)

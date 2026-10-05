@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # Values mirror the ``proxy:`` block in docker/nova.yaml; the defaults here
     # are what the embedded lifespan uses when nothing overrides them.
     PROXY_ENABLED: bool = True
+    STREAMS_ENABLED: bool = False
+    MANAGED_APPEND_ENABLED: bool = False
     PROXY_HOST: str = "0.0.0.0"
     PROXY_PORT: int = 4406
     PROXY_MAX_CONNECTIONS: int = 100

@@ -1,7 +1,7 @@
 """Production readiness audit — read-only findings against a running cluster.
 
-Nova is a management console over an already-deployed StarRocks cluster. This
-module answers the operator's question *"is this cluster actually production
+StarRocks provides Nova's analytical engine. This module audits an already-deployed
+cluster and answers the operator's question *"is this cluster actually production
 grade right now?"* without ever mutating it — no node is added, dropped, moved
 or restarted, and no application data is touched.
 

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { cleanup, render } from "vitest-browser-react";
+import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -12,6 +12,9 @@ import {
 import { StudioChat } from "./studio-chat";
 import { workflowApi } from "./workflow-api";
 import "@/styles/index.css";
+
+const views: Awaited<ReturnType<typeof render>>[] = [];
+const clients: QueryClient[] = [];
 
 function contrast(element: HTMLElement): number {
   const canvas = document.createElement("canvas");
@@ -51,7 +54,8 @@ function contrast(element: HTMLElement): number {
 }
 
 afterEach(async () => {
-  await cleanup();
+  for (const view of views.splice(0)) await view.unmount();
+  clients.splice(0).forEach((client) => client.clear());
   vi.restoreAllMocks();
   document.documentElement.classList.remove("dark");
   await page.viewport(1280, 720);
@@ -99,6 +103,7 @@ it.each([
   vi.spyOn(workflowApi, "list").mockRejectedValue(
     new ApiError(404, "Workflow disabled"),
   );
+  vi.spyOn(workflowApi, "resumable").mockResolvedValue({ missions: [] });
   const getThread = vi
     .spyOn(agentsApi, "getThread")
     .mockImplementation(async (_agent, threadId, cursor) => ({
@@ -106,12 +111,12 @@ it.each([
       messages: cursor ? older : newest,
       next_cursor: cursor ? null : "older-page",
     }));
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  clients.push(client);
   const view = await render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={client}>
       <div className="flex h-svh flex-col overflow-hidden">
         <header className="shrink-0 p-2">History test</header>
         <StudioChat
@@ -126,6 +131,7 @@ it.each([
       </div>
     </QueryClientProvider>,
   );
+  views.push(view);
   await expect
     .element(view.getByText("Answer across the page boundary", { exact: true }))
     .toBeInTheDocument();

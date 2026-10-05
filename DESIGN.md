@@ -81,7 +81,127 @@ tidak boleh dipakai lagi. Nilai yang sudah ada sebelumnya tersebar di 33
 kemunculan `bg-card/*` dan 22 kemunculan `border-border/*`; penggantinya adalah
 `--surface-*`. Migrasi dilakukan per grup refactor, bukan serentak.
 
-### 2.4 Grafik
+### Nova Glass Shell
+
+**Satu backdrop, dua ketebalan tint.** Shell aplikasi punya satu lukisan latar
+(`--shell-backdrop`) yang dipasang pada koordinat viewport. Navigasi dan
+workspace sama-sama berdiri di atasnya dan sama-sama memakai warna tint
+`--background`; yang berbeda hanya opacity-nya. Karena itu sidebar dan konten
+selalu berada di satu keluarga hue, dan gradasi backdrop menyambung melewati
+batas kolom.
+
+| Lapisan | Dipakai oleh | Tint | Filter |
+|---|---|---|---|
+| Chrome (tipis) | Sidebar global, sidebar Studio, rail ikon, drawer mobile, frame inset Console | `--sidebar-navigation-tint` | Satu `backdrop-filter` pada shell |
+| Pane (tebal) | `SidebarInset` di bawah sidebar bermaterial navigasi, `<main>` Studio (`shell-pane`) | `--shell-pane-tint` | Tidak ada; komposit statis di atas `--background` opak |
+| Isi | Kartu, tabel, editor, transcript, inspector, dialog, popover, menu portal | `--card`, `--surface-*`, `--popover` | Tidak ada; tetap solid |
+
+Glass berhenti di pane. Permukaan isi tidak pernah transparan dan tidak pernah
+memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
+
+| Token | Arti |
+|---|---|
+| `--shell-backdrop` | Lukisan latar shell: teal-slate di kiri atas, bata dan amber di bawah |
+| `--shell-pane-tint` | Tint workspace di atas backdrop; 100% di tema terang, 82% di tema gelap |
+| `--sidebar-navigation-tint` | Tint chrome di atas backdrop atau konten di belakang drawer |
+| `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 45% terang, 46% gelap |
+| `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
+| `--sidebar-navigation-edge` | Hairline transparan; juga `--inset-border` di tema gelap |
+| `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace; tidak dipakai pada Console inset |
+| `--sidebar-navigation-hover` | Plate interaksi transparan |
+| `--sidebar-navigation-selected` | Plate transparan lebih kuat untuk pilihan aktif |
+| `--sidebar-navigation-selected-shadow` | Hairline dan bayangan halus plate aktif di tema terang; `none` di tema gelap |
+| `--sidebar-navigation-foreground` | Teks navigasi; slate di tema terang, `--foreground` di tema gelap |
+| `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
+| `--sidebar-navigation-ring` | Fokus merah bata dengan kontras terhadap plate navigasi |
+
+**Backdrop harus punya variasi hue.** Kaca hanya terbaca kalau ada sesuatu di
+belakangnya. Gradien abu-abu netral di bawah tint terlihat sama dengan warna
+solid, jadi backdrop memakai teal-slate dan bata/amber dari palet Nova sendiri.
+Blur tidak menggantikan variasi itu.
+
+**Plate dan hairline transparan, bukan hex opak.** Hover, selected, dan edge
+adalah putih ber-alpha di kedua tema, sehingga gradasi backdrop tetap terlihat
+di bawah baris aktif. Di tema terang plate mengangkat baris (lebih terang dari
+sekitarnya, dengan hairline dan bayangan halus); plate gelap di atas backdrop
+terang terbaca sebagai cat abu-abu, bukan kaca. Edge tetap slate di tema terang. Kontras diukur pada hasil kompositnya di
+setiap stop backdrop, bukan pada warna plate itu sendiri.
+
+**Pane terang tetap 100%.** `--primary` (4.53:1) dan token `-strong` diukur
+sebagai teks di atas `--background` tanpa ruang untuk tint, jadi pane tema
+terang tidak tembus. Tema gelap punya margin (teks sekunder 7.1:1 pada stop
+paling terang) dan memakai 82%. Mengubah opacity pane berarti menghitung ulang
+B4 untuk semua token teks.
+
+`--sidebar` dan `--background` tetap opak untuk layout dan konsumen lama.
+Sidebar global memilih `material="navigation"`; Studio memakai
+`sidebar-navigation-material` dan `shell-pane` tanpa menggabungkan implementasi
+navigasi kedua produk. Halaman tidak boleh mengecat `bg-background` selebar
+pane, karena itu menutup backdrop; latar pane milik shell.
+
+Material chrome mengisi seluruh kolom sidebar desktop sampai tepi viewport,
+termasuk padding layout di sekitar menu. Shell dalam transparan tanpa border,
+radius, atau shadow pembentuk card, termasuk pada variant `inset` dan
+`floating`. Header, menu, dan footer berada pada satu bidang kaca yang kontinu;
+tidak ada permukaan kaca kedua di dalam sidebar. Frame inset Console
+menggabungkan tint chrome dan backdrop sebagai latar statis tanpa filter.
+Provider dengan sidebar solid memakai latar sebelumnya. Merah bata tetap untuk
+identitas dan penanda aktif, bukan latar seluruh sidebar.
+
+Shell memiliki paling banyak satu lapisan backdrop blur statis; header, baris,
+history, dan footer tidak memiliki blur sendiri. Sidebar Console inset tidak
+mengecat lapisan sendiri: kolomnya bening di atas frame wrapper, sehingga
+navigasi dan frame adalah satu permukaan tanpa tepi yang harus disejajarkan.
+Brand di header sidebar tidak pernah mendapat plate hover atau selected. `sidebar-navigation-item` berbagi hover dan
+selection di dalam shell saja. Drawer mobile memfilter shell agar animasi Sheet
+tidak membatasi backdrop; lapisan tint internal dinonaktifkan dan underlay
+memakai campuran tint yang sama pada opacity 90%. Blur dan tint tidak
+dianimasikan. Lebar, posisi kontrol, radius baris, kepadatan, dan perilaku
+navigasi tidak berubah.
+
+Fallback opak berlaku sebelum pemeriksaan `@supports`. Dukungan standar dan
+WebKit mengaktifkan blur; `prefers-reduced-transparency` mematikan blur dan
+gambar backdrop pada chrome, frame, dan pane. Forced colors memakai warna
+sistem dan pilihan aktif yang tetap terbaca. Keterbacaan tidak boleh bergantung
+pada blur.
+
+### 2.4 Tipografi
+
+Satu keluarga huruf untuk seluruh UI: **Inter**, di-host sendiri dari
+`frontend/public/fonts/` dan didefinisikan di `fonts.css`. `--font-sans` menunjuk
+ke `--font-inter`; IBM Plex Sans dan font sistem tetap tersedia lewat
+`src/config/fonts.ts` sebagai pilihan, bukan default. Kode memakai JetBrains Mono.
+
+| Peran | Ukuran | Bobot | Contoh |
+|---|---|---|---|
+| Judul halaman | `text-lg` | 600 gelap, 550 terang | `PageHeader` |
+| Label navigasi, judul baris, kontrol | `text-sm` | 500 gelap, 450 terang | Menu sidebar, judul riwayat Studio, tombol |
+| Body dan isi tabel | `text-sm` (14px) | 400 | Paragraf, sel |
+| Teks sekunder | `text-xs` (12px) | 400 | Timestamp, subjudul brand, label grup |
+
+- **Bobot dikoreksi per tema.** Teks gelap di atas latar terang terlihat lebih
+  tebal daripada bobot yang sama dalam keadaan terbalik. `--weight-medium` dan
+  `--weight-semibold` bernilai 450/550 di tema terang dan 500/600 di tema gelap;
+  `font-medium`, `font-semibold`, `font-bold`, dan `font-heading` membacanya.
+  Di dalam chrome navigasi tema terang keduanya turun sekali lagi ke 400/500
+  (`--sidebar-navigation-weight-*`): teks di atas tint tetap terasa tebal pada 450.
+  Komponen tidak menulis angka bobot sendiri.
+- **Teks utama tema terang adalah slate, bukan hitam.** `--foreground` bernilai
+  `#1e293b` (14.6:1 di atas putih). Hampir-hitam di atas putih membuat seluruh
+  halaman terasa tebal walau bobotnya 400. `--card-foreground`,
+  `--popover-foreground`, `--secondary-foreground`, dan teks navigasi mengikuti
+  token yang sama.
+- **Bobot maksimum 600.** `--font-weight-bold` dipetakan ke 600, jadi `font-bold`
+  tidak pernah lebih berat dari `font-semibold`. Hierarki dibangun dari ukuran
+  dan warna, bukan dari bobot ekstra.
+- **Teks terkecil 12px.** `text-[11px]` dan `text-[10px]` tidak dipakai untuk
+  teks baru; yang tersisa adalah label huruf besar di menu akun.
+- **Letter spacing body `-0.006em`**, rekomendasi Inter untuk 14px. Judul boleh
+  memakai `tracking-tight`; teks kecil tidak dirapatkan lagi.
+- `font-synthesis-weight: none` mencegah browser menebalkan huruf secara
+  sintetis saat berkas font belum termuat.
+
+### 2.5 Grafik
 
 `--chart-1` sampai `--chart-9` dan `--chart-tone-1` sampai `--chart-tone-6`
 hanya untuk seri data di dalam grafik. Warna grafik tidak boleh dipakai sebagai

@@ -35,6 +35,7 @@ class StageRelation:
 
 
 StageSchemaProvider = Callable[[StageReference], Awaitable[BoundRelation]]
+StreamSchemaProvider = Callable[[Any], Awaitable[tuple[str, BoundRelation] | None]]
 
 
 class RelationBinder:
@@ -44,10 +45,13 @@ class RelationBinder:
         *,
         database: str | None = None,
         stage_schema: StageSchemaProvider | None = None,
+        stream_schema: StreamSchemaProvider | None = None,
     ) -> None:
         self.binder = binder
         self.database = database
         self.stage_schema = stage_schema
+        self.stream_schema = stream_schema
+        self.stream_bindings = []
         self._cache: dict[str, BoundRelation] = {}
 
     async def bind_relation(
@@ -238,7 +242,25 @@ class RelationBinder:
                 if len(node.qualifiedName().identifier()) == 1
                 else None
             )
-            return alias, source if source is not None else await self._table(name)
+            if source is not None:
+                return alias, source
+            if self.stream_schema is not None:
+                from app.modules.streams.namespace import resolve_stream_name
+                from app.sql_frontend.planning.execution import StreamBinding
+                from app.sql_frontend.streams import name_parts
+
+                parts = name_parts(node.qualifiedName())
+                # Three-part native catalog names retain their engine meaning.
+                if len(parts) < 3 or (len(parts) == 3 and parts[1].casefold() == "default"):
+                    stream_name = resolve_stream_name(parts, self.database)
+                    resolved = await self.stream_schema(stream_name)
+                    if resolved is not None:
+                        stream_id, relation = resolved
+                        self.stream_bindings.append(StreamBinding(
+                            stream_name, stream_id, node.start.start, node.stop.stop + 1, alias,
+                        ))
+                        return alias, relation
+            return alias, await self._table(name)
         if kind == "SubqueryWithAliasContext":
             alias = identifier(node.identifier()).casefold()
             return alias, await self._query(

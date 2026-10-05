@@ -1,3 +1,4 @@
+import { Logo } from '@/assets/logo'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -527,10 +528,7 @@ export function DatabaseExplorerPage() {
     <div data-layout='fixed' className='flex h-full min-h-0 flex-col'>
       <Header fixed>
         <div className='flex min-w-0 flex-1 items-center gap-3'>
-          <img
-            src='/images/nova-mark.svg'
-            alt=''
-            aria-hidden='true'
+          <Logo sizes='40px'
             className='h-6 w-6 shrink-0'
           />
           <div className='min-w-0'>

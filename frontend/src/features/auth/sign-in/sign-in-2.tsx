@@ -1,3 +1,4 @@
+import { Logo } from '@/assets/logo'
 import { useSearch } from '@tanstack/react-router'
 import { SignInVisual } from './components/sign-in-visual'
 import { UserAuthForm } from './components/user-auth-form'
@@ -10,16 +11,13 @@ export function SignIn2() {
         <div className='mx-auto my-auto w-full max-w-sm'>
           <header className='mb-8'>
             <div className='mb-2 flex items-center gap-3'>
-            <img
-              src='/images/nova-mark.svg'
-              alt=''
+            <Logo sizes='40px'
               className='size-10'
-              aria-hidden='true'
             />
             <div className='leading-tight'>
               <h1 className='text-lg font-bold tracking-tight'>Nova</h1>
               <p className='text-xs font-medium text-muted-foreground'>
-                Data warehouse + AI platform
+                Enterprise Intelligence OS
               </p>
             </div>
             </div>

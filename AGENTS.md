@@ -19,9 +19,11 @@ Project configuration: `.devmesh/project.json`.
 
 ## Nova in 30 seconds
 
-Nova is a governed analytics and AI platform built on StarRocks. Console and
-Studio share authentication, governed data access, SQL execution, storage, and
-the bounded assistant engine. The MySQL proxy exposes the same Nova SQL path.
+Nova is an Enterprise Intelligence OS that connects governed data, business
+meaning, agents, decisions, actions, outcomes, and learning. StarRocks provides
+its analytical engine and authentication. Console and Studio share governed
+data access, SQL execution, storage, and the bounded assistant engine. The MySQL
+proxy exposes the same Nova SQL path.
 Read [README.md](README.md) for product context and [HOW_TO_RUN.md](HOW_TO_RUN.md)
 for local operation.
 

@@ -23,7 +23,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['recharts'],
+    include: ['recharts', 'react-dom/client', 'react-top-loading-bar'],
   },
   server: {
     proxy: {
