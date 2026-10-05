@@ -173,6 +173,25 @@ class IntelligenceRepository:
             )
         return model.model_validate(_decode(result["rows"][0][0])) if result["rows"] else None
 
+    async def edition_stories(self, story_ids: list[str], scope: Scope, model: type[R]) -> list[R]:
+        """The current revision of each story of one edition, in one read."""
+        if not story_ids:
+            return []
+        marks = ",".join(["%s"] * len(story_ids))
+        result = await db.execute_system(
+            "SELECT payload,branches FROM (SELECT payload,ROW_NUMBER() OVER "
+            "(PARTITION BY id ORDER BY revision DESC) rn,"
+            f"COUNT(*) OVER (PARTITION BY id,revision) branches FROM {self._table('stories')} "
+            "WHERE principal=%s AND active_role=%s AND security_context_version=%s "
+            f"AND id IN ({marks})) latest WHERE rn=1",
+            [scope.principal, scope.active_role, scope.security_context_version, *story_ids],
+        )
+        if any(row[1] != 1 for row in result["rows"]):
+            raise HTTPException(
+                status_code=409, detail="Concurrent revisions require reconciliation"
+            )
+        return [model.model_validate(_decode(row[0])) for row in result["rows"]]
+
     async def shared_story(self, record_id: str, model: type[R]) -> R | None:
         # Only the newsroom reader uses this lookup. It returns nothing to a
         # caller until that caller reproduces every access proof of the story.

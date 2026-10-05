@@ -9,9 +9,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatValue, humanize, kicker, longDate } from "./format";
-import { newspaperApi, type StoryDetail } from "./newspaper-api";
-import { DriverChart, TrendChart } from "./story-chart";
-import { Movement, NewsFailure, Severity } from "./story-parts";
+import { Highlighted } from "./highlight";
+import { newspaperApi, type Reaction, type StoryDetail } from "./newspaper-api";
+import { Reactions } from "./reactions";
+import { DriverChart, TrendChart, WeekdayChart } from "./story-chart";
+import { HeadFigure, NewsFailure, Severity } from "./story-parts";
 
 const RULE_SOURCE = {
   metric: "Metric definition",
@@ -56,38 +58,30 @@ function Body({
           ? "Written by the default model from verified figures"
           : "Standard wording from verified figures"}
       </p>
-      <dl className="mt-6 grid gap-4 border-y py-5 sm:grid-cols-3">
-        <div>
-          <dt className="text-xs text-muted-foreground">Change</dt>
-          <dd className="mt-1"><Movement story={story} large /></dd>
-          <dd className="text-xs text-muted-foreground tabular-nums">
-            {formatValue(story.change, story.unit)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Observed</dt>
-          <dd className="mt-1 text-xl font-semibold break-words tabular-nums">
-            {formatValue(story.after, story.unit)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Typical</dt>
-          <dd className="mt-1 text-xl font-semibold break-words tabular-nums">
-            {formatValue(story.before, story.unit)}
-          </dd>
-        </div>
-      </dl>
+      <div className="mt-6 border-y py-5">
+        <HeadFigure story={story} large />
+        <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+          Observed {formatValue(story.after, story.unit)} · typical{" "}
+          {formatValue(story.before, story.unit)}
+        </p>
+      </div>
       <div className="py-6">
         <TrendChart story={story} height={280} />
       </div>
-      <Section title="What happened">{story.narrative.what_happened}</Section>
+      <Section title="What happened">
+        <Highlighted text={story.narrative.what_happened} story={story} />
+      </Section>
       <Section title="Why it matters">{story.narrative.why_it_matters}</Section>
       <Section title="What to check">{story.narrative.what_to_check}</Section>
       {story.drivers.length ? (
         <Section title="Where it moved">
           <DriverChart story={story} />
         </Section>
-      ) : null}
+      ) : (
+        <Section title="Against the same weekday">
+          <WeekdayChart story={story} height={180} />
+        </Section>
+      )}
       <Section title="Business rules">
         <ul className="divide-y">
           {story.business_rules.map((rule) => (
@@ -112,7 +106,7 @@ function Body({
         <Button
           onClick={() =>
             onFollowUp(
-              `Look into this change from News: ${story.narrative.headline}. ${story.narrative.what_happened} What could explain it, and what should I check first?`,
+              `From News: ${story.narrative.headline}. What could explain this change, and what should I check first?`,
             )
           }
         >
@@ -127,10 +121,15 @@ function Body({
 export function StoryPanel({
   id,
   ids,
+  reaction,
   epoch,
   onOpen,
+  onReact,
   onFollowUp,
 }: {
+  /** The reader's reaction as the edition page holds it. */
+  reaction: Reaction | null | undefined;
+  onReact: (id: string, reaction: Reaction | null) => void;
   id: string;
   /** Stories the reader can see, in page order, for previous and next. */
   ids: string[];
@@ -169,11 +168,16 @@ export function StoryPanel({
             Next
             <ChevronRight className="size-4" />
           </Button>
-          {position >= 0 && (
-            <span className="ms-auto text-xs text-muted-foreground tabular-nums">
-              {position + 1} of {ids.length}
-            </span>
-          )}
+          <span className="ms-auto flex items-center gap-2">
+            {position >= 0 && (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {position + 1} of {ids.length}
+              </span>
+            )}
+            {story.data && (
+              <Reactions story={story.data} reaction={reaction} onReact={onReact} />
+            )}
+          </span>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8">
           {story.isError ? (

@@ -282,3 +282,19 @@ def test_the_update_route_stays_behind_the_administrator_gate():
     )
 
     assert users_router._admin in _dependency_calls(route)
+
+
+def test_story_routes_require_the_entitlement_too():
+    routes = {
+        (route.path, tuple(sorted(route.methods))): route
+        for route in engine_router.router.routes
+        if route.path == "/newspaper" or route.path.startswith("/stories/")
+    }
+
+    assert set(routes) == {
+        ("/newspaper", ("GET",)),
+        ("/stories/{story_id}", ("GET",)),
+        ("/stories/{story_id}/feedback", ("PUT",)),
+    }
+    for route in routes.values():
+        assert news_entitlement._news_user in _dependency_calls(route), route.path

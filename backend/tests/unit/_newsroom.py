@@ -35,7 +35,7 @@ def press_time(day: date) -> datetime:
 class Newsroom:
     """A newsroom over the warehouse, with schedules and audit captured."""
 
-    def __init__(self, monkeypatch, *, rows=None, bindings=None, writer=None):
+    def __init__(self, monkeypatch, *, rows=None, bindings=None, writer=None, judge=None):
         @asynccontextmanager
         async def lock(_key, **_kwargs):
             yield
@@ -54,12 +54,15 @@ class Newsroom:
         self.warehouse = warehouse.Warehouse(rows)
         self.journal = warehouse.Journal()
         self.bindings = warehouse.Bindings(bindings)
+        self.reactions = warehouse.Reactions()
         self.service = NewsroomService(
             IntelligenceService(self.journal, self.warehouse),
             self.warehouse,
             self.journal,
             self.bindings,
             writer,
+            judge,
+            self.reactions,
         )
 
     def user(self, name: str) -> dict:

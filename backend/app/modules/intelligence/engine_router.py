@@ -300,6 +300,19 @@ async def read_story(story_id: Annotated[str, Path(max_length=64)], user: NewsUs
     return await newsroom_service.story(story_id, user)
 
 
+class StoryReaction(Contract):
+    reaction: Literal["like", "dislike"] | None = None
+
+
+@router.put("/stories/{story_id}/feedback")
+async def react_to_story(
+    story_id: Annotated[str, Path(max_length=64)], body: StoryReaction, user: NewsUser
+):
+    from app.modules.intelligence.newsroom import newsroom_service
+
+    return await newsroom_service.react(story_id, body.reaction, user)
+
+
 @router.post("/news/{news_id}/investigate")
 async def investigate_news(news_id: str, user: NewsUser):
     return await intelligence_service.investigate(news_id, user)

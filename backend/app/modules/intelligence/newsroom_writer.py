@@ -58,6 +58,15 @@ REVIEW_INSTRUCTIONS = (
 VERDICT = {"states_cause", "writes_quantity_in_words"}
 
 
+POLARITY_INSTRUCTIONS = (
+    "You classify one business metric for an internal company newspaper. From its name, "
+    "description and unit, decide whether a HIGHER value is better or worse for the business. "
+    "Return only a JSON object with the single key higher_is, whose value is exactly one of "
+    "better, worse or neutral. Use neutral when it depends on context or cannot be told."
+)
+POLARITIES = ("better", "worse", "neutral")
+
+
 class NarrativeRejected(ValueError):
     """The draft broke a grounding rule; the template narrative stays."""
 
@@ -183,3 +192,43 @@ async def write_story(
         )
     check_verdict(_parse(str(review.get("content") or "")))
     return narrative, str(resolved.model)[:256]
+
+
+async def judge_polarity(
+    ir: SemanticModelIR, metric_name: str, *, provider=assistant_provider
+) -> str | None:
+    """Ask the model whether more of ``metric_name`` is good; ``None`` when unclear.
+
+    Only the metric's published name, description and unit are sent. The answer
+    is accepted only as one of three exact values, so a malformed reply leaves
+    the metric unjudged rather than coloured wrongly.
+    """
+    metric = ir.metric(metric_name)
+    if metric is None:
+        return None
+    async with asyncio.timeout(TIMEOUT_SECONDS):
+        resolved = await provider.resolve()
+        answer = await provider.complete(
+            messages=[
+                {"role": "system", "content": POLARITY_INSTRUCTIONS},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "name": metric.name,
+                            "description": metric.description,
+                            "unit": metric.unit,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            provider=resolved,
+        )
+    try:
+        verdict = _parse(str(answer.get("content") or ""))
+    except NarrativeRejected:
+        return None
+    if not isinstance(verdict, dict) or set(verdict) != {"higher_is"}:
+        return None
+    return verdict["higher_is"] if verdict["higher_is"] in POLARITIES else None

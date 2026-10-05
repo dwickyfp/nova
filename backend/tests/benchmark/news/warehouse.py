@@ -213,6 +213,13 @@ class Journal:
         ]
         return deepcopy(max(editions, key=lambda row: row.edition_date)) if editions else None
 
+    async def edition_stories(self, story_ids, scope, model):
+        return [
+            deepcopy(row)
+            for story_id in story_ids
+            if (row := await self.get("stories", story_id, scope, model))
+        ]
+
     async def shared_story(self, record_id, model):
         return deepcopy(self.rows.get(("stories", record_id)))
 
@@ -223,3 +230,23 @@ class Bindings:
 
     async def get_role_execution_user(self, role):
         return self.bindings.get(role)
+
+
+class Reactions:
+    """Per-reader reactions kept in memory, with the store's interface."""
+
+    def __init__(self):
+        self.saved: dict[tuple[str, str], dict] = {}
+
+    async def set(self, user_name, story, reaction):
+        from app.modules.intelligence.newsroom_feedback import features
+
+        if reaction is None:
+            self.saved.pop((user_name, story["id"]), None)
+            return
+        self.saved[(user_name, story["id"])] = {
+            "story_id": story["id"], "reaction": reaction, "features": features(story),
+        }
+
+    async def rows(self, user_name):
+        return [row for (owner, _), row in self.saved.items() if owner == user_name]

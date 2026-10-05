@@ -1,3 +1,4 @@
+import { threadTitle } from "./thread-title";
 import {
   memo,
   useCallback,
@@ -432,7 +433,7 @@ export function StudioChat({
       // The first question names the conversation, so the history list is
       // readable from the moment it appears. The backend keeps it in step on
       // the first turn; this only avoids a placeholder flashing first.
-      const thread = await agentsApi.createThread(agent.agent_id, title);
+      const thread = await agentsApi.createThread(agent.agent_id, threadTitle(title));
       setThreadId(thread.thread_id);
       // Tell the sidebar, so the new conversation is the highlighted one and the
       // history list refreshes to include it.

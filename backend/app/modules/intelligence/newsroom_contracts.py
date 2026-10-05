@@ -91,6 +91,9 @@ class Edition(Record):
     pressed_at: datetime
     config_digest: str = Field(min_length=64, max_length=64)
     story_ids: list[str] = Field(default_factory=list, max_length=24)
+    #: Whether a higher value of each metric is better for the business, as the
+    #: model judged it from the published definition. Absent means not judged.
+    polarity: dict[str, Literal["better", "worse", "neutral"]] = Field(default_factory=dict)
     #: Coverage notes for managers. Never contains story counts or slice values.
     warnings: list[str] = Field(default_factory=list, max_length=12)
 
@@ -154,6 +157,8 @@ class Story(Record):
     change: float
     relative_change: float | None = None
     severity: Literal["warning", "critical"]
+    #: Good or bad for the business; ``None`` when the metric was not judged.
+    impact: Literal["favorable", "unfavorable", "neutral"] | None = None
     rank: int = Field(ge=1, le=24)
     confidence: Confidence
     proofs: list[StoryProof] = Field(min_length=1, max_length=4)

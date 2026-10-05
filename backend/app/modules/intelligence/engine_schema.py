@@ -38,7 +38,8 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")"""
 
 async def ensure_engine_schema() -> None:
     from app.modules.access_control.business_policy import BUSINESS_POLICY_DDL
+    from app.modules.intelligence.newsroom_feedback import FEEDBACK_DDL
 
-    for ddl in ENGINE_DDL:
+    for ddl in (*ENGINE_DDL, FEEDBACK_DDL):
         await db.execute_system(ddl)
     await db.execute_system(BUSINESS_POLICY_DDL)

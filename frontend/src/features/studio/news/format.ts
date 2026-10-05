@@ -45,10 +45,43 @@ export function kicker(story: Story): string {
     : "Whole view";
 }
 
-/** Critical first, then the order the edition ranked them. */
+/** The reader's own order from the server; the edition's order when absent. */
 export function byPriority(a: Story, b: Story): number {
+  if (a.score != null && b.score != null && a.score !== b.score)
+    return b.score - a.score;
   return (
     Number(b.severity === "critical") - Number(a.severity === "critical") ||
     a.rank - b.rank
   );
+}
+
+export type Tone = "good" | "bad" | "neutral";
+
+/**
+ * Whether the change is good for the business. The model judges each metric
+ * once; when it has not, a rise reads as good and a fall as bad.
+ */
+export function tone(story: Story): Tone {
+  if (story.impact === "favorable") return "good";
+  if (story.impact === "unfavorable") return "bad";
+  if (story.impact === "neutral") return "neutral";
+  return story.change > 0 ? "good" : "bad";
+}
+
+export const TONE_TEXT: Record<Tone, string> = {
+  good: "text-success-strong",
+  bad: "text-destructive",
+  neutral: "text-foreground",
+};
+
+/** "−34.6% (−IDR 134.6M)": the relative and absolute change together. */
+export function deltaLine(story: Story): string {
+  const sign = story.change > 0 ? "+" : "−";
+  const amount = `${sign}${formatValue(Math.abs(story.change), story.unit, true)}`;
+  const relative = formatChange(story.relative_change);
+  return relative ? `${relative} (${amount})` : amount;
+}
+
+export function weekdayName(story: Story): string {
+  return calendarDay(story.edition_date).toLocaleDateString("en", { weekday: "long" });
 }

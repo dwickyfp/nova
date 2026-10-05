@@ -85,7 +85,11 @@ async def evaluate(seed: int = dataset.SEED) -> dict:
         stack.enter_context(patch.object(newsroom, "configure_schedule", schedule))
         house, journal = warehouse.Warehouse(dataset.generate(seed)), warehouse.Journal()
         service = NewsroomService(
-            IntelligenceService(journal, house), house, journal, warehouse.Bindings()
+            IntelligenceService(journal, house),
+            house,
+            journal,
+            warehouse.Bindings(),
+            feedback=warehouse.Reactions(),
         )
         cfg = config()
         await service.configure(

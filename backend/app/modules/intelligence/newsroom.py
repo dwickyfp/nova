@@ -51,6 +51,7 @@ from app.modules.intelligence.newsroom_contracts import (
     StoryProof,
     StorySlice,
 )
+from app.modules.intelligence.newsroom_feedback import feedback_store, rank
 from app.modules.intelligence.schedules import configure_schedule
 from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.ml_engine.analysis import detect_change
@@ -276,6 +277,30 @@ def rank_candidates(candidates: list[Candidate], limit: int) -> list[Candidate]:
     return kept[:limit]
 
 
+def impact(polarity: str | None, change: float) -> str | None:
+    """Good or bad for the business, from the metric's judged polarity."""
+    if polarity is None:
+        return None
+    if polarity == "neutral":
+        return "neutral"
+    return "favorable" if (change > 0) == (polarity == "better") else "unfavorable"
+
+
+def story_highlights(story: Story) -> list[dict]:
+    """Exact strings a reader's page may emphasise; all come from proven values."""
+    figures = [
+        format_number(story.after, story.unit),
+        format_number(story.before, story.unit),
+        format_number(abs(story.change), story.unit),
+    ]
+    if story.relative_change is not None:
+        figures.append(format_percent(story.relative_change))
+    subjects = [story.metric_label] + ([story.slice.value] if story.slice else [])
+    return [{"text": text, "kind": "change"} for text in figures[2:]] + [
+        {"text": text, "kind": "figure"} for text in figures[:2]
+    ] + [{"text": text, "kind": "subject"} for text in subjects]
+
+
 def story_slots(story: Story, config: NewsConfig) -> dict[str, str]:
     """Every number a narrative may state, already formatted from proven rows."""
     weekday = story.edition_date.strftime("%A")
@@ -396,6 +421,7 @@ def public_story(story: Story) -> dict:
             "change",
             "relative_change",
             "severity",
+            "impact",
             "rank",
             "series",
             "drivers",
@@ -407,6 +433,7 @@ def public_story(story: Story) -> dict:
         "view_id": story.semantic.view_id,
         "semantic_version": story.semantic.version,
         "confidence": story.confidence.label,
+        "highlights": story_highlights(story),
     }
 
 
@@ -494,12 +521,16 @@ class NewsroomService:
         repository=intelligence_repository,
         tasks=task_orchestration_repository,
         writer=None,
+        judge=None,
+        feedback=feedback_store,
     ):
         self.service = service
         self.semantic = semantic
         self.repository = repository
         self.tasks = tasks
         self.writer = writer
+        self.judge = judge
+        self.feedback = feedback
 
     # ── Settings ────────────────────────────────────────────────────────────
 
@@ -701,6 +732,7 @@ class NewsroomService:
             change=detection["change"],
             relative_change=detection["relative_change"],
             severity=detection["severity"],
+            impact=impact(edition.polarity.get(group.metric), detection["change"]),
             rank=rank,
             confidence=Confidence(dimension="detection", method=DETECTION_METHOD, label="medium"),
             proofs=proofs,
@@ -753,9 +785,11 @@ class NewsroomService:
         groups, parsed, candidates, warnings = await self._detect(ref, config, day, user, budget)
         scope = Scope.from_user(user).model_copy(update={"session_id": None})
         edition_id = fingerprint([view_id, day.isoformat(), scope.principal, scope.active_role])
+        polarity = await self._polarity(view_id, ref, config, ir, scope, budget)
         async with metadata_lock(f"newsroom:{view_id}"):
             prior = await self.repository.get("editions", edition_id, scope, Edition)
             edition = Edition(
+                polarity=polarity,
                 id=edition_id,
                 scope=scope,
                 semantic=ref,
@@ -821,6 +855,31 @@ class NewsroomService:
             "rejected": rejected,
             "warnings": warnings,
         }
+
+    async def _polarity(
+        self,
+        view_id: str,
+        ref: SemanticRef,
+        config: NewsConfig,
+        ir: SemanticModelIR,
+        scope: Scope,
+        budget: CycleBudget,
+    ) -> dict[str, str]:
+        """Each metric's judged direction of "good", reused while the view is unchanged."""
+        latest = await self.repository.latest_edition(view_id, scope, Edition)
+        known = dict(latest.polarity) if latest and latest.semantic == ref else {}
+        if self.judge is None or config.narrative != "model":
+            return known
+        for metric in config.metrics:
+            if metric in known or 120 - (monotonic() - budget.started) < 60:
+                continue
+            try:
+                verdict = await self.judge(ir, metric)
+            except Exception:
+                verdict = None
+            if verdict is not None:
+                known[metric] = verdict
+        return {name: value for name, value in known.items() if name in config.metrics}
 
     async def _write(
         self,
@@ -959,11 +1018,9 @@ class NewsroomService:
             stories = [target]
         else:
             checked = edition
-            stories = [
-                story
-                for story_id in edition.story_ids
-                if (story := await self.repository.get("stories", story_id, edition.scope, Story))
-            ]
+            stories = await self.repository.edition_stories(
+                edition.story_ids, edition.scope, Story
+            )
         digests = await self._reader_digests(checked, config, user, budget)
         return edition, sorted(
             (story for story in stories if self._proven(story, digests)),
@@ -986,6 +1043,15 @@ class NewsroomService:
                     "stories": [public_story(story) for story in stories],
                 }
             )
+        # One order across every view the reader can see; the first is their head story.
+        ranked = rank(
+            [story for section in sections for story in section["stories"]],
+            await self.feedback.rows(user["username"]),
+        )
+        for section in sections:
+            section["stories"] = [
+                story for story in ranked if story["view_id"] == section["view_id"]
+            ]
         shown = sum(len(section["stories"]) for section in sections)
         await self._audit_read(user, "READ_NEWSPAPER", "newspaper", "SUCCESS", "ALLOW", shown)
         return {
@@ -1011,6 +1077,16 @@ class NewsroomService:
             "pressed_at": found[0].pressed_at.isoformat(),
         }
 
+    async def react(self, story_id: str, reaction: str | None, user: dict) -> dict:
+        """Record the reader's like or dislike for a story they can read."""
+        # The same proof as opening the story: no reaction to an unseen story.
+        story = await self.story(story_id, user)
+        await self.feedback.set(user["username"], story, reaction)
+        await self._audit_read(
+            user, "REACT_STORY", story_id[:64], "SUCCESS", (reaction or "clear").upper(), 1
+        )
+        return {"id": story["id"], "reaction": reaction}
+
     @staticmethod
     async def _audit_read(user, action, name, status, decision, rows) -> None:
         await write_audit_log(
@@ -1034,4 +1110,10 @@ async def _model_writer(story, config, ir, known_values):
     return await write_story(story, config, ir, known_values)
 
 
-newsroom_service = NewsroomService(writer=_model_writer)
+async def _model_judge(ir, metric):
+    from app.modules.intelligence.newsroom_writer import judge_polarity
+
+    return await judge_polarity(ir, metric)
+
+
+newsroom_service = NewsroomService(writer=_model_writer, judge=_model_judge)

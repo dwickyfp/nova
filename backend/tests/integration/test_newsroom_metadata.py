@@ -55,6 +55,10 @@ async def newsroom_db(request, monkeypatch, docker_services):
     try:
         yield marker
     finally:
+        await db.execute_system(
+            "DELETE FROM NOVA_SYSTEM.CONFIG_INTELLIGENCE_STORY_FEEDBACK WHERE user_name=%s",
+            [marker],
+        )
         for table in ("CONFIG_INTELLIGENCE_EDITIONS", "CONFIG_INTELLIGENCE_STORIES"):
             await db.execute_system(
                 f"DELETE FROM NOVA_SYSTEM.{table} WHERE principal=%s", [marker]
@@ -192,6 +196,12 @@ async def test_a_story_roundtrips_with_exact_figures_and_is_found_by_id_only(new
     saved = await repository.save("stories", story)
 
     assert await repository.shared_story(saved.id, Story) == saved
+    revised = await repository.save(
+        "stories", saved.model_copy(update={"rank": 2}), expected_revision=1
+    )
+    assert await repository.edition_stories([saved.id, "0" * 64], scope, Story) == [revised]
+    assert await repository.edition_stories([], scope, Story) == []
+    saved = revised
     assert await repository.get("stories", saved.id, scope, Story) == saved
     assert await repository.shared_story("0" * 64, Story) is None
     stranger = scope.model_copy(update={"principal": "someone_else"})
@@ -199,3 +209,36 @@ async def test_a_story_roundtrips_with_exact_figures_and_is_found_by_id_only(new
     with pytest.raises(Exception) as refused:
         await repository.save("stories", saved.model_copy(update={"scope": stranger, "rank": 2}))
     assert getattr(refused.value, "status_code", None) == 404
+
+
+async def test_reactions_roundtrip_per_reader_and_the_migration_is_idempotent(newsroom_db):
+    from app.modules.intelligence.newsroom_feedback import feedback_store
+
+    for statement in Path("migrations/20261007_news_feedback.sql").read_text().split(";"):
+        sql = "\n".join(
+            line for line in statement.splitlines() if not line.strip().startswith("--")
+        ).strip()
+        if sql:
+            await db.execute_system(sql)
+    reader = newsroom_db
+    story = {
+        "id": "s" * 64, "view_id": "view", "metric": "revenue", "change": -5.0,
+        "slice": {"dimension": "city", "value": "Bandung"},
+    }
+
+    await feedback_store.set(reader, story, "like")
+    await feedback_store.set(reader, story, "dislike")
+
+    assert await feedback_store.rows(reader) == [
+        {
+            "story_id": "s" * 64,
+            "reaction": "dislike",
+            "features": {
+                "view": "view", "metric": "revenue", "direction": "decrease",
+                "dimension": "city", "slice": "city=Bandung",
+            },
+        }
+    ]
+    assert await feedback_store.rows("someone-else-" + reader) == []
+    await feedback_store.set(reader, story, None)
+    assert await feedback_store.rows(reader) == []

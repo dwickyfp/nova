@@ -44,7 +44,17 @@ export type Story = {
   narrative: StoryNarrative;
   business_rules: BusinessRule[];
   narrative_source: "template" | "model";
+  /** Good or bad for the business as the model judged the metric; null when unjudged. */
+  impact?: "favorable" | "unfavorable" | "neutral" | null;
+  /** Verified strings the page may emphasise inside the narrative. */
+  highlights?: { text: string; kind: "change" | "figure" | "subject" }[];
+  /** This reader's own reaction and where the story sits in their order. */
+  reaction?: Reaction | null;
+  score?: number;
+  head?: boolean;
+  reason?: string;
 };
+export type Reaction = "like" | "dislike";
 export type StoryDetail = Story & { view_name: string; pressed_at: string };
 export type NewspaperSection = {
   view_id: string;
@@ -63,6 +73,11 @@ export const newspaperApi = {
     api.get<Newspaper>(
       `/intelligence/newspaper${edition ? `?edition=${encodeURIComponent(edition)}` : ""}`,
       signal,
+    ),
+  react: (id: string, reaction: Reaction | null) =>
+    api.put<{ id: string; reaction: Reaction | null }>(
+      `/intelligence/stories/${encodeURIComponent(id)}/feedback`,
+      { reaction },
     ),
   story: (id: string, signal?: AbortSignal) =>
     api.get<StoryDetail>(

@@ -55,6 +55,17 @@ function story(overrides: Partial<Story> = {}): Story {
       },
     ],
     narrative_source: "model",
+    impact: "unfavorable",
+    highlights: [
+      { text: "IDR 134,621,612", kind: "change" },
+      { text: "IDR 254,505,601", kind: "figure" },
+      { text: "Revenue", kind: "subject" },
+      { text: "Bandung", kind: "subject" },
+    ],
+    reaction: null,
+    score: 2.3,
+    head: true,
+    reason: "Largest move in this edition",
     ...overrides,
   };
 }
@@ -66,6 +77,9 @@ const online = story({
   rank: 2,
   relative_change: 0.143,
   change: 40000000,
+  impact: "favorable",
+  score: 1.1,
+  head: false,
   narrative: { ...story().narrative, headline: "Revenue rose 14.3% in Online" },
 });
 const paper: Newspaper = {
@@ -115,7 +129,7 @@ it.each([
   await expect
     .element(screen.getByRole("heading", { level: 2, name: "Revenue fell 34.6% in Bandung" }))
     .toBeVisible();
-  await expect.element(screen.getByText("−34.6%").first()).toBeVisible();
+  await expect.element(screen.getByText("−34.6% (−IDR 134.6M)").first()).toBeVisible();
   await expect
     .element(screen.getByRole("heading", { level: 3, name: "Revenue rose 14.3% in Online" }))
     .toBeVisible();
@@ -123,14 +137,34 @@ it.each([
   await expect.element(screen.getByText("1 critical")).toBeVisible();
   // One long column: every story is its own block, divided from the one before.
   const entries = [...document.querySelectorAll('[data-slot="news-entry"]')];
-  expect(entries.map((entry) => entry.querySelector("span")?.textContent)).toEqual(["01", "02"]);
+  expect(document.body.textContent).not.toMatch(/\b0[12]\b/);
+  await expect.element(screen.getByText("Top story for you")).toBeVisible();
+  await expect.element(screen.getByText(/Largest move in this edition/)).toBeVisible();
+  // The head figure leads each story; its change is coloured by business impact.
+  const tones = [...document.querySelectorAll("[data-tone]")].map((node) => [
+    node.getAttribute("data-tone"),
+    node.className.includes("text-destructive"),
+    node.className.includes("text-success-strong"),
+  ]);
+  expect(tones).toEqual([
+    ["bad", true, false],
+    ["good", false, true],
+  ]);
+  expect(entries[0].querySelector('[data-highlight="subject"]')?.textContent).toBe("Revenue");
+  expect(
+    [...document.querySelectorAll("[data-chart-kind]")].map((node) =>
+      node.getAttribute("data-chart-kind"),
+    ),
+  ).toEqual(["weekday"]);
   expect(getComputedStyle(entries[0]).borderTopWidth).toBe("0px");
   expect(getComputedStyle(entries[1]).borderTopWidth).toBe("1px");
   expect(entries[1].getBoundingClientRect().top).toBeGreaterThan(
     entries[0].getBoundingClientRect().bottom - 1,
   );
   await expect.poll(() => document.querySelectorAll('[data-testid="news-chart"] svg').length).toBe(2);
-  await screen.getByRole("button", { name: "Revenue fell 34.6% in Bandung" }).click();
+  await screen
+    .getByRole("button", { name: "Revenue fell 34.6% in Bandung", exact: true })
+    .click();
   expect(onOpen).toHaveBeenCalledWith("story-bandung");
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
   for (const element of document.querySelectorAll("article, figure"))
@@ -191,6 +225,105 @@ it("drops the cached edition when the signed-in principal changes", async () => 
 
   await expect.element(screen.getByText("Nothing material in this edition")).toBeVisible();
   expect(screen.getByText("Revenue fell 34.6% in Bandung").query()).toBeNull();
+});
+
+it("colours by direction when the metric has not been judged", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue({
+    ...paper,
+    sections: [{ ...paper.sections[0], stories: [story({ impact: null })] }],
+  });
+  await mount();
+
+  await expect.poll(() => document.querySelector("[data-tone]")?.getAttribute("data-tone")).toBe("bad");
+});
+
+it("rotates the chart form down the page", async () => {
+  const many = [0, 1, 2, 3].map((index) =>
+    story({
+      id: `s${index}`,
+      score: 9 - index,
+      head: index === 0,
+      slice: { dimension: "city", value: `City ${index}` },
+      narrative: { ...story().narrative, headline: `Story ${index}` },
+    }),
+  );
+  vi.spyOn(newspaperApi, "read").mockResolvedValue({
+    ...paper,
+    sections: [{ ...paper.sections[0], stories: many }],
+  });
+  await mount();
+
+  await expect
+    .poll(() =>
+      [...document.querySelectorAll("[data-chart-kind]")].map((node) =>
+        node.getAttribute("data-chart-kind"),
+      ),
+    )
+    .toEqual(["weekday", "trend", "level"]);
+  await expect.poll(() => document.querySelectorAll('[data-testid="news-chart"] svg').length).toBe(4);
+});
+
+it("records a like or dislike without opening the story, and clears it on a second press", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
+  const react = vi
+    .spyOn(newspaperApi, "react")
+    .mockImplementation(async (id, reaction) => ({ id, reaction }));
+  const onOpen = vi.fn();
+  const screen = await mount({ onOpen });
+
+  const like = screen.getByRole("button", { name: "More like this: Revenue fell 34.6% in Bandung" });
+  await expect.element(like).toHaveAttribute("aria-pressed", "false");
+  await like.click();
+  await expect.element(like).toHaveAttribute("aria-pressed", "true");
+  expect(react).toHaveBeenLastCalledWith("story-bandung", "like");
+
+  await screen
+    .getByRole("button", { name: "Less like this: Revenue fell 34.6% in Bandung" })
+    .click();
+  expect(react).toHaveBeenLastCalledWith("story-bandung", "dislike");
+  await expect.element(like).toHaveAttribute("aria-pressed", "false");
+
+  await screen
+    .getByRole("button", { name: "Less like this: Revenue fell 34.6% in Bandung" })
+    .click();
+  expect(react).toHaveBeenLastCalledWith("story-bandung", null);
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+it("puts the mark back when a reaction cannot be saved", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
+  vi.spyOn(newspaperApi, "react").mockRejectedValue(new ApiError(500, "Down"));
+  const screen = await mount();
+
+  const like = screen.getByRole("button", { name: "More like this: Revenue fell 34.6% in Bandung" });
+  await like.click();
+
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Your reaction could not be saved");
+  await expect.element(like).toHaveAttribute("aria-pressed", "false");
+});
+
+it("orders stories the way the server ranked them for this reader", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue({
+    ...paper,
+    sections: [
+      {
+        ...paper.sections[0],
+        stories: [
+          story({ score: 0.4, head: false, reaction: "dislike" }),
+          { ...online, score: 3.2, head: true, reason: "Matches stories you liked: Channel · Online" },
+        ],
+      },
+    ],
+  });
+  const screen = await mount();
+
+  await expect
+    .element(screen.getByRole("heading", { level: 2, name: "Revenue rose 14.3% in Online" }))
+    .toBeVisible();
+  await expect.element(screen.getByText(/Matches stories you liked: Channel · Online/)).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Less like this: Revenue fell 34.6% in Bandung" }))
+    .toHaveAttribute("aria-pressed", "true");
 });
 
 it("opens a story from anywhere in its block", async () => {
@@ -265,6 +398,9 @@ it.each([
     await expect.element(panel.getByRole("heading", { level: 3, name })).toBeVisible();
   await expect.element(panel.getByText("Whole view")).toBeVisible();
   await expect.element(panel.getByText("1 of 2")).toBeVisible();
+  await expect
+    .element(panel.getByRole("button", { name: "More like this: Revenue fell 34.6% in Bandung" }))
+    .toBeVisible();
   await expect.element(panel.getByRole("button", { name: "Previous" })).toBeDisabled();
   await panel.getByRole("button", { name: "Next" }).click();
   expect(onOpen).toHaveBeenLastCalledWith("story-online");
@@ -273,7 +409,9 @@ it.each([
     .toBeVisible();
   await expect.element(screen.getByText(/must be explained in the weekly review/)).toBeVisible();
   await screen.getByRole("button", { name: "Ask Studio about this" }).click();
-  expect(onFollowUp.mock.calls[0][0]).toContain("Revenue fell 34.6% in Bandung");
+  expect(onFollowUp.mock.calls[0][0]).toBe(
+    "From News: Revenue fell 34.6% in Bandung. What could explain this change, and what should I check first?",
+  );
   await screen.getByRole("button", { name: "Close" }).click();
   expect(onOpen).toHaveBeenLastCalledWith();
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);

@@ -19,6 +19,31 @@ export function authHeaders(extra?: Record<string, string>) {
  * differently (for example, an idempotent delete whose 404 means "already
  * gone") branch on `status`; everything else reads `message`.
  */
+/**
+ * A readable message from an error body. Validation errors arrive as a list of
+ * objects, which would otherwise print as "[object Object]".
+ */
+export function errorDetail(detail: unknown, fallback = 'Request failed'): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) =>
+        typeof item === 'string'
+          ? item
+          : item && typeof item === 'object' && typeof (item as { msg?: unknown }).msg === 'string'
+            ? (item as { msg: string }).msg
+            : ''
+      )
+      .filter(Boolean)
+    if (messages.length) return messages.join('. ')
+  }
+  if (detail && typeof detail === 'object') {
+    const message = (detail as { message?: unknown; msg?: unknown }).message ?? (detail as { msg?: unknown }).msg
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return fallback
+}
+
 export class ApiError extends Error {
   readonly status: number
 
@@ -50,7 +75,7 @@ async function request<T>(path: string, options: RequestInit & { signal?: AbortS
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new ApiError(res.status, err.detail || 'Request failed')
+    throw new ApiError(res.status, errorDetail(err.detail))
   }
 
   if (res.status === 204) {
@@ -108,7 +133,7 @@ export const api = {
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
-        throw new Error(err.detail || 'Upload failed')
+        throw new Error(errorDetail(err.detail, 'Upload failed'))
       }
       return res.json() as Promise<T>
     })
