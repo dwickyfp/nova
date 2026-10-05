@@ -139,6 +139,7 @@ statement
     | novaStageInsertStatement
     | novaForcePasswordStatement
     | novaSecurityShowStatement
+    | novaStreamStatement
     | novaForecastStatement
     | novaPlanAdvisorStatement
 
@@ -819,6 +820,19 @@ novaForcePasswordStatement
 
 novaUserIdentity
     : identifierOrString (('.' | '-') identifierOrString)* (AT identifierOrString)?
+    ;
+
+novaStreamStatement
+    : CREATE STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName APPEND_ONLY EQ TRUE
+    | DROP STREAM (IF EXISTS)? novaStreamName
+    | (DESC | DESCRIBE) STREAM novaStreamName
+    | SHOW STREAM STATUS novaStreamName
+    | SHOW STREAM BACKLOG novaStreamName
+    | SHOW STREAMS
+    ;
+
+novaStreamName
+    : (identifier | DEFAULT) (DOT_IDENTIFIER | '.' (identifier | DEFAULT))*
     ;
 
 novaSecurityShowStatement
@@ -3692,6 +3706,7 @@ nonReserved
     // identifier -- without it these new tokens would become reserved spellings.
     | ML_MODEL | INPUT | TARGET | SERIES | ALGORITHM | TEST_SIZE | FEATURES | HYPERPARAMETERS
     | COPY | REQUIRE | CHANGE | AVAILABLE | ML_FORECAST | HORIZON | FREQUENCY
+    | STREAMS | APPEND_ONLY | BACKLOG
     // NOVA-END
     | ARRAY_AGG | ARRAY_AGG_DISTINCT | ASSERT_ROWS | AWARE
     | BACKEND | BACKENDS | BACKUP | BEGIN | BITMAP_UNION | BLACKLIST | BLACKHOLE | BINARY | BODY | BOOLEAN | BRANCH | BROKER | BUCKETS

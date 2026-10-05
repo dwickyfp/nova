@@ -75,6 +75,8 @@ def _query(parsed: ParsedStatement) -> Statement:
 
 
 def default_builders() -> AstBuilderRegistry:
+    from app.sql_frontend.streams import build_stream_statement
+
     registry = AstBuilderRegistry()
     for name, builder in {
         "CreateMlModelStatementContext": CreateMLModelStatement,
@@ -89,6 +91,7 @@ def default_builders() -> AstBuilderRegistry:
         "NovaCopyStatementContext": StageAwareStatement,
         "NovaStageInsertStatementContext": StageAwareStatement,
         "NovaSecurityShowStatementContext": SecurityStatement,
+        "NovaStreamStatementContext": build_stream_statement,
         "CreateRoleStatementContext": SecurityStatement,
         "CreateUserStatementContext": SecurityStatement,
         "AlterUserStatementContext": SecurityStatement,
