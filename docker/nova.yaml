@@ -22,6 +22,7 @@ proxy:
   max_connections: 100
   connect_timeout: 10
   read_timeout: 300
+  max_rows: 100000            # larger results are refused, never truncated
 
 auth:
   session_ttl: 86400           # 24 hours

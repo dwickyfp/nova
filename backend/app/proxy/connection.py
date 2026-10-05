@@ -37,9 +37,10 @@ from app.proxy.auth import (
     StarRocksLogin,
     open_starrocks_login,
 )
-from app.proxy.executor import ProxyQueryExecutor
+from app.proxy.executor import ProxyQueryExecutor, WireResult
 from app.proxy.protocol import (
     CLIENT_DEPRECATE_EOF,
+    CLIENT_MULTI_RESULTS,
     COM_CHANGE_USER,
     COM_FIELD_LIST,
     COM_INIT_DB,
@@ -51,12 +52,14 @@ from app.proxy.protocol import (
     COM_STMT_EXECUTE,
     COM_STMT_PREPARE,
     COM_STMT_RESET,
+    DEFAULT_SERVER_STATUS,
     ER_ACCESS_DENIED_ERROR,
     ER_NO_DB_ERROR,
     ER_NOT_SUPPORTED_YET,
     ER_UNKNOWN_COM_ERROR,
     MAX_PACKET_SIZE,
     SERVER_CAPABILITIES,
+    SERVER_MORE_RESULTS_EXISTS,
     ProtocolError,
     build_error_packet,
     build_handshake_packet,
@@ -65,12 +68,12 @@ from app.proxy.protocol import (
     encode_packet,
     parse_handshake_response,
 )
-from app.proxy.session import SessionState
+from app.proxy.session import SessionState, quote_database_target
 
 logger = logging.getLogger(__name__)
 
-#: Advertised thread id. StarRocks' own connection ids are not visible here, so
-#: the proxy mints its own; clients only use it for ``KILL``.
+#: Fallback thread id. The handshake normally announces the engine's own
+#: connection id (see ``StarRocksLogin.connection_id``).
 _START_CONNECTION_ID = 1000
 
 
@@ -229,6 +232,8 @@ class ProxyConnection:
             )
             return False
 
+        if upstream.connection_id:
+            self._ctx.connection_id = upstream.connection_id
         try:
             handshake = build_handshake_packet(self._ctx.connection_id, upstream.scramble)
             self._writer.write(encode_packet(handshake, 0))
@@ -389,32 +394,65 @@ class ProxyConnection:
 
         if result.error is not None:
             PROXY_QUERIES.labels(status="error").inc()
-            await self._write_error(result.error_code, result.error)
-            return
+        else:
+            PROXY_QUERIES.labels(status="success").inc()
+        sequence = 1
+        # A client that did not negotiate multi-results cannot read more than
+        # one response per command; it gets the final one, as before.
+        preceding = result.preceding if self._ctx.capabilities & CLIENT_MULTI_RESULTS else []
+        for part in preceding:
+            payloads = self._response_payloads(part, more_results=True)
+            await self._write_payloads(payloads, start_sequence=sequence)
+            sequence = (sequence + len(payloads)) % 256
+        await self._write_payloads(
+            self._response_payloads(result, more_results=False), start_sequence=sequence
+        )
 
-        PROXY_QUERIES.labels(status="success").inc()
+    def _response_payloads(self, result: WireResult, *, more_results: bool) -> list[bytes]:
+        """Packets for one statement's response.
+
+        ``more_results`` marks every response of a multi-statement command but
+        the last, so the client keeps reading. An error always ends the command.
+        """
+        status = DEFAULT_SERVER_STATUS | (SERVER_MORE_RESULTS_EXISTS if more_results else 0)
+        if result.error is not None:
+            return [
+                build_error_packet(
+                    result.error_code, result.error, capabilities=self._ctx.capabilities
+                )
+            ]
         if result.is_resultset:
-            payloads = build_resultset(
+            return build_resultset(
                 result.columns,
                 result.rows,
                 capabilities=self._ctx.capabilities,
+                status_flags=status,
             )
-            await self._write_payloads(payloads)
-            return
-
         # No column metadata: a single OK packet, with the affected row count
         # written as a length-encoded integer (see protocol.build_ok_packet).
-        await self._write_payloads(
-            [build_ok_packet(result.ok_affected, 0, capabilities=self._ctx.capabilities)]
-        )
+        return [
+            build_ok_packet(
+                result.ok_affected,
+                0,
+                status_flags=status,
+                capabilities=self._ctx.capabilities,
+            )
+        ]
 
     async def _on_init_db(self, body: bytes) -> None:
+        """``COM_INIT_DB`` — what the mysql CLI sends for ``use <db>``.
+
+        It is answered by running ``USE`` through the same path as a ``USE``
+        statement, so the engine validates the database before the session
+        records it; an unknown database is refused here rather than failing
+        every later statement.
+        """
         database = body.decode("utf-8", errors="surrogateescape").strip()
         if not database:
             await self._write_error(ER_NO_DB_ERROR, "No database selected")
             return
-        self._ctx.session.set_database(database)
-        await self._write_payloads([build_ok_packet(0, 0, capabilities=self._ctx.capabilities)])
+        statement = f"USE {quote_database_target(database)}"
+        await self._on_query(statement.encode("utf-8", errors="surrogateescape"))
 
     async def _on_unsupported(self, command: int) -> None:
         """Refuse a command Nova does not implement, in MySQL's own idiom.

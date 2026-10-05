@@ -139,15 +139,19 @@ def _redact_error_message(message: str) -> str:
 #: table reference) are the same token shape and cannot be told apart; with it,
 #: only a position the engine would read as a table is rewritten.
 #:
-#: Identifier quoting accepted on each segment, matching the rest of the dialect.
+#: Identifier quoting is accepted on the database and table segments.
 _SEGMENT = r"`?[A-Za-z_][\w$]*`?"
 
 #: A position the engine reads as a table: after ``FROM``/``JOIN``/``INTO``/
 #: ``UPDATE``/``TABLE``, or after a comma separating entries in a table list.
 #:
-#: The middle segment must be exactly ``default`` (bare or backticked) — that
+#: The middle segment must be exactly an *unquoted* ``default`` — that
 #: placeholder is the whole point, and requiring it keeps the routine from
-#: touching ordinary three-part names such as ``mydb.bronze.orders``.
+#: touching ordinary three-part names such as ``mydb.bronze.orders``. ``DEFAULT``
+#: is reserved in StarRocks, so the bare spelling can only be the placeholder.
+#: A backquoted ``\`default\``` is a real database name — Hive, Iceberg and Paimon
+#: catalogs expose one, addressed as ``catalog.\`default\`.table`` — and is passed
+#: to the engine unchanged.
 #:
 #: The comma alternative is intentionally *not* anchored to a FROM clause: doing
 #: so needs real clause tracking, which is the parser's job, not this routine's.
@@ -158,7 +162,7 @@ _SEGMENT = r"`?[A-Za-z_][\w$]*`?"
 #: recorded here rather than hidden.
 _DEFAULT_SCHEMA_TABLE_REF = re.compile(
     rf"""(?:\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+|,\s*)
-         (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
+         (?P<db>{_SEGMENT})\s*\.\s*default\s*\.\s*(?P<table>{_SEGMENT})""",
     re.IGNORECASE | re.VERBOSE,
 )
 
@@ -181,7 +185,7 @@ _DEFAULT_SCHEMA_TABLE_REF = re.compile(
 _DESCRIBE_TABLE_REF = re.compile(
     rf"""\b(?:DESCRIBE|DESC)\s+
          (?:{_SEGMENT}\s*\.\s*)?
-         (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
+         (?P<db>{_SEGMENT})\s*\.\s*default\s*\.\s*(?P<table>{_SEGMENT})""",
     re.IGNORECASE | re.VERBOSE,
 )
 
@@ -195,8 +199,8 @@ def _mask_literals_and_comments(sql: str) -> str:
     text. ``\\x00`` cannot occur in SQL text and is not whitespace, so it can
     never create or destroy a word boundary around live SQL.
 
-    Backtick-quoted *identifiers* are deliberately **not** masked: a backticked
-    ``db.default.table`` is exactly what this routine exists to rewrite. Single
+    Backtick-quoted *identifiers* are deliberately **not** masked: the database
+    and table segments around the placeholder may be quoted. Single
     quotes are always a string literal. Double quotes are ambiguous in StarRocks
     (identifier or string depending on ``ANSI_QUOTES``), and masking them is the
     safe direction — a genuine string must never be rewritten, and an identifier
@@ -731,6 +735,7 @@ class QueryService:
             if analysis
             else None,
             execution_failure=getattr(exc, "execution_failure", None),
+            engine_error_code=getattr(exc, "engine_code", None),
         )
 
     async def get_history(

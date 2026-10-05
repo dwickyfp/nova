@@ -41,6 +41,7 @@ Environment variables (all optional; defaults match the `proxy:` block in
 | `PROXY_MAX_CONNECTIONS` | `100` | Concurrent client limit; connections past it are refused at accept time |
 | `PROXY_CONNECT_TIMEOUT` | `10` | Seconds to wait for a StarRocks login |
 | `PROXY_READ_TIMEOUT` | `300` | Seconds of client silence before the connection is closed |
+| `PROXY_MAX_ROWS` | `100000` | Largest result set returned for one statement; a larger result is refused with error 1235, never truncated |
 
 The proxy shares `STARROCKS_HOST` / `STARROCKS_FE_MYSQL_PORT` with the rest of
 the backend — that is where it authenticates.
@@ -51,8 +52,14 @@ the backend — that is where it authenticates.
 |---|---|
 | `SELECT * FROM @stage.file.csv` | Rewritten to `FILES()` with injected credentials, then executed |
 | `SELECT ...` / DDL / DML | Executed through `QueryService`, unmodified |
+| `UPDATE` / `DELETE` / `TRUNCATE` / `DROP` | Executed directly: a MySQL client has no confirmation exchange, so the statement it sends is the explicit request. The guard, engine authorization and audit still apply |
 | `SHOW DATABASES` | Executed, then `NOVA_SYSTEM`, `information_schema`, `sys`, `_statistics_` are filtered out |
-| `USE <db>` | Tracked in the proxy's session and applied to the engine connection |
+| `USE <db>` / `USE <catalog>.<db>` / `COM_INIT_DB` | Validated by the engine, then tracked in the proxy's session and re-selected before each statement |
+| `USE 'catalog'` / `SET CATALOG <name>` | Executed; the previously selected database is no longer re-selected |
+| `SET [SESSION] TRANSACTION ...` | Forwarded; the engine accepts it as a no-op. `BEGIN`/`COMMIT`/`ROLLBACK` and `autocommit=0` are refused with 1235 |
+| `SET NAMES utf8mb4 [COLLATE utf8mb4_*]` | Acknowledged; the proxy always speaks UTF-8. Other character sets are refused |
+| `SET sql_dialect = <not StarRocks>` | Refused with 1235: Nova parses StarRocks SQL only |
+| `KILL [QUERY] <id>` | Forwarded. The handshake announces the engine's connection id, so `CONNECTION_ID()` and the id the mysql CLI kills on Ctrl+C name the session that runs this client's statements |
 | `SET @var = value` | Tracked in the proxy's session; later `@var` references are substituted before the statement reaches the engine. Never sent to the engine as a `SET` |
 | `SET ROLE <role>` | Tracked in the proxy's session and applied to each subsequent query |
 | `DROP ROLE ACCOUNTADMIN` / `REVOKE ... ACCOUNTADMIN` | Refused by the guard in `QueryService` |
@@ -79,6 +86,13 @@ it only rewrites references that are really references:
 
 A reference with no stored value is left verbatim, and the engine answers for an
 unset variable in its own way (`NULL`).
+
+Values the engine reports with the `STRING` wire type — `ARRAY`, `MAP`,
+`STRUCT`, `JSON` and `LARGEINT` — are not turned into quoted literals, which
+would make them `VARCHAR`. The assignment runs on the client's engine session
+instead (`SET @a = [1,2,3]`), and later `@a` references are left for the engine,
+which resolves them with their original type. The engine's own limits apply
+(it refuses `MAP` user variables, for example).
 
 The reference name accepts the same characters `handle_set_statement` does,
 `$` included (`[A-Za-z_][\w$]*`). The two must agree: `SET @x$abc = 'V'` stores
@@ -175,23 +189,9 @@ error, not as a wrong-password failure.
 
 ## Limitations
 
-* **`LIST` is not implemented.** Nova parses `LIST [FILES] @stage` and resolves
-  the stage reference — so the statement is not silently passed through with the
-  reference intact — but nothing executes it, and **StarRocks has no `LIST`
-  statement** (measured: every form is a syntax error at the engine). The
-  statement therefore fails with the engine's `LIST` syntax error. Browse-stage
-  is a Nova-side feature that needs its own implementation; until then the
-  documented syntax is recognised and refused rather than misinterpreted.
-
-  One known wart inside that dead end: `translate_stage_query` substitutes only
-  the `@stage1` text, so the written-out `LIST FILES @stage1` becomes
-  `LIST FILES FILES(...)` — the literal `FILES` keyword is left in place. It
-  costs nothing today because the statement cannot execute either way, and it is
-  the translator's business rather than the parser's. It is recorded here so the
-  `LIST` implementation finds it instead of rediscovering it.
-* **`@stage1/folder/x.csv` (slash paths) and globs (`@stage1.data/*.csv`) are
-  not detected.** Both are listed as open defects in `README.md` (SQL dialect),
-  and both predate the proxy.
+* **Write stage globs after a dot (`@stage1.*.csv`).** `/*` opens a SQL block
+  comment, so the `mysql` CLI strips `@stage1/*.csv` before sending it, and a
+  later `*/` turns the glob into a comment.
 * **Prepared statements (`COM_STMT_PREPARE`) are not supported.** Clients that
   use them get `ER_NOT_SUPPORTED_YET` (1235), which is the code drivers
   interpret as "fall back to the text protocol". The `mysql` CLI, JDBC's
@@ -205,17 +205,17 @@ error, not as a wrong-password failure.
 * **`SET @@global.x` is refused** rather than accepted and ignored — a client
   that believes it changed a server-wide setting and did not is worse off than
   one that gets an error.
-* **A multi-statement script returns the last statement's result.** The text
-  protocol cannot express several result sets without
-  `CLIENT_MULTI_RESULTS` bookkeeping that the proxy does not implement; the
-  first error still wins.
-* **Integer columns are reported as `BIGINT` regardless of their real width.**
-  `_column_definition` infers the type from the Python value, and
-  `QueryResult` carries column names and values but not the engine's declared
-  type. A `TINYINT` column therefore arrives with type code `0x08` where the
-  engine reports `0x01`. Both decode to `int` in every client, so this affects
-  metadata fidelity rather than values; reporting the true width needs the type
-  code carried through `QueryResult`.
+* **Multi-statement commands answer one result per statement.** Clients that
+  negotiate `CLIENT_MULTI_RESULTS` read each result set or OK in order, flagged
+  with `SERVER_MORE_RESULTS_EXISTS`; execution stops at the first error, which
+  ends the response. A client without multi-results receives the final response
+  only. Database, catalog and role changes must be sent as separate commands.
+* **Errors keep the engine's number.** An engine failure reaches the client
+  with StarRocks' own code (for example 5502 for an unknown table); proxy and
+  Nova refusals use 1064, or 1235 for unsupported features.
+* **Result sets are buffered.** The proxy reads a result before writing it, so
+  `PROXY_MAX_ROWS` bounds its memory; add `LIMIT` or raise the setting for
+  larger extracts.
 * **An unset user variable is passed through, not rejected.** `SELECT @never_set`
   reaches the engine and returns `NULL`, which is what StarRocks itself does.
 

@@ -183,7 +183,9 @@ def default_semantics() -> StatementSemanticsRegistry:
         ast.StreamStatement,
         StatementSemantics(stream_effects, validator=validate_stream, preflight_safe=True),
     )
-    native = StatementSemantics(_native_effects)
+    native = StatementSemantics(
+        _native_effects, validator=validation._native_session_settings, preflight_safe=True
+    )
     registry.register(ast.NativeStatement, native)
     registry.register(ast.StageAwareStatement, native)
     registry.register(

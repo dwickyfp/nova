@@ -71,6 +71,26 @@ def _decode_result_rows(cursor, raw_rows):
     return rows
 
 
+def _starrocks_error(exc: Exception) -> StarRocksError:
+    """Translate a driver error, keeping the engine's own error number.
+
+    A server-side failure (an analysis error, an unknown table, a refused
+    privilege) is reported by its engine message and code. Codes 2000-2999 are
+    the client library's own (lost connection, server gone away), which keep
+    the connection-error wording. Every driver class is covered: the engine
+    reports a filtered insert as an ``InternalError`` and a constraint failure as
+    an ``IntegrityError``, and those must not reach callers in the driver's raw
+    ``(code, 'message')`` form.
+    """
+    code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
+    if code is not None and not 2000 <= code < 3000:
+        detail = exc.args[1] if len(exc.args) > 1 else ""
+        return StarRocksError(f"SQL error: ({code}) {detail}", engine_code=code)
+    if isinstance(exc, asyncmy.errors.OperationalError):
+        return StarRocksError(f"Connection error: {exc}")
+    return StarRocksError(f"SQL error: {exc}")
+
+
 @dataclass
 class QueryResult:
     """Standardized query result.
@@ -121,6 +141,7 @@ class QueryResult:
     correlation_status: str = "unavailable"
     column_types: tuple[str, ...] = ()
     truncated: bool = False
+    engine_error_code: int | None = None
     fetch_ms: float | None = None
     engine_roundtrip_ms: float | None = None
     engine_ms: float | None = None
@@ -196,10 +217,8 @@ class QueryRepository:
                         elapsed_ms=round(elapsed, 2),
                         executed_sql=sql,
                     )
-        except asyncmy.errors.OperationalError as e:
-            raise StarRocksError(f"Connection error: {e}") from e
-        except asyncmy.errors.ProgrammingError as e:
-            raise StarRocksError(f"SQL error: {e}") from e
+        except asyncmy.errors.DatabaseError as e:
+            raise _starrocks_error(e) from e
 
     async def execute_as_user(
         self,
@@ -250,10 +269,8 @@ class QueryRepository:
                 return await self._execute_on(
                     conn, sql, role=role, database=database, max_rows=max_rows, start=start
                 )
-        except asyncmy.errors.OperationalError as e:
-            raise StarRocksError(f"Connection error: {e}") from e
-        except asyncmy.errors.ProgrammingError as e:
-            raise StarRocksError(f"SQL error: {e}") from e
+        except asyncmy.errors.DatabaseError as e:
+            raise _starrocks_error(e) from e
 
     @staticmethod
     async def _execute_on(
@@ -377,10 +394,8 @@ class QueryRepository:
         except asyncio.CancelledError:
             conn.close()
             raise
-        except asyncmy.errors.OperationalError as e:
-            raise StarRocksError(f"Connection error: {e}") from e
-        except asyncmy.errors.ProgrammingError as e:
-            raise StarRocksError(f"SQL error: {e}") from e
+        except asyncmy.errors.DatabaseError as e:
+            raise _starrocks_error(e) from e
         finally:
             if restore_profile:
                 try:

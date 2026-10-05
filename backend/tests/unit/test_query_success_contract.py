@@ -324,3 +324,36 @@ class TestEngineFailureCannotBeLaunderedIntoSuccess:
         payload = client.post(EXECUTE_ENDPOINT, json={"sql": BAD_SQL}).json()
 
         assert payload[0]["success"] is False
+
+
+class TestEngineErrorTranslation:
+    """Server-side failures keep the engine's number; client faults do not."""
+
+    def test_engine_failure_keeps_its_code_and_message(self):
+        import asyncmy
+
+        from app.modules.query.repository import _starrocks_error
+
+        error = _starrocks_error(
+            asyncmy.errors.OperationalError(1049, "Unknown database 'missing'")
+        )
+        assert error.engine_code == 1049
+        assert str(error) == "SQL error: (1049) Unknown database 'missing'"
+
+    def test_lost_connection_keeps_the_connection_wording(self):
+        import asyncmy
+
+        from app.modules.query.repository import _starrocks_error
+
+        error = _starrocks_error(asyncmy.errors.OperationalError(2013, "Lost connection"))
+        assert error.engine_code is None
+        assert str(error).startswith("Connection error:")
+
+    def test_every_driver_error_class_is_translated(self):
+        import asyncmy
+
+        from app.modules.query.repository import _starrocks_error
+
+        error = _starrocks_error(asyncmy.errors.InternalError(1064, "Insert has filtered data"))
+        assert error.engine_code == 1064
+        assert str(error) == "SQL error: (1064) Insert has filtered data"

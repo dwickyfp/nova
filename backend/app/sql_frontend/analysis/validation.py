@@ -67,6 +67,35 @@ _forecast_context = _with_context(_forecast)
 _password_context = _with_context(_password)
 
 
+#: ``sql_dialect`` values the central parser can classify. Nova parses with the
+#: pinned StarRocks grammar only; a session switched to another dialect would
+#: make the engine read statements Nova classified under different syntax.
+_SUPPORTED_SQL_DIALECTS = frozenset({"starrocks"})
+
+
+def _native_session_settings(statement: ast.Statement, context: Any = None) -> None:
+    """Refuse native ``SET`` forms that change how the engine parses SQL."""
+    root = statement.parsed.statement_context
+    if type(root).__name__ != "SetStatementContext":
+        return None
+    for variable in root.setVar():
+        if type(variable).__name__ != "SetSystemVarContext":
+            continue
+        name = variable.identifier() or variable.systemVariable().identifier()
+        if name.getText().strip("`").casefold() != "sql_dialect":
+            continue
+        value = variable.setExprOrDefault()
+        if value.DEFAULT() is not None:
+            continue
+        if value.getText().strip("'\"`").casefold() not in _SUPPORTED_SQL_DIALECTS:
+            from app.sql_frontend.errors import CapabilityUnsupportedError
+
+            raise CapabilityUnsupportedError(
+                "Nova parses StarRocks SQL only; sql_dialect must remain StarRocks"
+            )
+    return None
+
+
 def _security_context(statement: ast.Statement, context: Any) -> Any:
     return _security(statement) if context and context.ranger_enabled else None
 

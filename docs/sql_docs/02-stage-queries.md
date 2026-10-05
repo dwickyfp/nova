@@ -33,6 +33,10 @@ FILES('path'='s3://bucket/db/schema/stage1/data.csv', 'format'='csv', creds…)
 
 - `name` starts with a letter or underscore and may contain letters, digits, underscores, and hyphens.
 - The path may mix `.` and `/` separators, contain letters, digits, underscores, and hyphens, and include a `*` glob segment.
+- Write a glob segment after a `.` (`@name.*.csv`, `@name/folder.*.csv`), not after a `/`. In SQL `/*` opens a
+  block comment: the `mysql` CLI strips `@name/*.csv …` before sending it, and a later `*/` in the same statement
+  turns the glob into a comment, so the statement reads the whole stage. A glob is one whole segment; a partial
+  segment such as `sales_*.csv` is a syntax error.
 - A trailing `/` marks a directory.
 
 ### `@stage` is not `@@variable`

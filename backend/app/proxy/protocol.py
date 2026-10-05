@@ -97,6 +97,9 @@ CHARSET_UTF8MB4 = 45
 CHARSET_UTF8 = 33
 
 SERVER_STATUS_AUTOCOMMIT = 1 << 1
+#: Set on every response of a multi-statement ``COM_QUERY`` except the last, so
+#: the client reads the next result instead of treating the command as done.
+SERVER_MORE_RESULTS_EXISTS = 1 << 3
 
 #: Status flags the proxy reports.
 #:
@@ -623,6 +626,7 @@ def build_resultset(
     rows: list[list],
     *,
     capabilities: int = DEFAULT_PROTOCOL_CAPABILITIES,
+    status_flags: int = DEFAULT_SERVER_STATUS,
 ) -> list[bytes]:
     """Build the framed packets of a complete text result set.
 
@@ -651,8 +655,10 @@ def build_resultset(
         payloads.append(build_text_row(list(row), columns))
 
     if capabilities & CLIENT_DEPRECATE_EOF:
-        payloads.append(build_ok_packet(0, 0, capabilities=capabilities))
+        payloads.append(
+            build_ok_packet(0, 0, status_flags=status_flags, capabilities=capabilities)
+        )
     else:
-        payloads.append(build_eof_packet())
+        payloads.append(build_eof_packet(status_flags=status_flags))
 
     return payloads

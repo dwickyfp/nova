@@ -23,7 +23,7 @@ import pytest
 from app.modules.access_control.role_activation import RoleAssignments
 from app.modules.query.repository import QueryResult
 from app.proxy.executor import ProxyQueryExecutor, WireResult
-from app.proxy.session import SessionState
+from app.proxy.session import SessionState, handle_set_statement
 
 
 class FakeQueryService:
@@ -376,7 +376,7 @@ class TestResultMapping:
         assert result.is_resultset
         assert [c.name for c in result.columns] == ["b"]
 
-    async def test_affected_rows_accumulate_across_statements(self, monkeypatch):
+    async def test_each_statement_reports_its_own_affected_rows(self, monkeypatch):
         fake = FakeQueryService([QueryResult(affected_rows=2), QueryResult(affected_rows=3)])
         _patch_service(monkeypatch, fake)
         executor = ProxyQueryExecutor(SessionState())
@@ -385,7 +385,8 @@ class TestResultMapping:
             "DELETE FROM a; DELETE FROM b", username="u", connection=object()
         )
 
-        assert result.ok_affected == 5
+        assert result.ok_affected == 3
+        assert [part.ok_affected for part in result.preceding] == [2]
 
     async def test_no_results_is_an_ok(self, monkeypatch):
         fake = FakeQueryService([])
@@ -774,3 +775,184 @@ class TestFailureIsolation:
 
         assert result.error is not None
         assert result.error_code == 1064
+
+
+class TestMySQLClientCompatibility:
+    """Behaviour a MySQL client relies on that the proxy must not change."""
+
+    async def test_destructive_statements_run_without_a_confirmation_exchange(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService([QueryResult(affected_rows=1)]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute(
+            "DELETE FROM t WHERE id = 1", username="u", connection=object()
+        )
+
+        assert result.error is None
+        assert fake.calls[-1]["confirm_destructive"] is True
+
+    async def test_quoted_semicolons_reach_the_pipeline_unchanged(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        executor = ProxyQueryExecutor(SessionState())
+
+        await executor.execute('SELECT "a;b", \'c\\\';d\'', username="u", connection=object())
+
+        assert fake.last_sql == 'SELECT "a;b", \'c\\\';d\''
+
+    async def test_a_trailing_line_comment_cannot_swallow_the_next_statement(self, monkeypatch):
+        from app.common.sql_guard import split_sql_statements
+
+        fake = _patch_service(monkeypatch, FakeQueryService([QueryResult(), QueryResult()]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        await executor.execute("SELECT 1 -- note\n; SELECT 2", username="u", connection=object())
+
+        assert split_sql_statements(fake.last_sql) == ["SELECT 1 -- note", "SELECT 2"]
+
+    async def test_results_over_the_row_limit_are_refused_not_truncated(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "PROXY_MAX_ROWS", 2)
+        truncated = QueryResult(columns=["id"], rows=[[1], [2]], truncated=True)
+        fake = _patch_service(monkeypatch, FakeQueryService([truncated]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute("SELECT id FROM t", username="u", connection=object())
+
+        assert fake.calls[-1]["max_rows"] == 2
+        assert result.rows == []
+        assert result.error_code == 1235
+        assert "limit of 2 rows" in result.error
+
+    async def test_engine_error_numbers_reach_the_client(self, monkeypatch):
+        failed = QueryResult(
+            error="SQL error: (1049) Unknown database 'missing'",
+            error_code="execution_error",
+            engine_error_code=1049,
+        )
+        _patch_service(monkeypatch, FakeQueryService([failed]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute(
+            "SELECT * FROM missing.t", username="u", connection=object()
+        )
+
+        assert result.error_code == 1049
+        assert result.error == "Unknown database 'missing'"
+
+    async def test_client_library_error_numbers_are_not_forwarded(self, monkeypatch):
+        failed = QueryResult(error="Connection error: lost", engine_error_code=2013)
+        _patch_service(monkeypatch, FakeQueryService([failed]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute("SELECT 1", username="u", connection=object())
+
+        assert result.error_code == 1064
+
+    async def test_multi_statement_results_keep_statement_order(self, monkeypatch):
+        first = QueryResult(columns=["a"], rows=[[1]])
+        second = QueryResult(columns=["b"], rows=[[2]])
+        _patch_service(monkeypatch, FakeQueryService([first, second]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute("SELECT 1 a; SELECT 2 b", username="u", connection=object())
+
+        assert [part.rows for part in result.preceding] == [[[1]]]
+        assert result.rows == [[2]]
+
+    async def test_local_assignments_answer_before_engine_results(self, monkeypatch):
+        result_set = QueryResult(columns=["x"], rows=[[5]])
+        fake = _patch_service(monkeypatch, FakeQueryService([result_set]))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute("SET @x = 5; SELECT @x", username="u", connection=object())
+
+        assert fake.last_sql == "SELECT 5"
+        assert len(result.preceding) == 1 and result.preceding[0].is_ok
+        assert result.rows == [[5]]
+
+    async def test_error_ends_the_response_after_completed_statements(self, monkeypatch):
+        results = [QueryResult(affected_rows=1), QueryResult(error="SQL error: boom")]
+        _patch_service(monkeypatch, FakeQueryService(results))
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute(
+            "INSERT INTO t VALUES (1); INSERT INTO u VALUES (2)", username="u", connection=object()
+        )
+
+        assert [part.ok_affected for part in result.preceding] == [1]
+        assert result.error is not None
+
+    async def test_catalog_switch_stops_reselecting_the_old_database(self, monkeypatch):
+        _patch_service(monkeypatch, FakeQueryService())
+        session = SessionState()
+        session.set_database("audit_db")
+        executor = ProxyQueryExecutor(session)
+
+        result = await executor.execute("SET CATALOG hive", username="u", connection=object())
+
+        assert result.error is None
+        assert session.database is None
+
+    async def test_catalog_switch_inside_a_script_is_refused(self, monkeypatch):
+        fake = _patch_service(monkeypatch, FakeQueryService())
+        executor = ProxyQueryExecutor(SessionState())
+
+        result = await executor.execute(
+            "SET CATALOG hive; SELECT 1", username="u", connection=object()
+        )
+
+        assert result.error_code == 1235
+        assert fake.calls == []
+
+
+class TestTypedUserVariables:
+    """ARRAY/MAP/STRUCT/JSON values keep their type on the engine session."""
+
+    async def test_complex_value_is_kept_on_the_engine_session(self, monkeypatch):
+        evaluated = QueryResult(
+            columns=["nova_user_variable"], rows=[["[1,2,3]"]], column_types=("(254, None, 60)",)
+        )
+
+        class Sequenced(FakeQueryService):
+            async def execute_statements(self, **kwargs):
+                self.calls.append(kwargs)
+                return [evaluated] if len(self.calls) == 1 else [QueryResult()]
+
+        fake = _patch_service(monkeypatch, Sequenced())
+        session = SessionState()
+        executor = ProxyQueryExecutor(session)
+
+        result = await executor.execute("SET @a = [1,2,3]", username="u", connection=object())
+        await executor.execute("SELECT array_length(@a)", username="u", connection=object())
+
+        assert result.error is None
+        assert [call["sql"] for call in fake.calls] == [
+            "SELECT ([1,2,3]) AS nova_user_variable",
+            "SET @a = [1,2,3]",
+            "SELECT array_length(@a)",
+        ]
+        assert "a" in session.engine_variables and "a" not in session.user_variables
+
+    async def test_varchar_value_is_still_substituted(self, monkeypatch):
+        evaluated = QueryResult(
+            columns=["nova_user_variable"], rows=[["[1,2,3]"]], column_types=("(253, None, 64)",)
+        )
+        fake = _patch_service(monkeypatch, FakeQueryService([evaluated]))
+        session = SessionState()
+        executor = ProxyQueryExecutor(session)
+
+        await executor.execute("SET @a = concat('[1,', '2,3]')", username="u", connection=object())
+        await executor.execute("SELECT @a", username="u", connection=object())
+
+        assert fake.last_sql == "SELECT '[1,2,3]'"
+        assert not session.engine_variables
+
+    async def test_a_literal_reassignment_takes_back_ownership(self):
+        session = SessionState()
+        session.engine_variables.add("a")
+
+        handle_set_statement("SET @a = 5", session)
+
+        assert session.user_variables["a"] == "5"
+        assert "a" not in session.engine_variables

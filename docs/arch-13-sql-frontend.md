@@ -96,7 +96,9 @@ The HTTP response keeps legacy fields and adds `error_code`, `statement_kind`,
 `effects` and optional `execution_failure`. `destructive` describes statement
 policy; `needs_confirmation` describes the current wait for approval. The worksheet
 uses the server response and resubmits the immutable SQL/tab/namespace snapshot.
-The proxy returns its existing ERR refusal without a new confirmation syntax.
+MySQL clients have no confirmation exchange, so the proxy submits the statement as
+confirmed: the statement the client sent is the explicit request, as with any MySQL
+server. The guard, engine authorization and audit still apply.
 
 `LogicalPlan` carries the statement and analysis. Lowering produces one of:
 
@@ -236,6 +238,9 @@ Unsupported managed governance forms are rejected; they are never forwarded as
 native grants. Native user-account operations retain their prior routing.
 The ACCOUNTADMIN/root/UDF/egress guard runs before parsing and Ranger actions.
 Ranger-disabled security SQL keeps native execution.
+Native `SET sql_dialect` to anything other than StarRocks is refused with
+`capability_unsupported`: the engine would parse later statements with another
+grammar while Nova classified them with the pinned StarRocks grammar.
 
 Compatibility APIs remain in `modules/query/dialect/parser.py`, the compact ML
 and task parsers, and the old security statement router for existing callers.

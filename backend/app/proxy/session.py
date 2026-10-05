@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from app.common.sql_guard import strip_sql_comments
+from app.common.sql_guard import split_sql_statements, strip_sql_comments
 from app.sql_frontend.session_functions import QueryCorrelationSession
 
 #: Role assignment, e.g. ``SET ROLE ACCOUNTADMIN`` / ``SET ROLE 'analyst'``.
@@ -50,9 +50,13 @@ _PINNED = re.compile(
     r"^\s*SET\s+(?:NAMES|CHARACTER\s+SET|CHARSET)\b",
     re.IGNORECASE,
 )
+#: A UTF-8 ``COLLATE`` is accepted with ``SET NAMES`` because drivers send it
+#: on connect (Connector/J ``connectionCollation``, Go ``collation``); the engine
+#: accepts it too. The proxy always speaks UTF-8, so only UTF-8 collations fit.
 _UTF8_CHARSET = re.compile(
     r"^\s*SET\s+(?:NAMES|CHARACTER\s+SET|CHARSET)\s+"
-    r"(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT|'(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT)')\s*;?\s*$",
+    r"(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT|'(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT)')"
+    r"(?:\s+COLLATE\s+(?:'?UTF8(?:MB[34])?_[A-Z0-9_]+'?|DEFAULT))?\s*;?\s*$",
     re.IGNORECASE,
 )
 
@@ -61,9 +65,12 @@ _AUTOCOMMIT_ON = re.compile(
     r"AUTOCOMMIT\s*=\s*(?:1|ON|TRUE)\s*;?\s*$",
     re.IGNORECASE,
 )
+#: ``SET [SESSION|LOCAL] TRANSACTION ISOLATION LEVEL …/READ ONLY|WRITE`` is not
+#: listed: drivers send it on connect, and the engine accepts it as a no-op, so
+#: it is forwarded like any other session setting.
 _UNSUPPORTED_SESSION = re.compile(
-    r"^\s*(?:(?:BEGIN|COMMIT|ROLLBACK)\b|START\s+TRANSACTION\b|"
-    r"SET\s+(?:(?:SESSION|LOCAL|GLOBAL)\s+)?(?:TRANSACTION|AUTOCOMMIT|FOREIGN_KEY_CHECKS)\b)",
+    r"^\s*(?:(?:BEGIN|COMMIT|ROLLBACK)\b|START\s+TRANSACTION\b|SET\s+GLOBAL\s+TRANSACTION\b|"
+    r"SET\s+(?:(?:SESSION|LOCAL|GLOBAL)\s+)?(?:AUTOCOMMIT|FOREIGN_KEY_CHECKS)\b)",
     re.IGNORECASE,
 )
 
@@ -99,6 +106,9 @@ class SessionState:
     active_role: str | None = None
     security_context_version: int = 1
     user_variables: dict[str, str] = field(default_factory=dict)
+    #: Variables whose typed value lives on the engine session (ARRAY, MAP,
+    #: STRUCT, JSON, LARGEINT); references to them are left for the engine.
+    engine_variables: set[str] = field(default_factory=set)
 
     def set_database(self, database: str) -> None:
         self.database = database or None
@@ -210,6 +220,7 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
         if not _LITERAL_VALUE.fullmatch(raw_value):
             return SetStatementResult(True, assignment=(name, raw_value))
         session.user_variables[name] = _store_value(raw_value)
+        session.engine_variables.discard(name)
         return SetStatementResult(True)
 
     return SetStatementResult(False)
@@ -383,6 +394,10 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
                     substituted.append(name)
                     index = match.end()
                     continue
+                if name in session.engine_variables:
+                    out.append(statement[index : match.end()])
+                    index = match.end()
+                    continue
                 unknown.append(name)
                 out.append(statement[index : match.end()])
                 index = match.end()
@@ -449,96 +464,85 @@ def _skip_backquoted(statement: str, start: int) -> int:
 def split_statements(sql: str) -> list[str]:
     """Split a ``COM_QUERY`` payload into statements, respecting literals.
 
-    The proxy needs its own splitter (rather than reusing
-    ``app.common.sql_guard.split_sql_statements``) because it must classify
-    each statement *before* deciding whether to hand it to ``QueryService``:
-    a script of ``SET @x = 1; SELECT @x`` has to have its ``SET`` removed
-    before the rest is executed, or the engine sees it too.
+    The proxy splits before ``QueryService`` does because it must classify
+    each statement first: a script of ``SET @x = 1; SELECT @x`` has to have its
+    ``SET`` removed before the rest is executed, or the engine sees it too.
 
-    Semantics match the guard's splitter — semicolons inside single-quoted
-    literals, ``--`` line comments and ``/* */`` block comments are text.
+    The boundaries must be exactly the ones ``QueryService`` and the engine
+    use, so this delegates to the guard's splitter. A separate scanner that
+    knew only single-quoted literals cut ``SELECT "a;b"``, ``'it\\'s; x'`` and
+    backquoted names at the inner ``;``; the pieces were then re-joined with a
+    different separator, which silently changed the user's data.
     """
-    statements: list[str] = []
-    current: list[str] = []
-    index = 0
-    length = len(sql)
-    while index < length:
-        char = sql[index]
+    return split_sql_statements(sql)
 
-        if char == "'":
-            current.append(char)
-            index += 1
-            while index < length:
-                literal = sql[index]
-                current.append(literal)
-                if literal == "'":
-                    if index + 1 < length and sql[index + 1] == "'":
-                        current.append("'")
-                        index += 2
-                        continue
-                    index += 1
-                    break
-                index += 1
-            continue
 
-        if char == "/" and sql.startswith("/*", index):
-            end = sql.find("*/", index + 2)
-            if end < 0:
-                current.append(sql[index:])
-                index = length
-                continue
-            current.append(sql[index : end + 2])
-            index = end + 2
-            continue
-
-        if char == "-" and sql.startswith("--", index):
-            newline = sql.find("\n", index)
-            if newline < 0:
-                current.append(sql[index:])
-                index = length
-                continue
-            current.append(sql[index:newline])
-            index = newline
-            continue
-
-        if char == ";":
-            statement = "".join(current).strip()
-            if statement:
-                statements.append(statement)
-            current = []
-            index += 1
-            continue
-
-        current.append(char)
-        index += 1
-
-    tail = "".join(current).strip()
-    if tail:
-        statements.append(tail)
-    return statements
+#: Separator used to hand proxy-classified statements back to ``QueryService``
+#: as one script. The newline before ``;`` ends a trailing ``--`` comment so the
+#: boundary is not swallowed by it.
+STATEMENT_SEPARATOR = "\n;\n"
 
 
 _USE_PATTERN = re.compile(r"^\s*USE\s+(?P<database>.+?)\s*;?\s*$", re.IGNORECASE | re.DOTALL)
 
 
-def parse_use_statement(statement: str) -> str | None:
-    """Return the database named by ``USE <db>``, or ``None``.
+#: One segment of a ``USE`` target: a backquoted name (``` `` ``` escapes a
+#: backquote) or a bare name.
+_USE_SEGMENT = re.compile(r"\s*(?:`(?P<quoted>(?:[^`]|``)+)`|(?P<bare>[^\s.`'\";]+))\s*")
 
-    Also accepts ``USE \`db\``` and ``USE db.schema`` — the latter because
-    Nova's UI writes ``USE DATALAKE.bronze`` (see ``docs/arch-07-mysql-proxy.md``),
-    and the engine resolves the qualified form itself, so only the first
-    segment is tracked locally.
+_CATALOG_SWITCH = re.compile(
+    r"^\s*(?:USE\s+(?:'[^']*'|\"[^\"]*\")|SET\s+CATALOG\s+\S+)\s*;?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def parse_use_statement(statement: str) -> str | None:
+    """Return the target of ``USE <db>`` or ``USE <catalog>.<db>``, or ``None``.
+
+    The qualified form is StarRocks' ``catalog.database`` and is kept whole:
+    the proxy re-selects this value before every statement, and the engine's
+    database selection resolves ``catalog.database`` itself. Recording only the
+    first segment selected a database named after the catalog and broke every
+    later statement. ``USE 'catalog'`` switches catalogs and is not a database
+    (see :func:`is_catalog_switch`).
     """
     match = _USE_PATTERN.match(statement)
     if not match:
         return None
-    raw = match.group("database").strip().strip(";").strip()
-    if not raw:
+    raw = match.group("database").strip().rstrip(";").strip()
+    parts: list[str] = []
+    index = 0
+    while index < len(raw):
+        segment = _USE_SEGMENT.match(raw, index)
+        if segment is None or segment.end() == index:
+            return None
+        quoted = segment.group("quoted")
+        parts.append(quoted.replace("``", "`") if quoted is not None else segment.group("bare"))
+        index = segment.end()
+        if index < len(raw):
+            if raw[index] != ".":
+                return None
+            index += 1
+            if index == len(raw):
+                return None
+    if not parts or len(parts) > 2:
         return None
-    raw = raw.strip("`")
-    if "." in raw:
-        raw = raw.split(".", 1)[0].strip().strip("`")
-    return raw or None
+    return ".".join(parts)
+
+
+def is_catalog_switch(statement: str) -> bool:
+    """True for ``USE 'catalog'`` and ``SET CATALOG <name>``.
+
+    After a catalog switch the previously selected database belongs to another
+    catalog, so the proxy must stop re-selecting it.
+    """
+    return bool(_CATALOG_SWITCH.match(strip_sql_comments(statement)))
+
+
+def quote_database_target(target: str) -> str:
+    """``USE`` target text for a ``COM_INIT_DB`` name (``db`` or ``catalog.db``)."""
+    parts = target.split(".", 1) if target.count(".") == 1 else [target]
+    return ".".join("`" + part.replace("`", "``") + "`" for part in parts)
 
 
 def is_show_databases(statement: str) -> bool:

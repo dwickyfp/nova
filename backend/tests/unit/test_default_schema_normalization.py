@@ -60,6 +60,15 @@ PRESERVED_CASES = [
     ("SELECT 1 -- config.default.value", "SELECT 1 -- config.default.value"),
     ("SELECT /* @s.a.default.csv */ 1", "SELECT /* @s.a.default.csv */ 1"),
     ("-- SELECT * FROM db.default.t\nSELECT 1", "-- SELECT * FROM db.default.t\nSELECT 1"),
+    # A backquoted `default` is a real database name (external Hive/Iceberg
+    # catalogs expose one), not the UI placeholder, which is never quoted.
+    (
+        "SELECT * FROM hive_catalog.`default`.orders",
+        "SELECT * FROM hive_catalog.`default`.orders",
+    ),
+    ("SELECT * FROM `mydb`.`default`.`orders`", "SELECT * FROM `mydb`.`default`.`orders`"),
+    ("INSERT INTO iceberg.`default`.t SELECT 1", "INSERT INTO iceberg.`default`.t SELECT 1"),
+    ("DESC hive_catalog.`default`.orders", "DESC hive_catalog.`default`.orders"),
     # The engine's own variables — `@@` never starts a stage ref, and the old
     # parser treated `@@version` as one elsewhere in the dialect.
     ("SELECT @@version", "SELECT @@version"),
@@ -87,7 +96,7 @@ def test_normalization_preserves_valid_sql(sql: str, expected: str) -> None:
 COLLAPSED_CASES = [
     ("SELECT * FROM db.default.t", "SELECT * FROM db.t"),
     ("SELECT * FROM mydb.default.orders", "SELECT * FROM mydb.orders"),
-    ("SELECT * FROM `mydb`.`default`.`orders`", "SELECT * FROM `mydb`.`orders`"),
+    ("SELECT * FROM `mydb`.default.`orders`", "SELECT * FROM `mydb`.`orders`"),
     # Case-insensitive keyword and placeholder, as the engine is.
     ("select * from mydb.DEFAULT.orders", "select * from mydb.orders"),
     ("SELECT * FROM MYDB.default.ORDERS", "SELECT * FROM MYDB.ORDERS"),
@@ -133,7 +142,7 @@ COLLAPSED_CASES = [
         "DESCRIBE default_catalog.NOVA_ANALYTICS.default.channel_performance",
         "DESCRIBE default_catalog.NOVA_ANALYTICS.channel_performance",
     ),
-    ("DESC `mydb`.`default`.`orders`", "DESC `mydb`.`orders`"),
+    ("DESC `mydb`.default.`orders`", "DESC `mydb`.`orders`"),
     # A DESCRIBE later in a multi-statement script is rewritten too.
     ("select 1; describe db.default.t;", "select 1; describe db.t;"),
     # A trailing comment must not disable the rewrite.

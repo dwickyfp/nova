@@ -8,6 +8,25 @@ import uuid
 from app.common.sql_guard import redact_sql_credentials
 from app.core.database import db
 
+#: Byte budget for each ``AUDIT_LOG`` text column. The columns are StarRocks
+#: ``STRING``/``TEXT`` (at most 65533 bytes); an over-long value makes the audit
+#: insert fail after the audited statement already ran, and the client would see
+#: that failure instead of the statement's result.
+AUDIT_TEXT_MAX_BYTES = 60_000
+
+
+def fit_audit_text(text: str | None, limit: int = AUDIT_TEXT_MAX_BYTES) -> str | None:
+    """Truncate ``text`` to ``limit`` UTF-8 bytes, recording how much was cut."""
+    if text is None:
+        return None
+    encoded = text.encode("utf-8", errors="surrogateescape")
+    if len(encoded) <= limit:
+        return text
+    marker_budget = 64
+    kept = encoded[: limit - marker_budget].decode("utf-8", errors="ignore")
+    removed = len(encoded) - len(kept.encode("utf-8", errors="surrogateescape"))
+    return f"{kept} /* [truncated {removed} bytes] */"
+
 
 async def write_audit_log(
     *,
@@ -42,9 +61,13 @@ async def write_audit_log(
         nova_execution_id = nova_execution_id or execution.id
         engine_query_ids = engine_query_ids if engine_query_ids is not None else execution.query_ids
     qid = query_id or str(uuid.uuid4())
-    sql_text = redact_sql_credentials(sql_text) if sql_text else sql_text
-    rewritten_sql = redact_sql_credentials(rewritten_sql) if rewritten_sql else rewritten_sql
-    error_message = redact_sql_credentials(error_message) if error_message else error_message
+    sql_text = fit_audit_text(redact_sql_credentials(sql_text) if sql_text else sql_text)
+    rewritten_sql = fit_audit_text(
+        redact_sql_credentials(rewritten_sql) if rewritten_sql else rewritten_sql
+    )
+    error_message = fit_audit_text(
+        redact_sql_credentials(error_message) if error_message else error_message
+    )
     columns = (
         "query_id",
         "event_type",
