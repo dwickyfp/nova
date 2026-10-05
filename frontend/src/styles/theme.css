@@ -1,15 +1,17 @@
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  /* Slate rather than near-black: 14.6:1 on white, well above AA, without
+     the page reading heavy next to the glass chrome. */
+  --foreground: #1e293b;
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
+  --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
+  --popover-foreground: var(--foreground);
   --primary: #d04738;
   --primary-foreground: #ffffff;
   --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --secondary-foreground: var(--foreground);
   --muted: oklch(0.968 0.007 247.896);
   --tooltip-neutral: color-mix(in srgb, var(--foreground) 20%, var(--background));
   /* Darkened from oklch(0.554 0.046 257.417) so muted text clears AA on both
@@ -105,7 +107,7 @@
   --sidebar-navigation-selected: rgb(255 255 255 / 68%);
   --sidebar-navigation-selected-shadow:
     0 1px 2px rgb(15 23 42 / 8%), inset 0 0 0 1px rgb(255 255 255 / 70%);
-  --sidebar-navigation-foreground: #1e293b;
+  --sidebar-navigation-foreground: var(--foreground);
   --sidebar-navigation-muted-foreground: #485364;
   --sidebar-navigation-ring: var(--accent-foreground);
 
@@ -113,6 +115,10 @@
      so the light theme steps each weight down. */
   --weight-medium: 450;
   --weight-semibold: 550;
+  /* Text over the tinted chrome has less ground contrast to carry it and
+     still reads heavy at 450, so navigation steps down once more. */
+  --sidebar-navigation-weight-medium: 400;
+  --sidebar-navigation-weight-semibold: 500;
 
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
@@ -146,6 +152,8 @@
   --sidebar-navigation-ring: var(--accent-foreground);
   --weight-medium: 500;
   --weight-semibold: 600;
+  --sidebar-navigation-weight-medium: 500;
+  --sidebar-navigation-weight-semibold: 600;
 
   --background: #0b0f14;
   --foreground: #f7f8fa;
