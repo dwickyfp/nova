@@ -41,6 +41,37 @@ def _caller(context: Any) -> dict[str, Any]:
     return user
 
 
+async def load_specialist_models(candidate: Any, context: Any) -> tuple[list[dict[str, Any]], int]:
+    """Resolve one specialist's Views as its own turn would, under the caller's access.
+
+    Returns the authorized models and the number of bindings the specialist runs with.
+    """
+    from types import SimpleNamespace
+
+    from app.modules.agents.releases import load_runtime_manifest
+
+    agent: dict[str, Any] = {
+        "agent_id": candidate.agent_id,
+        "owner_name": candidate.owner_name,
+        "release_manifest_id": candidate.release_manifest_id,
+        "semantic_view_ids": list(candidate.view_ids),
+    }
+    manifest = await load_runtime_manifest(agent)
+    if manifest:
+        agent = {**agent, **manifest["dependencies"]["configuration"]}
+    ids = bound_view_ids(agent)
+    models = await load_authorized_models(SimpleNamespace(
+        user=getattr(context, "user", None),
+        role=getattr(context, "role", None),
+        audit_session_id=getattr(context, "audit_session_id", None),
+        agent_id=candidate.agent_id,
+        semantic_view_ids=ids,
+        release_manifest=manifest,
+        authorized_semantic_models=None,
+    ))
+    return models, len(ids)
+
+
 async def load_authorized_models(context: Any) -> list[dict[str, Any]]:
     """Load only active versions after the View service checks source/entity access."""
     cached = getattr(context, "authorized_semantic_models", None)

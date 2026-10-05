@@ -165,6 +165,21 @@ class AgentControl:
                     return next(
                         row for row in tree if row["run_id"] == session["current_turn_id"]
                     ), tree
+        # A participant is also known by its task name, agent id, or agent name.
+        # Only one participant of this collaboration may answer to it.
+        alias = target.strip().casefold()
+        named = [
+            session for session in sessions
+            if alias and alias in {
+                session["agent_path"].rsplit("/", 1)[-1].casefold(),
+                str(session["agent_id"]).casefold(),
+                str(session["agent_name"]).casefold(),
+            }
+        ]
+        if len(named) == 1:
+            return next(
+                row for row in tree if row["run_id"] == named[0]["current_turn_id"]
+            ), tree
         raise ValueError("Agent is not visible in this collaboration")
 
     async def discover_agents(self, capability: str = "", *, decision: Any = None) -> list[dict]:

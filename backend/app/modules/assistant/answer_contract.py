@@ -15,7 +15,10 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation, localcontext
+from functools import lru_cache
 from typing import Any
+
+from babel import Locale, UnknownLocaleError
 
 from app.modules.assistant.locale_numbers import (
     UNIT_POWERS,
@@ -53,7 +56,8 @@ CLAIMS_INSTRUCTION = (
     "by a JSON array, then </claims>. List every number you wrote, in any language or "
     "format, as {\"text\": the number exactly as written with its % or unit word, "
     "\"value\": its plain numeric value (25.9 for 25,9%, 1200000 for 1,2 juta), "
-    "\"kind\": cell | derived | count | question | position | date, \"evidence_id\", "
+    "\"kind\": cell | derived | count | question | position | date (count is the number "
+    "of rows returned; a metric value such as a headcount is a cell), \"evidence_id\", "
     "\"column\", \"row_label\" (the row it belongs to), \"direction\": up | down | null "
     "for a change, \"labels\": for a change [the row measured, the row it is compared "
     "with], for a share [the row]}. Also list "
@@ -266,9 +270,39 @@ def _table_counts(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
     return counts
 
 
-def _mask_dates(answer: str) -> str:
-    """Blank ISO dates and clock times; positions are preserved."""
-    return _DATE.sub(lambda match: " " * len(match.group(0)), answer)
+@lru_cache(maxsize=32)
+def _spoken_date(language: str) -> re.Pattern[str]:
+    """A day number beside a month name ("31 Desember", "December 31") in a language."""
+    names: set[str] = set()
+    for code in {language, "en"}:
+        try:
+            months = Locale.parse(code).months["format"]
+        except (UnknownLocaleError, ValueError):
+            continue
+        for width in ("wide", "abbreviated"):
+            names.update(str(name).rstrip(".") for name in months[width].values())
+    month = "(?:" + "|".join(sorted(map(re.escape, names), key=len, reverse=True)) + r")\.?"
+    return re.compile(
+        rf"(?<![\w.,])(?P<before>\d{{1,2}})(?=\s+{month}(?!\w))"
+        rf"|(?<!\w){month}\s+(?P<after>\d{{1,2}})(?![\w.]|,\d)",
+        re.I,
+    )
+
+
+def _mask_dates(answer: str, language: str = "en") -> str:
+    """Blank ISO dates, clock times and spoken day numbers; positions are preserved."""
+    answer = _DATE.sub(lambda match: " " * len(match.group(0)), answer)
+
+    def blank_day(match: re.Match[str]) -> str:
+        group = "before" if match.group("before") else "after"
+        if not 1 <= int(match.group(group)) <= 31:
+            return match.group(0)
+        start, end = match.span(group)
+        text = match.group(0)
+        offset = match.start()
+        return text[:start - offset] + " " * (end - start) + text[end - offset:]
+
+    return _spoken_date(language).sub(blank_day, answer)
 
 
 def _table_years(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
@@ -481,10 +515,23 @@ def _prose_columns(answer: str, token: NumberToken, columns: set[str]) -> set[st
 # ── the check ────────────────────────────────────────────────────────────────
 
 def _cell_matches(value: Decimal, token: NumberToken, percent: bool) -> bool:
-    """A plain number states a cell exactly; percentages and scaled amounts may round."""
+    """A plain number states a cell exactly; percentages and scaled amounts may round.
+
+    A computed cell (an average or ratio carried to more than two decimals) has no
+    exact way to be written. It may be stated rounded to two or more decimals, or to
+    a whole number once it is in the thousands; "1.2" for 1.234 is still not the cell.
+    """
     if token.percent or token.scale is not None or percent:
         return display_matches(value, token)
-    return value in token.values
+    if value in token.values:
+        return True
+    return _computed(value) and display_matches(value, token) and (
+        abs(value) >= 1000 or any(-reading.as_tuple().exponent >= 2 for reading in token.values)
+    )
+
+
+def _computed(value: Decimal) -> bool:
+    return -value.normalize().as_tuple().exponent > 2
 
 
 def _list_marker(answer: str, token: NumberToken) -> bool:
@@ -497,6 +544,57 @@ def _list_marker(answer: str, token: NumberToken) -> bool:
 
 
 def check_numeric_answer(
+    answer: str,
+    *,
+    question: str,
+    tables: dict[str, dict[str, Any]],
+    claims: tuple[Claim, ...] | None = None,
+    language: str = "en",
+) -> AnswerCheck:
+    """Check the answer as claimed, then recheck a failed plain value without its claim.
+
+    The claims are the model's own notes and can be wrong where the sentence is right:
+    a headcount noted as a count, a value noted under another specialist's evidence
+    id, a row label noted for the neighbouring row. Such a number is accepted only if
+    the answer without any claim would have been, so a claim never widens what passes.
+    A change, its direction, or a value the claim gives differently from the text is
+    stated by the claim alone and is not rechecked.
+    """
+    check = _check_numeric_answer(
+        answer, question=question, tables=tables, claims=claims, language=language
+    )
+    if check.accepted or not claims:
+        return check
+    stated_by_claim = {
+        _key(item.text) for item in claims
+        if item.kind == "derived" or item.direction or (
+            # The claim gives another number than the text shows: the claim stands.
+            item.value is not None and not any(
+                display_matches(item.value, token)
+                for token in number_tokens(item.text, language)
+            )
+        )
+    }
+    retry = {text for text in check.unsupported if _key(text) not in stated_by_claim}
+    if not retry:
+        return check
+    plain = _check_numeric_answer(
+        answer, question=question, tables=tables, claims=None, language=language
+    )
+    # Recovered only when the plain reading verified that very text.
+    recovered = (retry - set(plain.unsupported)) & {item.text for item in plain.claims}
+    if not recovered:
+        return check
+    unsupported = tuple(text for text in check.unsupported if text not in recovered)
+    return AnswerCheck(
+        accepted=not unsupported,
+        claims=check.claims + tuple(item for item in plain.claims if item.text in recovered),
+        unsupported=unsupported,
+        unsupported_hypotheses=check.unsupported_hypotheses,
+    )
+
+
+def _check_numeric_answer(
     answer: str,
     *,
     question: str,
@@ -536,7 +634,7 @@ def check_numeric_answer(
     counts: set[Decimal] | None = None
     found: list[NumericClaim] = []
     unsupported: list[str] = []
-    for token in number_tokens(_mask_dates(answer), language):
+    for token in number_tokens(_mask_dates(answer, language), language):
         queue = by_text.get(_key(token.text)) or by_text.get(_key(token.core)) or []
         spoken_first = _prose_label(answer, token, table_labels) if len(queue) > 1 else None
         claim = next(
@@ -863,7 +961,7 @@ def finalize_verified_answer(
         text = answer.rstrip() + ("\n\n" + "\n".join(leaders) if leaders else "")
         return VerifiedAnswer(text, check, False, comparison)
     data_claims = [claim for claim in check.claims if claim.evidence_id]
-    tokens = number_tokens(_mask_dates(answer), language)
+    tokens = number_tokens(_mask_dates(answer, language), language)
     headline = tokens[0].text if tokens else None
     if (
         data_claims
@@ -947,7 +1045,7 @@ def _value_text(
     if parsed == parsed.to_integral_value():
         return rendering.number(parsed, 0, **source)
     exponent = max(0, -parsed.as_tuple().exponent)
-    if words & _MONEY_IDENTIFIERS and exponent <= 2:
+    if (words & _MONEY_IDENTIFIERS and exponent <= 2) or _computed(parsed):
         return rendering.number(parsed, 2, **source)
     return rendering.number(parsed, exponent, **source)
 

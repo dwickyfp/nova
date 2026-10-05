@@ -200,3 +200,40 @@ async def test_catalog_inspection_does_not_exhaust_data_query_budget():
     )]
     assert len(query.runs) == 3
     assert TurnResult(frames=frames).finish_reason == "stop"
+
+
+async def uncovered(answer: str) -> TurnResult:
+    """Smart discovers no owner and answers; a describe_agent tool makes it a Studio turn."""
+    from app.modules.agents.tools.describe_agent import DescribeAgentTool
+
+    discovery = EvalTool("discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+                         data={"agents": []})
+    registry = ToolRegistry()
+    registry.register(discovery)
+    registry.register(DescribeAgentTool(registry, name="Smart"))
+    provider = ScriptedProvider([
+        call("discover_agents", capability="Berapa stok gudang?"), text_frame(answer),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["discover_agents"],
+                  "required_tools": ["discover_agents"]})
+    context = LoopContext(user_name="alice", agent_id="__smart__", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    loop = AssistantLoop(provider=provider, registry=registry, max_iterations=6)
+    return TurnResult(frames=[frame async for frame in loop.run(
+        thread=thread(read_only_grant=True), user_content="Berapa stok gudang?",
+        context=context,
+        resolve_consent=AsyncMock(return_value=False),
+    )])
+
+
+@pytest.mark.asyncio
+async def test_smart_states_the_gap_when_no_specialist_owns_the_request():
+    result = await uncovered("Saya tidak punya data stok gudang. Saya punya keuangan dan HR.")
+    assert result.finish_reason == "out_of_scope", result.error_codes
+    assert any(frame.startswith("event: text_delta") for frame in result.frames)
+
+
+@pytest.mark.asyncio
+async def test_smart_cannot_state_a_value_when_no_specialist_owns_the_request():
+    result = await uncovered("Stok gudang saat ini 1200 unit.")
+    assert result.finish_reason == "data_evidence_incomplete", result.error_codes
+    assert not any(frame.startswith("event: text_delta") for frame in result.frames)

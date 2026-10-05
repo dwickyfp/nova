@@ -55,6 +55,7 @@ from app.modules.assistant.data_evidence import (
     incomplete_metrics,
     metric_owners,
     next_collaboration_tool,
+    no_semantic_owner,
     sql_evidence_kind,
 )
 from app.modules.assistant.intelligence import (
@@ -194,6 +195,8 @@ class LoopContext:
     #: Model id -> logical dataset names the caller may expose to a provider.
     authorized_semantic_datasets: dict[str, list[str]] | None = None
     authorized_semantic_models: list[dict[str, Any]] | None = None
+    #: Smart root only: the combined specialist catalog, read once per turn.
+    collaboration_catalog: dict[str, Any] | None = None
     agent_scope: dict[str, Any] | None = None
     release_manifest: dict[str, Any] | None = None
     quality_facts: dict[str, Any] | None = None
@@ -1377,9 +1380,14 @@ class AssistantLoop:
                         str(uuid4()), finish_reason="clarification", usage=context.usage
                     )
                     return
+                # Smart discovered no owner and ran nothing else: the same limit applies.
+                uncovered = bool(
+                    context.collaboration_root and not evidence.tables
+                    and no_semantic_owner(evidence)
+                )
                 if (
                     context.agent_scope is not None
-                    and governed_attempted
+                    and (governed_attempted or uncovered)
                     and not evidence.business_tables
                     and _is_scope_answer("".join(buffered_text))
                 ):
@@ -2157,6 +2165,7 @@ class AssistantLoop:
                 context.pending_output = []
                 context.steps = []
                 context.authorized_semantic_models = None
+                context.collaboration_catalog = None
                 context.authorized_semantic_datasets = None
                 context.semantic_routing_terms = None
                 yield events.format_sse(

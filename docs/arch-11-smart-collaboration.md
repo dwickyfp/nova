@@ -138,6 +138,41 @@ root delegates to that specialist. The specialist queries its own semantic
 coverage directly; the root's routing instruction is not inherited as an
 instruction to recursively delegate the same question.
 
+Catalog questions ("what data do you have?") are answered by `describe_agent`
+without spawning anyone. The root reads each authorized specialist's Semantic
+Views the way that specialist's own turn resolves them: the caller's principal
+and active role, the specialist's private-view access, and its release pin when
+one exists. Views merge into one list keyed by view and version, each naming the
+agents that serve it, so a View bound to two specialists appears once and
+differently pinned versions stay distinct. A specialist whose pin has drifted or
+whose Views are no longer authorized is reported as unavailable; the others
+still appear. The combined catalog is metadata, not business evidence.
+
+The turn planner routes a Smart request for values to discovery, never to the
+catalog: Smart owns no `semantic_query`, and its data is what its specialists
+serve. The root reads at most the six most recent user and assistant messages of
+its Studio thread, each bounded, so a follow-up keeps its subject. When discovery
+finds no owner and nothing else ran, Smart may state which data is missing; that
+answer carries no number and ends as `out_of_scope`. A turn that ends as
+`out_of_scope` or `clarification` is a completed turn, not a failure. Catalog
+metadata still cannot answer a data question.
+
+Numeric verification checks each number as the model claimed it. The claims are
+the model's own notes and can be wrong where the sentence is right: specialist
+results are renumbered when the root gathers them, so a value is often noted under
+another table's evidence id, and a headcount is noted as a count. A plain value
+whose claim fails is therefore rechecked without the claim and kept only if that
+reading verifies it against a result cell, with the row and column the sentence
+names. A claim never widens what passes. A change, its direction, and a value the
+claim gives differently from the text are judged by the claim alone. A day number
+beside a month name is a date, and a computed average may be stated rounded to two
+decimals, or to a whole number in the thousands. A value that equals no cell is
+still removed.
+
+`wait_agent`, `send_message`, `followup_task`, and `interrupt_agent` accept a
+participant's path, and also its task name, agent id, or agent name when exactly
+one participant of the collaboration answers to it.
+
 Specialist query tables retain source-agent, source-turn, semantic-plan, and
 model provenance through `EvidenceTracker` and numeric verification. Completion
 checks require the matched metrics, dimensions, and explicit single-year period.
@@ -217,8 +252,10 @@ Settings may lower these bounds; root creation records the effective limits.
 Per-agent context, step, time, consent, and tool limits remain in force. Tree
 token totals are checked at admission and worker checkpoints. Concurrent provider
 requests already in flight may complete before the next aggregate check.
-The coordinator uses the root's 30,000-token limit; a specialist uses its
-20,000-token limit. The root must not inherit the smaller specialist limit when
+The Smart root uses a 60,000-token limit; a specialist uses its 20,000-token
+limit. The root pays for discovery, one spawn and wait per specialist, and the
+synthesis, so the legacy coordinator's 30,000 tokens end a two-specialist answer
+before it is written. The root must not inherit the smaller specialist limit when
 resuming after a wait.
 
 Schema initialization adds `delivery_mode VARCHAR(16) NOT NULL DEFAULT

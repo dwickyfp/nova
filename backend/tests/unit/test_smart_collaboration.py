@@ -688,3 +688,64 @@ def test_context_never_copies_authentication():
         "encrypted_password": "hidden-value",
     }
     assert "hidden-value" not in AgentControl._bounded_context(parent, [parent], "full", "")
+
+
+@pytest.mark.asyncio
+async def test_root_sees_bounded_earlier_turns_but_not_the_current_message(monkeypatch):
+    from app.modules.agents import harness_worker
+
+    rows = [
+        {"message_id": f"m{index}", "role": "user" if index % 2 == 0 else "assistant",
+         "content": "x" * 9000, "created_at": datetime(2026, 1, 1), "steps": [{"kind": "table"}]}
+        for index in range(10)
+    ]
+    rows.append({"message_id": "tool", "role": "tool", "content": "raw",
+                 "created_at": datetime(2026, 1, 1)})
+    rows.append({"message_id": "current", "role": "user", "content": "kalau per kategori?",
+                 "created_at": datetime(2026, 1, 1)})
+    listing = AsyncMock(return_value=rows)
+    monkeypatch.setattr(harness_worker.assistant_repository, "list_messages", listing)
+    root = {"thread_id": "thread", "owner_name": "alice", "payload": {"user_message_id": "current"}}
+
+    history = await harness_worker.AgentHarnessWorker._root_history(root)
+
+    listing.assert_awaited_once_with("thread", user_name="alice")
+    assert [message.message_id for message in history] == [f"m{index}" for index in range(4, 10)]
+    assert all(len(message.content) == harness_worker.ROOT_HISTORY_CHARS for message in history)
+    assert history[-1].steps == [{"kind": "table"}]
+
+
+@pytest.mark.asyncio
+async def test_root_answers_without_history_when_the_thread_cannot_be_read(monkeypatch):
+    from app.modules.agents import harness_worker
+
+    monkeypatch.setattr(harness_worker.assistant_repository, "list_messages",
+                        AsyncMock(side_effect=RuntimeError("private connection detail")))
+    assert await harness_worker.AgentHarnessWorker._root_history(
+        {"thread_id": "thread", "owner_name": "alice", "payload": {}}
+    ) == []
+
+
+def test_a_scope_statement_or_clarification_completes_a_turn():
+    from app.modules.agents import harness_worker
+
+    assert {"stop", "out_of_scope", "clarification"} == harness_worker.ANSWERED
+    assert harness_worker.MAX_ROOT_TOKENS < harness_worker.SMART_ROOT_TOKENS
+    assert harness_worker.SMART_ROOT_TOKENS < harness_worker.MAX_SESSION_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_a_participant_answers_to_its_task_or_agent_name_only_when_unambiguous(
+    collaboration,
+):
+    _, root = collaboration
+    child = await spawn(root, "finance", "expense-2025")
+    by_path, _ = await root._target("/root/expense-2025")
+    for alias in ("expense-2025", "Expense-2025", "finance"):
+        assert (await root._target(alias))[0]["run_id"] == by_path["run_id"]
+    assert by_path["run_id"] == child.caller["run_id"]
+    await spawn(root, "finance", "second")
+    with pytest.raises(ValueError, match="not visible"):
+        await root._target("finance")
+    with pytest.raises(ValueError, match="not visible"):
+        await root._target("payroll")

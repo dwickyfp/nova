@@ -62,3 +62,57 @@ async def test_catalog_cannot_be_skipped_by_unsupported_answer(monkeypatch):
           resolve_consent=AsyncMock(return_value=False))])
     assert result.finish_reason != "stop"
     assert not any(frame.startswith("event: text_delta") for frame in result.frames)
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_trajectory_aggregates_two_specialists(monkeypatch):
+    from pathlib import Path
+
+    from app.modules.agents.auto_planner import Candidate
+    from app.modules.agents.capabilities import CapabilityManifest
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.ossie import parse_ossie
+    from app.modules.agents.tools import describe_agent
+
+    source = Path("app/modules/agents/examples/nova_sales.ossie.yaml").read_text()
+    model = SemanticModelIR.from_ossie(parse_ossie(source).as_dict())
+    owned = {
+        "sales": {"semantic_model_id": "sales", "name": "Sales", "version": 1},
+        "marketing": {"semantic_model_id": "marketing", "name": "Marketing", "version": 1},
+    }
+
+    async def load(candidate, context):
+        return [{**owned[candidate.agent_id], "_scoped_ir": model}], 1
+
+    monkeypatch.setattr(describe_agent, "write_audit_log", AsyncMock(return_value="audit"))
+    monkeypatch.setattr(describe_agent, "load_specialist_models", load)
+    monkeypatch.setattr("app.modules.agents.auto_planner.authorized_candidates", AsyncMock(
+        return_value=[Candidate(agent_id, agent_id.title(), CapabilityManifest(), (),
+                                owner_name="owner", view_ids=(agent_id,))
+                      for agent_id in owned],
+    ))
+    registry = ToolRegistry()
+    query, spawn = EvalTool("query_execute"), EvalTool("spawn_agent")
+    registry.register(query)
+    registry.register(spawn)
+    registry.register(DescribeAgentTool(registry, name="Smart"))
+    provider = ScriptedProvider([
+        tool_call_frame("delegate", name="spawn_agent", arguments={
+            "agent": "sales", "task_name": "catalog", "objective": "List your data"}),
+        tool_call_frame("catalog", name="describe_agent", arguments={"offset": 0}),
+        text_frame("Saya punya Semantic View Sales (agent Sales) dan Marketing (agent Marketing)."),
+    ], turn_plan={"intent": "agent_catalog", "tools": [], "required_tools": []})
+    context = LoopContext("reader", agent_id="__smart__", collaboration_root=True,
+                          collaboration_tools=("spawn_agent",))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, system_prompt="Smart", max_iterations=5,
+    ).run(thread=thread(), user_content="data apa yang kamu punya?", context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert not query.runs and not spawn.runs
+    assert context.selected_tools == ["describe_agent"]
+    assert context.agent_scope["catalog_scope"] == "accessible_specialists"
+    assert [(view["name"], view["agents"][0]["name"])
+            for view in context.collaboration_catalog["views"]] == [
+        ("Marketing", "Marketing"), ("Sales", "Sales"),
+    ]

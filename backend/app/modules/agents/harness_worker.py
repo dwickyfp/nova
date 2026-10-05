@@ -54,7 +54,7 @@ from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.skills import contains_credential_shape
-from app.modules.assistant.state import AssistantThread
+from app.modules.assistant.state import AssistantMessage, AssistantThread
 from app.modules.assistant.tools.redaction import is_credential_value, redact_rows
 from app.observability.metrics import (
     AGENT_WORKER_ACTIVE,
@@ -68,6 +68,13 @@ logger = logging.getLogger(__name__)
 MAX_PARALLEL_RUNS = 32
 MAX_SESSION_TOKENS = 120_000
 MAX_ROOT_TOKENS = 30_000
+#: A Smart root pays for discovery, one spawn and wait per specialist, and synthesis.
+#: The legacy coordinator limit ends a two-specialist answer before it is written.
+SMART_ROOT_TOKENS = 60_000
+#: Earlier thread turns a Smart root sees, so a follow-up keeps its subject.
+ROOT_HISTORY_MESSAGES = 6
+ROOT_HISTORY_CHARS = 4000
+ANSWERED = frozenset({"stop", "out_of_scope", "clarification"})
 MAX_CHILD_TOKENS = 20_000
 MAX_SESSION_SECONDS = 600
 MAX_EVIDENCE_TABLES = 3
@@ -849,6 +856,35 @@ class AgentHarnessWorker:
                 },
             )
 
+    @staticmethod
+    async def _root_history(root: dict) -> list[AssistantMessage]:
+        """Earlier turns of the Studio thread, bounded, so a follow-up keeps its subject."""
+        try:
+            rows = await assistant_repository.list_messages(
+                root["thread_id"], user_name=root["owner_name"]
+            )
+        except Exception as exc:  # noqa: BLE001 - a turn without history still answers
+            logger.warning("Could not load Smart thread history: %s", type(exc).__name__)
+            return []
+        current = (root.get("payload") or {}).get("user_message_id")
+        earlier: list[dict] = []
+        for row in rows:
+            if current and row["message_id"] == current:
+                break
+            if row["role"] in {"user", "assistant"}:
+                earlier.append(row)
+        return [
+            AssistantMessage(
+                message_id=row["message_id"],
+                role=row["role"],
+                content=str(row.get("content") or "")[:ROOT_HISTORY_CHARS],
+                steps=row.get("steps") or [],
+                created_at=row["created_at"],
+                security_context=row.get("security_context"),
+            )
+            for row in earlier[-ROOT_HISTORY_MESSAGES:]
+        ]
+
     async def _execute_child(self, child: dict, user: dict, cancelled: asyncio.Event) -> None:
         is_root = child["agent_id"] == SMART_AGENT_ID and child["depth"] == 0
         root = child if is_root else await self.repository.get(child["root_run_id"])
@@ -961,6 +997,8 @@ class AgentHarnessWorker:
             title=child["objective"][:80],
         )
         thread.consent.always_allow_read_only = agent.get("policy") == "auto_read_only"
+        if is_root:
+            thread.messages = await self._root_history(child)
         context = LoopContext(
             user_name=child["owner_name"],
             execution_timezone=configured_timezone(),
@@ -1049,7 +1087,9 @@ class AgentHarnessWorker:
             context.start_new_mission = bool(child.get("payload", {}).get("new_mission"))
         step_limit = 32 if smart else 12
         time_limit = min(float(seconds), 600.0 if is_root else 300.0)
-        participant_token_limit = MAX_ROOT_TOKENS if is_root else MAX_CHILD_TOKENS
+        participant_token_limit = (
+            (SMART_ROOT_TOKENS if smart else MAX_ROOT_TOKENS) if is_root else MAX_CHILD_TOKENS
+        )
         context_limit = min(token_budget or 24000, participant_token_limit)
         loop = AssistantLoop(
             provider=assistant_provider,
@@ -1276,7 +1316,8 @@ class AgentHarnessWorker:
             answer = "The specialist result contained sensitive content and was withheld."
         await self._assert_running(child)
         await self._user_for(child)
-        status = "completed" if finish_reason == "stop" else "failed"
+        # Stating that no data covers the request, or asking what is meant, is an answer.
+        status = "completed" if finish_reason in ANSWERED else "failed"
         if is_root and status == "completed":
             async with self.repository.admission_lock(root["run_id"], child["owner_name"]) as owned:
                 tree = await self.repository.tree(

@@ -33,6 +33,9 @@ class Candidate:
     model_name: str | None = None
     dimensions: tuple[dict[str, Any], ...] = ()
     semantic_views: tuple[dict[str, Any], ...] = ()
+    owner_name: str = ""
+    release_manifest_id: str | None = None
+    view_ids: tuple[str, ...] = ()
 
     def prompt_view(self) -> dict[str, Any]:
         return {
@@ -187,6 +190,9 @@ async def authorized_candidates(user: dict) -> list[Candidate]:
                         model_name=agent.get("model_name"),
                         dimensions=tuple(dimensions),
                         semantic_views=tuple(views),
+                        owner_name=agent["owner_name"],
+                        release_manifest_id=agent.get("release_manifest_id"),
+                        view_ids=tuple(bound_view_ids(agent)),
                     )
                 )
             if result or attempt == 2:

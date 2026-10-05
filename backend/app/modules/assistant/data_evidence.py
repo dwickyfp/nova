@@ -36,6 +36,13 @@ def metric_owners(evidence: Any) -> list[dict[str, Any]]:
     return [agent for agent in discovered_agents(evidence) if agent.get("semantic_matches")]
 
 
+def no_semantic_owner(evidence: Any) -> bool:
+    """Discovery ran and no accessible specialist owns what was asked."""
+    return any(item.tool == "discover_agents" for item in evidence.items) and not metric_owners(
+        evidence
+    )
+
+
 def nonredundant_business_tables(evidence: Any) -> dict[str, dict[str, Any]]:
     """Hide repeated projections only when their source, query scope, and cells agree."""
     tables = evidence.business_tables
