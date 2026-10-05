@@ -1016,7 +1016,8 @@ class AssistantLoop:
                 # The root computes and charts over what its specialists returned.
                 selected_tools = tuple(dict.fromkeys((
                     *selected_tools,
-                    *(name for name in _RESULT_TOOLS if self._registry.get(name) is not None),
+                    *(name for name in (*_RESULT_TOOLS, "propose_automation")
+                      if self._registry.get(name) is not None),
                 )))
             context.selected_tools = list(selected_tools)
         if (
@@ -2401,6 +2402,25 @@ class AssistantLoop:
                         **(context.evidence_sql or {}), evidence_item.evidence_id: compiled,
                     }
             if (
+                invocation.tool_name == "semantic_query" and route.needs_diagnosis
+                and not deferred_calls and not tool_uses.get("diagnose_change")
+                and self._registry.get("diagnose_change") is not None
+            ):
+                diagnosis = _diagnosis_arguments(
+                    evidence.tables.get(evidence_item.evidence_id) or {},
+                    (outcome.evidence or {}).get("metrics") or [],
+                )
+                if diagnosis:
+                    # The result already holds two periods and what may explain them:
+                    # breaking the change down is arithmetic, not a model decision.
+                    deferred_calls.append({
+                        "id": f"primary-{uuid4()}",
+                        "type": "function",
+                        "function": {
+                            "name": "diagnose_change", "arguments": json.dumps(diagnosis),
+                        },
+                    })
+            if (
                 context.collaboration_root and invocation.tool_name == "spawn_agent"
                 and isinstance(outcome.data, dict) and outcome.data.get("agent_path")
             ):
@@ -2933,6 +2953,33 @@ def _turn_context_prompt(
         )
     parts.append("</NOVA_TURN_CONTEXT>")
     return "\n".join(parts)
+
+
+_PERIOD_LABEL = re.compile(r"\d{4}-\d{2}(?:-\d{2})?")
+
+
+def _diagnosis_arguments(table: dict[str, Any], metrics: list[Any]) -> dict[str, Any] | None:
+    """``diagnose_change`` arguments for a result of two periods broken down by dimensions."""
+    columns = [str(column) for column in table.get("columns") or []]
+    rows = [row for row in table.get("rows") or [] if isinstance(row, (list, tuple))]
+    if not rows or len(columns) < 3 or any(len(row) != len(columns) for row in rows):
+        return None
+    period = next((
+        index for index in range(len(columns))
+        if all(isinstance(row[index], str) and _PERIOD_LABEL.match(row[index]) for row in rows)
+        and len({row[index] for row in rows}) == 2
+    ), None)
+    measure = next((columns.index(str(name)) for name in metrics if str(name) in columns), None)
+    if period is None or measure is None or measure == period:
+        return None
+    dimensions = [name for index, name in enumerate(columns) if index not in (period, measure)]
+    if not 1 <= len(dimensions) <= 3:
+        return None
+    prior, current = sorted({row[period] for row in rows})
+    return {
+        "prior_period": prior, "current_period": current, "period_column": columns[period],
+        "revenue_column": columns[measure], "dimension_columns": dimensions,
+    }
 
 
 def _asked(thread: Any, user_content: str) -> str:

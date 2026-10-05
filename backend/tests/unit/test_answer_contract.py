@@ -481,3 +481,37 @@ def test_a_change_a_decomposition_lists_is_accepted_however_the_model_noted_it()
     assert not check_numeric_answer(
         answer, question="Kenapa berubah?", tables=tables, claims=wrong, language="id",
     ).accepted
+
+
+def test_a_claim_noted_with_its_currency_or_sign_is_the_claim_of_that_number() -> None:
+    tables = {
+        "evidence_1": {"columns": ["month", "total_expense"],
+                       "rows": [["2026-04-01", "4319"], ["2026-05-01", "5910"]]},
+        "evidence_2": {"columns": ["component", "change"], "rows": [
+            ["total 2026-05", "5910"], ['["Office", "Operations"]', "-237"], ["net_change", "1591"],
+        ]},
+        "evidence_3": {"columns": ["from", "to", "change_pct_change"],
+                       "rows": [["2026-04-01", "2026-05-01", "36.8372%"]]},
+    }
+    answer = (
+        "Total expense menjadi Rp5.910 pada Mei 2026, naik +1.591 atau sekitar 36,84%. "
+        "Office di Operations: - Rp 237."
+    )
+    noted = (
+        Claim(text="Rp5.910", kind="cell", value=Decimal(5910), evidence_id="evidence_2",
+              column="change", row_label="total 2026-05"),
+        Claim(text="1.591", kind="cell", value=Decimal(1591), evidence_id="evidence_2",
+              column="change", row_label="net_change", direction="up"),
+        Claim(text="36,84%", kind="derived", value=Decimal("36.8372"), direction="up"),
+        Claim(text="- Rp 237", kind="cell", value=Decimal(-237), direction="down"),
+    )
+    check = check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=noted, language="id",
+    )
+    assert check.accepted, check.unsupported
+    # A percentage no result holds is still the claim's alone.
+    wrong = (*noted[:2], Claim(text="36,84%", kind="derived", value=Decimal("12.5"),
+                               direction="up"), noted[3])
+    assert not check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=wrong, language="id",
+    ).accepted

@@ -309,33 +309,49 @@ def _mask_dates(answer: str, language: str = "en") -> str:
     return _spoken_date(language).sub(blank_day, answer)
 
 
-def _signed_cells(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
+def _signed_cells(tables: dict[str, dict[str, Any]]) -> tuple[set[Decimal], set[Decimal]]:
+    """Numeric cells, and cells a computation wrote as a percentage ("36.8372%")."""
     cells: set[Decimal] = set()
+    percents: set[Decimal] = set()
     for table in tables.values():
         for row in (table.get("rows") or [])[:200]:
             for cell in row if isinstance(row, (list, tuple)) else []:
                 number = _number(cell)
                 if number is not None:
                     cells.add(number)
-    return cells
+                elif isinstance(cell, str) and cell.strip().endswith("%"):
+                    share = _number(cell.strip()[:-1])
+                    if share is not None:
+                        percents.add(share)
+    return cells, percents
 
 
-def _written_as_cell(claim: Claim, cells: set[Decimal], language: str) -> bool:
+def _written_as_cell(
+    claim: Claim, signed: tuple[set[Decimal], set[Decimal]], language: str
+) -> bool:
     """The claimed change is itself a result cell, falling when the claim says it fell."""
+    cells, percents = signed
     for token in number_tokens(claim.text, language):
-        if token.percent:
-            continue
-        for value in token.values:
-            size = abs(value * (token.scale or 1))
-            if claim.direction == "down":
-                found = -size in cells
-            elif claim.direction == "up":
-                found = size in cells
-            else:
-                found = size in cells or -size in cells
-            if found and size:
+        for cell in percents if token.percent else cells:
+            if not cell or (claim.direction == "down" and cell > 0 and not token.percent) or (
+                claim.direction == "up" and cell < 0
+            ):
+                continue
+            if token.percent:
+                # A computed percentage is stated rounded: 36.8372% as 36,84%.
+                if display_matches(abs(cell), token):
+                    return True
+            elif any(abs(value * (token.scale or 1)) == abs(cell) for value in token.values):
                 return True
     return False
+
+
+def _figure(text: str, language: str) -> str:
+    """The number in a claim or a span, without the currency or sign written around it."""
+    tokens = number_tokens(text, language)
+    if not tokens:
+        return _key(text)
+    return _key(tokens[0].core.lstrip("+-−") + ("%" if tokens[0].percent else ""))
 
 
 def _table_years(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
@@ -601,22 +617,27 @@ def check_numeric_answer(
         return check
     signed = _signed_cells(tables)
     cell_backed = {
-        _key(item.text) for item in claims
+        _figure(item.text, language) for item in claims
         if (item.kind == "derived" or item.direction)
         and _written_as_cell(item, signed, language)
     }
     stated_by_claim = {
-        _key(item.text) for item in claims
-        if ((item.kind == "derived" or item.direction) and _key(item.text) not in cell_backed)
+        _figure(item.text, language) for item in claims
+        if ((item.kind == "derived" or item.direction)
+            and _figure(item.text, language) not in cell_backed)
         or (
             # The claim gives another number than the text shows: the claim stands.
+            # A fall noted as a negative value and written as its size is the same number.
             item.value is not None and not any(
-                display_matches(item.value, token)
+                display_matches(item.value, token) or display_matches(abs(item.value), token)
                 for token in number_tokens(item.text, language)
             )
         )
     }
-    retry = [span for span in check.unsupported_spans if _key(span[2]) not in stated_by_claim]
+    retry = [
+        span for span in check.unsupported_spans
+        if _figure(span[2], language) not in stated_by_claim
+    ]
     if not retry:
         return check
     plain = _check_numeric_answer(
@@ -625,7 +646,8 @@ def check_numeric_answer(
     # Recovered only where the plain reading verified the number at that very position.
     verified = dict(zip(plain.verified_spans, plain.claims, strict=True))
     recovered = [
-        span for span in retry if span[:2] in verified or _key(span[2]) in cell_backed
+        span for span in retry
+        if span[:2] in verified or _figure(span[2], language) in cell_backed
     ]
     if not recovered:
         return check
@@ -662,9 +684,18 @@ def _check_numeric_answer(
     # Several numbers can be written the same way ("1" twice): claims queue per text,
     # in answer order.
     by_text: dict[str, list[Claim]] = {}
+    # The same queues by the bare figure: a claim noted as "Rp5.910.000.000" or
+    # "+261.000.000" is the claim of the number written beside that sign.
+    by_figure: dict[str, list[Claim]] = {}
     for item in claims or ():
         if item.kind not in {"comparison", "hypothesis"}:
-            by_text.setdefault(_key(item.text), []).append(item)
+            queue = by_text.setdefault(_key(item.text), [])
+            queue.append(item)
+            written = number_tokens(item.text, language)
+            # Only a sign or currency before the number; a unit word after it is
+            # read through the claim itself.
+            if written and item.text.strip().endswith(written[0].text):
+                by_figure.setdefault(_figure(item.text, language), queue)
     question_values = {
         value * (token.scale or 1)
         for token in number_tokens(question, language) for value in token.values
@@ -694,7 +725,10 @@ def _check_numeric_answer(
         good_spans.append((token.start, token.end))
 
     for token in number_tokens(_mask_dates(answer, language), language):
-        queue = by_text.get(_key(token.text)) or by_text.get(_key(token.core)) or []
+        queue = (
+            by_text.get(_key(token.text)) or by_text.get(_key(token.core))
+            or by_figure.get(_figure(token.text, language)) or []
+        )
         spoken_first = _prose_label(answer, token, table_labels) if len(queue) > 1 else None
         claim = next(
             (item for item in queue if spoken_first and item.row_label

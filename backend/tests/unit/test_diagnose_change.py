@@ -110,3 +110,22 @@ async def test_a_call_that_names_no_usable_column_can_be_repaired():
     )
     assert not outcome.ok and outcome.recoverable
     assert "entry_date, department, total_expense" in outcome.safe_detail
+
+
+def test_a_two_period_breakdown_is_diagnosed_without_a_model_decision():
+    from app.modules.assistant.service import _diagnosis_arguments
+
+    assert _diagnosis_arguments(MONTHLY, ["total_expense"]) == {
+        "prior_period": "2026-04-01 00:00:00", "current_period": "2026-05-01 00:00:00",
+        "period_column": "entry_date", "revenue_column": "total_expense",
+        "dimension_columns": ["department"],
+    }
+    arguments = _diagnosis_arguments(MONTHLY, ["total_expense"])
+    assert decompose_change(MONTHLY, **arguments)["net_change"] == "70"
+    # Nothing to break the change down by, three periods, or no known measure: the model decides.
+    totals = {"columns": ["entry_date", "total_expense"],
+              "rows": [["2026-04-01", "150"], ["2026-05-01", "220"]]}
+    assert _diagnosis_arguments(totals, ["total_expense"]) is None
+    longer = {**MONTHLY, "rows": [*MONTHLY["rows"], ["2026-06-01 00:00:00", "Sales", "1"]]}
+    assert _diagnosis_arguments(longer, ["total_expense"]) is None
+    assert _diagnosis_arguments(MONTHLY, ["net_income"]) is None

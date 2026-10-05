@@ -381,8 +381,15 @@ takes the result's own period and measure columns, matches a period by prefix
 (`2026-04` is the row labelled `2026-04-01 00:00:00`), lists both period totals
 with the contributions, and a call it cannot use is recoverable. The semantic
 planner plans two named periods as one range grouped by their unit, not as a
-previous-period comparison of the whole range. A change the answer states is
-accepted when a result holds it as a cell of the same sign.
+previous-period comparison of the whole range. When a turn that needs a
+diagnosis gets a result of two periods broken down by one to three dimensions,
+the loop runs `diagnose_change` on it without a model call. A change the answer
+states is accepted when a result holds it as a cell of the same sign, a computed
+percentage cell may be stated rounded, and a claim noted with its currency or
+sign is the claim of that number. `propose_automation` stays available to the
+Smart root whatever the planner selected. After the root settles, Studio reads
+the run tree a few more times while a participant is unsettled, so its status
+card does not stay on "Queued".
 
 ## Limitations and validation
 

@@ -11,12 +11,12 @@ class Case:
     turns: tuple[str, ...]
     expect: str
     gold: tuple[str, ...] = ()
-    #: Gold the judge may check a detail against, though the answer need not state it.
-    reference: tuple[str, ...] = ()
     #: Stream artifacts the last turn must carry: chart, table, automation_proposal.
     artifacts: tuple[str, ...] = ()
     #: The specialists that can also answer it alone, as a baseline.
     direct: tuple[str, ...] = field(default=())
+    #: Gold the judge may check a detail against, though the answer need not state it.
+    reference: tuple[str, ...] = ()
 
 
 CATALOG = (
