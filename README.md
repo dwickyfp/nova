@@ -160,9 +160,9 @@ Nova Console exposes the data and control foundation across these layers.
 
 ## The Nova app
 
-The Studio workspace image is a frontend preview using sample Sales Agent metadata
-from this repository; it does not show a live query result. The other images are
-checked-in app and Studio UI captures.
+These images are captures of a local development instance running demo sales
+data. The Studio workspace shows a saved conversation in which Smart delegated
+the question to a Sales Agent.
 
 ### SQL Workspace
 
@@ -170,11 +170,11 @@ checked-in app and Studio UI captures.
 
 ### Database Explorer
 
-![Nova Database Explorer browsing stage files](docs/assets/readme/database-explorer.png)
+![Nova Database Explorer browsing the tables of a sales database](docs/assets/readme/database-explorer.png)
 
 ### Nova Studio: governed intelligence workspace
 
-![Nova Studio workspace home with a sample Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
+![Nova Studio answering a revenue question through a Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
 
 ### Nova Studio capabilities
 
@@ -182,7 +182,7 @@ checked-in app and Studio UI captures.
 
 ### Nova Studio skill upload
 
-![Nova Studio skill upload dialog](docs/assets/readme/nova-studio-skill-upload.png)
+![Nova Studio skill upload dialog over the Capabilities view](docs/assets/readme/nova-studio-skill-upload.png)
 
 ## Architecture
 
