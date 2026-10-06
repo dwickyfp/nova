@@ -171,7 +171,9 @@ its Studio thread, each bounded, so a follow-up keeps its subject. A year or
 limit the user named in an earlier turn may be repeated by the answer. When a
 Smart answer showed no table of its own, its newest specialist result is kept
 with the message as a `result` step, which Studio does not display, so "chart
-that" in the next turn has the rows. A chart request that finds no data is
+that" in the next turn has the rows. The step records what the rows measure and
+which specialist served them, and when Smart charts them they count as that
+turn's evidence, judged by the same coverage rule as a fresh result. A chart request that finds no data is
 recoverable for Smart: it asks the owner first. When discovery
 finds no owner and nothing else ran, Smart may state which data is missing; that
 answer carries no number and ends as `out_of_scope`. A turn that ends as
