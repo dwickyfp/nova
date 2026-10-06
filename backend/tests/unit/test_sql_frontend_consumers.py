@@ -276,3 +276,79 @@ def test_prediction_table_rows_match_the_table_across_batch_boundaries(rows):
     table = pa.table({"id": list(range(rows)), "label": [f"row-{i}" for i in range(rows)]})
 
     assert _table_rows(table) == [[i, f"row-{i}"] for i in range(rows)]
+
+
+async def test_large_statement_is_prepared_off_the_event_loop(monkeypatch):
+    """Guard, build and planning of a long statement must not run on the loop."""
+    import threading
+
+    from app.core.config import settings
+    from app.modules.query import service as service_module
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1024)
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
+    threads: dict[str, set[str]] = {}
+
+    def recording(name, original):
+        def wrapper(*args, **kwargs):
+            threads.setdefault(name, set()).add(threading.current_thread().name)
+            return original(*args, **kwargs)
+
+        return wrapper
+
+    service = QueryService()
+    monkeypatch.setattr(
+        service_module,
+        "guard_user_statement",
+        recording("guard", service_module.guard_user_statement),
+    )
+    monkeypatch.setattr(service._builders, "build", recording("build", service._builders.build))
+    monkeypatch.setattr(
+        service._planner, "preflight", recording("preflight", service._planner.preflight)
+    )
+    repository = AsyncMock()
+    repository.execute_as_user.return_value = QueryResult(columns=["c"], rows=[[1]])
+    service._repo = repository
+    values = ", ".join(str(number) for number in range(600))
+
+    results = await service.execute_statements(
+        sql=f"SELECT 1 WHERE 1 IN ({values})",
+        username="alice",
+        encrypted_password="",
+        connection=object(),
+        role="analyst",
+    )
+
+    assert results[0].error is None and results[0].rows == [[1]]
+    here = threading.current_thread().name
+    assert threads.keys() == {"guard", "build", "preflight"}
+    for name, used in threads.items():
+        assert here not in used, f"{name} ran on the event loop"
+
+
+async def test_planning_falls_back_to_the_event_loop_when_a_planner_waits(monkeypatch):
+    import asyncio
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
+    service = QueryService()
+    original = service._planner.plan
+    waited: list[bool] = []
+
+    async def plan(statement, context, **kwargs):
+        await asyncio.sleep(0)
+        waited.append(True)
+        return await original(statement, context, **kwargs)
+
+    monkeypatch.setattr(service._planner, "plan", plan)
+    repository = AsyncMock()
+    repository.execute_as_user.return_value = QueryResult(columns=["c"], rows=[[1]])
+    service._repo = repository
+
+    result = await service.execute(
+        "SELECT 1", "alice", "", connection=object(), role="analyst"
+    )
+
+    assert result.error is None and waited == [True]

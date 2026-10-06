@@ -58,3 +58,7 @@ docker/data/
 # lockfiles for package managers this repo does not use are ignored.
 package-lock.json
 yarn.lock
+
+# TLS material for the split gateway is deployment-local.
+docker/gateway/tls/*
+!docker/gateway/tls/.gitkeep

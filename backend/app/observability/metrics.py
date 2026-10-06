@@ -189,6 +189,24 @@ SEARCH_BUILD_DURATION = Histogram(
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 1800, 3600),
 )
 
+LLM_FUNCTION_REQUESTS = Counter(
+    "nova_llm_function_requests_total",
+    "AI_* SQL function calls served by the internal LLM gateway.",
+    ("function", "status"),
+)
+LLM_FUNCTION_TOKENS = Counter(
+    "nova_llm_function_tokens_total",
+    "Provider tokens used by AI_* SQL functions.",
+    ("function", "kind"),
+)
+QUERY_ADMISSION_ACTIVE = Gauge(
+    "nova_query_admission_active", "Statements this process is running under the admission cap."
+)
+QUERY_ADMISSION_REFUSED = Counter(
+    "nova_query_admission_refused_total",
+    "Statements refused because the process was at its admission cap.",
+    ("source",),
+)
 SERVICE_UP = Gauge("nova_service_up", "Whether a Nova process completed startup.", ("service",))
 SERVICE_HEARTBEAT = Gauge(
     "nova_service_last_heartbeat_timestamp_seconds",

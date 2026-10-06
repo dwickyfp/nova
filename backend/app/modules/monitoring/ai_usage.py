@@ -167,6 +167,32 @@ class AIUsageService:
                 ))
         return events, len(rows) > SOURCE_LIMIT
 
+    async def _function_tokens(self, start: datetime, end: datetime) -> tuple[list[dict], bool]:
+        """Measured ``AI_*`` usage from the LLM gateway, one event per flushed total.
+
+        The engine does not say who ran the SQL, so these carry no user; the
+        ``functions`` source still lists which statements called a function.
+        """
+        zone = configured_timezone()
+        result = await db.execute_system(
+            "SELECT usage_id, CONVERT_TZ(recorded_at, %s, '+00:00'), function_name, model_name, "
+            "status, prompt_tokens, completion_tokens, total_tokens, duration_ms "
+            "FROM NOVA_SYSTEM.USAGE_LLM_FUNCTIONS "
+            "WHERE recorded_at >= CONVERT_TZ(%s, '+00:00', %s) "
+            "AND recorded_at < CONVERT_TZ(%s, '+00:00', %s) "
+            "ORDER BY recorded_at DESC, usage_id DESC LIMIT %s",
+            [zone, start.replace(tzinfo=None), zone, end.replace(tzinfo=None), zone,
+             SOURCE_LIMIT + 1],
+        )
+        rows = result["rows"]
+        events = [
+            _event(
+                f"function-usage:{r[0]}", r[1], "", "function_tokens", r[2],
+                r[3], r[5], r[6], r[7], str(r[4]).lower(), r[8],
+            ) for r in rows[:SOURCE_LIMIT]
+        ]
+        return events, len(rows) > SOURCE_LIMIT
+
     async def dashboard(
         self, *, days: int = 7, source: str | None = None, model: str | None = None,
         user_name: str | None = None, offset: int = 0, limit: int = 25,
@@ -175,7 +201,10 @@ class AIUsageService:
         end = now or datetime.now(UTC)
         start = end.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
         previous_start, previous_end = start - timedelta(days=days), end - timedelta(days=days)
-        loaders = {"assistant": self._messages, "smart": self._runs, "functions": self._functions}
+        loaders = {
+            "assistant": self._messages, "smart": self._runs, "functions": self._functions,
+            "function_tokens": self._function_tokens,
+        }
 
         async def load(name: str, begin: datetime, finish: datetime) -> tuple[list[dict], bool]:
             return await asyncio.wait_for(loaders[name](begin, finish), timeout=15)

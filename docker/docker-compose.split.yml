@@ -4,17 +4,27 @@
 #   docker compose -f docker/docker-compose-engine.yml \
 #     -f docker/docker-compose.split.yml --profile app up -d
 #   docker compose -f docker/docker-compose-engine.yml \
-#     -f docker/docker-compose.split.yml --profile app up -d --scale nova-query=3
+#     -f docker/docker-compose.split.yml --profile app up -d \
+#     --scale nova-query=3 --scale nova-proxy=2
 #
-# The web process keeps the schema bootstrap and the singleton background
-# loops, so it stays at one replica. The gateway takes over the API port.
+# The gateway takes over the API port and the MySQL port.
 
 services:
   nova-backend:
+    # No fixed name, so the web tier can be scaled like the query tier.
+    container_name: !reset null
     environment:
       NOVA_PROCESS_ROLE: web
       PROXY_ENABLED: "false"
+      # AI_* calls from the engine go straight to the query tier.
+      LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-http://nova-query:8000}
     ports: !override []
+    healthcheck: &nova-ready
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
   nova-query:
     extends:
@@ -25,22 +35,33 @@ services:
       NOVA_PROCESS_ROLE: query
       PROXY_ENABLED: "false"
     ports: !override []
+    # The web process creates the schemas a query process reads at startup.
     depends_on:
       nova-backend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck: *nova-ready
     restart: unless-stopped
 
   nova-proxy:
     extends:
       service: nova-backend
       file: docker-compose-engine.yml
-    container_name: nova-proxy
+    container_name: !reset null
     command: ["python", "-m", "app.proxy"]
     environment:
       PROXY_ENABLED: "true"
       NOVA_METRICS_HOST: 0.0.0.0
-    ports: !override
-      - "${NOVA_MYSQL_PORT:-4406}:4406"
+    # MySQL clients connect through the gateway, which balances the replicas.
+    ports: !override []
+    depends_on:
+      nova-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 4406), timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
     restart: unless-stopped
 
   nova-gateway:
@@ -48,12 +69,22 @@ services:
     image: nginx:1.27-alpine
     container_name: nova-gateway
     depends_on:
-      - nova-backend
-      - nova-query
+      nova-backend:
+        condition: service_healthy
+      nova-query:
+        condition: service_healthy
+      nova-proxy:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
+      - "127.0.0.1:${NOVA_API_TLS_PORT:-8443}:8443"
+      - "${NOVA_MYSQL_PORT:-4406}:4406"
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./gateway/routes.conf:/etc/nginx/nova-routes.conf:ro
+      # Empty unless HTTPS is enabled; see gateway/tls.conf.example.
+      - ./gateway/tls:/etc/nginx/nova-tls:ro
+      - ${NOVA_TLS_CERT_DIR:-./gateway/tls}:/etc/nginx/certs:ro
     restart: unless-stopped
     networks:
       - nova

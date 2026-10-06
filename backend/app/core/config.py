@@ -72,10 +72,22 @@ class Settings(BaseSettings):
     #: every parse inline.
     SQL_PARSE_OFFLOAD_MIN_CHARS: int = Field(default=8192, ge=0)
     SQL_PARSE_THREADS: int = Field(default=2, ge=1)
-    #: Statements the query API runs at once in this process; 0 means no cap.
-    #: A request over the cap is refused with 429 instead of queueing behind
-    #: work the engine has not finished.
-    QUERY_MAX_CONCURRENCY: int = Field(default=0, ge=0)
+    #: Statements this process runs at once across the query API, the ML
+    #: execution routes and the MySQL proxy; 0 means no cap. Work over the cap
+    #: is refused (429, or a MySQL error) instead of queueing behind work the
+    #: engine has not finished.
+    QUERY_MAX_CONCURRENCY: int = Field(default=64, ge=0)
+
+    # --- AI_* SQL functions ---
+    #: Where the engine's backends reach this service. ``AI_*`` function bodies
+    #: call ``<url>/api/v1/internal/llm/chat/completions`` so the provider key
+    #: stays in Nova. Must be reachable from every StarRocks BE, and should be
+    #: an internal address: the route is not meant for the public gateway.
+    LLM_GATEWAY_URL: str = "http://host.docker.internal:8000"
+    LLM_GATEWAY_TIMEOUT_SECONDS: float = 60.0
+    #: Provider requests this process forwards at once; the rest wait.
+    LLM_GATEWAY_MAX_CONCURRENCY: int = Field(default=32, ge=1)
+    LLM_USAGE_FLUSH_SECONDS: float = 30.0
 
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"

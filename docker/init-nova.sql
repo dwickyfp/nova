@@ -605,6 +605,24 @@ PROPERTIES("replication_num"="1");
 -- USAGE Schema
 -- ═══════════════════════════════════════
 
+-- Token usage of the AI_* SQL functions, summed per function and written in
+-- batches by the internal LLM gateway (backend/app/modules/llm_functions/gateway.py).
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE_LLM_FUNCTIONS (
+  usage_id          BIGINT NOT NULL AUTO_INCREMENT,
+  recorded_at       DATETIME NOT NULL,
+  function_name     VARCHAR(64) NOT NULL,
+  alias_name        VARCHAR(128),
+  model_name        VARCHAR(256),
+  status            VARCHAR(32) NOT NULL,
+  request_count     BIGINT NOT NULL,
+  prompt_tokens     BIGINT,
+  completion_tokens BIGINT,
+  total_tokens      BIGINT,
+  duration_ms       BIGINT
+) DUPLICATE KEY(usage_id, recorded_at)
+DISTRIBUTED BY HASH(usage_id) BUCKETS 1
+PROPERTIES("replication_num"="1");
+
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE_QUERY_STATS (
   stat_id         BIGINT NOT NULL AUTO_INCREMENT,
   user_name       VARCHAR(128),

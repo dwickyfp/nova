@@ -7,7 +7,7 @@ from app.sql_dialect.grammar import StarRocksParser
 from app.sql_frontend.analysis.effects import PlanEffects
 from app.sql_frontend.ast.statements import StreamStatement
 from app.sql_frontend.errors import SQLSyntaxError, SyntaxDiagnostic
-from app.sql_frontend.parser import _Diagnostics, tokenize_sql
+from app.sql_frontend.parser import _Diagnostics, new_parser, tokenize_sql
 
 
 def name_parts(node) -> tuple[str, ...]:
@@ -27,8 +27,7 @@ def name_parts(node) -> tuple[str, ...]:
 def parse_stream_name(value: str, database: str | None = None):
     tokens, errors = tokenize_sql(value)
     listener = _Diagnostics()
-    parser = StarRocksParser(tokens)
-    parser.removeErrorListeners()
+    parser = new_parser(tokens)
     parser.addErrorListener(listener)
     node = parser.novaStreamName()
     errors += listener.errors

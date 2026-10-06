@@ -7,10 +7,12 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.common.nova_system import init_nova_system
@@ -46,6 +48,8 @@ from app.modules.intelligence.search import search_service
 from app.modules.intelligence.search_schema import ensure_search_schema
 from app.modules.intelligence.semantic_view_schema import ensure_semantic_view_schema
 from app.modules.intelligence.semantic_views import router as semantic_views_router
+from app.modules.llm_functions.gateway import llm_gateway
+from app.modules.llm_functions.gateway import router as llm_gateway_router
 from app.modules.llm_functions.router import router as llm_fn_router
 from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
@@ -84,6 +88,14 @@ logger = logging.getLogger(__name__)
 #: leave a window in which a function a query needs does not exist.
 _LLM_UDF_LOCK = "nova:llm-functions:register"
 
+#: Held by the one process that is creating or migrating ``NOVA_SYSTEM``.
+_BOOTSTRAP_LOCK = "nova:control-plane:bootstrap"
+BOOTSTRAP_LOCK_TTL_SECONDS = 600
+BOOTSTRAP_LOCK_POLL_SECONDS = 1.0
+
+#: A dependency that has not answered in this long is not ready to serve.
+READINESS_TIMEOUT_SECONDS = 3
+
 
 def _owns_control_plane(role: str) -> bool:
     """Whether this process bootstraps schemas and runs the singleton loops."""
@@ -98,6 +110,40 @@ def _serves_execution(role: str) -> bool:
 def _service_label(role: str) -> str:
     """The ``nova_service_up`` label; the query tier reports separately."""
     return "query" if role == "query" else "backend"
+
+
+async def _bootstrap_exclusively() -> None:
+    """Run the schema bootstrap in one process at a time.
+
+    Most of it is ``CREATE TABLE IF NOT EXISTS``, but a few steps migrate or
+    backfill data and are not safe when two processes interleave. A process
+    that finds the lock held waits, then runs the bootstrap itself, by which
+    time every step is a no-op.
+    """
+    from app.modules.task_orchestration.transport import LeaderLock
+
+    lock = None
+    try:
+        lock = LeaderLock(
+            session_store._redis, key=_BOOTSTRAP_LOCK, ttl_seconds=BOOTSTRAP_LOCK_TTL_SECONDS
+        )
+        deadline = time.monotonic() + BOOTSTRAP_LOCK_TTL_SECONDS
+        while not await lock.acquire():
+            if time.monotonic() >= deadline:
+                logger.warning("Schema bootstrap lock was not released; continuing without it")
+                lock = None
+                break
+            await asyncio.sleep(BOOTSTRAP_LOCK_POLL_SECONDS)
+    except Exception as exc:
+        # A lock that cannot be taken must not keep the only process from starting.
+        logger.warning("Schema bootstrap is not serialized: %s", type(exc).__name__)
+        lock = None
+    try:
+        await _bootstrap_control_plane()
+    finally:
+        if lock is not None:
+            with contextlib.suppress(Exception):
+                await lock.release()
 
 
 async def _bootstrap_control_plane() -> None:
@@ -214,6 +260,12 @@ async def _bootstrap_control_plane() -> None:
                 type(exc).__name__,
             )
 
+    # Token usage of the AI_* SQL functions, written by the LLM gateway.
+    try:
+        await llm_gateway.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure AI function usage schema: %s", e)
+
 
 async def _register_llm_udfs() -> None:
     """Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)."""
@@ -227,6 +279,9 @@ async def _register_llm_udfs() -> None:
         try:
             from app.modules.llm_functions.service import llm_function_service
 
+            if await llm_function_service.registration_is_current():
+                logger.info("LLM UDFs already match the configured aliases")
+                return
             result = await llm_function_service.register_all_udfs()
             logger.info(
                 "LLM UDFs registered: %d ok, %d failed",
@@ -260,7 +315,7 @@ async def lifespan(app: FastAPI):
     role = settings.NOVA_PROCESS_ROLE
     control = _owns_control_plane(role)
     if control:
-        await _bootstrap_control_plane()
+        await _bootstrap_exclusively()
         # So the AI_* functions are available as SQL functions from the start.
         await _register_llm_udfs()
 
@@ -302,11 +357,16 @@ async def lifespan(app: FastAPI):
     autopilot_flush = asyncio.create_task(
         autopilot_collector.run(autopilot_stop, autopilot_repository)
     )
+    # The same holds for AI function usage: whichever process the engine calls
+    # records what it forwarded.
+    llm_usage_flush = asyncio.create_task(llm_gateway.meter.run(autopilot_stop))
     service = _service_label(role)
     SERVICE_UP.labels(service=service).set(1)
+    app.state.started = True
     try:
         yield
     finally:
+        app.state.started = False
         SERVICE_UP.labels(service=service).set(0)
         news_stop.set()
         for task in background:
@@ -323,6 +383,7 @@ async def lifespan(app: FastAPI):
             logger.warning("MySQL proxy did not stop cleanly: %s", e)
     autopilot_stop.set()
     await autopilot_flush
+    await llm_usage_flush
     await session_store.close()
     await db.close_system_pool()
 
@@ -388,6 +449,9 @@ def create_app() -> FastAPI:
     app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(ml_router, prefix=f"{prefix}/ml", tags=["ml"])
     app.include_router(ml_internal_router, prefix=f"{prefix}/internal/ml", tags=["internal"])
+    # Called by the engine's ``ai_query()``, not by browsers. Authenticated by
+    # the per-alias token in the function body; keep it off the public gateway.
+    app.include_router(llm_gateway_router, prefix=f"{prefix}/internal/llm", tags=["internal"])
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
@@ -474,6 +538,25 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": "0.1.0", "role": settings.NOVA_PROCESS_ROLE}
+
+    @app.get("/ready")
+    async def ready():
+        """Whether this process can serve a request now.
+
+        ``/health`` only says the process is up. This also requires startup to
+        have finished and the engine and Redis to answer, which is what a
+        gateway or orchestrator needs before sending traffic.
+        """
+        if not getattr(app.state, "started", False):
+            return JSONResponse(status_code=503, content={"status": "starting"})
+        try:
+            async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
+                await db.execute_system("SELECT 1")
+                await session_store._redis.ping()
+        except Exception as exc:
+            logger.warning("Readiness check failed: %s", type(exc).__name__)
+            return JSONResponse(status_code=503, content={"status": "unavailable"})
+        return {"status": "ready", "role": settings.NOVA_PROCESS_ROLE}
 
     app.add_api_route("/metrics", metrics_response, methods=["GET"], include_in_schema=False)
 

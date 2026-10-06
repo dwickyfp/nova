@@ -20,8 +20,13 @@ from uuid import uuid4
 import asyncmy
 import asyncmy.cursors
 
-from app.common.crypto import decrypt as decrypt_api_key
 from app.core.config import settings
+from app.modules.llm_functions.gateway import (
+    FORWARDED_PARAMETERS,
+    alias_token,
+    gateway_endpoint,
+    llm_gateway,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +326,7 @@ class LLMFunctionService:
 
     async def delete_alias(self, alias_id: str) -> bool:
         """Delete an alias. If it was the default, try to promote another."""
+        llm_gateway.forget(alias_id)
         existing = await self.get_alias(alias_id)
         if not existing:
             return False
@@ -527,37 +533,31 @@ class LLMFunctionService:
         if not model_name and model:
             model_name = model["name"]
 
-        # Build config JSON for ai_query()
-        # NOTE: StarRocks ai_query() config fields:
-        #   - model (required): model name
-        #   - api_key (required): API key for the LLM provider
-        #   - endpoint_url (optional): custom endpoint URL
+        # ``ai_query()`` posts an OpenAI-style request to ``endpoint`` with
+        # ``api_key`` as the bearer token. Both point at Nova's own gateway, so
+        # the provider's key never enters the engine's function metadata; the
+        # token only names this alias. See ``gateway.py``.
+        if not provider.get("endpoint"):
+            return {
+                "function_name": template["function_name"],
+                "function_type": function_type,
+                "alias_name": alias.get("alias_name"),
+                "provider_name": provider["name"],
+                "model_name": model_name,
+                "registered": False,
+                "error": "Provider has no endpoint",
+            }
         config = {
-            "model": model_name or "gpt-4o-mini",
-            "api_key": decrypt_api_key(provider["api_key"]),
+            key: value
+            for key, value in (alias.get("default_params") or {}).items()
+            if key in FORWARDED_PARAMETERS or key == "timeout_ms"
         }
-        # Add endpoint if provider has a custom one
-        # StarRocks ai_query() uses "endpoint" field (NOT "endpoint_url")
-        # and requires full path to /chat/completions
-        if provider.get("endpoint"):
-            endpoint = provider["endpoint"]
-            # Docker BE can't reach host localhost; use host.docker.internal
-            endpoint = endpoint.replace("localhost", "host.docker.internal")
-            endpoint = endpoint.replace("127.0.0.1", "host.docker.internal")
-            # ai_query() needs full path including /chat/completions
-            if not endpoint.endswith("/chat/completions"):
-                # Remove trailing slash
-                endpoint = endpoint.rstrip("/")
-                # Add /chat/completions if not already there
-                if endpoint.endswith("/v1"):
-                    endpoint = endpoint + "/chat/completions"
-                elif not endpoint.endswith("/chat/completions"):
-                    endpoint = endpoint + "/v1/chat/completions"
-            config["endpoint"] = endpoint
-
-        # Merge default_params from alias
-        if alias.get("default_params"):
-            config.update(alias["default_params"])
+        config.update(
+            model=model_name or "gpt-4o-mini",
+            api_key=alias_token(alias["id"]),
+            endpoint=gateway_endpoint(),
+        )
+        llm_gateway.forget(alias["id"])
 
         config_str = json.dumps(config, separators=(",", ": "))
         # Escape single quotes for SQL string literal
@@ -696,6 +696,45 @@ class LLMFunctionService:
                 "registered": False,
                 "error": str(e),
             }
+
+    async def registration_is_current(self) -> bool:
+        """Whether the engine's ``AI_*`` functions already match the aliases.
+
+        Registering drops each function before recreating it, so a process that
+        starts while queries are running should leave matching functions alone.
+        """
+        conn = await self._connect()
+        bodies: dict[str, str] = {}
+        try:
+            async with conn.cursor() as cur:
+                await cur.execute("SHOW FULL GLOBAL FUNCTIONS")
+                for row in await cur.fetchall():
+                    values = list(row.values()) if isinstance(row, dict) else list(row)
+                    name = str(values[0]).split("(", 1)[0].strip().upper()
+                    bodies[name] = str(values[-1])
+        finally:
+            conn.close()
+
+        chosen: dict[str, dict] = {}
+        for alias in await self.list_aliases():
+            function_type = alias["function_type"]
+            if function_type not in chosen or alias.get("is_default"):
+                chosen[function_type] = alias
+        for function_type, template in UDF_TEMPLATES.items():
+            body = bodies.get(template["function_name"])
+            if body is None:
+                return False
+            alias = chosen.get(function_type)
+            if alias is None:
+                if "not configured" not in body:
+                    return False
+            elif alias.get("is_active", True):
+                expected = [alias_token(alias["id"]), gateway_endpoint()]
+                if alias.get("model_name"):
+                    expected.append(json.dumps(alias["model_name"]))
+                if any(marker not in body for marker in expected):
+                    return False
+        return True
 
     async def get_udf_status(self) -> list[dict]:
         """Check which UDFs are registered in StarRocks."""

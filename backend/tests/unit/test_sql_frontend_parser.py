@@ -346,3 +346,147 @@ async def test_worker_parse_leaves_the_event_loop_prediction_caches_alone(monkey
     assert shared_states() == before
     parse_statement(sql)
     assert shared_states() > before
+
+
+# ── CPU work around the parse ───────────────────────────────────────────────
+
+
+async def test_cpu_helper_runs_small_work_inline_and_large_work_on_a_worker(monkeypatch):
+    import threading
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 100)
+    here = threading.current_thread().name
+
+    assert await run_sql_cpu(99, lambda: threading.current_thread().name) == here
+    assert (await run_sql_cpu(100, lambda: threading.current_thread().name)).startswith(
+        "nova-sql-parse"
+    )
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 0)
+    assert await run_sql_cpu(10**6, lambda: threading.current_thread().name) == here
+
+
+async def test_cpu_helper_passes_arguments_results_and_errors_through(monkeypatch):
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+
+    def work(left, *, right):
+        if right is None:
+            raise SemanticError("refused")
+        return left + right
+
+    assert await run_sql_cpu(5, work, 2, right=3) == 5
+    with pytest.raises(SemanticError, match="refused"):
+        await run_sql_cpu(5, work, 2, right=None)
+
+
+async def test_cpu_helper_shares_request_caches_but_not_context_assignments(monkeypatch):
+    from contextvars import ContextVar
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    cache: ContextVar[dict | None] = ContextVar("test_cache", default=None)
+    flag: ContextVar[str] = ContextVar("test_flag", default="caller")
+    shared: dict = {}
+    cache.set(shared)
+
+    def work():
+        cache.get()["seen"] = flag.get()
+        flag.set("worker")
+
+    await run_sql_cpu(5, work)
+
+    assert shared == {"seen": "caller"} and flag.get() == "caller"
+
+
+async def test_nested_parse_on_a_worker_uses_the_worker_caches(monkeypatch):
+    """Builders and planners parse inner SQL; that must stay off the shared caches."""
+    from app.core.config import settings
+    from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
+    from app.sql_frontend.parser import run_sql_cpu
+
+    def shared_states() -> int:
+        caches = (*StarRocksLexer.decisionsToDFA, *StarRocksParser.decisionsToDFA)
+        return sum(len(dfa.states) for dfa in caches)
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    sql = "SELECT NTILE(4) OVER (ORDER BY amount NULLS LAST) FROM ledger LIMIT 7 OFFSET 3"
+    before = shared_states()
+
+    parsed = await run_sql_cpu(len(sql), parse_statement, sql)
+
+    assert shared_states() == before
+    assert type(ast_builders.build(parsed)).__name__ == "NativeStatement"
+
+
+async def test_stream_names_are_parsed_safely_on_a_worker(monkeypatch):
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+    from app.sql_frontend.streams import parse_stream_name
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+
+    inline = parse_stream_name("sales.orders_stream")
+    offloaded = await run_sql_cpu(99, parse_stream_name, "sales.orders_stream")
+
+    assert offloaded == inline
+
+
+def test_coroutine_that_never_suspends_is_run_to_completion():
+    from app.sql_frontend.parser import run_without_awaiting
+
+    async def plan():
+        return "plan"
+
+    assert run_without_awaiting(plan) == "plan"
+
+
+def test_coroutine_that_suspends_asks_for_the_event_loop():
+    import asyncio
+
+    from app.sql_frontend.parser import NeedsEventLoop, run_without_awaiting
+
+    async def plan():
+        await asyncio.sleep(0)
+        return "plan"
+
+    with pytest.raises(NeedsEventLoop):
+        run_without_awaiting(plan)
+
+
+def test_coroutine_errors_are_raised_unchanged():
+    from app.sql_frontend.parser import run_without_awaiting
+
+    async def plan():
+        raise SemanticError("unsupported")
+
+    with pytest.raises(SemanticError, match="unsupported"):
+        run_without_awaiting(plan)
+
+
+@pytest.mark.parametrize("aliases", [3, 60])
+def test_fingerprint_filters_the_token_stream_a_fixed_number_of_times(monkeypatch, aliases):
+    """It used to filter every token once per alias and per IN list."""
+    from app.sql_frontend import parser
+    from app.sql_frontend.fingerprint import fingerprint
+
+    accesses = 0
+    original = parser.ParsedStatement.visible_tokens
+
+    def counting(self):
+        nonlocal accesses
+        accesses += 1
+        return original.fget(self)
+
+    monkeypatch.setattr(parser.ParsedStatement, "visible_tokens", property(counting))
+    columns = ", ".join(f"c{index} AS a{index}" for index in range(aliases))
+
+    shape = fingerprint(f"SELECT {columns} FROM db.t WHERE k IN (1, 2, 3) ORDER BY a0")
+
+    assert shape is not None and accesses <= 4

@@ -28,6 +28,12 @@ APP_TARGETS = {
     "nova-worker": ("worker", "nova-worker:9102", 9102),
     "nova-agent-worker": ("agent-worker", "nova-agent-worker:9103", 9103),
 }
+#: Tiers a split deployment runs beside the web process. Their replicas are
+#: discovered through DNS, so there is no fixed instance to expect.
+SPLIT_TARGETS = {
+    "nova-query": "query",
+    "nova-proxy": "proxy",
+}
 CORE_JOBS = ("prometheus", "starrocks-fe", "starrocks-be", "redis", "node-exporter")
 PROBES = ("stage-storage", "policy-service")
 DASHBOARDS = {
@@ -120,7 +126,7 @@ def get_json(base_url: str, path: str, timeout: float, auth: tuple[str, str] | N
     return payload
 
 
-def check_targets(payload: Any, mode: str) -> list[Check]:
+def check_targets(payload: Any, mode: str, topology: str = "single") -> list[Check]:
     data = payload.get("data") if isinstance(payload, dict) else None
     targets = data.get("activeTargets") if isinstance(data, dict) else None
     if not isinstance(targets, list):
@@ -134,11 +140,13 @@ def check_targets(payload: Any, mode: str) -> list[Check]:
                 by_job.setdefault(job, []).append(target)
 
     checks: list[Check] = []
-    for job in (*CORE_JOBS, *APP_TARGETS):
+    split = topology == "split"
+    for job in (*CORE_JOBS, *APP_TARGETS, *(SPLIT_TARGETS if split else ())):
         found = by_job.get(job, [])
         healthy = bool(found) and all(target.get("health") == "up" for target in found)
         detail = f"{sum(target.get('health') == 'up' for target in found)}/{len(found)} up"
-        if job in APP_TARGETS:
+        # A scaled web tier has one instance per replica, not one fixed name.
+        if job in APP_TARGETS and not (split and job == "nova-backend"):
             _, container_instance, port = APP_TARGETS[job]
             expected = f"host.docker.internal:{port}" if mode == "host" else container_instance
             instance_ok = any(target.get("labels", {}).get("instance") == expected for target in found)
@@ -178,12 +186,17 @@ def check_instant_vector(payload: Any, name: str) -> Check:
     return Check(name, healthy, f"{len(values)} series; expected value 1")
 
 
-def metric_queries() -> dict[str, str]:
+def metric_queries(topology: str = "single") -> dict[str, str]:
+    split = topology == "split"
     queries = {
         f"Startup {service}": f'nova_service_up{{job="{job}",service="{service}"}}'
         for job, (service, _, _) in APP_TARGETS.items()
     }
-    queries["SQL proxy listener"] = 'nova_proxy_listener_up{job="nova-backend"}'
+    if split:
+        for job, service in SPLIT_TARGETS.items():
+            queries[f"Startup {service}"] = f'nova_service_up{{job="{job}",service="{service}"}}'
+    proxy_job = "nova-proxy" if split else "nova-backend"
+    queries["SQL proxy listener"] = f'nova_proxy_listener_up{{job="{proxy_job}"}}'
     queries["Search indexing metrics"] = 'count(nova_search_builds_active{job="nova-backend"}) > bool 0'
     queries["Search build error metrics"] = 'count(nova_search_build_errors_total{job="nova-backend"}) > bool 0'
     queries["Search indexing poll succeeded"] = 'nova_search_last_successful_poll_timestamp_seconds{job="nova-backend"} > bool 0'
@@ -242,17 +255,19 @@ def check_dashboards(payload: Any) -> list[Check]:
 
 
 def inspect_stack(prometheus_url: str, grafana_url: str, mode: str,
-                  timeout: float, credentials: tuple[str, str] | None) -> list[Check]:
+                  timeout: float, credentials: tuple[str, str] | None,
+                  topology: str = "single") -> list[Check]:
     checks: list[Check] = []
     try:
-        checks.extend(check_targets(get_json(prometheus_url, "/api/v1/targets", timeout), mode))
+        checks.extend(check_targets(
+            get_json(prometheus_url, "/api/v1/targets", timeout), mode, topology))
     except RuntimeError as error:
         checks.append(Check("Prometheus targets", False, str(error)))
     try:
         checks.extend(check_rules(get_json(prometheus_url, "/api/v1/rules", timeout), expected_alerts()))
     except (RuntimeError, OSError) as error:
         checks.append(Check("Prometheus alert rules", False, str(error)))
-    for name, query in metric_queries().items():
+    for name, query in metric_queries(topology).items():
         path = "/api/v1/query?" + urlencode({"query": query}, quote_via=quote)
         try:
             checks.append(check_instant_vector(get_json(prometheus_url, path, timeout), name))
@@ -274,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("host", "container"),
                         default=os.environ.get("NOVA_METRICS_MODE", "host"))
+    parser.add_argument("--topology", choices=("single", "split"), default="single",
+                        help="split also requires the query tier and the standalone proxy")
     parser.add_argument("--prometheus-url", default="http://127.0.0.1:9090")
     parser.add_argument("--grafana-url", default="http://127.0.0.1:3001")
     parser.add_argument("--env-file", type=Path,
@@ -293,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(error))
     credentials = (user, password) if user and password else None
     checks = inspect_stack(args.prometheus_url, args.grafana_url, args.mode,
-                           args.timeout, credentials)
+                           args.timeout, credentials, args.topology)
     for check in checks:
         state = "PASS" if check.ok else "FAIL"
         print(f"[{state}] {check.name}: {check.detail}")

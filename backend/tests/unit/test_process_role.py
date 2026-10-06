@@ -9,6 +9,7 @@ owns; ``all`` must keep doing everything a single process did before.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -177,6 +178,9 @@ def udf_registration(monkeypatch):
 
     monkeypatch.setattr(llm_function_service, "register_all_udfs", register_all_udfs)
     monkeypatch.setattr(
+        llm_function_service, "registration_is_current", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
         "app.modules.task_orchestration.transport.LeaderLock",
         lambda *args, **kwargs: _Lock(state["acquired"], events),
     )
@@ -207,3 +211,181 @@ async def test_failed_registration_releases_the_lock_and_does_not_stop_startup(u
     await main._register_llm_udfs()
 
     assert events == ["acquire", "register", "release"]
+
+
+@pytest.fixture
+def probe(monkeypatch):
+    """A started app whose engine and Redis answer unless told otherwise."""
+    state = {"engine": None, "redis": None}
+
+    async def execute_system(sql):
+        if state["engine"]:
+            raise state["engine"]
+        return {"rows": [[1]]}
+
+    class Redis:
+        async def ping(self):
+            if state["redis"]:
+                raise state["redis"]
+            return True
+
+    monkeypatch.setattr(main.db, "execute_system", execute_system)
+    monkeypatch.setattr(main.session_store, "_redis", Redis())
+    monkeypatch.setattr(main.app.state, "started", True, raising=False)
+    return state
+
+
+def test_ready_once_started_and_dependencies_answer(monkeypatch, probe):
+    monkeypatch.setattr(settings, "NOVA_PROCESS_ROLE", "query")
+
+    response = TestClient(main.app).get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "role": "query"}
+
+
+def test_not_ready_before_startup_has_finished(monkeypatch, probe):
+    monkeypatch.setattr(main.app.state, "started", False, raising=False)
+
+    response = TestClient(main.app).get("/ready")
+
+    assert response.status_code == 503 and response.json() == {"status": "starting"}
+
+
+@pytest.mark.parametrize("dependency", ["engine", "redis"])
+def test_not_ready_while_a_dependency_is_down(probe, dependency):
+    probe[dependency] = ConnectionError("secret-host:9030 refused")
+
+    response = TestClient(main.app).get("/ready")
+
+    assert response.status_code == 503
+    # The cause is logged, not sent to an unauthenticated caller.
+    assert response.json() == {"status": "unavailable"}
+
+
+def test_health_stays_up_while_a_dependency_is_down(probe):
+    probe["engine"] = ConnectionError("down")
+
+    assert TestClient(main.app).get("/health").status_code == 200
+
+
+async def test_lifespan_marks_the_process_started_only_while_it_serves(monkeypatch, duties):
+    monkeypatch.setattr(settings, "NOVA_PROCESS_ROLE", "query")
+    monkeypatch.setattr(main.app.state, "started", False, raising=False)
+
+    async with main.lifespan(main.app):
+        assert main.app.state.started is True
+
+    assert main.app.state.started is False
+
+
+# ── Schema bootstrap across web replicas ────────────────────────────────────
+
+
+class _SharedLock:
+    """Two ``LeaderLock`` handles over one in-memory key."""
+
+    held = False
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.mine = False
+
+    async def acquire(self) -> bool:
+        if type(self).held:
+            return False
+        type(self).held = self.mine = True
+        return True
+
+    async def release(self) -> None:
+        if self.mine:
+            type(self).held = self.mine = False
+
+
+@pytest.fixture
+def bootstrap_lock(monkeypatch):
+    _SharedLock.held = False
+    monkeypatch.setattr("app.modules.task_orchestration.transport.LeaderLock", _SharedLock)
+    monkeypatch.setattr(main, "BOOTSTRAP_LOCK_POLL_SECONDS", 0.001)
+    return _SharedLock
+
+
+async def test_two_starting_processes_never_bootstrap_at_the_same_time(monkeypatch, bootstrap_lock):
+    running = peak = finished = 0
+
+    async def bootstrap():
+        nonlocal running, peak, finished
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.01)
+        running -= 1
+        finished += 1
+
+    monkeypatch.setattr(main, "_bootstrap_control_plane", bootstrap)
+
+    await asyncio.gather(main._bootstrap_exclusively(), main._bootstrap_exclusively())
+
+    # Both ran it (the second finds everything in place), one after the other.
+    assert (peak, finished) == (1, 2) and bootstrap_lock.held is False
+
+
+async def test_bootstrap_lock_is_released_when_bootstrap_fails(monkeypatch, bootstrap_lock):
+    async def bootstrap():
+        raise RuntimeError("engine unavailable")
+
+    monkeypatch.setattr(main, "_bootstrap_control_plane", bootstrap)
+
+    with pytest.raises(RuntimeError):
+        await main._bootstrap_exclusively()
+
+    assert bootstrap_lock.held is False
+
+
+async def test_bootstrap_proceeds_when_the_lock_is_never_released(monkeypatch, bootstrap_lock):
+    ran = []
+    bootstrap_lock.held = True
+    monkeypatch.setattr(main, "BOOTSTRAP_LOCK_TTL_SECONDS", 0.01)
+
+    async def bootstrap():
+        ran.append(True)
+
+    monkeypatch.setattr(main, "_bootstrap_control_plane", bootstrap)
+
+    await main._bootstrap_exclusively()
+
+    # A crashed holder must not keep every other process from starting, and
+    # the waiter must not release a lock it never held.
+    assert ran == [True] and bootstrap_lock.held is True
+
+
+async def test_bootstrap_runs_without_a_lock_when_redis_is_unavailable(monkeypatch):
+    ran = []
+
+    class Broken:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def acquire(self):
+            raise ConnectionError("redis down")
+
+    async def bootstrap():
+        ran.append(True)
+
+    monkeypatch.setattr("app.modules.task_orchestration.transport.LeaderLock", Broken)
+    monkeypatch.setattr(main, "_bootstrap_control_plane", bootstrap)
+
+    await main._bootstrap_exclusively()
+
+    assert ran == [True]
+
+
+async def test_current_llm_functions_are_not_dropped_and_recreated(monkeypatch, udf_registration):
+    from app.modules.llm_functions.service import llm_function_service
+
+    events, _ = udf_registration
+    monkeypatch.setattr(
+        llm_function_service, "registration_is_current", AsyncMock(return_value=True)
+    )
+
+    await main._register_llm_udfs()
+
+    assert events == ["acquire", "release"]

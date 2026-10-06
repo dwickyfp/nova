@@ -40,6 +40,7 @@ from app.modules.ml_engine.schemas import (
 )
 from app.modules.ml_engine.service import ml_engine_service
 from app.modules.ml_engine.spec import MLExecutionSpec, MLMode, MLSecurityContext, MLTask
+from app.modules.query.admission import Admitted
 from app.modules.query.sql_pipeline import redact_for_output
 
 router = APIRouter()
@@ -75,7 +76,7 @@ def _caller_credentials(user: dict) -> str:
 # ── Training ──────────────────────────────────────────────────
 
 
-@router.post("/train", response_model=TrainModelResponse)
+@router.post("/train", response_model=TrainModelResponse, dependencies=[Admitted])
 async def train_model(
     req: TrainModelRequest,
     user: dict = require_user,
@@ -158,7 +159,7 @@ async def predict_version(req: VersionPredictRequest, user: dict = require_user)
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/predict/batch", response_model=BatchPredictResponse)
+@router.post("/predict/batch", response_model=BatchPredictResponse, dependencies=[Admitted])
 async def batch_predict(
     req: BatchPredictRequest,
     user: dict = require_user,
@@ -190,7 +191,7 @@ async def batch_predict(
         ) from e
 
 
-@router.post("/forecast", response_model=ForecastResponse)
+@router.post("/forecast", response_model=ForecastResponse, dependencies=[Admitted])
 async def forecast(req: ForecastRequest, user: dict = require_user):
     """Forecast a future horizon from a persisted forecast alias."""
     try:
@@ -207,7 +208,7 @@ async def forecast(req: ForecastRequest, user: dict = require_user):
         raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/predict/materialize")
+@router.post("/predict/materialize", dependencies=[Admitted])
 async def materialize_prediction(req: BatchPredictRequest, user: dict = require_user):
     from app.common.audit import write_audit_log
 
@@ -272,7 +273,7 @@ async def result_page(
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/forecast/version", response_model=ForecastResponse)
+@router.post("/forecast/version", response_model=ForecastResponse, dependencies=[Admitted])
 async def forecast_version(req: VersionForecastRequest, user: dict = require_user):
     """Forecast from one immutable persisted model version."""
     try:
@@ -391,7 +392,7 @@ async def delete_alias(
     )
 
 
-@router.post("/execute", response_model=MLExecuteResponse)
+@router.post("/execute", response_model=MLExecuteResponse, dependencies=[Admitted])
 async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
     """Execute deterministic persistent or ephemeral ML as the requesting user."""
     password = _caller_credentials(user)
@@ -429,7 +430,7 @@ async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
         raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/runs/{run_id}/promote", response_model=MLExecuteResponse)
+@router.post("/runs/{run_id}/promote", response_model=MLExecuteResponse, dependencies=[Admitted])
 async def promote_run(
     run_id: str,
     req: PromoteRunRequest,

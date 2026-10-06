@@ -17,7 +17,7 @@ export type UsageStats = {
 };
 
 export type UsageGroup = UsageStats & { name: string | null };
-export type UsageSource = "assistant" | "smart" | "functions";
+export type UsageSource = "assistant" | "smart" | "functions" | "function_tokens";
 export type UsageActivity = {
   id: string;
   at: string;
@@ -85,6 +85,7 @@ export const sourceLabels: Record<UsageSource, string> = {
   assistant: "Nova Studio / Assistant",
   smart: "Smart Mode",
   functions: "AI Functions",
+  function_tokens: "AI Functions, measured tokens",
 };
 
 export function number(value: number | null) {

@@ -28,6 +28,62 @@ class StackAcceptanceTests(unittest.TestCase):
         self.assertFalse(checks["Scrape nova-agent-worker"].ok)
         self.assertFalse(checks["Scrape probe stage-storage"].ok)
 
+    def _targets(self, jobs: dict[str, list[str]]) -> dict:
+        targets = [
+            {"labels": {"job": job, "instance": job}, "health": "up"}
+            for job in check_stack.CORE_JOBS
+        ]
+        for job, instances in jobs.items():
+            targets.extend(
+                {"labels": {"job": job, "instance": instance}, "health": "up"}
+                for instance in instances
+            )
+        return {"data": {"activeTargets": targets}}
+
+    def test_split_topology_requires_the_query_tier_and_the_standalone_proxy(self) -> None:
+        payload = self._targets({"nova-backend": ["172.18.0.5:8000", "172.18.0.6:8000"]})
+        checks = {check.name: check for check in check_stack.check_targets(
+            payload, "container", "split")}
+
+        # Replicas are discovered by address, so no fixed web instance is expected.
+        self.assertTrue(checks["Scrape nova-backend"].ok)
+        self.assertFalse(checks["Scrape nova-query"].ok)
+        self.assertFalse(checks["Scrape nova-proxy"].ok)
+
+    def test_split_topology_passes_when_every_replica_is_up(self) -> None:
+        payload = self._targets({
+            "nova-backend": ["172.18.0.5:8000"],
+            "nova-query": ["172.18.0.7:8000", "172.18.0.8:8000"],
+            "nova-proxy": ["172.18.0.9:9104"],
+        })
+        checks = {check.name: check for check in check_stack.check_targets(
+            payload, "container", "split")}
+
+        self.assertTrue(checks["Scrape nova-query"].ok)
+        self.assertEqual(checks["Scrape nova-query"].detail, "2/2 up")
+        self.assertTrue(checks["Scrape nova-proxy"].ok)
+
+    def test_single_topology_does_not_ask_for_split_tiers(self) -> None:
+        names = {check.name for check in check_stack.check_targets(
+            self._targets({}), "container")}
+
+        self.assertNotIn("Scrape nova-query", names)
+        self.assertNotIn("Scrape nova-proxy", names)
+
+    def test_split_topology_reads_the_proxy_listener_from_the_proxy_job(self) -> None:
+        single, split = check_stack.metric_queries(), check_stack.metric_queries("split")
+
+        self.assertIn('job="nova-backend"', single["SQL proxy listener"])
+        self.assertIn('job="nova-proxy"', split["SQL proxy listener"])
+        self.assertIn('service="query"', split["Startup query"])
+        self.assertNotIn("Startup query", single)
+
+    def test_split_prometheus_config_is_the_base_config_with_dns_discovery(self) -> None:
+        import build_prometheus_split as builder
+
+        self.assertEqual(builder.SPLIT.read_text(), builder.render(builder.BASE.read_text()))
+        self.assertNotIn("targets/query.yml", builder.SPLIT.read_text())
+
     def test_empty_or_failed_probe_sample_is_not_healthy(self) -> None:
         empty = {"data": {"resultType": "vector", "result": []}}
         failed = {"data": {"resultType": "vector", "result": [

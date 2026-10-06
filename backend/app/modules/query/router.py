@@ -7,7 +7,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, SecretStr
 
-from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import (
     split_sql_statements,
@@ -16,7 +15,7 @@ from app.core.config import settings
 from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.auth.service import auth_service
-from app.modules.query.admission import QueryCapacityError, query_admission
+from app.modules.query.admission import Admitted
 from app.modules.query.service import query_service
 from app.proxy.session import parse_role_statement
 
@@ -167,6 +166,7 @@ class CompletionResponse(BaseModel):
     "/execute",
     response_model=list[QueryResponse],
     response_class=SanitizingJSONResponse,
+    dependencies=[Admitted],
 )
 async def execute_query(
     req: QueryRequest,
@@ -209,43 +209,21 @@ async def execute_query(
             )
         ]
 
-    try:
-        async with query_admission.slot():
-            results = await query_service.execute_statements(
-                source="web",
-                tenant=user.get("tenant", "default"),
-                security_context_version=user.get("security_context_version", 1),
-                sql=sql,
-                username=user["username"],
-                encrypted_password=user["encrypted_password"],
-                database=req.database,
-                schema=req.schema_name,
-                role=_resolve_active_role(user),
-                max_rows=req.max_rows,
-                session_id=user["session_id"],
-                confirm_destructive=req.confirm_destructive,
-                file_id=req.file_id,
-            )
-    except QueryCapacityError:
-        await write_audit_log(
-            event_type="query",
-            user_name=user["username"],
-            action="execute",
-            object_type="query",
-            object_name="",
-            status="REFUSED",
-            sql_text=sql,
-            error_message="Query capacity reached",
-            session_id=user["session_id"],
-            file_id=req.file_id,
-            database_name=req.database,
-            schema_name=req.schema_name,
-        )
-        raise HTTPException(
-            status_code=429,
-            detail="Nova is running its maximum number of queries. Retry shortly.",
-            headers={"Retry-After": "1"},
-        ) from None
+    results = await query_service.execute_statements(
+        source="web",
+        tenant=user.get("tenant", "default"),
+        security_context_version=user.get("security_context_version", 1),
+        sql=sql,
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+        database=req.database,
+        schema=req.schema_name,
+        role=_resolve_active_role(user),
+        max_rows=req.max_rows,
+        session_id=user["session_id"],
+        confirm_destructive=req.confirm_destructive,
+        file_id=req.file_id,
+    )
 
     responses = []
     for result in results:
@@ -295,6 +273,7 @@ async def execute_query(
     "/explain",
     response_model=QueryResponse,
     response_class=SanitizingJSONResponse,
+    dependencies=[Admitted],
 )
 async def explain_query(
     req: QueryRequest,

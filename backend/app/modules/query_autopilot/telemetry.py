@@ -21,7 +21,7 @@ from app.modules.query_autopilot.models import (
     Scope,
     digest,
 )
-from app.sql_frontend.fingerprint import fingerprint
+from app.sql_frontend.fingerprint import QueryShape, fingerprint
 
 logger = logging.getLogger(__name__)
 PURPOSE: ContextVar[str] = ContextVar("autopilot_purpose", default="workload")
@@ -95,6 +95,15 @@ class Collector:
         except Exception:
             return False
 
+    def observes(self, sql: str) -> bool:
+        """Whether ``observe`` would record this statement; counts an oversize drop."""
+        if not self.enabled or PURPOSE.get() != "workload":
+            return False
+        if len(sql) > 131072:
+            self.dropped += 1
+            return False
+        return True
+
     def observe(
         self,
         *,
@@ -105,14 +114,12 @@ class Collector:
         elapsed_ms: float,
         kwargs: dict,
         result=None,
+        shape: QueryShape | None = None,
     ) -> None:
-        if not self.enabled or PURPOSE.get() != "workload":
+        if not self.observes(sql):
             return
         try:
-            if len(sql) > 131072:
-                self.dropped += 1
-                return
-            shape = fingerprint(sql)
+            shape = shape or fingerprint(sql)
             scope = Scope(
                 principal=kwargs["username"],
                 active_role=kwargs.get("role") or None,
