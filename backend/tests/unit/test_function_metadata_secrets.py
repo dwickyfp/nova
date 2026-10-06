@@ -66,7 +66,6 @@ async def test_udf_registration_failure_cannot_echo_resolved_config(monkeypatch,
             }
         ),
     )
-    monkeypatch.setattr("app.modules.llm_functions.service.decrypt_api_key", lambda value: value)
     monkeypatch.setattr(
         service,
         "_connect",
@@ -77,6 +76,7 @@ async def test_udf_registration_failure_cannot_echo_resolved_config(monkeypatch,
     result = await service._register_single_udf(
         "complete",
         {
+            "id": "alias-1",
             "provider_id": "fixture",
             "model_name": "fixture-model",
         },
@@ -84,6 +84,11 @@ async def test_udf_registration_failure_cannot_echo_resolved_config(monkeypatch,
     assert not result["registered"]
     assert "sentinel-key" not in str(result)
     assert "sentinel-key" not in caplog.text
+    # Nor may the alias token that the function body now carries.
+    from app.modules.llm_functions.gateway import alias_token
+
+    assert alias_token("alias-1") not in str(result)
+    assert alias_token("alias-1") not in caplog.text
 
 
 @pytest.mark.parametrize(

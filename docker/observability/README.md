@@ -95,7 +95,15 @@ it shares that process in the default deployment. If the proxy runs as a
 separate `app.proxy` process, configure `prometheus/targets/host/proxy.yml` for
 port 9104 or `prometheus/targets/container/proxy.yml` for its container
 address. Both files are empty by default, so an unused standalone proxy target
-cannot create a false alarm.
+cannot create a false alarm. A split deployment's query tier is scraped the same
+way: list each `NOVA_PROCESS_ROLE=query` process in `query.yml` (its API port,
+8000 in the container stack). For a scaled container stack, add
+`docker-compose.split-observability.yml`: it mounts `prometheus.split.yml`,
+which discovers every replica through Docker DNS. That file is generated;
+after changing `prometheus.yml` run
+`python docker/observability/build_prometheus_split.py`. The acceptance checker
+covers the single-process deployment by default and the split one with
+`--topology split`.
 
 Run the read-only acceptance checker after the stack is up. It reads Grafana
 credentials from `docker/.env` and does not require a password on the command

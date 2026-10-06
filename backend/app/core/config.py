@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     #: to ``Asia/Jakarta`` (``database.DEFAULT_TIMEZONE``).
     NOVA_TIMEZONE: str = "Asia/Jakarta"
 
+    # --- Process role ---
+    #: Which share of the API service this process runs. ``all`` is the single
+    #: process deployment: every route, the schema bootstrap, the background
+    #: loops and the embedded MySQL proxy. A split deployment runs one ``web``
+    #: process (application API, schema bootstrap, singleton background loops)
+    #: and any number of ``query`` processes (SQL and ML execution) behind a
+    #: gateway that routes by path, with ``python -m app.proxy`` serving MySQL.
+    #: Every role mounts every route; the gateway decides where a request lands.
+    NOVA_PROCESS_ROLE: Literal["all", "web", "query"] = "all"
+
     # --- MySQL protocol proxy ---
     # Values mirror the ``proxy:`` block in docker/nova.yaml; the defaults here
     # are what the embedded lifespan uses when nothing overrides them.
@@ -54,6 +64,35 @@ class Settings(BaseSettings):
     #: deployment. Set it when the proxy is reached through a different
     #: hostname/load balancer than the web UI.
     PROXY_PUBLIC_HOST: str = ""
+
+    # --- SQL execution load ---
+    #: Statements at least this long are parsed on a worker thread so one large
+    #: script cannot hold the event loop for the whole parse. Shorter ones parse
+    #: inline, where the thread hand-off would cost more than the parse. 0 keeps
+    #: every parse inline.
+    SQL_PARSE_OFFLOAD_MIN_CHARS: int = Field(default=8192, ge=0)
+    SQL_PARSE_THREADS: int = Field(default=2, ge=1)
+    #: Statements this process runs at once across the query API, the ML
+    #: execution routes and the MySQL proxy; 0 means no cap. Work over the cap
+    #: is refused (429, or a MySQL error) instead of queueing behind work the
+    #: engine has not finished.
+    QUERY_MAX_CONCURRENCY: int = Field(default=64, ge=0)
+
+    #: Audit rows written by one INSERT when several arrive together. Each
+    #: caller still waits for its own row to be recorded. 1 writes every row
+    #: on its own.
+    AUDIT_GROUP_MAX_ROWS: int = Field(default=200, ge=1)
+
+    # --- AI_* SQL functions ---
+    #: Where the engine's backends reach this service. ``AI_*`` function bodies
+    #: call ``<url>/api/v1/internal/llm/chat/completions`` so the provider key
+    #: stays in Nova. Must be reachable from every StarRocks BE, and should be
+    #: an internal address: the route is not meant for the public gateway.
+    LLM_GATEWAY_URL: str = "http://host.docker.internal:8000"
+    LLM_GATEWAY_TIMEOUT_SECONDS: float = 60.0
+    #: Provider requests this process forwards at once; the rest wait.
+    LLM_GATEWAY_MAX_CONCURRENCY: int = Field(default=32, ge=1)
+    LLM_USAGE_FLUSH_SECONDS: float = 30.0
 
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -209,6 +248,15 @@ class Settings(BaseSettings):
     ML_MAX_BEST_ROWS: int = 10_000_000
     ML_MAX_BEST_BYTES: int = 8 * 1024 * 1024 * 1024
     ML_MAX_CONCURRENCY: int = 2
+    #: Where model training runs. ``local`` trains in the process that received
+    #: the request. ``worker`` queues it for ``nova-worker``, which trains as
+    #: the caller while the caller's session is live; requests without a
+    #: session still train locally.
+    ML_TRAINING_EXECUTOR: Literal["local", "worker"] = "local"
+    #: How long a queued training job may wait for a worker before it is
+    #: withdrawn and the caller is told no worker is running.
+    ML_JOB_QUEUE_TIMEOUT_SECONDS: float = 30.0
+    ML_JOB_POLL_SECONDS: float = 0.25
     ML_WORKER_PROCESSES: int = 2
     ML_ARTIFACT_STORAGE_CONNECTION: str = "production"
     ML_ARTIFACT_PREFIX: str = "nova/ml-artifacts"

@@ -386,6 +386,11 @@ class MySQLProtocol:
 
 ### Startup Integration
 
+The proxy is embedded in the API process only when `PROXY_ENABLED` is set and
+`NOVA_PROCESS_ROLE` is `all`. The `web` and `query` roles of a split deployment
+never open the MySQL port; `python -m app.proxy` serves it as its own process
+([HOW_TO_RUN.md](../HOW_TO_RUN.md)). The sketch below is the original design.
+
 ```python
 # main.py
 import asyncio

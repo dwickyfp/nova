@@ -226,3 +226,129 @@ async def test_extension_runs_through_unmodified_query_service_with_injected_cat
     assert calls == ["SELECT 7", "SELECT 9"]
     catalog.resolve_table.assert_awaited_once()
     catalog.get_columns.assert_awaited_once()
+
+
+async def test_ml_prediction_rows_are_built_off_the_event_loop(monkeypatch):
+    import threading
+
+    import pyarrow as pa
+
+    from app.modules.ml_engine.service import ml_engine_service
+    from app.sql_frontend.execution import adapters
+
+    table = pa.table({"id": [1, 2, None], "prediction": [0.5, None, 1.5]})
+    converted_on: list[str] = []
+    original = adapters._table_rows
+
+    def recording(result_table):
+        converted_on.append(threading.current_thread().name)
+        return original(result_table)
+
+    monkeypatch.setattr(adapters, "_table_rows", recording)
+    monkeypatch.setattr(
+        ml_engine_service, "batch_predict_projected", AsyncMock(return_value=({}, table))
+    )
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
+    monkeypatch.setattr("app.modules.query.service.decrypt_password", lambda value: "caller-pw")
+    service = QueryService()
+    service._repo = AsyncMock()
+
+    result = await service.execute(
+        "SELECT id, ML_PREDICT('model', CAST(n AS DOUBLE)) AS prediction FROM numbers",
+        "alice",
+        "enc",
+        database="analytics",
+        role="analyst",
+    )
+
+    assert result.error is None
+    assert result.columns == ["id", "prediction"]
+    assert result.rows == [[1, 0.5], [2, None], [None, 1.5]] and result.row_count == 3
+    assert len(converted_on) == 1 and converted_on[0] != threading.current_thread().name
+
+
+@pytest.mark.parametrize("rows", [0, 1, 4096, 4097, 9000])
+def test_prediction_table_rows_match_the_table_across_batch_boundaries(rows):
+    import pyarrow as pa
+
+    from app.sql_frontend.execution.adapters import _table_rows
+
+    table = pa.table({"id": list(range(rows)), "label": [f"row-{i}" for i in range(rows)]})
+
+    assert _table_rows(table) == [[i, f"row-{i}"] for i in range(rows)]
+
+
+async def test_large_statement_is_prepared_off_the_event_loop(monkeypatch):
+    """Guard, build and planning of a long statement must not run on the loop."""
+    import threading
+
+    from app.core.config import settings
+    from app.modules.query import service as service_module
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1024)
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
+    threads: dict[str, set[str]] = {}
+
+    def recording(name, original):
+        def wrapper(*args, **kwargs):
+            threads.setdefault(name, set()).add(threading.current_thread().name)
+            return original(*args, **kwargs)
+
+        return wrapper
+
+    service = QueryService()
+    monkeypatch.setattr(
+        service_module,
+        "guard_user_statement",
+        recording("guard", service_module.guard_user_statement),
+    )
+    monkeypatch.setattr(service._builders, "build", recording("build", service._builders.build))
+    monkeypatch.setattr(
+        service._planner, "preflight", recording("preflight", service._planner.preflight)
+    )
+    repository = AsyncMock()
+    repository.execute_as_user.return_value = QueryResult(columns=["c"], rows=[[1]])
+    service._repo = repository
+    values = ", ".join(str(number) for number in range(600))
+
+    results = await service.execute_statements(
+        sql=f"SELECT 1 WHERE 1 IN ({values})",
+        username="alice",
+        encrypted_password="",
+        connection=object(),
+        role="analyst",
+    )
+
+    assert results[0].error is None and results[0].rows == [[1]]
+    here = threading.current_thread().name
+    assert threads.keys() == {"guard", "build", "preflight"}
+    for name, used in threads.items():
+        assert here not in used, f"{name} ran on the event loop"
+
+
+async def test_planning_falls_back_to_the_event_loop_when_a_planner_waits(monkeypatch):
+    import asyncio
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
+    service = QueryService()
+    original = service._planner.plan
+    waited: list[bool] = []
+
+    async def plan(statement, context, **kwargs):
+        await asyncio.sleep(0)
+        waited.append(True)
+        return await original(statement, context, **kwargs)
+
+    monkeypatch.setattr(service._planner, "plan", plan)
+    repository = AsyncMock()
+    repository.execute_as_user.return_value = QueryResult(columns=["c"], rows=[[1]])
+    service._repo = repository
+
+    result = await service.execute(
+        "SELECT 1", "alice", "", connection=object(), role="analyst"
+    )
+
+    assert result.error is None and waited == [True]

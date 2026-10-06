@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.auth.service import auth_service
+from app.modules.query.admission import Admitted
 from app.modules.query.service import query_service
 from app.proxy.session import parse_role_statement
 
@@ -165,6 +166,7 @@ class CompletionResponse(BaseModel):
     "/execute",
     response_model=list[QueryResponse],
     response_class=SanitizingJSONResponse,
+    dependencies=[Admitted],
 )
 async def execute_query(
     req: QueryRequest,
@@ -271,6 +273,7 @@ async def execute_query(
     "/explain",
     response_model=QueryResponse,
     response_class=SanitizingJSONResponse,
+    dependencies=[Admitted],
 )
 async def explain_query(
     req: QueryRequest,

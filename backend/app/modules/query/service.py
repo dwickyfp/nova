@@ -45,7 +45,13 @@ from app.sql_frontend.capabilities.starrocks import EngineCapabilities, resolve_
 from app.sql_frontend.context import ExecutionContext, PlanningContext
 from app.sql_frontend.errors import ConfirmationRequiredError, SemanticError
 from app.sql_frontend.execution.adapters import FeatureAdapters
-from app.sql_frontend.parser import parse_statement, parsing_scope
+from app.sql_frontend.parser import (
+    NeedsEventLoop,
+    parse_statement_async,
+    parsing_scope,
+    run_sql_cpu,
+    run_without_awaiting,
+)
 from app.sql_frontend.planning.planner import SQLPlanner
 from app.storage.secrets import (
     drain_secret_resolution_facts,
@@ -96,15 +102,22 @@ def _observe_sql_execution(
                                 result.engine_roundtrip_ms = identity.engine_roundtrip_ms
                                 result.fetch_ms = identity.fetch_ms
                             result.nova_ms = max(0, elapsed - (result.engine_roundtrip_ms or 0))
-                        collector.observe(
-                            identity=identity,
-                            sql=str(bound.get("sql", "")),
-                            source=source,
-                            status=status,
-                            elapsed_ms=elapsed,
-                            kwargs=bound,
-                            result=result,
-                        )
+                        observed_sql = str(bound.get("sql", ""))
+                        if collector.observes(observed_sql):
+                            from app.sql_frontend.fingerprint import fingerprint
+
+                            collector.observe(
+                                identity=identity,
+                                sql=observed_sql,
+                                source=source,
+                                status=status,
+                                elapsed_ms=elapsed,
+                                kwargs=bound,
+                                result=result,
+                                shape=await run_sql_cpu(
+                                    len(observed_sql), fingerprint, observed_sql
+                                ),
+                            )
         finally:
             EXECUTION.reset(token)
             SQL_QUERIES.labels(source=source, status=status).inc()
@@ -322,7 +335,7 @@ class QueryService:
         ] = resolve_engine_capabilities,
     ) -> None:
         self._repo = QueryRepository()
-        self._frontend = parse_statement
+        self._frontend = parse_statement_async
         self._builders = builders if builders is not None else ast_builders
         self._planner = planner if planner is not None else SQLPlanner()
         self._catalog_provider_factory = catalog_provider_factory
@@ -366,10 +379,14 @@ class QueryService:
                 connection, encrypted_password = delegated, ""
         # Normalize Nova's editor-friendly db.default.table notation to the
         # StarRocks-compatible db.table form before validation/execution.
-        normalized_sql = self._normalize_default_schema_qualification(sql)
+        normalized_sql = await run_sql_cpu(
+            len(sql), self._normalize_default_schema_qualification, sql
+        )
 
         try:
-            guard_user_statement(
+            await run_sql_cpu(
+                len(normalized_sql),
+                guard_user_statement,
                 normalized_sql,
                 confirm_destructive=confirm_destructive,
                 allow_stage_export=allow_stage_export,
@@ -418,15 +435,17 @@ class QueryService:
             transaction_active=client_transaction,
         )
         try:
-            if len(split_sql_statements(normalized_sql)) > 1:
+            size = len(normalized_sql)
+            parts = await run_sql_cpu(size, split_sql_statements, normalized_sql)
+            if len(parts) > 1:
                 # Direct single-result callers still receive a confirmation refusal.
-                for item in split_sql_statements(normalized_sql):
-                    candidate = self._builders.build(self._frontend(item))
+                for item in parts:
+                    candidate = self._builders.build(await self._frontend(item))
                     analysis = self._planner.preflight(candidate)
                     if analysis.requires_confirmation and not confirm_destructive:
                         raise ConfirmationRequiredError(analysis.effects, analysis.statement_kind)
-            parsed = self._frontend(normalized_sql, original_sql=sql)
-            statement = self._builders.build(parsed)
+            parsed = await self._frontend(normalized_sql, original_sql=sql)
+            statement = await run_sql_cpu(size, self._builders.build, parsed)
             context.statements[0] = statement
             binder = Binder(
                 self._catalog_provider_factory(
@@ -450,9 +469,14 @@ class QueryService:
                 database=database,
                 stage_schema=self._adapters().stage_schema_provider(context),
             )
-            analysis = self._planner.preflight(statement)
-            plan = await self._planner.plan(statement, planning)
-            bound = self._planner.preflight(statement)
+            try:
+                analysis, plan, bound = await run_sql_cpu(
+                    size, self._plan_without_awaiting, statement, planning
+                )
+            except NeedsEventLoop:
+                analysis = self._planner.preflight(statement)
+                plan = await self._planner.plan(statement, planning)
+                bound = self._planner.preflight(statement)
             if not bound.effects.includes(plan.effects) or (
                 plan.requires_confirmation and not bound.requires_confirmation
             ):
@@ -607,6 +631,30 @@ class QueryService:
                 "Could not write the audit row for a pre-engine rejection (user=%r)", username
             )
 
+    def _plan_without_awaiting(self, statement, planning: PlanningContext):
+        """Analyse and plan one statement as plain CPU work.
+
+        Returns the analysis before planning, the plan, and the analysis after
+        it. Raises ``NeedsEventLoop`` if a planner has to wait for something.
+        """
+        analysis = self._planner.preflight(statement)
+        plan = run_without_awaiting(lambda: self._planner.plan(statement, planning))
+        return analysis, plan, self._planner.preflight(statement)
+
+    def _preflight_parsed(self, parsed):
+        """Build one parsed statement and analyse it before anything executes."""
+        statement = self._builders.build(parsed)
+        return statement, self._planner.preflight(statement)
+
+    @staticmethod
+    def _guarded(stmt_sql: str, normalize, allow_stage_export: bool) -> str:
+        """Normalise one statement and run it past the SQL guard."""
+        normalized = normalize(stmt_sql)
+        guard_user_statement(
+            normalized, allow_stage_export=allow_stage_export, check_confirmation=False
+        )
+        return normalized
+
     async def preflight_script(
         self,
         statements: list[str],
@@ -632,17 +680,22 @@ class QueryService:
             try:
                 for stmt_sql in statements:
                     analysis = None
-                    normalized = self._normalize_default_schema_qualification(stmt_sql)
-                    guard_user_statement(
-                        normalized,
-                        allow_stage_export=allow_stage_export,
-                        check_confirmation=False,
+                    normalized = await run_sql_cpu(
+                        len(stmt_sql),
+                        self._guarded,
+                        stmt_sql,
+                        self._normalize_default_schema_qualification,
+                        allow_stage_export,
                     )
-                    statement = self._builders.build(
-                        self._frontend(normalized, original_sql=stmt_sql)
+                    parsed = await self._frontend(normalized, original_sql=stmt_sql)
+                    # Recorded before validation, so a statement refused by it
+                    # still reports its own kind and effects.
+                    statement, analysis = await run_sql_cpu(
+                        len(stmt_sql), self._preflight_parsed, parsed
                     )
-                    analysis = self._planner.preflight(statement)
-                    self._planner.semantics.validate_preflight(
+                    await run_sql_cpu(
+                        len(stmt_sql),
+                        self._planner.semantics.validate_preflight,
                         statement,
                         PlanningContext(
                             database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED
@@ -687,7 +740,7 @@ class QueryService:
 
         Stops on first error — returns results collected so far plus an error result.
         """
-        statements = split_sql_statements(sql)
+        statements = await run_sql_cpu(len(sql), split_sql_statements, sql)
         if not statements:
             return [QueryResult(original_sql=sql, warnings=["Empty SQL"], error="Empty SQL")]
 
@@ -701,18 +754,23 @@ class QueryService:
                 confirmation_statement = None
                 for stmt_sql in statements:
                     analysis = None
-                    normalized = self._normalize_default_schema_qualification(stmt_sql)
-                    guard_user_statement(
-                        normalized,
-                        allow_stage_export=allow_stage_export,
-                        check_confirmation=False,
+                    normalized = await run_sql_cpu(
+                        len(stmt_sql),
+                        self._guarded,
+                        stmt_sql,
+                        self._normalize_default_schema_qualification,
+                        allow_stage_export,
                     )
-                    statement = self._builders.build(
-                        self._frontend(normalized, original_sql=stmt_sql)
+                    parsed = await self._frontend(normalized, original_sql=stmt_sql)
+                    # Recorded before validation, so a statement refused by it
+                    # still reports its own kind and effects.
+                    statement, analysis = await run_sql_cpu(
+                        len(stmt_sql), self._preflight_parsed, parsed
                     )
-                    analysis = self._planner.preflight(statement)
                     analyses.append(analysis)
-                    self._planner.semantics.validate_preflight(
+                    await run_sql_cpu(
+                        len(stmt_sql),
+                        self._planner.semantics.validate_preflight,
                         statement,
                         PlanningContext(
                             database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED

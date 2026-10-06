@@ -57,6 +57,15 @@ def _redact_error_message(message: str) -> str:
         return "[redacted: unredactable error message]"
 
 
+def _table_rows(table) -> list[list[Any]]:
+    """Convert an Arrow result table into response rows, a batch at a time."""
+    rows: list[list[Any]] = []
+    for batch in table.to_batches(max_chunksize=4096):
+        values = [column.to_pylist() for column in batch.columns]
+        rows.extend([list(row) for row in zip(*values, strict=True)])
+    return rows
+
+
 def _stage_location_map(parsed, configs_by_ref) -> list[tuple[str, str]]:
     """Physical stage roots (``s3://bucket/prefix``) and their ``@stage`` names.
 
@@ -561,6 +570,7 @@ class FeatureAdapters:
                 horizon=statement.horizon,
                 frequency=statement.frequency,
                 mode=statement.mode,
+                session_id=session_id,
             )
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             columns = [
@@ -685,10 +695,9 @@ class FeatureAdapters:
             )
             del metadata
             columns = result_table.column_names
-            rows: list[list[Any]] = []
-            for batch in result_table.to_batches(max_chunksize=4096):
-                values = [column.to_pylist() for column in batch.columns]
-                rows.extend([list(row) for row in zip(*values, strict=True)])
+            # Building up to ML_SQL_RESULT_MAX_ROWS Python rows is CPU work, so
+            # it runs beside inference rather than on the event loop.
+            rows = await ml_engine_service.runtime.executor.run(_table_rows, result_table)
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             await self._audit(
                 event_type="query",

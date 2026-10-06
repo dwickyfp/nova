@@ -116,3 +116,377 @@ def test_debug_representations_hide_source_and_authentication():
     assert "private-value" not in repr(parsed)
     assert "private-value" not in repr(context)
     assert "encrypted-value" not in repr(context)
+
+
+# ── Parsing off the event loop ──────────────────────────────────────────────
+
+
+def _large_insert(rows: int = 400) -> str:
+    values = ", ".join(f"({i}, 'name{i}', {i}.5)" for i in range(rows))
+    return f"INSERT INTO db.t VALUES {values}"
+
+
+@pytest.fixture
+def parse_threads(monkeypatch):
+    """Record which thread each parse runs on."""
+    import threading
+
+    from app.sql_frontend import parser
+
+    seen: list[str] = []
+    original = parser.parse_tree
+
+    def recording(sql, **kwargs):
+        seen.append(threading.current_thread().name)
+        return original(sql, **kwargs)
+
+    monkeypatch.setattr(parser, "parse_tree", recording)
+    return seen
+
+
+async def test_short_statement_is_parsed_inline(monkeypatch, parse_threads):
+    import threading
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 8192)
+
+    await parse_statement_async("SELECT 1")
+
+    assert parse_threads == [threading.current_thread().name]
+
+
+async def test_large_statement_is_parsed_on_a_worker_thread(monkeypatch, parse_threads):
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 64)
+
+    await parse_statement_async(_large_insert())
+
+    assert len(parse_threads) == 1 and parse_threads[0].startswith("nova-sql-parse")
+
+
+async def test_zero_threshold_keeps_every_parse_inline(monkeypatch, parse_threads):
+    import threading
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 0)
+
+    await parse_statement_async(_large_insert())
+
+    assert parse_threads == [threading.current_thread().name]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select 1",
+        "SELECT * FROM @stage1.data.csv s JOIN @stage2.2026.*.parquet t ON s.id=t.id",
+        "CREATE ML_MODEL m TYPE = REGRESSION TARGET = 'y' INPUT = (SELECT x,y FROM t)",
+        "SELECT ML_PREDICT('m', x) FROM t",
+        "GRANT SELECT ON db.t TO ROLE analyst",
+        _large_insert(50),
+    ],
+)
+async def test_worker_parse_matches_the_inline_parse(monkeypatch, sql):
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+
+    inline = parse_statement(sql, original_sql=f"{sql} ")
+    offloaded = await parse_statement_async(sql, original_sql=f"{sql} ")
+
+    assert offloaded.parse_tree.toStringTree() == inline.parse_tree.toStringTree()
+    assert [token.text for token in offloaded.visible_tokens] == [
+        token.text for token in inline.visible_tokens
+    ]
+    assert (offloaded.span, offloaded.original_sql, offloaded.normalized_sql) == (
+        inline.span,
+        inline.original_sql,
+        inline.normalized_sql,
+    )
+    assert type(ast_builders.build(offloaded)) is type(ast_builders.build(inline))
+
+
+async def test_worker_parse_reports_the_same_syntax_error(monkeypatch):
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    sql = "SELECT FROM WHERE password = 'hunter2'"
+
+    with pytest.raises(SQLSyntaxError) as inline:
+        parse_statement(sql)
+    with pytest.raises(SQLSyntaxError) as offloaded:
+        await parse_statement_async(sql)
+
+    assert offloaded.value.diagnostics == inline.value.diagnostics
+    assert "hunter2" not in str(offloaded.value)
+
+
+async def test_worker_parse_rejects_more_than_one_statement(monkeypatch):
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+
+    with pytest.raises(SQLSyntaxError):
+        await parse_statement_async("SELECT 1; SELECT 2")
+
+
+async def test_worker_parse_fills_and_reuses_the_request_cache(monkeypatch, parse_threads):
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 64)
+    sql = _large_insert()
+
+    with parsing_scope():
+        first = await parse_statement_async(sql)
+        second = await parse_statement_async(sql, original_sql="-- note\n" + sql)
+        # The synchronous entry point shares the same request cache.
+        third = parse_statement(sql)
+
+    assert len(parse_threads) == 1
+    assert second.parse_tree is first.parse_tree and third.parse_tree is first.parse_tree
+    assert second.original_sql.startswith("-- note")
+
+
+async def test_worker_parse_keeps_nothing_outside_a_request(monkeypatch, parse_threads):
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 64)
+    sql = _large_insert()
+
+    await parse_statement_async(sql)
+    await parse_statement_async(sql)
+
+    assert len(parse_threads) == 2
+
+
+async def test_worker_and_inline_parses_do_not_disturb_each_other(monkeypatch):
+    import asyncio
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 2000)
+    large = [_large_insert(150 + step) for step in range(6)]
+    small = [f"SELECT a{step}, COUNT(*) FROM t WHERE b > {step} GROUP BY 1" for step in range(40)]
+    expected_large = [parse_statement(sql).parse_tree.toStringTree() for sql in large]
+    expected_small = [parse_statement(sql).parse_tree.toStringTree() for sql in small]
+
+    async def inline_parses():
+        trees = []
+        for sql in small:
+            trees.append((await parse_statement_async(sql)).parse_tree.toStringTree())
+            await asyncio.sleep(0)
+        return trees
+
+    *offloaded, inline = await asyncio.gather(
+        *(parse_statement_async(sql) for sql in large), inline_parses()
+    )
+
+    assert [item.parse_tree.toStringTree() for item in offloaded] == expected_large
+    assert inline == expected_small
+
+
+async def test_event_loop_keeps_running_during_a_large_parse(monkeypatch):
+    import asyncio
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import parse_statement_async
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 64)
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    try:
+        await parse_statement_async(_large_insert(1500))
+    finally:
+        task.cancel()
+
+    # An inline parse would leave the ticker at zero for the whole statement.
+    assert ticks > 0
+
+
+async def test_worker_parse_leaves_the_event_loop_prediction_caches_alone(monkeypatch):
+    """The runtime grows its DFA caches without a lock, so threads must not share them."""
+    from app.core.config import settings
+    from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
+    from app.sql_frontend.parser import parse_statement_async
+
+    def shared_states() -> int:
+        caches = (*StarRocksLexer.decisionsToDFA, *StarRocksParser.decisionsToDFA)
+        return sum(len(dfa.states) for dfa in caches)
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    # Syntax no other test in this module parses, so an inline parse would have
+    # to add states to the shared caches.
+    sql = (
+        "SELECT RANK() OVER (PARTITION BY region ORDER BY total DESC "
+        "ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM sales QUALIFY 1 = 1"
+    )
+    before = shared_states()
+
+    await parse_statement_async(sql)
+
+    assert shared_states() == before
+    parse_statement(sql)
+    assert shared_states() > before
+
+
+# ── CPU work around the parse ───────────────────────────────────────────────
+
+
+async def test_cpu_helper_runs_small_work_inline_and_large_work_on_a_worker(monkeypatch):
+    import threading
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 100)
+    here = threading.current_thread().name
+
+    assert await run_sql_cpu(99, lambda: threading.current_thread().name) == here
+    assert (await run_sql_cpu(100, lambda: threading.current_thread().name)).startswith(
+        "nova-sql-parse"
+    )
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 0)
+    assert await run_sql_cpu(10**6, lambda: threading.current_thread().name) == here
+
+
+async def test_cpu_helper_passes_arguments_results_and_errors_through(monkeypatch):
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+
+    def work(left, *, right):
+        if right is None:
+            raise SemanticError("refused")
+        return left + right
+
+    assert await run_sql_cpu(5, work, 2, right=3) == 5
+    with pytest.raises(SemanticError, match="refused"):
+        await run_sql_cpu(5, work, 2, right=None)
+
+
+async def test_cpu_helper_shares_request_caches_but_not_context_assignments(monkeypatch):
+    from contextvars import ContextVar
+
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    cache: ContextVar[dict | None] = ContextVar("test_cache", default=None)
+    flag: ContextVar[str] = ContextVar("test_flag", default="caller")
+    shared: dict = {}
+    cache.set(shared)
+
+    def work():
+        cache.get()["seen"] = flag.get()
+        flag.set("worker")
+
+    await run_sql_cpu(5, work)
+
+    assert shared == {"seen": "caller"} and flag.get() == "caller"
+
+
+async def test_nested_parse_on_a_worker_uses_the_worker_caches(monkeypatch):
+    """Builders and planners parse inner SQL; that must stay off the shared caches."""
+    from app.core.config import settings
+    from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
+    from app.sql_frontend.parser import run_sql_cpu
+
+    def shared_states() -> int:
+        caches = (*StarRocksLexer.decisionsToDFA, *StarRocksParser.decisionsToDFA)
+        return sum(len(dfa.states) for dfa in caches)
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    sql = "SELECT NTILE(4) OVER (ORDER BY amount NULLS LAST) FROM ledger LIMIT 7 OFFSET 3"
+    before = shared_states()
+
+    parsed = await run_sql_cpu(len(sql), parse_statement, sql)
+
+    assert shared_states() == before
+    assert type(ast_builders.build(parsed)).__name__ == "NativeStatement"
+
+
+async def test_stream_names_are_parsed_safely_on_a_worker(monkeypatch):
+    from app.core.config import settings
+    from app.sql_frontend.parser import run_sql_cpu
+    from app.sql_frontend.streams import parse_stream_name
+
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+
+    inline = parse_stream_name("sales.orders_stream")
+    offloaded = await run_sql_cpu(99, parse_stream_name, "sales.orders_stream")
+
+    assert offloaded == inline
+
+
+def test_coroutine_that_never_suspends_is_run_to_completion():
+    from app.sql_frontend.parser import run_without_awaiting
+
+    async def plan():
+        return "plan"
+
+    assert run_without_awaiting(plan) == "plan"
+
+
+def test_coroutine_that_suspends_asks_for_the_event_loop():
+    import asyncio
+
+    from app.sql_frontend.parser import NeedsEventLoop, run_without_awaiting
+
+    async def plan():
+        await asyncio.sleep(0)
+        return "plan"
+
+    with pytest.raises(NeedsEventLoop):
+        run_without_awaiting(plan)
+
+
+def test_coroutine_errors_are_raised_unchanged():
+    from app.sql_frontend.parser import run_without_awaiting
+
+    async def plan():
+        raise SemanticError("unsupported")
+
+    with pytest.raises(SemanticError, match="unsupported"):
+        run_without_awaiting(plan)
+
+
+@pytest.mark.parametrize("aliases", [3, 60])
+def test_fingerprint_filters_the_token_stream_a_fixed_number_of_times(monkeypatch, aliases):
+    """It used to filter every token once per alias and per IN list."""
+    from app.sql_frontend import parser
+    from app.sql_frontend.fingerprint import fingerprint
+
+    accesses = 0
+    original = parser.ParsedStatement.visible_tokens
+
+    def counting(self):
+        nonlocal accesses
+        accesses += 1
+        return original.fget(self)
+
+    monkeypatch.setattr(parser.ParsedStatement, "visible_tokens", property(counting))
+    columns = ", ".join(f"c{index} AS a{index}" for index in range(aliases))
+
+    shape = fingerprint(f"SELECT {columns} FROM db.t WHERE k IN (1, 2, 3) ORDER BY a0")
+
+    assert shape is not None and accesses <= 4

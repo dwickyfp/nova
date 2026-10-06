@@ -40,6 +40,7 @@ from app.modules.ml_engine.schemas import (
 )
 from app.modules.ml_engine.service import ml_engine_service
 from app.modules.ml_engine.spec import MLExecutionSpec, MLMode, MLSecurityContext, MLTask
+from app.modules.query.admission import Admitted
 from app.modules.query.sql_pipeline import redact_for_output
 
 router = APIRouter()
@@ -75,7 +76,7 @@ def _caller_credentials(user: dict) -> str:
 # ── Training ──────────────────────────────────────────────────
 
 
-@router.post("/train", response_model=TrainModelResponse)
+@router.post("/train", response_model=TrainModelResponse, dependencies=[Admitted])
 async def train_model(
     req: TrainModelRequest,
     user: dict = require_user,
@@ -103,6 +104,7 @@ async def train_model(
             horizon=req.horizon,
             frequency=req.frequency,
             mode=req.mode,
+            session_id=user.get("session_id"),
             **_tenant_options(user),
         )
         return result
@@ -158,7 +160,7 @@ async def predict_version(req: VersionPredictRequest, user: dict = require_user)
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/predict/batch", response_model=BatchPredictResponse)
+@router.post("/predict/batch", response_model=BatchPredictResponse, dependencies=[Admitted])
 async def batch_predict(
     req: BatchPredictRequest,
     user: dict = require_user,
@@ -190,7 +192,7 @@ async def batch_predict(
         ) from e
 
 
-@router.post("/forecast", response_model=ForecastResponse)
+@router.post("/forecast", response_model=ForecastResponse, dependencies=[Admitted])
 async def forecast(req: ForecastRequest, user: dict = require_user):
     """Forecast a future horizon from a persisted forecast alias."""
     try:
@@ -207,7 +209,7 @@ async def forecast(req: ForecastRequest, user: dict = require_user):
         raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/predict/materialize")
+@router.post("/predict/materialize", dependencies=[Admitted])
 async def materialize_prediction(req: BatchPredictRequest, user: dict = require_user):
     from app.common.audit import write_audit_log
 
@@ -272,7 +274,7 @@ async def result_page(
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/forecast/version", response_model=ForecastResponse)
+@router.post("/forecast/version", response_model=ForecastResponse, dependencies=[Admitted])
 async def forecast_version(req: VersionForecastRequest, user: dict = require_user):
     """Forecast from one immutable persisted model version."""
     try:
@@ -391,7 +393,26 @@ async def delete_alias(
     )
 
 
-@router.post("/execute", response_model=MLExecuteResponse)
+@router.get("/jobs/{job_id}")
+async def training_job(job_id: str, user: dict = require_user):
+    """Status of a training job queued for the worker, for the session that queued it."""
+    from app.modules.migration.jobs import session_fingerprint
+    from app.modules.ml_engine.jobs import ml_job_repo, public_status
+
+    job = await ml_job_repo.get(job_id)
+    if (
+        job is None
+        or job["actor"] != user["username"]
+        or job["active_role"] != user.get("active_role")
+        or int(job["security_context_version"]) != int(user.get("security_context_version") or 1)
+        or job["session_fingerprint"] != session_fingerprint(user.get("session_id") or "")
+    ):
+        # One answer for "no such job" and "not yours": do not confirm job ids.
+        raise HTTPException(status_code=404, detail="Training job not found")
+    return public_status(job)
+
+
+@router.post("/execute", response_model=MLExecuteResponse, dependencies=[Admitted])
 async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
     """Execute deterministic persistent or ephemeral ML as the requesting user."""
     password = _caller_credentials(user)
@@ -429,7 +450,7 @@ async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
         raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
 
 
-@router.post("/runs/{run_id}/promote", response_model=MLExecuteResponse)
+@router.post("/runs/{run_id}/promote", response_model=MLExecuteResponse, dependencies=[Admitted])
 async def promote_run(
     run_id: str,
     req: PromoteRunRequest,

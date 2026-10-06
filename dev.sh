@@ -4,6 +4,7 @@
 #
 # Starts the five host-side processes (nothing that belongs in Docker):
 #   backend    FastAPI web + embedded MySQL proxy (port 8000, 4406)
+#              (--split: web 8000, query tier 8001, standalone proxy 4406)
 #   scheduler  nova-scheduler (cron/interval tick -> Redis Streams)
 #   worker     nova-worker (runs task graphs and migration jobs)
 #   agent-worker  Studio Smart coordinator and specialist runs
@@ -16,11 +17,12 @@
 #   ./dev.sh                          start everything, follow logs
 #   ./dev.sh --no-frontend            skip the Vite dev server
 #   ./dev.sh --no-infra-check         skip the StarRocks/Redis reachability probe
+#   ./dev.sh --split                  run web, query tier and MySQL proxy as separate processes
 #   ./dev.sh --kill                   free the ports first, then start
 #   ./dev.sh --help
 #
 # Ports are overridable when the defaults are taken:
-#   BACKEND_PORT=8000 PROXY_PORT=4406 FRONTEND_PORT=5173 ./dev.sh
+#   BACKEND_PORT=8000 QUERY_PORT=8001 PROXY_PORT=4406 FRONTEND_PORT=5173 ./dev.sh
 #   STARROCKS_FE_MYSQL_PORT=29030 RANGER_ADMIN_PORT=6080 ./dev.sh
 #
 # Ctrl+C stops every child process. Logs are also written to .dev-logs/.
@@ -35,14 +37,16 @@ LOG_DIR="$ROOT/.dev-logs"
 RUN_FRONTEND=1
 NO_INFRA_CHECK=0
 KILL_PORTS=0
+SPLIT=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-frontend) RUN_FRONTEND=0 ;;
     --no-infra-check) NO_INFRA_CHECK=1 ;;
     --kill) KILL_PORTS=1 ;;
+    --split) SPLIT=1 ;;
     -h|--help)
-      sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -178,6 +182,7 @@ signal_tree() {
 # the stack comes up half-down, so fail before spawning anything.
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 PROXY_PORT="${PROXY_PORT:-4406}"
+QUERY_PORT="${QUERY_PORT:-8001}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 # PIDs listening on a TCP port (macOS lsof). Empty when the port is free.
@@ -217,7 +222,9 @@ free_port() {
 }
 
 # Refuse on a busy port unless --kill was given (then reap it first).
-for entry in "$BACKEND_PORT:backend/web" "$PROXY_PORT:backend/MySQL-proxy"; do
+PORT_ENTRIES=("$BACKEND_PORT:backend/web" "$PROXY_PORT:backend/MySQL-proxy")
+[[ "$SPLIT" -eq 1 ]] && PORT_ENTRIES+=("$QUERY_PORT:backend/query")
+for entry in "${PORT_ENTRIES[@]}"; do
   port="${entry%%:*}"
   label="${entry#*:}"
   if port_open "$port"; then
@@ -348,10 +355,27 @@ PY
   die "task worker configuration is incomplete. Set WORKER_IMPERSONATION_USER and WORKER_IMPERSONATION_PASSWORD in backend/.env for a dedicated StarRocks account. With Ranger enabled, also set WORKER_IMPERSONATION_ROLE."
 fi
 
-# Backend: FastAPI with the embedded MySQL proxy (PROXY_PORT, default 4406).
-run backend "$C_BLUE" "$BACKEND_DIR" \
-  "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
-  uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
+if [[ "$SPLIT" -eq 1 ]]; then
+  # Split topology: the web process serves the application API, the query
+  # process runs SQL and ML, and the MySQL proxy is its own process. Vite routes
+  # by path the way the gateway does in a deployment.
+  run backend "$C_BLUE" "$BACKEND_DIR" \
+    "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=web PROXY_ENABLED=false ML_TRAINING_EXECUTOR=worker \
+    uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
+
+  run query "$C_BLUE" "$BACKEND_DIR" \
+    "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=query PROXY_ENABLED=false ML_TRAINING_EXECUTOR=worker \
+    uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$QUERY_PORT"
+
+  run proxy "$C_BLUE" "$BACKEND_DIR" \
+    "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
+    uv run python -m app.proxy
+else
+  # Backend: FastAPI with the embedded MySQL proxy (PROXY_PORT, default 4406).
+  run backend "$C_BLUE" "$BACKEND_DIR" \
+    "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
+    uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
+fi
 
 # Standalone workers. They share NOVA_SYSTEM + Redis; migration jobs are
 # claimed by app.worker, never executed in the FastAPI process.
@@ -370,8 +394,10 @@ run agent-worker "$C_CYAN" "$BACKEND_DIR" \
 if [[ "$RUN_FRONTEND" -eq 1 ]]; then
   # `pnpm dev` in package.json already passes `--port 5173`; use this to
   # control the port without stacking a second conflicting flag.
+  FRONTEND_ENV=(env)
+  [[ "$SPLIT" -eq 1 ]] && FRONTEND_ENV+=(NOVA_QUERY_API_URL="http://localhost:${QUERY_PORT}")
   run frontend "$C_YELLOW" "$FRONTEND_DIR" \
-    pnpm exec vite --host 0.0.0.0 --port "$FRONTEND_PORT"
+    "${FRONTEND_ENV[@]}" pnpm exec vite --host 0.0.0.0 --port "$FRONTEND_PORT"
 fi
 
 # ── wait ─────────────────────────────────────────────────────────────
@@ -379,7 +405,12 @@ printf '\n'
 ok "Nova is coming up:"
 printf '    %-10s %s\n' "web"     "http://localhost:${BACKEND_PORT}"
 printf '    %-10s %s\n' "api"     "http://localhost:${BACKEND_PORT}/docs"
-printf '    %-10s %s\n' "mysql"   "localhost:${PROXY_PORT} (through the backend)"
+if [[ "$SPLIT" -eq 1 ]]; then
+  printf '    %-10s %s\n' "query"   "http://localhost:${QUERY_PORT}"
+  printf '    %-10s %s\n' "mysql"   "localhost:${PROXY_PORT} (standalone proxy)"
+else
+  printf '    %-10s %s\n' "mysql"   "localhost:${PROXY_PORT} (through the backend)"
+fi
 [[ "$RUN_FRONTEND" -eq 1 ]] && printf '    %-10s %s\n' "ui" "http://localhost:${FRONTEND_PORT}"
 printf '\n'
 log "Ctrl+C to stop everything."

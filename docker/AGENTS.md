@@ -11,6 +11,15 @@ commands run from the repository root unless stated otherwise. Read
   object storage. Its `app` profile adds the backend and task/migration worker.
   Do not assume it also starts every scheduler or Studio worker; inspect
   `dev.sh` and the run guide for separate process ownership.
+- `docker/docker-compose.split.yml` is an opt-in override that replaces the
+  single backend with scalable web, query and MySQL proxy tiers behind the
+  `docker/gateway/` nginx gateway. `NOVA_PROCESS_ROLE` decides which startup
+  duties a process runs; only the web role bootstraps schemas, under a Redis
+  lock. Assistant and agent routes are pinned to one query replica per session
+  because their consent and cancel state is process-local; do not replace that
+  rule with round robin or with `hash ... consistent`, which does not pin
+  replicas that share one DNS name. `/api/v1/internal/` is never routed publicly.
+  `gateway/tls/` holds deployment-local certificates and is git-ignored.
 - Local frontend development uses Vite 5173 and backend 8000; the MySQL proxy
   defaults to 4406. Compose/environment files own deployment port bindings.
   The engine's native MySQL port stays internal in governed deployment;

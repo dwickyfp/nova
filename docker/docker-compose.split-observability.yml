@@ -1,0 +1,14 @@
+# Prometheus for a split deployment: discovers every web, query and proxy
+# replica through Docker DNS instead of the per-mode target files.
+#
+#   docker compose -f docker/docker-compose-engine.yml \
+#     -f docker/docker-compose.split.yml \
+#     -f docker/docker-compose-observability.yml \
+#     -f docker/docker-compose.split-observability.yml --profile app up -d
+#
+# Verify with: python docker/observability/check_stack.py --mode container --topology split
+
+services:
+  prometheus:
+    volumes:
+      - ./observability/prometheus/prometheus.split.yml:/etc/prometheus/prometheus.yml:ro

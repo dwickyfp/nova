@@ -548,7 +548,98 @@ class MLEngineService:
         mode: str = "balanced",
         tenant: str = "default",
         security_context_version: int = 1,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
+        """Train and register a model, on the worker when that is configured.
+
+        A caller that passes its ``session_id`` lets ``nova-worker`` do the
+        training, bound to that session. Callers without one (agent tools, the
+        feature store) train in this process, as before.
+        """
+        if settings.ML_TRAINING_EXECUTOR == "worker" and session_id and not as_system:
+            from app.modules.ml_engine.jobs import submit_training, wait_for_training
+
+            if username is None:
+                raise ValueError("Training requires caller credentials")
+            job_id = await submit_training(
+                session_id=session_id,
+                user={
+                    "username": username,
+                    "active_role": role,
+                    "security_context_version": security_context_version,
+                    "tenant": tenant,
+                },
+                training_sql=training_sql,
+                request={
+                    "model_name": model_name,
+                    "model_type": model_type,
+                    "algorithm": algorithm,
+                    "target_column": target_column,
+                    "feature_columns": feature_columns,
+                    "hyperparameters": hyperparameters,
+                    "test_size": test_size,
+                    "database_name": database_name,
+                    "timestamp_column": timestamp_column,
+                    "series_column": series_column,
+                    "horizon": horizon,
+                    "frequency": frequency,
+                    "mode": mode,
+                },
+            )
+            budget = budget_for(MLMode(mode))
+            return await wait_for_training(
+                job_id,
+                timeout_seconds=budget.timeout_seconds + settings.ML_JOB_QUEUE_TIMEOUT_SECONDS,
+            )
+        return await self.train_model_locally(
+            model_name=model_name,
+            model_type=model_type,
+            algorithm=algorithm,
+            training_sql=training_sql,
+            target_column=target_column,
+            feature_columns=feature_columns,
+            hyperparameters=hyperparameters,
+            test_size=test_size,
+            database_name=database_name,
+            created_by=created_by,
+            username=username,
+            password=password,
+            role=role,
+            as_system=as_system,
+            timestamp_column=timestamp_column,
+            series_column=series_column,
+            horizon=horizon,
+            frequency=frequency,
+            mode=mode,
+            tenant=tenant,
+            security_context_version=security_context_version,
+        )
+
+    async def train_model_locally(
+        self,
+        model_name: str,
+        model_type: str,
+        algorithm: str,
+        training_sql: str,
+        target_column: str | None,
+        feature_columns: list[str] | None,
+        hyperparameters: dict | None,
+        test_size: float,
+        database_name: str | None,
+        created_by: str = "root",
+        username: str | None = None,
+        password: str | None = None,
+        role: str | None = None,
+        as_system: bool = False,
+        timestamp_column: str | None = None,
+        series_column: str | None = None,
+        horizon: int | None = None,
+        frequency: str | None = None,
+        mode: str = "balanced",
+        tenant: str = "default",
+        security_context_version: int = 1,
+    ) -> dict[str, Any]:
+        """Train in this process, as the identity given."""
         del created_by
         if as_system:
             if settings.RANGER_ENABLED:

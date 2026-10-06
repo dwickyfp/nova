@@ -504,9 +504,9 @@ class ProxyConnection:
             await self._write_error(1064, "A prepared statement holds exactly one statement")
             return
         try:
-            from app.sql_frontend.parser import parse_statement
+            from app.sql_frontend.parser import parse_statement_async
 
-            parse_statement(sql)
+            await parse_statement_async(sql)
         except ValueError as exc:
             await self._write_error(1064, str(exc))
             return

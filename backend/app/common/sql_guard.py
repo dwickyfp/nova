@@ -39,6 +39,9 @@ newline that survived normalization. ``DESTRUCTIVE_SQL_PATTERN`` and
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from app.core.exceptions import ForbiddenSQLError
 
@@ -372,10 +375,11 @@ def _guard_single_statement(sql: str, *, allow_stage_export: bool = False) -> No
     for pattern, message in BLOCKED_PATTERNS:
         if re.search(pattern, normalized, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
+    blanked = _blank_string_literals(normalized)
     for pattern, message in _EGRESS_PATTERNS:
         if allow_stage_export and pattern == _STAGE_EXPORT_EGRESS_PATTERN:
             continue
-        if re.search(pattern, _blank_string_literals(normalized), BLOCKED_PATTERN_FLAGS):
+        if re.search(pattern, blanked, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
 
 
@@ -590,6 +594,29 @@ def _normalized_value(raw: str) -> str:
     return value.strip("'\"`")
 
 
+#: Redactions already computed for the current request. One statement is
+#: redacted again for the plan, the audit row, the result and the response;
+#: each pass scans the whole text.
+_REQUEST_REDACTIONS: ContextVar[dict[str, str] | None] = ContextVar(
+    "nova_sql_request_redactions", default=None
+)
+#: Shorter text is cheaper to redact again than to remember.
+_REDACTION_MEMO_MIN_CHARS = 2048
+
+
+@contextmanager
+def redaction_scope() -> Iterator[None]:
+    """Reuse redactions within a request; nothing is kept once it ends."""
+    if _REQUEST_REDACTIONS.get() is not None:
+        yield
+        return
+    token = _REQUEST_REDACTIONS.set({})
+    try:
+        yield
+    finally:
+        _REQUEST_REDACTIONS.reset(token)
+
+
 def redact_sql_credentials(sql: str) -> str:
     """Replace credential values in ``sql`` with ``***``.
 
@@ -610,14 +637,21 @@ def redact_sql_credentials(sql: str) -> str:
     """
     if not sql:
         return sql
+    memo = _REQUEST_REDACTIONS.get() if len(sql) >= _REDACTION_MEMO_MIN_CHARS else None
+    if memo is not None and sql in memo:
+        return memo[sql]
+    source = sql
     sql = _redact_account_credentials(sql)
     for pattern, quoted_key in _CREDENTIAL_PATTERNS:
         sql = pattern.sub(lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql)
     if not _redaction_is_complete(sql):
+        # Never remembered: every later attempt must fail closed as well.
         raise CredentialsRedactionError(
             "credential parameters remain populated after redaction; refusing to "
             "return the statement"
         )
+    if memo is not None:
+        memo[source] = sql
     return sql
 
 

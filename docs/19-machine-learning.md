@@ -11,7 +11,7 @@ Nova provides two separate intelligence layers:
 | Layer | Purpose | Runtime |
 |---|---|---|
 | Native ML | Classification, regression, forecasting, anomaly detection, clustering | Nova's deterministic ML workers |
-| AI SQL functions | Completion, summarization, sentiment, translation, extraction | Configured LLM providers through StarRocks `ai_query()` |
+| AI SQL functions | Completion, summarization, sentiment, translation, extraction | Configured LLM providers through StarRocks `ai_query()`, which calls Nova's internal LLM gateway; the provider key stays in Nova |
 
 The assistant orchestrates these systems. It does not train models or calculate
 predictions itself. See [Module 28](28-native-ml-runtime.md) for the native ML

@@ -39,7 +39,7 @@ def event(name="one", at="2026-09-25T10:00:00", **kwargs):
 @pytest.fixture
 def service(monkeypatch):
     service = AIUsageService()
-    for method in ("_messages", "_runs", "_functions"):
+    for method in ("_messages", "_runs", "_functions", "_function_tokens"):
         monkeypatch.setattr(service, method, AsyncMock(return_value=([], False)))
     return service
 
@@ -93,7 +93,9 @@ async def test_partial_data_never_has_a_comparison(service):
 
 
 async def test_all_failed_is_unavailable_not_zero(service):
-    for method in (service._messages, service._runs, service._functions):
+    for method in (
+        service._messages, service._runs, service._functions, service._function_tokens
+    ):
         method.side_effect = RuntimeError("offline")
     with pytest.raises(ai_usage.AIUsageUnavailable):
         await service.dashboard(now=NOW)
@@ -182,3 +184,42 @@ def test_api_bounds_and_no_exception_details(monkeypatch):
         response = client.get("/ai/usage")
         assert response.status_code == 503
         assert "secret" not in response.text
+
+
+async def test_measured_function_tokens_are_read_from_the_gateway_usage_table(monkeypatch):
+    queries = []
+
+    async def execute_system(sql, params):
+        queries.append((sql, params))
+        return {"rows": [
+            [7, datetime(2026, 9, 25, 3), "AI_COMPLETE", "model-a", "success", 300, 40, 340, 900],
+            [6, datetime(2026, 9, 25, 2), "AI_SUMMARIZE", "model-a", "error", 0, 0, 0, 20],
+        ]}
+
+    monkeypatch.setattr(ai_usage.db, "execute_system", execute_system)
+
+    events, truncated = await AIUsageService()._function_tokens(
+        datetime(2026, 9, 19, tzinfo=UTC), NOW
+    )
+
+    assert truncated is False and "USAGE_LLM_FUNCTIONS" in queries[0][0]
+    first, second = events
+    assert (first["source"], first["action"], first["model"]) == (
+        "function_tokens", "AI_COMPLETE", "model-a"
+    )
+    assert (first["input_tokens"], first["output_tokens"], first["total_tokens"]) == (300, 40, 340)
+    # The engine does not tell the gateway who ran the SQL.
+    assert first["user_name"] == "" and second["status"] == "error"
+
+
+async def test_function_tokens_count_towards_the_dashboard_totals(service):
+    service._function_tokens.side_effect = [
+        ([event("usage", source="function_tokens", action="AI_COMPLETE", user="",
+                prompt=300, completion=40, total=340, status="success")], False),
+        ([], False),
+    ]
+
+    data = await service.dashboard(now=NOW)
+
+    assert data["summary"]["total_tokens"] == 340
+    assert {row["source"] for row in data["coverage"]} >= {"functions", "function_tokens"}

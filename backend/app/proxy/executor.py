@@ -26,7 +26,8 @@ import decimal
 import logging
 import math
 from ast import literal_eval
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -36,6 +37,12 @@ from app.core.config import settings
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
+)
+from app.modules.query.admission import (
+    REFUSAL,
+    QueryCapacityError,
+    audit_refusal,
+    query_admission,
 )
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import query_service
@@ -69,6 +76,7 @@ from app.proxy.session import (
     transaction_control,
     unquote_literal,
 )
+from app.sql_frontend.parser import run_sql_cpu
 from app.sql_frontend.session_functions import CORRELATION_SESSION
 
 logger = logging.getLogger(__name__)
@@ -504,7 +512,11 @@ class ProxyQueryExecutor:
 
         # The read half of ``SET @x = …``: substitution happens here, after the
         # statements before it applied their assignments (NOVA-25).
-        substituted = substitute_user_variables(statement, self._session).sql
+        substituted = (
+            await run_sql_cpu(
+                len(statement), substitute_user_variables, statement, self._session
+            )
+        ).sql
         return await self.run_engine_statement(
             substituted,
             sink,
@@ -541,21 +553,26 @@ class ProxyQueryExecutor:
             # A MySQL client has no confirmation exchange: the statement the user
             # sent is the explicit request, as with any MySQL server. The guard,
             # engine authorization and audit still apply to destructive SQL.
-            results = await query_service.execute_statements(
-                source="mysql_proxy",
-                sql=sql,
-                username=username,
-                encrypted_password="",
-                database=self._session.database,
-                role=self._session.active_role,
-                security_context_version=self._session.security_context_version,
-                max_rows=row_limit or None,
-                session_id=session_id,
-                confirm_destructive=True,
-                connection=connection,
-                client_transaction=self._session.in_transaction,
-                row_sink=stream,
-            )
+            # A statement inside an open transaction is always admitted: refusing
+            # it would leave the client's transaction half applied.
+            async with self._admission(username, session_id):
+                results = await query_service.execute_statements(
+                    source="mysql_proxy",
+                    sql=sql,
+                    username=username,
+                    encrypted_password="",
+                    database=self._session.database,
+                    role=self._session.active_role,
+                    security_context_version=self._session.security_context_version,
+                    max_rows=row_limit or None,
+                    session_id=session_id,
+                    confirm_destructive=True,
+                    connection=connection,
+                    client_transaction=self._session.in_transaction,
+                    row_sink=stream,
+                )
+        except QueryCapacityError:
+            results = [QueryResult(error=REFUSAL)]
         except Exception as exc:
             # A failure outside the per-statement loop (the connection dying, or
             # the pipeline raising before it builds a result). The message can
@@ -577,6 +594,20 @@ class ProxyQueryExecutor:
             # The selected database belonged to the previous catalog.
             self._session.set_database("")
         return part.error is None and not stream.overflowed
+
+    @asynccontextmanager
+    async def _admission(self, username: str, session_id: str | None) -> AsyncIterator[None]:
+        if self._session.in_transaction:
+            yield
+            return
+        try:
+            async with query_admission.slot("mysql_proxy"):
+                yield
+        except QueryCapacityError:
+            await audit_refusal(
+                username=username, source="mysql_proxy", target="", session_id=session_id
+            )
+            raise
 
     async def _run_prepared_sql(
         self,

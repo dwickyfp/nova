@@ -32,6 +32,8 @@ from app.core.studio_capabilities import log_studio_capabilities
 from app.modules.agents.automations import AutomationRunner, AutomationWorker
 from app.modules.migration.job_worker import MigrationJobWorker
 from app.modules.migration.repository import migration_repo
+from app.modules.ml_engine.job_worker import MLJobWorker
+from app.modules.ml_engine.jobs import ml_job_repo
 from app.modules.task_orchestration.consumer import GraphRunConsumer
 from app.modules.task_orchestration.execution import DelegateExecutor
 from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
@@ -120,6 +122,10 @@ async def _run() -> None:
     migration_task = asyncio.create_task(
         MigrationJobWorker(client).run_forever(stop_event), name="nova-worker-migration"
     )
+    await ml_job_repo.ensure_schema()
+    ml_task = asyncio.create_task(
+        MLJobWorker(client).run_forever(stop_event), name="nova-worker-ml-training"
+    )
     automation_task = asyncio.create_task(
         build_automation_worker(client).run_forever(stop_event),
         name="nova-worker-automations",
@@ -139,6 +145,8 @@ async def _run() -> None:
             await heartbeat_task
         with contextlib.suppress(asyncio.CancelledError):
             await migration_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await ml_task
         with contextlib.suppress(asyncio.CancelledError):
             await automation_task
         with contextlib.suppress(asyncio.CancelledError):

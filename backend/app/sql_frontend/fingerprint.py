@@ -117,6 +117,9 @@ def fingerprint(sql: str) -> QueryShape:
         parsed = parse_statement(sql)
         statement = ast_builders.build(parsed)
         nodes = list(walk_nodes(parsed.statement_context))
+        # The property filters the whole token stream on every access; the
+        # loops below would otherwise do that once per alias and per list.
+        visible_tokens = parsed.visible_tokens
         if (
             not isinstance(statement, NativeStatement)
             or _name(parsed.statement_context) != "QueryStatementContext"
@@ -167,7 +170,7 @@ def fingerprint(sql: str) -> QueryShape:
                 previous = next(
                     (
                         t
-                        for t in reversed(parsed.visible_tokens)
+                        for t in reversed(visible_tokens)
                         if t.tokenIndex < alias.start.tokenIndex
                     ),
                     alias.start,
@@ -197,7 +200,7 @@ def fingerprint(sql: str) -> QueryShape:
                 if replacement is not None:
                     replacements[node.start.tokenIndex] = (node.stop.tokenIndex, replacement)
             if kind in {"IntegerListContext", "StringListContext"}:
-                for token in parsed.visible_tokens:
+                for token in visible_tokens:
                     if (
                         node.start.tokenIndex < token.tokenIndex < node.stop.tokenIndex
                         and token.text not in {",", "-", "+"}
@@ -235,7 +238,7 @@ def fingerprint(sql: str) -> QueryShape:
                     )
         parts: list[str] = []
         until = -1
-        for token in parsed.visible_tokens:
+        for token in visible_tokens:
             if token.tokenIndex <= until or token.text == ";" or token.tokenIndex in skipped:
                 continue
             if token.tokenIndex in replacements:
