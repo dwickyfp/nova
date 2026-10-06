@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     #: engine has not finished.
     QUERY_MAX_CONCURRENCY: int = Field(default=64, ge=0)
 
+    #: Audit rows written by one INSERT when several arrive together. Each
+    #: caller still waits for its own row to be recorded. 1 writes every row
+    #: on its own.
+    AUDIT_GROUP_MAX_ROWS: int = Field(default=200, ge=1)
+
     # --- AI_* SQL functions ---
     #: Where the engine's backends reach this service. ``AI_*`` function bodies
     #: call ``<url>/api/v1/internal/llm/chat/completions`` so the provider key

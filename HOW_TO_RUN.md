@@ -290,14 +290,25 @@ Pengaturan beban, semuanya per proses:
 | --- | --- | --- |
 | `QUERY_MAX_CONCURRENCY` | `64` | Statement yang dijalankan sekaligus lewat API query (execute, explain), route eksekusi ML, dan proxy MySQL. Di atas batas, request ditolak (429 dengan `Retry-After`, atau error MySQL) dan tercatat di audit sebagai `REFUSED`. Statement di dalam transaksi proxy yang sedang terbuka tidak pernah ditolak. `0` mematikan. |
 | `SQL_PARSE_OFFLOAD_MIN_CHARS` | `8192` | Statement sepanjang ini atau lebih diproses (guard, parse, build, plan) di thread terpisah agar event loop tidak tertahan. `0` mematikan. |
-| `SQL_PARSE_THREADS` | `2` | Jumlah thread tersebut. |
+| `SQL_PARSE_THREADS` | `2` | Jumlah thread tersebut. Tiap thread menyimpan cache parser sendiri (terukur di bawah 20 MB per thread untuk korpus uji). |
 | `PROXY_MAX_CONNECTIONS` | `100` | Sesi MySQL per proses proxy. |
 | `PROXY_MAX_ROWS` | `0` (tanpa batas) | Batas baris per statement lewat proxy. Hasil yang melebihi batas ditolak, tidak dipotong. |
 | `LLM_GATEWAY_MAX_CONCURRENCY` | `32` | Panggilan provider LLM yang diteruskan sekaligus untuk fungsi `AI_*`; sisanya menunggu. |
+| `AUDIT_GROUP_MAX_ROWS` | `200` | Baris audit yang ditulis satu `INSERT` bila datang bersamaan. Setiap pemanggil tetap menunggu barisnya tercatat sebelum respons dikirim. `1` menulis tiap baris sendiri. |
 
 Thread menjaga proses tetap responsif, tetapi tidak menambah throughput karena
-Python tetap memakai satu core per proses. Throughput ditambah dengan menambah
-replika query tier dan proxy.
+Python tetap memakai satu core per proses. Replika query tier dan proxy menambah
+kapasitas CPU untuk statement besar.
+
+Untuk banyak statement kecil, batasnya bukan Nova melainkan tulisan audit: satu
+`INSERT` baris ke StarRocks butuh sekitar 100 ms dan insert yang bersamaan tidak
+saling tumpang tindih (sekitar 58 per detik pada stack lokal, berapa pun jumlah
+replika). Karena itu baris audit yang datang bersamaan digabung ke satu `INSERT`.
+Pada stack lokal, satu replika query naik dari sekitar 60 ke sekitar 135
+statement per detik pada 48 klien bersamaan. Latensi per statement tetap sekitar
+0,2 detik karena setiap statement menunggu audit-nya tercatat; menurunkannya
+berarti menulis audit secara asinkron, yang mengubah jaminan audit dan sengaja
+tidak dilakukan.
 
 ### Training ML di worker
 

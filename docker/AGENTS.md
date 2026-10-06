@@ -17,7 +17,8 @@ commands run from the repository root unless stated otherwise. Read
   duties a process runs; only the web role bootstraps schemas, under a Redis
   lock. Assistant and agent routes are pinned to one query replica per session
   because their consent and cancel state is process-local; do not replace that
-  rule with plain round robin. `/api/v1/internal/` is never routed publicly.
+  rule with round robin or with `hash ... consistent`, which does not pin
+  replicas that share one DNS name. `/api/v1/internal/` is never routed publicly.
   `gateway/tls/` holds deployment-local certificates and is git-ignored.
 - Local frontend development uses Vite 5173 and backend 8000; the MySQL proxy
   defaults to 4406. Compose/environment files own deployment port bindings.
