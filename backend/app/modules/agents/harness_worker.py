@@ -117,6 +117,10 @@ def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dic
     return shown
 
 
+_CARRIED_FACTS = ("metrics", "dimensions", "semantic_plan", "semantic_model_id",
+                  "source_agent_id")
+
+
 def _carried_result(evidence: dict | None, shown: list[dict]) -> dict | None:
     """The newest result of a Smart answer that showed no table of its own.
 
@@ -125,13 +129,20 @@ def _carried_result(evidence: dict | None, shown: list[dict]) -> dict | None:
     """
     if any(item.get("kind") == "table" for item in shown):
         return None
-    tables = [table for table in ((evidence or {}).get("tables") or {}).values()
-              if isinstance(table, dict) and table.get("columns") and table.get("rows")]
+    tables = {key: table for key, table in ((evidence or {}).get("tables") or {}).items()
+              if isinstance(table, dict) and table.get("columns") and table.get("rows")}
     if not tables:
         return None
-    latest = tables[-1]
-    return {"kind": "result", "title": str(latest.get("title") or "query result"),
-            "columns": list(latest["columns"])[:50], "rows": list(latest["rows"])[:200]}
+    key, latest = list(tables.items())[-1]
+    described = next((item.get("metadata") or {} for item in (evidence or {}).get("items") or []
+                      if item.get("evidence_id") == key), {})
+    return {
+        "kind": "result", "title": str(latest.get("title") or "query result"),
+        "columns": list(latest["columns"])[:50], "rows": list(latest["rows"])[:200],
+        # What the rows measure and who served them, so the next turn can tell
+        # whether they answer what it is asked.
+        "metadata": {name: described[name] for name in _CARRIED_FACTS if name in described},
+    }
 
 
 class AuthenticationUnavailable(RuntimeError):

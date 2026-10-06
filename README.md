@@ -176,6 +176,12 @@ the question to a Sales Agent.
 
 ![Nova Studio answering a revenue question through a Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
 
+Smart mode answers across agents as one analyst. In this recording, shown at four
+times speed, it describes the data it can reach, combines expense from a Finance
+agent with headcount from an HR agent, and charts the result.
+
+![Nova Studio in Smart mode answering three questions: what data it has, expense and active employees by department, and a chart of expense by department](docs/assets/readme/nova-studio-smart-chat.gif)
+
 ### Nova Studio capabilities
 
 ![Nova Studio personal skills view](docs/assets/readme/nova-studio-capabilities.png)

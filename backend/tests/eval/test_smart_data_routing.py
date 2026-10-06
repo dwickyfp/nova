@@ -511,3 +511,45 @@ async def test_an_answer_is_checked_against_a_specialist_no_wait_named():
           resolve_consent=AsyncMock(return_value=False))])
     assert result.finish_reason == "stop", result.error_codes
     assert answer_text(result).startswith(answer)
+
+
+@pytest.mark.asyncio
+async def test_smart_charts_the_result_of_the_turn_before():
+    from types import SimpleNamespace
+
+    kept = {"kind": "result", "title": "Expense by department",
+            "columns": ["department", "total_expense"],
+            "rows": [["Sales", "1200.00"], ["Finance", "900.00"]],
+            "metadata": {"metrics": ["total_expense"], "dimensions": ["department"],
+                         "source_agent_id": "finance"}}
+    history = thread(read_only_grant=True)
+    history.messages.append(SimpleNamespace(
+        role="assistant", content="Sales spent 1,200 and Finance 900.", steps=[kept],
+        message_id="m1", created_at=None,
+    ))
+    registry = ToolRegistry()
+    registry.register(EvalTool(
+        "discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+        data={"agents": [{"agent_id": "finance", "name": "Finance",
+                          "dimension_matches": ["department"],
+                          "semantic_matches": [{"metric": "total_expense",
+                                                "matched_alias": "expense"}]}]},
+    ))
+    registry.register(EvalTool("data_to_chart", chart={"chart_spec": "{}"}))
+    provider = ScriptedProvider([
+        # Discovery already ran without a model call.
+        call("data_to_chart"),
+        text_frame("Here is the chart: Sales spent 1,200 and Finance 900."),
+    ], turn_plan={
+        "intent": "semantic_analytics", "tools": ["discover_agents", "data_to_chart"],
+        "required_tools": ["discover_agents", "data_to_chart"],
+        "intent_frame": {"language": "en", "compares_groups": False},
+    })
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=12,
+    ).run(thread=history, user_content="Now chart it.", context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert "1,200" in answer_text(result)

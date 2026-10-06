@@ -213,6 +213,8 @@ class EvidenceTracker:
                 # A forecast or score the runtime computed is a result the answer may
                 # state; without it every ML answer is rebuilt from the input table.
                 "ml_execute",
+                # The verified result of the turn before, charted or refined now.
+                "previous_result",
             }
             and table
         ):

@@ -2409,6 +2409,20 @@ class AssistantLoop:
                     context.evidence_sql = {
                         **(context.evidence_sql or {}), evidence_item.evidence_id: compiled,
                     }
+            charted = context.last_result or {}
+            if (
+                context.collaboration_root and invocation.tool_name == "data_to_chart"
+                and charted.get("source") == "previous_turn" and charted.get("rows")
+                and not evidence.business_tables
+            ):
+                # "Chart that": the rows are the verified result of the turn before,
+                # kept with its answer. They are this turn's evidence too.
+                evidence.add(
+                    "previous_result", str(charted.get("title") or "previous result"),
+                    table={"columns": list(charted.get("columns") or []),
+                           "rows": list(charted["rows"])},
+                    metadata={**(charted.get("metadata") or {}), "source": "previous_turn"},
+                )
             if (
                 invocation.tool_name == "semantic_query" and route.needs_diagnosis
                 and not deferred_calls and not tool_uses.get("diagnose_change")
@@ -3576,6 +3590,9 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
                 "columns": columns,
                 "rows": rows,
                 "source": "previous_turn",
+                # What a kept Smart result measures, when it was recorded.
+                **({"metadata": step["metadata"]}
+                   if isinstance(step.get("metadata"), dict) and step["metadata"] else {}),
             }
     return None
 
