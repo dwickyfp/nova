@@ -688,3 +688,166 @@ def test_context_never_copies_authentication():
         "encrypted_password": "hidden-value",
     }
     assert "hidden-value" not in AgentControl._bounded_context(parent, [parent], "full", "")
+
+
+@pytest.mark.asyncio
+async def test_root_sees_bounded_earlier_turns_but_not_the_current_message(monkeypatch):
+    from app.modules.agents import harness_worker
+
+    rows = [
+        {"message_id": f"m{index}", "role": "user" if index % 2 == 0 else "assistant",
+         "content": "x" * 9000, "created_at": datetime(2026, 1, 1), "steps": [{"kind": "table"}]}
+        for index in range(10)
+    ]
+    rows.append({"message_id": "tool", "role": "tool", "content": "raw",
+                 "created_at": datetime(2026, 1, 1)})
+    rows.append({"message_id": "current", "role": "user", "content": "kalau per kategori?",
+                 "created_at": datetime(2026, 1, 1)})
+    listing = AsyncMock(return_value=rows)
+    monkeypatch.setattr(harness_worker.assistant_repository, "list_messages", listing)
+    root = {"thread_id": "thread", "owner_name": "alice", "payload": {"user_message_id": "current"}}
+
+    history = await harness_worker.AgentHarnessWorker._root_history(root)
+
+    listing.assert_awaited_once_with("thread", user_name="alice")
+    assert [message.message_id for message in history] == [f"m{index}" for index in range(4, 10)]
+    assert all(len(message.content) == harness_worker.ROOT_HISTORY_CHARS for message in history)
+    assert history[-1].steps == [{"kind": "table"}]
+
+
+@pytest.mark.asyncio
+async def test_root_answers_without_history_when_the_thread_cannot_be_read(monkeypatch):
+    from app.modules.agents import harness_worker
+
+    monkeypatch.setattr(harness_worker.assistant_repository, "list_messages",
+                        AsyncMock(side_effect=RuntimeError("private connection detail")))
+    assert await harness_worker.AgentHarnessWorker._root_history(
+        {"thread_id": "thread", "owner_name": "alice", "payload": {}}
+    ) == []
+
+
+def test_a_scope_statement_or_clarification_completes_a_turn():
+    from app.modules.agents import harness_worker
+
+    assert {"stop", "out_of_scope", "clarification"} == harness_worker.ANSWERED
+    assert harness_worker.MAX_ROOT_TOKENS < harness_worker.SMART_ROOT_TOKENS
+    assert harness_worker.SMART_ROOT_TOKENS < harness_worker.MAX_SESSION_TOKENS
+    assert harness_worker.MAX_CHILD_TOKENS < harness_worker.SMART_CHILD_TOKENS
+    assert harness_worker.SMART_CHILD_TOKENS < harness_worker.SMART_ROOT_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_a_participant_answers_to_its_task_or_agent_name_only_when_unambiguous(
+    collaboration,
+):
+    _, root = collaboration
+    child = await spawn(root, "finance", "expense-2025")
+    by_path, _ = await root._target("/root/expense-2025")
+    for alias in ("expense-2025", "Expense-2025", "finance"):
+        assert (await root._target(alias))[0]["run_id"] == by_path["run_id"]
+    assert by_path["run_id"] == child.caller["run_id"]
+    await spawn(root, "finance", "second")
+    with pytest.raises(ValueError, match="not visible"):
+        await root._target("finance")
+    with pytest.raises(ValueError, match="not visible"):
+        await root._target("payroll")
+
+
+@pytest.mark.asyncio
+async def test_discovery_lists_what_each_owner_enabled(collaboration, monkeypatch):
+    from app.modules.agents import agent_control
+    from app.modules.agents.auto_planner import ABILITIES
+
+    _, root = collaboration
+    candidates = [
+        Candidate(agent_id="finance", name="Finance", manifest=CapabilityManifest(), metrics=(),
+                  abilities=(ABILITIES["ml_execute"],)),
+        Candidate(agent_id="hr", name="HR", manifest=CapabilityManifest(), metrics=()),
+    ]
+    monkeypatch.setattr(agent_control, "authorized_candidates", AsyncMock(return_value=candidates))
+    found = {item["agent_id"]: item["abilities"] for item in await root.discover_agents("forecast")}
+    assert found == {"finance": [ABILITIES["ml_execute"]], "hr": []}
+
+
+@pytest.mark.asyncio
+async def test_a_candidate_has_only_the_abilities_its_owner_selected(monkeypatch):
+    from app.modules.agents import auto_planner
+
+    agents = [
+        {"agent_id": "finance", "owner_name": "alice", "name": "Finance",
+         "default_tools": ["semantic_query", "ml_execute"], "semantic_view_ids": []},
+        {"agent_id": "hr", "owner_name": "alice", "name": "HR",
+         "default_tools": ["semantic_query"], "semantic_view_ids": []},
+    ]
+    monkeypatch.setattr(auto_planner.agent_repository, "list_agents",
+                        AsyncMock(return_value=agents))
+    monkeypatch.setattr(auto_planner.agent_repository, "list_shared_agents",
+                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(auto_planner, "has_verified_access", AsyncMock(return_value=True))
+    monkeypatch.setattr(auto_planner.capability_repository, "get",
+                        AsyncMock(return_value=CapabilityManifest()))
+    found = await auto_planner.authorized_candidates(
+        {"username": "alice", "active_role": "analyst", "assigned_roles": ["analyst"]}
+    )
+    assert {item.agent_id: item.abilities for item in found} == {
+        "finance": (auto_planner.ABILITIES["ml_execute"],), "hr": (),
+    }
+
+
+def test_a_smart_answer_keeps_its_newest_result_for_the_next_turn():
+    from types import SimpleNamespace
+
+    from app.modules.agents.harness_worker import _carried_result
+    from app.modules.assistant.service import _latest_thread_result
+
+    evidence = {"tables": {
+        "evidence_1": {"columns": ["department", "total_expense"], "rows": [["Sales", "12"]]},
+        "evidence_2": {"columns": ["category", "total_expense"], "rows": [["Travel", "9"]]},
+    }}
+    carried = _carried_result(evidence, [])
+    assert carried["kind"] == "result" and carried["columns"] == ["category", "total_expense"]
+    # A table the answer already shows is the one the next turn charts.
+    assert _carried_result(evidence, [{"kind": "table", "columns": ["a"], "rows": [[1]]}]) is None
+    assert _carried_result({"tables": {}}, []) is None
+    thread = SimpleNamespace(messages=[
+        SimpleNamespace(role="assistant", steps=[carried], content="Travel 9."),
+    ])
+    restored = _latest_thread_result(thread)
+    assert restored["rows"] == [["Travel", "9"]] and restored["source"] == "previous_turn"
+
+
+@pytest.mark.asyncio
+async def test_smart_can_fetch_data_after_a_chart_request_found_none():
+    from types import SimpleNamespace
+
+    from app.modules.agents.tools.data_to_chart import data_to_chart_tool
+    from app.modules.assistant.tools import ToolInvocation
+
+    call = ToolInvocation(tool_call_id="c", tool_name="data_to_chart", arguments={"intent": "x"})
+    smart = await data_to_chart_tool.run(
+        call, SimpleNamespace(last_result=None, collaboration_root=True))
+    assert not smart.ok and smart.recoverable
+    alone = await data_to_chart_tool.run(
+        call, SimpleNamespace(last_result=None, collaboration_root=False))
+    assert not alone.ok and not alone.recoverable
+
+
+def test_a_smart_chart_of_two_measures_draws_both():
+    from app.modules.agents.tools.data_to_chart import _two_measure_spec, sanitize_chart_spec
+
+    columns = ["department", "total_expense", "active_headcount"]
+    rows = [["Sales", "12404000000.00", 23], ["Finance", "11553000000.00", 22]]
+    one = {"mark": "bar", "encoding": {
+        "x": {"field": "active_headcount", "type": "quantitative"},
+        "y": {"field": "department", "type": "nominal"},
+    }}
+    both = _two_measure_spec(columns, rows, "Expense and headcount", one)
+    drawn = {channel["field"] for channel in both["encoding"].values()}
+    assert drawn == set(columns)
+    assert sanitize_chart_spec(both, title="Expense and headcount")["encoding"] == both["encoding"]
+    # A spec that already draws both, or a table that is not label + two measures, is kept.
+    scatter = {"mark": "point", "encoding": {
+        "x": {"field": "total_expense"}, "y": {"field": "active_headcount"},
+    }}
+    assert _two_measure_spec(columns, rows, "t", scatter) is None
+    assert _two_measure_spec(columns[:2], [row[:2] for row in rows], "t", one) is None

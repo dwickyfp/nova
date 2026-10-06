@@ -18,8 +18,12 @@ const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
 }));
 vi.mock("@/features/agents/api", () => ({
+  AUTO_AGENT_ID: "__smart__",
   skillsApi: mocks,
   studioApi: mocks,
+}));
+vi.mock("@/features/agents/agent-detail/automations-tab", () => ({
+  AgentAutomationsTab: ({ agentId }: { agentId: string }) => <p>Schedules for {agentId}</p>,
 }));
 
 const documentText =
@@ -199,6 +203,18 @@ describe("Studio personal capabilities", () => {
       .not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     await expect.element(screen.getByText("Mission workflow")).toBeVisible();
+  });
+
+  it("lists the reports Smart runs on a schedule", async () => {
+    const screen = await render(
+      wrap(<StudioCapabilities onCreateWithChat={vi.fn()} />),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Scheduled reports" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "Scheduled reports" }))
+      .toBeVisible();
+    await expect.element(screen.getByText("Schedules for __smart__")).toBeVisible();
+    await expect.element(screen.getByPlaceholder("Search")).not.toBeInTheDocument();
   });
 
   it("opens the create menu and dispatches chat creation", async () => {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { agentsApi, type AgentThread } from "@/features/agents/api";
+import { agentsApi, studioApi, type AgentThread } from "@/features/agents/api";
 import { StudioApp } from "./index";
 
 const mocks = vi.hoisted(() => ({
@@ -224,6 +224,61 @@ describe("StudioApp thread routing", () => {
     } finally {
       if (normalStudio) listStudio.mockImplementation(normalStudio);
       if (normalThreads) listThreads.mockImplementation(normalThreads);
+    }
+  });
+
+  it("tells an owner which of their agents wait for access verification", async () => {
+    mocks.search = {};
+    const listStudio = vi.mocked(agentsApi.listStudio);
+    const normalStudio = listStudio.getMockImplementation();
+    listStudio.mockResolvedValue({
+      agents: [],
+      count: 0,
+      needs_access: [{ agent_id: "sales", name: "Sales Agent" }],
+    });
+    try {
+      const screen = await renderStudio();
+
+      await expect.element(screen.getByRole("status")).toHaveTextContent(
+        "Sales Agent is not available here yet.",
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Open access settings" }));
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/agents/$agentId",
+        params: { agentId: "sales" },
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await expect.element(screen.getByText(/not available here yet/)).not.toBeInTheDocument();
+    } finally {
+      if (normalStudio) listStudio.mockImplementation(normalStudio);
+    }
+  });
+
+  it("asks for a role instead of reporting load failures when none is active", async () => {
+    mocks.search = {};
+    const settings = vi.mocked(studioApi.settings);
+    const listStudio = vi.mocked(agentsApi.listStudio);
+    const normalSettings = settings.getMockImplementation();
+    const normalStudio = listStudio.getMockImplementation();
+    settings.mockResolvedValue({
+      identity: { username: "ana", active_role: null, roles: ["ANALYST", "FINANCE"] },
+      preferences: { preferred_name: null },
+    } as unknown as Awaited<ReturnType<typeof studioApi.settings>>);
+    listStudio.mockRejectedValue(new Error("403"));
+    try {
+      const screen = await renderStudio();
+
+      await expect.element(screen.getByRole("status")).toHaveTextContent(
+        "Choose a role to see your data and conversations.",
+      );
+      await expect.element(screen.getByRole("button", { name: "ANALYST" })).toBeVisible();
+      await expect.element(screen.getByRole("button", { name: "FINANCE" })).toBeVisible();
+      await expect
+        .element(screen.getByText("Specialists are temporarily unavailable."))
+        .not.toBeInTheDocument();
+    } finally {
+      if (normalSettings) settings.mockImplementation(normalSettings);
+      if (normalStudio) listStudio.mockImplementation(normalStudio);
     }
   });
 

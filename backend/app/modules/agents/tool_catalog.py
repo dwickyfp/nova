@@ -21,7 +21,12 @@ from app.modules.agents.tools.analyze_documents_spec import PARAMETERS as ANALYZ
 from app.modules.agents.tools.compute_metrics import PARAMETERS as COMPUTE_PARAMETERS
 from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
 from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
+from app.modules.agents.tools.diagnose_change import DESCRIPTION as DIAGNOSE_DESCRIPTION
+from app.modules.agents.tools.diagnose_change import PARAMETERS as DIAGNOSE_PARAMETERS
 from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
+from app.modules.agents.tools.propose_automation import (
+    DESCRIPTION as PROPOSE_AUTOMATION_DESCRIPTION,
+)
 from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 from app.modules.assistant.analysis_workspace import analysis_workspace_tool
@@ -33,6 +38,7 @@ from app.modules.intelligence.action_contracts import (
 
 COMPUTE_DESCRIPTION = ComputeMetricsTool.description
 SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
+PROPOSE_DESCRIPTION = PROPOSE_AUTOMATION_DESCRIPTION
 
 #: name -> (description, input_schema)
 
@@ -178,25 +184,10 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             },
         },
     ),
-    "diagnose_change": (
-        "Reconcile a two-period authorized result into arithmetic volume, unit-value, "
-        "interaction, and returns contributions. Unavailable drivers stay unassigned; "
-        "the tool does not prove causes.",
-        {
-            "type": "object",
-            "properties": {
-                "prior_period": {"type": "string"},
-                "current_period": {"type": "string"},
-                "revenue_column": {"type": "string"},
-                "units_column": {"type": "string"},
-                "returns_column": {"type": "string"},
-            },
-            "required": ["prior_period", "current_period", "revenue_column"],
-            "additionalProperties": False,
-        },
-    ),
+    "diagnose_change": (DIAGNOSE_DESCRIPTION, DIAGNOSE_PARAMETERS),
     "compute_metrics": (COMPUTE_DESCRIPTION, COMPUTE_PARAMETERS),
     "schedule_automation": (SCHEDULE_DESCRIPTION, SCHEDULE_PARAMETERS),
+    "propose_automation": (PROPOSE_DESCRIPTION, SCHEDULE_PARAMETERS),
     "analyze_documents": (ANALYZE_DESCRIPTION, ANALYZE_PARAMETERS),
     "ml_execute": (
         "Run Nova's bounded ML runtime for forecast, classification, regression, anomaly "
@@ -216,6 +207,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                     ],
                 },
                 "input_sql": {"type": "string"},
+                "evidence_id": {"type": "string"},
                 "feature_columns": {"type": "array", "items": {"type": "string"}},
                 "target": {"type": "string"},
                 "timestamp": {"type": "string"},
@@ -226,7 +218,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                 "model_name": {"type": "string"},
                 "parameters": {"type": "object"},
             },
-            "required": ["task", "input_sql"],
+            "required": ["task"],
         },
     ),
     "load_skill": (

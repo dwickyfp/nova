@@ -210,6 +210,9 @@ class EvidenceTracker:
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
                 "compute_metrics", "analyze_documents",
                 "canonical_investigation",
+                # A forecast or score the runtime computed is a result the answer may
+                # state; without it every ML answer is rebuilt from the input table.
+                "ml_execute",
             }
             and table
         ):
@@ -284,9 +287,10 @@ class EvidenceTracker:
         return {key: table for key, table in self._tables.items()
                 if key not in catalog_ids and not catalog_table(table)}
 
-    def import_results(self, participant: dict[str, Any]) -> None:
+    def import_results(self, participant: dict[str, Any]) -> list[Evidence]:
+        """Take a finished specialist's results as this turn's evidence, once each."""
         if participant.get("status") not in {"idle", "completed"} or not participant.get("depth"):
-            return
+            return []
         source = participant.get("evidence") or {}
         tables = source.get("tables") or {}
         imported = {}
@@ -313,6 +317,7 @@ class EvidenceTracker:
             item.metadata["canonical_business_result"] = {
                 **canonical, "numeric_evidence_refs": refs,
             }
+        return list(imported.values())
 
     def composer_context(self) -> str:
         payload = [asdict(item) for item in self._items]

@@ -223,3 +223,27 @@ async def test_generator_shares_contract_with_provider_and_runtime(supports_sche
     provider.complete.return_value = {"content": '{"metrics":["total_revenue"],"sql":"SELECT 1"}'}
     with pytest.raises(SemanticPlanError, match="violates its schema"):
         await generate_plan(provider, sales_model(), {}, "Revenue", SimpleNamespace())
+
+
+@pytest.mark.parametrize(("time", "expected"), [
+    # May against April, planned as one range of both months: two groups, no comparison.
+    ({"range": "2026-04-01..2026-05-31", "compare": "previous_period"}, ("month", None)),
+    ({"range": "2025-12-01..2026-01-31", "compare": "previous_period"}, ("month", None)),
+    # One month, three months, part of a month, or an asked grain: the plan as written.
+    ({"range": "2026-05", "compare": "previous_period"}, (None, "previous_period")),
+    ({"range": "2026-04-01..2026-06-30", "compare": "previous_period"},
+     (None, "previous_period")),
+    ({"range": "2026-04-10..2026-05-31", "compare": "previous_period"},
+     (None, "previous_period")),
+    ({"range": "2026-04-01..2026-05-31", "compare": "previous_period", "grain": "week"},
+     ("week", "previous_period")),
+    ({"range": "2026-04-01..2026-05-31"}, (None, None)),
+])
+def test_a_comparison_over_two_whole_months_is_those_two_months(time, expected):
+    from app.modules.agents.semantic.planning import SemanticPlan
+
+    plan = SemanticPlan.from_dict({
+        "metrics": ["revenue"], "time": {"dimension": "order_date", **time},
+    })
+    assert (plan.time.grain, plan.time.compare) == expected
+    assert plan.time.range == time["range"]

@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { parseAssistantEvent, readSseFrames } from "./events";
 
 describe("parseAssistantEvent", () => {
+  it("reads a schedule Smart drafted and drops a malformed one", () => {
+    const proposal = {
+      title: "Weekly expense", prompt: "Total expense last week?", schedule_kind: "cron",
+      schedule_expr: "0 8 * * 1", timezone: "Asia/Jakarta",
+      condition: { metric: "total_expense", operator: ">", value: 5 },
+      next_run: "2026-10-12T01:00:00+00:00", content_id: "ignored",
+    };
+    const { content_id: _ignored, ...kept } = proposal;
+    expect(parseAssistantEvent("automation_proposal", JSON.stringify(proposal)))
+      .toEqual({ type: "automation_proposal", proposal: kept });
+    expect(parseAssistantEvent("automation_proposal", JSON.stringify({ ...proposal, condition: { metric: 3 } })))
+      .toMatchObject({ proposal: { condition: null } });
+    expect(parseAssistantEvent("automation_proposal", JSON.stringify({ ...proposal, schedule_kind: "hourly" }))).toBeNull();
+    expect(parseAssistantEvent("automation_proposal", JSON.stringify({ title: "x" }))).toBeNull();
+  });
   it("preserves bounded workflow provenance on both evidence event kinds", () => {
     const workflow = { mission_id: "mission-a", run_id: "child-run", root_run_id: "root-run" };
     for (const type of ["evidence_health", "evidence_envelope"]) {

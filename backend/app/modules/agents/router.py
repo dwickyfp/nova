@@ -72,6 +72,7 @@ from app.modules.agents.repository import AgentMetadataUnavailable, agent_reposi
 from app.modules.agents.rule_proposals import candidate_definition, rule_proposal_repository
 from app.modules.agents.run_journal import run_journal
 from app.modules.agents.schemas import (
+    AgentAccessGap,
     AgentCreateRequest,
     AgentListResponse,
     AgentUpdateRequest,
@@ -161,6 +162,8 @@ _active_run_tasks: set[asyncio.Task[None]] = set()
 router = APIRouter()
 
 AUTO_AGENT_ID = SMART_AGENT_ID
+#: Half-second checks before a new Smart message is refused as a concurrent run.
+SMART_SETTLE_ATTEMPTS = 6
 
 
 class AutoMessageRequest(BaseModel):
@@ -496,6 +499,14 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
             if item["run_id"] == root_run_id and item["type"] == "agent_completed":
                 answer = str(item["payload"].get("answer") or "")
                 if base + 1 > after:
+                    for artifact in item["payload"].get("artifacts") or []:
+                        kind = artifact.get("kind")
+                        if kind in {"table", "chart", "automation_proposal"}:
+                            yield _auto_frame(kind, {
+                                **{name: value for name, value in artifact.items()
+                                   if name != "kind"},
+                                "run_id": root_run_id, "sequence": base + 1,
+                            })
                     yield _auto_frame(
                         "text_delta",
                         {
@@ -596,19 +607,22 @@ async def list_agents(
             and (not database or agent.get("database_name") == database)
             and (not search or search.lower() in agent["name"].lower())
         )
+        gaps: list[AgentAccessGap] = []
         if studio:
-            agents = [
-                agent
-                for agent in agents
-                if await has_verified_access(agent, role_name=role, user=user)
-            ]
-            agents.insert(0, _auto_agent(user["username"]))
+            usable = []
+            for agent in agents:
+                if await has_verified_access(agent, role_name=role, user=user):
+                    usable.append(agent)
+                elif agent["owner_name"] == user["username"]:
+                    # Only its owner can verify access, so only its owner is told.
+                    gaps.append(AgentAccessGap(agent_id=agent["agent_id"], name=agent["name"]))
+            agents = [_auto_agent(user["username"]), *usable]
     except AgentMetadataUnavailable:
         raise HTTPException(
             status_code=503, detail="Agent metadata is temporarily unavailable"
         ) from None
     views = [_agent_view(a) for a in agents]
-    return AgentListResponse(agents=views, count=len(views))
+    return AgentListResponse(agents=views, count=len(views), needs_access=gaps)
 
 
 @router.get("/capabilities")
@@ -1968,6 +1982,15 @@ async def _require_owned_agent(agent_id: str, user: dict) -> dict:
     return agent
 
 
+async def _require_automation_agent(agent_id: str, user: dict) -> dict:
+    """An agent whose schedules the caller manages: one they own, or their own Smart."""
+    if agent_id == SMART_AGENT_ID:
+        # Smart has no stored record; every user schedules their own.
+        session_security(user)
+        return _auto_agent(user["username"])
+    return await _require_owned_agent(agent_id, user)
+
+
 @router.get("/{agent_id}/verified-query-candidates")
 async def list_verified_query_candidates(
     agent_id: str, status: str | None = None, user: dict = Depends(get_current_user)
@@ -2023,7 +2046,7 @@ async def decide_verified_query_candidate(
 async def list_agent_automations(agent_id: str, user: dict = Depends(get_current_user)) -> dict:
     from app.modules.agents.automations import automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     items = await automation_repository.list(agent_id=agent_id, owner_name=user["username"])
     return {"automations": items, "count": len(items)}
 
@@ -2034,7 +2057,7 @@ async def create_agent_automation(
 ) -> dict:
     from app.modules.agents.automations import AutomationError, automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     try:
         created = await automation_repository.create(
             agent_id=agent_id, owner_name=user["username"],
@@ -2057,7 +2080,7 @@ async def update_agent_automation(
 ) -> dict:
     from app.modules.agents.automations import AutomationError, automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     automation = await automation_repository.get(automation_id, owner_name=user["username"])
     if automation is None or automation["agent_id"] != agent_id:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -2079,7 +2102,7 @@ async def delete_agent_automation(
 ) -> None:
     from app.modules.agents.automations import automation_repository
 
-    await _require_owned_agent(agent_id, user)
+    await _require_automation_agent(agent_id, user)
     automation = await automation_repository.get(automation_id, owner_name=user["username"])
     if automation is None or automation["agent_id"] != agent_id:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -2403,7 +2426,14 @@ async def send_agent_message(
             raise HTTPException(status_code=422, detail="Invalid Smart message")
         async with _auto_admission(thread_id, user_name) as assert_owned:
             thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
-            if await harness_repository.active_for_thread(thread_id, user_name):
+            # A follow-up sent the moment an answer lands can still see the finished
+            # run as active; give it a moment to settle before refusing.
+            for attempt in range(SMART_SETTLE_ATTEMPTS):
+                if not await harness_repository.active_for_thread(thread_id, user_name):
+                    break
+                if attempt + 1 < SMART_SETTLE_ATTEMPTS:
+                    await asyncio.sleep(0.5)
+            else:
                 raise HTTPException(status_code=409, detail="A Smart run is already active")
             await assert_owned()
             user_message = await assistant_repository.append_message(

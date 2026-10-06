@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import time
+import weakref
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -27,6 +28,19 @@ from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools.redaction import is_credential_value
 
 logger = logging.getLogger(__name__)
+
+#: The engine applies an UPDATE as a rewrite of the whole row it read. Two statements
+#: on one run that overlap can therefore undo each other: a heartbeat restores the
+#: `running` status a completion just replaced. A process writes a run row in turn.
+_ROW_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+
+
+async def _update_run(run_id: str, sql: str, params: list[Any]) -> dict:
+    lock = _ROW_LOCKS.get(run_id)
+    if lock is None:
+        lock = _ROW_LOCKS[run_id] = asyncio.Lock()
+    async with lock:
+        return await db.execute_system(sql, params)
 
 RUN_COLUMNS = (
     ("session_id", "VARCHAR(64)"),
@@ -257,7 +271,8 @@ class HarnessRepository:
                 "SET session_sequence = %s WHERE event_id = %s AND session_sequence IS NULL",
                 [sequence, event_id],
             )
-            await db.execute_system(
+            await _update_run(
+                root_run_id,
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET last_sequence = %s "
                 "WHERE run_id = %s AND last_sequence < %s",
                 [sequence, root_run_id, sequence],
@@ -452,7 +467,8 @@ class HarnessRepository:
                     busy.add(participant_id(row))
 
     async def cancel_session(self, anchor: dict) -> None:
-        await db.execute_system(
+        await _update_run(
+            anchor["run_id"],
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET payload = %s WHERE run_id = %s",
             [json.dumps({**anchor["payload"], "session_cancelled": True}), anchor["run_id"]],
         )
@@ -716,7 +732,8 @@ class HarnessRepository:
         )[:min(max(limit, 1), 100)]
 
     async def claim(self, run_id: str, worker_id: str) -> bool:
-        result = await db.execute_system(
+        result = await _update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET status = 'running', "
             "lease_owner = %s, generation = generation + 1, updated_at = %s "
             "WHERE run_id = %s AND status = 'queued'",
@@ -725,7 +742,8 @@ class HarnessRepository:
         return result.get("affected", 0) == 1
 
     async def heartbeat(self, run_id: str, worker_id: str) -> None:
-        await db.execute_system(
+        await _update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET updated_at = %s "
             "WHERE run_id = %s AND status = 'running' AND lease_owner = %s",
             [_now(), run_id, worker_id],
@@ -735,7 +753,8 @@ class HarnessRepository:
         self, run_id: str, *, lease_owner: str, generation: int
     ) -> bool:
         now = _now().replace(microsecond=0)
-        result = await db.execute_system(
+        result = await _update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
             "SET updated_at = IF(updated_at = %s, %s, %s) "
             "WHERE run_id = %s AND status = 'running' "
@@ -798,7 +817,8 @@ class HarnessRepository:
             where += " AND lease_owner = %s AND generation = %s"
             match_values.extend((lease_owner, generation))
         for attempt in range(8):
-            result = await db.execute_system(
+            result = await _update_run(
+                run_id,
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET "
                 + ", ".join(assignments)
                 + where,
@@ -826,7 +846,8 @@ class HarnessRepository:
         return False
 
     async def add_usage(self, run_id: str, *, prompt_tokens: int, completion_tokens: int) -> None:
-        await db.execute_system(
+        await _update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET "
             "prompt_tokens = prompt_tokens + %s, "
             "completion_tokens = completion_tokens + %s, updated_at = %s "
@@ -1059,12 +1080,14 @@ class HarnessRepository:
                 old[2] != message_type,
                 old[3] != correlation_id,
                 old[4] != reply_to,
-                old[5] != content,
+                # A recovered turn answers again in other words. Its parent may have
+                # read the first completion, so that one stands.
+                message_type != "final" and old[5] != content,
                 old[6] != origin,
                 old[7] != delivery_mode,
             )
             if not any(mismatch):
-                await self._emit_message(sender, recipient, message_id, message_type, content,
+                await self._emit_message(sender, recipient, message_id, message_type, old[5],
                                          origin, delivery_mode, correlation_id, reply_to)
                 await self._audit_message(sender, recipient, message_id)
                 return message_id
@@ -1302,7 +1325,8 @@ class HarnessRepository:
             if sequence * 3 + 2 > 2**53 - 1:
                 raise RuntimeError("Auto event sequence exceeds the client cursor range")
             await assert_owned()
-            await db.execute_system(
+            await _update_run(
+                root_run_id,
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET last_sequence = %s "
                 "WHERE run_id = %s AND last_sequence < %s",
                 [sequence, root_run_id, sequence],

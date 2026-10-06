@@ -180,3 +180,24 @@ def test_http_studio_and_thread_access_after_switching_roles(monkeypatch) -> Non
 ])
 def test_native_function_verification_requires_usage_on_exact_scope(grant, allowed):
     assert access._native_function_usage([grant], "db.fn") is allowed
+
+
+@pytest.mark.asyncio
+async def test_studio_tells_an_owner_which_of_their_agents_wait_for_access(monkeypatch) -> None:
+    mine = _agent()
+    theirs = {**_agent(), "agent_id": "hr", "owner_name": "bob", "name": "HR Agent"}
+    monkeypatch.setattr(agent_repository, "list_agents", AsyncMock(return_value=[mine]))
+    monkeypatch.setattr(agent_repository, "list_shared_agents", AsyncMock(return_value=[theirs]))
+    monkeypatch.setattr(access, "access_fingerprint", AsyncMock(return_value="current"))
+    monkeypatch.setattr(access, "verify_access", AsyncMock(return_value=[]))
+    grants = AsyncMock(return_value=[{"role_name": "analyst", "verified_fingerprint": "stale"}])
+    monkeypatch.setattr(agent_repository, "list_agent_roles", grants)
+
+    listed = await router.list_agents(studio=True, user=_user("analyst"))
+    assert [agent.agent_id for agent in listed.agents] == ["__smart__"]
+    # Another owner's agent is left out without comment: this user cannot fix it.
+    assert [(gap.agent_id, gap.name) for gap in listed.needs_access] == [("sales", "Sales Agent")]
+    assert (await router.list_agents(studio=False, user=_user("analyst"))).needs_access == []
+
+    grants.return_value = [{"role_name": "analyst", "verified_fingerprint": "current"}]
+    assert (await router.list_agents(studio=True, user=_user("analyst"))).needs_access == []

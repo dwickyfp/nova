@@ -55,6 +55,7 @@ from app.modules.assistant.data_evidence import (
     incomplete_metrics,
     metric_owners,
     next_collaboration_tool,
+    no_semantic_owner,
     sql_evidence_kind,
 )
 from app.modules.assistant.intelligence import (
@@ -194,6 +195,13 @@ class LoopContext:
     #: Model id -> logical dataset names the caller may expose to a provider.
     authorized_semantic_datasets: dict[str, list[str]] | None = None
     authorized_semantic_models: list[dict[str, Any]] | None = None
+    #: A recurring report or alert Smart drafted this turn for the user to confirm.
+    automation_proposal: dict[str, Any] | None = None
+    #: Smart root only: every participant of the run with its results, so an answer
+    #: is checked against all finished work, not only the specialists a wait named.
+    collect_results: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None
+    #: Smart root only: the combined specialist catalog, read once per turn.
+    collaboration_catalog: dict[str, Any] | None = None
     agent_scope: dict[str, Any] | None = None
     release_manifest: dict[str, Any] | None = None
     quality_facts: dict[str, Any] | None = None
@@ -220,6 +228,9 @@ class LoopContext:
     #: This turn's verified result tables by evidence id, for ``compute_metrics``.
     #: Set before each tool call; never persisted or sent upstream.
     evidence_tables: dict[str, dict[str, Any]] | None = None
+    #: The compiled query behind each ``semantic_query`` result of this turn, so
+    #: ``ml_execute`` can take a governed result as its input. Never sent upstream.
+    evidence_sql: dict[str, str] | None = None
     #: Token usage summed across the turn's model calls, written by the loop as
     #: each response reports it. Read by the router to persist on the assistant
     #: message for Observability. Never sent to the provider.
@@ -275,6 +286,21 @@ class LoopContext:
 
 #: Repairs per kind of mistake in one turn. Separate budgets stop an early
 #: argument slip from ending the turn at a later, unrelated error.
+#: Tools that work on results already gathered and read no data themselves.
+_RESULT_TOOLS = ("compute_metrics", "data_to_chart")
+#: The part of a result table the model is shown with the tool result.
+_PREVIEW_ROWS = 40
+_PREVIEW_COLUMNS = 12
+#: How long the root waits for its specialists when it starts waiting on its own.
+_AUTO_WAIT_SECONDS = 60
+#: Read-only analysis an owner can enable on a Studio agent, usable after its query.
+_ANALYSIS_TOOLS = ("compute_metrics", "data_to_chart", "diagnose_change", "ml_execute")
+#: Tool-call syntax some providers leak into the text channel.
+_TOOL_MARKUP = re.compile(
+    r"<\s*[\uff5c|]{1,2}\s*DSML\s*[\uff5c|]|<\s*(?:function_calls|tool_call)\s*>|<\s*invoke\s+name\s*=",
+    re.I,
+)
+
 REPAIR_LIMITS = {
     "composer_tool_call": 1,
     "missing_required": 1,
@@ -282,6 +308,7 @@ REPAIR_LIMITS = {
     "tool_not_allowed": 2,
     "invalid_args": 2,
     "recoverable_tool": 2,
+    "unverified_number": 1,
 }
 
 
@@ -315,7 +342,10 @@ class AssistantLoop:
         max_calls_per_tool: int = MAX_CALLS_PER_TOOL,
         iterative: bool = False,
         summarize_history: bool = False,
+        spend_limit: int | None = None,
     ) -> None:
+        #: Total tokens the turn may use; near it the loop composes its answer.
+        self._spend_limit = spend_limit
         self._provider = provider
         self._registry = registry
         self._max_iterations = max_iterations
@@ -751,6 +781,7 @@ class AssistantLoop:
         #: them serially, preserving the bounded single-tool-at-a-time rule
         #: without silently discarding calls after the first.
         deferred_calls: list[dict[str, Any]] = []
+        spawned: dict[str, str] = {}
         pending_artifacts: list[PendingArtifact] = []
         context.pending_output = []
 
@@ -964,11 +995,45 @@ class AssistantLoop:
                         "arguments": json.dumps({"question": user_content}, ensure_ascii=False),
                     },
                 })
+        if (
+            context.collaboration_root and route.needs_data
+            and route.intent != TurnIntent.AGENT_CATALOG
+            and self._registry.get("discover_agents") is not None
+        ):
+            # Every Smart data turn starts by finding who owns what was asked. Doing it
+            # before the first model call saves that call; the result is the same.
+            deferred_calls.append({
+                "id": f"primary-{uuid4()}",
+                "type": "function",
+                "function": {
+                    "name": "discover_agents",
+                    "arguments": json.dumps({"capability": user_content}, ensure_ascii=False),
+                },
+            })
         context.selected_tools = list(turn_plan.selected_tools)
         context.selected_skills = list(turn_plan.selected_skills)
         selected_tools = turn_plan.selected_tools
         if context.collaboration_tools and route.intent != TurnIntent.AGENT_CATALOG:
             selected_tools = tuple(dict.fromkeys((*selected_tools, *context.collaboration_tools)))
+            if context.collaboration_root:
+                # The root computes and charts over what its specialists returned.
+                selected_tools = tuple(dict.fromkeys((
+                    *selected_tools,
+                    *(name for name in (*_RESULT_TOOLS, "propose_automation")
+                      if self._registry.get(name) is not None),
+                )))
+            context.selected_tools = list(selected_tools)
+        if (
+            self._iterative and context.agent_scope is not None and route.needs_data
+            and not context.collaboration_root
+        ):
+            # An analyst turn may go from its query to a forecast, a diagnosis, a
+            # computation or a chart. The owner enabled these; the planner's choice
+            # only orders them, it does not take them away.
+            selected_tools = tuple(dict.fromkeys((
+                *selected_tools,
+                *(name for name in _ANALYSIS_TOOLS if self._registry.get(name) is not None),
+            )))
             context.selected_tools = list(selected_tools)
         selected_actions = ", ".join(selected_tools[:5])
         if len(selected_tools) > 5:
@@ -1306,6 +1371,28 @@ class AssistantLoop:
                 finish_reason=message.get("finish_reason"),
             )
             tool_calls = list(decision.tool_calls)
+            if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
+                # The model wrote a tool call as text. It is never an answer. Outside
+                # final composition a well-formed call to an offered tool is the call
+                # the model meant, and runs through the same gates as any other.
+                written = None if composing_final else _markup_tool_call("".join(buffered_text))
+                if written and written["function"]["name"] in selected_tools:
+                    tool_calls = [written]
+                    buffered_text = []
+            if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
+                if repairs.take("composer_tool_call"):
+                    messages.append({"role": "system", "content": (
+                        "Tools are disabled during final composition. Answer from the "
+                        "recorded evidence only." if composing_final else
+                        "Call a tool through the tool interface, never as text. If no tool "
+                        "is needed, write the answer."
+                    )})
+                    continue
+                yield events.error(
+                    "unexpected_tool_call", "The response contained a tool call as text."
+                )
+                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                return
             if composing_final and tool_calls:
                 if repairs.take("composer_tool_call"):
                     messages.append(
@@ -1360,13 +1447,20 @@ class AssistantLoop:
                             for update in updates
                         )
                         continue
+                if context.collaboration_root and context.collect_results is not None:
+                    for participant in await context.collect_results():
+                        for item in evidence.import_results(participant):
+                            table = evidence.tables.get(item.evidence_id) or {}
+                            context.last_result = {**table, "title": item.summary}
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
                 draft, answer_claims = split_claims("".join(buffered_text))
                 if answer_claims is not None:
                     buffered_text = [draft]
                 language = _turn_language(context)
-                if clarification_requested:
+                # A turn that already holds results answers from them, verified like any
+                # other answer, even when a later step could not be expressed.
+                if clarification_requested and not evidence.business_tables:
                     answer_text = "".join(buffered_text).strip() or say(
                         "loop.clarify", language
                     )
@@ -1377,9 +1471,14 @@ class AssistantLoop:
                         str(uuid4()), finish_reason="clarification", usage=context.usage
                     )
                     return
+                # Smart discovered no owner and ran nothing else: the same limit applies.
+                uncovered = bool(
+                    context.collaboration_root and not evidence.tables
+                    and no_semantic_owner(evidence)
+                )
                 if (
                     context.agent_scope is not None
-                    and governed_attempted
+                    and (governed_attempted or uncovered)
                     and not evidence.business_tables
                     and _is_scope_answer("".join(buffered_text))
                 ):
@@ -1492,8 +1591,40 @@ class AssistantLoop:
                     if all(not table.get("rows") for table in answer_tables.values()):
                         answer_text = say("loop.no_rows", language)
                     await _localized(language, context)
+                    from app.modules.assistant.answer_contract import check_numeric_answer
+
+                    draft = check_numeric_answer(
+                        answer_text, question=_asked(thread, user_content), tables=answer_tables,
+                        claims=answer_claims, language=language,
+                    )
+                    rewrite = {"role": "system", "content": (
+                        "Your draft stated numbers the results do not contain: "
+                        + ", ".join(draft.unsupported[:10])
+                        + ". Write the answer again. State only numbers that appear in "
+                        "the results. For a ratio, share, growth, difference or total, "
+                        "call compute_metrics first when it is available, otherwise "
+                        "leave that statement out."
+                    )}
+                    # One rewrite before anything is removed, when the request still fits:
+                    # the model can state the number from a result, compute it, or drop it.
+                    # A canonical investigation answer keeps its single composing call.
+                    if (
+                        draft.unsupported
+                        and not any(claim.kind == "hypothesis" for claim in answer_claims or ())
+                        and estimate_messages_tokens([*messages, rewrite])
+                        + len(json.dumps(tool_schemas, separators=(",", ":"), default=str)) // 4
+                        <= self._context_manager.token_budget
+                        and repairs.take("unverified_number")
+                    ):
+                        composing_final = False
+                        _record_step(context, {
+                            "kind": "runtime_decision", "answer_repair": "unverified_number",
+                            "unsupported": list(draft.unsupported)[:10], "status": "done",
+                        })
+                        messages.append(rewrite)
+                        continue
                     verified_answer = finalize_verified_answer(
-                        answer_text, question=user_content, tables=answer_tables,
+                        answer_text, question=_asked(thread, user_content), tables=answer_tables,
                         tables_shown=any(item.kind == "table" for item in pending_artifacts),
                         claims=answer_claims, language=language,
                         compares_groups=bool(
@@ -2157,6 +2288,7 @@ class AssistantLoop:
                 context.pending_output = []
                 context.steps = []
                 context.authorized_semantic_models = None
+                context.collaboration_catalog = None
                 context.authorized_semantic_datasets = None
                 context.semantic_routing_terms = None
                 yield events.format_sse(
@@ -2271,11 +2403,70 @@ class AssistantLoop:
                                   trace_detail={**(outcome.trace_detail or {}),
                                                 "canonical_business_result": observation})
                 _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
+            if invocation.tool_name == "semantic_query" and isinstance(outcome.data, dict):
+                compiled = str(outcome.data.get("sql") or "")
+                if compiled:
+                    context.evidence_sql = {
+                        **(context.evidence_sql or {}), evidence_item.evidence_id: compiled,
+                    }
+            if (
+                invocation.tool_name == "semantic_query" and route.needs_diagnosis
+                and not deferred_calls and not tool_uses.get("diagnose_change")
+                and self._registry.get("diagnose_change") is not None
+            ):
+                diagnosis = _diagnosis_arguments(
+                    evidence.tables.get(evidence_item.evidence_id) or {},
+                    (outcome.evidence or {}).get("metrics") or [],
+                )
+                if diagnosis:
+                    # The result already holds two periods and what may explain them:
+                    # breaking the change down is arithmetic, not a model decision.
+                    deferred_calls.append({
+                        "id": f"primary-{uuid4()}",
+                        "type": "function",
+                        "function": {
+                            "name": "diagnose_change", "arguments": json.dumps(diagnosis),
+                        },
+                    })
+            if (
+                context.collaboration_root and invocation.tool_name == "spawn_agent"
+                and isinstance(outcome.data, dict) and outcome.data.get("agent_path")
+            ):
+                spawned[str(outcome.data.get("agent_id") or "")] = str(outcome.data["agent_path"])
+                owners = {str(agent["agent_id"]) for agent in metric_owners(evidence)}
+                if (
+                    owners and owners <= set(spawned) and not deferred_calls
+                    and self._registry.get("wait_agent") is not None
+                    and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
+                ):
+                    # Every specialist that owns a requested measure has started. Waiting
+                    # for them is not a decision the model has to spend a call on.
+                    deferred_calls.append({
+                        "id": f"primary-{uuid4()}",
+                        "type": "function",
+                        "function": {
+                            "name": "wait_agent",
+                            "arguments": json.dumps({
+                                "targets": list(spawned.values()), "condition": "all",
+                                "timeout": _AUTO_WAIT_SECONDS,
+                            }),
+                        },
+                    })
+            collected_results: list[dict[str, Any]] = []
             if invocation.tool_name in {"list_agents", "wait_agent"} and isinstance(
                 outcome.data, dict
             ):
                 for participant in outcome.data.get("agents", []):
-                    evidence.import_results(participant)
+                    for item in evidence.import_results(participant):
+                        table = evidence.tables.get(item.evidence_id) or {}
+                        # The result tools (compute_metrics, data_to_chart) address a
+                        # specialist's table by the id it has in this turn.
+                        collected_results.append({
+                            "evidence_id": item.evidence_id,
+                            "columns": list(table.get("columns") or [])[:24],
+                            "row_count": len(table.get("rows") or []),
+                        })
+                        context.last_result = {**table, "title": item.summary}
             context.quality_facts.setdefault("evidence", []).append(
                 {
                     "id": evidence_item.evidence_id,
@@ -2316,6 +2507,28 @@ class AssistantLoop:
                 tool_name=invocation.tool_name,
                 evidence_id=evidence_item.evidence_id,
             )
+            if collected_results:
+                envelope["collected_results"] = collected_results
+            shown = evidence.tables.get(evidence_item.evidence_id)
+            if shown and shown.get("rows") and not isinstance(
+                (envelope.get("data") or {}).get("rows"), list
+            ):
+                # The model writes about this result, so it has to see it. The rows are
+                # the caller's own, already redacted, and bounded here; a result that
+                # does not fit the context budget is left to the answer's artifact.
+                room = self._context_manager.token_budget - estimate_messages_tokens(messages)
+                limit = _PREVIEW_ROWS
+                while limit:
+                    preview = {
+                        "columns": list(shown.get("columns") or [])[:_PREVIEW_COLUMNS],
+                        "rows": [list(row)[:_PREVIEW_COLUMNS] for row in shown["rows"][:limit]],
+                        "truncated": bool(shown.get("truncated")) or len(shown["rows"]) > limit,
+                    }
+                    cost = len(json.dumps(preview, default=str)) // 3
+                    if cost * 4 <= room:
+                        envelope["result"] = preview
+                        break
+                    limit //= 2
             envelope["metadata"] = {
                 **(envelope.get("metadata") or {}),
                 "artifact_note": artifact_note,
@@ -2338,12 +2551,27 @@ class AssistantLoop:
                 and "query_mutate" not in required_available
                 and required_available <= completed_capabilities
             )
-            if self._iterative and not context.collaboration_root:
+            spent = int((context.usage or {}).get("total_tokens") or 0)
+            if (
+                self._spend_limit
+                and not composing_final
+                and spent >= self._spend_limit * _SPEND_COMPOSE_SHARE
+            ):
+                # Close to the turn's token allowance: answer from what is known
+                # now, rather than spend the rest on a call that ends the turn empty.
+                composing_final = True
+                messages.append(
+                    {"role": "system", "content": _final_composer_prompt(evidence)}
+                )
+            elif self._iterative and not context.collaboration_root:
                 remaining_steps = self._max_iterations - _iteration - 1
                 remaining_time = deadline - _budget_time()
                 if required_done and not analysis_noted:
                     analysis_noted = True
-                    messages.append({"role": "system", "content": _ANALYSIS_PROMPT})
+                    messages.append({"role": "system", "content": (
+                        _DELEGATED_ANALYSIS_PROMPT if context.collaboration_tools
+                        else _ANALYSIS_PROMPT
+                    )})
                 if completed_capabilities and (
                     remaining_steps <= _COMPOSE_RESERVE_STEPS
                     or remaining_time < _COMPOSE_RESERVE_SECONDS
@@ -2595,7 +2823,9 @@ def _ml_parameters_for_task(parameters: dict[str, Any], task: str) -> dict[str, 
     """Narrow the ML-facing schema to the routed task."""
     properties = dict(parameters.get("properties") or {})
     properties["task"] = {"type": "string", "enum": [task]}
-    common = {"task", "input_sql", "feature_columns", "mode", "persist", "model_name"}
+    common = {
+        "task", "input_sql", "evidence_id", "feature_columns", "mode", "persist", "model_name",
+    }
     task_specific = {
         "forecast": {"target", "timestamp", "series", "horizon", "frequency", "parameters"},
         "classification": {"target", "parameters"},
@@ -2604,7 +2834,8 @@ def _ml_parameters_for_task(parameters: dict[str, Any], task: str) -> dict[str, 
         "clustering": {"row_identifier", "parameters"},
     }.get(task, {"parameters"})
     allowed = common | task_specific
-    required = ["task", "input_sql"]
+    # The input is a governed result (evidence_id) or a query; the tool requires one.
+    required = ["task"]
     if task in {"classification", "regression", "forecast"}:
         required.append("target")
     if task == "forecast":
@@ -2732,10 +2963,50 @@ def _turn_context_prompt(
     return "\n".join(parts)
 
 
+_PERIOD_LABEL = re.compile(r"\d{4}-\d{2}(?:-\d{2})?")
+
+
+def _diagnosis_arguments(table: dict[str, Any], metrics: list[Any]) -> dict[str, Any] | None:
+    """``diagnose_change`` arguments for a result of two periods broken down by dimensions."""
+    columns = [str(column) for column in table.get("columns") or []]
+    rows = [row for row in table.get("rows") or [] if isinstance(row, (list, tuple))]
+    if not rows or len(columns) < 3 or any(len(row) != len(columns) for row in rows):
+        return None
+    period = next((
+        index for index in range(len(columns))
+        if all(isinstance(row[index], str) and _PERIOD_LABEL.match(row[index]) for row in rows)
+        and len({row[index] for row in rows}) == 2
+    ), None)
+    measure = next((columns.index(str(name)) for name in metrics if str(name) in columns), None)
+    if period is None or measure is None or measure == period:
+        return None
+    dimensions = [name for index, name in enumerate(columns) if index not in (period, measure)]
+    if not 1 <= len(dimensions) <= 3:
+        return None
+    prior, current = sorted({row[period] for row in rows})
+    return {
+        "prior_period": prior, "current_period": current, "period_column": columns[period],
+        "revenue_column": columns[measure], "dimension_columns": dimensions,
+    }
+
+
+def _asked(thread: Any, user_content: str) -> str:
+    """The request with the user's earlier turns: a follow-up keeps their year and limits."""
+    earlier = [
+        str(message.content or "") for message in thread.messages[-_ASKED_LOOKBACK:]
+        if message.role == "user"
+    ]
+    return "\n".join([*earlier, user_content])
+
+
+#: Earlier messages whose numbers a follow-up answer may repeat.
+_ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
 _COMPOSE_RESERVE_STEPS = 2
 _COMPOSE_RESERVE_SECONDS = 15.0
+#: Share of a turn's token allowance after which it stops calling tools and answers.
+_SPEND_COMPOSE_SHARE = 0.7
 
 _ANALYSIS_PROMPT = (
     "The required evidence is in. If one more read-only step would materially "
@@ -2744,6 +3015,13 @@ _ANALYSIS_PROMPT = (
     "answer. Do not repeat a query that already ran."
 )
 
+#: A specialist working for Smart finishes its task; the requester adds the rest.
+_DELEGATED_ANALYSIS_PROMPT = (
+    "The required evidence is in. If the delegated task itself needs one more step you "
+    "have a tool for (a forecast, an explanation of a change), take it now. Otherwise "
+    "answer. Do not add charts, totals, or breakdowns the task did not ask for, and do "
+    "not repeat a query that already ran."
+)
 
 #: Upper bound for a window-derived context budget (tokens).
 MAX_WINDOW_CONTEXT_BUDGET = 120_000
@@ -2920,6 +3198,33 @@ def _structured_action_prompt(required: str, tool_schemas: list[dict[str, Any]])
         + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
         + "\n</NOVA_STRUCTURED_ACTION>"
     )
+
+
+_MARKUP_INVOKE = re.compile(r'invoke\s+name\s*=\s*"([A-Za-z0-9_:-]{1,80})"', re.I)
+_MARKUP_PARAMETER = re.compile(
+    r'parameter\s+name\s*=\s*"(\w{1,64})"([^>]*)>(.*?)<\s*/[^>]*parameter\s*>', re.S | re.I
+)
+
+
+def _markup_tool_call(text: str) -> dict[str, Any] | None:
+    """The one tool call a provider wrote as markup, or ``None`` when it is not one call."""
+    names = _MARKUP_INVOKE.findall(text)
+    if len(names) != 1:
+        return None
+    arguments: dict[str, Any] = {}
+    for name, attributes, raw in _MARKUP_PARAMETER.findall(text):
+        arguments[name] = raw.strip()
+        if 'string="true"' not in attributes.replace(" ", ""):
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
+                arguments[name] = json.loads(raw.strip())
+    return {
+        "id": str(uuid4()),
+        "type": "function",
+        "function": {
+            "name": names[0],
+            "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
+        },
+    }
 
 
 def _structured_action_call(content: str) -> dict[str, Any] | None:
@@ -3251,7 +3556,8 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
         if message.role != "assistant":
             continue
         for step in reversed(message.steps or []):
-            if step.get("kind") != "table":
+            # ``result`` is a table a Smart answer kept without displaying it.
+            if step.get("kind") not in {"table", "result"}:
                 continue
             raw_columns = step.get("columns")
             raw_rows = step.get("rows")

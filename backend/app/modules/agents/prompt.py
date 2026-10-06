@@ -18,6 +18,7 @@ Two rules shape the output:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.modules.agents.instructions import compile_agent_record
@@ -133,6 +134,34 @@ def build_system_prompt(
     return compiled.system_prompt
 
 
+_CODE_FENCE = re.compile(r"```.*?```", re.S)
+#: The product's name for a governed dataset; a reader just calls it data.
+_PRODUCT_TERM = re.compile(r"\bsemantic views?\b", re.I)
+_BACKTICKED = re.compile(r"`([^`\n]{1,80})`")
+_IDENTIFIER = re.compile(
+    r"(?<![\w./@:-])[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+(?![\w/@:-]|\.\w)"
+)
+
+
+def business_wording(text: str) -> str:
+    """Write identifiers the way a reader says them, outside code blocks.
+
+    ``total_expense`` and `` `department` `` become "total expense" and
+    "department". Numbers, paths, addresses and fenced code are left as written.
+    """
+    def plain(part: str) -> str:
+        part = _BACKTICKED.sub(lambda match: match.group(1), part)
+        part = _PRODUCT_TERM.sub("data", part)
+        return _IDENTIFIER.sub(lambda match: match.group(0).replace("_", " "), part)
+
+    pieces, cursor = [], 0
+    for fence in _CODE_FENCE.finditer(text):
+        pieces.extend((plain(text[cursor:fence.start()]), fence.group(0)))
+        cursor = fence.end()
+    pieces.append(plain(text[cursor:]))
+    return "".join(pieces)
+
+
 def _identity_block(agent: dict[str, Any]) -> str:
     name = (agent.get("name") or "").strip()
     description = (agent.get("description") or "").strip()
@@ -184,7 +213,7 @@ _TOOL_DESCRIPTIONS = {
         "recurring report or threshold alert when the user asks for one."
     ),
     "ml_execute": (
-        "ml_execute(task, input_sql, ...) — run bounded deterministic ML as the "
+        "ml_execute(task, evidence_id, ...) — run bounded deterministic ML as the "
         "requesting user; keep one-off analysis ephemeral."
     ),
     "create_agent": (

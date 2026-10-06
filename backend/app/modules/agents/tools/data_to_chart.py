@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 from datetime import date
 from decimal import Decimal
@@ -49,6 +50,10 @@ _PARAMETERS = {
                 "What the chart should show, e.g. 'revenue by region' or "
                 "'monthly trend'. Used to pick the mark and encoding."
             ),
+        },
+        "evidence_id": {
+            "type": "string",
+            "description": "Result to chart; defaults to the latest data result.",
         },
     },
 }
@@ -85,14 +90,24 @@ class DataToChartTool:
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         intent = _arg(invocation, "intent") or "visualise the data"
         last = getattr(context, "last_result", None)
+        chosen = _arg(invocation, "evidence_id")
+        if chosen:
+            # Only a result this turn already holds under the caller's access.
+            last = (getattr(context, "evidence_tables", None) or {}).get(chosen)
         if not last or not last.get("columns"):
+            detail = (
+                "There is no recent data to chart in this conversation. Fetch "
+                "the data first (a query or semantic_query), then chart it."
+            )
+            # Smart holds no data of its own: it can ask the specialist that owns
+            # it and chart the result, so the turn goes on.
+            smart = bool(getattr(context, "collaboration_root", False))
             return ToolOutcome(
-                ok=False,
-                summary="",
-                error=(
-                    "There is no recent data to chart in this conversation. Fetch "
-                    "the data first (a query or semantic_query), then chart it."
-                ),
+                ok=False, summary="", error=detail, recoverable=smart,
+                **({"error_class": "INVALID_TOOL_ARGUMENTS", "safe_detail": (
+                    "No data is held yet. Ask the specialist that owns it, then chart "
+                    "the result by its evidence_id."
+                )} if smart else {}),
             )
 
         columns: list[str] = list(last.get("columns") or [])
@@ -114,6 +129,12 @@ class DataToChartTool:
         if spec is not None and _has_invalid_encoding(spec, columns):
             spec = None
         spec = sanitize_chart_spec(spec, title=title) if spec is not None else None
+        if getattr(context, "collaboration_root", False):
+            # Smart charts a table it combined on purpose. A spec that draws one of
+            # its two measures leaves out half of what was asked for.
+            both = _two_measure_spec(columns, rows, title, spec)
+            if both is not None:
+                spec = sanitize_chart_spec(both, title=title)
         if spec is None:
             spec = sanitize_chart_spec(_fallback_spec(columns, rows, title, intent), title=title)
         if spec is None:
@@ -296,6 +317,46 @@ def _chart_value(value: Any) -> str | int | float | bool | None:
 def _mark_of(spec: dict[str, Any]) -> str:
     mark = spec.get("mark")
     return mark if isinstance(mark, str) else "chart"
+
+
+_PLAIN_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _two_measure_spec(
+    columns: list[str], rows: list[list], title: str, spec: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Bars for the first measure, shaded by the second, when a spec shows only one.
+
+    The renderer draws one mark, so two measures of different scale (an amount
+    and a headcount) share a chart as length and colour.
+    """
+    def measured(index: int) -> bool:
+        # A decimal measure arrives from the engine as text ("12404000000.00").
+        cells = [row[index] for row in rows[:20] if index < len(row) and row[index] is not None]
+        return bool(cells) and all(
+            not isinstance(cell, bool) and (
+                isinstance(cell, int | float | Decimal)
+                or isinstance(cell, str) and _PLAIN_NUMBER.fullmatch(cell.strip())
+            ) for cell in cells
+        )
+
+    numeric = [column for index, column in enumerate(columns) if measured(index)]
+    labels = [column for column in columns if column not in numeric]
+    if len(numeric) != 2 or len(labels) != 1:
+        return None
+    drawn = json.dumps((spec or {}).get("encoding") or {})
+    if all(json.dumps(column) in drawn for column in numeric):
+        return None
+    return {
+        "$schema": "https://vega-lite.github.io/schema/vega-lite/v5.json",
+        "title": title, "mark": "bar", "width": "container",
+        "data": {"values": []},
+        "encoding": {
+            "y": {"field": labels[0], "type": "nominal", "sort": "-x"},
+            "x": {"field": numeric[0], "type": "quantitative", "axis": {"format": "~s"}},
+            "color": {"field": numeric[1], "type": "quantitative"},
+        },
+    }
 
 
 def _fallback_spec(columns: list[str], rows: list[list], title: str, intent: str) -> dict[str, Any]:

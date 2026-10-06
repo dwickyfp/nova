@@ -555,3 +555,26 @@ def test_ephemeral_cache_enforces_lru_bytes_and_cleans_artifacts():
     assert len(cache._by_run) <= 2
     assert cache.memory_bytes <= 40
     assert evicted
+
+
+def test_a_requested_frequency_is_anchored_where_the_series_is():
+    import pandas as pd
+
+    from app.modules.ml_engine.engines.forecast import _aligned_frequency
+
+    starts = pd.DataFrame({
+        "unique_id": "all", "ds": pd.date_range("2026-01-01", periods=9, freq="MS"),
+    })
+    # "M" on first-of-month data would label October's value 30 September.
+    assert _aligned_frequency("M", starts) == "MS"
+    assert _aligned_frequency(None, starts) == "MS"
+    next_step = starts["ds"].max() + pd.tseries.frequencies.to_offset(
+        _aligned_frequency("M", starts))
+    assert str(next_step.date()) == "2026-10-01"
+    # Another unit is the caller's choice, and so is anything on a series too short to read.
+    assert _aligned_frequency("Q", starts) == "Q"
+    assert _aligned_frequency("M", starts.head(2)) == "M"
+    ends = pd.DataFrame({
+        "unique_id": "all", "ds": pd.date_range("2026-01-31", periods=6, freq="ME"),
+    })
+    assert _aligned_frequency("MS", ends) in {"M", "ME"}

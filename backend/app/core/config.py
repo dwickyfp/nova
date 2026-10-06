@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     SMART_MAX_CONCURRENT_AGENTS: int = 8
     SMART_MAX_TOTAL_AGENT_SESSIONS: int = 32
     SMART_MAX_TOTAL_TURNS: int = 128
-    SMART_MAX_TOTAL_TOKENS: int = 120000
+    SMART_MAX_TOTAL_TOKENS: int = 240000
     SMART_MAX_WALL_TIME: int = 600
 
     # --- Task orchestration: scheduler process (nova-scheduler) ---

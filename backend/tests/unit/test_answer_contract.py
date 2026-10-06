@@ -272,3 +272,246 @@ def test_indonesian_rendering_lists_every_group_highest_first() -> None:
     assert "Website 36,93%." in text
     assert "order count: Mobile App 177.450" in text
     assert "1.935.135.942.274,50" in text
+
+
+def _headcount_tables() -> dict:
+    return {"evidence_1": {"columns": ["department", "active_headcount"],
+                           "rows": [["Sales", "23"], ["Finance", "22"], ["Engineering", "18"]]}}
+
+
+def test_a_count_claim_for_a_counting_metric_verifies_as_its_cell() -> None:
+    answer = "| Sales | 23 |\n| Finance | 22 |\n| Engineering | 18 |"
+    claims = tuple(Claim(text=text, kind="count") for text in ("23", "22", "18"))
+    check = check_numeric_answer(
+        answer, question="Headcount by department", tables=_headcount_tables(), claims=claims,
+    )
+    assert check.accepted
+    assert {claim.column for claim in check.claims} == {"active_headcount"}
+
+
+def test_a_count_claim_that_matches_no_cell_or_row_count_stays_unsupported() -> None:
+    check = check_numeric_answer(
+        "Sales has 63 people.", question="Headcount by department",
+        tables=_headcount_tables(), claims=(Claim(text="63", kind="count"),),
+    )
+    assert check.unsupported == ("63",)
+
+
+def _expense_tables() -> dict:
+    return {"evidence_1": {"columns": ["total_expense"], "rows": [["58851000000.00"]]}}
+
+
+@pytest.mark.parametrize(("answer", "language"), [
+    ("Total 58.851.000.000, dari 1 Januari sampai 31 Desember 2025.", "id"),
+    ("Total 58,851,000,000 from January 1 to December 31, 2025.", "en"),
+    ("Total 58,851,000,000 between 1 Jan and 31 Dec 2025.", "en"),
+])
+def test_a_spoken_date_is_not_an_unverified_number(answer, language) -> None:
+    check = check_numeric_answer(
+        answer, question="Total expense 2025?", tables=_expense_tables(), language=language,
+    )
+    assert check.accepted, check.unsupported
+
+
+def test_a_number_beside_a_month_is_still_checked_when_it_is_not_a_day() -> None:
+    check = check_numeric_answer(
+        "Total 58.851.000.000, dengan 47 Desember transaksi.", question="Total expense 2025?",
+        tables=_expense_tables(), language="id",
+    )
+    assert check.unsupported == ("47",)
+
+
+def _average_tables() -> dict:
+    rows = [["Senior", "23590909.09090909"], ["Lead", "33666666.66666667"]]
+    return {"evidence_1": {"columns": ["job_level", "avg_monthly_salary"], "rows": rows}}
+
+
+@pytest.mark.parametrize("written", ["23,590,909.09", "23,590,909"])
+def test_a_computed_average_may_be_stated_rounded(written) -> None:
+    check = check_numeric_answer(
+        f"Senior averages {written}.", question="Average salary by level",
+        tables=_average_tables(),
+    )
+    assert check.accepted, check.unsupported
+
+
+def test_a_rounded_average_must_still_round_from_its_cell() -> None:
+    check = check_numeric_answer(
+        "Senior averages 23,590,910.", question="Average salary by level",
+        tables=_average_tables(),
+    )
+    assert check.unsupported == ("23,590,910",)
+
+
+def test_a_two_decimal_money_cell_is_still_stated_exactly() -> None:
+    tables = {"evidence_1": {"columns": ["revenue"], "rows": [["1234.56"]]}}
+    check = check_numeric_answer("Revenue was 1,235.", question="Revenue?", tables=tables)
+    assert check.unsupported == ("1,235",)
+
+
+def test_a_computed_average_renders_with_two_decimals() -> None:
+    text, claims = render_with_claims(_average_tables(), language="en")
+    assert "23,590,909.09" in text and "09090909" not in text
+    assert check_numeric_answer(
+        text, question="x", tables=_average_tables(), claims=claims,
+    ).accepted
+
+
+def _combined_tables() -> dict:
+    return {
+        "evidence_1": {"columns": ["department", "total_expense"],
+                       "rows": [["Sales", "12404000000.00"], ["Finance", "11553000000.00"]]},
+        "evidence_2": {"columns": ["department", "active_headcount"],
+                       "rows": [["Sales", "23"], ["Finance", "22"]]},
+    }
+
+
+def test_a_value_claimed_under_another_specialists_evidence_id_binds_to_its_cell() -> None:
+    answer = "| Sales | 12.404.000.000 | 23 |\n| Finance | 11.553.000.000 | 22 |"
+    claims = (
+        Claim(text="23", kind="cell", evidence_id="evidence_1", row_label="Sales"),
+        Claim(text="22", kind="cell", evidence_id="evidence_1", row_label="Finance"),
+    )
+    check = check_numeric_answer(
+        answer, question="Expense and headcount by department", tables=_combined_tables(),
+        claims=claims, language="id",
+    )
+    assert check.accepted, check.unsupported
+    assert {claim.evidence_id for claim in check.claims if claim.text in {"23", "22"}} == {
+        "evidence_2"
+    }
+
+
+def test_a_misbound_value_must_still_belong_to_the_named_row() -> None:
+    check = check_numeric_answer(
+        "| Finance | 23 |", question="Headcount by department", tables=_combined_tables(),
+        claims=(Claim(text="23", kind="cell", evidence_id="evidence_1", row_label="Finance"),),
+        language="id",
+    )
+    assert check.unsupported == ("23",)
+
+
+def test_a_small_computed_value_cannot_drop_to_one_decimal() -> None:
+    tables = {"evidence_1": {"columns": ["mean"], "rows": [[1.234]]}}
+    assert check_numeric_answer("Mean is 1.2.", question="Mean?", tables=tables).unsupported == (
+        "1.2",
+    )
+    assert check_numeric_answer("Mean is 1.23.", question="Mean?", tables=tables).accepted
+
+
+@pytest.mark.parametrize("claims", [
+    (Claim(text="18", kind="cell", row_label="Sales"),),
+    (Claim(text="18", kind="cell", row_label="Engineering", column="total_expense"),),
+    (Claim(text="18", kind="position"),),
+])
+def test_a_true_sentence_survives_a_wrong_note_about_it(claims) -> None:
+    tables = _headcount_tables()
+    tables["evidence_0"] = {"columns": ["department", "total_expense"],
+                            "rows": [["Engineering", "12145000000.00"]]}
+    check = check_numeric_answer(
+        "| Engineering | 12.145.000.000 | 18 |", question="Expense and headcount",
+        tables=tables, claims=claims, language="id",
+    )
+    assert check.accepted, check.unsupported
+
+
+def test_a_claimed_change_is_not_rechecked_without_its_claim() -> None:
+    tables = {"evidence_1": {"columns": ["month", "revenue"],
+                             "rows": [["2026-01", "100"], ["2026-02", "80"]]}}
+    answer = "Revenue rose 20%."
+    assert check_numeric_answer(answer, question="Revenue trend", tables=tables).accepted
+    risen = Claim(text="20%", kind="derived", direction="up")
+    assert not check_numeric_answer(
+        answer, question="Revenue trend", tables=tables, claims=(risen,),
+    ).accepted
+
+
+def test_a_forecast_the_runtime_computed_is_evidence_the_answer_may_state() -> None:
+    from app.modules.assistant.intelligence import EvidenceTracker
+
+    evidence = EvidenceTracker()
+    item = evidence.add("ml_execute", "forecast completed", table={
+        "columns": ["timestamp", "prediction", "lower_bound"],
+        "rows": [["2026-10-31T00:00:00+00:00", 4805000000.0, 2497114486.1684604]],
+    })
+    check = check_numeric_answer(
+        "Prediksi Oktober 2026 sebesar 4.805.000.000, batas bawah 2.497.114.486.",
+        question="Prediksi expense bulan depan", tables=evidence.business_tables, language="id",
+    )
+    assert check.accepted, check.unsupported
+    assert {claim.evidence_id for claim in check.claims if claim.evidence_id} == {
+        item.evidence_id
+    }
+
+
+def test_a_follow_up_may_repeat_the_year_the_user_named_earlier() -> None:
+    from types import SimpleNamespace
+
+    from app.modules.assistant.service import _asked
+
+    thread = SimpleNamespace(messages=[
+        SimpleNamespace(role="user", content="Berapa total expense tahun 2025?"),
+        SimpleNamespace(role="assistant", content="Rp 58.851.000.000 (lihat 2031)."),
+    ])
+    asked = _asked(thread, "kalau dipecah per kategori?")
+    tables = {"e1": {"columns": ["category", "total_expense"], "rows": [["Travel", "1200"]]}}
+    answer = "Total expense tahun 2025 per kategori: Travel 1.200."
+    assert check_numeric_answer(answer, question=asked, tables=tables, language="id").accepted
+    assert not check_numeric_answer(
+        answer, question="kalau dipecah per kategori?", tables=tables, language="id",
+    ).accepted
+    # Only what the user said counts, not an earlier answer.
+    assert "2031" not in asked
+
+
+def test_a_change_a_decomposition_lists_is_accepted_however_the_model_noted_it() -> None:
+    tables = {"evidence_2": {"columns": ["component", "change"], "rows": [
+        ['["Travel", "Finance"]', "224000000.00"], ['["Office", "Operations"]', "-237000000.00"],
+    ]}}
+    answer = "Travel di Finance naik 224.000.000, sedangkan Office di Operations turun 237.000.000."
+    noted = (
+        Claim(text="224.000.000", kind="derived", direction="up"),
+        Claim(text="237.000.000", kind="derived", direction="down"),
+    )
+    assert check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=noted, language="id",
+    ).accepted
+    # The direction still has to be the cell's own.
+    wrong = (noted[0], Claim(text="237.000.000", kind="derived", direction="up"))
+    assert not check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=wrong, language="id",
+    ).accepted
+
+
+def test_a_claim_noted_with_its_currency_or_sign_is_the_claim_of_that_number() -> None:
+    tables = {
+        "evidence_1": {"columns": ["month", "total_expense"],
+                       "rows": [["2026-04-01", "4319"], ["2026-05-01", "5910"]]},
+        "evidence_2": {"columns": ["component", "change"], "rows": [
+            ["total 2026-05", "5910"], ['["Office", "Operations"]', "-237"], ["net_change", "1591"],
+        ]},
+        "evidence_3": {"columns": ["from", "to", "change_pct_change"],
+                       "rows": [["2026-04-01", "2026-05-01", "36.8372%"]]},
+    }
+    answer = (
+        "Total expense menjadi Rp5.910 pada Mei 2026, naik +1.591 atau sekitar 36,84%. "
+        "Office di Operations: - Rp 237."
+    )
+    noted = (
+        Claim(text="Rp5.910", kind="cell", value=Decimal(5910), evidence_id="evidence_2",
+              column="change", row_label="total 2026-05"),
+        Claim(text="1.591", kind="cell", value=Decimal(1591), evidence_id="evidence_2",
+              column="change", row_label="net_change", direction="up"),
+        Claim(text="36,84%", kind="derived", value=Decimal("36.8372"), direction="up"),
+        Claim(text="- Rp 237", kind="cell", value=Decimal(-237), direction="down"),
+    )
+    check = check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=noted, language="id",
+    )
+    assert check.accepted, check.unsupported
+    # A percentage no result holds is still the claim's alone.
+    wrong = (*noted[:2], Claim(text="36,84%", kind="derived", value=Decimal("12.5"),
+                               direction="up"), noted[3])
+    assert not check_numeric_answer(
+        answer, question="Kenapa berubah?", tables=tables, claims=wrong, language="id",
+    ).accepted

@@ -1,4 +1,5 @@
 import { threadTitle } from "./thread-title";
+import { treeRefetchInterval } from "./smart-agent-tree";
 import {
   memo,
   useCallback,
@@ -44,6 +45,7 @@ import { DeepResearchCard } from "./deep-research-card";
 import { deepResearchApi } from "@/features/agents/studio-intelligence-api";
 import { UserMessageFooter } from "./user-message-footer";
 import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
+import { AutomationProposalCard } from "./automation-proposal-card";
 import { AutoTurnRail } from "./auto-turn-rail";
 import { rootRunForTurn } from "./auto-run-timeline";
 import {
@@ -164,13 +166,22 @@ export function StudioChat({
   const displayedAutoRunId = activeThreadId && activeThreadId === threadId
     ? activeAutoRunId ?? autoRunsQuery.data?.runs[0]?.run_id ?? null
     : null;
+  const settleReadsRef = useRef<{ runId: string | null; seen: number; count: number }>({ runId: null, seen: -1, count: 0 });
   const autoTreeQuery = useQuery({
     queryKey: ["studio", "auto-tree", displayedAutoRunId],
     queryFn: () => agentsApi.getAutoRunTree(displayedAutoRunId as string),
     enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(displayedAutoRunId),
     refetchInterval: (query) => {
-      const status = query.state.data?.runs.find((run) => run.depth === 0)?.status;
-      return streaming || (status && !["completed", "failed", "cancelled", "interrupted"].includes(status)) ? 1000 : false;
+      const reads = settleReadsRef.current;
+      if (reads.runId !== displayedAutoRunId) settleReadsRef.current = { runId: displayedAutoRunId, seen: -1, count: 0 };
+      const root = query.state.data?.runs.find((run) => run.depth === 0)?.status;
+      // Count each read after the root settled once, however often this is asked.
+      if (root && !streaming && settleReadsRef.current.seen !== query.state.dataUpdateCount
+          && ["completed", "failed", "cancelled", "interrupted"].includes(root)) {
+        settleReadsRef.current.seen = query.state.dataUpdateCount;
+        settleReadsRef.current.count += 1;
+      }
+      return treeRefetchInterval(query.state.data?.runs ?? [], streaming, settleReadsRef.current.count);
     },
   });
   const historicalChildTreeQuery = useQuery({
@@ -488,6 +499,8 @@ export function StudioChat({
       }
       const controller = new AbortController();
       abortRef.current = controller;
+      // Sending is a request to see the reply, wherever the reader had scrolled.
+      followOutputRef.current = true;
       const turnId = nextTurnId();
       setTurns((prev) => [
         ...prev,
@@ -1158,6 +1171,10 @@ const TurnView = memo(function TurnView({
           reconsidering={deepening}
           reconsiderDisabled={reconsiderDisabled}
         />
+      ) : null}
+
+      {!running && turn.automationProposal ? (
+        <AutomationProposalCard proposal={turn.automationProposal} />
       ) : null}
 
       {!running && onAsk && turn.suggestions?.length ? (

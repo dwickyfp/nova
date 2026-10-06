@@ -32,6 +32,8 @@ OPERATIONS = (
     "rank",
     "cagr",
     "contribution",
+    "ratio",
+    "combine",
 )
 
 PARAMETERS: dict[str, Any] = {
@@ -57,7 +59,13 @@ PARAMETERS: dict[str, Any] = {
         "to_label": {"type": "string", "description": "End row for pct_change/difference/cagr."},
         "compare_column": {
             "type": "string",
-            "description": "Prior-period numeric column for contribution.",
+            "description": "Prior-period numeric column for contribution; the divisor "
+            "column for ratio.",
+        },
+        "with_evidence_id": {
+            "type": "string",
+            "description": "For combine: the second result, joined to evidence_id on the "
+            "label column both share (department, month, ...).",
         },
         "periods": {
             "type": "integer",
@@ -65,7 +73,7 @@ PARAMETERS: dict[str, Any] = {
             "description": "Number of periods between from_label and to_label for cagr.",
         },
     },
-    "required": ["operation", "value_column"],
+    "required": ["operation"],
     "additionalProperties": False,
 }
 
@@ -106,6 +114,70 @@ def _is_numeric(value: Any) -> bool:
     except ComputeError:
         return False
     return True
+
+
+def combine(
+    first: dict[str, Any], second: dict[str, Any], label_column: str | None = None
+) -> dict[str, Any]:
+    """Two verified results side by side, on the label column they share.
+
+    Only rows whose label is in both results are kept, and a label must name one
+    row in each: nothing is summed, guessed, or filled in.
+    """
+    tables = []
+    for table in (first, second):
+        columns = [str(column) for column in table.get("columns") or []]
+        rows = [list(row) for row in (table.get("rows") or [])[:MAX_ROWS]]
+        if not columns or not rows or any(len(row) != len(columns) for row in rows):
+            raise ComputeError("Both results need complete rows to be combined.")
+        tables.append((columns, rows))
+    (left_columns, left_rows), (right_columns, right_rows) = tables
+    shared = [
+        column for column in left_columns
+        if column.casefold() in {other.casefold() for other in right_columns}
+        and not all(_is_numeric(row[left_columns.index(column)]) for row in left_rows)
+    ]
+    if label_column:
+        shared = [column for column in shared if column.casefold() == label_column.casefold()]
+    if len(shared) != 1:
+        raise ComputeError(
+            "The results must share exactly one label column to be combined. "
+            f"First: {left_columns}. Second: {right_columns}."
+        )
+    label = shared[0]
+    left_key = left_columns.index(label)
+    right_key = next(
+        index for index, column in enumerate(right_columns) if column.casefold() == label.casefold()
+    )
+
+    def keyed(rows: list[list[Any]], key: int) -> dict[str, list[Any]]:
+        by_label: dict[str, list[Any]] = {}
+        for row in rows:
+            name = _label_key(str(row[key]))
+            if name in by_label:
+                raise ComputeError(f"{label} {row[key]!r} names more than one row.")
+            by_label[name] = row
+        return by_label
+
+    left, right = keyed(left_rows, left_key), keyed(right_rows, right_key)
+    matched = [name for name in left if name in right]
+    if not matched:
+        raise ComputeError(f"No {label} value appears in both results.")
+    taken = {column.casefold() for column in left_columns}
+    right_names = []
+    for index, column in enumerate(right_columns):
+        if index == right_key:
+            continue
+        right_names.append((index, column if column.casefold() not in taken else f"{column}_2"))
+    unmatched = len(left) + len(right) - 2 * len(matched)
+    return {
+        "columns": [*left_columns, *(name for _, name in right_names)],
+        "rows": [
+            [*left[name], *(right[name][index] for index, _ in right_names)] for name in matched
+        ],
+        "summary": f"Combined {len(matched)} row(s) on {label}"
+        + (f"; {unmatched} row(s) had no match and were left out." if unmatched else "."),
+    }
 
 
 def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
@@ -275,8 +347,25 @@ def _compute(
             "rows": [[labels[start], labels[end], periods, _percent(growth * 100)]],
             "summary": f"{value_column} CAGR {_round(growth * 100)}% over {periods} period(s).",
         }
-    # contribution: each row's share of the total change between two columns.
     compare_column = str(arguments.get("compare_column") or "")
+    if operation == "ratio":
+        # One column per unit of another, row by row (expense per employee).
+        if compare_column not in columns or compare_column == value_column:
+            raise ComputeError("ratio needs compare_column (the divisor column).")
+        compare_index = columns.index(compare_column)
+        divisors = [_decimal(row[compare_index], column=compare_column) for row in rows]
+        name = f"{value_column}_per_{compare_column}"
+        out = [
+            [label, _round(value), _round(divisor),
+             _round(value / divisor) if divisor != 0 else None]
+            for label, value, divisor in zip(labels, values, divisors, strict=True)
+        ]
+        return {
+            "columns": [label_name, value_column, compare_column, name],
+            "rows": out,
+            "summary": f"{name} for {len(out)} row(s); a zero divisor leaves the ratio empty.",
+        }
+    # contribution: each row's share of the total change between two columns.
     if compare_column not in columns:
         raise ComputeError("contribution needs compare_column (the prior-period column).")
     compare_index = columns.index(compare_column)
@@ -302,7 +391,8 @@ class ComputeMetricsTool:
     name = "compute_metrics"
     description = (
         "Compute growth (pct_change), difference, share_of_total, sum/avg/min/max, rank, CAGR, "
-        "or contribution to change from a data result already returned in this conversation. "
+        "contribution to change, or a ratio of two columns from a data result already returned "
+        "in this conversation; combine joins two such results on the label column they share. "
         "Use it before stating any number that is not a result cell. It reads no new data."
     )
     parameters = PARAMETERS
@@ -339,19 +429,34 @@ class ComputeMetricsTool:
                 safe_detail="compute_metrics needs a data result from this conversation.",
             )
         try:
-            result = compute(table, args)
+            if args.get("operation") == "combine":
+                other = tables.get(str(args.get("with_evidence_id") or ""))
+                if other is None or not evidence_id:
+                    raise ComputeError(
+                        "combine needs evidence_id and with_evidence_id of two data results: "
+                        + ", ".join(list(tables)[-8:])
+                    )
+                result = combine(table, other, args.get("label_column"))
+            else:
+                result = compute(table, args)
         except ComputeError as exc:
             return ToolOutcome(
                 ok=False, summary="", error=str(exc), error_class="INVALID_TOOL_ARGUMENTS",
                 recoverable=True, safe_detail=str(exc),
                 repair_context={"columns": list(table.get("columns") or [])[:40]},
             )
+        if hasattr(context, "last_result"):
+            # A chart or a further computation continues from this table.
+            context.last_result = {
+                "title": f"{args['operation']} of {args.get('value_column') or 'results'}",
+                "columns": result["columns"], "rows": result["rows"],
+            }
         return ToolOutcome(
             ok=True,
             summary=result["summary"],
             data={"columns": result["columns"], "rows": result["rows"]},
             table={
-                "title": f"{args['operation']} of {args['value_column']}",
+                "title": f"{args['operation']} of {args.get('value_column') or 'results'}",
                 "columns": result["columns"],
                 "rows": result["rows"],
             },

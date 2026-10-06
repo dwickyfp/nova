@@ -63,7 +63,7 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     duplicates = frame.duplicated(["unique_id", "ds"]).sum()
     if duplicates:
         raise ValueError(f"Forecast input contains {int(duplicates)} duplicate timestamp(s)")
-    frequency = spec.frequency or _infer_frequency(frame)
+    frequency = _aligned_frequency(spec.frequency, frame)
     if int(frame["unique_id"].nunique()) * horizon > settings.ML_RESULT_INLINE_MAX_ROWS:
         raise DataBudgetExceeded(
             "Forecast output exceeds the inline row budget; reduce series or horizon"
@@ -155,6 +155,27 @@ def _models_for(spec: MLExecutionSpec, frequency: str):
     if spec.mode.value == "best":
         models.append(AutoARIMA(season_length=_season_length(frequency)))
     return models
+
+
+def _unit(frequency: str) -> str:
+    """The period a pandas alias steps by, whatever it is anchored to."""
+    letters = "".join(ch for ch in frequency.upper().split("-")[0] if ch.isalpha())
+    return "Y" if letters[:1] in {"Y", "A"} else letters[:1]
+
+
+def _aligned_frequency(given: str | None, frame: pd.DataFrame) -> str:
+    """The requested frequency, anchored where the series itself is.
+
+    A monthly series stamped on the first of the month and forecast with "M"
+    would label October's value 30 September: month end, one step early.
+    """
+    if not given:
+        return _infer_frequency(frame)
+    try:
+        observed = _infer_frequency(frame)
+    except ValueError:
+        return given
+    return observed if _unit(observed) == _unit(given) else given
 
 
 def _infer_frequency(frame: pd.DataFrame) -> str:

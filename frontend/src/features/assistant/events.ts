@@ -104,6 +104,25 @@ export function parseAssistantEvent(
         return parseChart(record);
       case "citation":
         return parseCitation(record);
+      case "automation_proposal": {
+        const { title, prompt, schedule_kind: kind, schedule_expr: expr, timezone } = record;
+        if (
+          typeof title !== "string" || typeof prompt !== "string" || typeof expr !== "string"
+          || typeof timezone !== "string" || (kind !== "cron" && kind !== "interval")
+        ) return null;
+        const raw = record.condition as Record<string, unknown> | null | undefined;
+        const condition = raw && typeof raw.metric === "string" && typeof raw.operator === "string"
+          && typeof raw.value === "number"
+          ? { metric: raw.metric, operator: raw.operator, value: raw.value }
+          : null;
+        return {
+          type: "automation_proposal",
+          proposal: {
+            title, prompt, schedule_kind: kind, schedule_expr: expr, timezone, condition,
+            next_run: typeof record.next_run === "string" ? record.next_run : undefined,
+          },
+        };
+      }
       case "suggestions": {
         const items = Array.isArray(record.suggestions) ? record.suggestions : [];
         const suggestions = items

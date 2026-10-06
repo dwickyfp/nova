@@ -353,3 +353,37 @@ async def test_disabled_quality_preserves_provider_path_and_public_trace(monkeyp
     assert context.quality_measurements is None
     assert not any(step["kind"] == "quality_observation" for step in context.steps)
     assert len([step for step in context.steps if step["kind"] == "provider"]) == 1
+
+
+async def test_a_turn_near_its_token_allowance_answers_instead_of_calling_again():
+    tool = EvalTool("search_knowledge")
+    registry = ToolRegistry()
+    registry.register(tool)
+    usage = {"prompt_tokens": 700, "completion_tokens": 50, "total_tokens": 750}
+
+    class Provider(ScriptedProvider):
+        """Calls the tool for as long as it is offered one."""
+
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.calls += 1
+            if tools:
+                yield ("message", {**tool_call_frame(
+                    f"c{self.calls}", name="search_knowledge", sql=f"SELECT {self.calls}",
+                ), "usage": usage})
+            else:
+                yield ("message", {**text_frame("Here is what I found."), "usage": usage})
+
+    provider = Provider(
+        [], turn_plan={"intent": "capability_help", "tools": registry.names(),
+                       "required_tools": []},
+    )
+    context = LoopContext(user_name="alice", agent_id="agent")
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, iterative=True, spend_limit=1000,
+    ).run(
+        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        context=context, resolve_consent=AsyncMock(return_value=True),
+    )]
+    # 750 of 1,000 tokens after the first call: the next model call is the answer.
+    assert len(tool.runs) == 1
+    assert TurnResult(frames=frames).finish_reason == "stop"

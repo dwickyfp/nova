@@ -2543,3 +2543,71 @@ async def test_coordinator_can_add_a_specialist_after_scout_finding(monkeypatch)
     assert spawned == ["marketing"]
     assert root["status"] == "waiting_for_agent"
     assert root["checkpoint"]["processed_child_ids"] == ["finance"]
+
+
+@pytest.mark.asyncio
+async def test_a_heartbeat_never_overlaps_the_transition_of_its_run(monkeypatch) -> None:
+    from app.modules.agents import harness_repository as module
+
+    # The engine rewrites the whole row an UPDATE read, so an overlapping heartbeat
+    # would put back the `running` status a completion just replaced.
+    open_statements, overlapped = 0, False
+
+    async def execute(sql: str, params=None):
+        nonlocal open_statements, overlapped
+        open_statements += 1
+        overlapped = overlapped or open_statements > 1
+        await asyncio.sleep(0.01)
+        open_statements -= 1
+        return {"affected": 1}
+
+    monkeypatch.setattr(module.db, "execute_system", execute)
+    repo = HarnessRepository()
+    await asyncio.gather(
+        repo.heartbeat("child", "worker"),
+        repo.add_usage("child", prompt_tokens=1, completion_tokens=1),
+        repo.transition("child", from_status="running", to_status="completed",
+                        lease_owner="worker", generation=1),
+        repo.heartbeat("child", "worker"),
+    )
+    assert not overlapped
+    # Runs do not wait on one another.
+    open_statements, overlapped = 0, False
+    await asyncio.gather(repo.heartbeat("child", "worker"), repo.heartbeat("other", "worker"))
+    assert overlapped
+
+
+@pytest.mark.asyncio
+async def test_a_recovered_turn_keeps_the_completion_its_parent_already_received(
+    monkeypatch,
+) -> None:
+    from app.modules.agents import harness_repository as module
+
+    child, parent = _run("child", depth=1), _run("root", depth=0)
+    stored: list[str] = []
+
+    async def execute(sql: str, params=None):
+        if sql.startswith("SELECT message_id"):
+            return {"rows": [[params[0], "root", stored[0], None, None, "First answer",
+                              "agent", "QUEUE_ONLY"]]}
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(module.db, "execute_system", execute)
+    monkeypatch.setattr(module.asyncio, "sleep", AsyncMock())
+    repo = HarnessRepository()
+    repo._emit_message = AsyncMock()
+    repo._audit_message = AsyncMock()
+    stored.append("final")
+    message_id = await repo.send(
+        sender=child, recipient=parent, operation_id="completion", message_type="final",
+        content="The same figures, said differently",
+    )
+    assert repo._emit_message.await_args.args[4] == "First answer"
+    assert message_id == repo._emit_message.await_args.args[2]
+    # Any other message keeps the rule: one operation id, one content.
+    stored[0] = "finding"
+    with pytest.raises(ValueError, match="already used"):
+        await repo.send(
+            sender=child, recipient=parent, operation_id="completion", message_type="finding",
+            content="The same figures, said differently",
+        )

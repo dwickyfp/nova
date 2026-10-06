@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import calendar
+import re
 from collections import deque
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -115,12 +117,12 @@ class SemanticPlan:
         raw_time = value.get("time")
         time = None
         if isinstance(raw_time, dict) and raw_time.get("dimension"):
-            time = SemanticTime(
+            time = _two_named_months(SemanticTime(
                 dimension=str(raw_time["dimension"]),
                 grain=_optional(raw_time.get("grain")),
                 range=_optional(raw_time.get("range")),
                 compare=_normalise_comparison(raw_time.get("compare")),
-            )
+            ))
         orders = tuple(
             SemanticOrder(
                 field=str(item.get("field") or ""),
@@ -307,6 +309,29 @@ def validate_plan(model: SemanticModelIR, plan: SemanticPlan) -> list[str]:
                 "top_n_per_group partitions by some, but not all, selected dimensions."
             )
     return errors
+
+
+_DATE_SPAN = re.compile(r"(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})")
+
+
+def _two_named_months(time: SemanticTime) -> SemanticTime:
+    """A previous-period comparison over exactly two whole months is those two months.
+
+    "May against April" planned as one range of both months would otherwise be
+    compared with the 61 days before it, a window that starts mid-month and
+    answers neither question. The two months become two groups instead.
+    """
+    if time.compare != TimeComparison.PREVIOUS_PERIOD.value or time.grain or not time.range:
+        return time
+    span = _DATE_SPAN.fullmatch(time.range.strip())
+    if not span:
+        return time
+    year, month, day, end_year, end_month, end_day = (int(part) for part in span.groups())
+    following = (year + month // 12, month % 12 + 1)
+    whole = day == 1 and end_day == calendar.monthrange(end_year, end_month)[1]
+    if not whole or (end_year, end_month) != following:
+        return time
+    return SemanticTime(dimension=time.dimension, grain="month", range=time.range)
 
 
 def _normalise_comparison(value: Any) -> str | None:

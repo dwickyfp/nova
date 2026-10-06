@@ -6,7 +6,11 @@ from typing import Any
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import redact_sql_credentials
-from app.modules.agents.semantic.access import _context_ids, load_authorized_models
+from app.modules.agents.semantic.access import (
+    _context_ids,
+    load_authorized_models,
+    load_specialist_models,
+)
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from app.modules.assistant.tools.redaction import redact_row
 
@@ -15,7 +19,8 @@ DESCRIPTION = (
     "Use for 'data apa saja yang kamu punya', available metrics, sources, or what "
     "you can help with. Reads authorized Semantic View metadata and enabled tools "
     "and skills; never scans databases or executes business queries. In Smart, "
-    "lists accessible specialists and their business scope without spawning them."
+    "returns the combined Semantic Views of accessible specialists, attributed to "
+    "their owning agents, without spawning them."
 )
 PARAMETERS = {
     "type": "object",
@@ -24,10 +29,17 @@ PARAMETERS = {
 }
 PAGE_SIZE = 4
 FIELD_LIMIT = 24
+SPECIALIST_LIMIT = 32
 
 
 def _text(value: Any, limit: int = 240) -> str:
     return str(redact_row(["metadata"], [redact_sql_credentials(str(value or ""))])[0])[:limit]
+
+
+def business_label(name: Any) -> str:
+    """An identifier as a reader would say it: ``total_expense`` -> ``Total expense``."""
+    words = _text(name, 128).replace("_", " ").replace("-", " ").split()
+    return " ".join(words).capitalize() if words else ""
 
 
 def semantic_catalog(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -40,12 +52,15 @@ def semantic_catalog(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
         result.append({
             "view_id": _text(record.get("semantic_model_id"), 128),
             "name": _text(record.get("name") or model.name, 128),
+            "label": business_label(record.get("name") or model.name),
             "version": _text(record.get("version") or model.version, 64),
             "description": _text(model.description),
             "metrics": [{"name": _text(metric.name, 128),
+                         "label": business_label(metric.name),
                          "description": _text(metric.description),
                          "unit": _text(metric.unit, 64)} for metric in metrics[:FIELD_LIMIT]],
             "dimensions": [{"name": _text(field.name, 128),
+                            "label": business_label(field.name),
                             "description": _text(field.description)}
                            for field in dimensions[:FIELD_LIMIT]],
             "fields_truncated": len(metrics) > FIELD_LIMIT or len(dimensions) > FIELD_LIMIT,
@@ -61,6 +76,62 @@ def _shared_dimensions(model: Any) -> list[list[str]]:
         [_text(field.rsplit(".", 1)[-1], 128) for field in group]
         for group in getattr(model, "conformed_dimensions", ())[:FIELD_LIMIT]
     ]
+
+
+async def collaboration_catalog(context: Any) -> dict[str, Any]:
+    """Combine every accessible specialist's Views, each read as that specialist runs it."""
+    cached = getattr(context, "collaboration_catalog", None)
+    if cached is not None:
+        return cached
+    from fastapi import HTTPException
+
+    from app.modules.agents.auto_planner import authorized_candidates
+
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    specialists = []
+    unavailable = 0
+    for candidate in await authorized_candidates(context.user or {}):
+        owner = {"agent_id": _text(candidate.agent_id, 128), "name": _text(candidate.name, 128)}
+        views: list[dict[str, Any]] = []
+        status = "ok"
+        try:
+            models, bound = await load_specialist_models(candidate, context)
+            views = semantic_catalog(models)
+            unavailable += max(0, bound - len(views))
+        except HTTPException:
+            # A drifted or unauthorized release pin hides that specialist only.
+            status = "unavailable"
+            unavailable += len(candidate.view_ids)
+        for view in views:
+            merged.setdefault((view["view_id"], view["version"]), {**view, "agents": []})[
+                "agents"
+            ].append(owner)
+        specialists.append({
+            **owner,
+            "description": _text(candidate.manifest.delegation_description),
+            "owns": [_text(item, 128) for item in candidate.manifest.owns[:FIELD_LIMIT]],
+            "view_count": len(views),
+            "catalog_status": status,
+        })
+    catalog = {
+        "views": sorted(
+            merged.values(),
+            key=lambda view: (view["name"].casefold(), view["view_id"], view["version"]),
+        ),
+        "specialists": specialists,
+        "unavailable": unavailable,
+    }
+    context.collaboration_catalog = catalog
+    return catalog
+
+
+def _names(specialists: list[dict[str, Any]]) -> str:
+    names = [item["name"] for item in specialists if item["view_count"]]
+    if len(names) > 4:
+        return ", ".join(names[:4]) + f" and {len(names) - 4} more"
+    if len(names) > 1:
+        return ", ".join(names[:-1]) + " and " + names[-1]
+    return "".join(names)
 
 
 class DescribeAgentTool:
@@ -81,11 +152,22 @@ class DescribeAgentTool:
         return "Read this agent's business catalog"
 
     def planning_scope(self, context: Any) -> dict[str, Any]:
+        smart = bool(getattr(context, "collaboration_root", False))
         views = semantic_catalog(getattr(context, "authorized_semantic_models", None) or [])
+        if smart:
+            return {
+                "surface": "studio",
+                "name": _text(self.agent_name, 128),
+                "smart": True,
+                "catalog_scope": "accessible_specialists",
+                "catalog_tool": self.name,
+                "free_form_sql": False,
+                "resource_details_available_with": self.name,
+            }
         return {
             "surface": "studio",
             "name": _text(self.agent_name, 128),
-            "smart": bool(getattr(context, "collaboration_root", False)),
+            "smart": False,
             "semantic_views": [{
                 "name": view["name"], "description": view["description"],
                 "metrics": [metric["name"] for metric in view["metrics"][:8]],
@@ -122,30 +204,17 @@ class DescribeAgentTool:
                 or (context.user or {}).get("active_role"),
             })
             unavailable_bindings = 0
+            specialists: list[dict[str, Any]] | None = None
             if getattr(context, "collaboration_root", False):
-                from app.modules.agents.auto_planner import authorized_candidates
-
-                candidates = await authorized_candidates(context.user or {})
-                entries = [{
-                    "agent_id": _text(candidate.agent_id, 128),
-                    "name": _text(candidate.name, 128),
-                    "description": _text(candidate.manifest.delegation_description),
-                    "owns": [_text(item, 128) for item in candidate.manifest.owns[:FIELD_LIMIT]],
-                    "semantic_views": list(candidate.semantic_views)[:PAGE_SIZE],
-                    "metrics": [_text(metric.get("name"), 128)
-                                for metric in candidate.metrics[:FIELD_LIMIT]
-                                if metric.get("visibility", "public") == "public"],
-                    "details_truncated": (len(candidate.metrics) > FIELD_LIMIT
-                                          or len(candidate.semantic_views) > PAGE_SIZE),
-                } for candidate in candidates[offset:offset + PAGE_SIZE]]
-                total = len(candidates)
-                kind = "specialists"
+                catalog = await collaboration_catalog(context)
+                views = catalog["views"]
+                specialists = catalog["specialists"]
+                unavailable_bindings = catalog["unavailable"]
             else:
                 views = semantic_catalog(await load_authorized_models(context))
                 unavailable_bindings = max(0, len(_context_ids(context)) - len(views))
-                entries = views[offset:offset + PAGE_SIZE]
-                total = len(views)
-                kind = "semantic_views"
+            entries = views[offset:offset + PAGE_SIZE]
+            total = len(views)
         except Exception:
             await write_audit_log(**audit, status="FAILED")
             return ToolOutcome(ok=False, summary="", error="Agent catalog is unavailable.",
@@ -155,7 +224,7 @@ class DescribeAgentTool:
                                     *self.registry.discoverable_skills)))
         data = {
             "name": _text(self.agent_name, 128),
-            kind: entries,
+            "semantic_views": entries,
             "total": total,
             "unavailable_binding_count": unavailable_bindings,
             "next_offset": offset + PAGE_SIZE if offset + PAGE_SIZE < total else None,
@@ -173,9 +242,17 @@ class DescribeAgentTool:
                 "which external data sources exist. Do not infer unlisted sources."
             ),
         }
+        summary = "Read the authorized business catalog for this agent."
+        if specialists is not None:
+            data["specialists"] = specialists[:SPECIALIST_LIMIT]
+            data["specialists_truncated"] = len(specialists) > SPECIALIST_LIMIT
+            owners = _names(specialists)
+            plural = "" if total == 1 else "s"
+            summary = (f"Read {total} Semantic View{plural} across {owners}." if owners
+                       else "No specialist Semantic Views are available.")
         audit_id = await write_audit_log(**audit, status="SUCCESS")
         return ToolOutcome(
-            ok=True, summary="Read the authorized business catalog for this agent.", data=data,
+            ok=True, summary=summary, data=data,
             evidence={"source": "agent_configuration", "audit_id": audit_id},
             metadata={"evidence_kind": "agent_catalog"},
         )

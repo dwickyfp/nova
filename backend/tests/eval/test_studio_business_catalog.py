@@ -6,7 +6,7 @@ import pytest
 
 from app.modules.agents.tools.describe_agent import DescribeAgentTool
 from app.modules.assistant.service import AssistantLoop, LoopContext
-from app.modules.assistant.tools import ToolRegistry
+from app.modules.assistant.tools import ToolOutcome, ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, text_frame, thread, tool_call_frame
 from tests.eval.harness import EvalTool, TurnResult
 
@@ -62,3 +62,126 @@ async def test_catalog_cannot_be_skipped_by_unsupported_answer(monkeypatch):
           resolve_consent=AsyncMock(return_value=False))])
     assert result.finish_reason != "stop"
     assert not any(frame.startswith("event: text_delta") for frame in result.frames)
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_trajectory_aggregates_two_specialists(monkeypatch):
+    from pathlib import Path
+
+    from app.modules.agents.auto_planner import Candidate
+    from app.modules.agents.capabilities import CapabilityManifest
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.ossie import parse_ossie
+    from app.modules.agents.tools import describe_agent
+
+    source = Path("app/modules/agents/examples/nova_sales.ossie.yaml").read_text()
+    model = SemanticModelIR.from_ossie(parse_ossie(source).as_dict())
+    owned = {
+        "sales": {"semantic_model_id": "sales", "name": "Sales", "version": 1},
+        "marketing": {"semantic_model_id": "marketing", "name": "Marketing", "version": 1},
+    }
+
+    async def load(candidate, context):
+        return [{**owned[candidate.agent_id], "_scoped_ir": model}], 1
+
+    monkeypatch.setattr(describe_agent, "write_audit_log", AsyncMock(return_value="audit"))
+    monkeypatch.setattr(describe_agent, "load_specialist_models", load)
+    monkeypatch.setattr("app.modules.agents.auto_planner.authorized_candidates", AsyncMock(
+        return_value=[Candidate(agent_id, agent_id.title(), CapabilityManifest(), (),
+                                owner_name="owner", view_ids=(agent_id,))
+                      for agent_id in owned],
+    ))
+    registry = ToolRegistry()
+    query, spawn = EvalTool("query_execute"), EvalTool("spawn_agent")
+    registry.register(query)
+    registry.register(spawn)
+    registry.register(DescribeAgentTool(registry, name="Smart"))
+    provider = ScriptedProvider([
+        tool_call_frame("delegate", name="spawn_agent", arguments={
+            "agent": "sales", "task_name": "catalog", "objective": "List your data"}),
+        tool_call_frame("catalog", name="describe_agent", arguments={"offset": 0}),
+        text_frame("Saya punya Semantic View Sales (agent Sales) dan Marketing (agent Marketing)."),
+    ], turn_plan={"intent": "agent_catalog", "tools": [], "required_tools": []})
+    context = LoopContext("reader", agent_id="__smart__", collaboration_root=True,
+                          collaboration_tools=("spawn_agent",))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, system_prompt="Smart", max_iterations=5,
+    ).run(thread=thread(), user_content="data apa yang kamu punya?", context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert not query.runs and not spawn.runs
+    assert context.selected_tools == ["describe_agent"]
+    assert context.agent_scope["catalog_scope"] == "accessible_specialists"
+    assert [(view["name"], view["agents"][0]["name"])
+            for view in context.collaboration_catalog["views"]] == [
+        ("Marketing", "Marketing"), ("Sales", "Sales"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_analyst_turn_keeps_the_analysis_tools_its_owner_enabled(monkeypatch):
+    """The planner picked only the query; the forecast the owner enabled is still callable."""
+    table = {"columns": ["month", "total_expense"], "rows": [["2026-09", "4805"]]}
+    forecast = {"columns": ["timestamp", "prediction"], "rows": [["2026-10-31", 4805.0]]}
+    registry = ToolRegistry()
+    query = EvalTool("semantic_query", outcomes=[ToolOutcome(
+        ok=True, summary="1 row", table=table,
+        data={"semantic_plan": {"metrics": ["total_expense"]}, "sql": "SELECT 1"},
+    )])
+    ml = EvalTool("ml_execute", outcomes=[ToolOutcome(
+        ok=True, summary="forecast completed", table=forecast, trace_detail={"run_id": "run-1"},
+    )])
+    registry.register(query)
+    registry.register(ml)
+    registry.register(DescribeAgentTool(registry, name="Finance"))
+    provider = ScriptedProvider([
+        tool_call_frame("q", name="semantic_query", arguments={"sql": "monthly expense"}),
+        tool_call_frame("f", name="ml_execute", arguments={"sql": "forecast"}),
+        text_frame("October is forecast at 4805."),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["semantic_query"],
+                  "required_tools": ["semantic_query"]})
+    context = LoopContext("reader", agent_id="finance")
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, system_prompt="Finance", max_iterations=8,
+        iterative=True,
+    ).run(thread=thread(read_only_grant=True), user_content="Forecast expense next month",
+          context=context, resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert len(query.runs) == 1 and len(ml.runs) == 1
+    assert "ml_execute" in context.selected_tools
+
+
+@pytest.mark.asyncio
+async def test_the_model_is_shown_the_rows_it_is_asked_to_write_about():
+    """A result that only reports its row count makes the model write blind."""
+    seen: list[list[dict]] = []
+
+    class Recording(ScriptedProvider):
+        async def stream(self, *, messages, **kwargs):
+            seen.append([dict(message) for message in messages])
+            async for frame in super().stream(messages=messages, **kwargs):
+                yield frame
+
+    table = {"columns": ["total_expense"], "rows": [["58851000000.00"]]}
+    registry = ToolRegistry()
+    registry.register(EvalTool("semantic_query", outcomes=[ToolOutcome(
+        ok=True, summary="1 row", table=table,
+        data={"semantic_plan": {"metrics": ["total_expense"]}, "sql": "SELECT 1",
+              "row_count": 1},
+    )]))
+    registry.register(DescribeAgentTool(registry, name="Finance"))
+    provider = Recording([
+        tool_call_frame("q", name="semantic_query", arguments={"sql": "total expense"}),
+        text_frame("Total expense is 58851000000.00."),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["semantic_query"],
+                  "required_tools": ["semantic_query"]})
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, system_prompt="Finance", max_iterations=6,
+        iterative=True,
+    ).run(thread=thread(read_only_grant=True), user_content="Total expense?",
+          context=LoopContext("reader", agent_id="finance"),
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    tool_message = next(m for m in seen[-1] if "semantic_query" in str(m.get("content"))
+                        and "row_count" in str(m.get("content")))
+    assert '"rows":[["58851000000.00"]]' in str(tool_message["content"]).replace(" ", "")

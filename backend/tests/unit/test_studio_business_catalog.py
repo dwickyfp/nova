@@ -129,20 +129,152 @@ async def test_catalog_paginates_without_claiming_complete(models, audit):
     assert second.data["next_offset"] is None
 
 
-@pytest.mark.asyncio
-async def test_smart_catalog_does_not_spawn_or_query(monkeypatch, audit):
+def smart_catalog(monkeypatch, bindings):
+    """Patch discovery so each specialist resolves the given models (or raises)."""
     from app.modules.agents.auto_planner import Candidate
     from app.modules.agents.capabilities import CapabilityManifest
 
-    candidate = Candidate("finance", "Finance", CapabilityManifest(owns=["revenue"]),
-                          ({"name": "revenue"},), semantic_views=({"name": "Finance view"},))
-    discover = AsyncMock(return_value=[candidate])
+    candidates = [
+        Candidate(agent_id, agent_id.title(), CapabilityManifest(owns=[agent_id]), (),
+                  owner_name="owner", view_ids=tuple(f"{agent_id}-{i}" for i in range(bound)))
+        for agent_id, (_, bound) in bindings.items()
+    ]
+
+    async def load(candidate, context):
+        models, bound = bindings[candidate.agent_id]
+        if isinstance(models, Exception):
+            raise models
+        return models, bound
+
+    discover = AsyncMock(return_value=candidates)
     monkeypatch.setattr("app.modules.agents.auto_planner.authorized_candidates", discover)
-    context = LoopContext("reader", agent_id="smart", collaboration_root=True, user={})
-    result = await DescribeAgentTool(ToolRegistry(), name="Smart").run(invocation(), context)
-    assert result.ok
-    assert result.data["specialists"][0]["metrics"] == ["revenue"]
-    assert result.data["specialists"][0]["semantic_views"] == [{"name": "Finance view"}]
+    monkeypatch.setattr(describe_agent, "load_specialist_models", load)
+    return discover
+
+
+def smart_context():
+    return LoopContext("reader", agent_id="smart", collaboration_root=True, user={})
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_combines_specialist_views_without_spawning(
+    monkeypatch, models, audit
+):
+    marketing = [{**models[0], "semantic_model_id": "marketing", "name": "Marketing"}]
+    smart_catalog(monkeypatch, {"sales": (models, 1), "marketing": (marketing, 1)})
+    registry = ToolRegistry()
+    spawn, query = EvalTool("spawn_agent"), EvalTool("query_execute")
+    registry.register(spawn)
+    registry.register(query)
+    result = await DescribeAgentTool(registry, name="Smart").run(invocation(), smart_context())
+    assert result.ok and not spawn.runs and not query.runs
+    views = result.data["semantic_views"]
+    assert [(view["name"], [agent["name"] for agent in view["agents"]]) for view in views] == [
+        ("Marketing", ["Marketing"]), ("Sales", ["Sales"]),
+    ]
+    assert views[0]["metrics"] and views[0]["dimensions"]
+    assert result.data["total"] == 2
+    assert [item["view_count"] for item in result.data["specialists"]] == [1, 1]
+    assert result.summary == "Read 2 Semantic Views across Sales and Marketing."
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_lists_a_shared_view_once_with_both_agents(
+    monkeypatch, models, audit
+):
+    smart_catalog(monkeypatch, {"sales": (models, 1), "finance": (models, 1)})
+    result = await DescribeAgentTool(ToolRegistry()).run(invocation(), smart_context())
+    assert result.data["total"] == 1
+    assert [agent["agent_id"] for agent in result.data["semantic_views"][0]["agents"]] == [
+        "sales", "finance",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_keeps_differently_pinned_versions_apart(monkeypatch, models, audit):
+    pinned = [{**models[0], "version": 1}]
+    smart_catalog(monkeypatch, {"sales": (models, 1), "finance": (pinned, 1)})
+    result = await DescribeAgentTool(ToolRegistry()).run(invocation(), smart_context())
+    assert [(view["version"], view["agents"][0]["agent_id"])
+            for view in result.data["semantic_views"]] == [("1", "finance"), ("2", "sales")]
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_isolates_an_unavailable_specialist(monkeypatch, models, audit):
+    from fastapi import HTTPException
+
+    drift = HTTPException(409, "private pin detail")
+    smart_catalog(monkeypatch, {"sales": (models, 2), "finance": (drift, 3)})
+    result = await DescribeAgentTool(ToolRegistry()).run(invocation(), smart_context())
+    assert result.ok and result.data["total"] == 1
+    assert [item["catalog_status"] for item in result.data["specialists"]] == [
+        "ok", "unavailable",
+    ]
+    assert result.data["unavailable_binding_count"] == 4
+    assert "private" not in json.dumps(result.data)
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_outage_is_not_reported_as_empty(monkeypatch, audit):
+    smart_catalog(monkeypatch, {"sales": (RuntimeError("private connection"), 1)})
+    result = await DescribeAgentTool(ToolRegistry()).run(invocation(), smart_context())
+    assert not result.ok and result.error_class == "CATALOG_UNAVAILABLE"
+    assert "private" not in result.error
+
+
+@pytest.mark.asyncio
+async def test_smart_catalog_paginates_views_and_reads_metadata_once(
+    monkeypatch, models, audit
+):
+    sales = [{**models[0], "semantic_model_id": f"s{i}", "name": f"view-{i}"} for i in range(3)]
+    finance = [{**models[0], "semantic_model_id": f"f{i}", "name": f"view-{i + 3}"}
+               for i in range(3)]
+    discover = smart_catalog(monkeypatch, {"sales": (sales, 3), "finance": (finance, 3)})
+    tool, context = DescribeAgentTool(ToolRegistry()), smart_context()
+    first = await tool.run(invocation(), context)
+    second = await tool.run(invocation(offset=4), context)
+    assert [view["name"] for view in first.data["semantic_views"]] == [
+        "view-0", "view-1", "view-2", "view-3",
+    ]
+    assert first.data["next_offset"] == 4 and first.data["total"] == 6
+    assert len(second.data["semantic_views"]) == 2 and second.data["next_offset"] is None
+    discover.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_specialist_views_resolve_through_its_release_pin(monkeypatch):
+    from app.modules.agents import releases
+    from app.modules.agents.auto_planner import Candidate
+    from app.modules.agents.capabilities import CapabilityManifest
+    from app.modules.agents.semantic import access
+
+    manifest = {"dependencies": {
+        "configuration": {"semantic_view_ids": ["pinned-view"]},
+        "semantic_views": [{"view_id": "pinned-view", "version": 1, "fingerprint": "f"}],
+    }}
+    monkeypatch.setattr(releases, "load_runtime_manifest", AsyncMock(return_value=manifest))
+    seen = {}
+
+    async def load(context):
+        seen.update(vars(context))
+        return []
+
+    monkeypatch.setattr(access, "load_authorized_models", load)
+    candidate = Candidate("sales", "Sales", CapabilityManifest(), (), owner_name="owner",
+                          release_manifest_id="release", view_ids=("draft-view",))
+    caller = LoopContext("reader", agent_id="smart", role="ANALYST",
+                         user={"username": "reader"})
+    assert await access.load_specialist_models(candidate, caller) == ([], 1)
+    assert seen["agent_id"] == "sales"
+    assert seen["semantic_view_ids"] == ["pinned-view"]
+    assert seen["release_manifest"] is manifest
+    assert seen["user"] == {"username": "reader"} and seen["role"] == "ANALYST"
+
+
+def test_smart_scope_points_at_the_combined_catalog():
+    scope = DescribeAgentTool(ToolRegistry(), name="Smart").planning_scope(smart_context())
+    assert scope["catalog_scope"] == "accessible_specialists"
+    assert "semantic_views" not in scope
 
 
 def test_studio_does_not_substitute_raw_sql_for_semantic_tool():
@@ -241,3 +373,47 @@ def test_scope_names_dimensions_shared_across_facts():
     assert scope["semantic_views"][0]["shared_dimensions"] == [
         ["sales_channel", "marketing_channel"]
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("smart", [False, True])
+async def test_only_smart_is_planned_with_specialist_routing(smart):
+    class Provider:
+        async def complete(self, **kwargs):
+            self.messages = kwargs["messages"]
+            return {"content": json.dumps({"intent": "agent_catalog", "tools": [],
+                                           "required_tools": []})}
+
+    registry = ToolRegistry()
+    tool = DescribeAgentTool(registry, name="Smart" if smart else "Sales")
+    registry.register(tool)
+    context = LoopContext("reader", agent_id="agent", collaboration_root=smart)
+    provider = Provider()
+    await plan_turn(provider_client=provider, provider=object(), registry=registry,
+                    user_content="Berapa total expense 2025?",
+                    agent_scope=tool.planning_scope(context))
+    instructions = provider.messages[0]["content"]
+    assert ("discover_agents as the only required tool" in instructions) is smart
+
+
+@pytest.mark.parametrize(("written", "read"), [
+    ("Metrik `total_expense` per `department`.", "Metrik total expense per department."),
+    ("| department | active_headcount |", "| department | active headcount |"),
+    ("Dari Semantic View keuangan dan semantic views lain.", "Dari data keuangan dan data lain."),
+    ("Total Rp12.404.000.000,00 pada 2025-01-01.", "Total Rp12.404.000.000,00 pada 2025-01-01."),
+    ("Kirim ke ops_team@example.com atau lihat /data/raw_file.csv",
+     "Kirim ke ops_team@example.com atau lihat /data/raw_file.csv"),
+    ("Lihat:\n```sql\nSELECT total_expense FROM t\n```\nlalu `net_income`.",
+     "Lihat:\n```sql\nSELECT total_expense FROM t\n```\nlalu net income."),
+])
+def test_identifiers_are_written_as_a_reader_says_them(written, read):
+    from app.modules.agents.prompt import business_wording
+
+    assert business_wording(written) == read
+
+
+def test_the_catalog_carries_a_business_label_for_every_item(models):
+    view = semantic_catalog(models)[0]
+    assert view["label"] and "_" not in view["label"]
+    assert all(item["label"] and "_" not in item["label"]
+               for item in (*view["metrics"], *view["dimensions"]))

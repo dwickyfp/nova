@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import traceback
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -31,7 +31,7 @@ from app.modules.agents.collaboration_tools import (
 )
 from app.modules.agents.harness_repository import TERMINAL, HarnessRepository, harness_repository
 from app.modules.agents.harness_tools import RequestSpecialistTool, SendAgentMessageTool
-from app.modules.agents.identity import SMART_AGENT_ID, participant_id
+from app.modules.agents.identity import AUTOMATION_SESSION, SMART_AGENT_ID, participant_id
 from app.modules.agents.memory import memory_prompt, memory_repository, select_relevant_memories
 from app.modules.agents.mission import mission_service
 from app.modules.agents.repository import agent_repository
@@ -41,7 +41,7 @@ from app.modules.agents.resource_delegation import (
     restore_resource_checkpoint,
 )
 from app.modules.agents.semantic.access import bound_view_ids
-from app.modules.agents.service import agent_service
+from app.modules.agents.service import BUDGET_PROFILES, agent_service, loop_limits
 from app.modules.assistant.answer_contract import (
     check_numeric_answer,
     finalize_verified_answer,
@@ -54,7 +54,7 @@ from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.skills import contains_credential_shape
-from app.modules.assistant.state import AssistantThread
+from app.modules.assistant.state import AssistantMessage, AssistantThread
 from app.modules.assistant.tools.redaction import is_credential_value, redact_rows
 from app.observability.metrics import (
     AGENT_WORKER_ACTIVE,
@@ -68,6 +68,18 @@ logger = logging.getLogger(__name__)
 MAX_PARALLEL_RUNS = 32
 MAX_SESSION_TOKENS = 120_000
 MAX_ROOT_TOKENS = 30_000
+#: A Smart root pays for discovery, one spawn and wait per specialist, and synthesis.
+#: The legacy coordinator limit ends a two-specialist answer before it is written.
+SMART_ROOT_TOKENS = 90_000
+#: A specialist that queries and then forecasts or diagnoses spends about 25,000
+#: tokens when asked directly; the legacy child limit stops it before it answers.
+SMART_CHILD_TOKENS = 60_000
+#: Earlier thread turns a Smart root sees, so a follow-up keeps its subject.
+ROOT_HISTORY_MESSAGES = 6
+ROOT_HISTORY_CHARS = 4000
+ANSWERED = frozenset({"stop", "out_of_scope", "clarification"})
+#: Tables and charts a Smart root may attach to its answer.
+MAX_ROOT_ARTIFACTS = 2
 MAX_CHILD_TOKENS = 20_000
 MAX_SESSION_SECONDS = 600
 MAX_EVIDENCE_TABLES = 3
@@ -78,6 +90,48 @@ MAX_CHILD_ACTIVITY_EVENTS = 200
 FINAL_MESSAGE_VISIBILITY_ATTEMPTS = 20
 MAX_DISCOVERY_ATTEMPTS = 6
 MAX_START_EVENT_ATTEMPTS = 6
+
+
+def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dict]:
+    """The table and chart a Smart answer shows: the last of each, headed in plain words.
+
+    Earlier tables are the inputs of the last one (two results, then their
+    combination, then a ratio over it), so showing them repeats the answer.
+    """
+    from app.modules.agents.tools.describe_agent import business_label
+
+    shown: list[dict] = []
+    for kind in ("table", "chart"):
+        latest = next((step for step in reversed(steps) if step.get("kind") == kind), None)
+        if latest is None:
+            continue
+        latest = dict(latest)
+        if kind == "table":
+            latest["columns"] = [business_label(column) for column in latest.get("columns") or []]
+            latest["title"] = business_label(latest.get("title") or "")
+        shown.append(latest)
+    shown = shown[:MAX_ROOT_ARTIFACTS]
+    if proposal:
+        # A schedule Smart drafted; Studio shows it with a button that creates it.
+        shown.append({"kind": "automation_proposal", **proposal})
+    return shown
+
+
+def _carried_result(evidence: dict | None, shown: list[dict]) -> dict | None:
+    """The newest result of a Smart answer that showed no table of its own.
+
+    It is kept with the message, not displayed, so the next turn can chart or
+    refine "that" without asking a specialist for the same rows again.
+    """
+    if any(item.get("kind") == "table" for item in shown):
+        return None
+    tables = [table for table in ((evidence or {}).get("tables") or {}).values()
+              if isinstance(table, dict) and table.get("columns") and table.get("rows")]
+    if not tables:
+        return None
+    latest = tables[-1]
+    return {"kind": "result", "title": str(latest.get("title") or "query result"),
+            "columns": list(latest["columns"])[:50], "rows": list(latest["rows"])[:200]}
 
 
 class AuthenticationUnavailable(RuntimeError):
@@ -200,6 +254,8 @@ class AgentHarnessWorker:
         self.waiting_runs: set[str] = set()
 
     async def _user_for(self, run: dict) -> dict:
+        if str(run.get("session_id") or "").startswith(AUTOMATION_SESSION):
+            return await self._automation_user(run)
         session = await session_store.get(str(run["session_id"]))
         if (
             not session
@@ -210,6 +266,69 @@ class AgentHarnessWorker:
         ):
             raise AuthenticationUnavailable("Session or role changed")
         return {**session, "session_id": run["session_id"]}
+
+    @staticmethod
+    async def _automation_user(run: dict) -> dict:
+        """The identity of a scheduled Smart run: its automation, checked again each time.
+
+        The run was created by the automation runner for an automation its owner
+        confirmed. It stays valid only while that automation is enabled and still
+        names this owner, role and agent, the same contract a scheduled agent run has.
+        """
+        from app.modules.agents.automations import (
+            automation_execution_user,
+            automation_repository,
+        )
+
+        automation_id = str(run["session_id"])[len(AUTOMATION_SESSION):]
+        automation = await automation_repository.get(automation_id, owner_name=run["owner_name"])
+        if (
+            not automation
+            or not automation.get("enabled")
+            or automation.get("agent_id") != SMART_AGENT_ID
+            or automation.get("role_name") != run["role_name"]
+        ):
+            raise AuthenticationUnavailable("Scheduled run is no longer authorized")
+        return {
+            **automation_execution_user(automation, str(run["thread_id"])),
+            "session_id": run["session_id"],
+        }
+
+    @asynccontextmanager
+    async def _identity(self, run: dict):
+        """Bind a scheduled run to its owner's delegated connection; else nothing."""
+        if not str(run.get("session_id") or "").startswith(AUTOMATION_SESSION):
+            yield
+            return
+        from app.core.config import settings
+        from app.modules.query.service import delegated_connection
+        from app.modules.task_orchestration.execution import (
+            CredentialUnavailable,
+            DelegateExecutor,
+            TaskSpec,
+            _dict_cursor,
+        )
+
+        if not settings.WORKER_IMPERSONATION_USER:
+            raise AuthenticationUnavailable("Scheduled runs need the worker execution account")
+        executor = DelegateExecutor(
+            None,
+            impersonation_user=settings.WORKER_IMPERSONATION_USER,
+            impersonation_password=settings.WORKER_IMPERSONATION_PASSWORD,
+            impersonation_role=settings.WORKER_IMPERSONATION_ROLE,
+        )
+        owner = run["owner_name"]
+        try:
+            async with executor.owner_connection(owner) as connection:
+                async with _dict_cursor(connection) as cursor:
+                    # Exactly one named active role, as for a scheduled task.
+                    await executor._prepare_task_session(
+                        cursor, TaskSpec(name="smart", body="", active_role=run["role_name"])
+                    )
+                with delegated_connection(owner, connection):
+                    yield
+        except CredentialUnavailable as exc:
+            raise AuthenticationUnavailable("Scheduled run could not authenticate") from exc
 
     async def process(self, run_id: str, worker_id: str) -> None:
         lease_id = f"{worker_id[:27]}:{uuid4().hex}"
@@ -291,15 +410,26 @@ class AgentHarnessWorker:
                         await self._defer_unstarted_run(run, root_id, exc)
                         return
                     await asyncio.sleep(0.2 * (2 ** attempt))
-            user = await self._user_for(run)
-            if run["depth"] == 0 and run.get("agent_id") != SMART_AGENT_ID:
-                await self._coordinate(run, user, cancelled)
-            else:
-                await self._execute_child(run, user, cancelled)
+            async with self._identity(run):
+                user = await self._user_for(run)
+                if run["depth"] == 0 and run.get("agent_id") != SMART_AGENT_ID:
+                    await self._coordinate(run, user, cancelled)
+                else:
+                    await self._execute_child(run, user, cancelled)
         except (RunCancelled, RunLeaseLost):
             pass
         except AuthenticationUnavailable:
-            if await self.repository.transition(
+            if str(run.get("session_id") or "").startswith(AUTOMATION_SESSION):
+                # Nobody signs in to resume a scheduled run: it ends here.
+                if await self.repository.transition(
+                    run_id, from_status="running", to_status="failed",
+                    lease_owner=lease_id, generation=run["generation"],
+                    error_class="scheduled_run_unauthorized",
+                ):
+                    await self.repository.event(root_id, run_id, "agent_failed", {
+                        "error_class": "scheduled_run_unauthorized",
+                    })
+            elif await self.repository.transition(
                 run_id,
                 from_status="running",
                 to_status="waiting_for_auth",
@@ -790,9 +920,15 @@ class AgentHarnessWorker:
         answer: str,
         children: list[dict],
         usage: dict | None = None,
+        artifacts: list[dict] | None = None,
+        carried: dict | None = None,
     ) -> None:
         if contains_credential_shape(answer) or is_credential_value(answer):
             answer = "The answer contained sensitive content and was withheld."
+        artifacts = artifacts or []
+        serialized = json.dumps([*artifacts, carried], default=_json_default)
+        if contains_credential_shape(serialized) or is_credential_value(serialized):
+            artifacts, carried = [], None
         await self.repository.reconcile_terminal_children(root["run_id"], children)
         message_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root['run_id']}"))
         existing = await assistant_repository.list_messages(
@@ -812,6 +948,7 @@ class AgentHarnessWorker:
                 content=answer,
                 message_id=message_id,
                 agent_id=root["agent_id"],
+                steps=[*artifacts, carried] if carried else artifacts,
                 usage={
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
@@ -846,8 +983,39 @@ class AgentHarnessWorker:
                 "agent_completed",
                 {
                     "answer": answer,
+                    # The tables and charts the root computed, shown with its answer.
+                    "artifacts": json.loads(json.dumps(artifacts, default=_json_default)),
                 },
             )
+
+    @staticmethod
+    async def _root_history(root: dict) -> list[AssistantMessage]:
+        """Earlier turns of the Studio thread, bounded, so a follow-up keeps its subject."""
+        try:
+            rows = await assistant_repository.list_messages(
+                root["thread_id"], user_name=root["owner_name"]
+            )
+        except Exception as exc:  # noqa: BLE001 - a turn without history still answers
+            logger.warning("Could not load Smart thread history: %s", type(exc).__name__)
+            return []
+        current = (root.get("payload") or {}).get("user_message_id")
+        earlier: list[dict] = []
+        for row in rows:
+            if current and row["message_id"] == current:
+                break
+            if row["role"] in {"user", "assistant"}:
+                earlier.append(row)
+        return [
+            AssistantMessage(
+                message_id=row["message_id"],
+                role=row["role"],
+                content=str(row.get("content") or "")[:ROOT_HISTORY_CHARS],
+                steps=row.get("steps") or [],
+                created_at=row["created_at"],
+                security_context=row.get("security_context"),
+            )
+            for row in earlier[-ROOT_HISTORY_MESSAGES:]
+        ]
 
     async def _execute_child(self, child: dict, user: dict, cancelled: asyncio.Event) -> None:
         is_root = child["agent_id"] == SMART_AGENT_ID and child["depth"] == 0
@@ -861,7 +1029,8 @@ class AgentHarnessWorker:
                 "owner_name": child["owner_name"],
                 "name": "Smart",
                 "description": "Solve requests directly or collaborate with governed specialists.",
-                "default_tools": ["load_skill"],
+                # Result tools read nothing: they compute and chart what specialists return.
+                "default_tools": ["load_skill", "compute_metrics", "data_to_chart"],
                 "policy": "auto_read_only",
                 "budget_seconds": 600,
                 "budget_tokens": 30000,
@@ -945,6 +1114,10 @@ class AgentHarnessWorker:
                 self.repository, child, user, on_wait=mark_waiting, enforce_lease=True
             )
             register_collaboration_tools(registry, control)
+            if is_root:
+                from app.modules.agents.tools.propose_automation import propose_automation_tool
+
+                registry.register(propose_automation_tool)
             system_prompt += collaboration_prompt(control)
         else:
             registry.register(SendAgentMessageTool(self.repository, child, root))
@@ -961,6 +1134,8 @@ class AgentHarnessWorker:
             title=child["objective"][:80],
         )
         thread.consent.always_allow_read_only = agent.get("policy") == "auto_read_only"
+        if is_root:
+            thread.messages = await self._root_history(child)
         context = LoopContext(
             user_name=child["owner_name"],
             execution_timezone=configured_timezone(),
@@ -1049,8 +1224,14 @@ class AgentHarnessWorker:
             context.start_new_mission = bool(child.get("payload", {}).get("new_mission"))
         step_limit = 32 if smart else 12
         time_limit = min(float(seconds), 600.0 if is_root else 300.0)
-        participant_token_limit = MAX_ROOT_TOKENS if is_root else MAX_CHILD_TOKENS
+        if is_root:
+            participant_token_limit = SMART_ROOT_TOKENS if smart else MAX_ROOT_TOKENS
+        else:
+            participant_token_limit = SMART_CHILD_TOKENS if smart else MAX_CHILD_TOKENS
         context_limit = min(token_budget or 24000, participant_token_limit)
+        # A specialist works as it does when asked directly: after its required query
+        # it may go on to a forecast, a diagnosis or a computation it has enabled.
+        limits = loop_limits(agent) if smart and not is_root else None
         loop = AssistantLoop(
             provider=assistant_provider,
             registry=registry,
@@ -1058,6 +1239,11 @@ class AgentHarnessWorker:
             time_budget_seconds=time_limit,
             system_prompt=system_prompt,
             context_manager=ContextManager(token_budget=context_limit),
+            spend_limit=participant_token_limit if smart else None,
+            **({
+                "max_calls_per_tool": limits.max_calls_per_tool,
+                "iterative": limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
+            } if limits else {}),
         )
         await self.repository.event(
             root["run_id"],
@@ -1171,9 +1357,16 @@ class AgentHarnessWorker:
                     )
             return incoming
 
+        if is_root and smart:
+            context.collect_results = control.list_agents
         prompt = child["objective"]
         if child["payload"].get("context"):
-            prompt += "\n\nRelevant delegated context:\n" + child["payload"]["context"]
+            # The requester's wider question is background. Read as part of the task, it
+            # makes a specialist ask about measures another specialist was given.
+            prompt += (
+                "\n\nBackground only, not part of your task (other specialists answer "
+                "what your data does not cover):\n" + child["payload"]["context"]
+            )
         parts: list[str] = []
         evidence_tables: list[dict[str, Any]] = (
             list(
@@ -1257,6 +1450,11 @@ class AgentHarnessWorker:
                 {"event_type": "omitted", "reason": "activity_limit"},
             )
         answer = "".join(parts).strip()
+        if is_root and smart:
+            from app.modules.agents.prompt import business_wording
+
+            # The reader knows the business, not the model's identifiers.
+            answer = business_wording(answer)
         if attachments:
             answer = reference_checkpoint(
                 {"answer": answer}, prompt=prompt, attachments=attachments, refs=resource_refs
@@ -1276,7 +1474,8 @@ class AgentHarnessWorker:
             answer = "The specialist result contained sensitive content and was withheld."
         await self._assert_running(child)
         await self._user_for(child)
-        status = "completed" if finish_reason == "stop" else "failed"
+        # Stating that no data covers the request, or asking what is meant, is an answer.
+        status = "completed" if finish_reason in ANSWERED else "failed"
         if is_root and status == "completed":
             async with self.repository.admission_lock(root["run_id"], child["owner_name"]) as owned:
                 tree = await self.repository.tree(
@@ -1292,8 +1491,10 @@ class AgentHarnessWorker:
                     )
                     return
                 await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
+                shown = _root_artifacts(context.steps or [], context.automation_proposal)
                 await self._finish_root(
-                    child, user, answer, [row for row in tree if row["depth"]], context.usage
+                    child, user, answer, [row for row in tree if row["depth"]], context.usage,
+                    shown, _carried_result(context.verified_evidence, shown),
                 )
             return
         latest_child = await self.repository.get(child["run_id"])

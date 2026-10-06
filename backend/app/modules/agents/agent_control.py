@@ -28,7 +28,7 @@ class CollaborationLimits:
     max_concurrent_agents: int = 8
     max_total_agent_sessions: int = 32
     max_total_turns: int = 128
-    max_total_tokens: int = 120_000
+    max_total_tokens: int = 240_000
     max_wall_time: int = 600
 
     @classmethod
@@ -165,6 +165,21 @@ class AgentControl:
                     return next(
                         row for row in tree if row["run_id"] == session["current_turn_id"]
                     ), tree
+        # A participant is also known by its task name, agent id, or agent name.
+        # Only one participant of this collaboration may answer to it.
+        alias = target.strip().casefold()
+        named = [
+            session for session in sessions
+            if alias and alias in {
+                session["agent_path"].rsplit("/", 1)[-1].casefold(),
+                str(session["agent_id"]).casefold(),
+                str(session["agent_name"]).casefold(),
+            }
+        ]
+        if len(named) == 1:
+            return next(
+                row for row in tree if row["run_id"] == named[0]["current_turn_id"]
+            ), tree
         raise ValueError("Agent is not visible in this collaboration")
 
     async def discover_agents(self, capability: str = "", *, decision: Any = None) -> list[dict]:
@@ -180,6 +195,7 @@ class AgentControl:
         return [
             {
                 **candidate.prompt_view(),
+                "abilities": list(candidate.abilities),
                 "semantic_matches": [
                     match for match in matches if match["agent_id"] == candidate.agent_id
                 ],

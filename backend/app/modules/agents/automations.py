@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.core.config import settings
 from app.core.database import db
+from app.modules.agents.identity import AUTOMATION_SESSION, SMART_AGENT_ID
 from app.modules.intelligence.contracts import Contract, Scope, SemanticRef, fingerprint
 from app.modules.intelligence.engine_repository import metadata_lock
 
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)
 MIN_INTERVAL = timedelta(minutes=15)
 MAX_AUTOMATIONS_PER_AGENT = 20
 MAX_TEXT_DELIVERED = 3000
+#: How often the runner looks at a scheduled Smart run it is waiting for.
+SMART_POLL_SECONDS = 2.0
 
 AUTOMATIONS_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS (
@@ -465,6 +468,48 @@ class AutomationRunner:
         )
         return result
 
+    async def _run_smart(self, automation: dict[str, Any], ran_at: datetime) -> RunResult:
+        """One scheduled Smart run: queue the root, let the Smart worker do the work.
+
+        The run is marked with the automation's id instead of a login session. The
+        Smart worker resolves that mark back to this automation and executes every
+        participant as the owner through the worker execution account, under the
+        role the automation was created with. Nothing here reads user data.
+        """
+        from app.modules.agents.harness_repository import harness_repository
+        from app.modules.assistant.repository import assistant_repository
+
+        owner, role = automation["owner_name"], automation["role_name"]
+        thread = await assistant_repository.create_thread(
+            user_name=owner,
+            title=f"{automation['title']} · {ran_at.date().isoformat()}",
+            agent_id=SMART_AGENT_ID,
+        )
+        thread_id = thread["thread_id"]
+        security = Scope.from_user(automation_execution_user(automation, thread_id)).model_dump()
+        question = await assistant_repository.append_message(
+            thread_id, user_name=owner, role="user", content=automation["prompt"],
+            agent_id=SMART_AGENT_ID, security_context=security,
+        )
+        root = await harness_repository.create_root(
+            owner_name=owner, thread_id=thread_id, role_name=role,
+            session_id=AUTOMATION_SESSION + automation["automation_id"],
+            security_version=1, objective=automation["prompt"],
+            user_message_id=question["message_id"],
+        )
+        status, text, tables = await _smart_outcome(
+            root["run_id"], thread_id, owner, settings.SMART_MAX_WALL_TIME + 60
+        )
+        if status != "completed":
+            return RunResult(status=f"failed:smart_{status}", thread_id=thread_id)
+        met = condition_met(automation.get("condition"), tables)
+        if met is None:
+            return RunResult(status="condition_unavailable", thread_id=thread_id, text=text)
+        if not met:
+            return RunResult(status="condition_not_met", thread_id=thread_id, text=text)
+        delivered = await _deliver(automation, owner, text)
+        return RunResult(status=delivered, thread_id=thread_id, text=text)
+
     async def _run(self, automation: dict[str, Any], ran_at: datetime) -> RunResult:
         from app.modules.agents.repository import agent_repository
         from app.modules.assistant.repository import assistant_repository
@@ -490,6 +535,8 @@ class AutomationRunner:
                 or binding.scope.session_id is not None
             ):
                 return RunResult(status="failed:execution_binding_changed", thread_id=None)
+        if automation["agent_id"] == SMART_AGENT_ID:
+            return await self._run_smart(automation, ran_at)
         agent = await agent_repository.get_agent(automation["agent_id"], owner_name=owner)
         if agent is None:
             return RunResult(status="failed:agent_missing", thread_id=None)
@@ -563,6 +610,31 @@ def automation_execution_user(automation: dict[str, Any], thread_id: str) -> dic
         user["security_context_version"] = binding.scope.security_context_version
         user["intelligence_allowed_views"] = [binding.semantic.view_id]
     return user
+
+
+async def _smart_outcome(root_id: str, thread_id: str, owner: str, wait_seconds: float):
+    """Wait for a scheduled Smart run; return its status, answer and result tables."""
+    from uuid import NAMESPACE_URL, uuid5
+
+    from app.modules.agents.harness_repository import TERMINAL, harness_repository
+    from app.modules.assistant.repository import assistant_repository
+
+    deadline = asyncio.get_running_loop().time() + wait_seconds
+    root = await harness_repository.get(root_id)
+    while root and root["status"] not in TERMINAL:
+        if asyncio.get_running_loop().time() >= deadline:
+            return "timeout", "", {}
+        await asyncio.sleep(SMART_POLL_SECONDS)
+        root = await harness_repository.get(root_id)
+    if not root or root["status"] != "completed":
+        return str((root or {}).get("status") or "missing"), "", {}
+    final_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root_id}"))
+    messages = await assistant_repository.list_messages(
+        thread_id, user_name=owner, synchronize=True
+    )
+    answer = next((m for m in messages if m["message_id"] == final_id), None)
+    tables = ((root.get("checkpoint") or {}).get("verified_evidence") or {}).get("tables") or {}
+    return "completed", str((answer or {}).get("content") or ""), tables
 
 
 async def _run_turn(

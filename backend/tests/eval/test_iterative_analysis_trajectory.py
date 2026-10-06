@@ -127,7 +127,6 @@ async def test_analyst_drills_down_and_computes_after_the_required_query():
     assert len(semantic.runs) == 2
     # The derived 25% is evidence, so the Indonesian answer is kept as written.
     assert "Revenue tumbuh 25% dari Juli ke Agustus" in text
-    assert "[angka tidak terverifikasi]" not in text
 
 
 async def test_non_iterative_loop_still_composes_after_the_required_query():

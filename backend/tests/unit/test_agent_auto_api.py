@@ -371,3 +371,42 @@ async def test_auto_sse_replay_keeps_final_message_identity(monkeypatch) -> None
     replay_done = json.loads(replay[-1].split("data: ", 1)[1])
     assert first_done["message_id"] == replay_done["message_id"]
     assert replay_done["sequence"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_follow_up_waits_for_the_previous_run_to_settle(monkeypatch) -> None:
+    """Sent the moment an answer lands, the next message is admitted, not refused."""
+    monkeypatch.setattr(
+        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+    )
+
+    @asynccontextmanager
+    async def admission_lock(_thread_id: str, _owner_name: str):
+        async def assert_owned() -> None:
+            return None
+
+        yield assert_owned
+
+    monkeypatch.setattr(router, "_require_agent", AsyncMock(return_value={}))
+    monkeypatch.setattr(router, "_require_agent_thread", AsyncMock(
+        return_value={"thread_id": "thread", "title": "Comparison"}
+    ))
+    monkeypatch.setattr(router.harness_repository, "admission_lock", admission_lock)
+    still_active = AsyncMock(side_effect=[True, True, False])
+    monkeypatch.setattr(router.harness_repository, "active_for_thread", still_active)
+    monkeypatch.setattr(router.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(router.assistant_repository, "append_message",
+                        AsyncMock(return_value={"message_id": "question-2"}))
+    create = AsyncMock(return_value={"run_id": "root-2"})
+    monkeypatch.setattr(router.harness_repository, "create_root", create)
+    monkeypatch.setattr("app.modules.agents.mission.mission_service.for_turn",
+                        AsyncMock(return_value=None))
+
+    response = await router.send_agent_message(
+        "__auto__", "thread", AgentMessageRequest(content="kalau per kategori?"), None,
+        _user("alice", "analyst"),
+    )
+
+    assert response.headers["X-Nova-Run-ID"] == "root-2"
+    assert still_active.await_count == 3
+    create.assert_awaited_once()
