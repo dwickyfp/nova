@@ -79,24 +79,29 @@ logger = logging.getLogger(__name__)
 # from app.modules.system.router import router as sys_router
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle."""
-    # Fail fast on missing/placeholder signing and encryption keys (NOVA-108).
-    # This runs before any connection is opened so a misconfigured deployment
-    # dies at boot with a clear message instead of at first login.
-    require_configured_secrets()
-    log_studio_capabilities(logger, "api")
+#: Held while one process re-registers the global LLM functions. Registration
+#: drops and recreates each function, so two processes doing it at once would
+#: leave a window in which a function a query needs does not exist.
+_LLM_UDF_LOCK = "nova:llm-functions:register"
 
-    # Startup
-    await db.init_system_pool()
-    from app.sql_frontend.capabilities.starrocks import resolve_engine_capabilities
 
-    await resolve_engine_capabilities()
-    # Align the engine's global time_zone with Nova's session pin (advisory; the
-    # per-session init_command is the guarantee). Best-effort inside the method.
-    await db.apply_global_time_zone()
-    await session_store.init()
+def _owns_control_plane(role: str) -> bool:
+    """Whether this process bootstraps schemas and runs the singleton loops."""
+    return role != "query"
+
+
+def _serves_execution(role: str) -> bool:
+    """Whether this process is where SQL and ML execution is routed."""
+    return role != "web"
+
+
+def _service_label(role: str) -> str:
+    """The ``nova_service_up`` label; the query tier reports separately."""
+    return "query" if role == "query" else "backend"
+
+
+async def _bootstrap_control_plane() -> None:
+    """Create or migrate the ``NOVA_SYSTEM`` schemas this service owns."""
     await init_nova_system()
     await ensure_search_schema()
     await ensure_semantic_view_schema()
@@ -209,27 +214,65 @@ async def lifespan(app: FastAPI):
                 type(exc).__name__,
             )
 
-    # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
-    # so they are available as SQL functions from the start.
-    try:
-        from app.modules.llm_functions.service import llm_function_service
 
-        result = await llm_function_service.register_all_udfs()
-        logger.info(
-            "LLM UDFs registered: %d ok, %d failed",
-            result["registered"],
-            result["failed"],
-        )
+async def _register_llm_udfs() -> None:
+    """Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)."""
+    from app.modules.task_orchestration.transport import LeaderLock
+
+    lock = LeaderLock(session_store._redis, key=_LLM_UDF_LOCK, ttl_seconds=120)
+    try:
+        if not await lock.acquire():
+            logger.info("LLM UDF registration is running in another process")
+            return
+        try:
+            from app.modules.llm_functions.service import llm_function_service
+
+            result = await llm_function_service.register_all_udfs()
+            logger.info(
+                "LLM UDFs registered: %d ok, %d failed",
+                result["registered"],
+                result["failed"],
+            )
+        finally:
+            await lock.release()
     except Exception as e:
         logger.warning("Failed to register LLM UDFs on startup: %s", e)
 
-    # MySQL protocol proxy. Embedded rather than a second process so the web
-    # service alone is enough to serve port 4406; `python -m app.proxy` runs the
-    # same server standalone. A proxy that cannot bind (port already taken by a
-    # standalone proxy, most likely) must not take the web service down with it.
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle."""
+    # Fail fast on missing/placeholder signing and encryption keys (NOVA-108).
+    # This runs before any connection is opened so a misconfigured deployment
+    # dies at boot with a clear message instead of at first login.
+    require_configured_secrets()
+    log_studio_capabilities(logger, "api")
+
+    # Startup
+    await db.init_system_pool()
+    from app.sql_frontend.capabilities.starrocks import resolve_engine_capabilities
+
+    await resolve_engine_capabilities()
+    # Align the engine's global time_zone with Nova's session pin (advisory; the
+    # per-session init_command is the guarantee). Best-effort inside the method.
+    await db.apply_global_time_zone()
+    await session_store.init()
+    role = settings.NOVA_PROCESS_ROLE
+    control = _owns_control_plane(role)
+    if control:
+        await _bootstrap_control_plane()
+        # So the AI_* functions are available as SQL functions from the start.
+        await _register_llm_udfs()
+
+    # MySQL protocol proxy. Embedded only in the single-process role, where the
+    # web service alone is enough to serve port 4406; a split deployment runs
+    # `python -m app.proxy`, the same server, as its own process. A proxy that
+    # cannot bind (port already taken by a standalone proxy, most likely) must
+    # not take the web service down with it.
     proxy_server = None
-    PROXY_EXPECTED.set(1 if settings.PROXY_ENABLED else 0)
-    if settings.PROXY_ENABLED:
+    embed_proxy = settings.PROXY_ENABLED and role == "all"
+    PROXY_EXPECTED.set(1 if embed_proxy else 0)
+    if embed_proxy:
         try:
             from app.proxy.server import MySQLProxyServer
 
@@ -239,11 +282,19 @@ async def lifespan(app: FastAPI):
             logger.warning("MySQL proxy did not start: %s", e)
             proxy_server = None
 
-    from app.modules.ml_engine.service import ml_engine_service
+    background: list[asyncio.Task] = []
+    if _serves_execution(role):
+        from app.modules.ml_engine.service import ml_engine_service
 
-    await ml_engine_service.ephemeral_repository.ensure_schema()
-    await search_service.start()
-    ml_cleanup = asyncio.create_task(ml_engine_service.sweep_ephemeral())
+        await ml_engine_service.ephemeral_repository.ensure_schema()
+        background.append(asyncio.create_task(ml_engine_service.sweep_ephemeral()))
+    news_stop = asyncio.Event()
+    if control:
+        from app.modules.intelligence import newsroom_refresher
+
+        await search_service.start()
+        background.append(asyncio.create_task(newsroom_refresher.run(news_stop)))
+    # Telemetry is buffered per process, so every role flushes its own.
     from app.modules.query_autopilot.repository import repository as autopilot_repository
     from app.modules.query_autopilot.telemetry import collector as autopilot_collector
 
@@ -251,23 +302,19 @@ async def lifespan(app: FastAPI):
     autopilot_flush = asyncio.create_task(
         autopilot_collector.run(autopilot_stop, autopilot_repository)
     )
-    from app.modules.intelligence import newsroom_refresher
-
-    news_stop = asyncio.Event()
-    news_refresh = asyncio.create_task(newsroom_refresher.run(news_stop))
-    SERVICE_UP.labels(service="backend").set(1)
+    service = _service_label(role)
+    SERVICE_UP.labels(service=service).set(1)
     try:
         yield
     finally:
-        SERVICE_UP.labels(service="backend").set(0)
+        SERVICE_UP.labels(service=service).set(0)
         news_stop.set()
-        news_refresh.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await news_refresh
-        ml_cleanup.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await ml_cleanup
-        await search_service.stop()
+        for task in background:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        if control:
+            await search_service.stop()
     # Shutdown
     if proxy_server is not None:
         try:
@@ -426,7 +473,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.1.0", "role": settings.NOVA_PROCESS_ROLE}
 
     app.add_api_route("/metrics", metrics_response, methods=["GET"], include_in_schema=False)
 

@@ -2,7 +2,7 @@ groups:
   - name: nova-availability
     rules:
       - alert: NovaServiceScrapeDown
-        expr: up{job=~"nova-backend|nova-scheduler|nova-worker|nova-agent-worker|nova-proxy|starrocks-fe|starrocks-be|redis|dependency-probe|prometheus|node-exporter"} == 0
+        expr: up{job=~"nova-backend|nova-query|nova-scheduler|nova-worker|nova-agent-worker|nova-proxy|starrocks-fe|starrocks-be|redis|dependency-probe|prometheus|node-exporter"} == 0
         for: 2m
         labels:
           severity: critical
@@ -49,7 +49,7 @@ groups:
   - name: nova-performance
     rules:
       - alert: NovaHttpServerErrorRateHigh
-        expr: sum(rate(nova_http_requests_total{job="nova-backend",status=~"5.."}[5m])) / clamp_min(sum(rate(nova_http_requests_total{job="nova-backend"}[5m])), 0.001) > 0.05 and sum(rate(nova_http_requests_total{job="nova-backend"}[5m])) > 0.5
+        expr: sum(rate(nova_http_requests_total{job=~"nova-backend|nova-query",status=~"5.."}[5m])) / clamp_min(sum(rate(nova_http_requests_total{job=~"nova-backend|nova-query"}[5m])), 0.001) > 0.05 and sum(rate(nova_http_requests_total{job=~"nova-backend|nova-query"}[5m])) > 0.5
         for: 5m
         labels:
           severity: warning

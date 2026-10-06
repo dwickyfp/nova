@@ -95,7 +95,10 @@ it shares that process in the default deployment. If the proxy runs as a
 separate `app.proxy` process, configure `prometheus/targets/host/proxy.yml` for
 port 9104 or `prometheus/targets/container/proxy.yml` for its container
 address. Both files are empty by default, so an unused standalone proxy target
-cannot create a false alarm.
+cannot create a false alarm. A split deployment's query tier is scraped the same
+way: list each `NOVA_PROCESS_ROLE=query` process in `query.yml` (its API port,
+8000 in the container stack). The acceptance checker covers the default
+single-process deployment; it does not require a query or proxy target.
 
 Run the read-only acceptance checker after the stack is up. It reads Grafana
 credentials from `docker/.env` and does not require a password on the command

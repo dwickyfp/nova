@@ -81,6 +81,14 @@ scrape_configs:
     file_sd_configs:
       - files: [/etc/prometheus/targets/agent-worker.yml]
 
+  # Empty by default because the backend runs SQL and ML itself. Populate
+  # query.yml only when running a separate query tier (NOVA_PROCESS_ROLE=query).
+  - job_name: nova-query
+    metrics_path: /metrics
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/query.yml]
+
   # Empty by default because the backend embeds the MySQL proxy. Populate
   # proxy.yml only when running app.proxy as a separate process.
   - job_name: nova-proxy

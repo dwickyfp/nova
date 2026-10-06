@@ -1,0 +1,59 @@
+# Split deployment: one web process, a scalable query tier, and a standalone
+# MySQL proxy, in place of the single backend process of the default stack.
+#
+#   docker compose -f docker/docker-compose-engine.yml \
+#     -f docker/docker-compose.split.yml --profile app up -d
+#   docker compose -f docker/docker-compose-engine.yml \
+#     -f docker/docker-compose.split.yml --profile app up -d --scale nova-query=3
+#
+# The web process keeps the schema bootstrap and the singleton background
+# loops, so it stays at one replica. The gateway takes over the API port.
+
+services:
+  nova-backend:
+    environment:
+      NOVA_PROCESS_ROLE: web
+      PROXY_ENABLED: "false"
+    ports: !override []
+
+  nova-query:
+    extends:
+      service: nova-backend
+      file: docker-compose-engine.yml
+    container_name: !reset null
+    environment:
+      NOVA_PROCESS_ROLE: query
+      PROXY_ENABLED: "false"
+    ports: !override []
+    depends_on:
+      nova-backend:
+        condition: service_started
+    restart: unless-stopped
+
+  nova-proxy:
+    extends:
+      service: nova-backend
+      file: docker-compose-engine.yml
+    container_name: nova-proxy
+    command: ["python", "-m", "app.proxy"]
+    environment:
+      PROXY_ENABLED: "true"
+      NOVA_METRICS_HOST: 0.0.0.0
+    ports: !override
+      - "${NOVA_MYSQL_PORT:-4406}:4406"
+    restart: unless-stopped
+
+  nova-gateway:
+    profiles: ["app"]
+    image: nginx:1.27-alpine
+    container_name: nova-gateway
+    depends_on:
+      - nova-backend
+      - nova-query
+    ports:
+      - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+    networks:
+      - nova

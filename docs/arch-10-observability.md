@@ -62,6 +62,9 @@ node exporters, and HTTP dependency probes. File service discovery selects
 either host processes launched by `dev.sh` or container application processes
 under the `app` profile. The default deployment keeps the MySQL proxy embedded in
 the API; a separate proxy can export port 9104 with an explicit target file.
+A split deployment (`NOVA_PROCESS_ROLE=query`) adds a `nova-query` job through
+`query.yml`, empty by default. API and SQL panels and alerts aggregate the
+backend and query jobs; a query process reports `nova_service_up{service="query"}`.
 Node exporter observes the Linux runtime hosting Docker. Under OrbStack or
 Docker Desktop, that is the Linux VM, not the macOS kernel or total Mac capacity.
 

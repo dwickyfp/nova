@@ -222,11 +222,60 @@ Respons yang diharapkan:
 ```json
 {
   "status": "ok",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "role": "all"
 }
 ```
 
 Biarkan terminal backend tetap berjalan.
+
+### Topologi terpisah: web, query tier, dan proxy (opsional)
+
+Secara default satu proses backend melayani semuanya: API aplikasi, eksekusi SQL
+dan ML, serta proxy MySQL di port 4406. Untuk beban data warehouse yang besar,
+ketiganya bisa dijalankan sebagai proses terpisah supaya query berat dan klien
+BI/ETL tidak memperlambat aplikasi.
+
+| Proses | Perintah | Peran |
+| --- | --- | --- |
+| Web | `NOVA_PROCESS_ROLE=web PROXY_ENABLED=false uvicorn app.main:app --port 8000` | API aplikasi, bootstrap skema `NOVA_SYSTEM`, loop latar belakang tunggal. Jalankan satu saja. |
+| Query tier | `NOVA_PROCESS_ROLE=query PROXY_ENABLED=false uvicorn app.main:app --port 8001` | `/api/v1/query/*` dan `/api/v1/ml/*`. Boleh banyak replika. |
+| Proxy MySQL | `python -m app.proxy` | Port 4406. Boleh banyak replika di belakang load balancer TCP. |
+
+`NOVA_PROCESS_ROLE` bernilai `all` (default), `web`, atau `query`. Setiap peran
+tetap memasang semua route; yang menentukan tujuan request adalah gateway:
+path yang cocok dengan `^/api/v1/(query|ml)(/|$)` ke query tier, sisanya ke web.
+Query tier tidak membuat skema, jadi proses web harus sudah berjalan lebih dulu.
+Semua proses wajib memakai `SECRET_KEY`, `FERNET_KEY`, dan Redis yang sama.
+
+Lokal, satu perintah menjalankan ketiganya dan Vite merutekan path seperti
+gateway:
+
+```bash
+./dev.sh --split
+```
+
+Dengan Docker, tambahkan file override. Gateway nginx
+(`docker/gateway/nginx.conf`) mengambil alih port API:
+
+```bash
+docker compose -f docker/docker-compose-engine.yml \
+  -f docker/docker-compose.split.yml --profile app up -d --scale nova-query=3
+```
+
+Pengaturan beban, semuanya per proses:
+
+| Variabel | Default | Arti |
+| --- | --- | --- |
+| `QUERY_MAX_CONCURRENCY` | `0` (tanpa batas) | Jumlah statement yang dijalankan API query sekaligus. Di atas batas, request ditolak dengan 429 dan `Retry-After`, serta tercatat di audit sebagai `REFUSED`. |
+| `SQL_PARSE_OFFLOAD_MIN_CHARS` | `8192` | Statement sepanjang ini atau lebih di-parse di thread terpisah agar event loop tidak tertahan. `0` mematikan. |
+| `SQL_PARSE_THREADS` | `2` | Jumlah thread parse. |
+| `PROXY_MAX_CONNECTIONS` | `100` | Sesi MySQL per proses proxy. |
+| `PROXY_MAX_ROWS` | `0` (tanpa batas) | Batas baris per statement lewat proxy. Hasil yang melebihi batas ditolak, tidak dipotong. |
+
+Thread parse menjaga proses tetap responsif, tetapi tidak menambah throughput
+karena Python tetap memakai satu core per proses. Throughput ditambah dengan
+menambah replika query tier dan proxy.
 
 ---
 

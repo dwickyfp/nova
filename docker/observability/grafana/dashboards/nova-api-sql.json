@@ -254,7 +254,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(nova_http_requests_total{job=\"nova-backend\"}[5m]))",
+          "expr": "sum(rate(nova_http_requests_total{job=~\"nova-backend|nova-query\"}[5m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -301,7 +301,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(rate(nova_http_requests_total{job=\"nova-backend\",status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(nova_http_requests_total{job=\"nova-backend\"}[5m])), 0.001)",
+          "expr": "(sum(rate(nova_http_requests_total{job=~\"nova-backend|nova-query\",status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(nova_http_requests_total{job=~\"nova-backend|nova-query\"}[5m])), 0.001)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -476,7 +476,7 @@
       },
       "targets": [
         {
-          "expr": "sum(nova_http_requests_in_flight{job=\"nova-backend\"})",
+          "expr": "sum(nova_http_requests_in_flight{job=~\"nova-backend|nova-query\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -570,7 +570,7 @@
       },
       "targets": [
         {
-          "expr": "sum by(route) (rate(nova_http_requests_total{job=\"nova-backend\"}[5m]))",
+          "expr": "sum by(route) (rate(nova_http_requests_total{job=~\"nova-backend|nova-query\"}[5m]))",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
@@ -631,7 +631,7 @@
       },
       "targets": [
         {
-          "expr": "sum by(status) (rate(nova_http_requests_total{job=\"nova-backend\"}[5m]))",
+          "expr": "sum by(status) (rate(nova_http_requests_total{job=~\"nova-backend|nova-query\"}[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -705,7 +705,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by(le) (rate(nova_http_request_duration_seconds_bucket{job=\"nova-backend\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(nova_http_request_duration_seconds_bucket{job=~\"nova-backend|nova-query\"}[5m])))",
           "legendFormat": "HTTP latency, p50",
           "refId": "A"
         }
@@ -766,7 +766,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(nova_http_request_duration_seconds_bucket{job=\"nova-backend\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(nova_http_request_duration_seconds_bucket{job=~\"nova-backend|nova-query\"}[5m])))",
           "legendFormat": "HTTP latency, p95",
           "refId": "A"
         }
@@ -827,7 +827,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by(le, route) (rate(nova_http_request_duration_seconds_bucket{job=\"nova-backend\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by(le, route) (rate(nova_http_request_duration_seconds_bucket{job=~\"nova-backend|nova-query\"}[5m])))",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
@@ -888,7 +888,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le, source) (rate(nova_sql_query_duration_seconds_bucket{job=~\"nova-backend|nova-proxy\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by(le, source) (rate(nova_sql_query_duration_seconds_bucket{job=~\"nova-backend|nova-query|nova-proxy\"}[5m])))",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -962,7 +962,7 @@
       },
       "targets": [
         {
-          "expr": "sum by(source, status) (rate(nova_sql_queries_total{job=~\"nova-backend|nova-proxy\"}[5m]))",
+          "expr": "sum by(source, status) (rate(nova_sql_queries_total{job=~\"nova-backend|nova-query|nova-proxy\"}[5m]))",
           "legendFormat": "{{source}} · {{status}}",
           "refId": "A"
         }

@@ -226,3 +226,53 @@ async def test_extension_runs_through_unmodified_query_service_with_injected_cat
     assert calls == ["SELECT 7", "SELECT 9"]
     catalog.resolve_table.assert_awaited_once()
     catalog.get_columns.assert_awaited_once()
+
+
+async def test_ml_prediction_rows_are_built_off_the_event_loop(monkeypatch):
+    import threading
+
+    import pyarrow as pa
+
+    from app.modules.ml_engine.service import ml_engine_service
+    from app.sql_frontend.execution import adapters
+
+    table = pa.table({"id": [1, 2, None], "prediction": [0.5, None, 1.5]})
+    converted_on: list[str] = []
+    original = adapters._table_rows
+
+    def recording(result_table):
+        converted_on.append(threading.current_thread().name)
+        return original(result_table)
+
+    monkeypatch.setattr(adapters, "_table_rows", recording)
+    monkeypatch.setattr(
+        ml_engine_service, "batch_predict_projected", AsyncMock(return_value=({}, table))
+    )
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
+    monkeypatch.setattr("app.modules.query.service.decrypt_password", lambda value: "caller-pw")
+    service = QueryService()
+    service._repo = AsyncMock()
+
+    result = await service.execute(
+        "SELECT id, ML_PREDICT('model', CAST(n AS DOUBLE)) AS prediction FROM numbers",
+        "alice",
+        "enc",
+        database="analytics",
+        role="analyst",
+    )
+
+    assert result.error is None
+    assert result.columns == ["id", "prediction"]
+    assert result.rows == [[1, 0.5], [2, None], [None, 1.5]] and result.row_count == 3
+    assert len(converted_on) == 1 and converted_on[0] != threading.current_thread().name
+
+
+@pytest.mark.parametrize("rows", [0, 1, 4096, 4097, 9000])
+def test_prediction_table_rows_match_the_table_across_batch_boundaries(rows):
+    import pyarrow as pa
+
+    from app.sql_frontend.execution.adapters import _table_rows
+
+    table = pa.table({"id": list(range(rows)), "label": [f"row-{i}" for i in range(rows)]})
+
+    assert _table_rows(table) == [[i, f"row-{i}"] for i in range(rows)]

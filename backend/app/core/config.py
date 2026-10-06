@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     #: to ``Asia/Jakarta`` (``database.DEFAULT_TIMEZONE``).
     NOVA_TIMEZONE: str = "Asia/Jakarta"
 
+    # --- Process role ---
+    #: Which share of the API service this process runs. ``all`` is the single
+    #: process deployment: every route, the schema bootstrap, the background
+    #: loops and the embedded MySQL proxy. A split deployment runs one ``web``
+    #: process (application API, schema bootstrap, singleton background loops)
+    #: and any number of ``query`` processes (SQL and ML execution) behind a
+    #: gateway that routes by path, with ``python -m app.proxy`` serving MySQL.
+    #: Every role mounts every route; the gateway decides where a request lands.
+    NOVA_PROCESS_ROLE: Literal["all", "web", "query"] = "all"
+
     # --- MySQL protocol proxy ---
     # Values mirror the ``proxy:`` block in docker/nova.yaml; the defaults here
     # are what the embedded lifespan uses when nothing overrides them.
@@ -54,6 +64,18 @@ class Settings(BaseSettings):
     #: deployment. Set it when the proxy is reached through a different
     #: hostname/load balancer than the web UI.
     PROXY_PUBLIC_HOST: str = ""
+
+    # --- SQL execution load ---
+    #: Statements at least this long are parsed on a worker thread so one large
+    #: script cannot hold the event loop for the whole parse. Shorter ones parse
+    #: inline, where the thread hand-off would cost more than the parse. 0 keeps
+    #: every parse inline.
+    SQL_PARSE_OFFLOAD_MIN_CHARS: int = Field(default=8192, ge=0)
+    SQL_PARSE_THREADS: int = Field(default=2, ge=1)
+    #: Statements the query API runs at once in this process; 0 means no cap.
+    #: A request over the cap is refused with 429 instead of queueing behind
+    #: work the engine has not finished.
+    QUERY_MAX_CONCURRENCY: int = Field(default=0, ge=0)
 
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"

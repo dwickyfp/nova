@@ -861,7 +861,7 @@
       },
       "targets": [
         {
-          "expr": "1 - up{job=~\"starrocks-fe|starrocks-be|nova-backend|nova-scheduler|nova-worker|nova-agent-worker|redis\"}",
+          "expr": "1 - up{job=~\"starrocks-fe|starrocks-be|nova-backend|nova-query|nova-scheduler|nova-worker|nova-agent-worker|redis\"}",
           "legendFormat": "{{job}}",
           "refId": "A"
         }

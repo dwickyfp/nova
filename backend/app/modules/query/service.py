@@ -45,7 +45,7 @@ from app.sql_frontend.capabilities.starrocks import EngineCapabilities, resolve_
 from app.sql_frontend.context import ExecutionContext, PlanningContext
 from app.sql_frontend.errors import ConfirmationRequiredError, SemanticError
 from app.sql_frontend.execution.adapters import FeatureAdapters
-from app.sql_frontend.parser import parse_statement, parsing_scope
+from app.sql_frontend.parser import parse_statement_async, parsing_scope
 from app.sql_frontend.planning.planner import SQLPlanner
 from app.storage.secrets import (
     drain_secret_resolution_facts,
@@ -322,7 +322,7 @@ class QueryService:
         ] = resolve_engine_capabilities,
     ) -> None:
         self._repo = QueryRepository()
-        self._frontend = parse_statement
+        self._frontend = parse_statement_async
         self._builders = builders if builders is not None else ast_builders
         self._planner = planner if planner is not None else SQLPlanner()
         self._catalog_provider_factory = catalog_provider_factory
@@ -421,11 +421,11 @@ class QueryService:
             if len(split_sql_statements(normalized_sql)) > 1:
                 # Direct single-result callers still receive a confirmation refusal.
                 for item in split_sql_statements(normalized_sql):
-                    candidate = self._builders.build(self._frontend(item))
+                    candidate = self._builders.build(await self._frontend(item))
                     analysis = self._planner.preflight(candidate)
                     if analysis.requires_confirmation and not confirm_destructive:
                         raise ConfirmationRequiredError(analysis.effects, analysis.statement_kind)
-            parsed = self._frontend(normalized_sql, original_sql=sql)
+            parsed = await self._frontend(normalized_sql, original_sql=sql)
             statement = self._builders.build(parsed)
             context.statements[0] = statement
             binder = Binder(
@@ -639,7 +639,7 @@ class QueryService:
                         check_confirmation=False,
                     )
                     statement = self._builders.build(
-                        self._frontend(normalized, original_sql=stmt_sql)
+                        await self._frontend(normalized, original_sql=stmt_sql)
                     )
                     analysis = self._planner.preflight(statement)
                     self._planner.semantics.validate_preflight(
@@ -708,7 +708,7 @@ class QueryService:
                         check_confirmation=False,
                     )
                     statement = self._builders.build(
-                        self._frontend(normalized, original_sql=stmt_sql)
+                        await self._frontend(normalized, original_sql=stmt_sql)
                     )
                     analysis = self._planner.preflight(statement)
                     analyses.append(analysis)
