@@ -260,6 +260,14 @@ async def _bootstrap_control_plane() -> None:
                 type(exc).__name__,
             )
 
+    # Training jobs handed to nova-worker (ML_TRAINING_EXECUTOR=worker).
+    try:
+        from app.modules.ml_engine.jobs import ml_job_repo
+
+        await ml_job_repo.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure ML job schema: %s", e)
+
     # Token usage of the AI_* SQL functions, written by the LLM gateway.
     try:
         await llm_gateway.ensure_schema()

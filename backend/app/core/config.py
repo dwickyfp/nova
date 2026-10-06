@@ -243,6 +243,15 @@ class Settings(BaseSettings):
     ML_MAX_BEST_ROWS: int = 10_000_000
     ML_MAX_BEST_BYTES: int = 8 * 1024 * 1024 * 1024
     ML_MAX_CONCURRENCY: int = 2
+    #: Where model training runs. ``local`` trains in the process that received
+    #: the request. ``worker`` queues it for ``nova-worker``, which trains as
+    #: the caller while the caller's session is live; requests without a
+    #: session still train locally.
+    ML_TRAINING_EXECUTOR: Literal["local", "worker"] = "local"
+    #: How long a queued training job may wait for a worker before it is
+    #: withdrawn and the caller is told no worker is running.
+    ML_JOB_QUEUE_TIMEOUT_SECONDS: float = 30.0
+    ML_JOB_POLL_SECONDS: float = 0.25
     ML_WORKER_PROCESSES: int = 2
     ML_ARTIFACT_STORAGE_CONNECTION: str = "production"
     ML_ARTIFACT_PREFIX: str = "nova/ml-artifacts"

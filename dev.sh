@@ -360,11 +360,11 @@ if [[ "$SPLIT" -eq 1 ]]; then
   # process runs SQL and ML, and the MySQL proxy is its own process. Vite routes
   # by path the way the gateway does in a deployment.
   run backend "$C_BLUE" "$BACKEND_DIR" \
-    "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=web PROXY_ENABLED=false \
+    "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=web PROXY_ENABLED=false ML_TRAINING_EXECUTOR=worker \
     uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
 
   run query "$C_BLUE" "$BACKEND_DIR" \
-    "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=query PROXY_ENABLED=false \
+    "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=query PROXY_ENABLED=false ML_TRAINING_EXECUTOR=worker \
     uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$QUERY_PORT"
 
   run proxy "$C_BLUE" "$BACKEND_DIR" \

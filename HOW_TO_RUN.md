@@ -238,44 +238,96 @@ BI/ETL tidak memperlambat aplikasi.
 
 | Proses | Perintah | Peran |
 | --- | --- | --- |
-| Web | `NOVA_PROCESS_ROLE=web PROXY_ENABLED=false uvicorn app.main:app --port 8000` | API aplikasi, bootstrap skema `NOVA_SYSTEM`, loop latar belakang tunggal. Jalankan satu saja. |
-| Query tier | `NOVA_PROCESS_ROLE=query PROXY_ENABLED=false uvicorn app.main:app --port 8001` | `/api/v1/query/*` dan `/api/v1/ml/*`. Boleh banyak replika. |
-| Proxy MySQL | `python -m app.proxy` | Port 4406. Boleh banyak replika di belakang load balancer TCP. |
+| Web | `NOVA_PROCESS_ROLE=web PROXY_ENABLED=false uvicorn app.main:app --port 8000` | API aplikasi, bootstrap skema `NOVA_SYSTEM`, loop latar belakang. Boleh lebih dari satu replika. |
+| Query tier | `NOVA_PROCESS_ROLE=query PROXY_ENABLED=false uvicorn app.main:app --port 8001` | Eksekusi SQL, ML, dan run assistant/agent. Boleh banyak replika. |
+| Proxy MySQL | `python -m app.proxy` | Port 4406. Boleh banyak replika. |
+| Worker | `python -m app.worker` | Task graph, migrasi, dan training ML bila `ML_TRAINING_EXECUTOR=worker`. |
 
 `NOVA_PROCESS_ROLE` bernilai `all` (default), `web`, atau `query`. Setiap peran
-tetap memasang semua route; yang menentukan tujuan request adalah gateway:
-path yang cocok dengan `^/api/v1/(query|ml)(/|$)` ke query tier, sisanya ke web.
-Query tier tidak membuat skema, jadi proses web harus sudah berjalan lebih dulu.
-Semua proses wajib memakai `SECRET_KEY`, `FERNET_KEY`, dan Redis yang sama.
+tetap memasang semua route; yang menentukan tujuan request adalah gateway
+(`docker/gateway/routes.conf`):
 
-Lokal, satu perintah menjalankan ketiganya dan Vite merutekan path seperti
+| Path | Tujuan | Catatan |
+| --- | --- | --- |
+| `/api/v1/query/*`, `/api/v1/ml/*` | Query tier, bergiliran | |
+| `/api/v1/assistant/*`, `/api/v1/agents/*`, `/api/v1/intelligence/actions/*` | Query tier, **satu replika per sesi** | Prompt persetujuan, grant, dan pembatalan run disimpan di proses yang menjalankannya, jadi gateway mengikat sesi (bearer token) ke satu replika. Bila replika itu hilang, prompt yang sedang menunggu di sana ditolak, tidak dijawab replika lain. |
+| `/api/v1/internal/*` | Ditolak (404) | Hanya untuk jaringan internal. |
+| Lainnya | Web, bergiliran | |
+
+Query tier tidak membuat skema, jadi satu proses web harus sudah siap lebih dulu.
+Bootstrap skema dijalankan bergantian memakai kunci Redis, sehingga beberapa
+replika web boleh start bersamaan. Semua proses wajib memakai `SECRET_KEY`,
+`FERNET_KEY`, dan Redis yang sama.
+
+`GET /ready` menjawab 200 hanya setelah startup selesai dan engine serta Redis
+menjawab; `GET /health` hanya menyatakan proses hidup. Gunakan `/ready` untuk
+healthcheck dan load balancer.
+
+Lokal, satu perintah menjalankan semuanya dan Vite merutekan path seperti
 gateway:
 
 ```bash
 ./dev.sh --split
 ```
 
-Dengan Docker, tambahkan file override. Gateway nginx
-(`docker/gateway/nginx.conf`) mengambil alih port API:
+Dengan Docker, tambahkan file override. Gateway nginx mengambil alih port API
+dan port MySQL, dan membagi klien MySQL ke replika proxy:
 
 ```bash
 docker compose -f docker/docker-compose-engine.yml \
-  -f docker/docker-compose.split.yml --profile app up -d --scale nova-query=3
+  -f docker/docker-compose.split.yml --profile app up -d \
+  --scale nova-query=3 --scale nova-proxy=2
 ```
+
+HTTPS di gateway bersifat opsional: salin `docker/gateway/tls.conf.example` ke
+`docker/gateway/tls/tls.conf`, taruh `tls.crt` dan `tls.key` di
+`NOVA_TLS_CERT_DIR` (default `docker/gateway/tls`, tidak ikut git), lalu restart
+`nova-gateway`. Listener tersedia di `NOVA_API_TLS_PORT` (default 8443).
 
 Pengaturan beban, semuanya per proses:
 
 | Variabel | Default | Arti |
 | --- | --- | --- |
-| `QUERY_MAX_CONCURRENCY` | `0` (tanpa batas) | Jumlah statement yang dijalankan API query sekaligus. Di atas batas, request ditolak dengan 429 dan `Retry-After`, serta tercatat di audit sebagai `REFUSED`. |
-| `SQL_PARSE_OFFLOAD_MIN_CHARS` | `8192` | Statement sepanjang ini atau lebih di-parse di thread terpisah agar event loop tidak tertahan. `0` mematikan. |
-| `SQL_PARSE_THREADS` | `2` | Jumlah thread parse. |
+| `QUERY_MAX_CONCURRENCY` | `64` | Statement yang dijalankan sekaligus lewat API query (execute, explain), route eksekusi ML, dan proxy MySQL. Di atas batas, request ditolak (429 dengan `Retry-After`, atau error MySQL) dan tercatat di audit sebagai `REFUSED`. Statement di dalam transaksi proxy yang sedang terbuka tidak pernah ditolak. `0` mematikan. |
+| `SQL_PARSE_OFFLOAD_MIN_CHARS` | `8192` | Statement sepanjang ini atau lebih diproses (guard, parse, build, plan) di thread terpisah agar event loop tidak tertahan. `0` mematikan. |
+| `SQL_PARSE_THREADS` | `2` | Jumlah thread tersebut. |
 | `PROXY_MAX_CONNECTIONS` | `100` | Sesi MySQL per proses proxy. |
 | `PROXY_MAX_ROWS` | `0` (tanpa batas) | Batas baris per statement lewat proxy. Hasil yang melebihi batas ditolak, tidak dipotong. |
+| `LLM_GATEWAY_MAX_CONCURRENCY` | `32` | Panggilan provider LLM yang diteruskan sekaligus untuk fungsi `AI_*`; sisanya menunggu. |
 
-Thread parse menjaga proses tetap responsif, tetapi tidak menambah throughput
-karena Python tetap memakai satu core per proses. Throughput ditambah dengan
-menambah replika query tier dan proxy.
+Thread menjaga proses tetap responsif, tetapi tidak menambah throughput karena
+Python tetap memakai satu core per proses. Throughput ditambah dengan menambah
+replika query tier dan proxy.
+
+### Training ML di worker
+
+`ML_TRAINING_EXECUTOR=worker` (dipakai `./dev.sh --split` dan compose split)
+membuat `CREATE ML_MODEL` dan `POST /api/v1/ml/train` mengantrekan job untuk
+`nova-worker`, lalu menunggu hasilnya; kontrak respons tidak berubah. Job tidak
+menyimpan kredensial. Worker melatih sebagai user pemanggil hanya selama sesi
+yang sama masih hidup dengan user, role aktif, dan versi security-context yang
+sama; bila tidak, job gagal dengan `session_expired`. Job yang tidak diambil
+worker dalam `ML_JOB_QUEUE_TIMEOUT_SECONDS` (30 detik) ditarik dan pemanggil
+mendapat pesan bahwa worker tidak berjalan. `GET /api/v1/ml/jobs/{job_id}`
+menampilkan status job kepada sesi yang mengantrekannya. Pemanggil tanpa sesi
+(tool agent, feature store) tetap melatih di proses yang menerima request.
+
+### Fungsi `AI_*` lewat gateway internal
+
+Body fungsi `AI_*` di StarRocks tidak lagi memuat API key provider. Fungsi
+memanggil `<LLM_GATEWAY_URL>/api/v1/internal/llm/chat/completions` dengan token
+yang hanya menunjuk satu alias; Nova yang menambahkan key provider, menentukan
+model, dan mencatat pemakaian token di `NOVA_SYSTEM.USAGE_LLM_FUNCTIONS` (terlihat
+di AI Monitoring sebagai "Measured AI function tokens").
+
+- `LLM_GATEWAY_URL` harus bisa dijangkau dari setiap BE StarRocks. Default
+  `http://host.docker.internal:8000` cocok untuk backend di host dan engine di
+  Docker; compose memakai nama service internal.
+- Token berlaku selama alias ada dan `SECRET_KEY` tidak berubah. Mengganti
+  `SECRET_KEY` mematikan semua token; fungsi didaftarkan ulang saat web start.
+- Engine tidak memberi tahu siapa yang menjalankan SQL, jadi pemakaian tercatat
+  per fungsi dan alias, bukan per user.
+- Saat start, fungsi yang sudah sesuai tidak di-drop dan dibuat ulang.
 
 ---
 

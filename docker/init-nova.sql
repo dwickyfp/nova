@@ -605,6 +605,30 @@ PROPERTIES("replication_num"="1");
 -- USAGE Schema
 -- ═══════════════════════════════════════
 
+-- Model training handed to nova-worker; a job names the caller's session and
+-- carries no credential (backend/app/modules/ml_engine/jobs.py).
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ML_JOBS (
+    id                       VARCHAR(64) NOT NULL,
+    actor                    VARCHAR(128) NOT NULL,
+    session_fingerprint      VARCHAR(64) NOT NULL,
+    active_role              VARCHAR(128),
+    security_context_version INT NOT NULL DEFAULT "1",
+    tenant                   VARCHAR(128) NOT NULL DEFAULT "default",
+    request_json             STRING NOT NULL,
+    encrypted_sql            STRING NOT NULL,
+    status                   VARCHAR(16) NOT NULL,
+    cancel_requested         BOOLEAN NOT NULL DEFAULT "false",
+    result_json              STRING,
+    error_kind               VARCHAR(32),
+    error_message            STRING,
+    created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at               DATETIME,
+    heartbeat_at             DATETIME,
+    finished_at              DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 -- Token usage of the AI_* SQL functions, summed per function and written in
 -- batches by the internal LLM gateway (backend/app/modules/llm_functions/gateway.py).
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE_LLM_FUNCTIONS (

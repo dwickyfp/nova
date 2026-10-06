@@ -104,6 +104,7 @@ async def train_model(
             horizon=req.horizon,
             frequency=req.frequency,
             mode=req.mode,
+            session_id=user.get("session_id"),
             **_tenant_options(user),
         )
         return result
@@ -390,6 +391,25 @@ async def delete_alias(
         database_name=database_name,
         **_tenant_options(user),
     )
+
+
+@router.get("/jobs/{job_id}")
+async def training_job(job_id: str, user: dict = require_user):
+    """Status of a training job queued for the worker, for the session that queued it."""
+    from app.modules.migration.jobs import session_fingerprint
+    from app.modules.ml_engine.jobs import ml_job_repo, public_status
+
+    job = await ml_job_repo.get(job_id)
+    if (
+        job is None
+        or job["actor"] != user["username"]
+        or job["active_role"] != user.get("active_role")
+        or int(job["security_context_version"]) != int(user.get("security_context_version") or 1)
+        or job["session_fingerprint"] != session_fingerprint(user.get("session_id") or "")
+    ):
+        # One answer for "no such job" and "not yours": do not confirm job ids.
+        raise HTTPException(status_code=404, detail="Training job not found")
+    return public_status(job)
 
 
 @router.post("/execute", response_model=MLExecuteResponse, dependencies=[Admitted])

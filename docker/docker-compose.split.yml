@@ -16,6 +16,8 @@ services:
     environment:
       NOVA_PROCESS_ROLE: web
       PROXY_ENABLED: "false"
+      # nova-worker trains models, so no API process holds a training run.
+      ML_TRAINING_EXECUTOR: worker
       # AI_* calls from the engine go straight to the query tier.
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-http://nova-query:8000}
     ports: !override []
@@ -34,6 +36,7 @@ services:
     environment:
       NOVA_PROCESS_ROLE: query
       PROXY_ENABLED: "false"
+      ML_TRAINING_EXECUTOR: worker
     ports: !override []
     # The web process creates the schemas a query process reads at startup.
     depends_on:

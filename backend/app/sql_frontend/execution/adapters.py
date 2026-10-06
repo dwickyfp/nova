@@ -570,6 +570,7 @@ class FeatureAdapters:
                 horizon=statement.horizon,
                 frequency=statement.frequency,
                 mode=statement.mode,
+                session_id=session_id,
             )
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             columns = [
