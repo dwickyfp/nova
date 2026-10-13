@@ -224,6 +224,8 @@ function applyEvent(
 ): TranscriptMessage[] {
   switch (event.type) {
     case "mission_updated":
+    case "ui":
+    case "ui_delta":
     case "mission_continuation":
     case "evidence_health":
     case "evidence_envelope":

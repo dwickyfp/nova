@@ -35,6 +35,7 @@ hljs.registerLanguage("sh", bash);
 const RUNNABLE_LANGUAGES = new Set(["sql", "mysql"]);
 
 type MarkdownContextValue = {
+  offline?: boolean;
   runContext?: TurnContext;
   onExecutionEvent?: (event: NoveEventInput) => void;
   onFixWithNove?: (prompt: string) => void;
@@ -81,6 +82,10 @@ function CodeBlock({
 }
 
 const components: Components = {
+  img: function MarkdownImage({ src, alt }) {
+    const { offline } = useContext(MarkdownContext);
+    return offline ? <span>{alt}</span> : <img src={src} alt={alt} />;
+  },
   code: function MarkdownCode({ className, children, ...rest }) {
     const context = useContext(MarkdownContext);
     const match = /language-(\w+)/.exec(className ?? "");
@@ -121,16 +126,20 @@ const components: Components = {
     <ol className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>
   ),
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      className="text-info-strong underline underline-offset-2"
-    >
-      {children}
-    </a>
-  ),
+  a: function MarkdownLink({ href, children }) {
+    const { offline } = useContext(MarkdownContext);
+    if (offline) return <span>{children}</span>;
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-info-strong underline underline-offset-2"
+      >
+        {children}
+      </a>
+    );
+  },
   blockquote: ({ children }) => (
     <blockquote className="my-2 border-l-2 border-border pl-3 text-muted-foreground">
       {children}
@@ -169,6 +178,7 @@ export const Markdown = memo(function Markdown({
   onExecutionEvent,
   onFixWithNove,
   representedTables,
+  offline,
 }: {
   children: string;
   className?: string;
@@ -177,10 +187,17 @@ export const Markdown = memo(function Markdown({
   onExecutionEvent?: (event: NoveEventInput) => void;
   onFixWithNove?: (prompt: string) => void;
   representedTables?: TableBlock[];
+  offline?: boolean;
 }) {
   const context = useMemo(
-    () => ({ runContext, onExecutionEvent, onFixWithNove, representedTables }),
-    [runContext, onExecutionEvent, onFixWithNove, representedTables],
+    () => ({
+      runContext,
+      onExecutionEvent,
+      onFixWithNove,
+      representedTables,
+      offline,
+    }),
+    [runContext, onExecutionEvent, onFixWithNove, representedTables, offline],
   );
 
   return (

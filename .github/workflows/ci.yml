@@ -131,6 +131,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install UI validator runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -176,6 +181,11 @@ jobs:
       NOVA_TEST_FE_HEAP_MB: "2048"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install UI validator runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -340,6 +350,9 @@ jobs:
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Intelligent UI catalog and validator drift
+        run: pnpm ui:check
 
       - name: Lint
         run: pnpm lint

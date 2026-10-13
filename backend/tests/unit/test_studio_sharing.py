@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.modules.agents import sharing, studio_router
-from app.modules.agents.sharing import shared_steps, strip_rows
+from app.modules.agents.sharing import shared_messages, shared_steps, strip_rows
 
 VIEWER = {"username": "bob", "encrypted_password": "enc", "assigned_roles": ["analyst"],
           "roles": ["analyst"], "active_role": "analyst", "session_id": "s"}
@@ -31,6 +31,21 @@ def test_snapshots_keep_plans_and_drop_every_row():
     }
     assert "rows" not in str(kept)
     assert strip_rows({"a": {"rows": [1], "data": {"x": 1}, "ok": True}}) == {"a": {"ok": True}}
+
+
+def test_shared_ui_never_exports_private_form_inputs_or_embedded_snapshots():
+    messages = shared_messages([
+        {"role": "assistant", "content": "Public fallback", "steps": [
+            {"kind": "ui", "program": "private program", "evidence": {"id": [{"amount": 42}]}}
+        ]},
+        {"role": "user", "content": "Email: private@example.com", "steps": [
+            {"kind": "ui_action", "state": {"$email": "private@example.com"}}
+        ]},
+        {"role": "assistant", "content": "private@example.com", "steps": STEPS},
+    ])
+    assert messages[0]["content"] == "Public fallback"
+    assert all(not message["steps"] for message in messages)
+    assert "private@example.com" not in str(messages)
 
 
 async def test_visible_shares_match_the_user_or_an_assigned_role(monkeypatch):
@@ -75,7 +90,7 @@ async def test_a_result_re_runs_as_the_viewer_and_is_refused_without_access(monk
     monkeypatch.setattr(assistant_repository, "get_thread",
                         AsyncMock(return_value={"agent_id": "a1"}))
     monkeypatch.setattr(assistant_repository, "list_messages",
-                        AsyncMock(return_value=[{"steps": STEPS}]))
+                        AsyncMock(return_value=[{"role": "assistant", "steps": STEPS}]))
     monkeypatch.setattr(semantic_view_service, "get_active_for_agent",
                         AsyncMock(return_value=None))
     with pytest.raises(HTTPException) as caught:
