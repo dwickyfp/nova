@@ -145,6 +145,12 @@ _SESSION_STATEMENTS = frozenset(
 
 #: Engine statements whose name prefix does not describe what they do.
 _ENGINE_STATEMENT_EFFECTS: dict[str, PlanEffects] = {
+    "CreatePipeStatementContext": PlanEffects(
+        changes_schema=True, reads_data=True, writes_data=True, external_io=True,
+    ),
+    "AlterPipeStatementContext": PlanEffects(
+        changes_schema=True, writes_data=True, external_io=True,
+    ),
     "AdminShowAutomatedSnapshotStatementContext": PlanEffects(reads_data=True),
     "AdminShowConfigStatementContext": PlanEffects(reads_data=True),
     "AdminShowReplicaDistributionStatementContext": PlanEffects(reads_data=True),
