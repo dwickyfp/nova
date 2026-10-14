@@ -28,12 +28,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { useSidebar } from "@/components/ui/sidebar-context";
+
 import { SignOutDialog } from "@/components/sign-out-dialog";
 import { ConnectionInfoDialog } from "@/components/connection-info-dialog";
 import { Input } from "@/components/ui/input";

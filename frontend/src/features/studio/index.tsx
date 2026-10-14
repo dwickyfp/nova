@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getCookie, setCookie } from "@/lib/cookies";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { agentsApi, studioApi, AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
+import {
+  agentsApi,
+  studioApi,
+  AUTO_AGENT_ID,
+  type Agent,
+} from "@/features/agents/api";
 import { api } from "@/lib/api-client";
 import { StudioChat } from "./studio-chat";
 import { StudioSidebar, type StudioView } from "./studio-sidebar";
@@ -18,6 +28,7 @@ import { StudioIntelligence } from "./studio-intelligence";
 import { NewspaperPage } from "./news/newspaper-page";
 import { ShareDialog } from "./share-dialog";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
+import { flushUiStates } from "./intelligent-ui/state";
 
 const AUTO_WHILE_CATALOG_LOADS: Agent = {
   agent_id: AUTO_AGENT_ID,
@@ -61,7 +72,7 @@ function StudioAppContent() {
     queryFn: () => agentsApi.listStudio(),
     retry: 1,
     retryDelay: 500,
-    refetchInterval: (query) => query.state.status === "error" ? 5000 : false,
+    refetchInterval: (query) => (query.state.status === "error" ? 5000 : false),
   });
   const agents = agentsQuery.data?.agents?.length
     ? agentsQuery.data.agents
@@ -85,17 +96,23 @@ function StudioAppContent() {
   // Without an active role nothing loads; say so instead of showing load errors.
   const identity = settingsQuery.data?.identity;
   const roleChoices = identity?.roles ?? [];
-  const needsRole = Boolean(identity && !identity.active_role && roleChoices.length);
+  const needsRole = Boolean(
+    identity && !identity.active_role && roleChoices.length,
+  );
   const chooseRole = async (role: string) => {
     await api.post("/auth/switch-role", { role });
     await queryClient.invalidateQueries({ queryKey: ["studio", "settings"] });
     window.location.reload();
   };
 
-  const requestedAgentId = search.agent === "__auto__" ? AUTO_AGENT_ID : search.agent;
-  const agentId = requestedAgentId && (
-    requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
-  ) ? requestedAgentId : (agents[0]?.agent_id ?? null);
+  const requestedAgentId =
+    search.agent === "__auto__" ? AUTO_AGENT_ID : search.agent;
+  const agentId =
+    requestedAgentId &&
+    (requestedAgentId === SKILL_AUTHOR_ID ||
+      agents.some((agent) => agent.agent_id === requestedAgentId))
+      ? requestedAgentId
+      : (agents[0]?.agent_id ?? null);
   const [view, setView] = useState<StudioView>(search.view ?? "chat");
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
@@ -109,7 +126,9 @@ function StudioAppContent() {
   // one, which is the opposite of what they asked for.
   const [freshChat, setFreshChat] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
-  const [sharing, setSharing] = useState<{ id: string; title: string } | null>(null);
+  const [sharing, setSharing] = useState<{ id: string; title: string } | null>(
+    null,
+  );
   // Shared with Nova's main sidebar, so the rail remembers its state whichever
   // surface set it last.
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -139,13 +158,28 @@ function StudioAppContent() {
   );
 
   const threadsQuery = useInfiniteQuery({
-    queryKey: ["agents", "threads", "all", settingsQuery.data?.identity.username, settingsQuery.data?.identity.active_role],
-    queryFn: ({ pageParam }) => pageParam ? agentsApi.listThreads(undefined, pageParam) : agentsApi.listThreads(),
+    queryKey: [
+      "agents",
+      "threads",
+      "all",
+      settingsQuery.data?.identity.username,
+      settingsQuery.data?.identity.active_role,
+    ],
+    queryFn: ({ pageParam }) =>
+      pageParam
+        ? agentsApi.listThreads(undefined, pageParam)
+        : agentsApi.listThreads(),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: settingsQuery.isSuccess,
   });
-  const threads = [...new Map(threadsQuery.data?.pages.flatMap((page) => page.threads).map((thread) => [thread.thread_id, thread]) ?? []).values()];
+  const threads = [
+    ...new Map(
+      threadsQuery.data?.pages
+        .flatMap((page) => page.threads)
+        .map((thread) => [thread.thread_id, thread]) ?? [],
+    ).values(),
+  ];
 
   const threadAgentId = (id: string) => {
     const owner = threads.find((thread) => thread.thread_id === id)?.agent_id;
@@ -165,7 +199,10 @@ function StudioAppContent() {
     if (!newest?.agent_id) return;
     navigate({
       to: "/studio",
-      search: { agent: newest.agent_id === "__auto__" ? AUTO_AGENT_ID : newest.agent_id, thread: newest.thread_id },
+      search: {
+        agent: newest.agent_id === "__auto__" ? AUTO_AGENT_ID : newest.agent_id,
+        thread: newest.thread_id,
+      },
       replace: true,
     });
   }, [
@@ -177,7 +214,13 @@ function StudioAppContent() {
     view,
   ]);
 
-  const selectAgent = (id: string) => {
+  const selectAgent = async (id: string) => {
+    try {
+      await flushUiStates();
+    } catch (error) {
+      toast.error((error as Error).message);
+      return false;
+    }
     setMobileSidebarOpen(false);
     setInitialPrompt("");
     setNewChatNonce(0);
@@ -185,9 +228,16 @@ function StudioAppContent() {
     // A new agent starts a fresh conversation, so the thread is dropped.
     setFreshChat(true);
     navigate({ to: "/studio", search: { agent: id }, replace: true });
+    return true;
   };
 
-  const selectThread = (id: string) => {
+  const selectThread = async (id: string) => {
+    try {
+      await flushUiStates();
+    } catch (error) {
+      toast.error((error as Error).message);
+      return;
+    }
     const owner = threadAgentId(id);
     if (!owner) return;
     setMobileSidebarOpen(false);
@@ -200,7 +250,13 @@ function StudioAppContent() {
     });
   };
 
-  const startNewChat = () => {
+  const startNewChat = async () => {
+    try {
+      await flushUiStates();
+    } catch (error) {
+      toast.error((error as Error).message);
+      return;
+    }
     setMobileSidebarOpen(false);
     setInitialPrompt("");
     setView("chat");
@@ -216,7 +272,10 @@ function StudioAppContent() {
   const removeThread = useMutation({
     mutationFn: (threadId: string) => {
       const owner = threadAgentId(threadId);
-      if (!owner) throw new Error("Conversation is no longer available. Refresh history.");
+      if (!owner)
+        throw new Error(
+          "Conversation is no longer available. Refresh history.",
+        );
       return agentsApi.deleteThread(owner, threadId);
     },
     onSuccess: (_result, threadId) => {
@@ -237,8 +296,8 @@ function StudioAppContent() {
       queryClient.setQueryData(["studio", "skill-author"], author);
       return author;
     },
-    onSuccess: (selected) => {
-      selectAgent(selected.agent_id);
+    onSuccess: async (selected) => {
+      if (!(await selectAgent(selected.agent_id))) return;
       setNewChatNonce((n) => n + 1);
       setInitialPrompt(`${CREATE_SKILL_COMMAND} `);
     },
@@ -248,7 +307,10 @@ function StudioAppContent() {
   const renameThread = useMutation({
     mutationFn: ({ threadId, title }: { threadId: string; title: string }) => {
       const owner = threadAgentId(threadId);
-      if (!owner) throw new Error("Conversation is no longer available. Refresh history.");
+      if (!owner)
+        throw new Error(
+          "Conversation is no longer available. Refresh history.",
+        );
       return agentsApi.renameThread(owner, threadId, title);
     },
     onSuccess: () => {
@@ -284,7 +346,13 @@ function StudioAppContent() {
         <StudioSidebar
           newsEnabled={settingsQuery.data?.identity.news_enabled === true}
           view={view}
-          onView={(nextView) => {
+          onView={async (nextView) => {
+            try {
+              await flushUiStates();
+            } catch (error) {
+              toast.error((error as Error).message);
+              return;
+            }
             setView(nextView);
             setMobileSidebarOpen(false);
             navigate({
@@ -305,7 +373,9 @@ function StudioAppContent() {
           onRenameThread={(threadId, title) =>
             renameThread.mutate({ threadId, title })
           }
-          onShareThread={(thread) => setSharing({ id: thread.thread_id, title: thread.title })}
+          onShareThread={(thread) =>
+            setSharing({ id: thread.thread_id, title: thread.title })
+          }
           threadsLoading={threadsQuery.isLoading}
           threadsError={threadsQuery.isError && !needsRole}
           onRetryThreads={() => void threadsQuery.refetch()}
@@ -317,7 +387,13 @@ function StudioAppContent() {
           footer={
             <StudioAccountMenu
               identity={settingsQuery.data?.identity}
-              memoryAgentId={agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID ? agent.agent_id : null}
+              memoryAgentId={
+                agent &&
+                agent.agent_id !== AUTO_AGENT_ID &&
+                agent.agent_id !== SKILL_AUTHOR_ID
+                  ? agent.agent_id
+                  : null
+              }
               onIdentityChange={() =>
                 queryClient.invalidateQueries({
                   queryKey: ["studio", "settings"],
@@ -329,37 +405,85 @@ function StudioAppContent() {
         />
       </div>
 
-      <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <main
+        aria-label={view === "chat" ? "Nova Studio chat" : view}
+        className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+      >
         {needsRole ? (
-          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <div
+            role="status"
+            className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground"
+          >
             <span>Choose a role to see your data and conversations.</span>
             {roleChoices.slice(0, 4).map((role) => (
-              <Button key={role} type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void chooseRole(role)}>
+              <Button
+                key={role}
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-0 text-xs"
+                onClick={() => void chooseRole(role)}
+              >
                 {role}
               </Button>
             ))}
-            {roleChoices.length > 4 ? <span>More roles are in the account menu.</span> : null}
+            {roleChoices.length > 4 ? (
+              <span>More roles are in the account menu.</span>
+            ) : null}
           </div>
         ) : agentsQuery.isError ? (
-          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-            <span>Specialists are temporarily unavailable. Smart can still try your question.</span>
-            <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>
+          <div
+            role="status"
+            className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground"
+          >
+            <span>
+              Specialists are temporarily unavailable. Smart can still try your
+              question.
+            </span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto px-0 text-xs"
+              onClick={() => void agentsQuery.refetch()}
+            >
               Retry specialists
             </Button>
           </div>
         ) : waiting.length && !waitingDismissed ? (
-          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <div
+            role="status"
+            className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground"
+          >
             <span>
               {waiting.length === 1
                 ? `${waiting[0].name} is not available here yet. Verify its access for your current role.`
                 : `${waiting.length} of your agents are not available here yet. Verify their access for your current role.`}
             </span>
             {waiting.slice(0, 3).map((item) => (
-              <Button key={item.agent_id} type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void navigate({ to: "/agents/$agentId", params: { agentId: item.agent_id } })}>
+              <Button
+                key={item.agent_id}
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-0 text-xs"
+                onClick={() =>
+                  void navigate({
+                    to: "/agents/$agentId",
+                    params: { agentId: item.agent_id },
+                  })
+                }
+              >
                 {waiting.length === 1 ? "Open access settings" : item.name}
               </Button>
             ))}
-            <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setWaitingDismissed(true)}>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto px-0 text-xs"
+              onClick={() => setWaitingDismissed(true)}
+            >
               Dismiss
             </Button>
           </div>
@@ -397,27 +521,73 @@ function StudioAppContent() {
           <NewspaperPage
             story={search.story}
             edition={search.edition}
-            onEdition={(edition) => navigate({ to: "/studio", search: { view: "news", edition }, replace: true })}
-            onOpen={(story) => navigate({ to: "/studio", search: { view: "news", story, edition: search.edition }, replace: true })}
-            onAlerts={() => navigate({ to: "/studio", search: { view: "news", desk: "alerts" }, replace: true })}
+            onEdition={(edition) =>
+              navigate({
+                to: "/studio",
+                search: { view: "news", edition },
+                replace: true,
+              })
+            }
+            onOpen={(story) =>
+              navigate({
+                to: "/studio",
+                search: { view: "news", story, edition: search.edition },
+                replace: true,
+              })
+            }
+            onAlerts={() =>
+              navigate({
+                to: "/studio",
+                search: { view: "news", desk: "alerts" },
+                replace: true,
+              })
+            }
             onFollowUp={(prompt) => {
               setInitialPrompt(prompt);
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
               setView("chat");
-              navigate({ to: "/studio", search: { agent: agentId ?? undefined }, replace: true });
-            }} />
+              navigate({
+                to: "/studio",
+                search: { agent: agentId ?? undefined },
+                replace: true,
+              });
+            }}
+          />
         ) : view === "news" || view === "decisions" ? (
-          <StudioIntelligence view={view} item={search.item}
-            onDecision={(item) => { setView("decisions"); navigate({ to: "/studio", search: { view: "decisions", item }, replace: true }); }}
-            onOpen={(item) => navigate({ to: "/studio", search: view === "news" ? { view, item, desk: "alerts" } : { view, item }, replace: true })}
+          <StudioIntelligence
+            view={view}
+            item={search.item}
+            onDecision={(item) => {
+              setView("decisions");
+              navigate({
+                to: "/studio",
+                search: { view: "decisions", item },
+                replace: true,
+              });
+            }}
+            onOpen={(item) =>
+              navigate({
+                to: "/studio",
+                search:
+                  view === "news"
+                    ? { view, item, desk: "alerts" }
+                    : { view, item },
+                replace: true,
+              })
+            }
             onFollowUp={(prompt) => {
               setInitialPrompt(prompt);
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
               setView("chat");
-              navigate({ to: "/studio", search: { agent: agentId ?? undefined }, replace: true });
-            }} />
+              navigate({
+                to: "/studio",
+                search: { agent: agentId ?? undefined },
+                replace: true,
+              });
+            }}
+          />
         ) : view === "artifacts" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />
         ) : view === "dashboards" ? (

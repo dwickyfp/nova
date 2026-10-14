@@ -160,9 +160,9 @@ Nova Console exposes the data and control foundation across these layers.
 
 ## The Nova app
 
-These images are captures of a local development instance running demo sales
-data. The Studio workspace shows a saved conversation in which Smart delegated
-the question to a Sales Agent.
+The Console images show a local instance with demo sales data. We captured Studio
+from the current production frontend using deterministic demo responses and
+simulated planning figures.
 
 ### SQL Workspace
 
@@ -172,15 +172,24 @@ the question to a Sales Agent.
 
 ![Nova Database Explorer browsing the tables of a sales database](docs/assets/readme/database-explorer.png)
 
-### Nova Studio: governed intelligence workspace
+### Nova Studio: interactive answers
 
-![Nova Studio answering a revenue question through a Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
+Studio opens with suggested requests and a composer for choosing agents and
+attaching files.
 
-Smart mode answers across agents as one analyst. In this recording, shown at four
-times speed, it describes the data it can reach, combines expense from a Finance
-agent with headcount from an HR agent, and charts the result.
+![Nova Studio welcome screen with suggested requests and the Smart composer](docs/assets/readme/nova-studio-welcome.png)
 
-![Nova Studio in Smart mode answering three questions: what data it has, expense and active employees by department, and a chart of expense by department](docs/assets/readme/nova-studio-smart-chat.gif)
+Answers can include calculators, forms, and filterable charts. This budget planner
+updates its estimate as the team size, weekly cost, or duration changes.
+
+![Nova Studio showing an interactive launch budget calculator and a filterable channel spending chart with simulated figures](docs/assets/readme/nova-studio-chat-preview.png)
+
+The recording shows a team size change, a chart filter, saved inputs restored after
+reload, and a follow-up sent through the planner's review button.
+
+![Nova Studio demo changing budget assumptions, filtering the chart, restoring saved inputs, and requesting a review](docs/assets/readme/nova-studio-intelligent-ui.gif)
+
+[Watch the MP4 recording](docs/assets/readme/nova-studio-intelligent-ui.mp4).
 
 ### Nova Studio capabilities
 

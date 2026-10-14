@@ -851,6 +851,7 @@ async def exercise_development_stories(client, resources, learned, monkeypatch):
                 assert knowledge["authority"] == "observed_outcome"
                 assert knowledge["definition"]["outcome_revision"] == outcome["revision"]
                 assert knowledge["semantic"] == semantic
+                from app.modules.agents.router import CREATE_THREAD_TITLE_PROMPT
                 from tests.benchmark.business_intelligence.scripted_provider import ScriptedBoundary
 
                 followup_question = (
@@ -871,7 +872,10 @@ async def exercise_development_stories(client, resources, learned, monkeypatch):
                         actual=outcome["actual"],
                         **kwargs,
                     ):
-                        if messages[-1].get("content") == question:
+                        if (
+                            messages[0].get("content") != CREATE_THREAD_TITLE_PROMPT
+                            and messages[-1].get("content") == question
+                        ):
                             context = "\n".join(str(row.get("content") or "") for row in messages)
                             assert reference in context
                             assert "[INFERRED]" in context

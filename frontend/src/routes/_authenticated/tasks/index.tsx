@@ -6,22 +6,20 @@ import { MonitoringPageScroller } from "@/features/monitoring";
 import { TaskList } from "@/features/task-orchestration";
 
 export const Route = createFileRoute("/_authenticated/tasks/")({
-  component: RouteComponent,
+  component: function RouteComponent() {
+    return (
+      <>
+        <Header>
+          <Search className="me-auto" />
+        </Header>
+        <Main fixed className="min-h-0">
+          <MonitoringPageScroller>
+            <div className="flex min-h-full flex-col">
+              <TaskList />
+            </div>
+          </MonitoringPageScroller>
+        </Main>
+      </>
+    );
+  },
 });
-
-function RouteComponent() {
-  return (
-    <>
-      <Header>
-        <Search className="me-auto" />
-      </Header>
-      <Main fixed className="min-h-0">
-        <MonitoringPageScroller>
-          <div className="flex min-h-full flex-col">
-            <TaskList />
-          </div>
-        </MonitoringPageScroller>
-      </Main>
-    </>
-  );
-}

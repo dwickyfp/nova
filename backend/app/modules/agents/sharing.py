@@ -76,6 +76,8 @@ def shared_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     for step in steps or []:
         if not isinstance(step, dict):
             continue
+        if step.get("kind") in {"ui", "ui_action"}:
+            continue
         kept = strip_rows(step)
         trace = step.get("trace_detail") or {}
         if step.get("kind") == "tool" and step.get("name") == "semantic_query":
@@ -85,6 +87,24 @@ def shared_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
                 if key in trace
             }
         output.append(kept)
+    return output
+
+
+def shared_messages(messages: list[dict]) -> list[dict]:
+    private = False
+    output = []
+    for message in messages:
+        steps = message.get("steps") or []
+        private = private or any(isinstance(step, dict) and step.get("kind") == "ui_action"
+                                 for step in steps)
+        if message.get("role") not in {"user", "assistant"}:
+            continue
+        output.append({
+            **message,
+            "content": ("This part uses private interactive inputs. Continue in your own "
+                        "conversation." if private else message.get("content", "")),
+            "steps": [] if private else shared_steps(steps),
+        })
     return output
 
 

@@ -5,18 +5,16 @@ import { Search } from '@/components/search'
 import FunctionsPage from '@/features/functions'
 
 export const Route = createFileRoute('/_authenticated/functions/')({
-  component: RouteComponent,
+  component: function RouteComponent() {
+    return (
+      <>
+        <Header>
+          <Search className='me-auto' />
+        </Header>
+        <Main scroll>
+          <FunctionsPage />
+        </Main>
+      </>
+    )
+  },
 })
-
-function RouteComponent() {
-  return (
-    <>
-      <Header>
-        <Search className='me-auto' />
-      </Header>
-      <Main scroll>
-        <FunctionsPage />
-      </Main>
-    </>
-  )
-}

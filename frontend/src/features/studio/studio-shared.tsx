@@ -18,7 +18,7 @@ import {
   type Share,
   type SharedThread,
 } from "@/features/agents/studio-intelligence-api";
-import { chartSpecWithRows } from "./studio-artifacts";
+import { chartSpecWithRows } from "./artifact-chart-spec";
 
 /** Conversations and dashboards others shared with you, run with your own access. */
 export function StudioShared() {

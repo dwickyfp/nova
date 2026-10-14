@@ -154,6 +154,9 @@ class LoopContext:
     user_name: str
     collaboration_tools: tuple[str, ...] = ()
     collaboration_root: bool = False
+    intelligent_ui: bool = False
+    ui_prompt: str = ""
+    ui_private_context: bool = False
     business_turn_hook: Any = None
     mission_continuation: dict | None = None
     business_result_hook: Any = None
@@ -302,6 +305,7 @@ _TOOL_MARKUP = re.compile(
 )
 
 REPAIR_LIMITS = {
+    "intelligent_ui": 1,
     "composer_tool_call": 1,
     "missing_required": 1,
     "business_evidence": 2,
@@ -1060,6 +1064,12 @@ class AssistantLoop:
             summary_lookup=lambda lines: summary_cache.get(thread_key, lines),
         )
         messages = self._build_messages(thread, user_content, context, route=route)
+        from app.modules.assistant.intelligent_ui import composer_prompt
+
+        context.ui_prompt = composer_prompt(
+            enabled=context.intelligent_ui, presentation=turn_plan.presentation,
+            token_room=self._context_manager.token_budget - estimate_messages_tokens(messages),
+        )
         language = _turn_language(context)
         if context.intent_frame is not None:
             leading = next(
@@ -1311,6 +1321,13 @@ class AssistantLoop:
                         len(json.dumps(current_schemas, separators=(",", ":"), default=str)) // 4
                     )
                     message_budget = self._context_manager.token_budget - schema_tokens
+                    if context.ui_prompt and estimate_messages_tokens(messages) > message_budget:
+                        messages = [{**item, "content": item["content"].replace(
+                            "\n" + context.ui_prompt, ""
+                        )} if isinstance(item.get("content"), str) else item for item in messages]
+                        context.ui_prompt = ""
+                        _record_step(context, {"kind": "runtime_decision",
+                                               "ui_fallback": "context_budget", "status": "done"})
                     if message_budget > 0:
                         curated_request = ContextManager(
                             token_budget=message_budget,
@@ -1455,11 +1472,20 @@ class AssistantLoop:
                         for item in evidence.import_results(participant):
                             table = evidence.tables.get(item.evidence_id) or {}
                             context.last_result = {**table, "title": item.summary}
+                if context.ui_prompt and not composing_final:
+                    composing_final = True
+                    messages.append({"role": "system", "content": _final_composer_prompt(
+                        evidence, context
+                    )})
+                    continue
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
-                draft, answer_claims = split_claims("".join(buffered_text))
-                if answer_claims is not None:
-                    buffered_text = [draft]
+                draft_text, answer_claims = split_claims("".join(buffered_text))
+                from app.modules.assistant.intelligent_ui import split_program
+
+                fallback_markdown, ui_program = split_program(draft_text)
+                if answer_claims is not None or fallback_markdown != draft_text:
+                    buffered_text = [fallback_markdown]
                 language = _turn_language(context)
                 # A turn that already holds results answers from them, verified like any
                 # other answer, even when a later step could not be expressed.
@@ -1707,6 +1733,42 @@ class AssistantLoop:
                     "missing_metrics": missing_metrics,
                 }
                 context.verified_evidence = evidence.snapshot()
+                if ui_program and context.ui_prompt:
+                    from app.modules.assistant.intelligent_ui import (
+                        UiValidationError,
+                        compose_block,
+                    )
+
+                    try:
+                        ui_block = await compose_block(
+                            ui_program, answer_text, tables=answer_tables,
+                            business=route.needs_data or business_request,
+                            private_context=bool(
+                                context.attachments or context.has_attachment_history
+                                or context.ui_private_context
+                            ),
+                            question=_asked(thread, user_content), claims=answer_claims,
+                            language=language,
+                        )
+                    except UiValidationError:
+                        if repairs.take("intelligent_ui"):
+                            messages.append({"role": "system", "content": (
+                                "The interactive program failed validation. Repair it once: "
+                                "use only the Nova catalog, valid declared state and exact "
+                                "@Evidence ids; business values must bind verified results, "
+                                "and media/HTML must be static public content. Keep the "
+                                "verified Markdown fallback. Include a useful Markdown answer "
+                                "even when omitting the program."
+                            )})
+                            continue
+                        _record_step(context, {
+                            "kind": "runtime_decision", "ui_fallback": "validation_failed",
+                            "status": "done",
+                        })
+                    else:
+                        pending_artifacts.append(PendingArtifact("ui", ui_block))
+                if not answer_text.strip():
+                    answer_text = say("loop.ui_unavailable", language)
                 for frame in _ordered_output_frames(
                     answer_text,
                     pending_artifacts,
@@ -2251,7 +2313,7 @@ class AssistantLoop:
                     )
                     composing_final = True
                     messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence)}
+                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
                     )
                     continue
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
@@ -2581,7 +2643,7 @@ class AssistantLoop:
                 # now, rather than spend the rest on a call that ends the turn empty.
                 composing_final = True
                 messages.append(
-                    {"role": "system", "content": _final_composer_prompt(evidence)}
+                    {"role": "system", "content": _final_composer_prompt(evidence, context)}
                 )
             elif self._iterative and not context.collaboration_root:
                 remaining_steps = self._max_iterations - _iteration - 1
@@ -2598,14 +2660,14 @@ class AssistantLoop:
                 ):
                     composing_final = True
                     messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence)}
+                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
                     )
             elif required_done:
                 composing_final = True
                 messages.append(
                     {
                         "role": "system",
-                        "content": _final_composer_prompt(evidence),
+                        "content": _final_composer_prompt(evidence, context),
                     }
                 )
 
@@ -3164,7 +3226,7 @@ def _studio_fallback_plan(
     )
 
 
-def _final_composer_prompt(evidence: EvidenceTracker) -> str:
+def _final_composer_prompt(evidence: EvidenceTracker, context: LoopContext | None = None) -> str:
     return (
         "<FINAL_COMPOSER>\n"
         "Tools are disabled. Answer only from the verified evidence JSON below. "
@@ -3174,6 +3236,11 @@ def _final_composer_prompt(evidence: EvidenceTracker) -> str:
         "one result column. State uncertainty when evidence is incomplete.\n"
         + evidence.composer_context()
         + "\n</FINAL_COMPOSER>"
+        + ("\n" + context.ui_prompt if context and context.ui_prompt else "")
+        + ("\nThis conversation contains private form or attachment inputs. "
+           "Do not use public media, external links or HtmlView."
+           if context and (context.ui_private_context or context.attachments
+                           or context.has_attachment_history) else "")
     )
 
 
@@ -3432,6 +3499,19 @@ def _ordered_output_frames(
                     "chart_spec": chart_spec,
                 },
             )
+        elif kind == "ui":
+            payload = dict(item["payload"])
+            program = payload.pop("program")
+            frames.append(events.format_sse("ui", {
+                "content_index": index, "content_id": content_id, "payload": payload,
+            }))
+            for offset in range(0, len(program), 4096):
+                frames.append(events.format_sse("ui_delta", {
+                    "content_index": index, "content_id": content_id,
+                    "text": program[offset:offset + 4096],
+                }))
+            _record_step(context, {"kind": "ui", "content_index": index,
+                                   "content_id": content_id, **payload, "program": program})
         elif kind == "citation":
             payload = dict(item["payload"])
             frames.append(events.citation(payload, content_index=index, content_id=content_id))

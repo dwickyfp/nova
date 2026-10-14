@@ -2,11 +2,11 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent, page } from "vitest/browser";
-import {
-  QueryConfirmationDialog,
-  snapshotQuery,
-  type QuerySnapshot,
-} from "./query-confirmation";
+import { QueryConfirmationDialog } from "./query-confirmation";
+import { type QuerySnapshot } from "./query-snapshot";
+
+import { snapshotQuery } from "./query-snapshot";
+
 import "@/styles/index.css";
 import { AssistantPanel } from "@/features/assistant/assistant-panel";
 

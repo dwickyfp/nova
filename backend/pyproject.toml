@@ -22,11 +22,12 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "joblib>=1.5.3",
     "numpy>=2.4.6",
+    "scipy>=1.17.1,<1.18",
     "pyarrow>=19.0.0",
     "adbc-driver-flightsql>=1.5.0",
     "adbc-driver-manager>=1.5.0",
     "flaml[automl]>=2.3.6",
-    "statsforecast>=2.0.1",
+    "statsforecast>=2.1.1",
     "pyod>=2.0.5",
     "pandas>=2.2.3",
     "antlr4-python3-runtime==4.13.2",
@@ -50,6 +51,7 @@ dev = [
     { include-group = "test" },
 ]
 test = [
+    "httpx2>=2.13.1",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
     "pytest-cov>=6.0.0",
@@ -69,6 +71,7 @@ default-groups = ["dev"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--strict-markers"
+filterwarnings = ["error"]
 markers = [
     "engine: requires the real StarRocks/Redis/MinIO stack from docker-compose.test.yml",
     "functional_sql: exhaustive SQL matrix against explicitly configured Nova proxy and API",

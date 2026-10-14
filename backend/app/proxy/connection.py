@@ -282,6 +282,7 @@ class ProxyConnection:
             )
             return False
 
+        self._ctx.upstream = upstream
         if upstream.connection_id:
             self._ctx.connection_id = upstream.connection_id
         try:
@@ -331,7 +332,6 @@ class ProxyConnection:
         # as an asyncmy connection is what lets the query pipeline run under the
         # client's own RBAC without a password the proxy does not have.
         self._ctx.connection = await upstream.open_session()
-        self._ctx.upstream = upstream
 
         requested_role = response.connect_attrs.get("nova_role") or None
         if settings.RANGER_ENABLED or requested_role is not None:

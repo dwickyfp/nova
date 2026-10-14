@@ -25,7 +25,17 @@ def train_clustering(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     preprocessor = FeaturePreprocessor(features, scale_numeric=True)
     X = preprocessor.fit_transform(table)
     X = bounded_dense(X, max_bytes=spec.budget.max_bytes if spec.budget else None)
+    if np.all(X[0] == X):
+        raise ValueError("Clustering produced only a single cluster or noise")
     max_k = min(int(spec.parameters.get("max_clusters", 8)), max(2, int(np.sqrt(len(X)))))
+    # Keep at most max_k row views instead of allocating a second feature matrix.
+    distinct_rows = [X[0]]
+    for row in X[1:]:
+        if not any(np.array_equal(row, other) for other in distinct_rows):
+            distinct_rows.append(row)
+            if len(distinct_rows) >= max_k:
+                break
+    max_k = min(max_k, len(distinct_rows))
     candidates = []
     for k in range(2, max_k + 1):
         if len(X) > 20_000:
@@ -58,7 +68,19 @@ def train_clustering(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     evaluated = []
     sample_limit = min(len(X), 10_000)
     for name, model in candidates:
-        labels = model.fit_predict(X) if hasattr(model, "fit_predict") else model.fit(X).predict(X)
+        if isinstance(model, Birch):
+            requested_clusters = model.n_clusters
+            model.set_params(n_clusters=None).fit(X)
+            if len(model.subcluster_centers_) < requested_clusters:
+                continue
+            model.set_params(n_clusters=requested_clusters).partial_fit()
+            labels = model.predict(X)
+        else:
+            labels = (
+                model.fit_predict(X)
+                if hasattr(model, "fit_predict")
+                else model.fit(X).predict(X)
+            )
         unique = np.unique(labels[labels >= 0])
         if len(unique) < 2:
             continue

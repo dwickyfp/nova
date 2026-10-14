@@ -86,6 +86,25 @@ MESSAGES_ADD_COLUMNS_DDL = (
     "ALTER TABLE NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES ADD COLUMN {column} {type}"
 )
 
+UI_STATE_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_UI_STATE (
+    state_id VARCHAR(64) NOT NULL,
+    user_name VARCHAR(128) NOT NULL,
+    thread_id VARCHAR(64) NOT NULL,
+    message_id VARCHAR(64) NOT NULL,
+    content_id VARCHAR(64) NOT NULL,
+    active_role VARCHAR(128) NOT NULL,
+    security_context_version BIGINT NOT NULL,
+    program_sha256 VARCHAR(64) NOT NULL,
+    revision BIGINT NOT NULL,
+    state JSON NOT NULL,
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(state_id)
+DISTRIBUTED BY HASH(state_id) BUCKETS 1
+ORDER BY (user_name, thread_id, message_id)
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
 
 def _dump(value: Any) -> str:
     """Serialize a JSON column value. StarRocks accepts a JSON string literal."""
@@ -139,6 +158,7 @@ class AssistantRepository:
     """CRUD for assistant threads and messages, always user-scoped."""
 
     async def ensure_schema(self) -> None:
+        await db.execute_system(UI_STATE_DDL)
         await db.execute_system(THREADS_DDL)
         # Additive: a pre-existing threads table predates ``agent_id``. A fresh
         # table already has it, so a duplicate-column error is expected and
@@ -188,6 +208,92 @@ class AssistantRepository:
                     raise
 
     # ── Threads ────────────────────────────────────────────────
+
+    async def ui_source(self, thread_id: str, message_id: str, content_id: str, *,
+                        user_name: str, security_context: dict) -> dict | None:
+        result = await db.execute_system(
+            "SELECT role,security_context,steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+            "WHERE thread_id=%s AND message_id=%s AND user_name=%s",
+            [thread_id, message_id, user_name],
+        )
+        if not result["rows"]:
+            return None
+        row = result["rows"][0]
+        stamp = _security_or_none(row[1]) if len(row) == 3 else None
+        if not stamp or row[0] != "assistant" or any(
+            stamp.get(key) != security_context.get(key)
+            for key in ("principal", "active_role", "security_context_version")
+        ):
+            return None
+        blocks = [step for step in _steps_or_empty(row[2]) if isinstance(step, dict)
+                  and step.get("kind") == "ui" and step.get("content_id") == content_id]
+        return blocks[0] if len(blocks) == 1 else None
+
+    async def get_ui_state(self, thread_id: str, message_id: str, content_id: str, *,
+                           user_name: str, security_context: dict, block: dict) -> dict:
+        result = await db.execute_system(
+            "SELECT revision,state,program_sha256 FROM NOVA_SYSTEM.CONFIG_ASSISTANT_UI_STATE "
+            "WHERE user_name=%s AND thread_id=%s AND message_id=%s AND content_id=%s "
+            "AND active_role=%s AND security_context_version=%s AND program_sha256=%s",
+            [user_name, thread_id, message_id, content_id, security_context["active_role"],
+             security_context["security_context_version"], block["program_sha256"]],
+        )
+        if not result["rows"]:
+            return {"revision": 0, "state": block["state_defaults"],
+                    "program_sha256": block["program_sha256"]}
+        import json
+
+        revision, state, digest = result["rows"][0]
+        from app.modules.assistant.intelligent_ui import validate_state
+
+        decoded = json.loads(state) if isinstance(state, str) else state
+        validate_state(decoded, block["state_defaults"])
+        return {"revision": int(revision), "state": decoded, "program_sha256": digest}
+
+    async def put_ui_state(self, thread_id: str, message_id: str, content_id: str, *,
+                           user_name: str, security_context: dict, block: dict,
+                           revision: int, state: dict) -> dict:
+        import hashlib
+
+        from fastapi import HTTPException
+
+        from app.modules.assistant.intelligent_ui import validate_state
+        from app.modules.intelligence.engine_repository import metadata_lock
+
+        validate_state(state, block["state_defaults"])
+        state_id = hashlib.sha256(_dump([
+            user_name, thread_id, message_id, content_id, security_context["active_role"],
+            security_context["security_context_version"], block["program_sha256"],
+        ]).encode()).hexdigest()
+        async with metadata_lock(f"assistant-ui:{state_id}") as lease:
+            current = await self.get_ui_state(
+                thread_id, message_id, content_id, user_name=user_name,
+                security_context=security_context, block=block,
+            )
+            if current["revision"] != revision:
+                raise HTTPException(409, "UI state changed on another device; reload saved state")
+            if not await lease.renew():
+                raise HTTPException(409, "UI state write lease expired")
+            await db.execute_system(
+                "INSERT INTO NOVA_SYSTEM.CONFIG_ASSISTANT_UI_STATE "
+                "(state_id,user_name,thread_id,message_id,content_id,active_role,"
+                "security_context_version,program_sha256,revision,state,updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                [state_id, user_name, thread_id, message_id, content_id,
+                 security_context["active_role"], security_context["security_context_version"],
+                 block["program_sha256"], revision + 1, _dump(state), _now()],
+            )
+            return {"revision": revision + 1, "state": state,
+                    "program_sha256": block["program_sha256"]}
+
+    async def ui_action_seen(self, thread_id: str, operation_id: str, *, user_name: str) -> bool:
+        result = await db.execute_system(
+            "SELECT message_id FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+            "WHERE user_name=%s AND thread_id=%s AND role='user' "
+            "AND get_json_string(CAST(steps AS VARCHAR),'$[0].operation_id')=%s LIMIT 1",
+            [user_name, thread_id, operation_id],
+        )
+        return bool(result["rows"])
 
     async def disable_learning(self, thread_id: str, *, user_name: str) -> None:
         await db.execute_system(
@@ -468,6 +574,10 @@ class AssistantRepository:
         return await self.get_thread(thread_id, user_name=user_name)
 
     async def delete_thread(self, thread_id: str, *, user_name: str) -> bool:
+        await db.execute_system(
+            "DELETE FROM NOVA_SYSTEM.CONFIG_ASSISTANT_UI_STATE "
+            "WHERE thread_id=%s AND user_name=%s", [thread_id, user_name],
+        )
         # Delete messages first so an interrupted delete cannot leave orphans.
         await db.execute_system(
             "DELETE FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
