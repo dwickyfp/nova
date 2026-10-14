@@ -1,18 +1,7 @@
+import type { QuerySnapshot } from "./query-snapshot";
 import { useEffect } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useIsNarrowForAssistant } from "@/features/assistant/use-assistant-panel";
-
-export type QuerySnapshot = Readonly<{
-  sql: string;
-  tabId: string;
-  database: string | null;
-  schema: string | null;
-  correlationId?: string;
-}>;
-
-export function snapshotQuery(query: QuerySnapshot): QuerySnapshot {
-  return Object.freeze({ ...query });
-}
 
 export function QueryConfirmationDialog({
   pending,

@@ -35,7 +35,7 @@ export function IntelligentUi({
   const epoch = useAuthStore((s) => s.securityEpoch);
   return (
     <UiSession
-      key={`${epoch}:${block.program_sha256}:${source?.messageId}:${source?.contentId}`}
+      key={`${epoch}:${block.program_sha256}:${JSON.stringify(source)}`}
       block={block}
       source={source}
       complete={complete}
@@ -197,11 +197,7 @@ function UiSession({
         blocked.current = true;
         return;
       }
-      if (
-        JSON.stringify(state) === JSON.stringify(saved.state) &&
-        revision.current === saved.revision
-      )
-        return;
+      if (JSON.stringify(state) === JSON.stringify(latestState.current)) return;
       pending.current = state;
       latestState.current = state;
       setStatus("Unsaved changes");
@@ -229,6 +225,7 @@ function UiSession({
         const state = latestState.current;
         validateDeclarativeState(state, block.state_defaults);
         await flush();
+        if (!active.current) return;
         await onAction(
           event.humanFriendlyMessage || "Continue using these inputs.",
           {

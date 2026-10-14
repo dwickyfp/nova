@@ -54,6 +54,69 @@ afterEach(async () => {
 });
 
 describe("Nova interactive answers", () => {
+  it("does not dispatch an action after leaving its conversation during save", async () => {
+    const ui = block(
+      'root = Col([Input($units,"Units",null,false,"number"), Button("Continue",@ToAssistant("Continue"),"continue")])\n$units=5',
+    );
+    vi.mocked(uiApi.get).mockResolvedValue({
+      revision: 0,
+      state: { $units: 5 },
+      program_sha256: ui.program_sha256,
+    });
+    let finish!: (value: {
+      revision: number;
+      state: Record<string, unknown>;
+      program_sha256: string;
+    }) => void;
+    vi.mocked(uiApi.put).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onAction = vi.fn();
+    const screen = await render(
+      <IntelligentUi block={ui} source={source} complete onAction={onAction} />,
+    );
+    await screen.getByRole("spinbutton", { name: "Units" }).fill("6");
+    await screen.getByRole("button", { name: "Continue" }).click();
+    await vi.waitFor(() => expect(uiApi.put).toHaveBeenCalledTimes(1));
+    await screen.rerender(<IntelligentUi block={ui} complete />);
+    finish({
+      revision: 1,
+      state: { $units: 6 },
+      program_sha256: ui.program_sha256,
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("saves the current value after an edit is reverted before autosave", async () => {
+    const original = window.setTimeout.bind(window);
+    vi.spyOn(window, "setTimeout").mockImplementation((fn, delay, ...args) =>
+      original(fn, delay === 400 ? 60_000 : delay, ...args),
+    );
+    const ui = block(
+      'root = Col([Input($units,"Units",null,false,"number")])\n$units=5',
+    );
+    vi.mocked(uiApi.get).mockResolvedValue({
+      revision: 0,
+      state: { $units: 5 },
+      program_sha256: ui.program_sha256,
+    });
+    const screen = await render(
+      <IntelligentUi block={ui} source={source} complete onAction={vi.fn()} />,
+    );
+    const input = screen.getByRole("spinbutton", { name: "Units" });
+    await input.fill("6");
+    await input.fill("5");
+    await flushUiStates();
+    expect(uiApi.put).toHaveBeenLastCalledWith(
+      source,
+      expect.objectContaining({ state: { $units: 5 } }),
+    );
+  });
+
   it("pins the full component and function catalog and rejects unsafe sources", () => {
     expect(componentDefinitions).toHaveLength(56);
     expect(uiFunctions).toHaveLength(59);

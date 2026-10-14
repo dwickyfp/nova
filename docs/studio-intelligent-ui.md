@@ -151,14 +151,24 @@ menampilkan alt/label sebagai teks tanpa memuat gambar atau membuka link keluar.
 Media/link publik memakai komponen katalog yang sudah divalidasi; code action
 existing tetap mengikuti konteks eksekusi Nova.
 
-Browser menampilkan gambar dari `upload.wikimedia.org`, beserta tautan sumber
-Wikimedia untuk atribusi/lisensi. MapLibre memuat style, tile, sprite, dan font
+Browser menampilkan gambar dari `upload.wikimedia.org` atau thumbnail resmi
+`thumb.wikimedia.org`, beserta tautan sumber Wikimedia untuk atribusi/lisensi.
+Host thumbnail mengikuti [perubahan domain Wikimedia](https://www.mediawiki.org/wiki/Snippets/Direct_imagelinks_to_Commons).
+MapLibre memuat style, tile, sprite, dan font
 publik OpenFreeMap dari `tiles.openfreemap.org`. Rute memakai OSRM dengan batas
 25 tempat dan 5.000 koordinat. Browser hanya mengirim permintaan basemap/media
 publik; Nova tidak mengirim hasil bisnis atau isi form ke layanan tersebut.
 YouTube berupa tautan eksplisit. Jika layanan gagal, deskripsi atau daftar
 lokasi tetap tersedia. Deployment perlu mengizinkan egress publik tersebut jika
 media ingin digunakan.
+
+Build memakai source modular MapLibre dari dependency terkunci agar chunk bisa
+dipecah. Transform khusus menghapus deklarasi field TypeScript tanpa initializer;
+field typed-array MapLibre harus mempertahankan nilai yang dibuat constructor
+induk. Urutan eksekusi modul dijaga melalui `strictExecutionOrder`. Entry worker
+dan stylesheet tetap memakai distribusi paket yang sama. Acceptance produksi
+menguji peta dan marker sesudah pemecahan bundle. Distribusi frontend menyertakan
+notice BSD MapLibre pada `public/licenses/maplibre-gl.txt`.
 
 `HtmlView` memakai iframe sandbox dengan origin opaque, script inline saja, CSP
 `default-src 'none'`, `connect-src 'none'`, `frame-src 'none'`, dan
@@ -170,6 +180,13 @@ belum selesai. HTML menerima token CSS Nova; canvas harus memakai warna dari
 token agar tetap terlihat pada kedua tema. Runtime canvas tidak di-autosave.
 
 ## Pemeriksaan
+
+Frontend lint menolak warning (`--max-warnings 0`); output coverage yang dihasilkan
+bukan source lint. Pytest memperlakukan warning sebagai error. TestClient memakai
+`httpx2` pada dependency group test, sesuai versi Starlette yang terkunci;
+StatsForecast memakai rilis yang memperbaiki escape sequence pada docstring.
+SciPy minimal 1.17.1 menghindari kegagalan loader extension PROPACK lama yang
+ditemukan pada runtime macOS; lockfile yang sama diperiksa pada Linux dan macOS.
 
 Dari `frontend/`:
 
@@ -213,3 +230,5 @@ menguji direct/Smart root, specialist/text, dan repair/fallback. Jalankan juga
 acceptance patched-FE Ranger untuk caller, role, filter, mask, proxy, dan tool
 agent; stack stock tidak menggantikannya. Hasil delivery dicatat di
 [laporan acceptance](reports/studio-intelligent-ui-20261013.md).
+Perbaikan warning dan regresi berikutnya dicatat di
+[laporan 14 Oktober](reports/studio-intelligent-ui-warning-cleanup-20261014.md).

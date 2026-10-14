@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
-export const DEFAULT_PAGE_SIZES = [10, 25, 50]
+const DEFAULT_PAGE_SIZES = [10, 25, 50]
 
 type SimpleTableViewportProps = {
   children: React.ReactNode

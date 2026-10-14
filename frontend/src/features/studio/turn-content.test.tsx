@@ -2,11 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import type { TableBlock } from "@/features/assistant/types";
-import {
-  replayThread,
-  type OrderedContent,
-  type TranscriptTurn,
-} from "./studio-chat";
+import { type OrderedContent, type TranscriptTurn } from "./studio-chat";
+import { replayThread } from "./studio-transcript";
+
 import { TurnContent } from "./turn-content";
 
 const table: TableBlock = {

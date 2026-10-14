@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 from urllib.parse import urlparse
 
 import httpx
@@ -14,6 +15,19 @@ from app.core.redis import session_store
 
 _HOSTS = frozenset({"commons.wikimedia.org", "router.project-osrm.org"})
 _LIMIT = 256_000
+
+
+def _image_url(info: dict) -> str | None:
+    for value in (info.get("thumburl"), info.get("url")):
+        if not isinstance(value, str) or len(value) > 2048:
+            continue
+        target = urlparse(value)
+        if target.scheme == "https" and target.netloc in {
+            "upload.wikimedia.org",
+            "thumb.wikimedia.org",
+        }:
+            return value
+    return None
 
 
 async def _public_json(url: str, params: dict | None = None) -> dict:
@@ -66,14 +80,19 @@ async def public_media(kind: str, props: dict) -> dict:
                     "iiurlwidth": 960,
                 },
             )
-            pages = list((response.get("query", {}).get("pages") or {}).values())[:3]
-            photos = [
-                info
+            payload = response.get("query", {})
+            if not isinstance(payload, dict) or not isinstance(payload.get("pages", {}), dict):
+                raise HTTPException(502, "Invalid public media response")
+            pages = list(payload.get("pages", {}).values())[:3]
+            if any(
+                not isinstance(page, dict)
+                or not isinstance(page.get("imageinfo", []), list)
+                or any(not isinstance(info, dict) for info in page.get("imageinfo", [])[:1])
                 for page in pages
-                for info in page.get("imageinfo", [])[:1]
-                if str(info.get("thumburl", info.get("url", ""))).startswith(
-                    "https://upload.wikimedia.org/"
-                )
+            ):
+                raise HTTPException(502, "Invalid public media response")
+            photos = [
+                info for page in pages for info in page.get("imageinfo", [])[:1] if _image_url(info)
             ]
             if not photos:
                 raise HTTPException(404, "No public image found")
@@ -82,7 +101,7 @@ async def public_media(kind: str, props: dict) -> dict:
             if not source.startswith("https://commons.wikimedia.org/"):
                 source = "https://commons.wikimedia.org/"
             result = {
-                "url": info.get("thumburl") or info["url"],
+                "url": _image_url(info),
                 "source": source,
                 "description": props.get("alt", query),
             }
@@ -104,8 +123,15 @@ async def public_media(kind: str, props: dict) -> dict:
                 lat, lon = p.get("latitude"), p.get("longitude")
                 if (
                     not isinstance(lat, (int, float))
+                    or isinstance(lat, bool)
+                    or not math.isfinite(lat)
                     or not -90 <= lat <= 90
-                    or (not isinstance(lon, (int, float)) or not -180 <= lon <= 180)
+                    or (
+                        not isinstance(lon, (int, float))
+                        or isinstance(lon, bool)
+                        or not math.isfinite(lon)
+                        or not -180 <= lon <= 180
+                    )
                 ):
                     raise HTTPException(422, "Invalid public map coordinate")
                 places.append({"latitude": lat, "longitude": lon, "label": p.get("label", "Place")})
@@ -123,11 +149,16 @@ async def public_media(kind: str, props: dict) -> dict:
                         geometry.get("type") == "LineString"
                         and isinstance(coords, list)
                         and (
-                            len(coords) <= 5000
+                            2 <= len(coords) <= 5000
                             and all(
                                 isinstance(c, list)
                                 and len(c) == 2
-                                and all(isinstance(n, (int, float)) for n in c)
+                                and all(
+                                    isinstance(n, (int, float))
+                                    and not isinstance(n, bool)
+                                    and math.isfinite(n)
+                                    for n in c
+                                )
                                 and -180 <= c[0] <= 180
                                 and -90 <= c[1] <= 90
                                 for c in coords
@@ -135,8 +166,18 @@ async def public_media(kind: str, props: dict) -> dict:
                         )
                     ):
                         result["geometry"] = geometry
-                except (httpx.HTTPError, HTTPException, KeyError, IndexError, ValueError,
-                        TimeoutError):
+                    else:
+                        result["route_unavailable"] = True
+                except (
+                    httpx.HTTPError,
+                    HTTPException,
+                    KeyError,
+                    IndexError,
+                    ValueError,
+                    TypeError,
+                    AttributeError,
+                    TimeoutError,
+                ):
                     result["route_unavailable"] = True
         else:
             raise HTTPException(422, "Unsupported public media component")

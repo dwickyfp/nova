@@ -127,7 +127,7 @@ def _unquote_identifier(value: str) -> str:
 def _split_qualified_task_name(
     raw: str,
 ) -> tuple[str, str | None, str | None]:
-    """Split ``db.schema.task`` into ``(name, database, schema)``.
+    r"""Split ``db.schema.task`` into ``(name, database, schema)``.
 
     The task name is the last segment; the scope is built right-to-left from the
     preceding segments, tolerating both ``db.schema.task`` and ``schema.task``.

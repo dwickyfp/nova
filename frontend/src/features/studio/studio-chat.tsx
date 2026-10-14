@@ -35,7 +35,7 @@ import { TurnContent } from "./turn-content";
 import { flushUiStates } from './intelligent-ui/state';
 import type { UiAction } from './intelligent-ui/types';
 import { findArtifactSql, type SavableContent } from "./artifact-source";
-import { splitChartTitle } from "./result-cards";
+import { splitChartTitle } from "./chart-title";
 import {
   CREATE_SKILL_COMMAND,
   SKILL_AUTHOR_ID,
@@ -65,7 +65,6 @@ import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { MissionTurnControls, type MissionTurnChoice } from "./mission-turn-controls";
 import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
-export { applyEvent, replayThread } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
 

@@ -202,6 +202,37 @@ def test_clustering_rejects_pathological_single_cluster() -> None:
         )
 
 
+@pytest.mark.parametrize("mode", [MLMode.INTERACTIVE, MLMode.BEST])
+def test_clustering_caps_candidates_to_distinct_feature_rows(mode) -> None:
+    table = pa.table({"x": np.repeat([-1.0, 1.0], 10)})
+    output = train_clustering(
+        table,
+        _spec(
+            MLTask.CLUSTERING,
+            mode=mode,
+            feature_columns=("x",),
+            parameters={"max_clusters": 4},
+        ),
+    )
+    assert output.metrics["cluster_count"] == 2
+    assert output.metrics["candidates_evaluated"] == (1 if mode == MLMode.INTERACTIVE else 3)
+
+
+def test_clustering_skips_birch_candidates_without_enough_subclusters() -> None:
+    table = pa.table({"x": np.repeat([-1.0, -0.99, 1.0], 10)})
+    output = train_clustering(
+        table,
+        _spec(
+            MLTask.CLUSTERING,
+            mode=MLMode.BEST,
+            feature_columns=("x",),
+            parameters={"max_clusters": 3},
+        ),
+    )
+    assert output.metrics["cluster_count"] >= 2
+    assert output.metrics["candidates_evaluated"] == 5
+
+
 class _BatchSource:
     def __init__(self, batches: list[pa.RecordBatch]) -> None:
         self.batches = batches

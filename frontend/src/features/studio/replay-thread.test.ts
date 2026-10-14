@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { replayThread } from "./studio-chat";
+import { replayThread } from "./studio-transcript";
+
 import type { AgentMessage } from "@/features/agents/api";
 
 /**

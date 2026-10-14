@@ -6,20 +6,18 @@ import { MonitoringPageScroller } from '@/features/monitoring'
 import { MonitoringActiveQueries } from '@/features/monitoring/active-queries'
 
 export const Route = createFileRoute('/_authenticated/active-query')({
-  component: RouteComponent,
+  component: function RouteComponent() {
+    return (
+      <>
+        <Header>
+          <Search className='me-auto' />
+        </Header>
+        <Main fixed className='min-h-0'>
+          <MonitoringPageScroller>
+            <MonitoringActiveQueries />
+          </MonitoringPageScroller>
+        </Main>
+      </>
+    )
+  },
 })
-
-function RouteComponent() {
-  return (
-    <>
-      <Header>
-        <Search className='me-auto' />
-      </Header>
-      <Main fixed className='min-h-0'>
-        <MonitoringPageScroller>
-          <MonitoringActiveQueries />
-        </MonitoringPageScroller>
-      </Main>
-    </>
-  )
-}

@@ -6,20 +6,30 @@ import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 type Props = Record<string, unknown>;
 export function PublicMedia({ name, p }: { name: string; p: Props }) {
   const { source } = useContext(UiRuntimeContext);
-  const [result, setResult] = useState<Props | null>(null);
-  const [error, setError] = useState(false);
+  const [loaded, setLoaded] = useState<{ key: string; value: Props } | null>(
+    null,
+  );
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const key = JSON.stringify(p);
+  const requestKey = JSON.stringify([source, name, p]);
+  const result = loaded?.key === requestKey ? loaded.value : null;
+  const error = failedKey === requestKey;
   useEffect(() => {
     const abort = new AbortController();
     if (!source || name === "YouTube") return;
     void uiApi
       .media(source, name, JSON.parse(key), abort.signal)
-      .then(setResult)
+      .then((value) => {
+        if (!abort.signal.aborted) {
+          setLoaded({ key: requestKey, value });
+          setFailedKey(null);
+        }
+      })
       .catch(() => {
-        if (!abort.signal.aborted) setError(true);
+        if (!abort.signal.aborted) setFailedKey(requestKey);
       });
     return () => abort.abort();
-  }, [key, name, source]);
+  }, [key, name, source, requestKey]);
   if (name === "YouTube")
     return (
       <a
@@ -51,7 +61,8 @@ export function PublicMedia({ name, p }: { name: string; p: Props }) {
         Loading public {name === "Map" ? "map" : "image"}…
       </p>
     );
-  if (name === "Map") return <PublicMap p={p} result={result} />;
+  if (name === "Map")
+    return <PublicMap key={requestKey} p={p} result={result} />;
   return (
     <figure className="min-w-0">
       <img
@@ -60,7 +71,7 @@ export function PublicMedia({ name, p }: { name: string; p: Props }) {
         referrerPolicy="no-referrer"
         loading="lazy"
         className="max-h-80 w-full rounded-lg object-cover"
-        onError={() => setError(true)}
+        onError={() => setFailedKey(requestKey)}
       />
       <figcaption className="mt-2 text-xs text-muted-foreground">
         {String(p.caption ?? result.description ?? "Public image")} ·{" "}
@@ -142,9 +153,13 @@ function PublicMap({ p, result }: { p: Props; result: Props }) {
             },
           });
         });
-        map.on("error", () => setError(true));
+        map.on("error", () => {
+          if (!cancelled) setError(true);
+        });
       })
-      .catch(() => setError(true));
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
     return () => {
       cancelled = true;
       dispose();

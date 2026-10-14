@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, replayThread, type TranscriptTurn } from "./studio-chat";
+import { type TranscriptTurn } from "./studio-chat";
+import { replayThread } from "./studio-transcript";
+
+import { applyEvent } from "./studio-transcript";
+
 import { visibleContent } from "./turn-content-order";
 import type { AssistantEvent } from "@/features/assistant/types";
 import { parseAssistantEvent } from "@/features/assistant/events";
