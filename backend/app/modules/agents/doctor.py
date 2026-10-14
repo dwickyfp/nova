@@ -235,7 +235,7 @@ def diagnose_history(
             ),
             None,
         )
-        if baseline
+        if baseline and current
         else None
     )
     current_regressions = regressions(baseline, current) if baseline and current else []

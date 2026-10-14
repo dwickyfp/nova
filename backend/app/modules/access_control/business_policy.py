@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from typing import Literal
+from typing import Any, Literal, Protocol
 
 from fastapi import HTTPException
 from pydantic import Field
 
 from app.common.audit import write_audit_log
 from app.core.database import db
-from app.modules.intelligence.contracts import Contract, DecisionOption, PolicyResult, fingerprint
+from app.modules.intelligence.contracts import Contract, PolicyResult, fingerprint
 from app.modules.intelligence.engine_repository import metadata_lock
 
 BUSINESS_POLICY_DDL = """
@@ -91,9 +91,26 @@ async def save_business_policy(value: BusinessPolicy, user: dict) -> BusinessPol
     return value
 
 
+class BusinessPolicyInput(Protocol):
+    @property
+    def action_type(self) -> str: ...
+
+    @property
+    def cost(self) -> float: ...
+
+    @property
+    def risk(self) -> str: ...
+
+    @property
+    def feasible(self) -> bool: ...
+
+    def model_dump(self, *, mode: Literal["json"]) -> dict[str, Any]: ...
+
+
 def evaluate_business_policy(
-    option: DecisionOption, policy: BusinessPolicy, context: dict
+    option: BusinessPolicyInput, policy: BusinessPolicy, context: dict
 ) -> PolicyResult:
+    decision: Literal["ALLOW", "DENY", "REQUIRE_APPROVAL"]
     if (
         not option.feasible
         or option.action_type in policy.blocked_actions

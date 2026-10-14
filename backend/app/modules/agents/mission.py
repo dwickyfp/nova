@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from app.modules.agents.mission_schema import (
     MissionReleasePin,
     MissionResume,
     MissionStage,
+    MissionStageStatus,
     ObjectRef,
     ResumableMission,
     ResumeReceipt,
@@ -75,7 +77,7 @@ def mission_request_digest(body: MissionCreate) -> str:
 
 
 def continuation_policy(
-    missions: list[Mission],
+    missions: builtins.list[Mission],
     *,
     operation_id: str,
     new_mission: bool = False,
@@ -199,7 +201,7 @@ def _decode(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
-def default_steps(intent: WorkIntent) -> list[StageKind]:
+def default_steps(intent: WorkIntent) -> builtins.list[StageKind]:
     return {
         WorkIntent.ANSWER: [],
         WorkIntent.ANALYZE: [StageKind.EVIDENCE],
@@ -217,7 +219,7 @@ def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> No
         if kind == "table" and isinstance(payload.get("table"), dict):
             payload = payload["table"]
     stage_kind = None
-    stage_status = "running"
+    stage_status: MissionStageStatus = "running"
     if kind in {"table", "chart"} or (
         kind == "tool_result" and payload.get("ok") is True and payload.get("evidence")
     ):
@@ -302,7 +304,9 @@ def project_object(mission: Mission, ref: ObjectRef, record: dict) -> None:
         "outcome": (StageKind.OBSERVE, status == "complete"),
     }
     kind, complete = mapping[ref.kind]
-    kinds = [(kind, "completed" if complete else "running")]
+    kinds: builtins.list[tuple[StageKind, MissionStageStatus]] = [
+        (kind, "completed" if complete else "running")
+    ]
     if record.get("evidence"):
         kinds.append((StageKind.EVIDENCE, "completed"))
     if ref.kind == "decision" and record.get("options"):
@@ -378,7 +382,7 @@ class MissionService:
             raise HTTPException(status_code=404, detail="Mission not found")
         return mission
 
-    async def resumable(self, thread_id: str, user: dict) -> list[ResumableMission]:
+    async def resumable(self, thread_id: str, user: dict) -> builtins.list[ResumableMission]:
         require_workflow()
         await require_thread(thread_id, user)
         scope = workflow_scope(user)
@@ -504,7 +508,13 @@ class MissionService:
                 mission_id=mission.mission_id,
                 revision=ref.revision,
             )
-            if ref.kind == "action" and record.status in {
+            from app.modules.intelligence.action_contracts import Action
+
+            if ref.kind == "action" and not isinstance(record, Action):
+                raise HTTPException(
+                    status_code=409, detail="Action requires reconciliation before resume"
+                )
+            if isinstance(record, Action) and record.status in {
                 "executing",
                 "verification_required",
                 "compensating",
@@ -700,7 +710,7 @@ class MissionService:
                 )
             raise
 
-    async def list(self, thread_id: str, user: dict) -> list[Mission]:
+    async def list(self, thread_id: str, user: dict) -> builtins.list[Mission]:
         require_workflow()
         await require_thread(thread_id, user)
         scope = workflow_scope(user)
@@ -718,7 +728,7 @@ class MissionService:
 
     async def _turn_candidates(
         self, thread_id: str, scope: Scope, operation_id: str
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         result = await db.execute_system(
             "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
             f"WHERE thread_id=%s AND {OWNER_SQL} ORDER BY created_at DESC, mission_id LIMIT 51",
@@ -1133,7 +1143,7 @@ class MissionService:
             mission = await self._get(mission_id, workflow_scope(user))
             if mission.cancel_requested:
                 raise HTTPException(status_code=409, detail="Mission cancellation requested")
-            root_run_id = run_id
+            root_run_id: str | None = run_id
             if run_id not in mission.run_ids:
                 participant = await harness_repository.get(run_id)
                 root_run_id = participant.get("root_run_id") if participant else None
@@ -1177,7 +1187,7 @@ class MissionService:
         self,
         mission_id: str,
         semantic: SemanticRef | dict,
-        metrics: list[str],
+        metrics: builtins.list[str],
         user: dict,
         *,
         filter_population_fingerprint: str | None = None,
@@ -1204,11 +1214,15 @@ class MissionService:
     async def record_investigation_requirements(
         self,
         mission_id: str,
-        requirements: list[str],
+        requirements: builtins.list[str],
         established: dict,
         user: dict,
     ) -> Mission:
-        pending = InvestigationRequirements(required_inputs=requirements, established=established)
+        from app.modules.intelligence.evidence import EvidenceEnvelope
+
+        pending = InvestigationRequirements(
+            required_inputs=requirements, established=EvidenceEnvelope.model_validate(established),
+        )
         mission = await self.get(mission_id, user, project=False)
         async with harness_repository.admission_lock(
             mission.thread_id,
@@ -1344,7 +1358,7 @@ class MissionService:
 
         mission = await self.get(mission_id, user, project=False)
         matches = {}
-        bindings = {}
+        bindings: dict[str, Scope] = {}
         for binding in [mission.scope, *mission.historical_bindings,
                         *mission.run_bindings.values(), *mission.object_bindings.values()]:
             bindings.setdefault(fingerprint(binding.model_dump(exclude={"session_id"})), binding)
@@ -1721,7 +1735,7 @@ class MissionService:
 
     async def deliverables(
         self, mission_id: str, user: dict, *, budget=None
-    ) -> list[MissionDeliverable]:
+    ) -> builtins.list[MissionDeliverable]:
         mission = await self.get(mission_id, user, project=False)
         result = await db.execute_system(
             "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_DELIVERABLES "

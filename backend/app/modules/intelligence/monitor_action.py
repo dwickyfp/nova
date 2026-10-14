@@ -13,7 +13,13 @@ from app.modules.intelligence.action_contracts import (
     ActionVerification,
     action_adapter_contract,
 )
-from app.modules.intelligence.contracts import Monitor, Scope, fingerprint, utc_now
+from app.modules.intelligence.contracts import (
+    Monitor,
+    MonitorConfiguration,
+    Scope,
+    fingerprint,
+    utc_now,
+)
 from app.modules.intelligence.schedules import configure_schedule, require_execution_binding
 from app.modules.task_orchestration.internal_handlers import InternalTaskConfiguration
 from app.modules.task_orchestration.repository import task_orchestration_repository
@@ -36,13 +42,26 @@ class MonitorActionAdapter:
         return self._service
 
     @staticmethod
+    def configuration(action: Action) -> MonitorConfiguration:
+        if not isinstance(action.configuration, MonitorConfiguration):
+            raise HTTPException(status_code=409, detail="Monitor action configuration changed")
+        return action.configuration
+
+    @staticmethod
+    def receipt(action: Action, *, compensated: bool = False) -> ActionReceipt | None:
+        receipt = action.compensation_receipt if compensated else action.receipt
+        if receipt is not None and not isinstance(receipt, ActionReceipt):
+            raise HTTPException(status_code=409, detail="Monitor action receipt changed")
+        return receipt
+
+    @staticmethod
     def monitor(action: Action, user: dict) -> Monitor:
         if action.scope != Scope.from_user(user):
             raise HTTPException(status_code=404, detail="Action unavailable")
         return Monitor(
             id=fingerprint([action.id, "monitor-v1"]),
             scope=Scope.from_user(user),
-            **action.configuration.model_dump(),
+            **MonitorActionAdapter.configuration(action).model_dump(),
         )
 
     async def schedule(self, monitor: Monitor):
@@ -56,6 +75,7 @@ class MonitorActionAdapter:
             config = json.loads(raw) if isinstance(raw, str) else raw
         except (ValueError, TypeError):
             return False
+        receipt = MonitorActionAdapter.receipt(action)
         expected_config = InternalTaskConfiguration(
             scope=action.scope.model_copy(update={"session_id": None}),
             record_id=fingerprint([action.id, "monitor-v1"]),
@@ -73,12 +93,12 @@ class MonitorActionAdapter:
             and task.get("timezone") == "UTC"
             and task.get("schedule_kind") == ("interval" if enabled else "manual")
             and task.get("schedule_expr")
-            == (f"{action.configuration.cadence_minutes} minutes" if enabled else None)
-            and (
-                not action.receipt
-                or action.receipt.task_id is None
-                or task.get("id") == action.receipt.task_id
+            == (
+                f"{MonitorActionAdapter.configuration(action).cadence_minutes} minutes"
+                if enabled
+                else None
             )
+            and (not receipt or receipt.task_id is None or task.get("id") == receipt.task_id)
         )
 
     async def preview(self, configuration, user: dict) -> None:
@@ -97,7 +117,7 @@ class MonitorActionAdapter:
     async def execute(
         self, action: Action, user: dict, *, guard: Callable[[], Awaitable[None]] | None = None
     ) -> ActionReceipt:
-        if not action.configuration.count_column:
+        if not MonitorActionAdapter.configuration(action).count_column:
             raise HTTPException(
                 status_code=422, detail="Scheduled monitors require reviewed count semantics"
             )
@@ -131,7 +151,7 @@ class MonitorActionAdapter:
                 checked_at=utc_now(), complete=False, reason="monitor_missing"
             )
         monitor = await self.service.get("monitors", monitor.id, user)
-        receipt = action.compensation_receipt if compensated else action.receipt
+        receipt = self.receipt(action, compensated=compensated)
         if monitor.scope != action.scope or (
             receipt
             and (
@@ -143,7 +163,7 @@ class MonitorActionAdapter:
             return ActionVerification(
                 checked_at=utc_now(), complete=False, reason="monitor_changed"
             )
-        configuration = action.configuration.model_dump()
+        configuration = MonitorActionAdapter.configuration(action).model_dump()
         if compensated:
             configuration["enabled"] = False
         actual = monitor.model_dump(include=set(configuration))
@@ -178,15 +198,16 @@ class MonitorActionAdapter:
         self, action: Action, user: dict, *, guard: Callable[[], Awaitable[None]] | None = None
     ) -> ActionReceipt:
         monitor = await self.service.get("monitors", self.monitor(action, user).id, user)
+        receipt = self.receipt(action)
         if monitor.scope != action.scope or (
-            action.receipt
+            receipt
             and (
-                action.receipt.monitor_id != monitor.id
-                or action.receipt.monitor_revision != monitor.revision
+                receipt.monitor_id != monitor.id
+                or receipt.monitor_revision != monitor.revision
             )
         ):
             raise HTTPException(status_code=409, detail="Monitor revision changed")
-        expected = action.configuration.model_dump()
+        expected = MonitorActionAdapter.configuration(action).model_dump()
         expected["enabled"] = monitor.enabled
         if monitor.model_dump(include=set(expected)) != expected:
             raise HTTPException(

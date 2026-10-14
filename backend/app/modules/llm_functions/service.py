@@ -251,6 +251,8 @@ class LLMFunctionService:
         await self.register_udf_for_type(data["function_type"])
 
         result = await self.get_alias(alias_id)
+        if result is None:
+            raise RuntimeError("Created function alias is unavailable")
         return result
 
     async def update_alias(self, alias_id: str, data: dict) -> dict | None:
@@ -724,14 +726,14 @@ class LLMFunctionService:
             body = bodies.get(template["function_name"])
             if body is None:
                 return False
-            alias = chosen.get(function_type)
-            if alias is None:
+            selected_alias = chosen.get(function_type)
+            if selected_alias is None:
                 if "not configured" not in body:
                     return False
-            elif alias.get("is_active", True):
-                expected = [alias_token(alias["id"]), gateway_endpoint()]
-                if alias.get("model_name"):
-                    expected.append(json.dumps(alias["model_name"]))
+            elif selected_alias.get("is_active", True):
+                expected = [alias_token(selected_alias["id"]), gateway_endpoint()]
+                if selected_alias.get("model_name"):
+                    expected.append(json.dumps(selected_alias["model_name"]))
                 if any(marker not in body for marker in expected):
                     return False
         return True
@@ -762,14 +764,16 @@ class LLMFunctionService:
         results: list[dict] = []
         for ft, template in UDF_TEMPLATES.items():
             fn_name = template["function_name"]
-            alias = type_to_alias.get(ft)
+            selected_alias = type_to_alias.get(ft)
             results.append(
                 {
                     "function_name": fn_name,
                     "function_type": ft,
-                    "alias_name": alias.get("alias_name") if alias else None,
-                    "provider_name": alias.get("provider_name") if alias else None,
-                    "model_name": alias.get("model_name") if alias else None,
+                    "alias_name": selected_alias.get("alias_name") if selected_alias else None,
+                    "provider_name": selected_alias.get("provider_name")
+                    if selected_alias
+                    else None,
+                    "model_name": selected_alias.get("model_name") if selected_alias else None,
                     "registered": fn_name in registered_functions,
                     "error": None,
                 }

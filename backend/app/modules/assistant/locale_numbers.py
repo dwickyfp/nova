@@ -226,14 +226,25 @@ def with_scale(token: NumberToken, scale: Decimal, text: str) -> NumberToken:
     return replace(token, scale=scale, text=text)
 
 
+def decimal_exponent(value: Decimal) -> int:
+    exponent = value.as_tuple().exponent
+    if not isinstance(exponent, int):
+        raise ValueError("A finite decimal is required")
+    return exponent
+
+
 def display_matches(value: Decimal, token: NumberToken) -> bool:
     """Whether ``value`` shows as ``token``, rounded as the token is written.
 
     Each reading carries its own precision: "1.234" is 1234 or 1.234.
     """
+    if not value.is_finite():
+        return False
     shown = value / token.scale if token.scale else value
     for reading in token.values:
-        quantum = Decimal(1).scaleb(min(reading.as_tuple().exponent, 0))
+        if not reading.is_finite():
+            continue
+        quantum = Decimal(1).scaleb(min(decimal_exponent(reading), 0))
         try:
             if shown.quantize(quantum, rounding=ROUND_HALF_UP) == reading:
                 return True

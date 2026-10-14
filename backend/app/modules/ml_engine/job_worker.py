@@ -90,7 +90,8 @@ class MLJobWorker:
         session_id = await job_session_id(self._client, str(job["id"]))
         session = await session_store.get(session_id) if session_id else None
         if (
-            not session
+            not session_id
+            or not session
             or not session.get("encrypted_password")
             or session.get("username") != job["actor"]
             or session.get("active_role") != job["active_role"]
@@ -146,7 +147,8 @@ class MLJobWorker:
         except asyncio.CancelledError:
             status = "cancelled"
             outcome = {"error_kind": "cancelled", "error_message": "Training was cancelled"}
-            if asyncio.current_task().cancelling():
+            current_task = asyncio.current_task()
+            if current_task is not None and current_task.cancelling():
                 # The worker itself is stopping, not the caller cancelling.
                 status = "interrupted"
                 await self._finish(job, status, outcome)

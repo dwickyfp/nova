@@ -27,7 +27,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 
@@ -116,6 +116,10 @@ class ProviderConfig:
     endpoint: str
     api_key: str
     capabilities: ProviderCapabilities = CONSERVATIVE_OPENAI_COMPATIBLE
+
+
+class ProviderSelection(TypedDict, total=False):
+    provider: ProviderConfig
 
 
 class AssistantProviderClient:

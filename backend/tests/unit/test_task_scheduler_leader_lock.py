@@ -62,6 +62,15 @@ class RecordingTick:
 
 
 class TestLeaderLock:
+    async def test_missing_redis_cannot_acquire_leadership(self):
+        lock = LeaderLock(None, key="k", ttl_seconds=30)
+        with pytest.raises(RuntimeError, match="Redis client is unavailable"):
+            await lock.acquire()
+        assert lock.is_leader is False
+        assert await lock.renew() is False
+        await lock.release()
+        assert lock.is_leader is False
+
     async def test_first_acquire_wins(self):
         lock = LeaderLock(FakeRedis(), key="k", ttl_seconds=30)
         assert await lock.acquire() is True

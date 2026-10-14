@@ -180,7 +180,7 @@ class StageRuntime:
                     config=BotoConfig(signature_version="s3v4"),
                     region_name=config.region or "us-east-1",
                 )
-                selected_key = s3_key
+                selected_key: str | None = s3_key
                 wildcard_positions = [s3_key.index(char) for char in "*?[" if char in s3_key]
                 if wildcard_positions:
                     prefix = s3_key[:min(wildcard_positions)]
@@ -202,6 +202,8 @@ class StageRuntime:
                     if selected_key is None:
                         # Nothing to sample; the engine reports the empty match.
                         return ""
+                if selected_key is None:
+                    return ""
                 resp = s3.get_object(Bucket=config.bucket, Key=selected_key, Range="bytes=0-8191")
                 body = resp["Body"]
                 try:

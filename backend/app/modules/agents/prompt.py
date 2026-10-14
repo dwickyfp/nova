@@ -154,7 +154,8 @@ def business_wording(text: str) -> str:
         part = _PRODUCT_TERM.sub("data", part)
         return _IDENTIFIER.sub(lambda match: match.group(0).replace("_", " "), part)
 
-    pieces, cursor = [], 0
+    pieces: list[str] = []
+    cursor = 0
     for fence in _CODE_FENCE.finditer(text):
         pieces.extend((plain(text[cursor:fence.start()]), fence.group(0)))
         cursor = fence.end()

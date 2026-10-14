@@ -17,7 +17,7 @@ from decimal import Decimal
 from statistics import median
 from time import monotonic
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -278,7 +278,9 @@ def rank_candidates(candidates: list[Candidate], limit: int) -> list[Candidate]:
     return kept[:limit]
 
 
-def impact(polarity: str | None, change: float) -> str | None:
+def impact(
+    polarity: str | None, change: float
+) -> Literal["favorable", "unfavorable", "neutral"] | None:
     """Good or bad for the business, from the metric's judged polarity."""
     if polarity is None:
         return None
@@ -550,7 +552,7 @@ class NewsroomService:
     async def _ir(self, view: dict) -> tuple[SemanticRef, SemanticModelIR]:
         version = view.get("active_version")
         row = await self.semantic._version(view["id"], version) if version else None
-        if not row or row["status"] != "ACTIVE":
+        if not version or not row or row["status"] != "ACTIVE":
             raise HTTPException(status_code=409, detail="Publish a version before enabling News")
         ref = SemanticRef(view_id=view["id"], version=version, fingerprint=row["fingerprint"])
         return ref, SemanticModelIR.from_ossie(row["definition"])
@@ -561,6 +563,8 @@ class NewsroomService:
         return default_config(ir, str(user.get("active_role") or ""))
 
     async def _schedule(self, view_id: str, config: NewsConfig, user: dict, *, enabled: bool):
+        if config.execution_user is None:
+            raise HTTPException(status_code=409, detail="News execution binding is unavailable")
         scope = Scope(
             principal=config.execution_user,
             active_role=config.execution_role,
@@ -605,11 +609,12 @@ class NewsroomService:
             validate_config(ir, config)
         if previous and previous.execution_user and (
             not body.enabled
+            or config is None
             or (previous.execution_user, previous.execution_role)
             != (config.execution_user, config.execution_role)
         ):
             await self._schedule(view_id, previous, user, enabled=False)
-        if body.enabled:
+        if body.enabled and config is not None:
             await self._schedule(view_id, config, user, enabled=True)
         await self.semantic.save_news(
             view_id,
@@ -671,7 +676,7 @@ class NewsroomService:
         group, detection, day = candidate.group, candidate.detection, edition.edition_date
         sliced = (
             StorySlice(dimension=group.dimension, value=candidate.value)
-            if candidate.value is not None
+            if candidate.value is not None and group.dimension is not None
             else None
         )
         digest, count = candidate.rows.digest(candidate.value)
@@ -690,6 +695,8 @@ class NewsroomService:
             rows = parsed.get(driver_group)
             if rows and rows.rows:
                 for value, series in rows.series.items():
+                    if value is None:
+                        continue
                     before = median(
                         [series.get(item, (0.0, 0))[0] for item in candidate.baseline_dates]
                     )
@@ -874,7 +881,7 @@ class NewsroomService:
         ir: SemanticModelIR,
         scope: Scope,
         budget: CycleBudget,
-    ) -> dict[str, str]:
+    ) -> dict[str, Literal["better", "worse", "neutral"]]:
         """Each metric's judged direction of "good", reused while the view is unchanged."""
         latest = await self.repository.latest_edition(view_id, scope, Edition)
         known = dict(latest.polarity) if latest and latest.semantic == ref else {}
@@ -987,6 +994,8 @@ class NewsroomService:
         )
 
     async def _edition(self, view: dict, config: NewsConfig, day: date | None) -> Edition | None:
+        if config.execution_user is None:
+            raise HTTPException(status_code=409, detail="News execution binding is unavailable")
         scope = Scope(
             principal=config.execution_user,
             active_role=config.execution_role,

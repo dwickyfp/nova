@@ -34,7 +34,7 @@ class AgentMetadataUnavailable(RuntimeError):
 async def _read_rows(
     sql: str,
     params: list[Any],
-    valid_row: Callable[[list[Any]], bool],
+    valid_row: Callable[[list[Any] | tuple[Any, ...]], bool],
 ) -> list[list[Any]]:
     saw_bad_read = False
     empty_reads = 0

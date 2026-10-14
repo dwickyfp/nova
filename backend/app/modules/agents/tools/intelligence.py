@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import HTTPException
 from pydantic import Field, ValidationError
 
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolOutcome
 from app.modules.intelligence.contracts import Contract, SemanticRef
 from app.modules.intelligence.responses import public_evidence
@@ -37,7 +38,7 @@ class ContextGraphTool:
         "not establish facts. Returned references identify their source and version."
     )
     parameters = ContextRequest.model_json_schema()
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     requires_consent = True
 
     def preview(self, invocation):
@@ -93,7 +94,7 @@ class DecisionLabTool:
         "effect analysis over a published semantic plan. Causal effects require a reviewed "
         "experiment protocol in the published Semantic View; correlation alone is association."
     )
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     requires_consent = True
 
     @property

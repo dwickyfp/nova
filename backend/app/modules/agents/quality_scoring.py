@@ -247,7 +247,7 @@ def _score_assertion(assertion: Assertion, trace: dict) -> Score:
                 else:
                     passed = all(
                         health_rank[label] >= health_rank[expected["minimum_health"]]
-                        for label in labels
+                        for label in labels if isinstance(label, str)
                     )
             if passed and "complete" in expected:
                 if any(type(item.get("complete")) is not bool for item in evidence):
@@ -268,7 +268,9 @@ def _score_assertion(assertion: Assertion, trace: dict) -> Score:
         ):
             passed = all(counts[key] <= limit for key, limit in expected.items())
             detail = "Measured counts checked against configured limits"
-    status = "unavailable" if passed is None else "pass" if passed else "fail"
+    status: Literal["pass", "fail", "unavailable"] = (
+        "unavailable" if passed is None else "pass" if passed else "fail"
+    )
     return Score(
         scorer=name,
         required=assertion.required,
@@ -336,7 +338,7 @@ def gate_results(cases: list[dict], results: list[dict], gates: PromotionGates) 
                 if (unique and result.get("case_revision") == case["revision"])
                 else "unavailable"
             )
-    performance = []
+    performance: list[str] = []
     for case in cases:
         result = by_id.get(case["id"], {})
         performance.extend(

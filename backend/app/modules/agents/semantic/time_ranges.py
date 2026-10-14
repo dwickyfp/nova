@@ -279,8 +279,10 @@ class ConcreteWindow:
     end: datetime
 
     def sql_bounds(self) -> tuple[str, str]:
-        return tuple("'" + bound.strftime("%Y-%m-%d %H:%M:%S.%f") + "'"
-                     for bound in (self.start, self.end))
+        return (
+            "'" + self.start.strftime("%Y-%m-%d %H:%M:%S.%f") + "'",
+            "'" + self.end.strftime("%Y-%m-%d %H:%M:%S.%f") + "'",
+        )
 
     def as_dict(self) -> dict[str, str]:
         return {name: value.astimezone(UTC).isoformat()
@@ -346,6 +348,8 @@ def resolve_execution_time(
     symbolic = resolve_time_range(value)
     token = _word_form(value)
     if symbolic.start_date is not None:
+        if symbolic.end_date is None:
+            raise SemanticPlanError("The time range requires an end date.")
         start = datetime.combine(symbolic.start_date, datetime.min.time(), zone)
         end = datetime.combine(symbolic.end_date, datetime.min.time(), zone)
     elif token in _TODATE:

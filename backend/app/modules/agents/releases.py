@@ -285,6 +285,8 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
             (routing.light_model_id, "llm"),
             (routing.heavy_model_id, "llm"),
         ):
+            if model_id is None:
+                raise HTTPException(422, "Decision routing model is not configured")
             selected, _ = await registered_model(model_id, kind)
             contract = await model_contract(selected["provider_id"], selected["name"])
             if contract not in models:

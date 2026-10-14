@@ -51,14 +51,14 @@ def activity_from_frame(frame: str) -> dict[str, Any] | None:
 
         try:
             model = EvidenceEnvelope if kind == "evidence_envelope" else EvidenceHealth
-            bounded = model.model_validate(payload.get("payload"))
+            evidence_model = model.model_validate(payload.get("payload"))
             workflow = (WorkflowProvenance.model_validate(payload["workflow"]).model_dump(
                 mode="json"
             ) if payload.get("workflow") is not None else None)
         except ValidationError:
             return None
         return {"event_type": kind, **_fields(payload, {"tool_call_id": 128, "tool_name": 80}),
-                "payload": bounded.model_dump(mode="json"), "workflow": workflow}
+                "payload": evidence_model.model_dump(mode="json"), "workflow": workflow}
     if kind == "execution_time_context":
         from pydantic import ValidationError
 
@@ -67,7 +67,7 @@ def activity_from_frame(frame: str) -> dict[str, Any] | None:
         raw = payload.get("payload") or {}
         fixed = raw.get("execution_time") or {}
         try:
-            bounded = ExecutionTimeContext.model_validate({
+            time_context = ExecutionTimeContext.model_validate({
                 "execution_now": fixed.get("now"), "timezone": fixed.get("timezone"),
                 "semantic": {"view_id": raw.get("semantic_view_id"),
                              "version": raw.get("semantic_version"),
@@ -79,7 +79,7 @@ def activity_from_frame(frame: str) -> dict[str, Any] | None:
         except ValidationError:
             return None
         return {"event_type": kind, **_fields(payload, {"tool_call_id": 128}),
-                "payload": bounded.model_dump(mode="json")}
+                "payload": time_context.model_dump(mode="json")}
     if kind == "plan":
         steps = payload.get("steps")
         if not isinstance(steps, list):

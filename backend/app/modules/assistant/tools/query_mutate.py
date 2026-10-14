@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from typing import Any
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import redact_sql_credentials, split_sql_statements
 from app.modules.access_control.security_context import SecurityContext
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.assistant.tools.query_execute import _render_result, _safe_redact
 from app.modules.query.sql_pipeline import guard_user_statement
@@ -34,9 +36,8 @@ def validated_write_sql(arguments: dict[str, Any]) -> str:
             statement, re.I,
         ):
             raise ValueError("This statement is not supported by the SQL write tool.")
-        if re.match(r"SET\s+(?:DEFAULT\s+)?ROLE\b", statement, re.I):
-            if re.match(r"SET\s+ROLE\b", statement, re.I):
-                raise ValueError("Use query_execute for a standalone session role change.")
+        if re.match(r"SET\s+ROLE\b", statement, re.I):
+            raise ValueError("Use query_execute for a standalone session role change.")
         guard_user_statement(statement, confirm_destructive=True)
     return sql
 
@@ -55,7 +56,7 @@ class QueryMutateTool:
         "required": ["sql"],
         "additionalProperties": False,
     }
-    classification = "destructive"
+    classification: ToolClassification = "destructive"
     requires_consent = True
 
     def classification_for(self, invocation: ToolInvocation) -> str:
@@ -100,26 +101,35 @@ class QueryMutateTool:
                 confirm_destructive=True, max_rows=100,
             )
         except Exception:
-            try:
+            with suppress(Exception):
                 await write_audit_log(**audit, status="ERROR")
-            except Exception:
-                pass
-            return ToolOutcome(ok=False, summary="", error="SQL execution failed; inspect before retrying.")
+            return ToolOutcome(
+                ok=False, summary="", error="SQL execution failed; inspect before retrying."
+            )
         failed = next((r for r in results if r.error), None)
         completed = sum(1 for r in results if not r.error)
         try:
             await write_audit_log(**audit, status="ERROR" if failed or not results else "SUCCESS")
         except Exception:
             return ToolOutcome(
-                ok=False, summary="",
-                error=f"{completed} statements completed, but the final audit could not be recorded. Inspect before retrying.",
+                ok=False,
+                summary="",
+                error=(
+                    f"{completed} statements completed, but the final audit could not be recorded. "
+                    "Inspect before retrying."
+                ),
                 error_class="AUDIT_WRITE_FAILED",
             )
         if failed or not results:
             return ToolOutcome(
-                ok=False, summary="",
+                ok=False,
+                summary="",
                 error=f"{completed} statements completed before failure. "
-                + _safe_redact(failed.error if failed else "No result was returned."),
+                + _safe_redact(
+                    failed.error or "Query execution failed."
+                    if failed
+                    else "No result was returned."
+                ),
                 error_class="SQL_WRITE_FAILED",
             )
         return ToolOutcome(ok=True, summary="\n".join(_render_result(r) for r in results),

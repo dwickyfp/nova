@@ -41,6 +41,7 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
 
     budget.consume("items")
     scope = Scope.from_user(user)
+    value: dict
     semantic = None
     authority, source_kind = "recorded_lifecycle_evidence", "lifecycle_evidence"
     if ref.kind in {"action", "decision", "outcome", "investigation", "news"}:
@@ -54,7 +55,9 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
 
             value = await mission_service.canonical_read(
                 ref.parent_id,
-                ObjectRef(kind=ref.kind, id=ref.id, revision=ref.revision),
+                ObjectRef.model_validate(
+                    {"kind": ref.kind, "id": ref.id, "revision": ref.revision}
+                ),
                 user,
                 budget=budget,
             )
@@ -81,9 +84,10 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
         if ref.kind == "mission":
             if ref.revision != mission.revision:
                 raise HTTPException(409, "Mission context changed; select its current revision")
-            source = mission
+            value = mission.model_dump(mode="json")
+            name = "Mission"
         else:
-            source = next(
+            deliverable = next(
                 (
                     item
                     for item in await mission_service.deliverables(mission_id, user, budget=budget)
@@ -91,22 +95,21 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
                 ),
                 None,
             )
-            if source is None:
+            if deliverable is None:
                 raise HTTPException(404, "Deliverable unavailable")
-            if ref.revision != source.mission_revision:
+            if ref.revision != deliverable.mission_revision:
                 raise HTTPException(409, "Deliverable Mission revision changed")
-        value = source.model_dump(mode="json")
-        if ref.kind == "deliverable":
-            for obj in source.object_refs:
+            value = deliverable.model_dump(mode="json")
+            for obj in deliverable.object_refs:
                 budget.consume("items")
                 await mission_service.canonical_read(mission_id, obj, user, budget=budget)
-        name = "Mission" if ref.kind == "mission" else f"Deliverable: {source.kind}"
+            name = f"Deliverable: {deliverable.kind}"
         digest = fingerprint(value)
     elif ref.kind == "agent":
         from app.modules.agents.router import _require_agent
 
-        source = await _require_agent(ref.id, user)
-        if source.get("owner_name") != scope.principal:
+        agent = await _require_agent(ref.id, user)
+        if agent.get("owner_name") != scope.principal:
             raise HTTPException(404, "Agent context unavailable")
         value = {"agent_id": ref.id, "owner_name": scope.principal}
         name, digest = "Agent", fingerprint(value)
@@ -130,7 +133,7 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
             value = {"fingerprint": dependencies["policy_fingerprint"]}
             name = "Agent policy reference"
         else:
-            value = next(
+            dependency = next(
                 (
                     item
                     for item in dependencies.get(f"{ref.kind}s", [])
@@ -138,8 +141,9 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
                 ),
                 None,
             )
-            if value is None:
+            if dependency is None:
                 raise HTTPException(404, "Release dependency unavailable")
+            value = dependency
             name = f"{ref.kind.capitalize()}: {ref.id}"
         digest = fingerprint(value)
         authority, source_kind = "recorded_agent_release", "agent_release"
@@ -167,9 +171,10 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
             agent = await _require_agent(ref.agent_id, user)
             if agent.get("owner_name") != scope.principal:
                 raise HTTPException(404, "Release context unavailable")
-            value = await get_manifest(ref.agent_id, scope.principal, manifest_id=ref.id)
-            if not value or value.get("id") != ref.id:
+            manifest = await get_manifest(ref.agent_id, scope.principal, manifest_id=ref.id)
+            if not manifest or manifest.get("id") != ref.id:
                 raise HTTPException(404, "Release context unavailable")
+            value = manifest
             if value.get("fingerprint") != fingerprint(value.get("dependencies")):
                 raise HTTPException(409, "Release manifest requires reconciliation")
             for pin in value["dependencies"].get("semantic_views", [])[:16]:
@@ -183,21 +188,21 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
         if ref.kind == "dashboard":
             from app.modules.agents.dashboard_repository import dashboard_repository
 
-            source = await dashboard_repository.get(ref.id, owner_name=scope.principal)
-            if source is None:
+            resource = await dashboard_repository.get(ref.id, owner_name=scope.principal)
+            if resource is None:
                 raise HTTPException(404, "Dashboard unavailable")
             value = {
-                "updated_at": str(source["updated_at"]),
-                "layout": source["layout"].model_dump(mode="json"),
+                "updated_at": str(resource["updated_at"]),
+                "layout": resource["layout"].model_dump(mode="json"),
             }
         else:
             from app.modules.agents.artifact_repository import artifact_repository
 
-            source = await artifact_repository.get(ref.id, owner_name=scope.principal)
-            if source is None:
+            resource = await artifact_repository.get(ref.id, owner_name=scope.principal)
+            if resource is None:
                 raise HTTPException(404, "Artifact unavailable")
             value = {
-                key: source.get(key)
+                key: resource.get(key)
                 for key in (
                     "updated_at",
                     "sql_text",
@@ -222,14 +227,14 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
             raise HTTPException(404, "Document participant unavailable")
         try:
             metadata = await resource_delegation.available(run, user)
-            source = next((item for item in metadata if item.resource_id == ref.id), None)
-            if source is None:
+            document = next((item for item in metadata if item.resource_id == ref.id), None)
+            if document is None:
                 raise HTTPException(404, "Document grant unavailable")
             await resource_delegation.load(run, user)
         except ValueError as exc:
             raise HTTPException(404, "Document grant unavailable") from exc
-        value = source.model_dump(mode="json")
-        digest, name = source.digest, "Granted document reference"
+        value = document.model_dump(mode="json")
+        digest, name = document.digest, "Granted document reference"
         authority, source_kind = "participant_granted_reference", "studio_reference"
     if ref.fingerprint and digest != ref.fingerprint:
         raise HTTPException(409, "Context source changed; review its current reference")

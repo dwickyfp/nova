@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import Field
@@ -168,7 +168,9 @@ async def traverse_context(node_id: str, user: dict, *, depth: int = 2, limit: i
         raise HTTPException(status_code=422, detail="Graph depth or node budget is invalid")
     service, budget = intelligence_service, CycleBudget()
     root = await service.get("nodes", node_id, user, budget=budget)
-    nodes, edges, visited = {root.id: root}, {}, set()
+    nodes = {root.id: root}
+    edges: dict[str, ContextEdge] = {}
+    visited: set[str] = set()
     queue = deque([(root.id, 0)])
     while queue:
         current, level = queue.popleft()
@@ -197,7 +199,7 @@ async def traverse_context(node_id: str, user: dict, *, depth: int = 2, limit: i
             if other not in visited:
                 queue.append((other, level + 1))
     if getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        usage_cache = {}
+        usage_cache: dict = {}
         resolved = [
             await derive_authority(node, user, budget, usage_cache=usage_cache)
             for node in nodes.values()
@@ -229,7 +231,9 @@ async def resolve_metric(
         )
     ]
     definitions = {item["name"]: item for item in row["definition"].get("metrics", [])}
-    exact = [metric for metric in candidates if metric.name.casefold() == term.strip().casefold()]
+    exact_matches = [
+        metric for metric in candidates if metric.name.casefold() == term.strip().casefold()
+    ]
     canonical = [
         metric
         for metric in candidates
@@ -241,13 +245,13 @@ async def resolve_metric(
     }) > 1
     selected = (
         None if conflict else
-        exact[0]
-        if len(exact) == 1
+        exact_matches[0]
+        if len(exact_matches) == 1
         else canonical[0]
         if len(canonical) == 1
         else (candidates[0] if len(candidates) == 1 else None)
     )
-    result = {
+    result: dict[str, Any] = {
         "status": "resolved"
         if selected is not None
         else ("ambiguous" if candidates else "unknown"),
@@ -434,6 +438,8 @@ async def project_canonical_context(ref: ContextSourceRef, user: dict) -> dict:
         if len(value.get("object_refs", [])) > 30:
             raise HTTPException(422, "Mission Context exceeds its projection budget")
     elif ref.kind == "agent_release":
+        if ref.agent_id is None:
+            raise HTTPException(422, "A release requires its agent reference")
         child, _ = await add(ContextSourceRef(kind="agent", id=ref.agent_id))
         link(child, root, "has_release")
         for pin in value["dependencies"].get("semantic_views", [])[:16]:
@@ -496,7 +502,7 @@ async def derive_authority(
         exclude={"session_id"}
     ):
         raise HTTPException(status_code=404, detail="Context unavailable in this security context")
-    update = {
+    update: dict[str, Any] = {
         "source_kind": "unknown", "authority": None, "authority_basis": {},
         "validity": "unknown", "freshness": "unknown", "usage_count": None,
         "aliases": [], "claim_fingerprint": None, "contradictions": [],
@@ -582,9 +588,9 @@ async def derive_authority(
         "document", "agent",
         "skill", "tool",
     } or (node.kind == "policy" and node.reference_parent_id):
-        source = await authorize_context_reference(node, user, budget)
+        context_source = await authorize_context_reference(node, user, budget)
         update.update(
-            source_kind=source["source_kind"], authority=source["authority"],
+            source_kind=context_source["source_kind"], authority=context_source["authority"],
             authority_basis={"method": "authorized-canonical-source-v1", "kind": node.kind},
             state=KnowledgeState.INFERRED, validity="historical",
         )
@@ -600,13 +606,13 @@ async def derive_authority(
             "decision": "decisions", "outcome": "outcomes",
             "news": "news", "investigation": "investigations",
         }[node.kind]
-        source = await intelligence_service.get(
+        canonical_record = await intelligence_service.get(
             kind, node.reference_id, user, budget=budget, revision=node.reference_revision,
         )
         update.update(
             source_kind="lifecycle_evidence", authority="recorded_lifecycle_evidence",
             authority_basis={
-                "method": "authorized-lifecycle-record-v1", "revision": source.revision,
+                "method": "authorized-lifecycle-record-v1", "revision": canonical_record.revision,
             },
             state=KnowledgeState.INFERRED, validity="historical",
         )

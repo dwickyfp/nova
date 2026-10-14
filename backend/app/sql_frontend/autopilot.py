@@ -38,7 +38,7 @@ def map_snapshot(
         raise ValueError(shape.reason)
     parsed = parse_statement(sql)
     changes = []
-    qualifiers = {}
+    qualifiers: dict[tuple[str, ...], set[str]] = {}
     aliases = set()
     nodes = list(walk_nodes(parsed.statement_context))
     for node in nodes:
@@ -94,10 +94,10 @@ def map_snapshot(
         if type(current).__name__ != "ColumnRefContext":
             continue
         base = current.columnReference().identifier().getText().strip("`")
-        parts = (base, *reversed(fields))
-        if parts[0] in aliases:
+        qualified_parts = (base, *reversed(fields))
+        if qualified_parts[0] in aliases:
             continue
-        targets = qualifiers.get(parts[:-1])
+        targets = qualifiers.get(qualified_parts[:-1])
         if targets:
             if (
                 len(targets) != 1
@@ -105,7 +105,11 @@ def map_snapshot(
             ):
                 raise ValueError("qualified_snapshot_column_scope_ambiguous")
             changes.append(
-                (node.start.start, node.stop.stop + 1, next(iter(targets)) + f".`{parts[-1]}`")
+                (
+                    node.start.start,
+                    node.stop.stop + 1,
+                    next(iter(targets)) + f".`{qualified_parts[-1]}`",
+                )
             )
     for start, end, replacement in sorted(changes, reverse=True):
         sql = sql[:start] + replacement + sql[end:]
@@ -264,7 +268,7 @@ def deterministic_order(sql: str, columns: list[str], rows: list[list]) -> bool:
             if len(matches) != 1:
                 raise ValueError("ordering_expression_unproven")
             keys.append(matches[0])
-    seen = {}
+    seen: dict[str, str] = {}
     for row in rows:
         key = json.dumps([row[i] for i in keys], default=str)
         whole = json.dumps(row, default=str)

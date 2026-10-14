@@ -269,7 +269,7 @@ class ObjectService:
         # StarRocks objects are database-scoped in Nova today, while stages are
         # schema-scoped. To avoid rendering the same table/view list under every
         # schema node, only surface database objects under the default schema.
-        objects = {"tables": [], "views": [], "materialized_views": []}
+        objects: dict[str, list[dict]] = {"tables": [], "views": [], "materialized_views": []}
         if schema == "default":
             objects = await self.list_objects(
                 database,

@@ -1,17 +1,16 @@
 """Pipe Manager schemas — request/response models for pipe CRUD and file tracking."""
 
 from pydantic import BaseModel, Field
-from typing import Literal
 
 
 class PipeCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=256)
-    database: str = Field(default='', max_length=256)
+    name: str = Field(..., min_length=1, max_length=256, pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$")
+    database: str = Field(default="", max_length=256, pattern=r"^(?:[A-Za-z_][A-Za-z0-9_$]*)?$")
     sql: str = Field(..., min_length=1)  # The INSERT INTO ... SELECT FROM FILES(...) statement
     auto_ingest: bool = True
-    poll_interval: int = 300  # seconds
-    batch_size: str = '1GB'
-    batch_files: int = 256
+    poll_interval: int = Field(300, ge=1, le=3600)
+    batch_size: str = Field("1GB", pattern=r"^[1-9][0-9]*(?:B|KB|MB|GB|TB|PB)?$")
+    batch_files: int = Field(256, ge=1)
 
 
 class PipeResponse(BaseModel):

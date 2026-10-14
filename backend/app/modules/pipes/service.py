@@ -1,229 +1,163 @@
-"""Pipe Manager service — CRUD for StarRocks continuous ingestion pipes.
+"""Pipe administration through the authenticated caller's SQL pipeline."""
 
-Pipes wrap an ``INSERT INTO … SELECT FROM FILES(…)`` statement with
-auto-ingest polling.  This service issues the corresponding DDL
-(``CREATE PIPE``, ``ALTER PIPE``, ``DROP PIPE``, ``SHOW PIPES``) over
-asyncmy and parses the results into schema-friendly dicts.
-"""
+from __future__ import annotations
 
 import json
-import logging
 
-import asyncmy
-import asyncmy.cursors
+from app.common.identifiers import check_identifier
+from app.core.exceptions import NovaException
+from app.modules.pipes.schemas import PipeCreate
+from app.modules.query.service import query_service
+from app.modules.query.sql_pipeline import redact_for_output
 
-from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+class PipeError(NovaException):
+    """An invalid request or a redacted SQL execution failure."""
+
+    def __init__(self, message: str):
+        super().__init__(message, status_code=400)
+
+
+def _qualified(name: str, database: str | None) -> str:
+    name = check_identifier(name, field="pipe name")
+    if database:
+        return f"`{check_identifier(database, field='database')}`.`{name}`"
+    return f"`{name}`"
+
+
+def _properties(raw: str | dict | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    raw = raw.strip()
+    if raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return _properties(parsed)
+        except json.JSONDecodeError:
+            pass
+    properties = {}
+    for token in raw.split(";" if ";" in raw else ","):
+        if "=" in token:
+            key, value = token.split("=", 1)
+            properties[key.strip().strip('"')] = value.strip().strip('"')
+    return properties
+
+
+def _pipe(row: dict) -> dict:
+    lower = {key.casefold(): value for key, value in row.items()}
+    created = lower.get("created_time") or lower.get("create_time")
+    return {
+        "name": lower.get("pipe_name", lower.get("name", "")),
+        "database": lower.get("database_name", lower.get("database", "")),
+        "state": lower.get("state", "UNKNOWN"),
+        "sql": lower.get("insert_sql") or lower.get("sql") or lower.get("source"),
+        "properties": _properties(lower.get("properties")),
+        "created_at": str(created) if created else None,
+    }
 
 
 class PipeService:
-    """Business logic for StarRocks pipe management."""
+    async def _query(self, sql: str, *, database: str | None = None, **caller) -> list[dict]:
+        result = await query_service.execute(sql=sql, database=database, **caller)
+        if result.error:
+            raise PipeError(redact_for_output(result.error))
+        # SHOW/DESCRIBE may return a persisted source statement containing keys.
+        return [
+            {
+                str(column): redact_for_output(value) if isinstance(value, str) else value
+                for column, value in zip(result.columns, row, strict=True)
+            }
+            for row in result.rows
+        ]
 
-    # ── DB helpers ──────────────────────────────────────────────
+    async def list_pipes(self, database: str | None = None, **caller) -> list[dict]:
+        sql = "SHOW PIPES"
+        if database:
+            sql += f" FROM `{check_identifier(database, field='database')}`"
+        return [_pipe(row) for row in await self._query(sql, database=database, **caller)]
 
-    @staticmethod
-    async def _connect() -> asyncmy.Connection:
-        """Create a direct asyncmy connection to StarRocks."""
-        return await asyncmy.connect(
-            host=settings.STARROCKS_HOST,
-            port=settings.STARROCKS_FE_MYSQL_PORT,
-            user="root",
-            password="",
-            autocommit=True,
-        )
-
-    # ── Helpers ─────────────────────────────────────────────────
-
-    @staticmethod
-    def _parse_properties(raw: str | None) -> dict[str, str]:
-        """Parse the Properties column from SHOW PIPES into a dict.
-
-        StarRocks returns properties as a semicolon-separated string like
-        ``"AUTO_INGEST=true;POLL_INTERVAL=300;BATCH_SIZE=1GB"`` or sometimes
-        as a JSON-ish blob.  We handle both formats gracefully.
-        """
-        if not raw:
-            return {}
-
-        raw = raw.strip()
-
-        # Try JSON first
-        if raw.startswith("{"):
-            try:
-                return {str(k): str(v) for k, v in json.loads(raw).items()}
-            except (json.JSONDecodeError, AttributeError):
-                pass
-
-        # Semicolon / comma separated key=value pairs
-        props: dict[str, str] = {}
-        sep = ";" if ";" in raw else ","
-        for token in raw.split(sep):
-            token = token.strip().strip('"').strip("'")
-            if "=" in token:
-                k, v = token.split("=", 1)
-                props[k.strip().strip('"')] = v.strip().strip('"')
-        return props
-
-    @staticmethod
-    def _row_to_pipe(row: dict) -> dict:
-        """Normalise a SHOW PIPES result row into PipeResponse shape."""
-        # StarRocks column names may vary in casing — normalise to lower.
-        lr = {k.lower(): v for k, v in row.items()}
-        return {
-            "name": lr.get("name", ""),
-            "database": lr.get("database", ""),
-            "state": lr.get("state", "UNKNOWN"),
-            "sql": lr.get("sql") or lr.get("source") or None,
-            "properties": PipeService._parse_properties(lr.get("properties")),
-            "created_at": str(lr["create_time"]) if lr.get("create_time") else None,
-        }
-
-    # ── Pipe CRUD ──────────────────────────────────────────────
-
-    async def list_pipes(self, database: str | None = None) -> list[dict]:
-        """Execute ``SHOW PIPES`` (optionally scoped to a database)."""
+    async def get_pipe(self, name: str, database: str | None = None, **caller) -> dict | None:
+        qualified = _qualified(name, database)
         sql = "SHOW PIPES"
         if database:
             sql += f" FROM `{database}`"
+        sql += f" WHERE NAME = '{name}'"
+        rows = await self._query(sql, database=database, **caller)
+        if not rows:
+            return None
+        result = _pipe(rows[0])
+        details = await self._query(f"DESCRIBE PIPE {qualified}", database=database, **caller)
+        if details:
+            detail = _pipe(details[0])
+            result.update(sql=detail["sql"], properties=detail["properties"])
+        return result
 
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(sql)
-                rows = await cur.fetchall()
-                return [self._row_to_pipe(r) for r in rows]
-        finally:
-            conn.close()
-
-    async def get_pipe(self, name: str, database: str | None = None) -> dict | None:
-        """Return a single pipe by name, or ``None`` if not found."""
-        sql = f"SHOW PIPES LIKE '{name}'"
-        if database:
-            sql = f"SHOW PIPES FROM `{database}` LIKE '{name}'"
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(sql)
-                row = await cur.fetchone()
-                return self._row_to_pipe(row) if row else None
-        finally:
-            conn.close()
-
-    async def create_pipe(self, data: dict) -> dict:
-        """Build and execute ``CREATE PIPE … PROPERTIES (…) AS <sql>``.
-
-        Returns the newly created pipe via ``get_pipe``.
-        """
-        name = data["name"]
-        auto_ingest = "TRUE" if data.get("auto_ingest", True) else "FALSE"
-        poll_interval = str(data.get("poll_interval", 300))
-        batch_size = data.get("batch_size", "1GB")
-        batch_files = str(data.get("batch_files", 256))
-        pipe_sql = data["sql"]
-        database = data.get("database", "")
-
-        qualified_name = f"`{database}`.`{name}`" if database else f"`{name}`"
-
-        ddl = (
-            f"CREATE PIPE {qualified_name}\n"
-            f"PROPERTIES (\n"
-            f'    "AUTO_INGEST" = "{auto_ingest}",\n'
-            f'    "POLL_INTERVAL" = "{poll_interval}",\n'
-            f'    "BATCH_SIZE" = "{batch_size}",\n'
-            f'    "BATCH_FILES" = "{batch_files}"\n'
-            f")\n"
-            f"AS {pipe_sql}"
+    async def create_pipe(self, data: dict, **caller) -> dict:
+        body = PipeCreate.model_validate(data)
+        database = body.database or None
+        qualified = _qualified(body.name, database)
+        sql = (
+            f"CREATE PIPE {qualified} PROPERTIES ("
+            f'"AUTO_INGEST"="{str(body.auto_ingest).lower()}", '
+            f'"POLL_INTERVAL"="{body.poll_interval}", '
+            f'"BATCH_SIZE"="{body.batch_size}", '
+            f'"BATCH_FILES"="{body.batch_files}") AS {body.sql}'
         )
+        await self._query(sql, database=database, **caller)
+        result = await self.get_pipe(body.name, database=database, **caller)
+        return result or {"name": body.name, "database": body.database, "state": "UNKNOWN"}
 
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(ddl)
-        finally:
-            conn.close()
-
-        # Return the freshly created pipe
-        result = await self.get_pipe(name, database=database or None)
-        return result or {"name": name, "database": database, "state": "UNKNOWN"}
-
-    async def suspend_pipe(self, name: str, database: str | None = None) -> dict:
-        """Execute ``ALTER PIPE … SUSPEND``."""
-        qualified_name = f"`{database}`.`{name}`" if database else f"`{name}`"
-        sql = f"ALTER PIPE {qualified_name} SUSPEND"
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(sql)
-        finally:
-            conn.close()
-
+    async def suspend_pipe(self, name: str, database: str | None = None, **caller) -> dict:
+        await self._query(
+            f"ALTER PIPE {_qualified(name, database)} SUSPEND", database=database, **caller
+        )
         return {"success": True, "message": f"Pipe '{name}' suspended"}
 
-    async def resume_pipe(self, name: str, database: str | None = None) -> dict:
-        """Execute ``ALTER PIPE … RESUME``."""
-        qualified_name = f"`{database}`.`{name}`" if database else f"`{name}`"
-        sql = f"ALTER PIPE {qualified_name} RESUME"
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(sql)
-        finally:
-            conn.close()
-
+    async def resume_pipe(self, name: str, database: str | None = None, **caller) -> dict:
+        await self._query(
+            f"ALTER PIPE {_qualified(name, database)} RESUME", database=database, **caller
+        )
         return {"success": True, "message": f"Pipe '{name}' resumed"}
 
-    async def drop_pipe(self, name: str, database: str | None = None) -> dict:
-        """Execute ``DROP PIPE …``."""
-        qualified_name = f"`{database}`.`{name}`" if database else f"`{name}`"
-        sql = f"DROP PIPE {qualified_name}"
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(sql)
-        finally:
-            conn.close()
-
+    async def drop_pipe(self, name: str, database: str | None = None, **caller) -> dict:
+        await self._query(
+            f"DROP PIPE {_qualified(name, database)}",
+            database=database,
+            confirm_destructive=True,
+            **caller,
+        )
         return {"success": True, "message": f"Pipe '{name}' dropped"}
 
-    # ── Pipe Files ─────────────────────────────────────────────
-
-    async def list_pipe_files(self, name: str, database: str | None = None) -> list[dict]:
-        """Query ``information_schema.pipe_files`` for the given pipe."""
-        where = f"pipe_name = '{name}'"
-        if database:
-            where += f" AND database_name = '{database}'"
-
-        sql = (
-            "SELECT pipe_name, file_name, state, file_size, "
-            "error_message, last_modified "
-            f"FROM information_schema.pipe_files "
-            f"WHERE {where} "
-            f"ORDER BY last_modified DESC"
+    async def list_pipe_files(self, name: str, database: str | None = None, **caller) -> list[dict]:
+        _qualified(name, database)
+        if await self.get_pipe(name, database=database, **caller) is None:
+            return []
+        where = f"pipe_name = '{name}' AND database_name = "
+        where += f"'{database}'" if database else "DATABASE()"
+        rows = await self._query(
+            "SELECT file_name, load_state, file_size, error_msg, finish_load_time "
+            f"FROM information_schema.pipe_files WHERE {where} "
+            "ORDER BY staged_time DESC",
+            database=database,
+            **caller,
         )
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(sql)
-                rows = await cur.fetchall()
-                return [
-                    {
-                        "file_name": r.get("file_name") or r.get("FILE_NAME", ""),
-                        "state": r.get("state") or r.get("STATE", "UNKNOWN"),
-                        "file_size": r.get("file_size") or r.get("FILE_SIZE"),
-                        "error_message": r.get("error_message") or r.get("ERROR_MESSAGE"),
-                        "loaded_at": str(r["last_modified"]) if r.get("last_modified") or r.get("LAST_MODIFIED") else None,
-                    }
-                    for r in rows
-                ]
-        finally:
-            conn.close()
+        files = []
+        for row in rows:
+            lower = {key.casefold(): value for key, value in row.items()}
+            finished = lower.get("finish_load_time")
+            files.append(
+                {
+                    "file_name": lower.get("file_name", ""),
+                    "state": lower.get("load_state", "UNKNOWN"),
+                    "file_size": lower.get("file_size"),
+                    "error_message": lower.get("error_msg"),
+                    "loaded_at": str(finished) if finished else None,
+                }
+            )
+        return files
 
 
-# Singleton
 pipe_service = PipeService()

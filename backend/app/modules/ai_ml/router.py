@@ -136,6 +136,8 @@ async def create_provider(
     _validate_provider_endpoint(body.endpoint)
     try:
         result = await ai_service.create_provider(body.model_dump(), user["username"])
+        if result is None:
+            raise RuntimeError("Created AI provider is unavailable")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     await write_audit_log(
@@ -237,6 +239,8 @@ async def create_model(
     data["provider_id"] = provider_id
     try:
         result = await ai_service.create_model(data, user["username"])
+        if result is None:
+            raise RuntimeError("Created AI model is unavailable")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     await write_audit_log(

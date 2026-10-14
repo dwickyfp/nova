@@ -76,7 +76,7 @@ def detect_format_from_listing(
 
     from collections import Counter
 
-    formats = Counter()
+    formats: Counter[str] = Counter()
     for key in object_keys[:sample_size]:
         fmt = detect_format_from_key(key)
         formats[fmt] += 1

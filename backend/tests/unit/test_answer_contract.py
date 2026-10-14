@@ -21,6 +21,19 @@ def cell(text, value, **source):
     return Claim(text=text, value=Decimal(str(value)), kind="cell", **source)
 
 
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), Decimal("NaN"), Decimal("-Infinity")]
+)
+def test_non_finite_cells_cannot_support_numeric_claims(value):
+    from app.modules.assistant.locale_numbers import display_matches, number_tokens
+
+    tables = {"evidence_1": {"columns": ["revenue"], "rows": [[value]]}}
+    checked = check_numeric_answer("Revenue is 12.", question="What is revenue?", tables=tables)
+    assert not checked.accepted
+    assert "12" in checked.unsupported
+    assert not display_matches(Decimal(str(value)), number_tokens("12", "en")[0])
+
+
 def test_numbers_match_result_cells_and_question_period() -> None:
     result = check_numeric_answer(
         "Omzet Juli 2026 sebesar Rp1.234 dengan margin 20%.",

@@ -16,6 +16,7 @@ from app.modules.access_control.business_policy import (
     evaluate_business_policy,
     read_business_policy,
 )
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.intelligence.action_contracts import (
     BUSINESS_ACTION_TOOL_DESCRIPTION,
@@ -290,6 +291,10 @@ class ActionService:
             )
         if evaluated.decision == "REQUIRE_APPROVAL":
             approval = action.approval
+            if approval is None:
+                raise HTTPException(
+                    status_code=403, detail="An authorized reviewer must approve this action"
+                )
             reviewer = await session_store.get(approval.session_id)
             expected_scope = Scope(
                 principal=approval.actor,
@@ -424,11 +429,9 @@ class ActionService:
             mission_id=body.mission_id,
             policy=evaluated,
             last_actor=user["username"],
-            status={
-                "ALLOW": "approved",
-                "DENY": "denied",
-                "REQUIRE_APPROVAL": "awaiting_approval",
-            }[evaluated.decision],
+            status="approved" if evaluated.decision == "ALLOW" else (
+                "denied" if evaluated.decision == "DENY" else "awaiting_approval"
+            ),
         )
         async with metadata_lock("action-preview:" + identity) as lease:
             prior = await self.repository.get("actions", identity, scope, Action)
@@ -503,7 +506,7 @@ class ActionService:
                     actor=user["username"],
                     active_role=user["active_role"],
                     security_context_version=Scope.from_user(user).security_context_version,
-                    session_id=Scope.from_user(user).session_id,
+                    session_id=user["session_id"],
                     policy_digest=evaluated.context_digest,
                     operation_id=body.operation_id,
                     approved_at=utc_now(),
@@ -739,7 +742,7 @@ class ActionService:
 class BusinessActionTool:
     name = BUSINESS_ACTION_TOOL_NAME
     description = BUSINESS_ACTION_TOOL_DESCRIPTION
-    classification = "destructive"
+    classification: ToolClassification = "destructive"
     requires_consent = True
     parameters = BUSINESS_ACTION_TOOL_PARAMETERS
 

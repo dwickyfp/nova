@@ -67,11 +67,9 @@ jobs:
           # diff would be linted and fail on machine-emitted formatting.
           uv run ruff check --force-exclude $CHANGED
 
-      # mypy carries a pre-existing 63-error baseline (see the job summary);
-      # it is wired in and visible but not yet blocking.
-      - name: mypy (report-only)
+      - name: mypy (blocking)
         working-directory: backend
-        run: uv run mypy app --no-error-summary || true
+        run: uv run mypy app --no-error-summary
 
   grammar-drift:
     # NOVA-54 PR 1. Two independent guarantees, both offline apart from the

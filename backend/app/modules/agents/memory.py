@@ -455,6 +455,8 @@ class AgentMemoryRepository:
                 revisions = [legacy]
             latest = revisions[0] if revisions else None
             if finalize_outcome:
+                if outcome is None:
+                    raise ValueError("Outcome finalization requires an outcome reference")
                 if latest and (
                     latest.state == KnowledgeState.SUPERSEDED
                     or latest.definition.get("outcome_id") != outcome["id"]
@@ -472,7 +474,7 @@ class AgentMemoryRepository:
                     == {"kind": "knowledge", "id": memory_id, "revision": latest.revision}
                 )
                 knowledge_revision = (
-                    latest.revision if reuse else latest.revision + 1 if latest else 1
+                    latest.revision if reuse and latest else latest.revision + 1 if latest else 1
                 )
                 # Allocate under the memory lease, then persist the Outcome link
                 # before exposing its Knowledge. A retry reuses a written journal
@@ -1067,8 +1069,9 @@ async def remember_user_message(
             source_quote=quote,
             source_thread_id=thread_id,
             existing_id=old["memory_id"] if old else None,
-            **({"source_message_id": source_message_id} if source_message_id else {}),
-            **({"source_scope": source_scope, "observed_at": observed_at} if source_scope else {}),
+            source_message_id=source_message_id or None,
+            source_scope=source_scope,
+            observed_at=observed_at if source_scope else None,
         )
         await write_audit_log(
             event_type="AGENT_MEMORY",
