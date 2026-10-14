@@ -136,7 +136,8 @@ async def parse_program(
 ) -> dict:
     if not program or len(program.encode()) > MAX_PROGRAM_BYTES or is_credential_value(program):
         raise UiValidationError("Invalid UI program")
-    if not runtime_available():
+    node_path = shutil.which("node")
+    if not runtime_available() or node_path is None:
         raise UiValidationError("UI validator runtime is unavailable")
     catalog()
     data = {"program": program, "evidence": _records(tables or {}), "business": business,
@@ -150,7 +151,7 @@ async def parse_program(
     try:
         async with asyncio.timeout(5), _RUNTIME_SLOTS:
             process = await asyncio.create_subprocess_exec(
-                shutil.which("node"),
+                node_path,
                 "--max-old-space-size=64",
                 "--disallow-code-generation-from-strings",
                 str(RUNTIME / "validator.cjs"),

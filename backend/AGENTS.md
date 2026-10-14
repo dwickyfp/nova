@@ -57,8 +57,8 @@ uv run python -m tests.eval.report
 
 Run `uv run ruff check --force-exclude` with the actual changed Python paths,
 relative to `backend/`, as additional arguments. This is blocking. Full-tree
-`uv run ruff check .` and `uv run mypy app --no-error-summary` expose report-only
-baselines; do not mistake them for clean blocking gates or hide new failures.
+`uv run ruff check .` exposes a report-only baseline. Full-application
+`uv run mypy app --no-error-summary` is blocking; do not hide failures.
 
 For DB access, SQL execution, auth, storage, or proxy changes, run the real-engine
 suite with CI's services, seed data, and environment. Start an isolated test

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from time import monotonic
-from typing import Literal, TypeVar, cast
+from typing import Literal, TypeVar, cast, overload
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
@@ -52,7 +52,7 @@ from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.ml_engine.analysis import detect_change, outcome_dimensions
 
 R = TypeVar("R", bound=Record)
-MODELS = {
+MODELS: dict[str, type[Record]] = {
     "nodes": ContextNode,
     "edges": ContextEdge,
     "monitors": Monitor,
@@ -558,6 +558,84 @@ class IntelligenceService:
                     status_code=409, detail="Decision lineage is incomplete; retry the operation"
                 )
 
+    @overload
+    async def get(
+        self, kind: Literal["nodes"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> ContextNode: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["edges"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> ContextEdge: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["monitors"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> Monitor: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["observations"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> MetricObservation: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["news"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> NewsItem: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["investigations"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> Investigation: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["decisions"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> Decision: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["events"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> DecisionEvent: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["outcomes"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> Outcome: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["actions"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> Action: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["action_events"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> ActionEvent: ...
+
+    @overload
+    async def get(
+        self, kind: Literal["comparisons"], record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> ChatComparison: ...
+
+    @overload
+    async def get(
+        self, kind: str, record_id: str, user: dict, *,
+        budget: CycleBudget | None = None, revision: int | None = None,
+    ) -> Record: ...
+
     async def get(
         self,
         kind: str,
@@ -602,6 +680,36 @@ class IntelligenceService:
             raise HTTPException(status_code=404, detail="Record unavailable")
         await self.authorize_record(record, user, budget)
         return record
+
+    @overload
+    async def get_for_mission(
+        self, kind: Literal["investigations"], record_id: str, user: dict, *, mission_id: str,
+        revision: int | None = None, budget: CycleBudget | None = None,
+    ) -> Investigation: ...
+
+    @overload
+    async def get_for_mission(
+        self, kind: Literal["decisions"], record_id: str, user: dict, *, mission_id: str,
+        revision: int | None = None, budget: CycleBudget | None = None,
+    ) -> Decision: ...
+
+    @overload
+    async def get_for_mission(
+        self, kind: Literal["outcomes"], record_id: str, user: dict, *, mission_id: str,
+        revision: int | None = None, budget: CycleBudget | None = None,
+    ) -> Outcome: ...
+
+    @overload
+    async def get_for_mission(
+        self, kind: Literal["actions"], record_id: str, user: dict, *, mission_id: str,
+        revision: int | None = None, budget: CycleBudget | None = None,
+    ) -> Action: ...
+
+    @overload
+    async def get_for_mission(
+        self, kind: str, record_id: str, user: dict, *, mission_id: str,
+        revision: int | None = None, budget: CycleBudget | None = None,
+    ) -> Record: ...
 
     async def get_for_mission(
         self, kind: str, record_id: str, user: dict, *, mission_id: str,
@@ -858,7 +966,9 @@ class IntelligenceService:
                 )
             )
         current, *baselines = observations
-        if any(row.value is None for row in observations):
+        observed_values = {row.id: row.value for row in observations if row.value is not None}
+        sample_counts = [row.sample_count for row in observations if row.sample_count is not None]
+        if len(observed_values) != len(observations) or len(sample_counts) != len(observations):
             return {
                 "observation_id": current.id,
                 "detection": {
@@ -869,9 +979,9 @@ class IntelligenceService:
                 "news_id": None,
             }
         detection = detect_change(
-            [row.value for row in baselines],
-            current.value,
-            sample_count=min(row.sample_count for row in observations),
+            [observed_values[row.id] for row in baselines],
+            observed_values[current.id],
+            sample_count=min(sample_counts),
             minimum_samples=monitor.minimum_samples,
             relative_threshold=monitor.relative_threshold,
             absolute_threshold=monitor.absolute_threshold,
@@ -914,7 +1024,7 @@ class IntelligenceService:
             evidence=evidence,
             baseline_windows=[
                 row.window
-                for row in sorted(baselines, key=lambda row: row.value)[
+                for row in sorted(baselines, key=lambda row: observed_values[row.id])[
                     (len(baselines) - 1) // 2 : len(baselines) // 2 + 1
                 ]
             ],
@@ -1034,7 +1144,8 @@ class IntelligenceService:
                     values[key] = Decimal(str(row[vi]))
                 return values
 
-            left, right = {}, segments(after)
+            left: dict[str, Decimal] = {}
+            right = segments(after)
             for table in before_tables:
                 for key, value in segments(table).items():
                     left[key] = left.get(key, Decimal(0)) + value / len(before_tables)
@@ -1089,7 +1200,9 @@ class IntelligenceService:
                 evidence_ids=[entry.id for entry in news.evidence],
                 next_test="Select a governed driver dimension to decompose the change.",
             ))
-        timeline = [{"at": news.window.end.isoformat(), "kind": "detection", "reference": news.id}]
+        timeline: list[dict] = [
+            {"at": news.window.end.isoformat(), "kind": "detection", "reference": news.id}
+        ]
         for related_id in monitor.related_monitor_ids:
             related = await self.get("monitors", related_id, user, budget=budget)
             observed = await self.observe(related, news.window, user, budget)
@@ -1603,7 +1716,7 @@ class IntelligenceService:
                 "news": None,
             }
         unknown_count = before.sample_count is None or after.sample_count is None
-        insufficient = (not unknown_count and min(
+        insufficient = (before.sample_count is not None and after.sample_count is not None and min(
             before.sample_count, after.sample_count
         ) < monitor.minimum_samples) or any(
             row.completeness is not None and row.completeness < 1 for row in (before, after)
@@ -1711,7 +1824,7 @@ class IntelligenceService:
         mission = await mission_service.get(mission_id, user, project=False)
         if mission.agent_id not in {None, agent_id} or mission.cancel_requested:
             raise HTTPException(status_code=409, detail="Mission cannot accept this comparison")
-        scopes = {}
+        scopes: dict[str, Scope] = {}
         for binding in [mission.scope, *mission.historical_bindings, *mission.run_bindings.values(),
                         *mission.object_bindings.values()]:
             scopes.setdefault(fingerprint(binding.model_dump(exclude={"session_id"})), binding)

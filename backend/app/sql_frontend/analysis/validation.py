@@ -77,7 +77,26 @@ def _native_statement_checks(statement: ast.Statement, context: Any = None) -> N
     """Refuse native statements Nova would misread or that would mislead the engine."""
     _stage_paths_end_cleanly(statement)
     _native_session_settings(statement)
+    _native_pipe_execution(statement, context)
     return None
+
+
+def _native_pipe_execution(statement: ast.Statement, context: Any) -> None:
+    if not context or not context.ranger_enabled:
+        return
+    root = statement.parsed.statement_context
+    kind = type(root).__name__
+    starts_execution = kind == "CreatePipeStatementContext"
+    if kind == "AlterPipeStatementContext":
+        starts_execution = root.alterPipeClause().SUSPEND() is None
+    if starts_execution:
+        from app.sql_frontend.errors import CapabilityUnsupportedError
+
+        raise CapabilityUnsupportedError(
+            "Pipe execution is unavailable with Ranger: background pipe tasks do not "
+            "preserve the caller's principal and active role. Use caller-scoped COPY "
+            "or scheduled Nova tasks instead."
+        )
 
 
 def _stage_paths_end_cleanly(statement: ast.Statement) -> None:

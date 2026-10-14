@@ -1,8 +1,11 @@
 """Redis-backed session store. Stores encrypted DB passwords per session."""
 
 import uuid
+from collections.abc import Mapping
+from typing import Any
 
 import redis.asyncio as aioredis
+from redis.typing import EncodableT, FieldT
 
 from app.core.config import settings
 
@@ -50,7 +53,7 @@ class SessionStore:
                 raise ValueError("A valid explicit default role is required")
             if not active_role or active_role not in roles:
                 raise ValueError("A valid active role is required")
-        data = {
+        data: Mapping[FieldT, EncodableT] = {
             "username": username,
             "encrypted_password": encrypted_password,
             "roles": ",".join(roles),
@@ -69,9 +72,14 @@ class SessionStore:
         if not self._redis:
             return None
 
-        data = await self._redis.hgetall(f"{SESSION_PREFIX}{session_id}")
-        if not data:
+        raw = await self._redis.hgetall(f"{SESSION_PREFIX}{session_id}")
+        if not raw:
             return None
+        data: dict[str, Any] = {
+            key.decode() if isinstance(key, bytes) else key:
+            value.decode() if isinstance(value, bytes) else value
+            for key, value in raw.items()
+        }
         roles_value = data.get("assigned_roles") or data.get("roles", "")
         data["roles"] = roles_value.split(",") if roles_value else []
         data["assigned_roles"] = list(data["roles"])

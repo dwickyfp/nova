@@ -204,6 +204,7 @@ class ToolRegistry:
         self.default_skills: tuple[str, ...] = ()
         self.discoverable_skills: tuple[str, ...] = ()
         self.skill_definitions: dict[str, Any] = {}
+        self.release_manifest: dict[str, Any] | None = None
 
     def register(self, tool: AssistantTool) -> None:
         self._tools[tool.name] = tool

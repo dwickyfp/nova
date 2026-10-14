@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import IO
 
 
 @dataclass(repr=False)
@@ -22,7 +22,7 @@ class ConsentApproval:
     """Approved input kept only in the paused request's in-memory future."""
 
     secure_input: dict[str, str] | None = None
-    upload: tuple[str, BinaryIO, str] | None = None
+    upload: tuple[str, IO[bytes], str] | None = None
 
 
 @dataclass

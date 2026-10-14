@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 from app.common.audit import write_audit_log
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
@@ -13,6 +13,17 @@ from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.intelligence.semantic_views import semantic_view_service
 
 _AGENT_ENTITY_TYPES = frozenset({"agent", "studio_agent", "studio-agent"})
+
+
+class _InspectionAudit(TypedDict):
+    event_type: str
+    user_name: str
+    action: str
+    object_type: str
+    object_name: str
+    session_id: str | None
+    active_role: str
+    security_context_version: int
 
 
 def _target_id(invocation: ToolInvocation, context: Any) -> str | None:
@@ -92,7 +103,7 @@ class InspectAgentConfigurationTool:
                 summary="",
                 error="Open an Agent Studio configuration or provide an agent id.",
             )
-        audit_fields = {
+        audit_fields: _InspectionAudit = {
             "event_type": "assistant_agent_inspect",
             "user_name": security.principal,
             "action": "INSPECT",

@@ -15,7 +15,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation, localcontext
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Any
 
 from babel import Locale, UnknownLocaleError
@@ -23,6 +23,7 @@ from babel import Locale, UnknownLocaleError
 from app.modules.assistant.locale_numbers import (
     UNIT_POWERS,
     NumberToken,
+    decimal_exponent,
     display_matches,
     format_number,
     format_percent,
@@ -165,7 +166,8 @@ def _number(value: Any) -> Decimal | None:
     if isinstance(value, int | float | Decimal):
         # A numeric cell is already a number; separators only exist in text.
         try:
-            return Decimal(str(value))
+            parsed = Decimal(str(value))
+            return parsed if parsed.is_finite() else None
         except InvalidOperation:
             return None
     raw = str(value).strip().replace(" ", "")
@@ -406,9 +408,9 @@ def _derivations(tables: dict[str, dict[str, Any]]) -> list[_Derived]:
             shared = frozenset.intersection(*labels) if labels else frozenset()
             numeric: dict[str, list[Decimal]] = {}
             for index, column in enumerate(columns[:_DERIVE_COLUMNS * 2]):
-                values = [_number(row[index]) if len(row) > index else None for row in rows]
-                if values and all(value is not None for value in values):
-                    numeric[column] = [value for value in values if value is not None]
+                parsed_values = [_number(row[index]) if len(row) > index else None for row in rows]
+                if parsed_values and all(value is not None for value in parsed_values):
+                    numeric[column] = [value for value in parsed_values if value is not None]
             numeric = dict(list(numeric.items())[:_DERIVE_COLUMNS])
 
             def add(value: Decimal, column: str, percent: bool, directional: bool,
@@ -439,12 +441,11 @@ def _derivations(tables: dict[str, dict[str, Any]]) -> list[_Derived]:
                             reference, subject = subject, reference
                         pair = labels[first] & labels[second]
                         either = labels[first] | labels[second]
-                        ends = {"subject": subject, "reference": reference}
                         add(after - before, column, percent_column, True, pair, either=either,
-                            **ends)
+                            subject=subject, reference=reference)
                         if before != 0 and not percent_column:
                             add((after - before) / abs(before) * 100, column, True, True, pair,
-                                either=either, **ends)
+                                either=either, subject=subject, reference=reference)
                 if total > 0 and not percent_column and all(value >= 0 for value in values):
                     for value, row_labels in zip(values, labels, strict=True):
                         add(value / total * 100, column, True, False, row_labels)
@@ -575,12 +576,12 @@ def _cell_matches(value: Decimal, token: NumberToken, percent: bool) -> bool:
     if value in token.values:
         return True
     return _computed(value) and display_matches(value, token) and (
-        abs(value) >= 1000 or any(-reading.as_tuple().exponent >= 2 for reading in token.values)
+        abs(value) >= 1000 or any(-decimal_exponent(reading) >= 2 for reading in token.values)
     )
 
 
 def _computed(value: Decimal) -> bool:
-    return -value.normalize().as_tuple().exponent > 2
+    return value.is_finite() and -decimal_exponent(value.normalize()) > 2
 
 
 def _list_marker(answer: str, token: NumberToken) -> bool:
@@ -887,7 +888,7 @@ def _label_values(
 
 
 def _places(value: Decimal) -> int:
-    return 0 if value == value.to_integral_value() else min(2, -value.as_tuple().exponent)
+    return 0 if value == value.to_integral_value() else min(2, -decimal_exponent(value))
 
 
 def check_comparisons(
@@ -940,7 +941,7 @@ def _comparison_error(
         )
     if claim.relation in {"max", "min"}:
         top = claim.relation == "max"
-        best = max(values, key=values.get) if top else min(values, key=values.get)
+        best = max(values, key=values.__getitem__) if top else min(values, key=values.__getitem__)
         if values[first] == values[best]:
             return None
         return say(
@@ -1114,9 +1115,9 @@ def finalize_verified_answer(
         # Mostly verified prose stays; a sentence stating an unsupported number is
         # dropped. A wrong headline number or table cell is not patched around: the
         # answer is rebuilt from cells.
-        text = remove_unverified(answer, check.unsupported_spans)
-        if text is not None:
-            return VerifiedAnswer(text, check, False, comparison)
+        retained_text = remove_unverified(answer, check.unsupported_spans)
+        if retained_text is not None:
+            return VerifiedAnswer(retained_text, check, False, comparison)
     replacement, replacement_claims = render_with_claims(
         tables, language=language, include_table=not tables_shown
     )
@@ -1167,6 +1168,13 @@ def _layout(table: dict[str, Any]) -> tuple[list[str], list[list[Any]], list[int
     return columns, rows, labels, measures
 
 
+def _numeric_cell(row: list[Any], *, index: int) -> Decimal:
+    value = _number(row[index])
+    if value is None:
+        raise ValueError("A comparison measure must contain finite numbers")
+    return value
+
+
 def _period_name(value: Any, language: str) -> str:
     text = str(value)
     if text in {"current_period", "previous_period"}:
@@ -1189,7 +1197,7 @@ def _value_text(
         return rendering.percent(points, 2, **source)
     if parsed == parsed.to_integral_value():
         return rendering.number(parsed, 0, **source)
-    exponent = max(0, -parsed.as_tuple().exponent)
+    exponent = max(0, -decimal_exponent(parsed))
     if (words & _MONEY_IDENTIFIERS and exponent <= 2) or _computed(parsed):
         return rendering.number(parsed, 2, **source)
     return rendering.number(parsed, exponent, **source)
@@ -1216,7 +1224,7 @@ def verified_leaders(
         if len(rows) < 2 or not labels:
             continue
         for index in measures:
-            ordered = sorted(rows, key=lambda row, i=index: _number(row[i]), reverse=True)
+            ordered = sorted(rows, key=partial(_numeric_cell, index=index), reverse=True)
 
             def describe(
                 row: list[Any], i: int = index, source: str = evidence_id,
@@ -1346,7 +1354,7 @@ def _sentences(
         return out
     out = []
     for i in measures:
-        ordered = sorted(rows, key=lambda row, i=i: _number(row[i]), reverse=True)
+        ordered = sorted(rows, key=partial(_numeric_cell, index=i), reverse=True)
         if len(rows) <= 6:
             out.append(f"{name[i]}: " + ", ".join(
                 f"{label_of(row)} {cell(row, i)}" for row in ordered

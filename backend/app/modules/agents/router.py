@@ -111,7 +111,7 @@ from app.modules.agents.versions import (
 )
 from app.modules.assistant import events
 from app.modules.assistant.attachments import attachment_prompt
-from app.modules.assistant.consent import consent_broker
+from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.provider import assistant_provider
@@ -347,7 +347,7 @@ async def _require_agent_thread(thread_id: str, agent_id: str, user_name: str) -
     matches = thread and (thread.get("agent_id") == agent_id or (
         agent_id in SMART_AGENT_IDS and thread.get("agent_id") in SMART_AGENT_IDS
     ))
-    if not matches:
+    if thread is None or not matches:
         raise HTTPException(status_code=404, detail="Thread not found")
     return thread
 
@@ -579,7 +579,7 @@ async def _scoped_auto_root(root_run_id: str, user: dict) -> dict:
         or root["owner_name"] != user["username"]
         or root["role_name"] != session_security(user).active_role
     )
-    if invalid:
+    if root is None or invalid:
         raise HTTPException(status_code=404, detail="Run not found in this role")
     await _require_agent_thread(root["thread_id"], AUTO_AGENT_ID, user["username"])
     return root
@@ -1061,6 +1061,8 @@ async def approve_rule_proposal(
             owner_name=user["username"],
             role_name=session_security(user).active_role,
         )
+        if updated is None:
+            raise HTTPException(status_code=409, detail="Proposal update requires reconciliation")
         return RuleProposalView(**updated)
     try:
         candidate, _, prior_fp, proposed_fp, _, _ = candidate_definition(
@@ -1132,6 +1134,8 @@ async def approve_rule_proposal(
     updated = await rule_proposal_repository.get(
         proposal_id, owner_name=user["username"], role_name=role
     )
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Proposal update requires reconciliation")
     return RuleProposalView(**updated)
 
 
@@ -1161,6 +1165,8 @@ async def reject_rule_proposal(
     updated = await rule_proposal_repository.get(
         proposal_id, owner_name=user["username"], role_name=role
     )
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Proposal update requires reconciliation")
     return RuleProposalView(**updated)
 
 
@@ -2391,7 +2397,7 @@ async def replay_agent_run(
                     },
                 )
                 return
-            if state["status"] != "running" and cursor >= state["last_sequence"]:
+            if state is None or (state["status"] != "running" and cursor >= state["last_sequence"]):
                 return
             if not frames:
                 await asyncio.sleep(1)
@@ -2536,9 +2542,12 @@ async def send_agent_message(
 
         key = hashlib.sha256(f"{user_name}:{thread_id}:{action.operation_id}".encode()).hexdigest()
         async with metadata_lock(f"ui-action:{key}"):
+            redis = session_store._redis
+            if redis is None:
+                raise HTTPException(503, "Metadata coordination is unavailable")
             if await assistant_repository.ui_action_seen(
                 thread_id, action.operation_id, user_name=user_name
-            ) or not await session_store._redis.set(
+            ) or not await redis.set(
                 f"nova:studio:ui-action:{key}", "accepted", nx=True, ex=86400
             ):
                 raise await _ui_denied(user, action.content_id,
@@ -2850,7 +2859,9 @@ async def send_agent_message(
         summarize_history=True,
     )
 
-    async def resolve_consent(invocation: ToolInvocation, classification: str) -> bool | None:
+    async def resolve_consent(
+        invocation: ToolInvocation, classification: str
+    ) -> bool | None | ConsentApproval:
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,

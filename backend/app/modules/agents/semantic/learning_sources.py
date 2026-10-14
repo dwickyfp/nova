@@ -112,7 +112,7 @@ def observation(
     context: LearningContext,
     shape: dict,
     *,
-    authority: str,
+    authority: Literal["usage_observation", "published_verified_query", "lifecycle_evidence"],
     evidence: list | None = None,
     observations: int | None = None,
     attribution="unknown",

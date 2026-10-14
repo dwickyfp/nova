@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import hashlib
 import json
 import re
@@ -73,12 +74,12 @@ class SemanticViewOrder(BaseModel):
 
 
 class SemanticViewQuery(BaseModel):
-    metrics: list[str] = Field(default_factory=list, max_length=32)
-    dimensions: list[str] = Field(default_factory=list, max_length=32)
+    metrics: builtins.list[str] = Field(default_factory=list, max_length=32)
+    dimensions: builtins.list[str] = Field(default_factory=list, max_length=32)
     filters: dict[str, str | int | float | bool] = Field(default_factory=dict, max_length=32)
-    named_filters: list[str] = Field(default_factory=list, max_length=16)
+    named_filters: builtins.list[str] = Field(default_factory=list, max_length=16)
     time: SemanticViewTime | None = None
-    order_by: list[SemanticViewOrder] = Field(default_factory=list, max_length=8)
+    order_by: builtins.list[SemanticViewOrder] = Field(default_factory=list, max_length=8)
     limit: int = Field(default=100, ge=1, le=1000)
     version: int | None = Field(default=None, ge=1)
 
@@ -96,7 +97,7 @@ class SemanticViewVerifiedQueryCreate(BaseModel):
     semantic_plan: dict
     verified_sql: str = Field(min_length=1, max_length=100_000)
     expected_result_signature: str | None = Field(default=None, max_length=256)
-    tags: list[str] = Field(default_factory=list, max_length=32)
+    tags: builtins.list[str] = Field(default_factory=list, max_length=32)
 
 
 def _record(result: dict, row: list) -> dict[str, Any]:
@@ -170,7 +171,7 @@ class SemanticViewService:
         return _view_row(result, result["rows"][0])
 
     @staticmethod
-    async def news_views() -> list[dict]:
+    async def news_views() -> builtins.list[dict]:
         """Views with News switched on; metadata only, the reader authorizes each."""
         result = await db.execute_system(
             "SELECT id,catalog_name,database_name,schema_name,name,owner_name,"
@@ -242,7 +243,9 @@ class SemanticViewService:
                                 return False
                         result = await asyncio.wait_for(
                             query_service.execute(
-                                sql="SELECT * FROM "
+                                # Plan a real SELECT so FE authorization runs without
+                                # fetching data. LIMIT 0 can eliminate the protected scan.
+                                sql="EXPLAIN SELECT * FROM "
                                 + ".".join(f"`{part}`" for part in source.split("."))
                                 + " LIMIT 1",
                                 username=user["username"],
@@ -326,7 +329,7 @@ class SemanticViewService:
             raise HTTPException(status_code=404, detail="Semantic View not found")
         return view
 
-    async def list(self, user: dict) -> list[dict]:
+    async def list(self, user: dict) -> builtins.list[dict]:
         result = await db.execute_system(
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
             "WHERE status<>'DEPRECATED' ORDER BY name"
@@ -346,9 +349,11 @@ class SemanticViewService:
             "WHERE view_id=%s ORDER BY version DESC",
             [view_id],
         )
-        versions = [await self._version(view_id, row[0]) for row in result["rows"]]
+        versions: builtins.list[dict | None] = [
+            await self._version(view_id, row[0]) for row in result["rows"]
+        ]
         if not can_manage(view["owner_name"], user):
-            accessible_versions = []
+            accessible_versions: builtins.list[dict | None] = []
             for row in versions:
                 if not row or row["status"] not in {"ACTIVE", "DEPRECATED"}:
                     continue
@@ -448,7 +453,9 @@ class SemanticViewService:
                 "status": row["status"], "version": version, "definition": row["definition"],
                 "fingerprint": expected_fingerprint, "database_name": view["database_name"]}
 
-    async def list_active_for_agent(self, user: dict, *, agent_id: str | None = None) -> list[dict]:
+    async def list_active_for_agent(
+        self, user: dict, *, agent_id: str | None = None
+    ) -> builtins.list[dict]:
         result = await db.execute_system(
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
             "WHERE status='ACTIVE' AND active_version IS NOT NULL ORDER BY name"
@@ -644,7 +651,10 @@ class SemanticViewService:
         new_ir = SemanticModelIR.from_ossie(definition)
         await self._insert_version(view_id, latest_version + 1, definition, new_ir.fingerprint)
         await self._audit("ALTER", view["name"], user)
-        return await self._version(view_id, latest_version + 1)
+        created = await self._version(view_id, latest_version + 1)
+        if created is None:
+            raise HTTPException(status_code=409, detail="Semantic version requires reconciliation")
+        return created
 
     async def adopt_verified_plan(
         self, view_id: str, *, question: str, semantic_plan: dict, user: dict
@@ -854,7 +864,7 @@ class SemanticViewService:
 
         view = await self._owned(view_id, user)
         row = await self._version(view_id, version)
-        self._require_publishable(view, row, version, acknowledge_regressions)
+        row = self._require_publishable(view, row, version, acknowledge_regressions)
         signature = self._publication_signature(row)
         if not await self._source_access(row["definition"], user):
             raise HTTPException(status_code=403, detail="Semantic source is unavailable")
@@ -901,7 +911,9 @@ class SemanticViewService:
         ).hexdigest()
 
     @staticmethod
-    def _require_publishable(view, row, version, acknowledge_regressions) -> None:
+    def _require_publishable(
+        view: dict, row: dict | None, version: int, acknowledge_regressions: bool
+    ) -> dict:
         if (
             not row
             or row["status"] not in {"VALIDATED", "ACTIVE"}
@@ -920,6 +932,7 @@ class SemanticViewService:
                 status_code=409,
                 detail="Verified-query regressions require explicit acknowledgement",
             )
+        return row
 
     async def _publish_locked(
         self,
@@ -933,7 +946,7 @@ class SemanticViewService:
     ) -> dict:
         view = await self._owned(view_id, user)
         row = await self._version(view_id, version)
-        self._require_publishable(view, row, version, acknowledge_regressions)
+        row = self._require_publishable(view, row, version, acknowledge_regressions)
         if preflight_signature is not None:
             if self._publication_signature(row) != preflight_signature:
                 raise HTTPException(

@@ -16,7 +16,7 @@ No credential is read or written here; preferences are UI metadata only.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from app.common.news_entitlement import is_news_enabled
 from app.core.database import db
@@ -28,6 +28,7 @@ from app.modules.agents.studio_schemas import (
     StudioIdentity,
     StudioPreferences,
     StudioSettingsResponse,
+    StudioTheme,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,9 @@ class StudioService:
             values[key] = row[1]
 
         return StudioPreferences(
-            theme=_choice(values.get("theme"), ("light", "dark", "system"), "system"),
+            theme=cast(
+                StudioTheme, _choice(values.get("theme"), ("light", "dark", "system"), "system")
+            ),
             language=str(values.get("language") or "en"),
             preferred_name=_str_or_none(values.get("preferred_name")),
             role=_str_or_none(values.get("role")),
@@ -163,7 +166,7 @@ def _bool(value: Any, default: bool) -> bool:
 
 def _choice(value: Any, allowed: tuple[str, ...], default: str) -> str:
     text = str(value).strip().lower() if value is not None else ""
-    return text if text in allowed else default  # type: ignore[return-value]
+    return text if text in allowed else default
 
 
 #: Process-wide service.

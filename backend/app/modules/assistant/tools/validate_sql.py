@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.common.sql_guard import redact_sql_credentials, split_sql_statements
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 
 
@@ -57,7 +58,7 @@ class ValidateSQLTool:
         "required": ["sql"],
         "additionalProperties": False,
     }
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     requires_consent = False
 
     def preview(self, invocation: ToolInvocation) -> str:

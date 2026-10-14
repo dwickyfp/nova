@@ -33,7 +33,7 @@ import re
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from app.common.sql_guard import redact_sql_credentials
 from app.core.config import settings
@@ -53,6 +53,7 @@ from app.modules.agents.semantic.runtime import (
 from app.modules.agents.semantic.time_ranges import resolve_execution_time
 from app.modules.assistant.evidence_health import (
     EvidenceFacts,
+    PlanSource,
     assess_evidence,
     attach_evidence_health,
 )
@@ -307,7 +308,7 @@ class SemanticQueryTool:
         explanation = "Compiled from governed semantic metrics and dimensions."
         # Where the plan came from, not a model's opinion of itself: a verified
         # query is exact, a validated plan is the model's reading of the question.
-        plan_source = "verified_query" if verified_hit else (
+        plan_source: PlanSource = "verified_query" if verified_hit else (
             "turn_planner" if plan_from_turn else "model_planner"
         )
         confidence = 1.0 if verified_hit else 0.8
@@ -573,10 +574,11 @@ class SemanticQueryTool:
                 evidence_id=invocation.tool_call_id,
             )
             seed, requirements = investigation_seed(envelope, semantic_ir, plan, time_context)
-            outcome.trace_detail["evidence_envelope"] = envelope.model_dump(mode="json")
+            trace_detail = dict(outcome.trace_detail or {})
+            trace_detail["evidence_envelope"] = envelope.model_dump(mode="json")
             if time_context:
-                outcome.trace_detail["execution_time_context"] = time_context.as_dict()
-            outcome = replace(outcome, business_result={
+                trace_detail["execution_time_context"] = time_context.as_dict()
+            outcome = replace(outcome, trace_detail=trace_detail, business_result={
                 "envelope": envelope, "seed": seed, "required_inputs": requirements,
                 "population_fingerprint": semantic_population_fingerprint(plan),
                 "time_dimension": plan.time.dimension if plan.time else None,
@@ -868,8 +870,13 @@ def _table_payload(results: list[Any], *, title: str = "") -> dict[str, Any] | N
 
 
 def _execution_facts(
-    model: dict[str, Any], results: list[Any], plan_source: str, verified_hit: VerifiedQuery | None,
-    plan: SemanticPlan, *, preview_truncated: bool = False,
+    model: dict[str, Any],
+    results: list[Any],
+    plan_source: PlanSource,
+    verified_hit: VerifiedQuery | None,
+    plan: SemanticPlan,
+    *,
+    preview_truncated: bool = False,
 ) -> EvidenceFacts:
     truncated = preview_truncated or any(
         getattr(result, "truncated", None) is True or len(result.rows) > 50
@@ -879,7 +886,7 @@ def _execution_facts(
             and len(result.rows) >= plan.limit)
         for result in results
     )
-    coverage = (
+    coverage: Literal["complete", "truncated", "partial", "unknown"] = (
         "truncated" if truncated else "complete"
         if results and all(getattr(result, "truncated", None) is False for result in results)
         else "unknown"

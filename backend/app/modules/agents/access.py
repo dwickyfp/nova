@@ -223,6 +223,7 @@ async def resolve_agent_dependencies(agent: dict) -> list[tuple[str, str]]:
             db = tool.get("database_name") or ""
             deps.append(("function", f"{db}.{tool['function_name']}".strip(".")))
 
+    version: dict | None
     for view_id in bound_view_ids(agent):
         deps.append(("semantic_view", view_id))
         if pins is not None:
@@ -407,6 +408,7 @@ async def access_fingerprint(agent: dict) -> str:
 
     pins = await _semantic_pins(agent)
     versions = []
+    version: dict | None
     for view_id in bound_view_ids(agent):
         if pins is not None:
             pin = pins[view_id]

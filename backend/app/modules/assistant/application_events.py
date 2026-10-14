@@ -50,7 +50,11 @@ class ApplicationEventBroker:
         correlation = action.get("correlation_id")
         surface = action.get("surface_id")
         capability = action.get("capability")
-        if not all(isinstance(item, str) and item for item in (correlation, surface, capability)):
+        if (
+            not isinstance(correlation, str) or not correlation
+            or not isinstance(surface, str) or not surface
+            or not isinstance(capability, str) or not capability
+        ):
             return
         with self._lock:
             existing = self._threads.get(thread_id)

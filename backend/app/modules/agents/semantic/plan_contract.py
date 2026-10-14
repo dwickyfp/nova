@@ -116,7 +116,7 @@ def semantic_plan_schema() -> dict[str, Any]:
 
 #: Keys added after the first contract. A plan stored or generated before them
 #: is still valid; the defaults mean "not used".
-_OPTIONAL_DEFAULTS = {"having": [], "transforms": [], "top_n_per_group": None}
+_OPTIONAL_DEFAULTS: dict[str, Any] = {"having": [], "transforms": [], "top_n_per_group": None}
 
 
 def validate_generated_plan(value: dict[str, Any]) -> None:

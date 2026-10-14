@@ -44,6 +44,21 @@ class AutomationActionAdapter:
         return self._service
 
     @staticmethod
+    def configuration(action: Action) -> AutomationActionConfiguration:
+        if not isinstance(action.configuration, AutomationActionConfiguration):
+            raise HTTPException(status_code=409, detail="Automation action configuration changed")
+        return action.configuration
+
+    @staticmethod
+    def action_receipt(
+        action: Action, *, compensated: bool = False
+    ) -> AutomationActionReceipt | None:
+        receipt = action.compensation_receipt if compensated else action.receipt
+        if receipt is not None and not isinstance(receipt, AutomationActionReceipt):
+            raise HTTPException(status_code=409, detail="Automation action receipt changed")
+        return receipt
+
+    @staticmethod
     def body(configuration: AutomationActionConfiguration) -> AutomationCreate:
         return AutomationCreate(
             **configuration.model_dump(exclude={"agent_id", "semantic", "delivery"})
@@ -62,18 +77,18 @@ class AutomationActionAdapter:
         return automation_creation_id(
             action.scope.principal,
             action.scope.active_role,
-            action.configuration.agent_id,
+            AutomationActionAdapter.configuration(action).agent_id,
             action.id,
         )
 
     @classmethod
     def expected(cls, action: Action, *, enabled: bool) -> dict:
-        body = cls.body(action.configuration).model_dump(mode="json")
+        body = cls.body(AutomationActionAdapter.configuration(action)).model_dump(mode="json")
         body["delivery"]["execution_binding"] = cls.binding(action).model_dump(mode="json")
         return {
             **body,
             "enabled": enabled,
-            "agent_id": action.configuration.agent_id,
+            "agent_id": AutomationActionAdapter.configuration(action).agent_id,
             "owner_name": action.scope.principal,
             "role_name": action.scope.active_role,
         }
@@ -100,7 +115,7 @@ class AutomationActionAdapter:
     async def read(self, action: Action, user: dict) -> dict | None:
         if action.scope != Scope.from_user(user):
             raise HTTPException(status_code=404, detail="Action unavailable")
-        await self.authorize(action.configuration, user)
+        await self.authorize(AutomationActionAdapter.configuration(action), user)
         return await self.repository.get(self.identity(action), owner_name=action.scope.principal)
 
     @staticmethod
@@ -116,15 +131,15 @@ class AutomationActionAdapter:
     ) -> AutomationActionReceipt:
         if action.scope != Scope.from_user(user):
             raise HTTPException(status_code=404, detail="Action unavailable")
-        await self.preview(action.configuration, user)
+        await self.preview(AutomationActionAdapter.configuration(action), user)
         if guard:
             await guard()
         try:
             saved = await self.repository.create(
-                agent_id=action.configuration.agent_id,
+                agent_id=AutomationActionAdapter.configuration(action).agent_id,
                 owner_name=action.scope.principal,
                 role_name=action.scope.active_role,
-                body=self.body(action.configuration),
+                body=self.body(AutomationActionAdapter.configuration(action)),
                 creation_identity=action.id,
                 execution_binding=self.binding(action),
             )
@@ -142,7 +157,7 @@ class AutomationActionAdapter:
             )
         expected = automation_configuration(self.expected(action, enabled=not compensated))
         actual = automation_configuration(record)
-        receipt = action.compensation_receipt if compensated else action.receipt
+        receipt = self.action_receipt(action, compensated=compensated)
         match = actual == expected and record["automation_id"] == self.identity(action)
         if receipt is not None:
             match = match and (
@@ -168,11 +183,12 @@ class AutomationActionAdapter:
             )
         expected = automation_configuration(self.expected(action, enabled=True))
         actual = automation_configuration(record)
+        receipt = self.action_receipt(action)
         if actual != expected or (
-            action.receipt is not None
+            receipt is not None
             and (
-                action.receipt.automation_id != record["automation_id"]
-                or action.receipt.configuration_digest != fingerprint(actual)
+                receipt.automation_id != record["automation_id"]
+                or receipt.configuration_digest != fingerprint(actual)
             )
         ):
             raise HTTPException(

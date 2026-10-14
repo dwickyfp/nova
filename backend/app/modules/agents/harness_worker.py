@@ -49,10 +49,10 @@ from app.modules.assistant.answer_contract import (
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.events import _json_default
-from app.modules.assistant.provider import assistant_provider
+from app.modules.assistant.provider import ProviderSelection, assistant_provider
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.security import observation_context, session_security
-from app.modules.assistant.service import AssistantLoop, LoopContext
+from app.modules.assistant.service import MAX_CALLS_PER_TOOL, AssistantLoop, LoopContext
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.state import AssistantMessage, AssistantThread
 from app.modules.assistant.tools.redaction import is_credential_value, redact_rows
@@ -839,7 +839,7 @@ class AgentHarnessWorker:
         )
         if not evidence:
             answer = "No specialist could be assigned to this question."
-            usage = {}
+            usage: dict[str, Any] = {}
         else:
             selected_provider = root["payload"].get("provider_id")
             selected_model = root["payload"].get("model")
@@ -854,7 +854,7 @@ class AgentHarnessWorker:
                 if first_agent:
                     selected_provider = first_agent.get("model_provider_id")
                     selected_model = first_agent.get("model_name")
-            provider_kwargs = {}
+            provider_kwargs: ProviderSelection = {}
             if selected_provider:
                 provider_kwargs["provider"] = await assistant_provider.resolve(
                     provider_id=selected_provider, model=selected_model
@@ -1256,10 +1256,10 @@ class AgentHarnessWorker:
             system_prompt=system_prompt,
             context_manager=ContextManager(token_budget=context_limit),
             spend_limit=participant_token_limit if smart else None,
-            **({
-                "max_calls_per_tool": limits.max_calls_per_tool,
-                "iterative": limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
-            } if limits else {}),
+            max_calls_per_tool=limits.max_calls_per_tool if limits else MAX_CALLS_PER_TOOL,
+            iterative=bool(
+                limits and limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations
+            ),
         )
         await self.repository.event(
             root["run_id"],
@@ -1307,7 +1307,7 @@ class AgentHarnessWorker:
             if int((context.usage or {}).get("total_tokens") or 0) >= participant_token_limit:
                 raise BudgetExceeded("Participant token budget exhausted")
             current = await self._user_for(child)
-            if getattr(context, "mission_id", None) and (
+            if context.mission_id is not None and (
                 await mission_service.cancellation_requested(context.mission_id, current)
             ):
                 raise RunCancelled("Mission cancellation requested")

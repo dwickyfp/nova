@@ -8,11 +8,10 @@ import hmac
 import json
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 import redis.asyncio as aioredis
-from pydantic import BaseModel
 
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
@@ -174,9 +173,16 @@ def session_fingerprint(session_id: str) -> str:
     return hmac.new(settings.SECRET_KEY.encode(), session_id.encode(), hashlib.sha256).hexdigest()
 
 
+class MigrationJobRequest(Protocol):
+    @property
+    def source(self) -> str: ...
+
+    def model_dump(self, *, mode: Literal["json"]) -> dict[str, Any]: ...
+
+
 async def submit_job(
     operation: str,
-    body: BaseModel,
+    body: MigrationJobRequest,
     user: dict[str, Any],
 ) -> MigrationJobAccepted:
     """Queue only references and request options; never persist a credential."""
@@ -287,7 +293,8 @@ def _date(value: Any) -> datetime | None:
 
 
 async def job_session_id(client: aioredis.Redis, job_id: str) -> str | None:
-    return await client.get(f"{_SESSION_KEY_PREFIX}{job_id}")
+    value = await client.get(f"{_SESSION_KEY_PREFIX}{job_id}")
+    return value.decode() if isinstance(value, bytes) else value
 
 
 async def clear_job_session(client: aioredis.Redis, job_id: str) -> None:

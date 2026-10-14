@@ -97,7 +97,7 @@ class InspectQueryErrorTool:
             )
         if card_event is None and (execution is None or execution.type not in {"sql", "query"}):
             return ToolOutcome(ok=False, summary="", error="No current SQL execution is available.")
-        if card_event is None and execution.status != "error":
+        if card_event is None and (execution is None or execution.status != "error"):
             return ToolOutcome(
                 ok=False,
                 summary="",
@@ -114,7 +114,9 @@ class InspectQueryErrorTool:
             ),
             None,
         )
-        execution_id = _event_execution_id(card_event) if card_event else execution.execution_id
+        execution_id = _event_execution_id(card_event) if card_event else (
+            execution.execution_id if execution else None
+        )
         error = (execution.error_message if execution and card_event is None else None) or (
             event.payload.get("errorMessage") if event else None
         )
@@ -173,7 +175,8 @@ class VerifyQueryRepairTool:
         app = _current_app(context)
         execution = app.execution if app else None
         if (
-            execution is None
+            app is None
+            or execution is None
             or execution.type not in {"sql", "query"}
             or execution.status != "success"
             or not execution.execution_id

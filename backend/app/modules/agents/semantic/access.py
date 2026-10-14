@@ -101,7 +101,7 @@ async def load_authorized_models(context: Any) -> list[dict[str, Any]]:
                 )
                 if not pin:
                     raise HTTPException(409, "Semantic binding is missing from the pinned release")
-                record = await semantic_view_service.get_version_for_agent(
+                record: dict | None = await semantic_view_service.get_version_for_agent(
                     view_id,
                     pin["version"],
                     pin["fingerprint"],

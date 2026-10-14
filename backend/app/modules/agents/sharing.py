@@ -37,11 +37,15 @@ MAX_SHARES_PER_OBJECT = 50
 _DATA_KEYS = frozenset({"rows", "data", "values", "table", "result", "results", "preview"})
 
 
-class ShareCreate(BaseModel):
-    object_type: Literal["thread", "dashboard"]
+class ShareTarget(BaseModel):
+    object_type: Literal["thread", "dashboard", "decision"]
     object_id: str = Field(min_length=1, max_length=64)
     target_type: Literal["user", "role"]
     target_name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z_][\w.\-]*$")
+
+
+class ShareCreate(ShareTarget):
+    object_type: Literal["thread", "dashboard"]
 
 
 def _row(values: list[Any]) -> dict[str, Any]:
@@ -129,7 +133,7 @@ class ShareRepository:
     async def ensure_schema(self) -> None:
         await db.execute_system(SHARES_DDL)
 
-    async def create(self, *, owner_name: str, body: ShareCreate) -> dict[str, Any]:
+    async def create(self, *, owner_name: str, body: ShareTarget) -> dict[str, Any]:
         await self.ensure_schema()
         existing = await self.for_object(body.object_type, body.object_id, owner_name=owner_name)
         for share in existing:

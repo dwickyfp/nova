@@ -242,7 +242,7 @@ class ActionAdapterContract:
     action_type: Literal["monitor", "automation"]
     configuration_type: type[Contract]
     receipt_type: type[Contract]
-    policy_type: type[Contract]
+    policy_type: type[MonitorPolicyInput] | type[AutomationPolicyInput]
     expected_effect: str
 
 

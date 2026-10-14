@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from statistics import mean, median, variance
-from typing import Literal
+from typing import Literal, TypedDict
 
 
 def numbers(values: list[float], *, minimum: int = 2) -> list[float]:
@@ -94,11 +94,19 @@ def detect_change(
     }
 
 
+class _Driver(TypedDict):
+    id: str
+    before: float
+    after: float
+    contribution: float
+    causal_status: Literal["arithmetic"]
+
+
 def rank_drivers(before: dict[str, float], after: dict[str, float], *, total_change: float) -> dict:
     keys = sorted(set(before) | set(after))
     if len(keys) > 1000:
         raise ValueError("Driver search exceeds the segment budget")
-    contributions = []
+    contributions: list[_Driver] = []
     for key in keys:
         previous, current = float(before.get(key, 0)), float(after.get(key, 0))
         numbers([previous, current])
@@ -248,15 +256,17 @@ def outcome_dimensions(
     if actual is not None:
         numbers([actual, actual])
     return {
-        "forecast_absolute_error": abs(actual - predicted) if usable else None,
+        "forecast_absolute_error": abs(actual - predicted)
+        if usable and actual is not None
+        else None,
         "forecast_relative_error": abs(actual - predicted) / abs(actual)
         if usable and actual
         else None,
         "interval_covered": lower <= actual <= upper
-        if usable and lower is not None and upper is not None
+        if usable and actual is not None and lower is not None and upper is not None
         else None,
         "expected_change": predicted - baseline,
-        "observed_change": actual - baseline if usable else None,
+        "observed_change": actual - baseline if usable and actual is not None else None,
         "attributed_business_impact": None,
         "attribution": "unknown" if overlapping or not usable else "observed_after",
         "completeness": completeness,

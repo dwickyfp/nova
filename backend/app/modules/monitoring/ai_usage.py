@@ -219,7 +219,7 @@ class AIUsageService:
         coverage = []
         for (name, period), result in zip(keys, results, strict=True):
             failed = isinstance(result, BaseException)
-            events, truncated = ([], False) if failed else result
+            events, truncated = ([], False) if isinstance(result, BaseException) else result
             coverage.append({
                 "source": name, "period": period,
                 "status": "unavailable" if failed else "limited" if truncated else "available",

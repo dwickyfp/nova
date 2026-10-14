@@ -38,7 +38,7 @@ async def draft_for_patch(
 
     current = await require_base(agent, patch.base_revision, user)
     if patch.kind == "restore_configuration":
-        if not patch.fields or set(patch.fields) - RESTORABLE_FIELDS:
+        if not patch.source_version_id or not patch.fields or set(patch.fields) - RESTORABLE_FIELDS:
             raise HTTPException(422, "Review supported configuration fields before applying")
         source = await agent_versions.get(
             agent["agent_id"], user["username"], patch.source_version_id
@@ -96,7 +96,7 @@ async def semantic_for_patch(
         operation_id=operation_id,
         agent_id=agent["agent_id"],
         base=patch.semantic,
-        changes=patch.changes,
+        changes=[autopilot.SemanticChange.model_validate(change) for change in patch.changes],
     )
     view = await semantic_view_service._owned(patch.semantic.view_id, user)
     if view["active_version"] != patch.semantic.version:
@@ -244,6 +244,8 @@ async def review_and_apply(
             raise HTTPException(409, "Quality metadata lease expired")
         case_refs = await regression_cases(proposal, body.regression_case_ids, user, lock)
         if patch.kind == "semantic_changes":
+            if patch.semantic is None:
+                raise HTTPException(422, "Review a pinned Semantic change before applying")
             target = await semantic_for_patch(agent, patch, operation_id, user)
             reference = {"proposal_id": target["proposal_id"], "view_id": patch.semantic.view_id}
         else:

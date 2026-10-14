@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 
 if TYPE_CHECKING:
@@ -93,7 +94,7 @@ COLLABORATION_TOOLS = {
 
 
 class CollaborationTool:
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     requires_consent = False
 
     def __init__(self, name: str, control: AgentControl) -> None:
@@ -199,9 +200,10 @@ def collaboration_prompt(control: AgentControl) -> str:
         "without asking a question back; a part of the wider request that your data does "
         "not cover belongs to another specialist, so leave it out without comment. "
     )
+    parent = path.parent()
     return (
         f"\n\nYou are {path.value} in a governed Smart collaboration. "
-        f"Your parent is {path.parent().value if path.parent() else 'the user'}. Root: /root. "
+        f"Your parent is {parent.value if parent else 'the user'}. Root: /root. "
         + routing
         + "Teammates may spawn their own children. "
         "Use list_agents to find paths and results. Send relevant findings directly to affected"

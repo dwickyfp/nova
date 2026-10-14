@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import httpx
 
@@ -34,6 +34,19 @@ _current: ContextVar[AttemptMeasurements | None] = ContextVar(
     default=None,
 )
 _Owner = TypeVar("_Owner", bound=Callable)
+
+
+def _mark_callable(
+    owner: _Owner,
+    marker: Literal[
+        "__nova_attempt__", "__nova_metadata_read_observer__", "__nova_metadata_borrow_observer__"
+    ],
+    value: AttemptMeasurements | bool,
+) -> _Owner:
+    setattr(owner, marker, value)
+    return owner
+
+
 _metadata_executor: ContextVar[asyncio.Task | None] = ContextVar(
     "assistant_metadata_executor",
     default=None,
@@ -241,7 +254,7 @@ async def observe_http_dispatches(client: Any) -> AsyncIterator[None]:
     if any(getattr(hook, "__nova_attempt__", None) is measured for hook in hooks):
         yield
         return
-    dispatched.__nova_attempt__ = measured
+    _mark_callable(dispatched, "__nova_attempt__", measured)
     hooks.append(dispatched)
     try:
         yield
@@ -254,14 +267,12 @@ async def observe_http_dispatches(client: Any) -> AsyncIterator[None]:
 
 def metadata_reads_observed(owner: _Owner) -> _Owner:
     """Declare an existing database owner instrumented; do not wrap its execution."""
-    owner.__nova_metadata_read_observer__ = True
-    return owner
+    return _mark_callable(owner, "__nova_metadata_read_observer__", True)
 
 
 def metadata_borrows_observed(owner: _Owner) -> _Owner:
     """Declare the existing connection owner reports unobserved direct borrows."""
-    owner.__nova_metadata_borrow_observer__ = True
-    return owner
+    return _mark_callable(owner, "__nova_metadata_borrow_observer__", True)
 
 
 @contextmanager

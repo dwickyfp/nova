@@ -321,7 +321,8 @@ def public_status(job: dict[str, Any]) -> dict[str, Any]:
 
 
 async def job_session_id(client: aioredis.Redis, job_id: str) -> str | None:
-    return await client.get(f"{_SESSION_KEY_PREFIX}{job_id}")
+    value = await client.get(f"{_SESSION_KEY_PREFIX}{job_id}")
+    return value.decode() if isinstance(value, bytes) else value
 
 
 async def clear_job_session(client: aioredis.Redis, job_id: str) -> None:

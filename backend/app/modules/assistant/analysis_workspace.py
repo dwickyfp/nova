@@ -15,6 +15,7 @@ from app.common.audit import write_audit_log
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.core.studio_capabilities import CapabilityStatus, effective_studio_capabilities
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.intelligence.contracts import Contract, Scope
 from app.observability.metrics import studio_operation
@@ -219,7 +220,9 @@ class AnalyticalWorkspace:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if cancelled.is_set() or not ready:
-                status = "cancelled" if cancelled.is_set() else "timeout"
+                status: Literal["cancelled", "timeout"] = (
+                    "cancelled" if cancelled.is_set() else "timeout"
+                )
                 stopped = await self._stop(execution_id, active)
                 result = AnalysisResult(
                     execution_id=execution_id,
@@ -352,7 +355,7 @@ async def cancel_analysis(execution_id: str, user: Annotated[dict, Depends(get_c
 class AnalyticalWorkspaceTool:
     name = "analysis_workspace"
     description = "Run a bounded analysis using granted attachments in an isolated workspace."
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     requires_consent = False
     parameters = AnalysisRequest.model_json_schema()
 

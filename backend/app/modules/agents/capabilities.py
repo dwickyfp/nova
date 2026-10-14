@@ -47,7 +47,7 @@ class CapabilityRepository:
         await db.execute_system(CAPABILITIES_DDL)
 
     async def get(self, agent: dict[str, Any]) -> CapabilityManifest:
-        def valid_row(row: list[Any]) -> bool:
+        def valid_row(row: list[Any] | tuple[Any, ...]) -> bool:
             if (
                 len(row) != 3
                 or row[0] != agent["agent_id"]

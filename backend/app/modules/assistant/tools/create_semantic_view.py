@@ -61,7 +61,9 @@ class CreateSemanticViewTool:
 
     def preview(self, invocation: ToolInvocation) -> str:
         args = invocation.arguments
-        tables = args.get("tables") if isinstance(args.get("tables"), list) else []
+        tables = args.get("tables")
+        if not isinstance(tables, list):
+            tables = []
         action = (
             "create, validate, and publish" if args.get("publish", True) else "create and validate"
         )

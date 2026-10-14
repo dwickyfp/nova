@@ -538,7 +538,7 @@ def _unit_schema(names: list[str]) -> dict:
 class UnitEconomicsScenarioAdapter:
     scenario_kind = "unit-economics"
     version = 1
-    parameter_model = SimulationInput
+    parameter_model: type[Contract] = SimulationInput
 
     def compatibility_reasons(self, context: ScenarioContext) -> list[ScenarioReason]:
         # Legacy monetary definitions may omit unit, but an explicit unit cannot be reinterpreted.
@@ -576,6 +576,10 @@ class UnitEconomicsScenarioAdapter:
     def validate_parameters(self, parameters: dict, context: ScenarioContext) -> SimulationInput:
         value = SimulationInput.model_validate(parameters, strict=True)
         if context.purpose == "decision":
+            if context.baseline is None:
+                raise HTTPException(
+                    status_code=422, detail="Decision scenarios require an observed baseline"
+                )
             if not context.metric_currency or context.currency != context.metric_currency:
                 raise HTTPException(
                     status_code=422,

@@ -152,7 +152,7 @@ class TargetCommitVerifier:
             "ABORTED": TargetOutcome.FAILED,
         }
         outcome = outcomes.get(
-            transaction.get("TransactionStatus"), TargetOutcome.VERIFICATION_REQUIRED
+            str(transaction.get("TransactionStatus") or ""), TargetOutcome.VERIFICATION_REQUIRED
         )
         return CommitReceipt(
             outcome, "verified_transaction", receipt.load_id,

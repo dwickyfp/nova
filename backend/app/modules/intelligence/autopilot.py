@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from typing import Literal
+from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, HTTPException
@@ -111,7 +111,8 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
     from app.modules.query.service import query_service
 
     session_security(user)
-    candidates, citations, discovered = [], [], []
+    candidates, citations = [], []
+    discovered: list[dict[str, Any]] = []
     for source in dict.fromkeys(body.sources):
         if len(source.split(".")) not in (2, 3) or not all(
             _IDENT.fullmatch(part) for part in source.split(".")
@@ -181,19 +182,19 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
                 "query_id": getattr(result, "query_id", None),
             }
         )
-    for source in discovered:
-        columns = {field["name"] for field in source["fields"]}
+    for discovered_source in discovered:
+        columns = {field["name"] for field in discovered_source["fields"]}
         for target in discovered:
             keys = target["primary_key"]
-            if source is target or not keys or not set(keys) <= columns:
+            if discovered_source is target or not keys or not set(keys) <= columns:
                 continue
             candidates.append(
                 {
                     "kind": "relationship",
-                    "name": f"{source['name']}_{target['name']}",
+                    "name": f"{discovered_source['name']}_{target['name']}",
                     "state": "HYPOTHESIS",
                     "definition": {
-                        "from": source["name"],
+                        "from": discovered_source["name"],
                         "to": target["name"],
                         "from_columns": keys,
                         "to_columns": keys,
@@ -386,7 +387,7 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
                     **({
                         "learning_evidence": learning,
                         "learning_request": body.learning.model_dump(mode="json"),
-                    } if learning else {}),
+                    } if learning and body.learning else {}),
                 },
             }
         )
@@ -417,7 +418,11 @@ async def _proposal(view_id: str, proposal_id: str, user: dict) -> tuple[dict, d
     if not await semantic_view_service._source_access(row["details"]["candidate_definition"], user):
         raise HTTPException(status_code=404, detail="Proposed source unavailable")
     view = await semantic_view_service._get(view_id)
+    if view is None or not view.get("active_version"):
+        raise HTTPException(status_code=409, detail="Active semantic version is unavailable")
     active = await semantic_view_service._version(view_id, view["active_version"])
+    if active is None:
+        raise HTTPException(status_code=409, detail="Active semantic version is unavailable")
     if active["fingerprint"] not in {row["prior_fingerprint"], row["proposed_fingerprint"]}:
         raise HTTPException(
             status_code=409, detail="Semantic version changed; create a new proposal"

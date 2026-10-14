@@ -53,7 +53,7 @@ class MySQLProxyServer:
         self._read_timeout = (
             read_timeout if read_timeout is not None else float(settings.PROXY_READ_TIMEOUT)
         )
-        self._server: asyncio.AbstractServer | None = None
+        self._server: asyncio.Server | None = None
         self._connections: set[asyncio.Task] = set()
         self._next_connection_id = 1000
 

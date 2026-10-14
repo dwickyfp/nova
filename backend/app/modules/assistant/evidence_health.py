@@ -27,6 +27,9 @@ def _aware_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+PlanSource = Literal["verified_query", "turn_planner", "model_planner", "compiled", "unknown"]
+
+
 class EvidenceFacts(BaseModel):
     """Internal input. Only execution/provenance owners may establish these facts."""
 
@@ -36,9 +39,7 @@ class EvidenceFacts(BaseModel):
     semantic_view_id: str | None = Field(default=None, max_length=128)
     semantic_version: int | None = Field(default=None, ge=1, strict=True)
     semantic_fingerprint: str | None = Field(default=None, max_length=128)
-    plan_source: Literal[
-        "verified_query", "turn_planner", "model_planner", "compiled", "unknown"
-    ] = "unknown"
+    plan_source: PlanSource = "unknown"
     verified_query_hit: bool | None = Field(default=None, strict=True)
     verified_query_id: str | None = Field(default=None, max_length=128)
     execution_status: Execution = "unknown"
