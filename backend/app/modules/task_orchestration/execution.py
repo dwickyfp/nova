@@ -368,9 +368,10 @@ class DelegateExecutor:
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,127}", owner):
                 raise CredentialUnavailable("invalid task execution account")
             target = owner
-            password = self._impersonation_password
-            assert password is not None
-            connection = db.user_conn(self._impersonation_user, password)
+            impersonation_password = self._impersonation_password
+            if impersonation_password is None:
+                raise CredentialUnavailable("task worker account is not configured")
+            connection = db.user_conn(self._impersonation_user, impersonation_password)
             try:
                 conn = await connection.__aenter__()
             except Exception:

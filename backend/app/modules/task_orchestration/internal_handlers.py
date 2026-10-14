@@ -49,18 +49,19 @@ async def run_once(
     from app.modules.intelligence.engine import intelligence_service
 
     async with asyncio.timeout(120):
-        if handler != "intelligence.consolidate" and not config.record_id:
+        record_id = config.record_id or ""
+        if handler != "intelligence.consolidate" and not record_id:
             raise ValueError("Internal work has no target record")
         if handler == "agents.quality":
             from app.modules.agents.quality_monitoring import score_production
 
-            return await score_production(config.record_id, user)
+            return await score_production(record_id, user)
         if handler == "intelligence.newsroom":
             from app.modules.intelligence.newsroom import newsroom_service
 
-            return await newsroom_service.run_cycle(config.record_id, user, now=now)
+            return await newsroom_service.run_cycle(record_id, user, now=now)
         if handler == "intelligence.monitor":
-            monitor = await intelligence_service.get("monitors", config.record_id, user)
+            monitor = await intelligence_service.get("monitors", record_id, user)
             if not monitor.enabled:
                 return {"status": "disabled"}
             clock = now or datetime.now(UTC)
@@ -69,7 +70,7 @@ async def run_once(
                 monitor.id, Window(start=end - timedelta(hours=monitor.window_hours), end=end), user
             )
         if handler == "intelligence.outcome":
-            outcome = await intelligence_service.evaluate_outcome(config.record_id, user)
+            outcome = await intelligence_service.evaluate_outcome(record_id, user)
             return {"status": outcome.status, "outcome_id": outcome.id}
         from app.modules.agents.memory import remember_user_message
         from app.modules.agents.router import _require_agent

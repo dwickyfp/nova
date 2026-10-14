@@ -136,8 +136,8 @@ CI suites. Changes spanning backend and frontend require both sets of checks.
 | Ranger/security or engine patch | Backend/integration checks as applicable plus patched-FE policy/role acceptance |
 | Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, CI browser setup and affected layout/state checks |
 
-Full-tree Ruff and mypy are currently report-only in CI; changed-file Ruff is
-blocking. Do not disable tests, weaken assertions, or bypass gates. No tests
+Full-tree Ruff is report-only in CI; changed-file Ruff and full-application mypy
+are blocking. Do not disable tests, weaken assertions, or bypass gates. No tests
 collected or every test skipped is not a pass. If a required check cannot run,
 report the missing prerequisite and stop before commit/push unless the user
 explicitly authorizes an exception.

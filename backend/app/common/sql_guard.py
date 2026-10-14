@@ -42,6 +42,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import partial
 
 from app.core.exceptions import ForbiddenSQLError
 
@@ -643,7 +644,7 @@ def redact_sql_credentials(sql: str) -> str:
     source = sql
     sql = _redact_account_credentials(sql)
     for pattern, quoted_key in _CREDENTIAL_PATTERNS:
-        sql = pattern.sub(lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql)
+        sql = pattern.sub(partial(_redacted_assignment, quoted_key=quoted_key), sql)
     if not _redaction_is_complete(sql):
         # Never remembered: every later attempt must fail closed as well.
         raise CredentialsRedactionError(

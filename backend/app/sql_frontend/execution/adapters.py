@@ -672,9 +672,16 @@ class FeatureAdapters:
         from app.modules.ml_engine.service import ml_engine_service
 
         try:
-            rewrite = validated_frontend or rewrite_ml_predict_projection(
-                normalized_sql, match, tree=parsed_frontend.parse_tree if parsed_frontend else None
-            )
+            if validated_frontend is not None:
+                rewrite = validated_frontend
+            else:
+                if match is None:
+                    raise ValueError("ML_PREDICT requires a validated projection")
+                rewrite = rewrite_ml_predict_projection(
+                    normalized_sql,
+                    match,
+                    tree=parsed_frontend.parse_tree if parsed_frontend else None,
+                )
             alias = rewrite.alias
             feature_sql = rewrite.feature_sql
             metadata, result_table = await ml_engine_service.batch_predict_projected(

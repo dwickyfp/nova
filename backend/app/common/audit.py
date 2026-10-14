@@ -122,7 +122,8 @@ class _AuditWriter:
 
     async def _drain(self, state: dict) -> None:
         while state["pending"]:
-            group, size = [], 0
+            group: list = []
+            size = 0
             while state["pending"] and len(group) < settings.AUDIT_GROUP_MAX_ROWS:
                 row_size = sum(len(value) for value in state["pending"][0][0] if type(value) is str)
                 if group and size + row_size > _GROUP_MAX_CHARS:

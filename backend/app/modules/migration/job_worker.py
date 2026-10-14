@@ -293,47 +293,53 @@ class MigrationJobWorker:
     ) -> dict[str, Any]:
         operation = job["operation"]
         actor = job["actor"]
+        result: BaseModel | dict[str, Any]
         if operation == "engine":
             result = await migration_service.engine_status()
         elif operation == "test_source":
-            body = SourceConnectionTestRequest.model_validate(payload)
+            test_source_request = SourceConnectionTestRequest.model_validate(payload)
             result = await migration_service.test_source_connection(
-                name=body.source,
-                host=body.host,
-                port=body.port,
-                username=body.username,
-                secret_ref=body.secret_ref,
+                name=test_source_request.source,
+                host=test_source_request.host,
+                port=test_source_request.port,
+                username=test_source_request.username,
+                secret_ref=test_source_request.secret_ref,
             )
         elif operation == "databases":
-            body = DatabasesRequest.model_validate(payload)
-            result = await migration_service.databases(body.source)
+            databases_request = DatabasesRequest.model_validate(payload)
+            result = await migration_service.databases(databases_request.source)
         elif operation == "enumerate":
-            body = EnumerateRequest.model_validate(payload)
-            result = await migration_service.enumerate(body.source, body.database)
+            enumerate_request = EnumerateRequest.model_validate(payload)
+            result = await migration_service.enumerate(
+                enumerate_request.source, enumerate_request.database
+            )
         elif operation == "dry_run":
-            body = DryRunRequest.model_validate(payload)
+            dry_run_request = DryRunRequest.model_validate(payload)
             result = await migration_service.dry_run(
-                body.source, body.database, body.objects, actor=actor
+                dry_run_request.source,
+                dry_run_request.database,
+                dry_run_request.objects,
+                actor=actor,
             )
         elif operation == "plan":
-            body = PlanRequest.model_validate(payload)
+            plan_request = PlanRequest.model_validate(payload)
             result = await migration_service.plan(
-                body.source,
-                body.database,
-                target_database=body.target_database,
-                objects=body.objects,
-                create_database=body.create_database,
+                plan_request.source,
+                plan_request.database,
+                target_database=plan_request.target_database,
+                objects=plan_request.objects,
+                create_database=plan_request.create_database,
                 actor=actor,
             )
         elif operation == "preflight":
-            body = PreflightRequest.model_validate(payload)
+            preflight_request = PreflightRequest.model_validate(payload)
             result = await migration_service.preflight(
-                body.source,
-                body.database,
-                target_database=body.target_database,
-                objects=body.objects,
-                create_database=body.create_database,
-                include_data=body.include_data,
+                preflight_request.source,
+                preflight_request.database,
+                target_database=preflight_request.target_database,
+                objects=preflight_request.objects,
+                create_database=preflight_request.create_database,
+                include_data=preflight_request.include_data,
                 actor=actor,
                 encrypted_password=session["encrypted_password"],
                 session_id=session_id,
@@ -352,6 +358,7 @@ class MigrationJobWorker:
         session_id: str,
         session: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
+        body: ExecuteRequest | ExecuteBatchRequest
         if job["operation"] == "execute":
             body = ExecuteRequest.model_validate(payload)
             databases = [body.database]

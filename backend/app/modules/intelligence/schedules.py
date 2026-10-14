@@ -82,6 +82,8 @@ async def configure_schedule(
                         "handler_config": config.model_dump_json(),
                     },
                 )
+                if existing is None:
+                    raise HTTPException(status_code=409, detail="Schedule changed during update")
             return {"task_id": existing["id"], "enabled": enabled}
         if not enabled:
             return {"task_id": None, "enabled": False}

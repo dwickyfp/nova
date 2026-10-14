@@ -47,7 +47,7 @@ _REFERENCE_TOOLS = frozenset({
     "inspect_query_error", "verify_query_repair", "validate_sql",
 })
 _DISCOVERY_TOOLS = frozenset({"load_skill", "search_knowledge"})
-_PLAN_SCHEMA = {
+_PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "intent": {"type": "string", "enum": [intent.value for intent in TurnIntent]},

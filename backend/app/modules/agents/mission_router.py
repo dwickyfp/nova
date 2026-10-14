@@ -87,7 +87,7 @@ async def read_mission_object(
         raise HTTPException(status_code=404, detail="Mission canonical reference not found")
     record = await mission_service.canonical_read(
         mission_id,
-        ObjectRef(kind=kind, id=object_id, revision=revision),
+        ObjectRef.model_validate({"kind": kind, "id": object_id, "revision": revision}),
         user,
     )
     return public_canonical_record(kind, record)

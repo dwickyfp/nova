@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.deps import get_current_user
 from app.modules.workspaces.schemas import (
+    WorkspaceEntry,
     WorkspaceFileCreate,
     WorkspaceFileResponse,
     WorkspaceFileUpdate,
@@ -40,13 +41,13 @@ async def create_workspace_file(
     entry = await workspace_service.create_file(
         user["username"], body.parent_path, body.name, body.content
     )
-    return WorkspaceFileResponse(entry=entry, content=body.content)
+    return WorkspaceFileResponse(entry=WorkspaceEntry.model_validate(entry), content=body.content)
 
 
 @router.get("/files/{entry_id}", response_model=WorkspaceFileResponse)
 async def get_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
     entry, content = await workspace_service.get_file(user["username"], entry_id)
-    return WorkspaceFileResponse(entry=entry, content=content)
+    return WorkspaceFileResponse(entry=WorkspaceEntry.model_validate(entry), content=content)
 
 
 @router.put("/files/{entry_id}", response_model=WorkspaceFileResponse)
@@ -56,7 +57,7 @@ async def update_workspace_file(
     user: dict = Depends(get_current_user),
 ):
     entry = await workspace_service.update_file(user["username"], entry_id, body.content)
-    return WorkspaceFileResponse(entry=entry, content=body.content)
+    return WorkspaceFileResponse(entry=WorkspaceEntry.model_validate(entry), content=body.content)
 
 
 @router.delete("/files/{entry_id}")

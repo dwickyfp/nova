@@ -85,7 +85,7 @@ class LeaderLock:
 
     def __init__(
         self,
-        client: aioredis.Redis,
+        client: aioredis.Redis | None,
         key: str | None = None,
         ttl_seconds: int | None = None,
     ) -> None:
@@ -104,9 +104,15 @@ class LeaderLock:
     def ttl_seconds(self) -> int:
         return self._ttl
 
+    @property
+    def _redis_client(self) -> aioredis.Redis:
+        if self._client is None:
+            raise RuntimeError("Redis client is unavailable for leader election")
+        return self._client
+
     async def acquire(self) -> bool:
         token = str(uuid.uuid4())
-        acquired = await self._client.set(self._key, token, nx=True, ex=self._ttl)
+        acquired = await self._redis_client.set(self._key, token, nx=True, ex=self._ttl)
         if acquired:
             self._token = token
             return True
@@ -116,7 +122,7 @@ class LeaderLock:
         """Extend the lock. Returns False (and drops leader state) if lost."""
         if self._token is None:
             return False
-        renewed = await self._client.eval(_RENEW_SCRIPT, 1, self._key, self._token, self._ttl)
+        renewed = await self._redis_client.eval(_RENEW_SCRIPT, 1, self._key, self._token, self._ttl)
         if not renewed:
             self._token = None
             return False
@@ -125,5 +131,5 @@ class LeaderLock:
     async def release(self) -> None:
         if self._token is None:
             return
-        await self._client.eval(_RELEASE_SCRIPT, 1, self._key, self._token)
+        await self._redis_client.eval(_RELEASE_SCRIPT, 1, self._key, self._token)
         self._token = None

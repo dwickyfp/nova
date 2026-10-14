@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict, cast
 
 from pydantic import (
     BaseModel,
@@ -672,7 +672,22 @@ def public_action(
     return PublicAction.model_validate(data)
 
 
-PUBLIC_RECORD_MODELS = {
+class PublicRecordModels(TypedDict):
+    investigations: type[PublicInvestigation]
+    decisions: type[PublicDecision]
+    outcomes: type[PublicOutcome]
+    news: type[PublicNews]
+    monitors: type[PublicMonitor]
+    actions: type[PublicAction]
+    events: type[PublicDecisionEvent]
+    action_events: type[PublicActionEvent]
+    observations: type[PublicObservation]
+    comparisons: type[PublicComparison]
+    nodes: type[PublicContextNode]
+    edges: type[PublicContextEdge]
+
+
+PUBLIC_RECORD_MODELS: PublicRecordModels = {
     "investigations": PublicInvestigation,
     "decisions": PublicDecision,
     "outcomes": PublicOutcome,
@@ -697,10 +712,12 @@ def public_canonical_record(kind: str, value: BaseModel | Mapping[str, Any]) -> 
         "monitor": "monitors",
     }
     kind = aliases.get(kind, kind)
+    result: BaseModel
     if kind == "actions":
         result = public_action(value)
     else:
-        result = PUBLIC_RECORD_MODELS[kind].model_validate(projection_input(value))
+        models = cast(Mapping[str, type[BaseModel]], PUBLIC_RECORD_MODELS)
+        result = models[kind].model_validate(projection_input(value))
     return result.model_dump(mode="json")
 
 

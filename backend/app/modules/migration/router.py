@@ -14,6 +14,7 @@ from app.core.deps import get_current_user
 
 from .jobs import (
     MigrationJobFailed,
+    MigrationJobRequest,
     MigrationJobUnavailable,
     migration_job_repo,
     public_status,
@@ -55,7 +56,7 @@ class _EngineRequest(BaseModel):
     source: str = ""
 
 
-async def _worker_read(operation: str, body: BaseModel, user: dict) -> dict:
+async def _worker_read(operation: str, body: MigrationJobRequest, user: dict) -> dict:
     accepted = await submit_job(operation, body, user)
     try:
         return await wait_for_job(accepted.job_id)

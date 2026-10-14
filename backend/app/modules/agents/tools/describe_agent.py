@@ -11,6 +11,7 @@ from app.modules.agents.semantic.access import (
     load_authorized_models,
     load_specialist_models,
 )
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from app.modules.assistant.tools.redaction import redact_row
 
@@ -138,7 +139,7 @@ class DescribeAgentTool:
     name = "describe_agent"
     description = DESCRIPTION
     parameters = PARAMETERS
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     requires_consent = False
 
     def __init__(

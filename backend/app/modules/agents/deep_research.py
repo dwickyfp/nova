@@ -248,13 +248,13 @@ async def run(run_id: str, agent: dict[str, Any], user: dict[str, Any], question
         return
     await repository.update(run_id, status="writing", progress=progress)
     findings, tables = [], {}
-    for index, (item, output) in enumerate(zip(plan, outputs, strict=True)):
-        if output is None:
-            findings.append({"investigation": item, "status": progress[index]["status"]})
+    for index, (question, research_output) in enumerate(zip(plan, outputs, strict=True)):
+        if research_output is None:
+            findings.append({"investigation": question, "status": progress[index]["status"]})
             continue
-        findings.append({"investigation": item, "status": output.finish_reason,
-                         "answer": output.text[:4000]})
-        for key, table in output.tables.items():
+        findings.append({"investigation": question, "status": research_output.finish_reason,
+                         "answer": research_output.text[:4000]})
+        for key, table in research_output.tables.items():
             tables[f"i{index}:{key}"] = table
     try:
         draft = await asyncio.wait_for(_complete(agent, [

@@ -78,17 +78,24 @@ def execution_envelope(
             version=model["version"], fingerprint=model["fingerprint"],
         )
     return EvidenceEnvelope(
-        health=health, semantic=semantic, metrics=list(plan.metrics),
+        health=health,
+        semantic=semantic,
+        metrics=list(plan.metrics),
         dimensions=list(plan.dimensions),
-        current_window=Window(**time_context.current.as_dict()) if time_context else None,
-        baseline_window=Window(**time_context.baseline.as_dict())
-        if time_context and time_context.baseline else None,
+        current_window=Window.model_validate(time_context.current.as_dict())
+        if time_context
+        else None,
+        baseline_window=Window.model_validate(time_context.baseline.as_dict())
+        if time_context and time_context.baseline
+        else None,
         timezone=time_context.timezone if time_context else None,
-        filter_shape=[FilterShape(field=item.field, operator=item.operator)
-                      for item in plan.filters],
+        filter_shape=[
+            FilterShape(field=item.field, operator=item.operator) for item in plan.filters
+        ],
         named_filters=list(plan.named_filters),
         warnings=list(time_context.warnings) if time_context else [],
-        evidence_refs=[evidence_id[:128]], validated_plan_fingerprint=fingerprint(plan.as_dict()),
+        evidence_refs=[evidence_id[:128]],
+        validated_plan_fingerprint=fingerprint(plan.as_dict()),
         model_fingerprint=ir.fingerprint,
     )
 
@@ -108,7 +115,7 @@ def investigation_seed(
         missing.append("complete_execution")
     if plan.having or plan.transforms or plan.top_n_per_group or plan.unresolved_concepts:
         missing.append("scalar_comparison_plan")
-    if missing:
+    if missing or envelope.semantic is None or time_context is None:
         return None, missing
     metric = ir.metric(plan.metrics[0])
     if metric is None:

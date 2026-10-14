@@ -12,6 +12,7 @@ from app.common.user_flags import set_must_change_password
 from app.core.config import settings
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import access_control_service
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.users.service import user_service
 
@@ -50,7 +51,7 @@ class ProvisionUserTool:
         "required": ["username", "role"],
         "additionalProperties": False,
     }
-    classification = "destructive"
+    classification: ToolClassification = "destructive"
     requires_consent = True
 
     def preview(self, invocation: ToolInvocation) -> str:

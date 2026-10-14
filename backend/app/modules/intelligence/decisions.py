@@ -117,6 +117,8 @@ async def _mission_operation_decision(
 ) -> Decision:
     from app.modules.agents.mission import mission_service
 
+    if body.mission_id is None:
+        raise HTTPException(status_code=422, detail="Mission ID is required")
     mission = await mission_service.get(body.mission_id, user, project=False)
     if mission.scope != Scope.from_user(user):
         raise HTTPException(status_code=409, detail="Resume the Mission under the current binding")
@@ -202,6 +204,8 @@ async def close_owned_decision(
         )
     # Withdrawing one's recommendation remains possible after data revocation.
     # Return only a receipt; historical results still require fresh authorization.
+    if decision.status != "cancelled" and decision.status != "superseded":
+        raise HTTPException(status_code=409, detail="Decision closure requires reconciliation")
     return DecisionReceipt(id=decision.id, revision=decision.revision, status=decision.status)
 
 
@@ -323,7 +327,7 @@ async def resolve_scenario_context(
             "investigations",
             investigation_id,
             user,
-            mission_id=mission_id,
+            mission_id=mission.mission_id,
             revision=revision,
             budget=budget,
         )
@@ -356,7 +360,7 @@ async def resolve_scenario_context(
     definition = await service.authorize_semantic(
         investigation.semantic, user, active=mission is None, budget=budget
     )
-    metric = next(
+    metric: dict = next(
         (
             item
             for item in definition["definition"].get("metrics", [])
@@ -479,7 +483,7 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
         estimate = await execute_scenario(
             item.scenario_kind,
             item.scenario_version,
-            item.simulation.model_dump(mode="json") if item.simulation else item.parameters,
+            item.simulation.model_dump(mode="json") if item.simulation else item.parameters or {},
             context,
             user,
             operation_id=f"{body.operation_id}:{item.id}",
@@ -504,6 +508,10 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
                 run_id=estimate.run_id,
                 evidence_ids=estimate.evidence_ids,
             )
+        )
+    if context.agent_id is None or context.target_metric is None:
+        raise HTTPException(
+            status_code=422, detail="Decision context requires an agent and target metric"
         )
     decision = Decision(
         id=record_id,
@@ -573,11 +581,9 @@ async def operate_decision(
     if body.operation == "select":
         decision.selected_option_id = option.id
         decision.policy = evaluated
-        decision.status = {
-            "ALLOW": "selected",
-            "DENY": "denied",
-            "REQUIRE_APPROVAL": "awaiting_approval",
-        }[evaluated.decision]
+        decision.status = "selected" if evaluated.decision == "ALLOW" else (
+            "denied" if evaluated.decision == "DENY" else "awaiting_approval"
+        )
         event = "selected" if evaluated.decision != "DENY" else "denied"
     else:
         if user["active_role"] not in policy.reviewer_roles:

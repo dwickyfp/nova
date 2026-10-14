@@ -5,7 +5,7 @@ from antlr4 import Token
 from app.modules.streams.namespace import resolve_stream_name
 from app.sql_dialect.grammar import StarRocksParser
 from app.sql_frontend.analysis.effects import PlanEffects
-from app.sql_frontend.ast.statements import StreamStatement
+from app.sql_frontend.ast.statements import Statement, StreamStatement
 from app.sql_frontend.errors import SQLSyntaxError, SyntaxDiagnostic
 from app.sql_frontend.parser import _Diagnostics, new_parser, tokenize_sql
 
@@ -63,7 +63,9 @@ def stream_effects(statement: StreamStatement) -> PlanEffects:
     )
 
 
-def validate_stream(statement: StreamStatement, context):
+def validate_stream(statement: Statement, context):
+    if not isinstance(statement, StreamStatement):
+        raise TypeError("Stream validation requires a Stream statement")
     from app.sql_frontend.planning.execution import StreamPayload
 
     name = resolve_stream_name(statement.name, context.database) if statement.name else None

@@ -104,10 +104,11 @@ class DataToChartTool:
             smart = bool(getattr(context, "collaboration_root", False))
             return ToolOutcome(
                 ok=False, summary="", error=detail, recoverable=smart,
-                **({"error_class": "INVALID_TOOL_ARGUMENTS", "safe_detail": (
+                error_class="INVALID_TOOL_ARGUMENTS" if smart else None,
+                safe_detail=(
                     "No data is held yet. Ask the specialist that owns it, then chart "
                     "the result by its evidence_id."
-                )} if smart else {}),
+                ) if smart else None,
             )
 
         columns: list[str] = list(last.get("columns") or [])
@@ -248,7 +249,8 @@ def sanitize_chart_spec(spec: Any, *, title: str) -> dict[str, Any] | None:
     for key, lower, upper in (("width", 100, 1600), ("height", 100, 800)):
         value = spec.get(key)
         if (value == "container" and key == "width") or (
-            type(value) in (int, float) and math.isfinite(value) and lower <= value <= upper
+            isinstance(value, int | float) and not isinstance(value, bool)
+            and math.isfinite(value) and lower <= value <= upper
         ):
             cleaned[key] = value
 

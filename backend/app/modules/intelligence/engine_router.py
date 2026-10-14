@@ -13,7 +13,7 @@ from app.modules.access_control.business_policy import (
     read_business_policy,
     save_business_policy,
 )
-from app.modules.agents.sharing import ShareCreate, share_repository
+from app.modules.agents.sharing import ShareTarget, share_repository
 from app.modules.intelligence.context_graph import (
     ConceptCreate,
     EdgeCreate,
@@ -51,6 +51,7 @@ from app.modules.intelligence.decisions import (
 from app.modules.intelligence.engine import MODELS, ChatInvestigationRequest, intelligence_service
 from app.modules.intelligence.public_projections import (
     PUBLIC_RECORD_MODELS,
+    PublicContextNode,
     PublicMonitor,
     public_canonical_record,
 )
@@ -73,7 +74,7 @@ class MonitorCreate(Contract):
     configuration: MonitorConfiguration
 
 
-class DecisionShare(ShareCreate):
+class DecisionShare(ShareTarget):
     object_type: Literal["decision"] = "decision"
 
 
@@ -423,7 +424,7 @@ async def decision_effectiveness(user: CurrentUser, after: str = Query(default="
             }
         return result
 
-    groups = {}
+    groups: dict[tuple[str, int, str, str, str], list] = {}
     for outcome in page["items"]:
         if not outcome.target_metric or not outcome.currency:
             continue
@@ -506,7 +507,7 @@ async def add_concept(body: ConceptCreate, user: CurrentUser):
     return await create_concept(body, user)
 
 
-@router.get("/context/search", response_model=Page[PUBLIC_RECORD_MODELS["nodes"]])
+@router.get("/context/search", response_model=Page[PublicContextNode])
 async def search_context(
     user: CurrentUser,
     term: str = Query(min_length=1, max_length=128),

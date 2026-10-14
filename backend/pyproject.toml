@@ -42,6 +42,11 @@ dev = [
     "mypy>=1.14.0",
     "types-croniter>=6.0.0",
     "pre-commit>=4.0.0",
+    "types-pyyaml>=6.0.12.20260906",
+    "types-python-jose>=3.5.0.20260408",
+    "boto3-stubs[s3,secretsmanager]>=1.43.113",
+    "pandas-stubs>=3.0.5.260914",
+    "scipy-stubs==1.15.3.*",
     { include-group = "test" },
 ]
 test = [
@@ -88,12 +93,12 @@ exclude_also = [
 ]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 # The vendored ANTLR parser is machine-generated from the pinned grammar and
 # cannot satisfy mypy: `from antlr4 import *` has no stubs, so hundreds of names
-# are unresolved, and its annotations are ANTLR's, not ours. Excluding it keeps
-# the pre-existing hand-written baseline (see the mypy step in CI) readable
-# instead of burying it under generated noise. The runtime import is verified by
-# tests/unit/test_sql_dialect_grammar.py, which is the check that matters.
+# are unresolved, and its annotations are ANTLR's, not ours. Exclude both file
+# discovery and imports so application checks remain blocking. Parser artifacts
+# are verified by regeneration and tests/unit/test_sql_dialect_grammar.py.
 exclude = [
     "^app/sql_dialect/grammar/StarRocks(Lexer|Parser|Visitor)\\.py$",
 ]
@@ -101,6 +106,24 @@ exclude = [
 [[tool.mypy.overrides]]
 module = ["antlr4", "antlr4.*"]
 ignore_missing_imports = true
+
+# These pinned third-party packages do not ship type information. Keep this
+# exception at their import boundary; application modules remain checked.
+[[tool.mypy.overrides]]
+module = ["asyncmy", "asyncmy.*", "sklearn", "sklearn.*", "statsforecast", "statsforecast.*", "pyod", "pyod.*", "joblib", "joblib.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "app.sql_dialect.grammar.StarRocksLexer",
+    "app.sql_dialect.grammar.StarRocksParser",
+    "app.sql_dialect.grammar.StarRocksVisitor",
+]
+follow_imports = "skip"
+
+[tool.pydantic-mypy]
+init_typed = true
+init_forbid_extra = true
 
 [tool.ruff]
 target-version = "py311"

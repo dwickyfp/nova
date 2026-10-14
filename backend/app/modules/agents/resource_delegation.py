@@ -412,7 +412,7 @@ def reference_checkpoint(
     if len(attachments) != len(normalize_refs(refs)):
         raise ValueError("Checkpoint attachments require matching resource references")
     original = provider_user_content(attachment_prompt(prompt, attachments), attachments)
-    secrets = []
+    secrets: list[str] = []
     for item in attachments:
         body = item["content"]
         secrets.extend(

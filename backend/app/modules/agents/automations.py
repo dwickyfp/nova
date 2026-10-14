@@ -19,6 +19,7 @@ executes read-only as the owner:
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import logging
 from dataclasses import dataclass
@@ -178,7 +179,7 @@ def condition_met(condition: dict[str, Any] | None, tables: dict[str, dict]) -> 
     return None
 
 
-def _row(values: list[Any]) -> dict[str, Any]:
+def _row(values: builtins.list[Any]) -> dict[str, Any]:
     record = dict(zip(_COLUMNS.split(", "), values, strict=True))
     for key in ("condition_json", "delivery_json"):
         raw = record.pop(key)
@@ -302,7 +303,7 @@ class AutomationRepository:
         assert created is not None
         return created
 
-    async def list(self, *, agent_id: str, owner_name: str) -> list[dict[str, Any]]:
+    async def list(self, *, agent_id: str, owner_name: str) -> builtins.list[dict[str, Any]]:
         await self.ensure_schema()
         result = await db.execute_system(
             f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
@@ -385,7 +386,7 @@ class AutomationRepository:
                 [automation_id, owner_name],
             )
 
-    async def due(self, now: datetime, *, limit: int = 20) -> list[dict[str, Any]]:
+    async def due(self, now: datetime, *, limit: int = 20) -> builtins.list[dict[str, Any]]:
         await self.ensure_schema()
         result = await db.execute_system(
             f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
@@ -639,7 +640,7 @@ async def _smart_outcome(root_id: str, thread_id: str, owner: str, wait_seconds:
 
 async def _run_turn(
     agent: dict[str, Any], automation: dict[str, Any], thread_id: str
-) -> tuple[str, list[dict], dict[str, dict]]:
+) -> tuple[str, builtins.list[dict], dict[str, dict]]:
     from app.modules.agents.turns import read_only_consent, run_agent_turn
 
     output = await run_agent_turn(

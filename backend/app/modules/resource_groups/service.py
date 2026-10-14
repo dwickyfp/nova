@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import re
 from ipaddress import ip_network
+from typing import Protocol, SupportsIndex, SupportsInt, runtime_checkable
 
 from app.modules.query.service import query_service
 
@@ -334,9 +335,18 @@ class ResourceGroupService:
         return usage
 
 
+@runtime_checkable
+class _SupportsTrunc(Protocol):
+    def __trunc__(self) -> int: ...
+
+
 def _as_int(value: object) -> int:
+    if not isinstance(
+        value, str | bytes | bytearray | SupportsInt | SupportsIndex | _SupportsTrunc
+    ):
+        return 0
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(value)
     except (TypeError, ValueError):
         return 0
 

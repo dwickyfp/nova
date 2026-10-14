@@ -12,7 +12,11 @@ from app.modules.agents.access import has_verified_access
 from app.modules.agents.capabilities import CapabilityManifest, capability_repository
 from app.modules.agents.repository import AgentMetadataUnavailable, agent_repository
 from app.modules.agents.semantic.access import bound_view_ids
-from app.modules.assistant.provider import AssistantProviderClient, assistant_provider
+from app.modules.assistant.provider import (
+    AssistantProviderClient,
+    ProviderSelection,
+    assistant_provider,
+)
 from app.modules.assistant.security import session_security
 
 #: Tools an owner can enable that change what a specialist can be asked for.
@@ -285,7 +289,7 @@ class AutoPlanner:
         selected_model = model
         if not selected_model and preferred and selected_provider == preferred.model_provider_id:
             selected_model = preferred.model_name
-        provider_kwargs = {}
+        provider_kwargs: ProviderSelection = {}
         if selected_provider:
             provider_kwargs["provider"] = await self.provider.resolve(
                 provider_id=selected_provider, model=selected_model

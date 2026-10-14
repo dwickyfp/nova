@@ -10,6 +10,7 @@ from app.sql_frontend.binding.models import BoundOutputColumn, BoundRelation, Ta
 from app.sql_frontend.binding.types import UnknownType
 from app.sql_frontend.errors import BindingError
 from app.sql_frontend.parser import ParsedStatement, parse_statement
+from app.sql_frontend.planning.execution import StreamBinding
 from app.sql_frontend.stage_parser import StageReference, stage_reference_from_atom
 
 
@@ -51,7 +52,7 @@ class RelationBinder:
         self.database = database
         self.stage_schema = stage_schema
         self.stream_schema = stream_schema
-        self.stream_bindings = []
+        self.stream_bindings: list[StreamBinding] = []
         self._cache: dict[str, BoundRelation] = {}
 
     async def bind_relation(
@@ -246,7 +247,6 @@ class RelationBinder:
                 return alias, source
             if self.stream_schema is not None:
                 from app.modules.streams.namespace import resolve_stream_name
-                from app.sql_frontend.planning.execution import StreamBinding
                 from app.sql_frontend.streams import name_parts
 
                 parts = name_parts(node.qualifiedName())

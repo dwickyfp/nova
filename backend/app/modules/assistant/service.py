@@ -28,7 +28,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -638,7 +638,7 @@ class AssistantLoop:
         resume_state: dict[str, Any] | None = None,
         save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         from app.core.config import settings
 
         context.execution_now = context.execution_now or _now()
@@ -703,7 +703,7 @@ class AssistantLoop:
         resume_state: dict[str, Any] | None = None,
         save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         """Drive one turn, yielding SSE frames.
 
         ``resolve_consent`` is awaited when a tool call is proposed; it returns
@@ -752,8 +752,9 @@ class AssistantLoop:
                 return
         evidence = EvidenceTracker()
         catalog_tool = self._registry.get("describe_agent")
-        if context.agent_id and callable(getattr(catalog_tool, "planning_scope", None)):
-            context.agent_scope = catalog_tool.planning_scope(context)
+        planning_scope = getattr(catalog_tool, "planning_scope", None)
+        if context.agent_id and callable(planning_scope):
+            context.agent_scope = planning_scope(context)
         repairs = RepairBudget()
         completed_capabilities: set[str] = set()
         composing_final = False
@@ -796,7 +797,9 @@ class AssistantLoop:
             _measure_tool_dispatch(context)
             outcome = await self._dispatch_tool(fast_tool, invocation, context)
             if outcome.error_class == "RELEASE_DRIFT":
-                yield events.error("release_drift", outcome.error)
+                yield events.error(
+                    "release_drift", outcome.error or "Pinned release resources changed."
+                )
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
             if outcome.ok:
@@ -1593,13 +1596,13 @@ class AssistantLoop:
                     await _localized(language, context)
                     from app.modules.assistant.answer_contract import check_numeric_answer
 
-                    draft = check_numeric_answer(
+                    draft_check = check_numeric_answer(
                         answer_text, question=_asked(thread, user_content), tables=answer_tables,
                         claims=answer_claims, language=language,
                     )
                     rewrite = {"role": "system", "content": (
                         "Your draft stated numbers the results do not contain: "
-                        + ", ".join(draft.unsupported[:10])
+                        + ", ".join(draft_check.unsupported[:10])
                         + ". Write the answer again. State only numbers that appear in "
                         "the results. For a ratio, share, growth, difference or total, "
                         "call compute_metrics first when it is available, otherwise "
@@ -1609,7 +1612,7 @@ class AssistantLoop:
                     # the model can state the number from a result, compute it, or drop it.
                     # A canonical investigation answer keeps its single composing call.
                     if (
-                        draft.unsupported
+                        draft_check.unsupported
                         and not any(claim.kind == "hypothesis" for claim in answer_claims or ())
                         and estimate_messages_tokens([*messages, rewrite])
                         + len(json.dumps(tool_schemas, separators=(",", ":"), default=str)) // 4
@@ -1619,7 +1622,7 @@ class AssistantLoop:
                         composing_final = False
                         _record_step(context, {
                             "kind": "runtime_decision", "answer_repair": "unverified_number",
-                            "unsupported": list(draft.unsupported)[:10], "status": "done",
+                            "unsupported": list(draft_check.unsupported)[:10], "status": "done",
                         })
                         messages.append(rewrite)
                         continue
@@ -1742,11 +1745,12 @@ class AssistantLoop:
             # requires per-turn serialization; the loop shape makes that true
             # by construction rather than by a lock.
             call = tool_calls[0]
-            invocation = self._parse_tool_call(call)
-            if invocation is None:
+            parsed_invocation = self._parse_tool_call(call)
+            if parsed_invocation is None:
                 yield events.error("bad_tool_call", "The assistant proposed an unusable tool call.")
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
+            invocation = parsed_invocation
 
             # Preserve the provider protocol: an assistant tool call is followed
             # by a tool-role result carrying the same id. Tool output never
@@ -2148,7 +2152,9 @@ class AssistantLoop:
                 )
                 yield events.tool_status(invocation.tool_call_id, "failed")
                 _finish_tool_step(context, "failed", outcome.error)
-                yield events.error("release_drift", outcome.error)
+                yield events.error(
+                    "release_drift", outcome.error or "Pinned release resources changed."
+                )
                 _transition(context, TurnState.FAILED)
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
@@ -2156,7 +2162,7 @@ class AssistantLoop:
 
             outcome = attach_execution_health(outcome, invocation.tool_name)
             if outcome.trace_detail:
-                _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
+                _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail or {})
                 health = outcome.trace_detail.get("evidence_health")
                 if health:
                     yield events.format_sse("evidence_health", {
@@ -2305,8 +2311,8 @@ class AssistantLoop:
                         load_authorized_models(context),
                         timeout=max(0, deadline - _budget_time()),
                     )
-                if context.agent_id and callable(getattr(catalog_tool, "planning_scope", None)):
-                    context.agent_scope = catalog_tool.planning_scope(context)
+                if context.agent_id and callable(planning_scope):
+                    context.agent_scope = planning_scope(context)
                 messages = self._build_messages(thread, user_content, context)
                 messages.append({"role": "system", "content": outcome.summary})
                 tool_uses[usage_key] = tool_uses.get(usage_key, 0) + 1
@@ -2402,7 +2408,7 @@ class AssistantLoop:
                 outcome = replace(outcome, business_hook_result=hook_result,
                                   trace_detail={**(outcome.trace_detail or {}),
                                                 "canonical_business_result": observation})
-                _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
+                _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail or {})
             if invocation.tool_name == "semantic_query" and isinstance(outcome.data, dict):
                 compiled = str(outcome.data.get("sql") or "")
                 if compiled:
@@ -2533,14 +2539,14 @@ class AssistantLoop:
                 room = self._context_manager.token_budget - estimate_messages_tokens(messages)
                 limit = _PREVIEW_ROWS
                 while limit:
-                    preview = {
+                    result_preview = {
                         "columns": list(shown.get("columns") or [])[:_PREVIEW_COLUMNS],
                         "rows": [list(row)[:_PREVIEW_COLUMNS] for row in shown["rows"][:limit]],
                         "truncated": bool(shown.get("truncated")) or len(shown["rows"]) > limit,
                     }
-                    cost = len(json.dumps(preview, default=str)) // 3
+                    cost = len(json.dumps(result_preview, default=str)) // 3
                     if cost * 4 <= room:
-                        envelope["result"] = preview
+                        envelope["result"] = result_preview
                         break
                     limit //= 2
             envelope["metadata"] = {
@@ -2645,6 +2651,7 @@ class AssistantLoop:
                 error="Pinned release resources changed or could not be authorized; "
                 "evaluate a new draft",
             )
+        context.quality_facts = context.quality_facts or {}
         semantic_started = time.monotonic()
         outcome = await tool.run(invocation, context)
         if invocation.tool_name in {"semantic_query", "semantic_view_query"}:

@@ -47,10 +47,13 @@ STAGE_LABELS = {
 }
 
 
+MissionStageStatus = Literal["planned", "running", "completed", "blocked", "cancelled"]
+
+
 class MissionStage(Contract):
     kind: StageKind
     label: str
-    status: Literal["planned", "running", "completed", "blocked", "cancelled"] = "planned"
+    status: MissionStageStatus = "planned"
     source_refs: list[str] = Field(default_factory=list, max_length=100)
 
 
@@ -173,8 +176,12 @@ class Mission(Contract):
     cancellation_complete: bool = False
     created_at: datetime
     updated_at: datetime
-    owner_scope: MissionOwnerScope | None = None
-    current_binding: MissionBinding | None = None
+    owner_scope: MissionOwnerScope = Field(default_factory=lambda data: MissionOwnerScope(
+        principal=data["scope"].principal, active_role=data["scope"].active_role,
+    ))
+    current_binding: MissionBinding = Field(default_factory=lambda data: MissionBinding(
+        scope=data["scope"], bound_at=data["created_at"],
+    ))
     run_bindings: dict[str, Scope] = Field(default_factory=dict, max_length=100)
     object_bindings: dict[str, Scope] = Field(default_factory=dict, max_length=100)
     historical_object_refs: list[ObjectRef] = Field(default_factory=list, max_length=100)

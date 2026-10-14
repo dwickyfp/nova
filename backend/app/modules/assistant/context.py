@@ -255,7 +255,7 @@ class ContextManager:
         )
         stats.summarized = summary is not None
         stats.dropped_lines = dropped_lines
-        stats.model_summary = bool(summary) and not summary.startswith(_DETERMINISTIC_PREFIX)
+        stats.model_summary = bool(summary and not summary.startswith(_DETERMINISTIC_PREFIX))
 
         curated = list(head)
         if summary is not None:

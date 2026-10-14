@@ -112,7 +112,7 @@ async def test_semantic_probes_batch_without_sharing_delegated_connections(
         call["security_context_version"] == 7 and call["session_id"] == "current" for call in calls
     )
     assert all(
-        call["sql"].startswith("SELECT * FROM") and call["sql"].endswith("LIMIT 1")
+        call["sql"].startswith("EXPLAIN SELECT * FROM") and call["sql"].endswith("LIMIT 1")
         for call in calls
     )
     assert all(call["max_rows"] == 0 for call in calls)
@@ -202,7 +202,7 @@ async def test_ranger_semantic_metadata_requires_current_select_policy(monkeypat
 
 
 @pytest.mark.parametrize("failure", ["no_failure", "policy_outage", "engine_denied"])
-async def test_ranger_semantic_probe_uses_real_select_under_current_identity(monkeypatch, failure):
+async def test_ranger_semantic_probe_plans_select_under_current_identity(monkeypatch, failure):
     from app.modules.access_control.service import access_control_service
     from app.modules.intelligence.semantic_views import SemanticViewService
 
@@ -229,7 +229,7 @@ async def test_ranger_semantic_probe_uses_real_select_under_current_identity(mon
         probe.assert_not_awaited()
     else:
         probe.assert_awaited_once_with(
-            sql="SELECT * FROM `sales`.`orders` LIMIT 1",
+            sql="EXPLAIN SELECT * FROM `sales`.`orders` LIMIT 1",
             username="reader",
             encrypted_password="opaque",
             database="sales",
