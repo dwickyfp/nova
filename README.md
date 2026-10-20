@@ -174,7 +174,7 @@ the question to a Sales Agent.
 
 ### Nova Studio: governed intelligence workspace
 
-![Nova Studio answering a revenue question through a Sales Agent](docs/assets/readme/nova-studio-chat-preview.png)
+![Nova Studio answering a revenue question through a Sales Agent](docs/assets/readme/nova-studio-smart-revenue-preview.png)
 
 Smart mode answers across agents as one analyst. In this recording, shown at four
 times speed, it describes the data it can reach, combines expense from a Finance
