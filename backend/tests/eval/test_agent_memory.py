@@ -43,9 +43,6 @@ class MemoryStore(AgentMemoryRepository):
         source_quote,
         source_thread_id,
         existing_id,
-        source_message_id=None,
-        source_scope=None,
-        observed_at=None,
     ):
         if existing_id:
             row = next(row for row in self.rows if row["memory_id"] == existing_id)

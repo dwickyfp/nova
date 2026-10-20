@@ -47,22 +47,6 @@ afterEach(() => {
 });
 
 describe("toConsentPayload", () => {
-  it("drops duplicate UI program chunks during journal replay", async () => {
-    const chunk =
-      'event: ui_delta\ndata: {"run_id":"run-ui","sequence":2,"content_index":1,"content_id":"content-1","text":"root = Col([])"}\n\n';
-    fetchMock.mockResolvedValueOnce(
-      new Response(chunk + chunk, {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      }),
-    );
-    const onEvent = vi.fn();
-    await streamAssistantTurn("thread", "Build a calculator", { onEvent });
-    expect(onEvent).toHaveBeenCalledTimes(1);
-    expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "ui_delta", sequence: 2 }),
-    );
-  });
   it("updates the sidebar role from the server role-change event", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(

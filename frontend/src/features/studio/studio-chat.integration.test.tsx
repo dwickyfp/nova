@@ -5,7 +5,6 @@ import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Agent } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
-import { registerUiFlush } from "./intelligent-ui/state";
 import "@/styles/index.css";
 
 /**
@@ -237,26 +236,6 @@ function renderStudio(
 
 afterEach(() => {
   vi.restoreAllMocks();
-});
-
-it("sends once when repeated Enter waits for an interactive state flush", async () => {
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => { release = resolve; });
-  const unregister = registerUiFlush(() => pending);
-  try {
-    const screen = await renderStudio();
-    await userEvent.fill(screen.getByRole("textbox", { name: "Message Nova" }), "Review results");
-    await userEvent.keyboard("{Enter}{Enter}");
-    release();
-    await expect.element(screen.getByText("Omzet tertinggi ada di", { exact: false })).toBeVisible();
-    const sent = vi.mocked(globalThis.fetch).mock.calls.filter(([input, init]) =>
-      String(input).endsWith("/messages") && init?.method === "POST",
-    );
-    expect(sent).toHaveLength(1);
-  } finally {
-    release();
-    unregister();
-  }
 });
 
 /**
@@ -535,14 +514,14 @@ describe("studio transcript click-through", () => {
       )
       .toBeVisible();
     await expect
-      .element(page.getByText("What would you like to work on?"))
+      .element(page.getByText("What insights can I help with?"))
       .toBeVisible();
     await expect
       .element(page.getByText("Nova Studio", { exact: true }))
       .not.toBeInTheDocument();
   });
 
-  it("keeps welcome suggestions above a stationary composer across the first send", async () => {
+  it("centers the welcome composer above suggestions and moves it down on send", async () => {
     renderStudio();
     const greetingLocator = page.getByRole("heading", {
       name: /Good (morning|afternoon|evening), Dwicky/,
@@ -556,10 +535,11 @@ describe("studio transcript click-through", () => {
     expect(greeting.getBoundingClientRect().bottom).toBeLessThan(
       composer.getBoundingClientRect().top,
     );
-    expect(suggestion.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      composer.getBoundingClientRect().top,
+    expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      suggestion.getBoundingClientRect().top,
     );
     const welcomeTop = composer.getBoundingClientRect().top;
+    const animate = vi.spyOn(Element.prototype, "animate");
 
     await userEvent.fill(
       page.getByRole("textbox", { name: "Message Nova" }),
@@ -572,11 +552,13 @@ describe("studio transcript click-through", () => {
     expect(page.getByRole("textbox", { name: "Message Nova" }).element()).toBe(
       textarea,
     );
-    expect(composer.getBoundingClientRect().top).toBeCloseTo(welcomeTop, 0);
-    expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
+    expect(composer.getBoundingClientRect().top).toBeGreaterThan(welcomeTop);
     await expect
       .element(page.getByRole("button", { name: "Top SKUs last quarter" }))
       .not.toBeInTheDocument();
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      expect(animate).toHaveBeenCalled();
+    }
   });
 
   it("clears the composer and shows progress while a new thread is still being created", async () => {
@@ -635,8 +617,8 @@ describe("studio transcript click-through", () => {
     await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeVisible();
     const composer = page.getByTestId("studio-composer").element();
     const composerRect = composer.getBoundingClientRect();
-    expect(composerRect.top).toBeGreaterThan(window.innerHeight / 2);
-    expect(composerRect.bottom).toBeLessThanOrEqual(window.innerHeight);
+    const composerCenter = composerRect.top + composerRect.height / 2;
+    expect(Math.abs(composerCenter - window.innerHeight / 2)).toBeLessThan(window.innerHeight / 6);
     await expect.element(page.getByRole("button", { name: questions[4] })).not.toBeInTheDocument();
 
     await page.getByRole("button", { name: "View all (8)" }).click();
@@ -648,11 +630,11 @@ describe("studio transcript click-through", () => {
   it("uses a white composer and a bordered text-only agent badge", async () => {
     renderStudio();
     await expect
-      .element(page.getByPlaceholder("Ask a question or describe what you need"))
+      .element(page.getByPlaceholder("Ask a question about your data"))
       .toBeVisible();
 
     const textarea = document.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="Ask a question or describe what you need"]',
+      'textarea[placeholder="Ask a question about your data"]',
     );
     expect(textarea?.parentElement?.classList.contains("bg-card")).toBe(true);
 
@@ -666,7 +648,7 @@ describe("studio transcript click-through", () => {
   it("renders the process rail and the answer, and opens a step", async () => {
     renderStudio();
     await page
-      .getByPlaceholder("Ask a question or describe what you need")
+      .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
 
@@ -722,7 +704,7 @@ describe("studio transcript click-through", () => {
   it("shows a consent card for an ask_every_tool agent and resolves it", async () => {
     renderStudio("ask_every_tool");
     await page
-      .getByPlaceholder("Ask a question or describe what you need")
+      .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
 
@@ -741,7 +723,7 @@ describe("studio transcript click-through", () => {
 
   it("keeps the composer controls keyboard reachable", async () => {
     renderStudio();
-    const textarea = page.getByPlaceholder("Ask a question or describe what you need");
+    const textarea = page.getByPlaceholder("Ask a question about your data");
     await textarea.click();
     await userEvent.keyboard("top skus{Enter}");
     await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
@@ -750,7 +732,7 @@ describe("studio transcript click-through", () => {
   it("opens a step to show what it did", async () => {
     renderStudio();
     await page
-      .getByPlaceholder("Ask a question or describe what you need")
+      .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
     await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
@@ -777,7 +759,7 @@ describe("studio transcript click-through", () => {
   it("offers a reconsider pass that streams as a labelled continuation", async () => {
     renderStudio("read_only", true);
     await page
-      .getByPlaceholder("Ask a question or describe what you need")
+      .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
     await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
@@ -869,7 +851,7 @@ describe("studio transcript click-through", () => {
     await page.getByRole("button", { name: "Start fresh" }).click();
 
     await expect
-      .element(page.getByText("What would you like to work on?"))
+      .element(page.getByText("What insights can I help with?"))
       .toBeVisible();
     await new Promise((resolve) => window.setTimeout(resolve, 50));
     await expect

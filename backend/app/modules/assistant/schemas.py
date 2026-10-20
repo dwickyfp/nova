@@ -159,28 +159,7 @@ class AttachmentInput(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class UiActionInput(BaseModel):
-    message_id: str = Field(min_length=1, max_length=64)
-    content_id: str = Field(min_length=1, max_length=64)
-    program_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    action_id: str = Field(min_length=1, max_length=256)
-    operation_id: str = Field(pattern=r"^[a-f0-9-]{36}$")
-    state: dict = Field(default_factory=dict)
-
-
-class UiStateInput(BaseModel):
-    revision: int = Field(ge=0)
-    program_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    state: dict
-
-
-class UiMediaInput(BaseModel):
-    type: Literal["SearchImage", "Image", "Map"]
-    props: dict
-
-
 class AgentMessageRequest(MessageRequest):
-    ui_action: UiActionInput | None = None
     work_intent: Literal["ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"] | None = (
         None
     )

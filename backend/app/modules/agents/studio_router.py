@@ -1078,7 +1078,7 @@ async def _shared_grant(user: dict, object_type: str, object_id: str) -> dict:
 
 @router.get("/studio/shared/threads/{thread_id}", response_class=SanitizingJSONResponse)
 async def open_shared_thread(thread_id: str, user: dict = Depends(get_current_user)) -> dict:
-    from app.modules.agents.sharing import shared_messages
+    from app.modules.agents.sharing import shared_steps
     from app.modules.assistant.repository import assistant_repository
 
     share = await _shared_grant(user, "thread", thread_id)
@@ -1102,9 +1102,9 @@ async def open_shared_thread(thread_id: str, user: dict = Depends(get_current_us
                 "message_id": item["message_id"],
                 "role": item["role"],
                 "content": item["content"],
-                "steps": item["steps"],
+                "steps": shared_steps(item.get("steps")),
             }
-            for item in shared_messages(messages)
+            for item in messages if item["role"] in {"user", "assistant"}
         ],
         "note": "Results are not included. Refresh a result to run it with your own access.",
     }
@@ -1121,7 +1121,6 @@ async def refresh_shared_result(
     from app.modules.agents.semantic.compiler import SemanticCompiler
     from app.modules.agents.semantic.ir import SemanticModelIR
     from app.modules.agents.semantic.planning import SemanticPlan
-    from app.modules.agents.sharing import shared_messages
     from app.modules.assistant.repository import assistant_repository
     from app.modules.intelligence.semantic_views import semantic_view_service
 
@@ -1130,7 +1129,7 @@ async def refresh_shared_result(
     thread = await assistant_repository.get_thread(thread_id, user_name=owner) or {}
     messages = await assistant_repository.list_messages(thread_id, user_name=owner)
     step = next(
-        (item for message in shared_messages(messages) for item in (message.get("steps") or [])
+        (item for message in messages for item in (message.get("steps") or [])
          if isinstance(item, dict) and item.get("tool_call_id") == tool_call_id
          and item.get("name") == "semantic_query"),
         None,

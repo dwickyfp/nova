@@ -20,7 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Bump when any source text changes, so cached translations are redone.
-VERSION = 2
+VERSION = 1
 
 MESSAGES: dict[str, str] = {
     "render.lead": "Here are the figures.",
@@ -46,9 +46,6 @@ MESSAGES: dict[str, str] = {
         "verified data to answer this question."
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
-    "loop.ui_unavailable": (
-        "I could not prepare this interactive answer. Ask me to explain it in text or try again."
-    ),
     "suggest.by": "{metric} by {dimension}{period}",
     "suggest.previous": "{metric}{period} compared with the previous period",
     "suggest.trend": "monthly {metric} trend this year",
@@ -91,10 +88,6 @@ BUILTIN: dict[str, dict[str, str]] = {
             "terverifikasi untuk menjawab pertanyaan ini."
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
-        "loop.ui_unavailable": (
-            "Saya belum bisa menyiapkan jawaban interaktif ini. "
-            "Minta penjelasan dalam teks atau coba lagi."
-        ),
         "suggest.by": "{metric} per {dimension}{period}",
         "suggest.previous": "{metric}{period} dibanding periode sebelumnya",
         "suggest.trend": "tren {metric} per bulan tahun ini",

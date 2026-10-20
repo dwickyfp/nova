@@ -9,7 +9,6 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
-      'coverage/**',
       'node_modules/**',
       '*.config.js',
       '*.config.cjs',

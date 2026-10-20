@@ -1149,11 +1149,6 @@ class AgentHarnessWorker:
             thread.messages = await self._root_history(child)
         context = LoopContext(
             user_name=child["owner_name"],
-            intelligent_ui=is_root and smart,
-            ui_private_context=("UI form input (user supplied):" in child["objective"] or any(
-                "UI form input (user supplied):" in message.content
-                or message.attachments for message in thread.messages
-            )),
             execution_timezone=configured_timezone(),
             collaboration_tools=tuple(COLLABORATION_TOOLS) if smart else (),
             collaboration_root=is_root,

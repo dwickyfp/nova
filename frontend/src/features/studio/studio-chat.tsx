@@ -32,10 +32,8 @@ import {
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
 import { ConsentCard } from "./consent-card";
 import { TurnContent } from "./turn-content";
-import { flushUiStates } from './intelligent-ui/state';
-import type { UiAction } from './intelligent-ui/types';
 import { findArtifactSql, type SavableContent } from "./artifact-source";
-import { splitChartTitle } from "./chart-title";
+import { splitChartTitle } from "./result-cards";
 import {
   CREATE_SKILL_COMMAND,
   SKILL_AUTHOR_ID,
@@ -65,6 +63,7 @@ import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { MissionTurnControls, type MissionTurnChoice } from "./mission-turn-controls";
 import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
+export { applyEvent, replayThread } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
 
@@ -232,6 +231,8 @@ export function StudioChat({
     }
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const composerStartRef = useRef<DOMRect | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   useLayoutEffect(() => {
@@ -410,6 +411,24 @@ export function StudioChat({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
+  useLayoutEffect(() => {
+    if (turns.length === 0 || !composerStartRef.current || !composerRef.current)
+      return;
+    const before = composerStartRef.current;
+    composerStartRef.current = null;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const after = composerRef.current.getBoundingClientRect();
+    const offset = before.top - after.top;
+    if (Math.abs(offset) < 2) return;
+    composerRef.current.animate(
+      [
+        { transform: `translateY(${offset}px)` },
+        { transform: "translateY(0)" },
+      ],
+      { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
+  }, [turns.length]);
+
   const ensureThread = useCallback(
     async (title: string): Promise<string | null> => {
       if (!agent) return null;
@@ -469,13 +488,15 @@ export function StudioChat({
   }, []);
 
   const send = useCallback(
-    async (override?: string, uiAction?: UiAction) => {
+    async (override?: string) => {
       const content = (override ?? input).trim();
       const pending = attachments;
       if ((!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
-      try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
-      if (abortRef.current) return;
 
+      if (turns.length === 0) {
+        composerStartRef.current =
+          composerRef.current?.getBoundingClientRect() ?? null;
+      }
       const controller = new AbortController();
       abortRef.current = controller;
       // Sending is a request to see the reply, wherever the reader had scrolled.
@@ -510,7 +531,6 @@ export function StudioChat({
         submittedThread = thread;
         if (controller.signal.aborted) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
-          uiAction,
           signal: controller.signal,
           role: currentRole,
           newMission: missionChoice.mode === "new",
@@ -833,7 +853,7 @@ export function StudioChat({
         "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
       )}
     >
-      <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", selectedChild && "hidden lg:flex")}>
+      <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", welcome && "overflow-y-auto", selectedChild && "hidden lg:flex")}>
       {workflowAvailable && !selectedChild && <div className="flex shrink-0 justify-end border-b border-border px-4 py-2 xl:hidden"><Button ref={workflowButtonRef} variant="ghost" className="min-h-11" aria-label="Open workflow details" aria-haspopup="dialog" onClick={() => changeWorkflowOpen(true)}>Activity and evidence</Button></div>}
       {showAutoCard && !selectedChild && !workflowAvailable ? (
         <AutoSubagentCard
@@ -848,22 +868,23 @@ export function StudioChat({
       ) : null}
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col",
+          "flex flex-1 flex-col",
+          welcome ? "justify-center pb-4 pt-12" : "min-h-0",
         )}
       >
         <div
           ref={scrollRef}
           className={cn(
-            "flex min-h-0 w-full flex-1 flex-col overflow-y-auto",
+            "w-full",
+            welcome ? "shrink-0" : "min-h-0 flex-1 overflow-y-auto",
             showAutoCard && !selectedChild && !workflowAvailable && "xl:pr-[324px]",
           )}
           onScroll={onTranscriptScroll}
         >
           <div
             className={cn(
-              "mx-auto w-full px-4 sm:px-6",
-              turns.some(turn => turn.content.some(item => item.type === 'ui')) ? 'max-w-6xl' : 'max-w-3xl',
-              welcome ? "my-auto shrink-0 py-6 sm:py-12" : "py-8 sm:py-10",
+              "mx-auto w-full max-w-3xl px-4 sm:px-6",
+              welcome ? "pb-5" : "py-8 sm:py-10",
             )}
           >
             {agent && loadingThread && empty ? (
@@ -882,12 +903,7 @@ export function StudioChat({
                 </p>
               </div>
             ) : empty || !agent ? (
-              <>
-                <Greeting displayName={displayName} />
-                {!creatingSkill && agent && agent.sample_questions.length > 0 ? (
-                  <SuggestedQuestions questions={agent.sample_questions} onPick={(text) => void send(text)} />
-                ) : null}
-              </>
+              <Greeting displayName={displayName} />
             ) : (
               <div className="flex flex-col gap-8">
                 {olderCursor ? (
@@ -900,7 +916,6 @@ export function StudioChat({
                   <TurnView
                     key={turn.id}
                     turn={turn}
-                    uiContext={threadId ? { agentId: agent.agent_id, threadId, onAction: send } : undefined}
                     onAsk={index === turns.length - 1 && !streaming ? (question) => void send(question) : undefined}
                     agent={agent}
                     agents={agents}
@@ -927,10 +942,11 @@ export function StudioChat({
         </div>
 
         <div
+          ref={composerRef}
           data-testid="studio-composer"
           className={cn(
             "w-full shrink-0 px-4 sm:px-6",
-            "pb-6 pt-2",
+            welcome ? "pb-2" : "pb-6 pt-2",
             showAutoCard && !selectedChild && !workflowAvailable && "xl:pr-[324px]",
           )}
         >
@@ -968,6 +984,15 @@ export function StudioChat({
           />
         </div>
       </div>
+      {welcome &&
+      !creatingSkill &&
+      agent &&
+      agent.sample_questions.length > 0 ? (
+        <SuggestedQuestions
+          questions={agent.sample_questions}
+          onPick={(text) => void send(text)}
+        />
+      ) : null}
       {skillDraft ? (
         <SkillEditor
           initialDocument={skillDraft}
@@ -1017,7 +1042,6 @@ const TurnView = memo(function TurnView({
   savingContentId,
   savedContentIds,
   onReviewSkill,
-  uiContext,
 }: {
   turn: TranscriptTurn;
   /** Ask a follow-up; set only for the latest finished turn. */
@@ -1040,7 +1064,6 @@ const TurnView = memo(function TurnView({
   savingContentId: string | null;
   savedContentIds: ReadonlySet<string>;
   onReviewSkill?: (document: string) => void;
-  uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
 }) {
   const running = turn.state === "streaming";
   const visibleSteps: RailStep[] = running && turn.steps.length === 0 && !turn.answer && turn.content.length === 0
@@ -1107,7 +1130,6 @@ const TurnView = memo(function TurnView({
 
       <TurnContent
         turn={turn}
-        uiContext={uiContext}
         runContext={runContext}
         running={running}
         onSaveArtifact={(item) => void onSaveArtifact(turn, item)}
@@ -1187,10 +1209,9 @@ function Greeting({ displayName }: { displayName?: string | null }) {
         {greeting}
         {name ? `, ${name}` : ""}
       </h1>
-      <p className="mt-2 text-2xl leading-tight font-medium tracking-tight text-primary sm:text-4xl">
-        What would you like to work on?
+      <p className="mt-1 bg-[linear-gradient(90deg,#D04738_0%,#F36B5B_55%,#F59E66_100%)] bg-clip-text text-3xl leading-tight font-medium tracking-[-0.04em] text-transparent sm:text-5xl">
+        What insights can I help with?
       </p>
-      <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">Adjust assumptions in a calculator or explore a result with filters. Ask Nova to continue when you need new data or an action.</p>
     </div>
   );
 }

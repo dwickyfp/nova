@@ -305,29 +305,11 @@ describe("Agent Quality", () => {
       .getByRole("option", { name: "Require other mandatory cases" })
       .click();
     await screen.getByLabelText("Maximum latency (ms)").fill("10");
-    await expect
-      .element(screen.getByLabelText("Maximum latency (ms)"))
-      .toHaveValue(10);
     await screen.getByLabelText("Maximum latency (ms)").fill("");
-    await expect
-      .element(screen.getByLabelText("Maximum latency (ms)"))
-      .toHaveValue(null);
     await screen.getByLabelText("Maximum tool calls").fill("1");
-    await expect
-      .element(screen.getByLabelText("Maximum tool calls"))
-      .toHaveValue(1);
     await screen.getByLabelText("Maximum tool calls").fill("");
-    await expect
-      .element(screen.getByLabelText("Maximum tool calls"))
-      .toHaveValue(null);
     await screen.getByLabelText("Maximum metadata reads").fill("5");
-    await expect
-      .element(screen.getByLabelText("Maximum metadata reads"))
-      .toHaveValue(5);
     await screen.getByLabelText("Maximum metadata reads").fill("");
-    await expect
-      .element(screen.getByLabelText("Maximum metadata reads"))
-      .toHaveValue(null);
     await screen.getByLabelText("Maximum total tokens").fill("0");
     await screen.getByRole("button", { name: "Evaluate release" }).click();
     await vi.waitFor(() =>

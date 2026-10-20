@@ -36,9 +36,10 @@ import {
   type ThreadTurn,
   type TraceStep,
 } from "@/features/agents/api";
-import { type TranscriptTurn } from "@/features/studio/studio-chat";
-import { replayThread } from "@/features/studio/studio-transcript";
-
+import {
+  replayThread,
+  type TranscriptTurn,
+} from "@/features/studio/studio-chat";
 import { ProcessRail } from "@/features/studio/thought-turn";
 import { TurnContent } from "@/features/studio/turn-content";
 import { cn } from "@/lib/utils";

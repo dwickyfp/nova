@@ -27,9 +27,9 @@ async def write_cursor(after: str, kind: str, scope: Scope) -> str:
     if client is None:
         raise HTTPException(status_code=503, detail="Pagination is temporarily unavailable")
     token = uuid4().hex
-    await client.set(
+    await client.setex(
         f"nova:intelligence:cursor:{token}",
+        900,
         json.dumps({"after": after, "kind": kind, "scope": fingerprint(scope.model_dump())}),
-        ex=900,
     )
     return token

@@ -111,8 +111,6 @@ export type AssistantEvent = (
       security_context_version: number;
     }
   | ({ type: "text_delta"; text: string } & ContentPosition)
-  | ({ type: "ui"; payload: Omit<import('../studio/intelligent-ui/types').UiBlock, 'program'> } & ContentPosition)
-  | ({ type: "ui_delta"; text: string } & ContentPosition)
   | {
       type: "thinking";
       phase: ThinkingPhase;

@@ -1,18 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  BarChart3,
-  Eye,
-  Grip,
-  LayoutDashboard,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  Share2,
-  Table2,
-  Trash2,
-} from "lucide-react";
+import { BarChart3, Eye, Grip, LayoutDashboard, Pencil, Plus, RefreshCw, Search, Share2, Table2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -24,7 +12,7 @@ import {
   type StudioDashboardDetail,
   type StudioDashboardTile,
 } from "@/features/agents/api";
-import { chartSpecWithRows } from "./artifact-chart-spec";
+import { chartSpecWithRows } from "./studio-artifacts";
 import { ShareDialog } from "./share-dialog";
 import {
   canPlaceTile,

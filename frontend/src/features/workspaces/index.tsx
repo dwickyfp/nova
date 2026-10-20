@@ -94,8 +94,11 @@ import { readToken } from "@/lib/read-token";
 import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
 import { WorkspaceTabStrip } from "./workspace-tab-strip";
-import { QueryConfirmationDialog } from "./query-confirmation";
-import { snapshotQuery, type QuerySnapshot } from "./query-snapshot";
+import {
+  QueryConfirmationDialog,
+  snapshotQuery,
+  type QuerySnapshot,
+} from "./query-confirmation";
 import {
   TableItemWithPopover,
   TablePopoverProvider,
@@ -5112,7 +5115,7 @@ function MonacoSqlEditor({
       tabWidth: 2,
     };
     monaco.languages.registerDocumentFormattingEditProvider("sql", {
-      provideDocumentFormattingEdits(model: import("monaco-editor").editor.ITextModel) {
+      provideDocumentFormattingEdits(model: any) {
         try {
           const formatted = formatSql(model.getValue(), formatOpts);
           return [{ range: model.getFullModelRange(), text: formatted }];
@@ -5122,7 +5125,7 @@ function MonacoSqlEditor({
       },
     });
     monaco.languages.registerDocumentRangeFormattingEditProvider("sql", {
-      provideDocumentRangeFormattingEdits(model: import("monaco-editor").editor.ITextModel, range: import("monaco-editor").IRange) {
+      provideDocumentRangeFormattingEdits(model: any, range: any) {
         try {
           const text = model.getValueInRange(range);
           const formatted = formatSql(text, formatOpts);

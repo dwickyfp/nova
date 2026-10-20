@@ -2,9 +2,7 @@ import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
-import { ResultTable } from "./result-cards";
-import { splitChartTitle } from "./chart-title";
-
+import { ResultTable, splitChartTitle } from "./result-cards";
 
 /**
  * The result-card title plumbing.

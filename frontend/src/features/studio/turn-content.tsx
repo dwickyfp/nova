@@ -6,8 +6,6 @@ import { TextShimmer } from "./text-shimmer";
 import type { OrderedContent, TranscriptTurn } from "./studio-chat";
 import type { SavableContent } from "./artifact-source";
 import { visibleContent } from "./turn-content-order";
-import { IntelligentUi } from "./intelligent-ui/renderer";
-import type { UiAction } from "./intelligent-ui/types";
 
 /**
  * The canonical renderer for an agent turn's authored output.
@@ -25,7 +23,6 @@ export function TurnContent({
   onSaveArtifact,
   savingContentId,
   savedContentIds,
-  uiContext,
 }: {
   turn: TranscriptTurn;
   runContext?: TurnContext;
@@ -35,16 +32,9 @@ export function TurnContent({
   onSaveArtifact?: (item: SavableContent) => void;
   savingContentId?: string | null;
   savedContentIds?: ReadonlySet<string>;
-  uiContext?: {
-    agentId: string;
-    threadId: string;
-    onAction: (message: string, action: UiAction) => Promise<void>;
-  };
 }) {
   const ordered = visibleContent(turn.content);
-  const representedTables = ordered.flatMap((item) =>
-    item.type === "table" ? [item.block] : [],
-  );
+  const representedTables = ordered.flatMap((item) => item.type === "table" ? [item.block] : []);
 
   if (!ordered.length && !turn.answer) return null;
 
@@ -55,10 +45,8 @@ export function TurnContent({
         selected={selectedContentId === "answer"}
         onSelect={onSelectContent ? () => onSelectContent(null) : undefined}
       >
-        <div className="nova-chat-item min-w-0 max-w-3xl text-sm">
-          <Markdown offline runContext={runContext}>
-            {turn.answer}
-          </Markdown>
+        <div className="nova-chat-item min-w-0 text-sm">
+          <Markdown runContext={runContext}>{turn.answer}</Markdown>
         </div>
       </SelectableOutput>
     );
@@ -71,47 +59,15 @@ export function TurnContent({
           key={item.id}
           contentId={item.id}
           selected={selectedContentId === item.id}
-          onSelect={
-            onSelectContent && item.type !== "ui"
-              ? () => onSelectContent(item)
-              : undefined
-          }
+          onSelect={onSelectContent ? () => onSelectContent(item) : undefined}
         >
           {item.type === "text" ? (
-            <div className="nova-chat-item min-w-0 max-w-3xl text-sm">
-              <Markdown
-                offline
-                runContext={runContext}
-                representedTables={representedTables}
-              >
-                {item.text}
-              </Markdown>
+            <div className="nova-chat-item min-w-0 text-sm">
+              <Markdown runContext={runContext} representedTables={representedTables}>{item.text}</Markdown>
               {running && !item.complete && itemIndex === ordered.length - 1 ? (
                 <TextShimmer className="mt-1">Writing</TextShimmer>
               ) : null}
             </div>
-          ) : item.type === "ui" ? (
-            turn.state === "cancelled" ||
-            turn.state === "error" ||
-            (turn.state === "done" && !item.complete) ? (
-              <Markdown offline>{item.block.fallback}</Markdown>
-            ) : (
-              <IntelligentUi
-                block={item.block}
-                complete={item.complete}
-                source={
-                  uiContext && turn.messageId
-                    ? {
-                        agentId: uiContext.agentId,
-                        threadId: uiContext.threadId,
-                        messageId: turn.messageId,
-                        contentId: item.id,
-                      }
-                    : undefined
-                }
-                onAction={uiContext?.onAction}
-              />
-            )
           ) : item.type === "table" ? (
             <ResultTable
               block={item.block}

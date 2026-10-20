@@ -369,7 +369,6 @@ export const agentsApi = {
 };
 
 export type StreamAgentTurnOptions = {
-  uiAction?: import('../studio/intelligent-ui/types').UiAction;
   signal?: AbortSignal;
   onEvent: (event: AssistantEvent) => void;
   role?: string | null;
@@ -393,7 +392,7 @@ export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId, uiAction }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -404,7 +403,7 @@ export async function streamAgentTurn(
         Accept: "text/event-stream",
       }),
       body: JSON.stringify({ content, role, model, provider_id: providerId, attachments,
-        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId, ui_action: uiAction }),
+        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId }),
       signal,
     },
   );
@@ -949,7 +948,6 @@ export type TraceStep =
       text: string;
     }
   /** A result grid the turn rendered, recorded so a reload can show it again. */
-  | ({ kind: 'ui'; content_index: number; content_id: string } & import('../studio/intelligent-ui/types').UiBlock)
   | {
       kind: "table";
       content_index?: number;

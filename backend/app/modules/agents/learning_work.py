@@ -39,7 +39,7 @@ async def enqueue_pending_learning(
         await client.delete(cursor_key)
     for source in sources:
         if client is not None and user is None:
-            await client.set(cursor_key, source["message_id"], ex=3600)
+            await client.setex(cursor_key, 3600, source["message_id"])
         try:
             scope = Scope.model_validate(source["scope"])
         except (ValidationError, TypeError):

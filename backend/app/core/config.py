@@ -100,7 +100,6 @@ class Settings(BaseSettings):
     QUERY_AUTOPILOT_LOCAL_LOG_FIXTURES: dict[str, list[Path]] = {}
 
     STUDIO_BUSINESS_WORKFLOW_ENABLED: bool = False
-    STUDIO_INTELLIGENT_UI_ENABLED: bool = True
     STUDIO_ACTIONS_ENABLED: bool = False
     STUDIO_QUALITY_ENABLED: bool = False
     STUDIO_ANALYSIS_WORKSPACE_ENABLED: bool = False

@@ -6,18 +6,20 @@ import { MonitoringPageScroller } from '@/features/monitoring'
 import { MonitoringQueryCost } from '@/features/monitoring/query-cost'
 
 export const Route = createFileRoute('/_authenticated/query-cost')({
-  component: function RouteComponent() {
-    return (
-      <>
-        <Header>
-          <Search className='me-auto' />
-        </Header>
-        <Main fixed className='min-h-0'>
-          <MonitoringPageScroller>
-            <MonitoringQueryCost />
-          </MonitoringPageScroller>
-        </Main>
-      </>
-    )
-  },
+  component: RouteComponent,
 })
+
+function RouteComponent() {
+  return (
+    <>
+      <Header>
+        <Search className='me-auto' />
+      </Header>
+      <Main fixed className='min-h-0'>
+        <MonitoringPageScroller>
+          <MonitoringQueryCost />
+        </MonitoringPageScroller>
+      </Main>
+    </>
+  )
+}

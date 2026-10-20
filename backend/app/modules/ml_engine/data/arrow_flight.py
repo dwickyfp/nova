@@ -132,7 +132,6 @@ class ArrowFlightDataSource:
         conn = flight_sql.connect(
             uri=(f"grpc://{settings.STARROCKS_HOST}:{settings.STARROCKS_ARROW_FLIGHT_PORT}"),
             db_kwargs=kwargs,
-            autocommit=True,
         )
         cursor = conn.cursor()
         try:

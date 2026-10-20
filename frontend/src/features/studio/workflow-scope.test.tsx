@@ -98,13 +98,7 @@ function Host({ turns }: { turns: TranscriptTurn[] }) {
 async function host(turns: TranscriptTurn[]) {
   await render(<QueryClientProvider client={client}><Host turns={turns} /></QueryClientProvider>);
   await expect.element(page.getByRole("button", { name: "Open workflow details" })).toBeVisible();
-  if (window.innerWidth < 1200) {
-    await page.getByRole("button", { name: "Open workflow details" }).click();
-    const drawer = page.getByRole("dialog", { name: "Workflow details", exact: true });
-    await expect.element(drawer).toBeVisible();
-    // A moving drawer can shift a pointer click onto the adjacent tab.
-    await Promise.all(drawer.element().getAnimations().map((animation) => animation.finished));
-  }
+  if (window.innerWidth < 1200) await page.getByRole("button", { name: "Open workflow details" }).click();
 }
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });

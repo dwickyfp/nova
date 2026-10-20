@@ -14,10 +14,6 @@ port governed test `47930`/`47379`/`47900`, serta container dan volume terpisah.
 Panduan ini memisahkan uji metadata dari gate patched-FE Ranger; perintahnya bukan laporan
 hasil uji.
 
-Untuk chat interaktif, baca [runtime dan operasi Intelligent UI](docs/studio-intelligent-ui.md).
-Backend web dan worker memerlukan Node 22; Dockerfile sudah menyertakannya.
-Flag `STUDIO_INTELLIGENT_UI_ENABLED` default `true`; nilai `false` memakai Markdown fallback.
-
 ## Prasyarat
 
 Pastikan software berikut sudah tersedia:

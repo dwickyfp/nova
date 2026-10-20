@@ -25,7 +25,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { useSidebar } from './ui/sidebar-context';
+import { useSidebar } from './ui/sidebar'
+
 export function ConfigDrawer() {
   const { setOpen } = useSidebar()
   const { resetDir } = useDirection()

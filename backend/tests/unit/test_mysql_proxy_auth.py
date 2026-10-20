@@ -172,7 +172,7 @@ class TestRelayAgainstAFakeEngine:
     """Drive the relay against a scripted engine instead of a live StarRocks."""
 
     @pytest.fixture
-    async def fake_engine(self):
+    def fake_engine(self):
         """A minimal server that completes or refuses a login on request."""
 
         class Engine:
@@ -184,58 +184,36 @@ class TestRelayAgainstAFakeEngine:
                 self.connections = 0
 
         engine = Engine()
-        handlers = set()
-        servers = []
 
         async def handler(reader, writer):
-            task = asyncio.current_task()
-            handlers.add(task)
-            try:
-                engine.connections += 1
-                payload = _handshake(scramble=engine.scramble)
-                writer.write(len(payload).to_bytes(3, "little") + b"\x00" + payload)
-                await writer.drain()
-                header = await reader.readexactly(4)
-                length = int.from_bytes(header[:3], "little")
-                body = await reader.readexactly(length)
-                engine.received_capabilities = struct.unpack("<I", body[:4])[0]
-                username_len = body.index(b"\x00", 32) - 32
-                offset = 32 + username_len + 1
-                response_length = body[offset]
-                engine.received_response = body[offset + 1 : offset + 1 + response_length]
-                if engine.accept:
-                    writer.write(b"\x07\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00")
-                else:
-                    message = b"#28000Access denied"
-                    writer.write(
-                        (len(message) + 3).to_bytes(3, "little")
-                        + b"\x02\xff\x15\x04"
-                        + message
-                    )
-                await writer.drain()
-                await reader.read()
-            except asyncio.IncompleteReadError:
-                pass
-            finally:
-                writer.close()
-                await writer.wait_closed()
-                handlers.discard(task)
+            engine.connections += 1
+            payload = _handshake(scramble=engine.scramble)
+            writer.write(len(payload).to_bytes(3, "little") + b"\x00" + payload)
+            await writer.drain()
+            header = await reader.readexactly(4)
+            length = int.from_bytes(header[:3], "little")
+            body = await reader.readexactly(length)
+            engine.received_capabilities = struct.unpack("<I", body[:4])[0]
+            username_len = body.index(b"\x00", 32) - 32
+            offset = 32 + username_len + 1
+            response_length = body[offset]
+            engine.received_response = body[offset + 1 : offset + 1 + response_length]
+            if engine.accept:
+                writer.write(b"\x07\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00")
+            else:
+                message = b"#28000Access denied"
+                writer.write(
+                    (len(message) + 3).to_bytes(3, "little")
+                    + b"\x02\xff\x15\x04"
+                    + message
+                )
+            await writer.drain()
 
         async def serve():
             server = await asyncio.start_server(handler, "127.0.0.1", 0)
-            servers.append(server)
             return server
 
-        try:
-            yield engine, serve
-        finally:
-            for server in servers:
-                server.close()
-                await server.wait_closed()
-            remaining = list(handlers)
-            for task in remaining:
-                task.cancel()
-            await asyncio.gather(*remaining, return_exceptions=True)
+        return engine, serve
 
     async def test_reads_the_challenge_without_closing_the_socket(self, fake_engine):
         engine, serve = fake_engine
