@@ -53,7 +53,7 @@ def factory():
 
 
 def observation(measured):
-    counts, measurement = measured.observation(None)
+    counts, measurement = measured.observation()
     return {"counts": counts, "measurement": measurement}
 
 

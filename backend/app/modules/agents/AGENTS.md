@@ -53,7 +53,7 @@ not add another independent inference/tool loop.
   and audit behavior.
 - Extend existing tool/skill/resource/memory catalogs. Keep memory and derived
   caches within owner/role scopes and current evidence/approval rules; do not
-  grant authority through saved prose, MCP responses, or decision ranking.
+  grant authority through saved prose or MCP responses.
 
 ## Validation
 

@@ -331,7 +331,7 @@ nova/
 | Platform overview | [Product model, principles, and terminology](docs/01-overview.md) |
 | Data and SQL | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md) |
 | Semantics and business context | [Intelligence foundation](docs/28-intelligence-foundation.md) |
-| Studio and agents | [Smart collaboration](docs/arch-11-smart-collaboration.md), [Decision Mode for runtime routing](docs/arch-12-studio-decision-mode.md) |
+| Studio and agents | [Smart collaboration](docs/arch-11-smart-collaboration.md) |
 | Decisions and governed workflows | [Governed Studio](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md) |
 | Security and governance | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md) |
 | ML | [Native ML runtime](docs/28-native-ml-runtime.md) |

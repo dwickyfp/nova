@@ -111,8 +111,6 @@ class CollaborationTool:
         arguments = dict(invocation.arguments)
         if self.name == "discover_agents" and getattr(context, "collaboration_root", False):
             arguments["capability"] = context.routing_content or arguments.get("capability", "")
-        if self.name == "discover_agents" and getattr(context, "decision", None) is not None:
-            arguments["decision"] = context.decision
         if self.name in {"spawn_agent", "send_message", "followup_task"}:
             arguments["operation_id"] = operation_key(
                 self.control.caller["run_id"], self.name, arguments

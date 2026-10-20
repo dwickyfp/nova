@@ -204,7 +204,7 @@ export function FunctionsTab() {
         providers: ProviderOption[]
         count: number
       }>('/ai/providers')
-      setProviderOptions(res.providers.filter((provider) => provider.type !== 'decision'))
+      setProviderOptions(res.providers)
     } catch {
       // Non-critical
     }
@@ -221,7 +221,7 @@ export function FunctionsTab() {
           models: ModelOption[]
           count: number
         }>(`/ai/providers/${providerId}/models`)
-        setModelOptions(res.models.filter((model) => model.type !== 'decision'))
+        setModelOptions(res.models)
       } catch {
         setModelOptions([])
       }

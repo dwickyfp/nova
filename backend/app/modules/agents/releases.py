@@ -126,7 +126,7 @@ async def model_contract(provider_id: str, name: str) -> dict:
             for item in models
             if item.get("name") == name
             and item.get("is_active")
-            and item.get("type") in {"llm", "decision"}
+            and item.get("type") == "llm"
         ),
         None,
     )
@@ -253,7 +253,6 @@ async def capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
 
 async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
     from app.modules.agents.service import agent_service
-    from app.modules.ai_ml.decision_settings import read_decision_settings, registered_model
     from app.modules.assistant.provider import assistant_provider
     from app.modules.intelligence.semantic_views import semantic_view_service
 
@@ -278,19 +277,6 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
         provider_id=agent.get("model_provider_id"), model=agent.get("model_name")
     )
     models = [await model_contract(config.provider_id, config.model)]
-    routing = await read_decision_settings()
-    if routing.enabled:
-        for model_id, kind in (
-            (routing.decision_model_id, "decision"),
-            (routing.light_model_id, "llm"),
-            (routing.heavy_model_id, "llm"),
-        ):
-            if model_id is None:
-                raise HTTPException(422, "Decision routing model is not configured")
-            selected, _ = await registered_model(model_id, kind)
-            contract = await model_contract(selected["provider_id"], selected["name"])
-            if contract not in models:
-                models.append(contract)
     semantics = []
     for view_id in agent.get("semantic_view_ids") or []:
         view = await semantic_view_service.get_active_for_agent(
@@ -315,7 +301,6 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
             "compiled_prompt": prompt,
             "compiled_instructions": agent["compiled_instructions"],
             "models": models,
-            "routing": routing.model_dump(),
             "resources": await resource_contracts(agent, user),
             "policy_fingerprint": fingerprint({"agent_policy": agent.get("policy")}),
             "scorer_set_version": SCORER_SET_VERSION,
@@ -354,7 +339,15 @@ async def load_runtime_manifest(agent: dict) -> dict | None:
     if not manifest or manifest["fingerprint"] != fingerprint(manifest["dependencies"]):
         raise HTTPException(409, "Pinned release manifest is unavailable or corrupt")
     dependencies = manifest["dependencies"]
-    for model in dependencies["models"]:
+    # Older manifests pinned the retired System One routing models after the
+    # agent's own model. Those models no longer run, so they cannot drift.
+    routing = dependencies.get("routing") or {}
+    retired = {
+        routing.get(key) for key in ("decision_model_id", "light_model_id", "heavy_model_id")
+    } if routing.get("enabled") else set()
+    for index, model in enumerate(dependencies["models"]):
+        if index and model["id"] in retired:
+            continue
         current = await model_contract(model["provider_id"], model["name"])
         if current != model:
             raise HTTPException(

@@ -24,11 +24,6 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.common.ssrf_guard import BlockedEndpointError, resolve_and_validate_url
 from app.core.deps import get_current_user, require_role
-from app.modules.ai_ml.decision_settings import (
-    DecisionSettings,
-    read_decision_settings,
-    save_decision_settings,
-)
 from app.modules.ai_ml.default_model import (
     DefaultModelSettings,
     read_default_model,
@@ -93,25 +88,6 @@ async def update_default_model(body: DefaultModelSettings, user: dict = require_
     await write_audit_log(
         event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
         object_type="DEFAULT_MODEL", object_name=body.model_id or "automatic", status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
-    )
-    return result
-
-
-@router.get("/decision-settings", response_model=DecisionSettings)
-async def get_decision_settings(user: dict = require_user):
-    return await read_decision_settings()
-
-
-@router.put("/decision-settings", response_model=DecisionSettings)
-async def update_decision_settings(body: DecisionSettings, user: dict = require_admin):
-    try:
-        result = await save_decision_settings(body)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    await write_audit_log(
-        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
-        object_type="DECISION_SETTINGS", object_name="studio_decision_mode", status="SUCCESS",
         session_id=user.get("session_id"), active_role=user.get("active_role"),
     )
     return result

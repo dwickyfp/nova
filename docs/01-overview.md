@@ -127,9 +127,6 @@ live-provider improvement, or complete production readiness.
 | Outcome | An observed result with completeness and attribution limits. |
 | Quality | Agent evaluation, regression checks, and reviewable improvement proposals. |
 
-Studio **Decision Mode** is the optional model/tool/skill routing mechanism. It
-is distinct from a business **Decision** object.
-
 The compact product description for About/help surfaces is:
 
 > Enterprise Intelligence OS that turns governed data into understanding, decisions, actions, and learning.
@@ -141,7 +138,7 @@ The compact product description for About/help surfaces is:
 | Local operation | [Run guide](../HOW_TO_RUN.md) |
 | Data and SQL | [SQL frontend](arch-13-sql-frontend.md), [stages](04-stage-manager.md), [task orchestration](08-task-manager.md) |
 | Semantics and context | [Intelligence foundation](28-intelligence-foundation.md) |
-| Agents | [Smart collaboration](arch-11-smart-collaboration.md), [runtime Decision Mode](arch-12-studio-decision-mode.md) |
+| Agents | [Smart collaboration](arch-11-smart-collaboration.md) |
 | Decisions, Actions, Outcomes, and Quality | [Governed Studio](arch-15-governed-studio.md), [operating guide](governed-studio-operations.md) |
 | Security | [Ranger architecture](arch-08-ranger-authorization.md), [Ranger runbook](29-ranger-access-control.md) |
 | ML | [Native ML runtime](28-native-ml-runtime.md) |

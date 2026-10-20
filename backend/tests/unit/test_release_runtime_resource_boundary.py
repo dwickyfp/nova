@@ -115,7 +115,6 @@ async def resource_boundary(kind, monkeypatch):
             "configuration": configuration,
             "resources": await releases.resource_contracts(configuration, USER),
             "models": [{"provider_id": "bench", "name": "bench-model"}],
-            "routing": {"enabled": False},
         },
     }
     state.listing.reset_mock()

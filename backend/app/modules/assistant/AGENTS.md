@@ -39,10 +39,7 @@ Paths below are repository-relative; commands run from `backend/`.
   secret-bearing context into snapshots/public trace projections.
 
 Read the [agents guide](../agents/AGENTS.md) for Smart checkpoints, participant
-identity, and delegation. For decision-mode selection read
-[Architecture 12](../../../../docs/arch-12-studio-decision-mode.md). Decision
-ranking cannot authorize a candidate, expand an executable plan, replace SQL
-validation, or bypass consent; uncertain decisions retain the existing path.
+identity, and delegation.
 
 ## Behavior validation
 
