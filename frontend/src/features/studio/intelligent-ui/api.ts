@@ -5,6 +5,8 @@ export function uiSourcePath(s: UiSource) {
   return `/agents/${encodeURIComponent(s.agentId)}/threads/${encodeURIComponent(s.threadId)}/messages/${encodeURIComponent(s.messageId)}/ui-state/${encodeURIComponent(s.contentId)}`;
 }
 export const uiApi = {
+  mapMetric: (s: UiSource, event: "ready" | "failed" | "fallback" | "route_unavailable", elapsed_ms: number) =>
+    api.post(`${uiSourcePath(s)}/map-metric`, { event, elapsed_ms }),
   get: (s: UiSource, signal?: AbortSignal) =>
     api.get<UiState>(uiSourcePath(s), signal),
   put: (s: UiSource, state: UiState) =>

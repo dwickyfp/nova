@@ -131,6 +131,7 @@ from app.modules.assistant.schemas import (
     ThreadListResponse,
     ThreadUpdateRequest,
     ThreadView,
+    UiMapMetricInput,
     UiMediaInput,
     UiStateInput,
 )
@@ -2488,7 +2489,7 @@ async def _ui_denied(user: dict, resource: str, reason: str, status: int = 422) 
 async def _ui_source(agent_id: str, thread_id: str, message_id: str,
                      content_id: str, user: dict) -> dict:
     from app.core.config import settings
-    from app.modules.assistant.intelligent_ui import CATALOG_VERSION
+    from app.modules.assistant.intelligent_ui import SUPPORTED_CATALOGS
 
     if not settings.STUDIO_INTELLIGENT_UI_ENABLED:
         raise HTTPException(404, "Interactive UI is disabled")
@@ -2500,7 +2501,7 @@ async def _ui_source(agent_id: str, thread_id: str, message_id: str,
     )
     import hashlib
 
-    if (not block or block.get("catalog_version") != CATALOG_VERSION
+    if (not block or block.get("catalog_version") not in SUPPORTED_CATALOGS
             or hashlib.sha256(str(block.get("program", "")).encode()).hexdigest()
             != block.get("program_sha256")):
         raise await _ui_denied(user, content_id,
@@ -2521,12 +2522,14 @@ async def get_agent_ui_state(agent_id: str, thread_id: str, message_id: str, con
 @router.put("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
 async def put_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
                              body: UiStateInput, user: dict = Depends(get_current_user)):
-    from app.modules.assistant.intelligent_ui import UiValidationError
+    from app.modules.assistant.intelligent_ui import UiValidationError, validate_source_state
 
     block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
     if body.program_sha256 != block["program_sha256"]:
         raise await _ui_denied(user, content_id, "UI program changed", 409)
     try:
+        if block["catalog_version"] == "nova-openui-3":
+            await validate_source_state(block, body.state)
         return await assistant_repository.put_ui_state(
             thread_id, message_id, content_id, user_name=user["username"],
             security_context=observation_context(session_security(user)), block=block,
@@ -2548,7 +2551,7 @@ async def get_agent_ui_media(agent_id: str, thread_id: str, message_id: str, con
             user, content_id, "Public media cannot receive business or form data"
         )
     try:
-        parsed = await parse_program(block["program"])
+        parsed = await parse_program(block["program"], catalog_version=block["catalog_version"])
     except UiValidationError as exc:
         raise HTTPException(422, "Public media source is invalid") from exc
     if not any(item["type"] == body.type and item["props"] == body.props
@@ -2557,6 +2560,20 @@ async def get_agent_ui_media(agent_id: str, thread_id: str, message_id: str, con
             user, content_id, "Media parameters must match the static source program"
         )
     return await public_media(body.type, body.props)
+
+
+@router.post("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/map-metric")
+async def record_agent_map_metric(agent_id: str, thread_id: str, message_id: str,
+                                  content_id: str, body: UiMapMetricInput,
+                                  user: dict = Depends(get_current_user)):
+    from app.observability.metrics import STUDIO_WORKFLOW_DURATION, STUDIO_WORKFLOW_OPERATIONS
+
+    await _ui_source(agent_id, thread_id, message_id, content_id, user)
+    # Client observations are kept distinct from server validation outcomes.
+    status = f"client_{body.event}"
+    STUDIO_WORKFLOW_OPERATIONS.labels("ui", "map_render", status).inc()
+    STUDIO_WORKFLOW_DURATION.labels("ui", "map_render", status).observe(body.elapsed_ms / 1000)
+    return {"recorded": True}
 
 
 @router.post("/{agent_id}/threads/{thread_id}/messages")

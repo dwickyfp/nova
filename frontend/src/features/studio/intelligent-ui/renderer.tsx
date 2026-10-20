@@ -14,12 +14,35 @@ import {
   createSchemaLibrary,
   UI_CATALOG_VERSION,
 } from "./catalog";
+import { componentDefinitions as legacyDefinitions, createSchemaLibrary as legacyLibrary } from "./catalog-v2";
+import { validateProgram as validateLegacyProgram } from "./validator-v2";
+import { MAPCN_ENABLED } from "./map-flag";
 import { UiNode } from "./components";
 import { UiRuntimeContext } from "./runtime-context";
 import { validateDeclarativeState, validateProgram } from "./validator";
 import { uiApi } from "./api";
 import { registerUiFlush } from "./state";
 import type { UiAction, UiBlock, UiSource, UiState } from "./types";
+
+// Saved state comes back with object keys sorted, while the client emits them in
+// creation order; compare by content so reopening an answer does not re-save it.
+// Saving runs in the background; only outcomes that need the user are shown.
+const QUIET_STATUS = new Set([
+  "Loading saved state…",
+  "Unsaved changes",
+  "Saving…",
+  "Saved",
+]);
+
+function sameState(a: unknown, b: unknown) {
+  const sorted = (_key: string, value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)),
+        )
+      : value;
+  return JSON.stringify(a, sorted) === JSON.stringify(b, sorted);
+}
 
 export function IntelligentUi({
   block,
@@ -53,8 +76,8 @@ function UiSession({
   const readOnly = !source || !onAction;
   const validation = useMemo(() => {
     try {
-      return block.catalog_version === UI_CATALOG_VERSION
-        ? validateProgram(
+      return block.catalog_version === "nova-openui-2" || (MAPCN_ENABLED && block.catalog_version === UI_CATALOG_VERSION)
+        ? (block.catalog_version === "nova-openui-2" ? validateLegacyProgram : validateProgram)(
             block.program,
             block.evidence,
             block.provenance.evidence_ids.length > 0,
@@ -65,18 +88,19 @@ function UiSession({
     }
   }, [block]);
   const library = useMemo(() => {
-    const core = createSchemaLibrary(block.evidence);
+    const legacy = block.catalog_version === "nova-openui-2";
+    const core = (legacy ? legacyLibrary : createSchemaLibrary)(block.evidence);
     return createLibrary({
       root: "Col",
       functions: Object.values(core.functions ?? {}),
-      components: componentDefinitions.map((d) =>
+      components: (legacy ? legacyDefinitions : componentDefinitions).map((d) =>
         defineComponent({
           ...d,
           component: ({ props }) => <UiNode name={d.name} p={props} />,
         }),
       ),
     });
-  }, [block.evidence]);
+  }, [block.evidence, block.catalog_version]);
   const [saved, setSaved] = useState<UiState | null>(
     readOnly
       ? {
@@ -197,7 +221,7 @@ function UiSession({
         blocked.current = true;
         return;
       }
-      if (JSON.stringify(state) === JSON.stringify(latestState.current)) return;
+      if (sameState(state, latestState.current)) return;
       pending.current = state;
       latestState.current = state;
       setStatus("Unsaved changes");
@@ -282,19 +306,22 @@ function UiSession({
       setStatus("Saved state could not load.");
     }
   };
+  const notice = QUIET_STATUS.has(status) ? "" : status;
   return (
     <section
       className="min-w-0 space-y-3"
       aria-label="Interactive answer"
     >
-      {!readOnly ? (
+      {readOnly ? (
+        <p className="mb-3 text-xs text-muted-foreground">Read-only preview</p>
+      ) : notice || blocked.current ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <span
             role="status"
             aria-live="polite"
             className="text-xs text-muted-foreground"
           >
-            {status === "Saved" ? "" : status}
+            {notice}
           </span>
           {blocked.current ? (
             <Button
@@ -314,9 +341,7 @@ function UiSession({
             </Button>
           ) : null}
         </div>
-      ) : (
-        <p className="mb-3 text-xs text-muted-foreground">Read-only preview</p>
-      )}
+      ) : null}
       {saved ? (
         <UiRuntimeContext.Provider
           value={{

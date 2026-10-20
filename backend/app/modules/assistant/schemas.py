@@ -179,6 +179,12 @@ class UiMediaInput(BaseModel):
     props: dict
 
 
+class UiMapMetricInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    event: Literal["ready", "failed", "fallback", "route_unavailable"]
+    elapsed_ms: float = Field(ge=0, le=300_000, allow_inf_nan=False)
+
+
 class AgentMessageRequest(MessageRequest):
     ui_action: UiActionInput | None = None
     work_intent: Literal["ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"] | None = (

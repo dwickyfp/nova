@@ -1,0 +1,38 @@
+.nova-map .maplibregl-popup-content {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.nova-map .maplibregl-popup-tip {
+  display: none;
+}
+.nova-map .maplibregl-popup-content > div {
+  max-width: min(20rem, calc(100vw - 3rem));
+}
+.nova-map .maplibregl-marker:focus-visible,
+.nova-map .maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.nova-map:fullscreen {
+  background: var(--background);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nova-map *,
+  .nova-map *::before,
+  .nova-map *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.nova-map .maplibregl-ctrl-attrib {
+  background: var(--popover);
+  color: var(--muted-foreground);
+}
+.nova-map .maplibregl-ctrl-attrib a {
+  color: inherit;
+}
+.dark .nova-map .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}

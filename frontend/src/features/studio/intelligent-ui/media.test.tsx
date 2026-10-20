@@ -6,7 +6,7 @@ import { uiApi } from "./api";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@/styles/index.css";
 
-vi.mock("./api", () => ({ uiApi: { media: vi.fn() } }));
+vi.mock("./api", () => ({ uiApi: { media: vi.fn(), mapMetric: vi.fn().mockResolvedValue({}) } }));
 afterEach(() => vi.resetAllMocks());
 const source = {
   agentId: "agent",

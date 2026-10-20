@@ -53,10 +53,44 @@ async def _public_json(url: str, params: dict | None = None) -> dict:
         return result
 
 
+def _route(candidate: object) -> dict | None:
+    if not isinstance(candidate, dict):
+        return None
+    geometry = candidate.get("geometry")
+    if not isinstance(geometry, dict) or geometry.get("type") != "LineString":
+        return None
+    coordinates = geometry.get("coordinates")
+    if not isinstance(coordinates, list) or not 2 <= len(coordinates) <= 5000:
+        return None
+    for point in coordinates:
+        if not isinstance(point, list) or len(point) != 2:
+            return None
+        if any(
+            isinstance(n, bool) or not isinstance(n, (float, int)) or not math.isfinite(n)
+            for n in point
+        ):
+            return None
+        if not -180 <= point[0] <= 180 or not -90 <= point[1] <= 90:
+            return None
+    result: dict = {"geometry": {"type": "LineString", "coordinates": coordinates}}
+    for key in ("distance", "duration"):
+        value = candidate.get(key)
+        if value is not None:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value < 0
+            ):
+                return None
+            result[key] = value
+    return result
+
+
 async def public_media(kind: str, props: dict) -> dict:
     digest = hashlib.sha256(json.dumps([kind, props], sort_keys=True).encode()).hexdigest()
     client = session_store._redis
-    cache_key = f"nova:studio:public-media:{digest}"
+    cache_key = f"nova:studio:public-media:v3:{digest}"
     if client:
         cached = await client.get(cache_key)
         if cached:
@@ -141,31 +175,26 @@ async def public_media(kind: str, props: dict) -> dict:
                 try:
                     route = await _public_json(
                         "https://router.project-osrm.org/route/v1/driving/" + coordinates,
-                        {"overview": "simplified", "geometries": "geojson", "steps": "false"},
+                        {
+                            "overview": "simplified",
+                            "geometries": "geojson",
+                            "steps": "false",
+                            "alternatives": "true",
+                        },
                     )
-                    geometry = route["routes"][0]["geometry"]
-                    coords = geometry.get("coordinates")
-                    if (
-                        geometry.get("type") == "LineString"
-                        and isinstance(coords, list)
-                        and (
-                            2 <= len(coords) <= 5000
-                            and all(
-                                isinstance(c, list)
-                                and len(c) == 2
-                                and all(
-                                    isinstance(n, (int, float))
-                                    and not isinstance(n, bool)
-                                    and math.isfinite(n)
-                                    for n in c
-                                )
-                                and -180 <= c[0] <= 180
-                                and -90 <= c[1] <= 90
-                                for c in coords
-                            )
-                        )
-                    ):
-                        result["geometry"] = geometry
+                    routes = []
+                    total_positions = 0
+                    for candidate in route.get("routes", [])[:3]:
+                        checked = _route(candidate)
+                        if checked is None:
+                            continue
+                        total_positions += len(checked["geometry"]["coordinates"])
+                        if total_positions > 5000:
+                            break
+                        routes.append(checked)
+                    if routes:
+                        result["geometry"] = routes[0]["geometry"]
+                        result["routes"] = routes
                     else:
                         result["route_unavailable"] = True
                 except (

@@ -1,8 +1,11 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useContext, useEffect, useRef, useState } from "react";
 import { UiRuntimeContext } from "./runtime-context";
 import { uiApi } from "./api";
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "./map-popup.css";
+
+import { MAPCN_ENABLED } from "./map-flag";
+const MapcnPublicMap = lazy(() => import("./public-map"));
 
 type Props = Record<string, unknown>;
 export function PublicMedia({ name, p }: { name: string; p: Props }) {
@@ -11,8 +14,9 @@ export function PublicMedia({ name, p }: { name: string; p: Props }) {
     null,
   );
   const [failedKey, setFailedKey] = useState<string | null>(null);
-  const key = JSON.stringify(p);
-  const requestKey = JSON.stringify([source, name, p]);
+  const { viewport: _viewport, routeSelected: _routeSelected, ...requestProps } = p;
+  const key = JSON.stringify(requestProps);
+  const requestKey = JSON.stringify([source, name, requestProps]);
   const result = loaded?.key === requestKey ? loaded.value : null;
   const error = failedKey === requestKey;
   useEffect(() => {
@@ -76,7 +80,7 @@ export function PublicMedia({ name, p }: { name: string; p: Props }) {
       </p>
     );
   if (name === "Map")
-    return <PublicMap key={requestKey} p={p} result={result} />;
+    return MAPCN_ENABLED ? <Suspense fallback={<p role="status">Loading map…</p>}><MapcnPublicMap key={requestKey} p={p} result={result} /></Suspense> : <PublicMap key={requestKey} p={p} result={result} />;
   return (
     <figure className="min-w-0">
       <img

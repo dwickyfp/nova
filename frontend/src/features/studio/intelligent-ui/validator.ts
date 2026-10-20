@@ -14,7 +14,8 @@ import {
   type EvidenceRows,
 } from "./catalog";
 import { validateOfflineHtml } from "./html-policy";
-import { geoFeatures } from "./geometry";
+import { mapData } from "./map-data";
+import { mapOptionsSchema, mapViewSchema } from "./map-options";
 
 export type UiValidation = {
   catalog_version: string;
@@ -293,6 +294,24 @@ export function validateProgram(
     if (isElement(v)) {
       ast(v.props);
       const props = evaluateElementProps(v, evalCtx).props;
+      if (["GeoMap", "Map"].includes(v.typeName)) {
+        const options = mapOptionsSchema.parse(props.options ?? {});
+        if (dynamic(v.props.options) || hasEvidence(v.props.options)) throw new Error("Map options must be static declarations.");
+        if (isReactiveAssign(props.viewport)) selectionVariables.add(props.viewport.target);
+        if (isReactiveAssign(props.routeSelected)) selectionVariables.add(props.routeSelected.target);
+        const viewport = isReactiveAssign(props.viewport) ? store.get(props.viewport.target) : props.viewport;
+        if (viewport != null) mapViewSchema.parse(viewport);
+        if (v.typeName === "GeoMap") {
+          if (options.locate || options.editable || options.simulation) throw new Error("Verified maps cannot use public location assumptions.");
+          if (options.layer === "route" && !props.geometry) throw new Error("Business routes need a geometry column.");
+          if (options.layer === "arc" && (!options.toLongitude || !options.toLatitude || props.geometry)) throw new Error("Arcs need explicit origin and destination columns.");
+          if (options.progress && options.layer !== "route") throw new Error("Progress requires route geometry.");
+        } else {
+          const route = isReactiveAssign(props.routeSelected) ? store.get(props.routeSelected.target) : props.routeSelected;
+          if (route != null && (typeof route !== "number" || !Number.isInteger(route) || route < 0 || route > 2)) throw new Error("Invalid route selection.");
+          if (options.progress || options.toLatitude || options.toLongitude || options.popupFields?.length) throw new Error("Public maps cannot bind business columns.");
+        }
+      }
       if (!business && displayed && ["Chart", "Table", "Kpi"].includes(v.typeName) &&
           Array.isArray(props.data) && props.data.length) {
         const records = props.data.filter(isPlain);
@@ -358,11 +377,11 @@ export function validateProgram(
         if (random(v.props.data))
           throw new Error("Map selections require deterministic result rows.");
         const rows = Array.isArray(props.data) ? props.data as Record<string, unknown>[] : [];
-        const features = geoFeatures(rows, {
+        const features = mapData(rows, {
           longitude: props.longitude as string | undefined,
           latitude: props.latitude as string | undefined,
           geometry: props.geometry as string | undefined,
-        });
+        }, mapOptionsSchema.parse(props.options ?? {}));
         const index = isReactiveAssign(props.selected) ? store.get(props.selected.target) : props.selected;
         if (isReactiveAssign(props.selected)) selectionVariables.add(props.selected.target);
         const valid = typeof index === "number" && Number.isInteger(index) &&
@@ -375,11 +394,12 @@ export function validateProgram(
           });
       }
       if (publicComponents.has(v.typeName)) {
+        const publicProps = v.typeName === "Map" ? Object.fromEntries(Object.entries(v.props).filter(([key]) => !["viewport", "routeSelected"].includes(key))) : v.props;
         if (
           business ||
           privateContext ||
-          hasEvidence(v.props) ||
-          dynamic(v.props)
+          hasEvidence(publicProps) ||
+          dynamic(publicProps)
         )
           throw new Error(
             "Public media cannot receive business data or form state.",
@@ -392,7 +412,7 @@ export function validateProgram(
         )
           throw new Error("Images must use Wikimedia uploads.");
         if (v.typeName === "HtmlView") validateOfflineHtml(String(props.html));
-        media.push({ type: v.typeName, props });
+        media.push({ type: v.typeName, props: v.typeName === "Map" ? Object.fromEntries(Object.entries(props).filter(([key]) => !["viewport", "routeSelected"].includes(key))) : props });
       }
       if (["Button", "IconButton", "Pressable"].includes(v.typeName)) {
         if (
