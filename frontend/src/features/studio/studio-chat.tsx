@@ -1296,7 +1296,6 @@ function Greeting({ displayName }: { displayName?: string | null }) {
       <p className="mt-2 text-2xl leading-tight font-medium tracking-tight text-primary sm:text-4xl">
         What would you like to work on?
       </p>
-      <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">Adjust assumptions in a calculator or explore a result with filters. Ask Nova to continue when you need new data or an action.</p>
     </div>
   );
 }
