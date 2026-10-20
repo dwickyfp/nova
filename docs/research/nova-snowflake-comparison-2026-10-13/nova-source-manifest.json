@@ -1,0 +1,207 @@
+{
+  "baseline_head": "ae61bbce956347053d871da54d850794a3cba762",
+  "basis": "Primary source checkout with in-flight changes explicitly labeled; not a claim all code is shipped in main.",
+  "source_files": {
+    "README.md": {
+      "sha256": "278a694ba4855588cae68934f63d586bbad5742b87475a2e77e62a0b98dbacde",
+      "bytes": 17713
+    },
+    "backend/app/core/config.py": {
+      "sha256": "97a30f5b33b089277f110535796e4d72af7a648ee5c457a48ebf7dbae4c96f27",
+      "bytes": 20567
+    },
+    "backend/app/core/security.py": {
+      "sha256": "b760ab4e7b4dfdb5ca1683a50edac6b55c7f8e917d1838f6748bdeadfc1ed425",
+      "bytes": 1989
+    },
+    "backend/app/modules/access_control/security_context.py": {
+      "sha256": "46983a0aa73ad1a1ad0109ea981f281bf3f667b1900b04110a34e1cbdb882e3e",
+      "bytes": 3185
+    },
+    "backend/app/modules/agents/AGENTS.md": {
+      "sha256": "2880e6ee2f104681b8b5f52a7c32f77247eb2a911d3a843d4804047fb6d90de5",
+      "bytes": 4367
+    },
+    "backend/app/modules/agents/mcp_client.py": {
+      "sha256": "ff0d0460f14b8e38ff465e53f3e05d33df94f80c7ce3cb398f70537cab85025f",
+      "bytes": 8512
+    },
+    "backend/app/modules/assistant/analysis_workspace.py": {
+      "sha256": "eb23b08e2714e4c85e1ec203b759eb114f09c17a39695463372d795fdfb73dd6",
+      "bytes": 16344
+    },
+    "backend/app/modules/assistant/service.py": {
+      "sha256": "3a7bd5e2bb6378d2f32f5198c958d3a16b2679ab373bf52721f47e9d42f969d7",
+      "bytes": 198874
+    },
+    "backend/app/modules/auth/service.py": {
+      "sha256": "6a94a10f0307ef6264eeabbdeee698f2f197aecb9e414dc8eb8818c6f5cbc99c",
+      "bytes": 13319
+    },
+    "backend/app/modules/backup/service.py": {
+      "sha256": "75c7cf14efbd815e12b870cf22a18efe2679cf063e96077f4c8925b0b55de0f2",
+      "bytes": 12204
+    },
+    "backend/app/modules/external_catalogs/schemas.py": {
+      "sha256": "c3cbcdbc78a87320ae4fe28c4691f8405cc75c740d87144ee8452e7a5a00fadb",
+      "bytes": 4801
+    },
+    "backend/app/modules/external_catalogs/service.py": {
+      "sha256": "db17306bd2ab8a881fc8847399af3f8626b2b0d6d7dd921c691d1183c15ab358",
+      "bytes": 13924
+    },
+    "backend/app/modules/intelligence/decisions.py": {
+      "sha256": "efb1eab99453325c8a97c588f477e58bb59d5f9edfb9b9c05b12237dce45066a",
+      "bytes": 24339
+    },
+    "backend/app/modules/intelligence/feature_store.py": {
+      "sha256": "b2388a4c623e0b0cf80426c025589d6cd7288abbdfb6ca114caee0ae4e06fcb6",
+      "bytes": 43045
+    },
+    "backend/app/modules/intelligence/online_features.py": {
+      "sha256": "3c6f2d2119a6685e69ec6c086abeefb7a9e64aace6a0f0d03e92382e457f1fe4",
+      "bytes": 6367
+    },
+    "backend/app/modules/intelligence/search.py": {
+      "sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "bytes": 47014
+    },
+    "backend/app/modules/intelligence/semantic_migration.py": {
+      "sha256": "2c106e71d5c181fef5996d421ec9dd6a18b96a9585fd51860018a7e8c106bf70",
+      "bytes": 16553
+    },
+    "backend/app/modules/intelligence/semantic_regression.py": {
+      "sha256": "7ef33ce0e26432d5b074d86eae7030aff4b9263d324dffd46809e9f574557ba6",
+      "bytes": 3385
+    },
+    "backend/app/modules/intelligence/semantic_views.py": {
+      "sha256": "a46880e2f67d6ec32986781f756675664c84e11bfeb7c081ae64d718b2a0d21d",
+      "bytes": 55873
+    },
+    "backend/app/modules/llm_functions/service.py": {
+      "sha256": "d64ce353545e743c8744d25ed367d6d51064c2c94cdbbc34879dd3f6ebfa8194",
+      "bytes": 34702
+    },
+    "backend/app/modules/migration/service.py": {
+      "sha256": "0dd41b20db6133a93fcaeed519038615a187b34ef33007142c49848b37df0e0b",
+      "bytes": 44903
+    },
+    "backend/app/modules/ml_engine/jobs.py": {
+      "sha256": "2325bfebea70b6f4b6bd05d509250675772d67237d0afd77172a0a85fedee81c",
+      "bytes": 12288
+    },
+    "backend/app/modules/ml_engine/registry/repository.py": {
+      "sha256": "6e91134560298d51e4ff5235f803550f6bb0322564bad5503a74761086fe46f7",
+      "bytes": 17730
+    },
+    "backend/app/modules/ml_engine/spec.py": {
+      "sha256": "0bd648f23bed201aeacfbfdb1e3b0d25087647913012511838def2802afe8362",
+      "bytes": 5122
+    },
+    "backend/app/modules/monitoring/ai_usage.py": {
+      "sha256": "3dbb5aa2833802b82e84a69e74bbd4af6fcd443281a886c6051e9d439c7c4aef",
+      "bytes": 12742
+    },
+    "backend/app/modules/monitoring/alerts.py": {
+      "sha256": "8d4332a05a890f20bab54313ef2b8421634d41d7e51adc7846378ccfc5c902e0",
+      "bytes": 13882
+    },
+    "backend/app/modules/monitoring/readiness.py": {
+      "sha256": "0119b2dcd2e9c04deb92700c704b93fe869a7857d56e49a1be1b724508019c13",
+      "bytes": 15363
+    },
+    "backend/app/modules/monitoring/repository.py": {
+      "sha256": "ee3191d50dc2e09d2111620ab0b665525a35f6f7c73fb55a40c860ae4e4a10d8",
+      "bytes": 34432
+    },
+    "backend/app/modules/pipes/service.py": {
+      "sha256": "a4ebbd1f4cbd9782a6064024bc3745437668f7ef87e967177e6e19f17cc5f7b7",
+      "bytes": 8711
+    },
+    "backend/app/modules/query/router.py": {
+      "sha256": "d6e4c3cb6987321d974f04c1620c16a7dbb94d1f1591af85669334f233725829",
+      "bytes": 15579
+    },
+    "backend/app/modules/query/service.py": {
+      "sha256": "2978fc304bc1df34a099eabd99c3f1a98649b048bde235ba046d039be4a16f9b",
+      "bytes": 58660
+    },
+    "backend/app/modules/query_autopilot/profile.py": {
+      "sha256": "9e5039bcf29cd5fcd399cb71f59a5ced88d6d2251fb506cde6f46505d6a1ff88",
+      "bytes": 6796
+    },
+    "backend/app/modules/query_autopilot/service.py": {
+      "sha256": "c95de27d8346744e3c33426e6eba99a7cb891e9bba1aaf27f7e7ce3ed2e99de6",
+      "bytes": 101883
+    },
+    "backend/app/modules/resource_groups/service.py": {
+      "sha256": "cb85342b9825865d4499452a499a2115a04f50f1dcb3a42b026dde2ed4b5e08d",
+      "bytes": 12329
+    },
+    "backend/app/modules/stages/service.py": {
+      "sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "bytes": 13707
+    },
+    "backend/app/modules/streams/catalog.py": {
+      "sha256": "2d7a7805b25f5cbcf27dbc2f786140ddb6df515f171f341f5b63c6842cdcdd2f",
+      "bytes": 3087
+    },
+    "backend/app/modules/streams/runtime.py": {
+      "sha256": "d487e6ef0cc72539282f7485d76cc973d9761c4755b0637fab09e53c238d3106",
+      "bytes": 480
+    },
+    "backend/app/modules/task_orchestration/dag.py": {
+      "sha256": "e92f718712eb8bb2a133f594fc5dae6c7b631118f49383d6b3453a2395e0d330",
+      "bytes": 12153
+    },
+    "backend/app/modules/task_orchestration/native.py": {
+      "sha256": "04f6d294e4fd0560fae7c7506d36a893c144f38c2881f0735445a3502c29314d",
+      "bytes": 15435
+    },
+    "backend/app/modules/task_orchestration/scheduler.py": {
+      "sha256": "308d5ed95c8e60bb711f731516b107fb3bf2c0fb2be551d4b5a8ad85ae74bc03",
+      "bytes": 19105
+    },
+    "backend/app/modules/workspaces/service.py": {
+      "sha256": "3cb36bcfd4908b2aadb8670208a32648145acc412828050f9370d696b00fb628",
+      "bytes": 19521
+    },
+    "backend/app/proxy/server.py": {
+      "sha256": "8a6445320c25602a4e293bd901c571c115f65f67b7d21a995dc1cdf034cc15fd",
+      "bytes": 5733
+    },
+    "backend/app/sql_frontend/analysis/validation.py": {
+      "sha256": "00fc9dd7c0fb6c904bc36a98d2fa67f3bdfb5ee8a6de5e373241e939a1d181b6",
+      "bytes": 5288
+    },
+    "backend/app/sql_frontend/capabilities/starrocks.py": {
+      "sha256": "dbc94169e9a38a1bcf4b6ac2cb86a2c32963bb581eeae37db5e84ae772d6a905",
+      "bytes": 8846
+    },
+    "backend/app/sql_frontend/parser.py": {
+      "sha256": "bc01fd550b1375affe3f49155f8e025b7c168efe1481eb5fc51e5bdb200275f9",
+      "bytes": 10468
+    },
+    "backend/app/sql_frontend/planning/planner.py": {
+      "sha256": "c3278f3b759b21552e738459c1b376d8a3bed3b2c72807ef8adf9d59a3cc56a4",
+      "bytes": 6946
+    },
+    "backend/docker-compose.yml": {
+      "sha256": "354108823c0e0b7c0f263167206f14678e069d5e0a93475d7e8945ce840bbed4",
+      "bytes": 1960
+    },
+    "docker/init-nova.sql": {
+      "sha256": "cb1939a619bf4772dc56a4784cee3712058da406bebfb300939c2d8590beb6d2",
+      "bytes": 87106
+    },
+    "frontend/AGENTS.md": {
+      "sha256": "77813bc54ab1679f7d571e956f28ec498d4bb5e6b50100237aba661e2b456a92",
+      "bytes": 3705
+    },
+    "frontend/src/routes/_authenticated/workspaces/index.tsx": {
+      "sha256": "604d1b0c414574c8fdf029f9a0fe7c3da36123fedcf683656edc88701e6d526b",
+      "bytes": 401
+    }
+  },
+  "code_only": "Contains paths/hashes, not source payloads or credentials."
+}

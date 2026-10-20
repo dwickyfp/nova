@@ -1,0 +1,103 @@
+[
+  {
+    "id": "qualify_native",
+    "kind": "alternative",
+    "sql": "SELECT id FROM (SELECT 1 AS id UNION ALL SELECT 2) v QUALIFY ROW_NUMBER() OVER(ORDER BY id)=1",
+    "status": "SUCCESS",
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        1
+      ]
+    ],
+    "error": null,
+    "ms": 280.06
+  },
+  {
+    "id": "rollup_native",
+    "kind": "alternative",
+    "sql": "SELECT id,SUM(amount),GROUPING(id) AS g FROM (SELECT 1 AS id,10 AS amount UNION ALL SELECT 2,20) v GROUP BY ROLLUP(id) ORDER BY g,id",
+    "status": "SUCCESS",
+    "columns": [
+      "id",
+      "sum(amount)",
+      "g"
+    ],
+    "rows": [
+      [
+        1,
+        10,
+        0
+      ],
+      [
+        2,
+        20,
+        0
+      ],
+      [
+        null,
+        30,
+        1
+      ]
+    ],
+    "error": null,
+    "ms": 409.09
+  },
+  {
+    "id": "unnest_native",
+    "kind": "alternative",
+    "sql": "SELECT x FROM (SELECT [1,2] AS arr) v, UNNEST(v.arr) AS u(x)",
+    "status": "SUCCESS",
+    "columns": [
+      "x"
+    ],
+    "rows": [
+      [
+        1
+      ],
+      [
+        2
+      ]
+    ],
+    "error": null,
+    "ms": 119.55
+  },
+  {
+    "id": "pivot_alias",
+    "kind": "retest",
+    "sql": "SELECT * FROM (SELECT 'a' AS k,1 AS v) x PIVOT(SUM(v) FOR k IN ('a')) AS p",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:70 Unexpected or missing SQL token near 'AS'",
+    "ms": 103.85
+  },
+  {
+    "id": "match_recognize",
+    "kind": "exact",
+    "sql": "SELECT * FROM (SELECT 1 AS id,10 AS v UNION ALL SELECT 2,20) t MATCH_RECOGNIZE(ORDER BY id MEASURES FIRST(id) AS start_id ONE ROW PER MATCH PATTERN(A B) DEFINE A AS v>0,B AS v>0)",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:63 Unexpected or missing SQL token",
+    "ms": 113.64
+  },
+  {
+    "id": "engine_identity",
+    "kind": "metadata",
+    "sql": "SELECT CURRENT_VERSION()",
+    "status": "SUCCESS",
+    "columns": [
+      "current_version()"
+    ],
+    "rows": [
+      [
+        "4.1.4-4a9848e"
+      ]
+    ],
+    "error": null,
+    "ms": 96.78
+  }
+]

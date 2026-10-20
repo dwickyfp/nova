@@ -1,0 +1,102 @@
+[
+  {
+    "id": "D02_DT_QUERY",
+    "sql": "SELECT city,total FROM CITY_TOTALS ORDER BY city",
+    "expected_rows": [
+      [
+        "Bandung",
+        20
+      ],
+      [
+        "Jakarta",
+        12
+      ]
+    ]
+  },
+  {
+    "id": "D03_DT_STATE",
+    "sql": "SHOW DYNAMIC TABLES LIKE 'CITY_TOTALS'",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "D04_DT_UPDATE",
+    "sql": "UPDATE SRC SET amount=13 WHERE id=1",
+    "expected_rows": [
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  {
+    "id": "D05_DT_STALE",
+    "sql": "SELECT city,total FROM CITY_TOTALS ORDER BY city",
+    "expected_rows": [
+      [
+        "Bandung",
+        20
+      ],
+      [
+        "Jakarta",
+        12
+      ]
+    ]
+  },
+  {
+    "id": "D06_DT_REFRESH",
+    "sql": "ALTER DYNAMIC TABLE CITY_TOTALS REFRESH",
+    "observe_only": true
+  },
+  {
+    "id": "D07_DT_FRESH",
+    "sql": "SELECT city,total FROM CITY_TOTALS ORDER BY city",
+    "expected_rows": [
+      [
+        "Bandung",
+        20
+      ],
+      [
+        "Jakarta",
+        13
+      ]
+    ]
+  },
+  {
+    "id": "D08_DT_DML_DENIED",
+    "sql": "INSERT INTO CITY_TOTALS VALUES('Surabaya',1)",
+    "expected_error": "not supported|cannot|not allowed|unsupported"
+  },
+  {
+    "id": "D09_DT_HISTORY",
+    "sql": "SELECT state,refresh_action,refresh_trigger FROM TABLE(INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(NAME=>'SNOWFLAKE_LEARNING_DB.SF_RESEARCH_20261013.CITY_TOTALS',RESULT_LIMIT=>10)) ORDER BY refresh_start_time",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "P01_PYTHON_UDF",
+    "sql": "CREATE TEMPORARY FUNCTION PY_DOUBLE(n INTEGER) RETURNS INTEGER LANGUAGE PYTHON RUNTIME_VERSION='3.12' HANDLER='double' AS $$\ndef double(n):\n    return n * 2 if n is not None else None\n$$"
+  },
+  {
+    "id": "P02_PYTHON_UDF_CALL",
+    "sql": "SELECT PY_DOUBLE(6)",
+    "expected_rows": [
+      [
+        12
+      ]
+    ]
+  },
+  {
+    "id": "P03_SNOWPARK_SP",
+    "sql": "CREATE TEMPORARY PROCEDURE SNOWPARK_TOTAL() RETURNS VARCHAR LANGUAGE PYTHON RUNTIME_VERSION='3.12' PACKAGES=('snowflake-snowpark-python') HANDLER='main' EXECUTE AS CALLER AS $$\nfrom snowflake.snowpark.functions import sum as sf_sum\ndef main(session):\n    result = session.table('SRC').agg(sf_sum('AMOUNT').alias('TOTAL')).collect()\n    return str(result[0]['TOTAL'])\n$$"
+  },
+  {
+    "id": "P04_SNOWPARK_CALL",
+    "sql": "CALL SNOWPARK_TOTAL()",
+    "expected_rows": [
+      [
+        "33"
+      ]
+    ]
+  }
+]

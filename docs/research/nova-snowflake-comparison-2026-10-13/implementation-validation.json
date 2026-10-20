@@ -1,0 +1,152 @@
+{
+  "as_of": "2026-10-13",
+  "branch": "feat/governed-ingestion-pipes",
+  "base_commit": "f46e4c9b2589a729afaeff9bf0d20438c49ebab8",
+  "unit": {
+    "status": "passed",
+    "tests": 7482,
+    "warnings": 7,
+    "seconds": 1076.01,
+    "coverage_percent_rounded": 61,
+    "platform": "Linux aarch64 / Python 3.11.13 / uv.lock",
+    "command": "uv run --no-sync pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml"
+  },
+  "focused_pipe_unit": {
+    "status": "passed",
+    "tests": 35
+  },
+  "focused_pipe_engine": {
+    "status": "passed",
+    "tests": 4,
+    "scope": "Final full integration: API lifecycle at poll_interval=3600, caller permissions, stored SQL/audit redaction; three Ranger execution gates"
+  },
+  "agent_eval": {
+    "status": "passed",
+    "scenarios": 48,
+    "checks": 165
+  },
+  "changed_file_ruff": {
+    "status": "passed"
+  },
+  "user_data_boundary_scan": {
+    "status": "passed",
+    "note": "Existing scanner covers its configured user-data adapter paths; route/real-engine tests cover pipes."
+  },
+  "ranger_acceptance": {
+    "status": "passed",
+    "scope": [
+      "active role",
+      "regional row filters",
+      "masking",
+      "transaction role stability",
+      "concurrent role sessions",
+      "unassigned role denial",
+      "root guard",
+      "agent query tools",
+      "CREATE PIPE frontend refusal"
+    ]
+  },
+  "full_integration": {
+    "status": "failed",
+    "tests_passed": 213,
+    "failed": 1,
+    "skipped": 16,
+    "deselected": 30,
+    "warnings": 2,
+    "seconds": 1642.35,
+    "failure": "test_bootstrap_and_review_use_production_api_with_restricted_identity: evaluate-outcome retry returned HTTP 404 semantic_version_unavailable",
+    "cause": "Source/semantic availability failure; exact causality unconfirmed. Isolated replay also failed; see timing-only diagnostics."
+  },
+  "source_sha256": {
+    "backend/app/modules/pipes/router.py": "7f4df57526611a5568f35b2ea54577d317713d8a548a5a340992985a37470853",
+    "backend/app/modules/pipes/schemas.py": "9860b45ab69559f41c8503783483340acd616d2867d883472b97f17714a01f87",
+    "backend/app/modules/pipes/service.py": "785e8b3905d1325eaf61c178eb9707a114228b998bccaf3761da2af0586b8de7",
+    "backend/app/sql_frontend/analysis/semantics.py": "0e5d2c8d79e746882c10a57ea98f04b0c1ed5c2699f610984768dfd77dcc34e8",
+    "backend/app/sql_frontend/analysis/validation.py": "77bb1c3a7ba28fdb6e71080331f953bab10c1fb9a1cc3e34c6ce68d4c942ea0d",
+    "backend/tests/unit/test_pipes.py": "7c1a4ae72804a21e3c312f733dc4c41679c6de41d5552d256a540c849e217e5b",
+    "backend/tests/integration/test_pipes_live.py": "02a2a2188a447b1b3957c3f50e7d5da46ad09f9a31555bc82beeba812a6e9179",
+    "docs/09-pipe-manager.md": "0af49d4d962bbb6a8205db4f81ce48fa6111071e074f8ef89160af58125f082e"
+  },
+  "github_actions": {
+    "implementation_branch": "passed",
+    "baseline_main_run": "https://github.com/dwickyfp/nova/actions/runs/37508900726",
+    "baseline_main_commit": "f46e4c9b2589a729afaeff9bf0d20438c49ebab8",
+    "baseline_note": "Successful main CI is contextual evidence, not validation of this patch.",
+    "run_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134",
+    "head_revision": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+    "frontend": {
+      "status": "passed",
+      "tests": 1197,
+      "test_files": 150,
+      "seconds": 131.44,
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115434757156"
+    },
+    "backend_unit": {
+      "status": "passed",
+      "tests": 7482,
+      "warnings": 8,
+      "seconds": 448.12,
+      "coverage_percent_rounded": 61,
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115434757314"
+    },
+    "agent_eval": {
+      "status": "passed",
+      "scenarios": 48,
+      "checks": 165
+    },
+    "backend_integration": {
+      "collected": 230,
+      "passed": 214,
+      "skipped": 16,
+      "deselected": 30,
+      "warnings": 3,
+      "seconds": 1612.94,
+      "failures": 0,
+      "errors": 0,
+      "status": "passed",
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115438423602"
+    },
+    "all_five_jobs_passed": true,
+    "evidence": "github-ci.json",
+    "studio_local_failure": "Not observed in the completed engine-marked CI suite; exact local cause remains unconfirmed"
+  },
+  "validated_at_local": "2026-10-14T00:08:33.318230+07:00",
+  "studio_replay": {
+    "status": "failed",
+    "tests": 1,
+    "seconds": 496.61,
+    "failure": "POST agents/{synthetic-agent}/knowledge/consolidate returned HTTP 404",
+    "diagnostics": "Four query executions cancelled around the 10-second source-probe deadline; source access false after 27.407s. Engine also reported logical planner exceeding its timeout. Exact causal chain remains unconfirmed.",
+    "instrumentation": "Timing/booleans/exception types only; original assertions, query settings, and application deadlines preserved"
+  },
+  "delivery_status": "committed_and_pushed_as_draft_PR; explicitly approved local integration exception; all five GitHub CI jobs passed",
+  "studio_baseline_comparison": {
+    "backend/app/modules/intelligence/semantic_views.py": {
+      "identical_to_fetched_origin_main": true,
+      "sha256": "a46880e2f67d6ec32986781f756675664c84e11bfeb7c081ae64d718b2a0d21d"
+    },
+    "backend/app/modules/intelligence/engine.py": {
+      "identical_to_fetched_origin_main": true,
+      "sha256": "796d915b6020fc6dc9f114740811b7ba0b5e9d4c8d993c16aa8e0fe549512d0e"
+    },
+    "backend/tests/integration/test_intelligence_studio_live.py": {
+      "identical_to_fetched_origin_main": true,
+      "sha256": "20100aef62a93f70975bd96d557cff64b1f947f56e17c7e1acc8668bbc200c49"
+    }
+  },
+  "test_log_sha256": {
+    "nova-snowflake-unit-delivered.log": "c162ec1065e4998933ccd6c7fb3600868de6918c66db7d53e0439e1517972984",
+    "nova-snowflake-integration-delivered.log": "20246e44cd0ee8e1f0adef1642a45dc1080d1795d75d3c14f33453daa09487dc",
+    "nova-snowflake-studio-retest.log": "28db59b3284295978124d3c75b20b1488e696d8816354cf53c2c440dc590bc7f"
+  },
+  "delivery": {
+    "commit": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+    "branch": "feat/governed-ingestion-pipes",
+    "pull_request": "https://github.com/dwickyfp/nova/pull/184",
+    "draft": true,
+    "local_required_check_exception": "Explicit user approval: Izinkan commit/push draft PR dan verifikasi CI",
+    "fetch_before_commit_and_push": true,
+    "missing_main_commits_at_each_fetch": 0
+  },
+  "delivery_updated_at_local": "2026-10-14T00:56:24.586588+07:00"
+}

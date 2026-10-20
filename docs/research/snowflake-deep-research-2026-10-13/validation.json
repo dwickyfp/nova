@@ -1,0 +1,14 @@
+{
+  "checked_at_utc": "2026-10-13T14:14:41.056076+00:00",
+  "main_words": 9537,
+  "main_lines": 826,
+  "runner_statements": 224,
+  "local_links_and_toc_anchors": "PASS",
+  "official_source_http_links": "89/89 HTTP 200",
+  "whitespace_and_fences": "PASS",
+  "case_counts_and_unique_ids": "PASS",
+  "csv_logical_roundtrip": "PASS",
+  "credential_pattern_scan": "PASS",
+  "cleanup_evidence": "Z06/Z07/Z08/U04 verified",
+  "application_ci": "not applicable: research documentation and evidence only"
+}

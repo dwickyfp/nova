@@ -1,0 +1,571 @@
+[
+  {
+    "id": "cte_values",
+    "kind": "common",
+    "sql": "WITH v(id,amount) AS (SELECT 1,10 UNION ALL SELECT 2,20) SELECT SUM(amount) FROM v",
+    "status": "SUCCESS",
+    "columns": [
+      "sum(amount)"
+    ],
+    "rows": [
+      [
+        30
+      ]
+    ],
+    "error": null,
+    "ms": 943.58
+  },
+  {
+    "id": "snowflake_values",
+    "kind": "exact",
+    "sql": "WITH v(id,amount) AS (SELECT column1,column2 FROM VALUES (1,10),(2,20)) SELECT SUM(amount) FROM v",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:50 Unexpected or missing SQL token near 'VALUES'",
+    "ms": 119.16
+  },
+  {
+    "id": "qualify",
+    "kind": "exact",
+    "sql": "SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM (SELECT 1 AS id UNION ALL SELECT 2) v QUALIFY rn=1",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting syntax error. Detail message: Can't support result other than column..",
+    "ms": 92.52
+  },
+  {
+    "id": "group_by_all",
+    "kind": "exact",
+    "sql": "SELECT city,SUM(amount) FROM (SELECT 'Jakarta' AS city,10 AS amount UNION ALL SELECT 'Bandung',20) v GROUP BY ALL",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:110 Unexpected or missing SQL token near 'ALL'",
+    "ms": 107.33
+  },
+  {
+    "id": "group_by_columns",
+    "kind": "alternative",
+    "sql": "SELECT city,SUM(amount) FROM (SELECT 'Jakarta' AS city,10 AS amount UNION ALL SELECT 'Bandung',20) v GROUP BY city ORDER BY city",
+    "status": "SUCCESS",
+    "columns": [
+      "city",
+      "sum(amount)"
+    ],
+    "rows": [
+      [
+        "Bandung",
+        20
+      ],
+      [
+        "Jakarta",
+        10
+      ]
+    ],
+    "error": null,
+    "ms": 104.87
+  },
+  {
+    "id": "select_exclude",
+    "kind": "exact",
+    "sql": "SELECT * EXCLUDE (b) FROM (SELECT 1 AS a,2 AS b) v",
+    "status": "SUCCESS",
+    "columns": [
+      "a"
+    ],
+    "rows": [
+      [
+        1
+      ]
+    ],
+    "error": null,
+    "ms": 106.51
+  },
+  {
+    "id": "select_replace",
+    "kind": "exact",
+    "sql": "SELECT * REPLACE (a+1 AS a) FROM (SELECT 1 AS a,2 AS b) v",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:9 Unexpected or missing SQL token near 'REPLACE'",
+    "ms": 95.44
+  },
+  {
+    "id": "select_ilike",
+    "kind": "exact",
+    "sql": "SELECT * ILIKE 'A%' FROM (SELECT 1 AS aa,2 AS bb) v",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:9 Unexpected or missing SQL token",
+    "ms": 102.24
+  },
+  {
+    "id": "trailing_comma",
+    "kind": "exact",
+    "sql": "SELECT 1 AS a, 2 AS b,",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:22 Unexpected or missing SQL token at end of input",
+    "ms": 102.99
+  },
+  {
+    "id": "alias_reuse",
+    "kind": "exact",
+    "sql": "SELECT 2 AS a,a+1 AS b",
+    "status": "SUCCESS",
+    "columns": [
+      "a",
+      "b"
+    ],
+    "rows": [
+      [
+        2,
+        3
+      ]
+    ],
+    "error": null,
+    "ms": 89.49
+  },
+  {
+    "id": "distinct_from",
+    "kind": "exact",
+    "sql": "SELECT NULL IS NOT DISTINCT FROM NULL",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:19 Unexpected or missing SQL token near 'DISTINCT'",
+    "ms": 112.08
+  },
+  {
+    "id": "equal_null",
+    "kind": "exact",
+    "sql": "SELECT EQUAL_NULL(NULL,NULL)",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error from line 1, column 7 to line 1, column 27. Detail message: No matching function with signature: equal_null(NULL_TYPE, NULL_TYPE).",
+    "ms": 95.73
+  },
+  {
+    "id": "null_safe_mysql",
+    "kind": "alternative",
+    "sql": "SELECT NULL <=> NULL",
+    "status": "SUCCESS",
+    "columns": [
+      "NULL <=> NULL"
+    ],
+    "rows": [
+      [
+        1
+      ]
+    ],
+    "error": null,
+    "ms": 99.47
+  },
+  {
+    "id": "try_to_number",
+    "kind": "exact",
+    "sql": "SELECT TRY_TO_NUMBER('bad')",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error from line 1, column 7 to line 1, column 26. Detail message: No matching function with signature: try_to_number(varchar).",
+    "ms": 104.93
+  },
+  {
+    "id": "cast_bad",
+    "kind": "behavior",
+    "sql": "SELECT CAST('bad' AS INT)",
+    "status": "SUCCESS",
+    "columns": [
+      "CAST('bad' AS INT)"
+    ],
+    "rows": [
+      [
+        null
+      ]
+    ],
+    "error": null,
+    "ms": 103.14
+  },
+  {
+    "id": "iff",
+    "kind": "exact",
+    "sql": "SELECT IFF(TRUE,'yes','no')",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error from line 1, column 7 to line 1, column 26. Detail message: No matching function with signature: iff(boolean, varchar, varchar).",
+    "ms": 105.35
+  },
+  {
+    "id": "if",
+    "kind": "alternative",
+    "sql": "SELECT IF(TRUE,'yes','no')",
+    "status": "SUCCESS",
+    "columns": [
+      "if(TRUE, 'yes', 'no')"
+    ],
+    "rows": [
+      [
+        "yes"
+      ]
+    ],
+    "error": null,
+    "ms": 102.23
+  },
+  {
+    "id": "parse_json",
+    "kind": "exact",
+    "sql": "SELECT PARSE_JSON('{\"x\":7}')",
+    "status": "SUCCESS",
+    "columns": [
+      "parse_json('{\"x\":7}')"
+    ],
+    "rows": [
+      [
+        "{\"x\": 7}"
+      ]
+    ],
+    "error": null,
+    "ms": 100.23
+  },
+  {
+    "id": "snowflake_json_path",
+    "kind": "exact",
+    "sql": "SELECT PARSE_JSON('{\"x\":7}'):x::INT",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:28 Unexpected or missing SQL token near ':'",
+    "ms": 102.31
+  },
+  {
+    "id": "starrocks_json_path",
+    "kind": "alternative",
+    "sql": "SELECT CAST(PARSE_JSON('{\"x\":7}')->'x' AS INT)",
+    "status": "SUCCESS",
+    "columns": [
+      "CAST((parse_json('{\"x\":7}')->'x') AS INT)"
+    ],
+    "rows": [
+      [
+        7
+      ]
+    ],
+    "error": null,
+    "ms": 92.6
+  },
+  {
+    "id": "flatten",
+    "kind": "exact",
+    "sql": "SELECT value FROM TABLE(FLATTEN(INPUT=>PARSE_JSON('[1,2]')))",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error. Detail message: Unknown table function 'flatten(INPUT=>PARSE_JSON('[1,2]'))', the function doesn't support named arguments or has invalid arguments.",
+    "ms": 111.54
+  },
+  {
+    "id": "unnest",
+    "kind": "alternative",
+    "sql": "SELECT x FROM UNNEST([1,2]) AS u(x)",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Table function must be used with lateral join",
+    "ms": 98.13
+  },
+  {
+    "id": "array_construct",
+    "kind": "exact",
+    "sql": "SELECT ARRAY_CONSTRUCT(1,2)",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error from line 1, column 7 to line 1, column 26. Detail message: No matching function with signature: array_construct(tinyint(4), tinyint(4)).",
+    "ms": 104.74
+  },
+  {
+    "id": "array_literal",
+    "kind": "alternative",
+    "sql": "SELECT [1,2]",
+    "status": "SUCCESS",
+    "columns": [
+      "[1, 2]"
+    ],
+    "rows": [
+      [
+        "[1,2]"
+      ]
+    ],
+    "error": null,
+    "ms": 96.02
+  },
+  {
+    "id": "dateadd",
+    "kind": "exact",
+    "sql": "SELECT DATEADD('day',1,'2026-10-13'::DATE)",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:14 Unexpected or missing SQL token near '('",
+    "ms": 111.43
+  },
+  {
+    "id": "date_add",
+    "kind": "alternative",
+    "sql": "SELECT DATE_ADD(CAST('2026-10-13' AS DATE),INTERVAL 1 DAY)",
+    "status": "SUCCESS",
+    "columns": [
+      "date_add(CAST('2026-10-13' AS DATE), INTERVAL 1 DAY)"
+    ],
+    "rows": [
+      [
+        "2026-10-14 00:00:00"
+      ]
+    ],
+    "error": null,
+    "ms": 87.01
+  },
+  {
+    "id": "convert_timezone",
+    "kind": "exact",
+    "sql": "SELECT CONVERT_TIMEZONE('UTC','Asia/Jakarta','2026-10-13 00:00:00'::TIMESTAMP_NTZ)",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:23 Unexpected or missing SQL token near '('",
+    "ms": 109.7
+  },
+  {
+    "id": "convert_tz",
+    "kind": "alternative",
+    "sql": "SELECT CONVERT_TZ('2026-10-13 00:00:00','UTC','Asia/Jakarta')",
+    "status": "SUCCESS",
+    "columns": [
+      "convert_tz('2026-10-13 00:00:00', 'UTC', 'Asia/Jakarta')"
+    ],
+    "rows": [
+      [
+        "2026-10-13 07:00:00"
+      ]
+    ],
+    "error": null,
+    "ms": 95.97
+  },
+  {
+    "id": "recursive_cte",
+    "kind": "exact",
+    "sql": "WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM n WHERE v<5) SELECT SUM(v) FROM n",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error. Detail message: Recursive CTE is not supported.",
+    "ms": 98.12
+  },
+  {
+    "id": "generator",
+    "kind": "exact",
+    "sql": "SELECT SEQ4() FROM TABLE(GENERATOR(ROWCOUNT=>3))",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error. Detail message: Unknown table function 'generator(ROWCOUNT=>3)', the function doesn't support named arguments or has invalid arguments.",
+    "ms": 108.82
+  },
+  {
+    "id": "generate_series",
+    "kind": "alternative",
+    "sql": "SELECT * FROM TABLE(generate_series(0,2))",
+    "status": "SUCCESS",
+    "columns": [
+      "generate_series"
+    ],
+    "rows": [
+      [
+        0
+      ],
+      [
+        1
+      ],
+      [
+        2
+      ]
+    ],
+    "error": null,
+    "ms": 101.58
+  },
+  {
+    "id": "union_by_name",
+    "kind": "exact",
+    "sql": "SELECT 1 AS a,2 AS b UNION ALL BY NAME SELECT 3 AS b,4 AS a",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:31 Unexpected or missing SQL token near 'BY'",
+    "ms": 101.58
+  },
+  {
+    "id": "pipe_operator",
+    "kind": "exact",
+    "sql": "SELECT 2 AS a ->> SELECT a*3 FROM $1",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:14 Unexpected or missing SQL token near '->'",
+    "ms": 105.72
+  },
+  {
+    "id": "asof_join",
+    "kind": "exact",
+    "sql": "SELECT * FROM (SELECT 2 AS ts) a ASOF JOIN (SELECT 1 AS ts) b MATCH_CONDITION(a.ts>=b.ts)",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:62 Unexpected or missing SQL token",
+    "ms": 106.55
+  },
+  {
+    "id": "pivot",
+    "kind": "exact",
+    "sql": "SELECT * FROM (SELECT 'a' AS k,1 AS v) PIVOT(SUM(v) FOR k IN ('a'))",
+    "status": "ERROR",
+    "error": "SQL error: (1248) Getting analyzing error. Detail message: Every derived table must have its own alias.",
+    "ms": 94.72
+  },
+  {
+    "id": "unpivot",
+    "kind": "exact",
+    "sql": "SELECT * FROM (SELECT 1 AS a,2 AS b) UNPIVOT(v FOR k IN (a,b))",
+    "status": "ERROR",
+    "columns": [],
+    "rows": [],
+    "error": "Invalid SQL: 1:47 Unexpected or missing SQL token near 'FOR'",
+    "ms": 108.05
+  },
+  {
+    "id": "rollup",
+    "kind": "common",
+    "sql": "SELECT id,SUM(amount),GROUPING(id) FROM (SELECT 1 AS id,10 AS amount UNION ALL SELECT 2,20) v GROUP BY ROLLUP(id) ORDER BY GROUPING(id),id",
+    "status": "ERROR",
+    "error": "SQL error: (1064) Getting analyzing error from line 1, column 123 to line 1, column 134. Detail message: ORDER BY clause cannot contain grouping.",
+    "ms": 119.45
+  },
+  {
+    "id": "rows_window",
+    "kind": "common",
+    "sql": "SELECT id,SUM(amount) OVER(ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM (SELECT 1 AS id,10 AS amount UNION ALL SELECT 2,20) v ORDER BY id",
+    "status": "SUCCESS",
+    "columns": [
+      "id",
+      "sum(amount) OVER (ORDER BY id ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+    ],
+    "rows": [
+      [
+        1,
+        10
+      ],
+      [
+        2,
+        30
+      ]
+    ],
+    "error": null,
+    "ms": 115.8
+  },
+  {
+    "id": "divide_zero",
+    "kind": "behavior",
+    "sql": "SELECT 1/0",
+    "status": "SUCCESS",
+    "columns": [
+      "1 / 0"
+    ],
+    "rows": [
+      [
+        null
+      ]
+    ],
+    "error": null,
+    "ms": 95.77
+  },
+  {
+    "id": "quoted_identifier",
+    "kind": "behavior",
+    "sql": "SELECT \"MixedCase\" FROM (SELECT 7 AS \"MixedCase\") v",
+    "status": "SUCCESS",
+    "columns": [
+      "'MixedCase'"
+    ],
+    "rows": [
+      [
+        "MixedCase"
+      ]
+    ],
+    "error": null,
+    "ms": 99.96
+  },
+  {
+    "id": "backtick_identifier",
+    "kind": "alternative",
+    "sql": "SELECT `MixedCase` FROM (SELECT 7 AS `MixedCase`) v",
+    "status": "SUCCESS",
+    "columns": [
+      "MixedCase"
+    ],
+    "rows": [
+      [
+        7
+      ]
+    ],
+    "error": null,
+    "ms": 101.91
+  },
+  {
+    "id": "regexp_replace",
+    "kind": "common",
+    "sql": "SELECT REGEXP_REPLACE('a1b2','[0-9]','')",
+    "status": "SUCCESS",
+    "columns": [
+      "regexp_replace('a1b2', '[0-9]', '')"
+    ],
+    "rows": [
+      [
+        "ab"
+      ]
+    ],
+    "error": null,
+    "ms": 102.79
+  },
+  {
+    "id": "explain",
+    "kind": "common",
+    "sql": "EXPLAIN SELECT 2+3 AS result",
+    "status": "SUCCESS",
+    "columns": [
+      "Explain String"
+    ],
+    "rows": [
+      [
+        "EXECUTE IN FE"
+      ],
+      [
+        "PLAN FRAGMENT 0"
+      ],
+      [
+        " OUTPUT EXPRS:2: expr"
+      ],
+      [
+        "  PARTITION: UNPARTITIONED"
+      ],
+      [
+        ""
+      ],
+      [
+        "  RESULT SINK"
+      ],
+      [
+        ""
+      ],
+      [
+        "  1:Project"
+      ],
+      [
+        "  |  <slot 2> : 5"
+      ],
+      [
+        "  |  "
+      ]
+    ],
+    "error": null,
+    "ms": 103.37
+  }
+]

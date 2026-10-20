@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-13",
+  "connector_version": "4.8.0",
+  "engine_version": "10.37.100",
+  "region": "AWS_AP_SOUTHEAST_3",
+  "runner_statements": 224,
+  "raw_status_counts": {
+    "OBSERVED": 37,
+    "PASS": 154,
+    "ERROR": 21,
+    "EXPECTED_ERROR": 10,
+    "FAIL": 2
+  },
+  "start_utc": "2026-10-13T13:11:16.456385+00:00",
+  "end_utc": "2026-10-13T13:31:40.789555+00:00",
+  "ui_queries": [
+    {
+      "query_id": "01c7b409-0001-afab-0000-0000d231a3dd",
+      "status": "SUCCESS",
+      "elapsed_ms": 33
+    },
+    {
+      "query_id": "01c7b40a-0001-afab-0000-0000d231a3e9",
+      "status": "SUCCESS",
+      "elapsed_ms": 39,
+      "validation_result": 5
+    }
+  ],
+  "task_child_query_id": "01c7b404-0001-afbc-0000-d2310001501e",
+  "warehouse_final_state": "SUSPENDED",
+  "roundtrip_logical_rows_equal": true,
+  "cost_attribution_complete": false
+}
