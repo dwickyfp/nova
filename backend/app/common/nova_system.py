@@ -487,6 +487,9 @@ async def init_nova_system() -> None:
         # Tables may not exist yet if init hasn't run
         pass
     else:
+        from app.modules.assistant.repository import UI_STATE_DDL
+
+        await db.execute_system(UI_STATE_DDL)
         # Once the base schema is confirmed, an AI model migration failure
         # must fail startup rather than leaving model CRUD on a stale schema.
         await migrate_ai_model_columns()

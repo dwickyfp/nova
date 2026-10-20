@@ -1,0 +1,10 @@
+[
+  {
+    "id": "G01_ROW_POLICY",
+    "sql": "CREATE ROW ACCESS POLICY CITY_FILTER AS(city VARCHAR) RETURNS BOOLEAN -> city = 'Jakarta'"
+  },
+  {
+    "id": "G02_MASK_POLICY",
+    "sql": "CREATE MASKING POLICY CITY_MASK AS(val VARCHAR) RETURNS VARCHAR -> '***'"
+  }
+]

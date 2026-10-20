@@ -115,6 +115,13 @@ class _EventRedis:
             self.hashes.pop(key, None)
 
 
+@pytest.fixture(autouse=True)
+def run_write_coordination(monkeypatch):
+    from app.core.redis import session_store
+
+    monkeypatch.setattr(session_store, "_redis", _EventRedis())
+
+
 @pytest.mark.asyncio
 async def test_auto_admission_lock_serializes_same_owner_thread(monkeypatch) -> None:
     from app.modules.agents import harness_repository as module
@@ -1617,20 +1624,20 @@ async def test_cancel_tree_only_cancels_children_after_active_root_changes(
     updates = []
 
     async def execute(sql: str, params=None):
+        if sql.startswith("SELECT run_id, root_run_id, depth"):
+            return {"rows": [["child", "root", 1]]}
         updates.append((sql, params))
-        return {"affected": root_affected if len(updates) == 1 else 2}
+        return {"affected": root_affected if len(updates) == 1 else 1}
 
     monkeypatch.setattr(module.db, "execute_system", execute)
     repo = HarnessRepository()
-    repo.get = AsyncMock(return_value={
-        "run_id": "root", "agent_id": "__auto__", "depth": 0,
-        "status": "completed",
-    })
+    repo.get = AsyncMock(return_value=_run("root", status="completed"))
     assert await repo.cancel_tree("root") is bool(root_affected)
     assert "run_id = %s AND agent_id IN ('__auto__', '__smart__') AND depth = 0" in updates[0][0]
     assert len(updates) == (2 if root_affected else 1)
     if root_affected:
-        assert "root_run_id = %s AND depth > 0" in updates[1][0]
+        assert "run_id = %s AND root_run_id = %s AND depth > 0" in updates[1][0]
+        assert updates[1][1][1:] == ["child", "root"]
 
 
 @pytest.mark.asyncio
@@ -1640,23 +1647,24 @@ async def test_cancel_tree_continues_when_update_applies_with_zero_affected(monk
     updates: list[str] = []
 
     async def execute(sql: str, params=None):
+        if sql.startswith("SELECT run_id, root_run_id, depth"):
+            return {"rows": [["child", "root", 1]]}
         updates.append(sql)
         return {"affected": 0 if len(updates) < 3 else 1}
 
     monkeypatch.setattr(module.db, "execute_system", execute)
     repo = HarnessRepository()
     repo.get = AsyncMock(side_effect=[
-        {"run_id": "root", "agent_id": "__auto__", "depth": 0,
-         "status": "running"},
-        {"run_id": "root", "agent_id": "__auto__", "depth": 0,
-         "status": "cancelled"},
+        _run("root", status="running"),
+        _run("root", status="running"),
+        _run("root", status="cancelled"),
     ])
     assert await repo.cancel_tree("root")
     assert len(updates) == 3
     assert all(
         "run_id = %s AND agent_id IN ('__auto__', '__smart__')" in sql for sql in updates[:2]
     )
-    assert "root_run_id = %s AND depth > 0" in updates[2]
+    assert "run_id = %s AND root_run_id = %s AND depth > 0" in updates[2]
 
 
 @pytest.mark.asyncio
@@ -1889,7 +1897,7 @@ async def test_repaired_root_terminal_ends_sse(monkeypatch, status: str, kind: s
     assert event.await_args.args[3] == (
         {"error_class": "ToolError"} if status == "failed" else {}
     )
-    assert sum(frame.startswith("event: error") for frame in frames) == 1
+    assert sum(frame.startswith("event: error") for frame in frames) == (status == "failed")
     assert sum(frame.startswith("event: done") for frame in frames) == 1
 
 
@@ -2091,16 +2099,19 @@ async def test_root_cancellation_cascades_and_child_cancel_is_scoped(monkeypatch
     calls: list[tuple[str, list]] = []
 
     async def execute(sql: str, params=None):
+        if sql.startswith("SELECT run_id, root_run_id, depth"):
+            return {"rows": [["finance", "root", 1]]}
         calls.append((sql, params))
         return {"affected": 1}
 
     monkeypatch.setattr(module.db, "execute_system", execute)
     repo = HarnessRepository()
+    repo.get = AsyncMock(return_value=_run("root", status="running"))
     assert await repo.cancel_tree("root")
     assert "run_id = %s AND agent_id IN ('__auto__', '__smart__')" in calls[0][0]
     assert calls[0][1][1:] == ["root"]
-    assert "root_run_id = %s AND depth > 0" in calls[1][0]
-    assert calls[1][1][1:] == ["root"]
+    assert "run_id = %s AND root_run_id = %s AND depth > 0" in calls[1][0]
+    assert calls[1][1][1:] == ["finance", "root"]
     assert await repo.cancel_child("root", "finance")
     assert "depth > 0" in calls[2][0]
     assert calls[2][1][1:] == ["finance", "root"]
@@ -2404,6 +2415,49 @@ async def test_replayed_coordinator_does_not_append_final_answer_twice(monkeypat
     assert len(stored) == 1
     assert stored[0]["message_id"]
     assert emitted == ["agent_completed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persisted,final", [(0, 40), (20, 40), (40, 40), (40, 20)])
+async def test_root_final_usage_includes_last_response_without_double_counting(
+    monkeypatch, persisted, final,
+) -> None:
+    from app.modules.agents import harness_worker as module
+
+    root = _run("root", status="running")
+    root.update(prompt_tokens=persisted, completion_tokens=persisted // 2)
+    stored = []
+    transition = AsyncMock(return_value=True)
+
+    class Repository:
+        get = AsyncMock(return_value=root)
+        event = AsyncMock()
+        reconcile_terminal_children = AsyncMock()
+
+    repository = Repository()
+    repository.transition = transition
+
+    async def append(thread_id, **kwargs):
+        stored.append(kwargs)
+
+    monkeypatch.setattr(module.assistant_repository, "list_messages", AsyncMock(
+        side_effect=lambda *args, **kwargs: list(stored),
+    ))
+    monkeypatch.setattr(module.assistant_repository, "append_message", append)
+    user = {"username": "alice", "active_role": "analyst",
+            "assigned_roles": ["analyst"], "security_context_version": 1}
+    await AgentHarnessWorker(repository)._finish_root(
+        root, user, "Answer", [{"prompt_tokens": 3, "completion_tokens": 2}],
+        {"prompt_tokens": final, "completion_tokens": final // 2},
+    )
+    expected = max(persisted, final)
+    assert stored[0]["usage"] == {
+        "prompt_tokens": expected + 3,
+        "completion_tokens": expected // 2 + 2,
+        "total_tokens": expected + expected // 2 + 5,
+    }
+    assert transition.await_args.kwargs["prompt_tokens"] == expected
+    assert transition.await_args.kwargs["completion_tokens"] == expected // 2
 
 
 @pytest.mark.asyncio

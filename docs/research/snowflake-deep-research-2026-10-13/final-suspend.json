@@ -1,0 +1,12 @@
+[
+  {
+    "id": "U03_FINAL_SUSPEND",
+    "sql": "ALTER WAREHOUSE COMPUTE_WH SUSPEND"
+  },
+  {
+    "id": "U04_FINAL_STATE",
+    "sql": "SHOW WAREHOUSES LIKE 'COMPUTE_WH'",
+    "observe_only": true,
+    "print_rows": true
+  }
+]

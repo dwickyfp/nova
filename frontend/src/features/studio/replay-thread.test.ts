@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { replayThread } from "./studio-chat";
+import { replayThread } from "./studio-transcript";
+
 import type { AgentMessage } from "@/features/agents/api";
 
 /**
@@ -32,6 +33,18 @@ const assistant = (
 });
 
 describe("replayThread", () => {
+  it.each(["cancelled", "error", "interrupted", "unexpected_tool_call", "context_overflow", "budget_exceeded"] as const)(
+    "restores a persisted %s outcome even before any answer text",
+    (reason) => {
+      const [restored] = replayThread([
+        user("Question"),
+        assistant("", [{ kind: "turn_outcome", finish_reason: reason }]),
+      ]);
+      expect(restored.state).toBe(reason === "cancelled" ? "cancelled" : "error");
+      expect(restored.stopReason).toBe(reason);
+      expect(restored.messageId).toBe("a1");
+    },
+  );
   it("opens a turn from the question and fills it from the answer", () => {
     const turns = replayThread([
       user("How many orders?"),

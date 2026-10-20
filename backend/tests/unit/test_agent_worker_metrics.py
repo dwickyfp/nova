@@ -183,3 +183,47 @@ async def test_agent_worker_poll_failure_has_no_success_heartbeat(monkeypatch) -
 
     assert errors.phases == ["poll"]
     assert pulses == []
+
+
+async def test_engine_planner_timeout_retries_only_metadata_poll(monkeypatch):
+    from asyncmy.errors import ProgrammingError
+
+    stop = asyncio.Event()
+    pulses = []
+    errors = _PhaseCounter()
+    monkeypatch.setattr(module, "heartbeat", pulses.append)
+    monkeypatch.setattr(module, "AGENT_WORKER_POLL_ERRORS", errors)
+
+    class Repository:
+        polls = 0
+
+        async def recover_stale(self):
+            pass
+
+        async def expire_waiting(self, **kwargs):
+            pass
+
+        async def queued(self, **kwargs):
+            self.polls += 1
+            if self.polls == 1:
+                raise ProgrammingError(1064, "StarRocks planner use long time 3000 ms")
+            stop.set()
+            return []
+
+    repository = Repository()
+    await module.AgentHarnessWorker(repository).run_forever(stop, "worker")
+    assert repository.polls == 2
+    assert errors.phases == ["poll"]
+    assert pulses == ["agent-worker"]
+
+
+@pytest.mark.parametrize("error", [(1064, "Invalid SQL"), (1045, "Access denied")])
+async def test_metadata_policy_and_syntax_failures_remain_terminal(monkeypatch, error):
+    from asyncmy.errors import ProgrammingError
+
+    class Repository:
+        async def recover_stale(self):
+            raise ProgrammingError(*error)
+
+    with pytest.raises(ProgrammingError):
+        await module.AgentHarnessWorker(Repository()).run_forever(asyncio.Event(), "worker")

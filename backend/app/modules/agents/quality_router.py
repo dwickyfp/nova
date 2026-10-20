@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
 from app.modules.agents import quality
+from app.modules.agents.harness_experiments import ExperimentRequest, experiment
 from app.modules.agents.releases import capture_manifest, get_manifest
 from app.modules.agents.versions import agent_versions
 
@@ -276,3 +277,12 @@ async def review_proposal(
         raise
     await audit(agent_id, user, "REVIEW_IMPROVEMENT")
     return record
+
+
+@router.post("/{agent_id}/quality/harness-experiments")
+async def run_harness_experiment(agent_id: str, body: ExperimentRequest, user: CurrentUser):
+    agent = await owned_agent(agent_id, user)
+    await audit(agent_id, user, "START_HARNESS_EXPERIMENT")
+    result = await experiment(agent, body, user)
+    await audit(agent_id, user, "COMPLETE_HARNESS_EXPERIMENT")
+    return result

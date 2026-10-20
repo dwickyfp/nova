@@ -1,0 +1,261 @@
+[
+  {
+    "id": "N05_STREAM_CREATE",
+    "sql": "CREATE STREAM DELTA ON TABLE SRC"
+  },
+  {
+    "id": "N06_SOURCE_INSERT",
+    "sql": "INSERT INTO SRC VALUES(1,'Jakarta',10),(2,'Bandung',20)",
+    "expected_rows": [
+      [
+        2
+      ]
+    ]
+  },
+  {
+    "id": "N07_STREAM_READ",
+    "sql": "SELECT id,METADATA$ACTION,METADATA$ISUPDATE FROM DELTA ORDER BY id",
+    "expected_rows": [
+      [
+        1,
+        "INSERT",
+        false
+      ],
+      [
+        2,
+        "INSERT",
+        false
+      ]
+    ]
+  },
+  {
+    "id": "N08_STREAM_REREAD",
+    "sql": "SELECT COUNT(*) FROM DELTA",
+    "expected_rows": [
+      [
+        2
+      ]
+    ]
+  },
+  {
+    "id": "N09_SINK_CREATE",
+    "sql": "CREATE TEMPORARY TABLE SINK(id INTEGER)"
+  },
+  {
+    "id": "N10_CONSUME",
+    "sql": "INSERT INTO SINK SELECT id FROM DELTA",
+    "expected_rows": [
+      [
+        2
+      ]
+    ]
+  },
+  {
+    "id": "N11_OFFSET",
+    "sql": "SELECT COUNT(*) FROM DELTA",
+    "expected_rows": [
+      [
+        0
+      ]
+    ]
+  },
+  {
+    "id": "N12_SOURCE_UPDATE",
+    "sql": "UPDATE SRC SET amount=11 WHERE id=1",
+    "expected_rows": [
+      [
+        1
+      ]
+    ]
+  },
+  {
+    "id": "N13_UPDATE_PAIR",
+    "sql": "SELECT amount,METADATA$ACTION,METADATA$ISUPDATE FROM DELTA ORDER BY METADATA$ACTION",
+    "expected_rows": [
+      [
+        10,
+        "DELETE",
+        true
+      ],
+      [
+        11,
+        "INSERT",
+        true
+      ]
+    ]
+  },
+  {
+    "id": "N14_BEGIN",
+    "sql": "BEGIN"
+  },
+  {
+    "id": "N15_CONSUME_TX",
+    "sql": "INSERT INTO SINK SELECT id FROM DELTA",
+    "expected_rows": [
+      [
+        2
+      ]
+    ]
+  },
+  {
+    "id": "N16_ROLLBACK",
+    "sql": "ROLLBACK"
+  },
+  {
+    "id": "N17_ROLLBACK_OFFSET",
+    "sql": "SELECT COUNT(*) FROM DELTA",
+    "expected_rows": [
+      [
+        2
+      ]
+    ]
+  },
+  {
+    "id": "N18_SEMANTIC_CREATE",
+    "sql": "CREATE SEMANTIC VIEW SALES TABLES(orders AS SRC PRIMARY KEY(id)) DIMENSIONS(orders.city AS city) METRICS(orders.total_amount AS SUM(amount))"
+  },
+  {
+    "id": "N19_SEMANTIC_QUERY",
+    "sql": "SELECT * FROM SEMANTIC_VIEW(SALES DIMENSIONS orders.city METRICS orders.total_amount) ORDER BY city",
+    "expected_rows": [
+      [
+        "Bandung",
+        20
+      ],
+      [
+        "Jakarta",
+        11
+      ]
+    ]
+  },
+  {
+    "id": "N20_SEMANTIC_METADATA",
+    "sql": "SHOW SEMANTIC METRICS IN SALES",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "N21_RECOVERY_CREATE",
+    "sql": "CREATE TRANSIENT TABLE RECOVERY(id INTEGER) DATA_RETENTION_TIME_IN_DAYS=1"
+  },
+  {
+    "id": "N22_RECOVERY_INSERT",
+    "sql": "INSERT INTO RECOVERY VALUES(7)",
+    "expected_rows": [
+      [
+        1
+      ]
+    ]
+  },
+  {
+    "id": "N23_RECOVERY_DROP",
+    "sql": "DROP TABLE RECOVERY"
+  },
+  {
+    "id": "N24_UNDROP",
+    "sql": "UNDROP TABLE RECOVERY"
+  },
+  {
+    "id": "N25_RECOVERY_VERIFY",
+    "sql": "SELECT id FROM RECOVERY",
+    "expected_rows": [
+      [
+        7
+      ]
+    ]
+  },
+  {
+    "id": "N26_DISABLE_SECONDARY",
+    "sql": "USE SECONDARY ROLES NONE"
+  },
+  {
+    "id": "N27_PUBLIC",
+    "sql": "USE ROLE PUBLIC"
+  },
+  {
+    "id": "N28_PUBLIC_CONTEXT",
+    "sql": "SELECT CURRENT_ROLE(),CURRENT_SECONDARY_ROLES()",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "N29_PUBLIC_ACCOUNT_DENIED",
+    "sql": "SELECT COUNT(*) FROM SNOWFLAKE.ACCOUNT_USAGE.USERS",
+    "expected_error": "does not exist or not authorized|insufficient privileges"
+  },
+  {
+    "id": "N30_PUBLIC_TABLE_DENIED",
+    "sql": "SELECT COUNT(*) FROM SNOWFLAKE_LEARNING_DB.SF_RESEARCH_20261013.SRC",
+    "expected_error": "does not exist or not authorized|insufficient privileges"
+  },
+  {
+    "id": "N31_RESTORE_ROLE",
+    "sql": "USE ROLE ACCOUNTADMIN"
+  },
+  {
+    "id": "N32_RESTORE_SECONDARY",
+    "sql": "USE SECONDARY ROLES ALL"
+  },
+  {
+    "id": "N33_ROLE_VERIFY",
+    "sql": "SELECT CURRENT_ROLE(),CURRENT_SECONDARY_ROLES()",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "N34_FILEFORMAT",
+    "sql": "CREATE TEMPORARY FILE FORMAT CSV TYPE=CSV SKIP_HEADER=1"
+  },
+  {
+    "id": "N35_STAGE",
+    "sql": "CREATE TEMPORARY STAGE FILES FILE_FORMAT=CSV"
+  },
+  {
+    "id": "N36_PUT",
+    "sql": "PUT file:///tmp/snowflake-research-20261013/synthetic.csv @FILES AUTO_COMPRESS=FALSE OVERWRITE=FALSE",
+    "observe_only": true
+  },
+  {
+    "id": "N37_LOAD_CREATE",
+    "sql": "CREATE TEMPORARY TABLE LOADED(id INTEGER,city VARCHAR,amount INTEGER)"
+  },
+  {
+    "id": "N38_COPY",
+    "sql": "COPY INTO LOADED FROM @FILES",
+    "observe_only": true
+  },
+  {
+    "id": "N39_LOAD_VERIFY",
+    "sql": "SELECT COUNT(*),SUM(amount)::VARCHAR FROM LOADED",
+    "expected_rows": [
+      [
+        2,
+        "30"
+      ]
+    ]
+  },
+  {
+    "id": "N40_UNLOAD",
+    "sql": "COPY INTO @FILES/export/out.csv FROM(SELECT id,city,amount FROM LOADED ORDER BY id) FILE_FORMAT=(TYPE=CSV COMPRESSION=NONE) SINGLE=TRUE HEADER=TRUE",
+    "observe_only": true
+  },
+  {
+    "id": "N41_GET",
+    "sql": "GET @FILES/export/out.csv file:///tmp/snowflake-research-20261013/download/",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "N42_PROCEDURE",
+    "sql": "CREATE TEMPORARY PROCEDURE ADD_NUM(a INTEGER,b INTEGER) RETURNS INTEGER LANGUAGE SQL AS $$ BEGIN RETURN a+b; END; $$"
+  },
+  {
+    "id": "N43_CALL",
+    "sql": "CALL ADD_NUM(4,5)",
+    "expected_rows": [
+      [
+        9
+      ]
+    ]
+  }
+]

@@ -1,0 +1,876 @@
+[
+  {
+    "id": "F001",
+    "family": "Governance",
+    "feature": "Federated auth, OAuth dan MFA",
+    "snowflake": "DOC: federated auth, OAuth dan MFA punya lifecycle/policy tersendiri",
+    "nova": "BELUM FIRST-CLASS: login Nova yang diperiksa memakai autentikasi StarRocks, encrypted session dan JWT",
+    "evidence_path": "backend/app/modules/auth/service.py",
+    "recommendation": "P1 enterprise identity discovery; jangan membuat user/password database baru"
+  },
+  {
+    "id": "F002",
+    "family": "Governance",
+    "feature": "Network/private connectivity",
+    "snowflake": "DOC: network policies/rules dan private connectivity",
+    "nova": "BERBEDA: deployment gateway/TLS/network controls; account network-policy object setara tidak ditemukan",
+    "evidence_path": "backend/app/core/config.py",
+    "recommendation": "P1 deployment acceptance dan explicit ingress/egress policy"
+  },
+  {
+    "id": "F003",
+    "family": "Governance",
+    "feature": "Secrets dan session lifecycle",
+    "snowflake": "DOC: secret integrations dan session policies",
+    "nova": "ADA/PARSIAL: encrypted Redis password/session, encrypted provider persistence dan secret references",
+    "evidence_path": "backend/app/core/security.py",
+    "recommendation": "Uji rotation/revocation dan pastikan secret readback tidak diekspos"
+  },
+  {
+    "id": "F004",
+    "family": "Governance",
+    "feature": "Data encryption/KMS",
+    "snowflake": "DOC: encryption dan key management sebagai layanan",
+    "nova": "BERBEDA: managed storage/config dan deployment menentukan encryption; customer-managed KMS lifecycle tidak dibuktikan",
+    "evidence_path": "backend/app/core/config.py",
+    "recommendation": "Dokumentasikan encryption boundaries dan key rotation yang benar-benar didukung"
+  },
+  {
+    "id": "F005",
+    "family": "Ingestion",
+    "feature": "External data migration",
+    "snowflake": "DOC: connectors/Openflow dan migration ecosystem",
+    "nova": "ADA/PARSIAL: migration preflight, planner, worker dan data mover tersedia",
+    "evidence_path": "backend/app/modules/migration/service.py",
+    "recommendation": "Uji resumability dan per-source support; bukan otomatis broad connector catalog"
+  },
+  {
+    "id": "F006",
+    "family": "Ingestion",
+    "feature": "Producer/backpressure contract",
+    "snowflake": "DOC: ingestion APIs memiliki offset dan error contract spesifik",
+    "nova": "PARSIAL: existing engine paths belum membuktikan unified producer channel contract",
+    "evidence_path": "backend/app/modules/query/service.py",
+    "recommendation": "Tentukan bounded buffering, retry dan rejected-record evidence"
+  },
+  {
+    "id": "F007",
+    "family": "Operations",
+    "feature": "Event/alert notifications",
+    "snowflake": "DOC: alerts dan notification integrations",
+    "nova": "PARSIAL: monitoring alerts tersedia; channel/trigger support bukan seluruh layanan Snowflake",
+    "evidence_path": "backend/app/modules/monitoring/alerts.py",
+    "recommendation": "Uji delivery lifecycle; task audit tidak mengirim notifikasi eksternal"
+  },
+  {
+    "id": "F008",
+    "family": "Applications",
+    "feature": "Multi-tenant product distribution",
+    "snowflake": "DOC: organization/accounts dan Native Apps roles",
+    "nova": "BERBEDA: Nova sessions/resource scoping tidak membuktikan managed account provisioning",
+    "evidence_path": "backend/app/modules/access_control/security_context.py",
+    "recommendation": "P2 isolated tenancy model sebelum cross-organization publishing"
+  },
+  {
+    "id": "F009",
+    "family": "Arsitektur",
+    "feature": "Analytical engine",
+    "snowflake": "LIVE: managed SQL engine 10.37.100",
+    "nova": "BERBEDA: StarRocks pin 4.1.4, distributed physical execution",
+    "evidence_path": "backend/app/sql_frontend/capabilities/starrocks.py",
+    "recommendation": "Pertahankan ownership parser/policy Nova dan execution StarRocks"
+  },
+  {
+    "id": "F010",
+    "family": "Arsitektur",
+    "feature": "Storage-compute separation",
+    "snowflake": "DOC: managed storage dan warehouse terpisah",
+    "nova": "PARSIAL: mode engine dan deployment memengaruhi pemisahan; storage payload dikelola Nova",
+    "evidence_path": "backend/docker-compose.yml",
+    "recommendation": "Uji shared-data secara terpisah; jangan menyamakan semua deployment"
+  },
+  {
+    "id": "F011",
+    "family": "Arsitektur",
+    "feature": "Elastic virtual warehouses",
+    "snowflake": "LIVE metadata, DOC elasticity",
+    "nova": "BERBEDA: resource groups membatasi workload pada engine, bukan warehouse independen",
+    "evidence_path": "backend/app/modules/resource_groups/service.py",
+    "recommendation": "P1 observability dan isolation; physical elasticity membutuhkan infrastruktur"
+  },
+  {
+    "id": "F012",
+    "family": "Arsitektur",
+    "feature": "Application tiers",
+    "snowflake": "DOC: layanan cloud terkelola",
+    "nova": "ADA: web, query, proxy dapat dipisah dengan kontrak gateway",
+    "evidence_path": "backend/docker-compose.yml",
+    "recommendation": "Uji load balancing, cancellation dan failover proses"
+  },
+  {
+    "id": "F013",
+    "family": "Arsitektur",
+    "feature": "Managed availability",
+    "snowflake": "DOC: layanan cloud dan opsi edition",
+    "nova": "PARSIAL: readiness checks tersedia; operasi cluster menjadi tanggung jawab deployment",
+    "evidence_path": "backend/app/modules/monitoring/readiness.py",
+    "recommendation": "Tetapkan SLO dan lakukan failure drill sebelum klaim HA"
+  },
+  {
+    "id": "F014",
+    "family": "Arsitektur",
+    "feature": "Interactive analytics",
+    "snowflake": "DOC: interactive warehouse/table",
+    "nova": "BERBEDA: StarRocks diarahkan untuk analytics interaktif; tidak ada lifecycle warehouse Snowflake",
+    "evidence_path": "backend/app/modules/query/service.py",
+    "recommendation": "Benchmark workload nyata dengan concurrency yang setara"
+  },
+  {
+    "id": "F015",
+    "family": "SQL",
+    "feature": "Central SQL frontend",
+    "snowflake": "LIVE: SQL Snowflake",
+    "nova": "ADA: parse, AST, analyze, bind, plan, route bersama",
+    "evidence_path": "backend/app/sql_frontend/analysis/validation.py",
+    "recommendation": "Perluas dialect di frontend ini; hindari deteksi ad-hoc"
+  },
+  {
+    "id": "F016",
+    "family": "SQL",
+    "feature": "Analytical SELECT dan windows",
+    "snowflake": "LIVE: CTE, aggregate, windows",
+    "nova": "LIVE: CTE, SUM, ROWS window, ROLLUP versi alternatif",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "Pertahankan result-based regression corpus"
+  },
+  {
+    "id": "F017",
+    "family": "SQL",
+    "feature": "QUALIFY",
+    "snowflake": "LIVE: alias window dapat digunakan",
+    "nova": "PARSIAL LIVE: bentuk langsung ROW_NUMBER bekerja; probe alias ditolak engine",
+    "evidence_path": "backend/app/sql_frontend/capabilities/starrocks.py",
+    "recommendation": "Dokumentasikan subset dan lowering berbasis AST bila diperlukan"
+  },
+  {
+    "id": "F018",
+    "family": "SQL",
+    "feature": "SQL convenience syntax",
+    "snowflake": "LIVE: GROUP BY ALL, BY NAME, wildcard modifiers, trailing comma",
+    "nova": "PARSIAL LIVE: EXCLUDE dan alias reuse bekerja; bentuk lain gagal pada probe",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "P1 GROUP BY ALL dan UNION BY NAME dengan binding schema"
+  },
+  {
+    "id": "F019",
+    "family": "SQL",
+    "feature": "Null-safe comparison",
+    "snowflake": "LIVE: EQUAL_NULL dan IS NOT DISTINCT FROM",
+    "nova": "BERBEDA LIVE: operator <=> bekerja; dua bentuk Snowflake ditolak",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "Sediakan migration guide atau lowering teruji"
+  },
+  {
+    "id": "F020",
+    "family": "SQL",
+    "feature": "JSON dan arrays",
+    "snowflake": "LIVE: VARIANT path, FLATTEN, ARRAY_CONSTRUCT",
+    "nova": "BERBEDA LIVE: PARSE_JSON, -> path, array literal, lateral UNNEST",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "P1 contract type, null, flatten dan shape sebelum alias fungsi"
+  },
+  {
+    "id": "F021",
+    "family": "SQL",
+    "feature": "Date dan timezone",
+    "snowflake": "LIVE: DATEADD, CONVERT_TIMEZONE, timestamp types",
+    "nova": "BERBEDA LIVE: DATE_ADD dan CONVERT_TZ; sintaks dan type berbeda",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "Uji timezone, DST dan precision; jangan rename fungsi saja"
+  },
+  {
+    "id": "F022",
+    "family": "SQL",
+    "feature": "Casting dan arithmetic",
+    "snowflake": "LIVE: cast buruk dan pembagian nol error pada sesi uji",
+    "nova": "BERBEDA LIVE: kedua probe Nova menghasilkan NULL",
+    "evidence_path": "backend/app/modules/query/service.py",
+    "recommendation": "P1 tangani silent semantic difference dalam migration tooling"
+  },
+  {
+    "id": "F023",
+    "family": "SQL",
+    "feature": "Identifier quoting",
+    "snowflake": "LIVE: tanda petik ganda untuk identifier",
+    "nova": "BERBEDA LIVE: petik ganda dibaca string; backtick mengakses kolom",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "P1 linter/rewrite AST dengan dialect eksplisit"
+  },
+  {
+    "id": "F024",
+    "family": "SQL",
+    "feature": "MERGE dan schema evolution",
+    "snowflake": "LIVE: MERGE update dan insert",
+    "nova": "BELUM: capability native_merge dan all_by_name false",
+    "evidence_path": "backend/app/sql_frontend/capabilities/starrocks.py",
+    "recommendation": "Jangan forward MERGE; desain conflict/update semantics lebih dahulu"
+  },
+  {
+    "id": "F025",
+    "family": "SQL",
+    "feature": "Transactions",
+    "snowflake": "LIVE: UPDATE rollback memulihkan data",
+    "nova": "ADA BERSYARAT: engine version, mode dan table type menentukan dukungan",
+    "evidence_path": "backend/app/sql_frontend/capabilities/starrocks.py",
+    "recommendation": "Pertahankan transaction/session tests; shared-data acceptance terpisah"
+  },
+  {
+    "id": "F026",
+    "family": "SQL",
+    "feature": "Constraints",
+    "snowflake": "LIVE: NOT NULL/CHECK enforced, PK/UNIQUE standard table tidak",
+    "nova": "BERBEDA: key models StarRocks bukan informational key Snowflake",
+    "evidence_path": "backend/app/sql_frontend/capabilities/starrocks.py",
+    "recommendation": "Uji constraint per table model; jangan membuat janji universal"
+  },
+  {
+    "id": "F027",
+    "family": "SQL",
+    "feature": "PIVOT, UNPIVOT, ASOF, patterns",
+    "snowflake": "LIVE: bentuk yang benar bekerja",
+    "nova": "BELUM PADA PROBE: PIVOT ulang, UNPIVOT, ASOF, MATCH_RECOGNIZE gagal",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "Prioritaskan berdasarkan query migrasi nyata"
+  },
+  {
+    "id": "F028",
+    "family": "SQL",
+    "feature": "Recursive CTE dan pipe operator",
+    "snowflake": "LIVE: recursive CTE dan SQL chain",
+    "nova": "BELUM PADA PROBE: recursive CTE ditolak engine; chain ditolak parser",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "Jangan memberi fallback diam-diam atau membuat parser kedua"
+  },
+  {
+    "id": "F029",
+    "family": "SQL",
+    "feature": "MySQL client integration",
+    "snowflake": "DOC: Snowflake drivers/SQL API; bukan protokol MySQL",
+    "nova": "ADA: proxy berbagi pipeline Nova dan caller context",
+    "evidence_path": "backend/app/proxy/server.py",
+    "recommendation": "Nilai lebih integrasi; verifikasi role dan transaction secara end to end"
+  },
+  {
+    "id": "F030",
+    "family": "Storage",
+    "feature": "Managed stages",
+    "snowflake": "LIVE: PUT, LIST, COPY, unload, GET",
+    "nova": "ADA: stage, configured connections, storage abstraction dan SQL lowering",
+    "evidence_path": "backend/app/modules/stages/service.py",
+    "recommendation": "Perbaiki UX data movement dengan bukti dan error yang jelas"
+  },
+  {
+    "id": "F031",
+    "family": "Storage",
+    "feature": "Workspace payload storage",
+    "snowflake": "UI/LIVE: file SQL di Workspaces",
+    "nova": "ADA: payload managed storage, metadata NOVA_SYSTEM, optimistic concurrency",
+    "evidence_path": "backend/app/modules/workspaces/service.py",
+    "recommendation": "Pertahankan ETag dan version history; tambah UX diff/restore bila perlu"
+  },
+  {
+    "id": "F032",
+    "family": "Storage",
+    "feature": "Time Travel SQL",
+    "snowflake": "LIVE: BEFORE statement mengambil nilai historis",
+    "nova": "BELUM: backup/recovery berbeda dari SELECT historis",
+    "evidence_path": "backend/app/modules/backup/service.py",
+    "recommendation": "P2 discovery untuk engine retention; tidak dapat ditiru dengan metadata saja"
+  },
+  {
+    "id": "F033",
+    "family": "Storage",
+    "feature": "Zero-copy clone",
+    "snowflake": "LIVE: temporary clone independen dari sumber",
+    "nova": "BELUM: belum ada kontrak clone setara yang ditemukan",
+    "evidence_path": "backend/app/modules/backup/service.py",
+    "recommendation": "Tunda sampai storage/engine mendukung semantics dan retention"
+  },
+  {
+    "id": "F034",
+    "family": "Storage",
+    "feature": "Fail-safe dan recovery",
+    "snowflake": "DOC: vendor-managed recovery dengan aturan object",
+    "nova": "BERBEDA: snapshots, repositories, recycle bin dan RECOVER",
+    "evidence_path": "backend/app/modules/backup/service.py",
+    "recommendation": "Tentukan RPO/RTO dan restore drill; hindari label Fail-safe"
+  },
+  {
+    "id": "F035",
+    "family": "Storage",
+    "feature": "External catalogs",
+    "snowflake": "DOC: Iceberg/Open Catalog",
+    "nova": "ADA/PARSIAL: API Hive/Iceberg, HMS/REST dan engine catalogs",
+    "evidence_path": "backend/app/modules/external_catalogs/schemas.py",
+    "recommendation": "P2 validasi read/write, schema evolution dan credential rotation"
+  },
+  {
+    "id": "F036",
+    "family": "Storage",
+    "feature": "Iceberg ownership",
+    "snowflake": "DOC: external-volume dan Snowflake-managed storage adalah pilihan berbeda",
+    "nova": "PARSIAL: Nova catalog integration bukan Snowflake-managed table lifecycle",
+    "evidence_path": "backend/app/modules/external_catalogs/service.py",
+    "recommendation": "Nyatakan catalog/storage ownership dan support matrix"
+  },
+  {
+    "id": "F037",
+    "family": "Ingestion",
+    "feature": "Batch COPY",
+    "snowflake": "LIVE: CSV dua baris; repeated COPY skip file",
+    "nova": "ADA: shared stage and SQL path",
+    "evidence_path": "backend/app/modules/query/service.py",
+    "recommendation": "Uji retry, schema mismatch, labels dan idempotency per operation"
+  },
+  {
+    "id": "F038",
+    "family": "Ingestion",
+    "feature": "File ingestion pipes",
+    "snowflake": "DOC: Snowpipe memakai layanan tambahan; tidak dinyalakan",
+    "nova": "DIPERBAIKI: API StarRocks Pipe caller-scoped, redacted, metadata benar",
+    "evidence_path": "backend/app/modules/pipes/service.py",
+    "recommendation": "P0 patch di draft PR; native RBAC saja untuk background execution",
+    "implementation_path": "/Users/dwickyferiansyahputra/.codex/worktrees/snowflake-gap-improvements/nova/backend/app/modules/pipes/service.py",
+    "implementation_branch": "feat/governed-ingestion-pipes",
+    "implementation_commit": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+    "implementation_pr": "https://github.com/dwickyfp/nova/pull/184",
+    "delivery": "draft PR; not merged into main"
+  },
+  {
+    "id": "F039",
+    "family": "Ingestion",
+    "feature": "Governed background pipes",
+    "snowflake": "DOC: product security contract Snowflake",
+    "nova": "TERBLOKIR RANGER: task engine tidak membawa principal/role yang dibutuhkan",
+    "evidence_path": "backend/app/sql_frontend/analysis/validation.py",
+    "recommendation": "P0 fail closed; desain caller-preserving task sebelum membuka gate",
+    "implementation_path": "/Users/dwickyferiansyahputra/.codex/worktrees/snowflake-gap-improvements/nova/backend/app/sql_frontend/analysis/validation.py",
+    "implementation_branch": "feat/governed-ingestion-pipes",
+    "implementation_commit": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+    "implementation_pr": "https://github.com/dwickyfp/nova/pull/184",
+    "delivery": "draft PR; not merged into main"
+  },
+  {
+    "id": "F040",
+    "family": "Ingestion",
+    "feature": "Streaming ingestion channels",
+    "snowflake": "DOC: Snowpipe Streaming high-performance channels dan offsets",
+    "nova": "BELUM SETARA: engine ingestion primitives tidak menyediakan kontrak channel API yang sama",
+    "evidence_path": "backend/app/modules/streams/runtime.py",
+    "recommendation": "Discovery offset, retry, schema, backpressure dan auth; jangan sekadar membuat endpoint"
+  },
+  {
+    "id": "F041",
+    "family": "Ingestion",
+    "feature": "CDC streams",
+    "snowflake": "LIVE: SELECT tidak consume; commit/rollback mengatur offset",
+    "nova": "TERBLOKIR: stream runtime selalu disabled atau provider unavailable",
+    "evidence_path": "backend/app/modules/streams/runtime.py",
+    "recommendation": "P1 provider nyata dan transactional offset consumption"
+  },
+  {
+    "id": "F042",
+    "family": "Ingestion",
+    "feature": "Stream metadata/journal",
+    "snowflake": "LIVE: object stream dan CDC lifecycle",
+    "nova": "FONDASI: catalog, namespace, claims dan journal tersedia",
+    "evidence_path": "backend/app/modules/streams/catalog.py",
+    "recommendation": "Jangan melabeli DDL/journal sebagai CDC yang beroperasi"
+  },
+  {
+    "id": "F043",
+    "family": "Transformasi",
+    "feature": "Tasks dan schedules",
+    "snowflake": "LIVE: user-managed task dieksekusi sekali",
+    "nova": "ADA: native/managed tasks, caller ownership dan schedule",
+    "evidence_path": "backend/app/modules/task_orchestration/scheduler.py",
+    "recommendation": "Perbaiki observability/retry dalam scheduler yang sama"
+  },
+  {
+    "id": "F044",
+    "family": "Transformasi",
+    "feature": "Task graphs",
+    "snowflake": "DOC: DAG, predecessor dan operational history",
+    "nova": "ADA: DAG, conditions, finalizers, rerun dan durable worker/reconciler",
+    "evidence_path": "backend/app/modules/task_orchestration/dag.py",
+    "recommendation": "Uji resume after crash dan idempotent side effects"
+  },
+  {
+    "id": "F045",
+    "family": "Transformasi",
+    "feature": "Dynamic tables",
+    "snowflake": "LIVE: init 12, refresh manual 13, lag sebelum refresh",
+    "nova": "PARSIAL: MV refresh/task primitives; kontrak Dynamic Table lengkap tidak ditemukan",
+    "evidence_path": "backend/app/modules/task_orchestration/native.py",
+    "recommendation": "P1 declarative freshness dan refresh contract di owner yang ada"
+  },
+  {
+    "id": "F046",
+    "family": "Transformasi",
+    "feature": "dbt Projects",
+    "snowflake": "UI/DOC: project deployment dan execution",
+    "nova": "BELUM FIRST-CLASS: workspace SQL file bukan deployment dbt",
+    "evidence_path": "backend/app/modules/workspaces/service.py",
+    "recommendation": "Integrasikan artifact/manifest jika kebutuhan pelanggan jelas"
+  },
+  {
+    "id": "F047",
+    "family": "Transformasi",
+    "feature": "DCM desired state",
+    "snowflake": "DOC: definitions, plan dan deploy",
+    "nova": "BELUM: desired-state project/object reconciliation tidak ditemukan",
+    "evidence_path": "backend/app/sql_frontend/planning/planner.py",
+    "recommendation": "P1 plan/diff/apply terotorisasi melalui frontend dan repository yang sama"
+  },
+  {
+    "id": "F048",
+    "family": "Governance",
+    "feature": "Authentication dan roles",
+    "snowflake": "LIVE: primary/secondary role behavior",
+    "nova": "BERBEDA: StarRocks auth, satu active role, Ranger context version",
+    "evidence_path": "backend/app/modules/access_control/security_context.py",
+    "recommendation": "Pertahankan deliberate one-role contract dan ACCOUNTADMIN protection"
+  },
+  {
+    "id": "F049",
+    "family": "Governance",
+    "feature": "Row filters dan masks",
+    "snowflake": "LIVE: policy membatasi Jakarta dan menyamarkan nilai",
+    "nova": "LIVE NOVA: patched-FE role, regional filtering, masking acceptance lulus",
+    "evidence_path": "backend/app/modules/access_control/security_context.py",
+    "recommendation": "Perluas parity evidence ke setiap background workload dan cache"
+  },
+  {
+    "id": "F050",
+    "family": "Governance",
+    "feature": "Query audit",
+    "snowflake": "LIVE: query IDs/history",
+    "nova": "ADA: redacted audit, caller context dan engine-query correlation",
+    "evidence_path": "backend/app/modules/query/service.py",
+    "recommendation": "Bedakan audit execution dengan lineage data/Access History"
+  },
+  {
+    "id": "F051",
+    "family": "Governance",
+    "feature": "Data/column lineage",
+    "snowflake": "DOC: Access History dan lineage",
+    "nova": "FONDASI/TERBATAS: load-lineage table ada; tidak ditemukan extractor/query graph aktif lengkap",
+    "evidence_path": "docker/init-nova.sql",
+    "recommendation": "P1 AST-derived read/write lineage plus engine evidence"
+  },
+  {
+    "id": "F052",
+    "family": "Governance",
+    "feature": "Tags dan classification",
+    "snowflake": "DOC: catalog tags/classification",
+    "nova": "FONDASI: CONFIG_OBJECT_TAGS DDL; CRUD/enforcement aktif lengkap tidak ditemukan",
+    "evidence_path": "docker/init-nova.sql",
+    "recommendation": "P1 lifecycle tags dan discoverability; masking tetap owner access-control"
+  },
+  {
+    "id": "F053",
+    "family": "Governance",
+    "feature": "Data quality monitoring",
+    "snowflake": "DOC: metric functions dan scheduled monitoring",
+    "nova": "PARSIAL/GATED: quality/monitor structures bukan layanan DMF lengkap",
+    "evidence_path": "backend/app/core/config.py",
+    "recommendation": "P1 assertion, freshness, alerts memakai task/monitor owner yang ada"
+  },
+  {
+    "id": "F054",
+    "family": "Governance",
+    "feature": "Secure data sharing",
+    "snowflake": "DOC: share ke consumer account",
+    "nova": "BELUM: first-class governed cross-account sharing tidak ditemukan",
+    "evidence_path": "backend/app/modules/external_catalogs/service.py",
+    "recommendation": "P2 hanya jika multi-tenant sharing menjadi kebutuhan produk"
+  },
+  {
+    "id": "F055",
+    "family": "Governance",
+    "feature": "Marketplace dan clean rooms",
+    "snowflake": "UI/DOC: distribusi dan kolaborasi data",
+    "nova": "BELUM: fitur first-class tidak ditemukan",
+    "evidence_path": "README.md",
+    "recommendation": "Tunda; jangan menyamakan export atau MCP connector dengan clean room"
+  },
+  {
+    "id": "F056",
+    "family": "Semantic",
+    "feature": "Business semantic views",
+    "snowflake": "LIVE: dimensions dan metrics menghasilkan agregasi kota",
+    "nova": "ADA: versioned views, relationships, grains, metrics dan compiler",
+    "evidence_path": "backend/app/modules/intelligence/semantic_views.py",
+    "recommendation": "P1 interoperability dan UX; jangan membuat semantic executor kedua"
+  },
+  {
+    "id": "F057",
+    "family": "Semantic",
+    "feature": "Verified queries",
+    "snowflake": "DOC: konteks/evaluasi Analyst",
+    "nova": "ADA: verified queries, quality validation dan publish regression",
+    "evidence_path": "backend/app/modules/intelligence/semantic_regression.py",
+    "recommendation": "Pisahkan contoh training dari held-out evaluations"
+  },
+  {
+    "id": "F058",
+    "family": "Semantic",
+    "feature": "Semantic access scope",
+    "snowflake": "DOC: object privileges dan agent integration",
+    "nova": "ADA: source checks dan agent-private/resource scoping",
+    "evidence_path": "backend/app/modules/intelligence/semantic_views.py",
+    "recommendation": "Uji deny, role switch dan changed source policy"
+  },
+  {
+    "id": "F059",
+    "family": "Semantic",
+    "feature": "Cross-tool metric portability",
+    "snowflake": "DOC: semantic views dapat diquery dan dipakai client",
+    "nova": "PARSIAL: syntax/compiler Nova berbeda dari object Snowflake",
+    "evidence_path": "backend/app/modules/intelligence/semantic_migration.py",
+    "recommendation": "P1 deterministic export/import dan compatibility diagnostics"
+  },
+  {
+    "id": "F060",
+    "family": "AI/Search",
+    "feature": "Natural-language SQL",
+    "snowflake": "DOC/UI: Analyst dan CoCo; inference tidak diuji",
+    "nova": "ADA: shared assistant loop, validated SQL dan evidence constraints",
+    "evidence_path": "backend/app/modules/assistant/service.py",
+    "recommendation": "Ukur execution correctness dan result fidelity pada held-out corpus"
+  },
+  {
+    "id": "F061",
+    "family": "AI/Search",
+    "feature": "AI SQL functions",
+    "snowflake": "DOC: model/region/privilege-specific AI SQL",
+    "nova": "ADA/PARSIAL: complete, sentiment, classify, summarize, extract, translate, filter",
+    "evidence_path": "backend/app/modules/llm_functions/service.py",
+    "recommendation": "Uji model/provider behavior dan accounting; tidak ada paid inference pada audit ini"
+  },
+  {
+    "id": "F062",
+    "family": "AI/Search",
+    "feature": "Embeddings dan hybrid search",
+    "snowflake": "DOC: managed Cortex Search",
+    "nova": "ADA: lexical/hybrid/semantic, RRF dan versioned projections",
+    "evidence_path": "backend/app/modules/intelligence/search.py",
+    "recommendation": "P1 refresh/freshness, multilingual retrieval dan policy acceptance"
+  },
+  {
+    "id": "F063",
+    "family": "AI/Search",
+    "feature": "Search rights model",
+    "snowflake": "DOC: Cortex Search menggunakan owner’s rights",
+    "nova": "BERBEDA: Nova membaca projection lalu requery sumber dengan caller",
+    "evidence_path": "backend/app/modules/intelligence/search.py",
+    "recommendation": "Pertahankan source recheck; audit candidate side channels dan cache versioning"
+  },
+  {
+    "id": "F064",
+    "family": "AI/Search",
+    "feature": "Document AI",
+    "snowflake": "DOC: parse/extract dokumen dan multimodal",
+    "nova": "PARSIAL: generic AI extraction belum membuktikan layout/OCR corpus support",
+    "evidence_path": "backend/app/modules/llm_functions/service.py",
+    "recommendation": "P2 benchmark dokumen nyata dan source citation completeness"
+  },
+  {
+    "id": "F065",
+    "family": "AI/Search",
+    "feature": "Analytical document search",
+    "snowflake": "DOC: retrieval bersama SQL/AI functions",
+    "nova": "PARSIAL: search tersedia; exhaustive corpus aggregation tidak dibuktikan",
+    "evidence_path": "backend/app/modules/intelligence/search.py",
+    "recommendation": "Bedakan top-k answer dengan complete count/aggregate"
+  },
+  {
+    "id": "F066",
+    "family": "AI/Search",
+    "feature": "AI gateway dan budgets",
+    "snowflake": "DOC: Gateway preview dengan privilege/logging",
+    "nova": "PARSIAL: provider gateway, encrypted keys, usage; bukan managed vendor gateway",
+    "evidence_path": "backend/app/modules/monitoring/ai_usage.py",
+    "recommendation": "P1 token/tool attribution, redaction dan budget behavior yang eksplisit"
+  },
+  {
+    "id": "F067",
+    "family": "Agents",
+    "feature": "Bounded tool execution",
+    "snowflake": "DOC: Cortex Agents orchestration",
+    "nova": "ADA: satu shared bounded loop dengan consent dan context control",
+    "evidence_path": "backend/app/modules/assistant/service.py",
+    "recommendation": "Perluas eval dari trajectories ke real model outcome bila budget tersedia"
+  },
+  {
+    "id": "F068",
+    "family": "Agents",
+    "feature": "Delegation dan durable collaboration",
+    "snowflake": "DOC: CoWork Deep Research dan agent threads",
+    "nova": "ADA: Smart, sessions, mailbox, journal dan bounded delegation",
+    "evidence_path": "backend/app/modules/agents/AGENTS.md",
+    "recommendation": "Perkuat provenance, recovery dan inherited security context"
+  },
+  {
+    "id": "F069",
+    "family": "Agents",
+    "feature": "Skills dan memory",
+    "snowflake": "DOC: agent skills/CoWork memory",
+    "nova": "ADA: scoped skills/resources/memory; permission bukan berasal dari skill",
+    "evidence_path": "backend/app/modules/agents/AGENTS.md",
+    "recommendation": "Uji private/public memory leakage dan context hygiene"
+  },
+  {
+    "id": "F070",
+    "family": "Agents",
+    "feature": "External MCP client",
+    "snowflake": "DOC: connector tools",
+    "nova": "ADA/PARSIAL: discovery HTTP/SSE, invocation HTTP, bounded SSRF-checked requests",
+    "evidence_path": "backend/app/modules/agents/mcp_client.py",
+    "recommendation": "Prioritaskan auth/consent/error handling sebelum menambah transport"
+  },
+  {
+    "id": "F071",
+    "family": "Agents",
+    "feature": "Managed MCP server",
+    "snowflake": "DOC: Snowflake-managed MCP server",
+    "nova": "BELUM: MCP client Nova tidak otomatis mengekspos server untuk client eksternal",
+    "evidence_path": "backend/app/modules/agents/mcp_client.py",
+    "recommendation": "P2 server publication dengan caller auth, scope dan audit"
+  },
+  {
+    "id": "F072",
+    "family": "Agents",
+    "feature": "Python analysis workspace",
+    "snowflake": "DOC: agent code execution/runtime",
+    "nova": "TERBLOKIR: enabled path tetap BLOCKED_BY_INFRASTRUCTURE",
+    "evidence_path": "backend/app/modules/assistant/analysis_workspace.py",
+    "recommendation": "P1 isolated executor, bounded IO dan explicit artifact lifecycle"
+  },
+  {
+    "id": "F073",
+    "family": "Agents",
+    "feature": "Business decisions/actions/outcomes",
+    "snowflake": "DOC: agent/artifact/automation platform",
+    "nova": "ADA BERBEDA: Nova intelligence mengikat entities, decisions, actions dan learning",
+    "evidence_path": "backend/app/modules/intelligence/decisions.py",
+    "recommendation": "Prioritas diferensiasi: pastikan outcome dan source evidence dapat ditelusuri"
+  },
+  {
+    "id": "F074",
+    "family": "ML",
+    "feature": "Task coverage",
+    "snowflake": "DOC: ML dan model functions/registry",
+    "nova": "ADA: classification, regression, forecast, anomaly, clustering, simulation, analysis",
+    "evidence_path": "backend/app/modules/ml_engine/spec.py",
+    "recommendation": "Roadmap lama dua-task harus dikoreksi; uji setiap worker contract"
+  },
+  {
+    "id": "F075",
+    "family": "ML",
+    "feature": "Model registry",
+    "snowflake": "DOC: versions, metrics dan inference",
+    "nova": "ADA: version/artifact/checksum/signature metadata dan lifecycle",
+    "evidence_path": "backend/app/modules/ml_engine/registry/repository.py",
+    "recommendation": "Perbaiki promotion, rollback dan monitoring dalam registry yang sama"
+  },
+  {
+    "id": "F076",
+    "family": "ML",
+    "feature": "Feature store",
+    "snowflake": "DOC: feature views, training datasets, PIT",
+    "nova": "ADA: versioned feature views, entity/time schema dan point-in-time helpers",
+    "evidence_path": "backend/app/modules/intelligence/feature_store.py",
+    "recommendation": "P1 edge-case PIT, late arrivals dan reproducible training lineage"
+  },
+  {
+    "id": "F077",
+    "family": "ML",
+    "feature": "Online features",
+    "snowflake": "DOC: serving integration tergantung produk/runtime",
+    "nova": "ADA: Redis TTL/version/monotonic publication, durable source tetap NOVA_SYSTEM/storage",
+    "evidence_path": "backend/app/modules/intelligence/online_features.py",
+    "recommendation": "Uji stale-write rejection dan role/security-version cache isolation"
+  },
+  {
+    "id": "F078",
+    "family": "ML",
+    "feature": "Training budgets dan data access",
+    "snowflake": "DOC: compute/runtime-specific controls",
+    "nova": "ADA: scoped data adapters dan row/byte/time execution budgets",
+    "evidence_path": "backend/app/modules/ml_engine/spec.py",
+    "recommendation": "Perluas fault/cancel acceptance; provider bukan bypass data rights"
+  },
+  {
+    "id": "F079",
+    "family": "ML",
+    "feature": "GPU/distributed serving",
+    "snowflake": "DOC: Container Services dan serving runtimes",
+    "nova": "BELUM DIBUKTIKAN: managed GPU/distributed serving parity tidak ditemukan",
+    "evidence_path": "backend/app/modules/ml_engine/jobs.py",
+    "recommendation": "P2 hanya berdasarkan model/workload yang membutuhkan"
+  },
+  {
+    "id": "F080",
+    "family": "Programming",
+    "feature": "SQL scripting/procedures",
+    "snowflake": "LIVE: loop/procedure sum 15",
+    "nova": "BELUM SETARA: managed SQL syntax tidak membuktikan Snowflake scripting runtime",
+    "evidence_path": "backend/app/sql_frontend/parser.py",
+    "recommendation": "P2 pilih subset yang dibutuhkan; routine owner dan auth harus jelas"
+  },
+  {
+    "id": "F081",
+    "family": "Programming",
+    "feature": "Python UDF/Snowpark",
+    "snowflake": "LIVE: Python UDF 12 dan Snowpark procedure 33",
+    "nova": "BERBEDA: engine UDF/ML workers bukan lazy Snowpark API",
+    "evidence_path": "backend/app/modules/ml_engine/jobs.py",
+    "recommendation": "Jangan mengekspos host Python sebagai user sandbox"
+  },
+  {
+    "id": "F082",
+    "family": "Programming",
+    "feature": "Notebooks",
+    "snowflake": "UI/DOC: SQL/Python/Markdown notebook runtimes",
+    "nova": "BELUM: full isolated notebook lifecycle tidak ditemukan",
+    "evidence_path": "backend/app/modules/assistant/analysis_workspace.py",
+    "recommendation": "P2 setelah isolated analysis executor tersedia"
+  },
+  {
+    "id": "F083",
+    "family": "Programming",
+    "feature": "Container jobs/services",
+    "snowflake": "DOC: image repository, compute pool, service/job",
+    "nova": "BELUM: aplikasi Nova di Docker tidak sama dengan user workload platform",
+    "evidence_path": "backend/docker-compose.yml",
+    "recommendation": "Tunda managed container platform sampai ada tenant isolation model"
+  },
+  {
+    "id": "F084",
+    "family": "Developer UX",
+    "feature": "SQL workspace",
+    "snowflake": "LIVE/UI: files, tabs, role/warehouse selector dan results",
+    "nova": "ADA: Monaco, file context, SQL tabs, multi-results, history, cancel, EXPLAIN",
+    "evidence_path": "frontend/src/routes/_authenticated/workspaces/index.tsx",
+    "recommendation": "P1 error/recovery dan consistency antara Console/Studio"
+  },
+  {
+    "id": "F085",
+    "family": "Developer UX",
+    "feature": "Results dan exports",
+    "snowflake": "UI: Table/Chart/Pivot/download; full REST partitions DOC",
+    "nova": "PARSIAL: chart/XLSX memakai qr.rows yang sudah diambil",
+    "evidence_path": "frontend/src/routes/_authenticated/workspaces/index.tsx",
+    "recommendation": "P1 governed full-result export, async job dan bounded artifacts"
+  },
+  {
+    "id": "F086",
+    "family": "Developer UX",
+    "feature": "Query history/profiles",
+    "snowflake": "LIVE: IDs dan profile untuk query kecil",
+    "nova": "ADA: history, EXPLAIN, engine correlation dan query-autopilot primitives",
+    "evidence_path": "backend/app/modules/query_autopilot/profile.py",
+    "recommendation": "P1 profiler UI dan actionable evidence; jangan mengklaim tidak ada infrastructure"
+  },
+  {
+    "id": "F087",
+    "family": "Developer UX",
+    "feature": "File versions/concurrency",
+    "snowflake": "DOC/UI: workspace project lifecycle",
+    "nova": "ADA: stored file versions dan optimistic ETag conflict",
+    "evidence_path": "backend/app/modules/workspaces/service.py",
+    "recommendation": "Tambahkan user-visible version restore tanpa silent overwrite"
+  },
+  {
+    "id": "F088",
+    "family": "Developer UX",
+    "feature": "Studio intelligent UI",
+    "snowflake": "DOC: CoCo/CoWork integration",
+    "nova": "IN-FLIGHT: perubahan primary checkout belum committed sebagai baseline audit",
+    "evidence_path": "backend/app/core/config.py",
+    "recommendation": "Jangan membangun fitur UI paralel atau menghitungnya sebagai shipped main"
+  },
+  {
+    "id": "F089",
+    "family": "Operations",
+    "feature": "Query API",
+    "snowflake": "DOC: async handles, cancel dan result partitions",
+    "nova": "ADA/PARSIAL: execute, streaming, explain, history, cancel; bounded default results",
+    "evidence_path": "backend/app/modules/query/router.py",
+    "recommendation": "P1 durable result handles jika diperlukan untuk export/background clients"
+  },
+  {
+    "id": "F090",
+    "family": "Operations",
+    "feature": "Usage dan billing",
+    "snowflake": "DOC: credits, storage, AI/serverless metering",
+    "nova": "PARSIAL: duration/rows/query usage bukan actual dollar/credit ledger",
+    "evidence_path": "backend/app/modules/monitoring/repository.py",
+    "recommendation": "P1 actual attribution model; pisahkan observed usage dan estimated cost"
+  },
+  {
+    "id": "F091",
+    "family": "Operations",
+    "feature": "Resource quotas",
+    "snowflake": "DOC: warehouse monitors/budgets dengan coverage berbeda",
+    "nova": "ADA: engine resource-group quota/classifier",
+    "evidence_path": "backend/app/modules/resource_groups/service.py",
+    "recommendation": "P1 concurrency/backpressure dan tested cancellation; jangan sebut universal financial cap"
+  },
+  {
+    "id": "F092",
+    "family": "Operations",
+    "feature": "Query optimization",
+    "snowflake": "DOC: pruning, services, MV dan profile",
+    "nova": "ADA: engine planning/MV/indexes; query autopilot evidence/proposals gated",
+    "evidence_path": "backend/app/modules/query_autopilot/service.py",
+    "recommendation": "P1 benchmark dan review safe changes; no invented speedup"
+  },
+  {
+    "id": "F093",
+    "family": "Operations",
+    "feature": "Replication/failover",
+    "snowflake": "DOC: groups dan edition-specific failover",
+    "nova": "BELUM SETARA: backup/readiness tidak membuktikan cross-region promotion",
+    "evidence_path": "backend/app/modules/monitoring/readiness.py",
+    "recommendation": "P2 infrastructure roadmap dengan RPO/RTO dan drills"
+  },
+  {
+    "id": "F094",
+    "family": "Operations",
+    "feature": "Postgres service",
+    "snowflake": "DOC/UI: separate provisioned instances",
+    "nova": "BELUM / BEDA SCOPE: Nova bukan managed Postgres service",
+    "evidence_path": "README.md",
+    "recommendation": "Tunda; jangan menambah database metadata relational kedua"
+  },
+  {
+    "id": "F095",
+    "family": "Applications",
+    "feature": "Streamlit",
+    "snowflake": "DOC/UI: Python app dan rights model runtime-specific",
+    "nova": "BELUM: Console/Studio bukan general user Python app hosting",
+    "evidence_path": "frontend/AGENTS.md",
+    "recommendation": "P2 setelah sandbox, app auth dan artifact lifecycle siap"
+  },
+  {
+    "id": "F096",
+    "family": "Applications",
+    "feature": "Native Apps/listings",
+    "snowflake": "DOC/UI: packaging dan distribution",
+    "nova": "BELUM: first-class consumer installation/publishing tidak ditemukan",
+    "evidence_path": "README.md",
+    "recommendation": "Tunda sampai distribusi lintas organisasi menjadi tujuan produk"
+  }
+]

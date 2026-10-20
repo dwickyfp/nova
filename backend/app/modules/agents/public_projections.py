@@ -223,6 +223,8 @@ def sanitize_workflow_payload(value: Any) -> Any:
             in {
                 "current_loop_attempt",
                 "current_operation_attempt",
+                "verified_result_rows",
+                "user_simulation",
             }
         ):
             output[key] = item

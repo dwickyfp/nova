@@ -89,17 +89,17 @@ export async function streamAssistantTurn(
   }
 
   let activeRun: string | undefined;
-  let lastSequence = -1;
+  let lastSequence = -1n;
   for await (const frame of readSseFrames(response.body)) {
     const event = parseAssistantEvent(frame.event, frame.data);
     if (!event) continue;
     if (event.run_id && event.run_id !== activeRun) {
       activeRun = event.run_id;
-      lastSequence = -1;
+      lastSequence = -1n;
     }
     if (event.sequence !== undefined) {
-      if (event.sequence <= lastSequence) continue;
-      lastSequence = event.sequence;
+      if (BigInt(event.sequence) <= lastSequence) continue;
+      lastSequence = BigInt(event.sequence);
     }
     if (event.type === "role_changed") {
       const auth = useAuthStore.getState().auth;

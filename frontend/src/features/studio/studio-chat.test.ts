@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, replayThread, type TranscriptTurn } from "./studio-chat";
+import { type TranscriptTurn } from "./studio-chat";
+import { replayThread } from "./studio-transcript";
+
+import { applyEvent } from "./studio-transcript";
+
 import { visibleContent } from "./turn-content-order";
 import type { AssistantEvent } from "@/features/assistant/types";
+import { parseAssistantEvent } from "@/features/assistant/events";
+import { validateProgram } from "./intelligent-ui/validator";
 
 /**
  * The Studio transcript reducer.
@@ -45,6 +51,76 @@ const thinking = (
 ): AssistantEvent => ({ type: "thinking", phase, text, status });
 
 describe("studio transcript reducer", () => {
+  it("seals UI only with its close frame and restores the same ordered program", () => {
+    const program =
+      'root = Col([Text("Adjust assumptions"),Input($n,"Units")])\n$n=5';
+    const parsed = validateProgram(program);
+    const payload = {
+      catalog_version: parsed.catalog_version,
+      program_sha256: "a".repeat(64),
+      fallback: "Adjust assumptions.",
+      state_defaults: parsed.state,
+      evidence: {},
+      actions: [],
+      provenance: {
+        evidence_ids: [],
+        scope: "user_simulation",
+        assumption: true,
+      },
+    };
+    const meta = parseAssistantEvent(
+      "ui",
+      JSON.stringify({ content_index: 1, content_id: "content-1", payload }),
+    )!;
+    const chunk = parseAssistantEvent(
+      "ui_delta",
+      JSON.stringify({
+        content_index: 1,
+        content_id: "content-1",
+        text: program,
+      }),
+    )!;
+    const incomplete = run([
+      meta,
+      meta,
+      chunk,
+      { type: "done", message_id: "reply", finish_reason: "cancelled" },
+    ]);
+    expect(incomplete.content).toHaveLength(1);
+    expect(incomplete.content[0].complete).toBe(false);
+    const complete = run([
+      meta,
+      chunk,
+      { type: "content_block_done", content_index: 1, content_id: "content-1" },
+    ]);
+    expect(complete.content[0].complete).toBe(true);
+    const restored = replayThread([
+      {
+        message_id: "reply",
+        role: "assistant",
+        content: payload.fallback,
+        created_at: "2026-10-13T00:00:00Z",
+        steps: [
+          {
+            kind: "ui",
+            content_index: 1,
+            content_id: "content-1",
+            ...payload,
+            program,
+          },
+        ],
+      },
+    ]);
+    const ui = restored[0].content.find((item) => item.type === "ui");
+    expect(ui?.type === "ui" && ui.block.program).toBe(program);
+    const cleared = applyEvent([complete], complete.id, {
+      type: "role_changed",
+      active_role: "other",
+      security_context_version: 2,
+    });
+    expect(cleared[0].content).toEqual([]);
+  });
+
   it("restores attached file cards without placing file content in the chat text", () => {
     const turns = replayThread([
       {
@@ -71,7 +147,11 @@ describe("studio transcript reducer", () => {
   it("clears evidence from the previous role", () => {
     const turn = run([
       delta("finance-secret"),
-      { type: "role_changed", active_role: "marketing", security_context_version: 2 },
+      {
+        type: "role_changed",
+        active_role: "marketing",
+        security_context_version: 2,
+      },
       delta("marketing result"),
     ]);
     expect(turn.answer).toBe("marketing result");

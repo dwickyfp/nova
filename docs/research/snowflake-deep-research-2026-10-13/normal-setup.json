@@ -1,0 +1,24 @@
+[
+  {
+    "id": "N00_CONTEXT",
+    "sql": "SELECT CURRENT_ROLE(),CURRENT_SECONDARY_ROLES(),CURRENT_DATABASE(),CURRENT_SCHEMA()",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "N01_DATABASE",
+    "sql": "USE DATABASE SNOWFLAKE_LEARNING_DB"
+  },
+  {
+    "id": "N02_SCHEMA",
+    "sql": "CREATE TRANSIENT SCHEMA SF_RESEARCH_20261013 DATA_RETENTION_TIME_IN_DAYS=1"
+  },
+  {
+    "id": "N03_USE_SCHEMA",
+    "sql": "USE SCHEMA SF_RESEARCH_20261013"
+  },
+  {
+    "id": "N04_CREATE_SOURCE",
+    "sql": "CREATE TRANSIENT TABLE SRC(id INTEGER,city VARCHAR,amount INTEGER) DATA_RETENTION_TIME_IN_DAYS=1"
+  }
+]

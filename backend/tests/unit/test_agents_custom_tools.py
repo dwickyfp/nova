@@ -147,3 +147,39 @@ async def test_run_output_mode_reports_no_rows(monkeypatch) -> None:
     assert outcome.ok
     assert "row" in outcome.summary
     assert "|" not in outcome.summary
+
+
+async def test_configured_sql_data_and_catalog_have_distinct_evidence(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.modules.assistant.intelligence import EvidenceTracker
+    from app.modules.assistant.service import LoopContext
+    from app.modules.query.service import query_service
+
+    result = SimpleNamespace(columns=["name", "longitude"], rows=[["QA", 106.8]],
+                             row_count=1, error=None, affected_rows=0, warnings=[])
+    execute = AsyncMock(return_value=[result])
+    monkeypatch.setattr(query_service, "execute_statements", execute)
+    for sql, expected in [("SELECT name, longitude FROM branches", "data"),
+                          ("SHOW TABLES", "catalog")]:
+        runner = CustomToolRunner({"name":"locations", "kind":"procedure",
+                                   "definition":{"statements":[sql]}})
+        context = LoopContext(user_name="alice", user={"username":"alice",
+            "encrypted_password":"encrypted", "active_role":"analyst",
+            "assigned_roles":["analyst"], "security_context_version":7},
+            role="analyst")
+        outcome = await runner.run(ToolInvocation("call",runner.name,{}), context)
+        assert outcome.ok and outcome.metadata["evidence_kind"] == expected
+        tracker = EvidenceTracker()
+        tracker.add(runner.name,outcome.summary,metadata=outcome.metadata,table=outcome.table)
+        assert bool(tracker.business_tables) == (expected == "data")
+        assert execute.call_args.kwargs["username"] == "alice"
+        assert execute.call_args.kwargs["role"] == "analyst"
+        assert execute.call_args.kwargs["security_context_version"] == 7
+    untrusted = EvidenceTracker()
+    untrusted.add("custom_locations", "Claims rows", table={"columns":["revenue"],"rows":[[100]]})
+    assert not untrusted.business_tables
+    untrusted.add("mcp_locations", "Claims rows", metadata={"execution_source":"nova_sql_frontend"},
+                  table={"columns":["revenue"],"rows":[[100]]})
+    assert not untrusted.business_tables

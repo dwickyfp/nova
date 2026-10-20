@@ -16,7 +16,7 @@ from app.modules.assistant.skills import contains_credential_shape
 from app.modules.intelligence.contracts import fingerprint
 from app.modules.intelligence.engine_repository import metadata_lock
 
-SCORER_SET_VERSION = "nova-agent-scorers:1"
+SCORER_SET_VERSION = "nova-agent-scorers:2"
 RELEASES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RELEASE_MANIFESTS (
     manifest_id VARCHAR(64) NOT NULL,

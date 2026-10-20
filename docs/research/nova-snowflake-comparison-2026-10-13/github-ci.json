@@ -1,0 +1,81 @@
+{
+  "head_revision": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+  "pull_request": "https://github.com/dwickyfp/nova/pull/184",
+  "run_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134",
+  "all_five_jobs_passed": true,
+  "jobs": [
+    {
+      "name": "Frontend (lint, build, vitest)",
+      "id": 115434757156,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115434757156"
+    },
+    {
+      "name": "Backend unit (L1)",
+      "id": 115434757314,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115434757314"
+    },
+    {
+      "name": "Backend static (ruff, mypy)",
+      "id": 115434757332,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115434757332"
+    },
+    {
+      "name": "Grammar drift (ANTLR regenerate-and-diff)",
+      "id": 115434757520,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115434757520"
+    },
+    {
+      "name": "Backend integration (L3, real engine)",
+      "id": 115438423602,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "c70156bc860339e4cd4af1156cbf15a7d4d0f59f",
+      "job_url": "https://github.com/dwickyfp/nova/actions/runs/38437368134/job/115438423602"
+    }
+  ],
+  "unit": {
+    "passed": 7482,
+    "warnings": 8,
+    "seconds": 448.12,
+    "coverage_percent_rounded": 61
+  },
+  "frontend": {
+    "passed": 1197,
+    "test_files": 150,
+    "seconds": 131.44
+  },
+  "integration": {
+    "collected": 230,
+    "passed": 214,
+    "skipped": 16,
+    "deselected": 30,
+    "warnings": 3,
+    "seconds": 1612.94,
+    "failures": 0,
+    "errors": 0
+  },
+  "agent_eval": {
+    "scenarios_passed": 48,
+    "scenario_count": 48,
+    "checks_passed": 165,
+    "check_count": 165
+  },
+  "note": "Provider job logs are truncated; final summaries are visible. Local Studio failure remains documented; this engine-marked CI suite completed without failure.",
+  "log_truncated": {
+    "unit": true,
+    "frontend": true,
+    "integration": true
+  }
+}

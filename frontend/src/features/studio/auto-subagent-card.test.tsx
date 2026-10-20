@@ -259,6 +259,7 @@ it("opens the subagent from the main chat's real spawn event", async () => {
     <AutoTurnRail rootRunId="root" agents={agents} running={false} onOpenChild={onOpenChild} />
   </QueryClientProvider>);
   const spawn = page.getByRole("button", { name: "Called Finance. Open subagent conversation" });
+  await page.getByTestId("process-rail-toggle").click();
   await expect.element(spawn).toBeVisible();
   await spawn.click();
   expect(onOpenChild).toHaveBeenCalledWith("finance");

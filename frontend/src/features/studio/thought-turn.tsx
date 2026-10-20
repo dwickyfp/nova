@@ -1,3 +1,4 @@
+import { processSummary } from "./process-summary";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
@@ -100,65 +101,12 @@ function isFailed(step: RailStep): boolean {
 }
 
 /**
- * The summary line. It names the work the group contains, in the order it
- * happened, and caps at three verbs so a long run does not produce an essay.
- * A live group says what it is doing now instead of summarising.
- */
-export function processSummary(steps: RailStep[], running: boolean): string {
-  const live = [...steps].reverse().find(isRunning);
-  if (running && live) {
-    return live.text;
-  }
-  const verbs: string[] = [];
-  for (const step of steps) {
-    const verb =
-      step.kind === "tool"
-        ? `ran ${step.label}`
-        : step.kind === "delegate"
-          ? "worked with a specialist"
-        : step.kind === "consent"
-          ? "asked for approval"
-          : step.kind === "note"
-            ? step.label === "plan"
-              ? "planned the run"
-              : step.label === "queued" || step.label === "started"
-                ? "started the run"
-                : step.label === "waiting"
-                  ? "waited for specialists"
-                  : step.label === "completed"
-                    ? "finished the answer"
-                    : "noted a context change"
-            : step.label === "plan"
-              ? "planned the run"
-              : step.label === "skill"
-                ? "loaded a skill"
-                : step.label === "observe"
-                  ? "read the result"
-                  : step.label === "answer"
-                    ? "wrote the answer"
-                    : "reasoned";
-    if (!verbs.includes(verb)) verbs.push(verb);
-  }
-  if (!verbs.length) return "Worked through the request";
-  if (verbs.length === 1) return capitalise(verbs[0]);
-  const head = verbs.slice(0, 3).map(capitalise).join(", ");
-  return verbs.length > 3 ? `${head}, and more` : head;
-}
-
-function capitalise(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-/**
- * The collapsible process group. Open while the turn runs, collapsed once it
- * settles, and re-openable at any time. A user who does not care about the
- * trace never has to open it; a user debugging an answer always can.
+ * Keep one activity summary visible; disclose recorded steps on request.
  */
 export function ProcessRail({
   steps,
   running,
-  /** Start open. A rail with steps opens, so its detail is never a click away. */
-  defaultOpen = true,
+  defaultOpen = false,
   /** Bumped by the parent to force the rail open, e.g. after a decision. */
   revealKey = 0,
   onOpenChild,
@@ -169,7 +117,7 @@ export function ProcessRail({
   revealKey?: number;
   onOpenChild?: (childRunId: string) => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen || running);
+  const [open, setOpen] = useState(defaultOpen);
   // Once the user touches the header, their choice wins over the auto state.
   const [pinned, setPinned] = useState(false);
 
@@ -182,7 +130,7 @@ export function ProcessRail({
     setOpen(true);
   }, [revealKey]);
 
-  const expanded = pinned ? open : open || running;
+  const expanded = open;
   const failed = steps.some(isFailed);
 
   if (!steps.length) return null;

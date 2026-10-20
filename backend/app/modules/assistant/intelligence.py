@@ -206,7 +206,7 @@ class EvidenceTracker:
         )
         self._items.append(evidence)
         if (
-            tool in {
+            (tool in {
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
                 "compute_metrics", "analyze_documents",
                 "canonical_investigation",
@@ -215,7 +215,10 @@ class EvidenceTracker:
                 "ml_execute",
                 # The verified result of the turn before, charted or refined now.
                 "previous_result",
-            }
+            } or (
+                tool.startswith("custom_")
+                and evidence.metadata.get("execution_source") == "nova_sql_frontend"
+            ))
             and table
         ):
             self._tables[evidence.evidence_id] = {

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "D10_DT_DML_RECHECK",
+    "sql": "INSERT INTO CITY_TOTALS VALUES('Surabaya',1)",
+    "expected_error": "Invalid Operation INSERT on Dynamic Table"
+  },
+  {
+    "id": "Z01_QAS_FINAL",
+    "sql": "SELECT COUNT(*),COALESCE(SUM(query_acceleration_bytes_scanned),0),COALESCE(SUM(query_acceleration_partitions_scanned),0) FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY_BY_WAREHOUSE(WAREHOUSE_NAME=>'COMPUTE_WH',RESULT_LIMIT=>1000)) WHERE query_tag='SNOWFLAKE_RESEARCH_20261013' OR query_id='01c7b404-0001-afbc-0000-d2310001501e'",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "Z02_METERING",
+    "sql": "SELECT start_time,end_time,credits_used_compute,credits_used_cloud_services FROM TABLE(INFORMATION_SCHEMA.WAREHOUSE_METERING_HISTORY(DATE_RANGE_START=>DATEADD('hour',-2,CURRENT_TIMESTAMP()),WAREHOUSE_NAME=>'COMPUTE_WH')) ORDER BY start_time",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "Z03_DROP_DT",
+    "sql": "DROP DYNAMIC TABLE CITY_TOTALS"
+  },
+  {
+    "id": "Z04_DROP_TASK",
+    "sql": "DROP TASK INSERT_ONCE"
+  },
+  {
+    "id": "Z05_DROP_SCHEMA",
+    "sql": "DROP SCHEMA SNOWFLAKE_LEARNING_DB.SF_RESEARCH_20261013"
+  },
+  {
+    "id": "Z06_NO_SCHEMA",
+    "sql": "SELECT COUNT(*) FROM SNOWFLAKE_LEARNING_DB.INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='SF_RESEARCH_20261013'",
+    "expected_scalar": 0
+  },
+  {
+    "id": "Z07_NO_TASK",
+    "sql": "SHOW TASKS LIKE 'INSERT_ONCE' IN DATABASE SNOWFLAKE_LEARNING_DB",
+    "expected_rows": []
+  },
+  {
+    "id": "Z08_NO_DT",
+    "sql": "SHOW DYNAMIC TABLES LIKE 'CITY_TOTALS' IN DATABASE SNOWFLAKE_LEARNING_DB",
+    "expected_rows": []
+  },
+  {
+    "id": "Z09_SUSPEND",
+    "sql": "ALTER WAREHOUSE COMPUTE_WH SUSPEND"
+  },
+  {
+    "id": "Z10_WAREHOUSE_VERIFY",
+    "sql": "SHOW WAREHOUSES LIKE 'COMPUTE_WH'",
+    "observe_only": true,
+    "print_rows": true
+  }
+]

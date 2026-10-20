@@ -70,7 +70,10 @@ function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runE
     retry: false,
     staleTime: 0,
     gcTime: 0,
-    refetchInterval: (query) => streaming || query.state.data?.missions?.some((mission) => ["running", "cancelling"].includes(mission.status)) ? 1500 : false,
+    refetchInterval: (query) => {
+      if (query.state.error instanceof ApiError && [403, 404].includes(query.state.error.status)) return false;
+      return streaming || query.state.data?.missions?.some((mission) => ["running", "cancelling"].includes(mission.status)) ? 1500 : false;
+    },
   });
   const unavailable = missions.error instanceof ApiError && [403, 404].includes(missions.error.status);
   const available = missions.isSuccess && Array.isArray(missions.data?.missions);

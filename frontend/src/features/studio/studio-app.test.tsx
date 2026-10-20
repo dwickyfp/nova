@@ -173,12 +173,20 @@ describe("StudioApp thread routing", () => {
     expect(agentsApi.deleteThread).toHaveBeenCalledWith("a2", "support-1");
   });
 
-  it("opens the newest conversation with its owner even when another agent is selected", async () => {
-    mocks.search = { agent: "a1" };
+  it("opens the newest conversation with its owner when no agent is requested", async () => {
+    mocks.search = {};
     vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(mixedHistory);
     await renderStudio();
     await expect.poll(() => mocks.navigate.mock.calls.length).toBe(1);
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/studio", search: { agent: "a2", thread: "support-1" }, replace: true });
+  });
+
+  it("restores only the requested agent's newest conversation", async () => {
+    mocks.search = { agent: "a1" };
+    vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(mixedHistory);
+    await renderStudio();
+    await expect.poll(() => mocks.navigate.mock.calls.length).toBe(1);
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: "/studio", search: { agent: "a1", thread: "thread-1" }, replace: true });
   });
 
   it("keeps the unified history when choosing a different agent for a new chat", async () => {
@@ -227,28 +235,22 @@ describe("StudioApp thread routing", () => {
     }
   });
 
-  it("tells an owner which of their agents wait for access verification", async () => {
+  it("keeps agents awaiting access verification out of the Studio banner and selection", async () => {
     mocks.search = {};
     const listStudio = vi.mocked(agentsApi.listStudio);
     const normalStudio = listStudio.getMockImplementation();
     listStudio.mockResolvedValue({
-      agents: [],
-      count: 0,
+      agents: [{ agent_id: "__smart__", name: "Smart" }] as Awaited<ReturnType<typeof agentsApi.listStudio>>["agents"],
+      count: 1,
       needs_access: [{ agent_id: "sales", name: "Sales Agent" }],
     });
     try {
       const screen = await renderStudio();
 
-      await expect.element(screen.getByRole("status")).toHaveTextContent(
-        "Sales Agent is not available here yet.",
-      );
-      await userEvent.click(screen.getByRole("button", { name: "Open access settings" }));
-      expect(mocks.navigate).toHaveBeenCalledWith({
-        to: "/agents/$agentId",
-        params: { agentId: "sales" },
-      });
-      await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await expect.element(screen.getByText("Smart", { exact: true })).toBeVisible();
       await expect.element(screen.getByText(/not available here yet/)).not.toBeInTheDocument();
+      await expect.element(screen.getByRole("button", { name: "Open access settings" })).not.toBeInTheDocument();
+      await expect.element(screen.getByText("Sales Agent")).not.toBeInTheDocument();
     } finally {
       if (normalStudio) listStudio.mockImplementation(normalStudio);
     }
@@ -295,6 +297,13 @@ describe("StudioApp thread routing", () => {
 
     await new Promise((resolve) => window.setTimeout(resolve, 50));
     expect(mocks.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replace an explicit agent link with another agent's latest thread", async () => {
+    mocks.search = { agent: "a2" };
+    await renderStudio();
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("starts a fresh chat from the header without reopening history", async () => {
@@ -385,7 +394,7 @@ describe("StudioApp thread routing", () => {
       .toBeInTheDocument();
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/studio",
-      search: { agent: "a1" },
+      search: { agent: "__smart__" },
       replace: true,
     });
   });

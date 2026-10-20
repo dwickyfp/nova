@@ -1,0 +1,334 @@
+{
+  "scope": "Synthetic isolated Studio replay on stock StarRocks 4.1.4 with 2048MB FE heap",
+  "records": [
+    {
+      "method": "_source_access",
+      "seconds": 3.574,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.273,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 3.369,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 3.753,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.73,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.463,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.63,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.215,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.215,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.484,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.477,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 5.273,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.698,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 4.388,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.881,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.047,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.164,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.516,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.178,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 2.718,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 4.413,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 4.415,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 4.423,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 4.44,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 8.719,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.1,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.103,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.104,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.104,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 7.423,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.535,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.627,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 3.637,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 10.077,
+      "exception": "CancelledError"
+    },
+    {
+      "method": "query_execute",
+      "seconds": 10.016,
+      "exception": "CancelledError"
+    },
+    {
+      "method": "query_execute",
+      "seconds": 10.028,
+      "exception": "CancelledError"
+    },
+    {
+      "method": "query_execute",
+      "seconds": 10.067,
+      "exception": "CancelledError"
+    },
+    {
+      "method": "query_execute",
+      "seconds": 5.902,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 8.796,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 8.821,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 9.024,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 7.8,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.743,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.758,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.803,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "_source_access",
+      "seconds": 27.407,
+      "is_false": true,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.751,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    },
+    {
+      "method": "query_execute",
+      "seconds": 2.609,
+      "is_false": false,
+      "is_none": false,
+      "has_query_error": false
+    }
+  ],
+  "limits": "No SQL, usernames, passwords, tokens, stored state or raw response bodies recorded. Failure causality not conclusively established."
+}

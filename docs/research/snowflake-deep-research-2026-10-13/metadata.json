@@ -1,0 +1,6 @@
+[
+  {"id":"M01_CONTEXT","sql":"SELECT CURRENT_VERSION(), CURRENT_REGION(), CURRENT_USER(), CURRENT_ROLE(), CURRENT_WAREHOUSE(), CURRENT_DATABASE(), CURRENT_SCHEMA()", "observe_only":true,"print_rows":true},
+  {"id":"M02_WAREHOUSES","sql":"SHOW WAREHOUSES", "observe_only":true,"print_rows":true,"max_rows":10},
+  {"id":"M03_DATABASES","sql":"SHOW DATABASES", "observe_only":true,"print_rows":true,"max_rows":10},
+  {"id":"M04_SCHEMA","sql":"SHOW SCHEMAS IN DATABASE \"USER$\"", "observe_only":true,"print_rows":true,"max_rows":10}
+]

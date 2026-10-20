@@ -1,0 +1,24 @@
+[
+  {
+    "id": "T05_TASK_HISTORY",
+    "sql": "SELECT state,error_code,error_message,query_id FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY(TASK_NAME=>'INSERT_ONCE',RESULT_LIMIT=>10)) WHERE name='INSERT_ONCE' ORDER BY scheduled_time DESC",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "T06_TASK_VERIFY",
+    "sql": "SELECT id FROM RECOVERY ORDER BY id",
+    "expected_rows": [
+      [
+        7
+      ],
+      [
+        8
+      ]
+    ]
+  },
+  {
+    "id": "D01_DT_CREATE",
+    "sql": "CREATE TRANSIENT DYNAMIC TABLE CITY_TOTALS SCHEDULER=DISABLE WAREHOUSE=COMPUTE_WH REFRESH_MODE=INCREMENTAL INITIALIZE=ON_CREATE AS SELECT city,SUM(amount) AS total FROM SRC GROUP BY city"
+  }
+]

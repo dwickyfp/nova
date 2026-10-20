@@ -111,6 +111,8 @@ export type AssistantEvent = (
       security_context_version: number;
     }
   | ({ type: "text_delta"; text: string } & ContentPosition)
+  | ({ type: "ui"; payload: Omit<import('../studio/intelligent-ui/types').UiBlock, 'program'> } & ContentPosition)
+  | ({ type: "ui_delta"; text: string } & ContentPosition)
   | {
       type: "thinking";
       phase: ThinkingPhase;
@@ -170,7 +172,7 @@ export type AssistantEvent = (
   /** Stable identity shared by every event in one turn. */
   run_id?: string;
   /** Monotonic event position within the run, used for deduplication. */
-  sequence?: number;
+  sequence?: number | string;
 };
 
 /** UI intent: what the user chose in the card, before the read-only gate. */

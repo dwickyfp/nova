@@ -21,6 +21,9 @@ SCORERS = frozenset(
         "task_completeness",
         "policy_compliance",
         "action_verification",
+        "ui_validity",
+        "ui_evidence",
+        "ui_action_success",
         "latency",
         "efficiency",
     }
@@ -47,6 +50,9 @@ FAILURES = {
     "task_completeness": "INCOMPLETE_ANSWER",
     "policy_compliance": "POLICY_FAILURE",
     "action_verification": "ACTION_VERIFICATION_FAILED",
+    "ui_validity": "INVALID_UI",
+    "ui_evidence": "UNGROUNDED_UI",
+    "ui_action_success": "UI_ACTION_INCOMPLETE",
     "latency": "TOO_SLOW",
     "efficiency": "INEFFICIENT_EXECUTION",
 }
@@ -110,7 +116,7 @@ class Assertion(Contract):
 
 class PromotionGates(Contract):
     other_cases: Literal["report_only", "mandatory", "all"] = "report_only"
-    required_scorers: list[str] = Field(default_factory=list, max_length=9)
+    required_scorers: list[str] = Field(default_factory=list, max_length=11)
     performance: Literal["report_only", "required"] = "report_only"
     max_latency_ms: float | None = Field(default=None, ge=0)
     count_budgets: dict[str, Annotated[int, Field(strict=True, ge=0)]] = Field(
@@ -193,6 +199,9 @@ def _score_assertion(assertion: Assertion, trace: dict) -> Score:
         "task_completeness",
         "policy_compliance",
         "action_verification",
+        "ui_validity",
+        "ui_evidence",
+        "ui_action_success",
     }:
         if _recorded(expected, actual):
             passed = _subset(expected, actual)

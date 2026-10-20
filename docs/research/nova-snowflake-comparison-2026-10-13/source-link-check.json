@@ -1,0 +1,257 @@
+[
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/native-apps/native-apps-about",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/native-apps/native-apps-about"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/snowflake-ml/feature-store/overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/snowflake-ml/feature-store/overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/snowflake-ml/model-registry/overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/snowflake-ml/model-registry/overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/snowpark-container-services/overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/snowpark-container-services/overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/snowpark/python/working-with-dataframes",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/snowpark/python/working-with-dataframes"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/sql-api",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/sql-api"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/streamlit/features/restricted-callers-rights",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/streamlit/features/restricted-callers-rights"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/developer-guide/streamlit/object-management/owners-rights",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/developer-guide/streamlit/object-management/owners-rights"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/sql-reference/constructs",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/sql-reference/constructs"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/access-history",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/access-history"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/account-replication-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/account-replication-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/admin-security-fed-auth-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/admin-security-fed-auth-overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-snowsight",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-snowsight"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/data-engineering/dbt-projects-on-snowflake",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/data-engineering/dbt-projects-on-snowflake"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/data-load-snowpipe-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/data-load-snowpipe-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/data-time-travel",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/data-time-travel"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/dcm-projects/dcm-projects-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/dcm-projects/dcm-projects-overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/dynamic-tables/overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/dynamic-tables/overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/interactive",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/interactive"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/intro-key-concepts",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/intro-key-concepts"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/network-policies",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/network-policies"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/oauth-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/oauth-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/object-clone",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/object-clone"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/resource-monitors",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/resource-monitors"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/security-access-control-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/security-access-control-overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/security-column-ddm-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/security-column-ddm-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/security-encryption-end-to-end",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/security-encryption-end-to-end"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/security-mfa",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/security-mfa"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/security-row-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/security-row-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-analytical-search",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-analytical-search"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-mcp"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-ai-gateway",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-ai-gateway"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst-evaluations",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst-evaluations"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/snowflake-cowork",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/snowflake-cowork"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowflake-postgres/postgres-create-instance",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowflake-postgres/postgres-create-instance"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/snowpipe-streaming/data-load-snowpipe-streaming-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/snowpipe-streaming/data-load-snowpipe-streaming-overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/streams-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/streams-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/tables-iceberg",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/tables-iceberg"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/tasks-intro",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/tasks-intro"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/views-semantic/overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/views-semantic/overview"
+  },
+  {
+    "url": "https://docs.snowflake.com/en/user-guide/warehouses-overview",
+    "status": 200,
+    "resolved_url": "https://docs.snowflake.com/en/user-guide/warehouses-overview"
+  },
+  {
+    "url": "https://docs.starrocks.io/docs/sql-reference/sql-functions/Window_function",
+    "status": 200,
+    "resolved_url": "https://docs.starrocks.io/docs/sql-reference/sql-functions/Window_function"
+  },
+  {
+    "url": "https://docs.starrocks.io/releasenotes/release-4.1/",
+    "status": 200,
+    "resolved_url": "https://docs.starrocks.io/releasenotes/release-4.1/"
+  },
+  {
+    "url": "https://github.com/StarRocks/starrocks/blob/4.1.4/fe/fe-core/src/main/java/com/starrocks/load/pipe/Pipe.java",
+    "status": 200,
+    "resolved_url": "https://github.com/StarRocks/starrocks/blob/4.1.4/fe/fe-core/src/main/java/com/starrocks/load/pipe/Pipe.java"
+  },
+  {
+    "url": "https://github.com/StarRocks/starrocks/blob/4.1.4/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskBuilder.java",
+    "status": 200,
+    "resolved_url": "https://github.com/StarRocks/starrocks/blob/4.1.4/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskBuilder.java"
+  }
+]

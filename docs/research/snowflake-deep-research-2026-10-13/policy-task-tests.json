@@ -1,0 +1,94 @@
+[
+  {
+    "id": "G03_POLICY_TABLE",
+    "sql": "CREATE TRANSIENT TABLE POLICY_DATA(city VARCHAR,secret VARCHAR)"
+  },
+  {
+    "id": "G04_POLICY_INSERT",
+    "sql": "INSERT INTO POLICY_DATA VALUES('Jakarta','alpha'),('Bandung','beta')",
+    "expected_rows": [
+      [
+        2
+      ]
+    ]
+  },
+  {
+    "id": "G05_ROW_ATTACH",
+    "sql": "ALTER TABLE POLICY_DATA ADD ROW ACCESS POLICY CITY_FILTER ON(city)"
+  },
+  {
+    "id": "G06_MASK_ATTACH",
+    "sql": "ALTER TABLE POLICY_DATA MODIFY COLUMN secret SET MASKING POLICY CITY_MASK"
+  },
+  {
+    "id": "G07_POLICY_VERIFY",
+    "sql": "SELECT city,secret FROM POLICY_DATA",
+    "expected_rows": [
+      [
+        "Jakarta",
+        "***"
+      ]
+    ]
+  },
+  {
+    "id": "G08_ROW_DETACH",
+    "sql": "ALTER TABLE POLICY_DATA DROP ROW ACCESS POLICY CITY_FILTER"
+  },
+  {
+    "id": "G09_MASK_DETACH",
+    "sql": "ALTER TABLE POLICY_DATA MODIFY COLUMN secret UNSET MASKING POLICY"
+  },
+  {
+    "id": "G10_RESTORED",
+    "sql": "SELECT city,secret FROM POLICY_DATA ORDER BY city",
+    "expected_rows": [
+      [
+        "Bandung",
+        "beta"
+      ],
+      [
+        "Jakarta",
+        "alpha"
+      ]
+    ]
+  },
+  {
+    "id": "F01_UPDATE_RESULT",
+    "sql": "UPDATE SRC SET amount=12 WHERE id=1",
+    "expected_rows": [
+      [
+        1,
+        0
+      ]
+    ]
+  },
+  {
+    "id": "F02_UPDATE_VERIFY",
+    "sql": "SELECT amount FROM SRC WHERE id=1",
+    "expected_rows": [
+      [
+        12
+      ]
+    ]
+  },
+  {
+    "id": "T01_TASK_TABLE",
+    "sql": "CREATE TEMPORARY TABLE TASK_RESULT(n INTEGER)"
+  },
+  {
+    "id": "T02_TASK_CREATE",
+    "sql": "CREATE TASK INSERT_ONCE WAREHOUSE=COMPUTE_WH AS INSERT INTO RECOVERY VALUES(8)"
+  },
+  {
+    "id": "T03_TASK_STATE",
+    "sql": "SHOW TASKS LIKE 'INSERT_ONCE'",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "T04_TASK_EXECUTE",
+    "sql": "EXECUTE TASK INSERT_ONCE",
+    "observe_only": true,
+    "print_rows": true
+  }
+]

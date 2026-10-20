@@ -1,0 +1,14 @@
+[
+  {
+    "id": "U01_UI_QUERY_HISTORY",
+    "sql": "SELECT query_id,query_text,execution_status,total_elapsed_time,warehouse_name,query_acceleration_bytes_scanned,query_tag FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER(USER_NAME=>'DWICKYFERI',RESULT_LIMIT=>50)) WHERE query_text ILIKE 'SELECT%AS validation_result;%' ORDER BY start_time",
+    "observe_only": true,
+    "print_rows": true
+  },
+  {
+    "id": "U02_WAREHOUSE_STATE",
+    "sql": "SHOW WAREHOUSES LIKE 'COMPUTE_WH'",
+    "observe_only": true,
+    "print_rows": true
+  }
+]

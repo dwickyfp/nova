@@ -25,6 +25,7 @@ import {
   AUTO_AGENT_ID,
   agentsApi,
   streamAgentTurn,
+  resumeAgentTurn,
   studioApi,
   type Agent,
   type AgentMessage,
@@ -32,8 +33,10 @@ import {
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
 import { ConsentCard } from "./consent-card";
 import { TurnContent } from "./turn-content";
+import { flushUiStates } from './intelligent-ui/state';
+import type { UiAction } from './intelligent-ui/types';
 import { findArtifactSql, type SavableContent } from "./artifact-source";
-import { splitChartTitle } from "./result-cards";
+import { splitChartTitle } from "./chart-title";
 import {
   CREATE_SKILL_COMMAND,
   SKILL_AUTHOR_ID,
@@ -44,7 +47,7 @@ import { AnswerFooter, type AnswerFeedback } from "./answer-footer";
 import { DeepResearchCard } from "./deep-research-card";
 import { deepResearchApi } from "@/features/agents/studio-intelligence-api";
 import { UserMessageFooter } from "./user-message-footer";
-import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
+import { AutoSubagentPanel } from "./auto-subagent-card";
 import { AutomationProposalCard } from "./automation-proposal-card";
 import { AutoTurnRail } from "./auto-turn-rail";
 import { rootRunForTurn } from "./auto-run-timeline";
@@ -63,7 +66,6 @@ import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { MissionTurnControls, type MissionTurnChoice } from "./mission-turn-controls";
 import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
-export { applyEvent, replayThread } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
 
@@ -95,7 +97,7 @@ export function StudioChat({
 }: {
   agent: Agent | null;
   agents: Agent[];
-  onSelectAgent: (id: string) => void;
+  onSelectAgent: (id: string) => void | Promise<boolean | void>;
   currentRole: string | null;
   /** Preferred Studio greeting name, falling back to the signed-in username. */
   displayName?: string | null;
@@ -108,6 +110,39 @@ export function StudioChat({
   initialPrompt?: string;
 }) {
   const queryClient = useQueryClient();
+  const selectComposerAgent = async (id: string) => {
+    if (streaming || readingFiles || abortRef.current) return;
+    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
+    preserveDraft.current = true;
+    setManualPending(false);
+    try {
+      const changed = await onSelectAgent(id);
+      if (changed === false) preserveDraft.current = false;
+    } catch (error) {
+      preserveDraft.current = false;
+      toast.error((error as Error).message);
+    }
+  };
+  const toggleSmart = () => {
+    if (streaming || readingFiles || abortRef.current) return;
+    if (agent?.agent_id !== AUTO_AGENT_ID || manualPending) {
+      if (agent?.agent_id === AUTO_AGENT_ID) setManualPending(false);
+      else void selectComposerAgent(AUTO_AGENT_ID);
+    } else {
+      const previous = agents.find((item) => item.agent_id === lastManual.current);
+      if (previous) void selectComposerAgent(previous.agent_id);
+      else setManualPending(true);
+    }
+  };
+
+  const [manualPending, setManualPending] = useState(false);
+  const lastManual = useRef<string | null>(null);
+  const preserveDraft = useRef(false);
+  useEffect(() => {
+    if (agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID)
+      lastManual.current = agent.agent_id;
+    setManualPending(false);
+  }, [agent?.agent_id, activeThreadId, newChatNonce]);
   // `threadId` records the thread whose transcript is actually loaded. It
   // starts empty even when the URL names a thread, so the load effect below
   // always runs for that thread instead of assuming it is already in hand.
@@ -117,6 +152,14 @@ export function StudioChat({
   const [workflowAvailable, setWorkflowAvailable] = useState(false);
   const [missionChoice, setMissionChoice] = useState<MissionTurnChoice>({ mode: "automatic" });
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
+  const manualSecurityEpoch = useRef(securityEpoch);
+  useEffect(() => {
+    if (manualSecurityEpoch.current === securityEpoch) return;
+    manualSecurityEpoch.current = securityEpoch;
+    lastManual.current = null;
+    preserveDraft.current = false;
+    setManualPending(false);
+  }, [securityEpoch]);
   useEffect(() => setMissionChoice({ mode: "automatic" }), [activeThreadId, agent?.agent_id, securityEpoch]);
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const workflowButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -134,6 +177,8 @@ export function StudioChat({
   const [readingFiles, setReadingFiles] = useState(false);
   const [skillDraft, setSkillDraft] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
+  const directRunRef = useRef<{ agentId: string; threadId: string; runId: string } | null>(null);
+  const stopRequestedRef = useRef(false);
   const [activeAutoRun, setActiveAutoRun] = useState<{
     runId: string;
     threadId: string;
@@ -154,7 +199,7 @@ export function StudioChat({
   }, []);
   useEffect(() => setSelectedChild(null), [activeThreadId]);
   useEffect(() => setWorkflowOpen(false), [activeThreadId, agent?.agent_id]);
-  const activeAutoRunId = activeAutoRun?.threadId === activeThreadId
+  const activeAutoRunId = activeAutoRun && activeAutoRun.threadId === activeThreadId
     ? activeAutoRun.runId
     : null;
   const refreshedAutoRunsRef = useRef<Set<string>>(new Set());
@@ -231,8 +276,6 @@ export function StudioChat({
     }
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);
-  const composerRef = useRef<HTMLDivElement | null>(null);
-  const composerStartRef = useRef<DOMRect | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   useLayoutEffect(() => {
@@ -289,8 +332,11 @@ export function StudioChat({
     setLoadingOlder(false);
     setActiveAutoRun(null);
     setSelectedChild(null);
-    setInput("");
-    setAttachments([]);
+    if (!preserveDraft.current) {
+      setInput("");
+      setAttachments([]);
+    }
+    preserveDraft.current = false;
     setDeepenTarget(null);
     setSavingContentId(null);
     setSavedContentIds(new Set());
@@ -320,16 +366,48 @@ export function StudioChat({
     followOutputRef.current = true;
     agentsApi
       .getThread(agent.agent_id, activeThreadId)
-      .then((detail) => {
+      .then(async (detail) => {
+        if (cancelled) return;
+        const restored = replayThread(detail.messages);
+        const unfinished = restored[restored.length - 1];
+        const active = agent.agent_id !== AUTO_AGENT_ID && unfinished && !unfinished.messageId
+          ? await Promise.resolve().then(() => agentsApi.activeRun(agent.agent_id, activeThreadId)).catch(() => null)
+          : null;
         if (cancelled) return;
         setThreadId(activeThreadId);
         storedMessagesRef.current = detail.messages;
         setOlderCursor(detail.next_cursor ?? null);
-        setTurns(replayThread(detail.messages));
+        setTurns(restored);
         setAttachments([]);
         setDeepenTarget(null);
         setSavingContentId(null);
         setSavedContentIds(new Set());
+        if (active?.run_id && unfinished && !unfinished.messageId) {
+          const controller = new AbortController();
+          abortRef.current = controller;
+          directRunRef.current = { agentId: agent.agent_id, threadId: activeThreadId, runId: active.run_id };
+          stopRequestedRef.current = false;
+          setStreaming(true);
+          setTurns((current) => patchTurn(current, unfinished.id, (turn) => ({ ...turn, state: "streaming" })));
+          void resumeAgentTurn(agent.agent_id, activeThreadId, active.run_id, {
+            signal: controller.signal,
+            onEvent: (event) => onTurnEvent(unfinished.id, event),
+          }).catch((error) => {
+            if (!controller.signal.aborted)
+              setTurns((current) => patchTurn(current, unfinished.id, (turn) => ({
+                ...turn, state: "error", error: (error as Error).message,
+              })));
+          }).finally(() => {
+            if (abortRef.current !== controller) return;
+            flushEvents();
+            setTurns((current) => patchTurn(current, unfinished.id, (turn) => (
+              turn.state === "streaming" ? { ...turn, state: "done" } : turn
+            )));
+            setStreaming(false);
+            directRunRef.current = null;
+            abortRef.current = null;
+          });
+        }
       })
       .catch(() => {
         // A thread that cannot be read leaves the current view untouched: a
@@ -346,7 +424,7 @@ export function StudioChat({
     return () => {
       cancelled = true;
     };
-  }, [activeThreadId, agent, discardQueuedEvents, threadId]);
+  }, [activeThreadId, agent, discardQueuedEvents, threadId, abortRef, flushEvents, onTurnEvent]);
 
   // The sidebar's "New" control: drop to a fresh conversation.
   useEffect(() => {
@@ -411,24 +489,6 @@ export function StudioChat({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
-  useLayoutEffect(() => {
-    if (turns.length === 0 || !composerStartRef.current || !composerRef.current)
-      return;
-    const before = composerStartRef.current;
-    composerStartRef.current = null;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const after = composerRef.current.getBoundingClientRect();
-    const offset = before.top - after.top;
-    if (Math.abs(offset) < 2) return;
-    composerRef.current.animate(
-      [
-        { transform: `translateY(${offset}px)` },
-        { transform: "translateY(0)" },
-      ],
-      { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-    );
-  }, [turns.length]);
-
   const ensureThread = useCallback(
     async (title: string): Promise<string | null> => {
       if (!agent) return null;
@@ -487,16 +547,32 @@ export function StudioChat({
     }
   }, []);
 
+  const cancelSmartRun = useCallback(async (runId: string, turnId?: string) => {
+    const controller = abortRef.current;
+    try {
+      await agentsApi.cancelAutoRun(runId);
+      controller?.abort();
+      if (abortRef.current && abortRef.current !== controller) return;
+      flushEvents();
+      setStreaming(false);
+      setTurns((prev) => prev.map((turn) =>
+        turn.id === turnId
+          ? { ...turn, state: "cancelled", stopReason: "cancelled", error: undefined }
+          : turn,
+      ));
+    } catch {
+      toast.error("Could not cancel the Smart run. Check its activity and try again.");
+    }
+  }, [abortRef, flushEvents]);
+
   const send = useCallback(
-    async (override?: string) => {
+    async (override?: string, uiAction?: UiAction) => {
       const content = (override ?? input).trim();
       const pending = attachments;
-      if ((!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
+      if (manualPending || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
+      try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
+      if (abortRef.current) return;
 
-      if (turns.length === 0) {
-        composerStartRef.current =
-          composerRef.current?.getBoundingClientRect() ?? null;
-      }
       const controller = new AbortController();
       abortRef.current = controller;
       // Sending is a request to see the reply, wherever the reader had scrolled.
@@ -521,6 +597,7 @@ export function StudioChat({
       setInput("");
       setAttachments([]);
       setStreaming(true);
+      stopRequestedRef.current = false;
       setDeepenTarget(null);
 
       let accepted = false;
@@ -531,6 +608,7 @@ export function StudioChat({
         submittedThread = thread;
         if (controller.signal.aborted) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
+          uiAction,
           signal: controller.signal,
           role: currentRole,
           newMission: missionChoice.mode === "new",
@@ -548,6 +626,14 @@ export function StudioChat({
             if (agent.agent_id === AUTO_AGENT_ID) {
               setActiveAutoRun({ runId, threadId: thread });
               void queryClient.invalidateQueries({ queryKey: ["studio", "auto-runs", thread] });
+              if (stopRequestedRef.current) void cancelSmartRun(runId, turnId);
+            } else {
+              directRunRef.current = { agentId: agent.agent_id, threadId: thread, runId };
+              if (stopRequestedRef.current) {
+                void agentsApi.cancelRun(agent.agent_id, thread, runId).catch(() => {
+                  toast.error("Could not cancel the agent run. Try Stop again.");
+                });
+              }
             }
           },
           onEvent: (event: AssistantEvent) => onTurnEvent(turnId, event),
@@ -576,6 +662,7 @@ export function StudioChat({
           ),
         );
         setStreaming(false);
+        directRunRef.current = null;
         abortRef.current = null;
         queryClient.invalidateQueries({
           queryKey: ["agents", "threads"],
@@ -605,6 +692,7 @@ export function StudioChat({
       currentRole,
       ensureThread,
       flushEvents,
+      cancelSmartRun,
       input,
       missionChoice,
       queryClient,
@@ -613,24 +701,22 @@ export function StudioChat({
       readingFiles,
       streaming,
       turns.length,
-    ],
+    manualPending, ],
   );
 
   const stop = useCallback(() => {
-    if (agent?.agent_id === AUTO_AGENT_ID && activeAutoRun) {
-      void agentsApi.cancelAutoRun(activeAutoRun.runId).catch(() => {
-        toast.error("Could not cancel the Smart run. Check its activity and try again.");
-      });
+    stopRequestedRef.current = true;
+    if (agent?.agent_id === AUTO_AGENT_ID) {
+      if (activeAutoRun) void cancelSmartRun(activeAutoRun.runId, turns[turns.length - 1]?.id);
+    } else if (agent?.agent_id !== AUTO_AGENT_ID) {
+      const run = directRunRef.current;
+      if (run) {
+        void agentsApi.cancelRun(run.agentId, run.threadId, run.runId).catch(() => {
+          toast.error("Could not cancel the agent run. Try Stop again.");
+        });
+      }
     }
-    abortRef.current?.abort();
-    flushEvents();
-    setStreaming(false);
-    setTurns((prev) =>
-      prev.map((turn) =>
-        turn.state === "streaming" ? { ...turn, state: "cancelled" } : turn,
-      ),
-    );
-  }, [activeAutoRun, agent?.agent_id, flushEvents]);
+  }, [activeAutoRun, agent?.agent_id, cancelSmartRun, turns]);
 
   /**
    * Send the user's decision on a tool call, then clear the card. The closing
@@ -836,7 +922,6 @@ export function StudioChat({
 
   const empty = turns.length === 0;
   const welcome = empty && (!agent || !loadingThread);
-  const showAutoCard = agent?.agent_id === AUTO_AGENT_ID && Boolean(displayedAutoRunId);
   const selectedTreeQuery = selectedChild?.rootRunId === displayedAutoRunId ? autoTreeQuery : historicalChildTreeQuery;
   const chronologicalAutoRuns = [...(autoRunsQuery.data?.runs ?? [])].reverse();
   const autoTurns = turns.filter((turn) => turn.origin !== "reconsider");
@@ -853,38 +938,25 @@ export function StudioChat({
         "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
       )}
     >
-      <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", welcome && "overflow-y-auto", selectedChild && "hidden lg:flex")}>
+      <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", selectedChild && "hidden lg:flex")}>
       {workflowAvailable && !selectedChild && <div className="flex shrink-0 justify-end border-b border-border px-4 py-2 xl:hidden"><Button ref={workflowButtonRef} variant="ghost" className="min-h-11" aria-label="Open workflow details" aria-haspopup="dialog" onClick={() => changeWorkflowOpen(true)}>Activity and evidence</Button></div>}
-      {showAutoCard && !selectedChild && !workflowAvailable ? (
-        <AutoSubagentCard
-          key={displayedAutoRunId}
-          runs={autoTreeQuery.data?.runs ?? []}
-          agents={agents}
-          loading={autoTreeQuery.isLoading}
-          error={autoTreeQuery.isError}
-          retry={() => void autoTreeQuery.refetch()}
-          onSelectChild={(childRunId) => openChild(displayedAutoRunId as string, childRunId)}
-        />
-      ) : null}
       <div
         className={cn(
-          "flex flex-1 flex-col",
-          welcome ? "justify-center pb-4 pt-12" : "min-h-0",
+          "flex min-h-0 flex-1 flex-col",
         )}
       >
         <div
           ref={scrollRef}
           className={cn(
-            "w-full",
-            welcome ? "shrink-0" : "min-h-0 flex-1 overflow-y-auto",
-            showAutoCard && !selectedChild && !workflowAvailable && "xl:pr-[324px]",
+            "flex min-h-0 w-full flex-1 flex-col overflow-y-auto",
           )}
           onScroll={onTranscriptScroll}
         >
           <div
             className={cn(
-              "mx-auto w-full max-w-3xl px-4 sm:px-6",
-              welcome ? "pb-5" : "py-8 sm:py-10",
+              "mx-auto w-full px-4 sm:px-6",
+              'max-w-3xl',
+              welcome ? "my-auto shrink-0 py-6 sm:py-12" : "py-8 sm:py-10",
             )}
           >
             {agent && loadingThread && empty ? (
@@ -903,7 +975,12 @@ export function StudioChat({
                 </p>
               </div>
             ) : empty || !agent ? (
-              <Greeting displayName={displayName} />
+              <>
+                <Greeting displayName={displayName} />
+                {!creatingSkill && agent && agent.sample_questions.length > 0 ? (
+                  <SuggestedQuestions questions={agent.sample_questions} onPick={(text) => void send(text)} />
+                ) : null}
+              </>
             ) : (
               <div className="flex flex-col gap-8">
                 {olderCursor ? (
@@ -912,14 +989,21 @@ export function StudioChat({
                     {loadingOlder ? "Loading…" : "Load older messages"}
                   </Button>
                 ) : null}
-                {turns.map((turn, index) => (
+                {turns.map((turn, index) => {
+                  const autoRunId = agent.agent_id === AUTO_AGENT_ID
+                    ? rootRunForTurn(turn, chronologicalAutoRuns, autoTurns, activeAutoRunId) : null;
+                  const autoRunStatus = autoTreeQuery.data?.runs.find((run) => run.run_id === autoRunId)?.status
+                    ?? chronologicalAutoRuns.find((run) => run.run_id === autoRunId)?.status;
+                  return (
                   <TurnView
                     key={turn.id}
                     turn={turn}
+                    uiContext={threadId ? { agentId: agent.agent_id, threadId, onAction: send } : undefined}
                     onAsk={index === turns.length - 1 && !streaming ? (question) => void send(question) : undefined}
                     agent={agent}
                     agents={agents}
-                    autoRunId={agent.agent_id === AUTO_AGENT_ID ? rootRunForTurn(turn, chronologicalAutoRuns, autoTurns, activeAutoRunId) : null}
+                    autoRunId={autoRunId}
+                    autoRunStatus={autoRunStatus}
                     onOpenChild={openChild}
                     deepenable={
                       extended && turn.state === "done" && Boolean(turn.answer)
@@ -934,7 +1018,7 @@ export function StudioChat({
                     savedContentIds={savedContentIds}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
-                ))}
+                ); })}
                 {workflowAvailable && threadId && <ThreadMissionObjects threadId={threadId} onFollowUp={(prompt, missionId) => { setInput(prompt); if (missionId) setMissionChoice({ mode: "continue", missionId }); textareaRef.current?.focus(); }} />}
               </div>
             )}
@@ -942,12 +1026,10 @@ export function StudioChat({
         </div>
 
         <div
-          ref={composerRef}
           data-testid="studio-composer"
           className={cn(
             "w-full shrink-0 px-4 sm:px-6",
-            welcome ? "pb-2" : "pb-6 pt-2",
-            showAutoCard && !selectedChild && !workflowAvailable && "xl:pr-[324px]",
+            "pb-6 pt-2",
           )}
         >
         {research ? (
@@ -978,21 +1060,15 @@ export function StudioChat({
           onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
             streaming={streaming}
             disabled={!agent}
-            agent={agent}
+            sendDisabled={manualPending}
+            agent={manualPending ? null : agent}
             agents={agents}
-            onSelectAgent={onSelectAgent}
+            onSelectAgent={(id) => void selectComposerAgent(id)}
+            smartEnabled={agent?.agent_id === AUTO_AGENT_ID && !manualPending}
+            onToggleSmart={toggleSmart}
           />
         </div>
       </div>
-      {welcome &&
-      !creatingSkill &&
-      agent &&
-      agent.sample_questions.length > 0 ? (
-        <SuggestedQuestions
-          questions={agent.sample_questions}
-          onPick={(text) => void send(text)}
-        />
-      ) : null}
       {skillDraft ? (
         <SkillEditor
           initialDocument={skillDraft}
@@ -1031,6 +1107,7 @@ const TurnView = memo(function TurnView({
   agent,
   agents,
   autoRunId,
+  autoRunStatus,
   onOpenChild,
   deepenable,
   deepening,
@@ -1042,6 +1119,7 @@ const TurnView = memo(function TurnView({
   savingContentId,
   savedContentIds,
   onReviewSkill,
+  uiContext,
 }: {
   turn: TranscriptTurn;
   /** Ask a follow-up; set only for the latest finished turn. */
@@ -1049,6 +1127,7 @@ const TurnView = memo(function TurnView({
   agent: Agent;
   agents: Agent[];
   autoRunId: string | null;
+  autoRunStatus?: string;
   onOpenChild: (rootRunId: string, childRunId: string) => void;
   deepenable: boolean;
   deepening: boolean;
@@ -1064,6 +1143,7 @@ const TurnView = memo(function TurnView({
   savingContentId: string | null;
   savedContentIds: ReadonlySet<string>;
   onReviewSkill?: (document: string) => void;
+  uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
 }) {
   const running = turn.state === "streaming";
   const visibleSteps: RailStep[] = running && turn.steps.length === 0 && !turn.answer && turn.content.length === 0
@@ -1130,6 +1210,7 @@ const TurnView = memo(function TurnView({
 
       <TurnContent
         turn={turn}
+        uiContext={uiContext}
         runContext={runContext}
         running={running}
         onSaveArtifact={(item) => void onSaveArtifact(turn, item)}
@@ -1154,8 +1235,11 @@ const TurnView = memo(function TurnView({
         </div>
       ) : null}
 
-      {turn.state === "cancelled" ? (
+      {turn.state === "cancelled" || autoRunStatus === "cancelled" ? (
         <StopNotice text="Stopped before the answer finished." />
+      ) : null}
+      {!turn.error && (turn.state === "error" || ["failed", "interrupted"].includes(autoRunStatus ?? "")) ? (
+        <StopNotice text="The run did not finish. Review its activity before retrying." />
       ) : null}
 
       {!running && (turn.answer || turn.content.length > 0) ? (
@@ -1209,9 +1293,10 @@ function Greeting({ displayName }: { displayName?: string | null }) {
         {greeting}
         {name ? `, ${name}` : ""}
       </h1>
-      <p className="mt-1 bg-[linear-gradient(90deg,#D04738_0%,#F36B5B_55%,#F59E66_100%)] bg-clip-text text-3xl leading-tight font-medium tracking-[-0.04em] text-transparent sm:text-5xl">
-        What insights can I help with?
+      <p className="mt-2 text-2xl leading-tight font-medium tracking-tight text-primary sm:text-4xl">
+        What would you like to work on?
       </p>
+      <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">Adjust assumptions in a calculator or explore a result with filters. Ask Nova to continue when you need new data or an action.</p>
     </div>
   );
 }

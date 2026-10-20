@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-13",
+  "feature_count": 96,
+  "family_count": 14,
+  "nova_sql_records": 49,
+  "nova_sql_probes": 48,
+  "sql_record_statuses": {
+    "SUCCESS": 23,
+    "ERROR": 26
+  },
+  "source_link_check": "source-link-check.json",
+  "files": {
+    "feature-matrix.json": {
+      "sha256": "2cb85c04be9dc03eae0273382b315e719c63974ff77ee2170f78b12b6d07a6d3",
+      "bytes": 38478
+    },
+    "github-ci.json": {
+      "sha256": "5fbcaf74374787a26c2a2e713e02bf75b18756c86dd87d5e00a3214dbdff5c29",
+      "bytes": 2539
+    },
+    "implementation-validation.json": {
+      "sha256": "d9660f8a29f34927fd0c1d5548572315c668ad6e0ebd729bebbc20ea745319cd",
+      "bytes": 6574
+    },
+    "nova-source-manifest.json": {
+      "sha256": "2d952e1ce827cd7c4ed128d18de791ecfa1d269f2271510a6ce1af2c246c165d",
+      "bytes": 8411
+    },
+    "runtime-diagnostic.json": {
+      "sha256": "88498c65ae352569b5bcd64a40adc82b737c9e69eb888fbd3caca9580475e14e",
+      "bytes": 7301
+    },
+    "source-link-check.json": {
+      "sha256": "cc2f9643b5eb42bd0d316918e7bd0ab415c3ac3c66bf092c26d7ad85a00930fb",
+      "bytes": 10647
+    },
+    "sql-audit.json": {
+      "sha256": "0198fe6d135f50e164da902342050d3cca886c06b455595e17ac1232e81430be",
+      "bytes": 13389
+    },
+    "sql-retest.json": {
+      "sha256": "4d52c100f1d099ac448cf3fe93cedc5d1b211bc31f3a8ccb1aa21bb69481f08b",
+      "bytes": 2097
+    },
+    "sql-test-catalog.md": {
+      "sha256": "4c3fe3dbbd32929935690f4155cea953ebc44b906004a7afc54c255bc4cf3a78",
+      "bytes": 12391
+    }
+  },
+  "report": {
+    "path": "../nova-snowflake-comparison-2026-10-13.md",
+    "sha256": "d1c4bf1f0d3537afb377bd3ea445c43346ad583c4e5794218fa60d5856de3378"
+  },
+  "notes": [
+    "No paid AI/serverless service calls added in this comparison",
+    "Absence means no matching first-class product contract found in scope",
+    "Probe count does not measure parity or performance",
+    "Implementation validation must be read separately from source inventory"
+  ],
+  "delivery_status": "committed_and_pushed_as_draft_PR; explicitly approved local integration exception; all five GitHub CI jobs passed"
+}

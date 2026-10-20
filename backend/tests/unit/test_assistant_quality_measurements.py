@@ -340,6 +340,48 @@ async def test_resumed_attempt_does_not_reset_required_count_budgets(quality_ena
     assert budget(record, provider_calls=1) == "unavailable"
 
 
+@pytest.mark.parametrize("consumed", [None, -1, True, "12", 30, 31])
+async def test_recovery_refuses_unverified_or_exhausted_token_budget(consumed):
+    provider = ScriptedProvider([text_frame("Must not execute.")])
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=ToolRegistry(), spend_limit=30,
+    ).run(
+        thread=thread(), user_content="Continue.",
+        context=LoopContext(user_name="alice"),
+        resolve_consent=AsyncMock(return_value=True),
+        resume_state={"consumed_tokens": consumed},
+    )]
+    assert provider.calls == 0
+    assert TurnResult(frames=frames).finish_reason == "token_budget"
+
+
+async def test_recovery_charges_previous_usage_and_new_planning(monkeypatch, quality_enabled):
+    usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+    provider, requests = http_provider(monkeypatch, [
+        (json.dumps(PLAN), usage), ("Ready.", usage), (json.dumps(PLAN), usage),
+    ])
+    checkpoints = []
+
+    async def save(value):
+        checkpoints.append(value)
+
+    loop = AssistantLoop(provider=provider, registry=ToolRegistry(), spend_limit=30)
+    first = LoopContext(user_name="alice", agent_id="agent")
+    _ = [frame async for frame in loop.run(
+        thread=thread(), user_content="Explain.", context=first,
+        resolve_consent=AsyncMock(return_value=True), save_state=save,
+    )]
+    assert checkpoints[0]["consumed_tokens"] == 15
+    resumed = LoopContext(user_name="alice", agent_id="agent")
+    frames = [frame async for frame in loop.run(
+        thread=thread(), user_content="Explain.", context=resumed,
+        resolve_consent=AsyncMock(return_value=True), resume_state=checkpoints[0],
+    )]
+    assert len(requests) == 3
+    assert resumed.quality_measurements.reported_total_tokens == 30
+    assert TurnResult(frames=frames).finish_reason == "token_budget"
+
+
 async def test_disabled_quality_preserves_provider_path_and_public_trace(monkeypatch):
     monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
     monkeypatch.setattr("app.modules.assistant.decision.decision_session",
@@ -355,7 +397,8 @@ async def test_disabled_quality_preserves_provider_path_and_public_trace(monkeyp
     assert len([step for step in context.steps if step["kind"] == "provider"]) == 1
 
 
-async def test_a_turn_near_its_token_allowance_answers_instead_of_calling_again():
+@pytest.mark.parametrize("limit, finish_reason", [(1000, "stop"), (750, "token_budget")])
+async def test_token_allowance_composes_near_limit_and_stops_when_exhausted(limit, finish_reason):
     tool = EvalTool("search_knowledge")
     registry = ToolRegistry()
     registry.register(tool)
@@ -379,11 +422,43 @@ async def test_a_turn_near_its_token_allowance_answers_instead_of_calling_again(
     )
     context = LoopContext(user_name="alice", agent_id="agent")
     frames = [frame async for frame in AssistantLoop(
-        provider=provider, registry=registry, iterative=True, spend_limit=1000,
+        provider=provider, registry=registry, iterative=True, spend_limit=limit,
     ).run(
         thread=thread(read_only_grant=True), user_content="Find the available guidance.",
         context=context, resolve_consent=AsyncMock(return_value=True),
     )]
-    # 750 of 1,000 tokens after the first call: the next model call is the answer.
     assert len(tool.runs) == 1
+    assert provider.calls == (2 if finish_reason == "stop" else 1)
+    assert TurnResult(frames=frames).finish_reason == finish_reason
+
+
+async def test_first_useful_content_and_validated_ui_action_are_observed(quality_enabled):
+    from app.observability.metrics import STUDIO_FIRST_USEFUL_RESPONSE
+
+    metric = STUDIO_FIRST_USEFUL_RESPONSE.labels("direct")
+    before = metric._sum.get()
+    context, frames = await run(
+        ScriptedProvider([text_frame("Ready.")], turn_plan=PLAN),
+        context=LoopContext(user_name="alice", agent_id="agent", steps=[], ui_action_accepted=True),
+    )
     assert TurnResult(frames=frames).finish_reason == "stop"
+    record = observation(context)
+    assert record["facts"]["presentation"]["first_useful_response_ms"] >= 0
+    assert metric._sum.get() >= before
+    assert score_assertion(
+        Assertion(scorer="ui_action_success", expected={"accepted": True, "completed": True}),
+        record,
+    ).status == "pass"
+
+
+@pytest.mark.parametrize("finish_reason", ["cancelled", "error", "interrupted", "token_budget"])
+def test_interrupted_ui_actions_do_not_score_as_completed(monkeypatch, finish_reason):
+    from app.modules.assistant.service import _record_quality_observation
+
+    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
+    context = LoopContext(user_name="alice", agent_id="agent", steps=[], ui_action_accepted=True)
+    _record_quality_observation(context, "Continue", finish_reason)
+    assert score_assertion(
+        Assertion(scorer="ui_action_success", expected={"completed": True}),
+        observation(context),
+    ).status == "fail"

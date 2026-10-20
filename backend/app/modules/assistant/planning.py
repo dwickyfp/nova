@@ -29,6 +29,7 @@ class TurnPlan:
     primary_view: str | None = None
     work_intent: WorkIntent | None = None
     public_work_steps: tuple[StageKind, ...] = ()
+    presentation: str = "text"
 
 
 _DATA_INTENTS = frozenset(
@@ -50,6 +51,7 @@ _DISCOVERY_TOOLS = frozenset({"load_skill", "search_knowledge"})
 _PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "presentation": {"type": "string", "enum": ["text", "interactive"]},
         "intent": {"type": "string", "enum": [intent.value for intent in TurnIntent]},
         "tools": {"type": "array", "items": {"type": "string"}},
         "required_tools": {"type": "array", "items": {"type": "string"}},
@@ -89,7 +91,8 @@ _PRIMARY_PLAN_RULES = (
 def _plan_schema(semantic_context: dict[str, Any] | None) -> dict[str, Any]:
     properties = {**_PLAN_SCHEMA["properties"], "intent_frame": intent_frame_schema()}
     # Strict provider schemas require every property; legacy validators accept omissions.
-    required = [*_PLAN_SCHEMA["required"], "intent_frame", "work_intent", "public_work_steps"]
+    required = [*_PLAN_SCHEMA["required"], "intent_frame", "work_intent", "public_work_steps",
+                "presentation"]
     if semantic_context is not None:
         properties["primary_plan"] = {
             "anyOf": [semantic_context["plan_schema"], {"type": "null"}],
@@ -108,6 +111,13 @@ def _output_instructions(schema: dict[str, Any]) -> str:
     for name, definition in properties.items():
         if name == "intent":
             rules.append("intent: exactly one of " + ", ".join(definition["enum"]) + ".")
+        elif name == "presentation":
+            rules.append(
+                "presentation: interactive when a calculator, checklist, form, local data filter, "
+                "chart/dashboard, diagram, map/itinerary, flashcards, timer or canvas makes the "
+                "answer more useful; text for simple explanations, greetings or clarification. "
+                "This affects final presentation only and never expands tools or agent scope."
+            )
         elif name in {"tools", "required_tools"}:
             rules.append(name + ": an array of exact tool names from the supplied catalog.")
         elif name == "skills":
@@ -145,6 +155,9 @@ def validate_turn_plan(
 ) -> TurnPlan:
     if not isinstance(value, dict):
         raise TurnPlanningError("The provider did not return a turn plan.")
+    presentation = value.get("presentation", "text")
+    if presentation not in {"text", "interactive"}:
+        raise TurnPlanningError("The provider returned an unknown presentation.")
     try:
         intent = TurnIntent(value["intent"])
     except (KeyError, ValueError, TypeError) as exc:
@@ -241,6 +254,7 @@ def validate_turn_plan(
         ),
         primary_view=primary_view if isinstance(primary_view, str) and primary_view else None,
         work_intent=work_intent, public_work_steps=public_work_steps,
+        presentation=presentation,
     )
 
 

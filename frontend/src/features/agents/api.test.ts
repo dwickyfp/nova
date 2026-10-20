@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentsApi, streamAgentTurn } from "./api";
+import { agentsApi, resumeAgentTurn, streamAgentTurn } from "./api";
 
 /**
  * Locks the wire paths of the Agent Studio client (Phase 12). A path change here
@@ -71,6 +71,26 @@ function sseResponse(frames: string, runId?: string) {
 }
 
 describe("agent run reconnect", () => {
+  it("restores a run after reload using only GET and preserves large cursors", async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(sseResponse(
+      'event: text_delta\ndata: {"run_id":"run","sequence":"9999999999999999","text":"Recovered"}\n\n'
+      + 'event: done\ndata: {"run_id":"run","sequence":"10000000000000000","message_id":"m","finish_reason":"stop"}\n\n',
+    ));
+    const seen: string[] = [];
+    await resumeAgentTurn("sales", "thread", "run", { onEvent: (event) => seen.push(event.type) });
+    expect(seen).toEqual(["text_delta", "done"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestedUrl()).toContain("/runs/run/events?after=-1");
+    expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
+  });
+
+  it("sends cancellation to the existing run without posting another message", async () => {
+    await agentsApi.cancelRun("sales", "thread", "run");
+    expect(requestedUrl()).toBe("/api/v1/agents/sales/threads/thread/runs/run/cancel");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+  });
+
   it("replays missing frames without reposting the user message", async () => {
     const frame = (type: string, sequence: number, payload: Record<string, unknown>) =>
       `event: ${type}\ndata: ${JSON.stringify({ run_id: "run-1", sequence, ...payload })}\n\n`;

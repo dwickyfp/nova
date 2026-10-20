@@ -1,3 +1,5 @@
+FROM node:22.22.3-bookworm-slim AS ui-runtime
+
 FROM python:3.11.13-slim AS builder
 ARG UV_VERSION=0.8.17
 RUN apt-get update \
@@ -11,6 +13,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 FROM python:3.11.13-slim
 WORKDIR /opt/nova/backend
 COPY --from=builder /opt/nova/backend/.venv /opt/nova/backend/.venv
+COPY --from=ui-runtime /usr/local/bin/node /usr/local/bin/node
 COPY backend/ ./
 COPY docs/ /opt/nova/docs/
 COPY docker/backend-entrypoint.sh /usr/local/bin/nova-backend-entrypoint
