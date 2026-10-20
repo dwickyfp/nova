@@ -324,7 +324,7 @@ async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monk
             assert (await alice.request("GET", f"intelligence/decisions/{decision_id}"))[
                 "id"
             ] == decision_id
-            await browser_checkpoint("populated", news_id=news_id, decision_id=decision_id)
+            await browser_checkpoint("populated", news_id=news_id)
             mask = RangerPolicy.model_validate(
                 {
                     "service": settings.RANGER_SERVICE_NAME,
@@ -354,7 +354,6 @@ async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monk
                 raise AssertionError("Changed mask did not invalidate stored evidence")
             response = await ah.get(f"/api/v1/intelligence/context/{graph['root_id']}/graph")
             assert response.status_code in {403, 404, 409}
-            await browser_checkpoint("stale", news_id=news_id, decision_id=decision_id)
             for policy in reversed(policies):
                 await ranger.delete_policy(policy["id"])
                 assert await ranger.get_policy(policy["name"]) is None
@@ -374,7 +373,6 @@ async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monk
             response = await ah.get(f"/api/v1/intelligence/decisions/{decision_id}")
             assert response.status_code in {403, 404, 409}
             assert (await ah.get(f"/api/v1/semantic-views/{view_id}")).status_code == 404
-            await browser_checkpoint("empty_denied", news_id=news_id, decision_id=decision_id)
     finally:
         for policy in reversed(policies):
             await ranger.delete_policy(policy["id"])

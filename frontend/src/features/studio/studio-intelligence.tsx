@@ -22,19 +22,13 @@ import {
   type News,
   type Outcome,
 } from "@/features/intelligence/lifecycle-api";
-import { DecisionCompose } from "@/features/intelligence/decision-compose";
-import {
-  DecisionShares,
-  EffectivenessPanel,
-} from "@/features/intelligence/decision-governance";
+import { DecisionShares } from "@/features/intelligence/decision-governance";
 import { MonitorPanel } from "@/features/intelligence/monitor-panel";
 import { ContextInspector } from "@/features/intelligence/context-inspector";
 
 type Props = {
-  view: "news" | "decisions";
   item?: string;
   onOpen: (id?: string) => void;
-  onDecision: (id: string) => void;
   onFollowUp: (prompt: string) => void;
 };
 const number = (value: number | undefined | null) =>
@@ -107,7 +101,7 @@ export function StudioIntelligence(props: Props) {
   const epoch = useAuthStore((state) => state.securityEpoch);
   return (
     <IntelligenceView
-      key={`${epoch}:${props.view}:${props.item || ""}`}
+      key={`${epoch}:${props.item || ""}`}
       {...props}
       epoch={epoch}
     />
@@ -115,25 +109,19 @@ export function StudioIntelligence(props: Props) {
 }
 
 function IntelligenceView({
-  view,
   item,
   onOpen,
-  onDecision,
   onFollowUp,
   epoch,
 }: Props & { epoch: number }) {
   const client = useQueryClient();
   const [showMonitors, setShowMonitors] = useState(false);
-  const [shared, setShared] = useState(false);
-  const key = ["intelligence", epoch, view, shared ? "shared" : "owned"];
+  const key = ["intelligence", epoch, "news"];
   const listing = useInfiniteQuery({
     queryKey: key,
     initialPageParam: "",
     queryFn: ({ pageParam }) =>
-      intelligenceApi.page<News | Decision>(
-        shared && view === "decisions" ? "decisions/shared" : view,
-        pageParam,
-      ),
+      intelligenceApi.page<News>("news", pageParam),
     getNextPageParam: (page) => page.next_after || undefined,
     enabled: !item,
     staleTime: 0,
@@ -142,7 +130,7 @@ function IntelligenceView({
   });
   const detail = useQuery({
     queryKey: [...key, item],
-    queryFn: () => intelligenceApi.get<News | Decision>(view, item!),
+    queryFn: () => intelligenceApi.get<News>("news", item!),
     enabled: !!item,
     staleTime: 0,
     gcTime: 0,
@@ -159,20 +147,16 @@ function IntelligenceView({
           <Button
             variant="ghost"
             size="icon"
-            aria-label={`Back to ${view}`}
+            aria-label="Back to news"
             onClick={() => onOpen()}
           >
             <ArrowLeft className="size-4" />
           </Button>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-normal">
-            {view === "news" ? "News" : "Decisions"}
-          </h1>
+          <h1 className="text-xl font-normal">News</h1>
           <p className="text-sm text-muted-foreground">
-            {view === "news"
-              ? "Material changes with evidence and investigation."
-              : "Options, review, and observed outcomes."}
+            Material changes with evidence and investigation.
           </p>
         </div>
         <Button
@@ -186,7 +170,7 @@ function IntelligenceView({
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="mx-auto max-w-4xl space-y-4">
-          {view === "news" && !item && (
+          {!item && (
             <div className="space-y-4">
               <Button
                 variant="outline"
@@ -198,30 +182,6 @@ function IntelligenceView({
               {showMonitors && <MonitorPanel onNews={onOpen} />}
             </div>
           )}
-          {view === "decisions" && !item && (
-            <div className="space-y-4">
-              <div
-                className="flex flex-wrap gap-2"
-                aria-label="Decision visibility"
-              >
-                <Button
-                  variant={shared ? "outline" : "secondary"}
-                  aria-pressed={!shared}
-                  onClick={() => setShared(false)}
-                >
-                  My decisions
-                </Button>
-                <Button
-                  variant={shared ? "secondary" : "outline"}
-                  aria-pressed={shared}
-                  onClick={() => setShared(true)}
-                >
-                  Shared with me
-                </Button>
-              </div>
-              {!shared && <EffectivenessPanel epoch={epoch} />}
-            </div>
-          )}
           {item ? (
             detail.isFetching ? (
               <LoadingLines />
@@ -231,22 +191,14 @@ function IntelligenceView({
                 retry={() => void detail.refetch()}
               />
             ) : (
-              detail.data &&
-              (view === "news" ? (
+              detail.data && (
                 <NewsDetail
-                  news={detail.data as News}
-                  onCreated={onDecision}
+                  news={detail.data}
                   onFollowUp={onFollowUp}
                   refresh={refresh}
                   epoch={epoch}
                 />
-              ) : (
-                <DecisionDetail
-                  decision={detail.data as Decision}
-                  refresh={refresh}
-                  epoch={epoch}
-                />
-              ))
+              )
             )
           ) : listing.isError ? (
             <Failure
@@ -272,11 +224,9 @@ function IntelligenceView({
                         {row.status.split("_").join(" ")}
                       </StatusBadge>
                     </span>
-                    {"summary" in row && (
-                      <span className="text-sm text-muted-foreground">
-                        {row.summary}
-                      </span>
-                    )}
+                    <span className="text-sm text-muted-foreground">
+                      {row.summary}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {new Date(row.created_at).toLocaleString()} · Semantic
                       version {row.semantic.version}
@@ -287,16 +237,8 @@ function IntelligenceView({
             </ul>
           ) : (
             <EmptyState
-              title={
-                view === "news"
-                  ? "No material changes to review"
-                  : "No decisions yet"
-              }
-              description={
-                view === "news"
-                  ? "News appears after an enabled monitor finds a change above its materiality threshold."
-                  : "Open a News investigation to prepare options and an outcome window."
-              }
+              title="No material changes to review"
+              description="News appears after an enabled monitor finds a change above its materiality threshold."
             />
           )}
           {!item && listing.hasNextPage && (
@@ -316,13 +258,11 @@ function IntelligenceView({
 
 function NewsDetail({
   news,
-  onCreated,
   onFollowUp,
   refresh,
   epoch,
 }: {
   news: News;
-  onCreated: (id: string) => void;
   onFollowUp: Props["onFollowUp"];
   refresh: () => void;
   epoch: number;
@@ -534,11 +474,6 @@ function NewsDetail({
               </ol>
             </div>
             <EvidenceList evidence={value.evidence} />
-            <DecisionCompose
-              news={news}
-              investigation={value}
-              onCreated={onCreated}
-            />
           </>
         )
       )}
