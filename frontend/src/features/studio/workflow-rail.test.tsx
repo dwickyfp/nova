@@ -13,7 +13,7 @@ const mission: Mission = { mission_id: "m1", thread_id: "t1", objective: "Invest
   run_ids: ["r1"], stages: [{ kind: "evidence", label: "Inspect evidence", status: "completed", source_refs: ["r1"] }], evidence_refs: ["e1"], object_refs: [], cancel_requested: false, created_at: "2026-10-03T10:00:00Z", updated_at: "2026-10-03T10:00:00Z" };
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
-function Host() {
+function Host({ streaming = false }: { streaming?: boolean }) {
   const [available, setAvailable] = useState(false);
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
@@ -21,7 +21,7 @@ function Host() {
     <main className="flex min-h-0 min-w-0 flex-1 flex-col"><header className="shrink-0 p-3">Studio
       {available && <button ref={opener} className="ml-2 min-h-11 rounded border px-3" onClick={() => setOpen(true)}>Open workflow details</button>}
     </header><div className="min-h-0 flex-1 overflow-y-auto p-3">Conversation</div></main>
-    <WorkflowRail threadId="t1" turns={[]} streaming={false} agents={[]} runs={[]} runLoading={false} runError={false} retryRuns={vi.fn()} onSelectChild={vi.fn()} onAvailable={setAvailable} mobileOpen={open}
+    <WorkflowRail threadId="t1" turns={[]} streaming={streaming} agents={[]} runs={[]} runLoading={false} runError={false} retryRuns={vi.fn()} onSelectChild={vi.fn()} onAvailable={setAvailable} mobileOpen={open}
       onMobileOpenChange={(value) => { setOpen(value); if (!value) requestAnimationFrame(() => opener.current?.focus()); }} />
   </div>;
 }
@@ -38,6 +38,14 @@ describe("Mission projections", () => {
 });
 
 describe("Workflow rail", () => {
+  it.each([403, 404])("stops polling an unavailable workflow while streaming (%s)", async (status) => {
+    const list = vi.spyOn(workflowApi, "list").mockRejectedValue(new ApiError(status, "Unavailable"));
+    render(<QueryClientProvider client={client()}><Host streaming /></QueryClientProvider>);
+    await expect.poll(() => list.mock.calls.length).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    expect(list).toHaveBeenCalledTimes(1);
+    await expect.element(page.getByRole("complementary", { name: "Workflow details" })).not.toBeInTheDocument();
+  });
   for (const dark of [false, true]) it(`uses a sheet at 320px and supports keyboard tabs and Escape (dark: ${dark})`, async () => {
     await page.viewport(320, 720);
     document.documentElement.classList.toggle("dark", dark);

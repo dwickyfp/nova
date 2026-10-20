@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from asyncmy.errors import ProgrammingError
+
 from app.core.database import configured_timezone
 from app.core.redis import session_store
 from app.modules.agents.access import has_verified_access
@@ -100,7 +102,22 @@ def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dic
     """
     from app.modules.agents.tools.describe_agent import business_label
 
-    shown: list[dict] = []
+    if any(step.get("kind") == "ui" for step in steps):
+        # The shared composer has already validated and sealed these blocks.
+        # Preserve their identities for persisted state and live/replay parity.
+        shown: list[dict] = [
+            dict(step) for step in steps
+            if step.get("kind") in {"text", "ui"}
+            and type(step.get("content_index")) is int
+        ]
+        shown.sort(key=lambda item: item["content_index"])
+        for index, item in enumerate(shown):
+            item["content_index"] = index
+        if proposal:
+            shown.append({"kind": "automation_proposal", **proposal})
+        return shown
+
+    shown = []
     for kind in ("table", "chart"):
         latest = next((step for step in reversed(steps) if step.get("kind") == kind), None)
         if latest is None:
@@ -946,12 +963,17 @@ class AgentHarnessWorker:
             root["thread_id"], user_name=root["owner_name"], synchronize=True
         )
         visible = any(item["message_id"] == message_id for item in existing)
+        latest_root = (await self.repository.get(root["run_id"])) or root
+        # The final provider response arrives after the last loop checkpoint.
+        root_prompt = max(int(latest_root.get("prompt_tokens") or 0),
+                          int((usage or {}).get("prompt_tokens") or 0))
+        root_completion = max(int(latest_root.get("completion_tokens") or 0),
+                              int((usage or {}).get("completion_tokens") or 0))
         if not visible:
-            latest_root = (await self.repository.get(root["run_id"])) or root
             child_prompt = sum(int(item.get("prompt_tokens") or 0) for item in children)
             child_completion = sum(int(item.get("completion_tokens") or 0) for item in children)
-            prompt_tokens = child_prompt + int(latest_root.get("prompt_tokens") or 0)
-            completion_tokens = child_completion + int(latest_root.get("completion_tokens") or 0)
+            prompt_tokens = child_prompt + root_prompt
+            completion_tokens = child_completion + root_completion
             await assistant_repository.append_message(
                 root["thread_id"],
                 user_name=root["owner_name"],
@@ -987,6 +1009,8 @@ class AgentHarnessWorker:
             lease_owner=root["lease_owner"],
             generation=root["generation"],
             summary=answer[:8000],
+            prompt_tokens=root_prompt,
+            completion_tokens=root_completion,
         ):
             await self.repository.event(
                 root["run_id"],
@@ -1149,6 +1173,14 @@ class AgentHarnessWorker:
             thread.messages = await self._root_history(child)
         context = LoopContext(
             user_name=child["owner_name"],
+            intelligent_ui=is_root and smart,
+            ui_action_accepted=is_root and bool(
+                child.get("payload", {}).get("ui_action_accepted")
+            ),
+            ui_private_context=("UI form input (user supplied):" in child["objective"] or any(
+                "UI form input (user supplied):" in message.content
+                or message.attachments for message in thread.messages
+            )),
             execution_timezone=configured_timezone(),
             collaboration_tools=tuple(COLLABORATION_TOOLS) if smart else (),
             collaboration_root=is_root,
@@ -1555,6 +1587,7 @@ class AgentHarnessWorker:
     async def run_forever(self, stop: asyncio.Event, worker_id: str) -> None:
         active: set[asyncio.Task[None]] = set()
         cycle = 0
+        poll_backoff = 1
         while not stop.is_set():
             finished = {task for task in active if task.done()}
             active.difference_update(finished)
@@ -1575,9 +1608,22 @@ class AgentHarnessWorker:
                     if len(active) - len(self.waiting_runs) >= MAX_PARALLEL_RUNS:
                         break
                     active.add(asyncio.create_task(self.process(run["run_id"], worker_id)))
-            except Exception:
+            except Exception as exc:
                 AGENT_WORKER_POLL_ERRORS.labels(phase="poll").inc()
+                if (
+                    isinstance(exc, ProgrammingError)
+                    and len(exc.args) > 1 and exc.args[0] == 1064
+                    and str(exc.args[1]).startswith("StarRocks planner use long time")
+                ):
+                    # Only the metadata poll is retried. Tool execution retains
+                    # its operation identity and uncertain-mutation safeguards.
+                    logger.warning("Agent metadata poll exceeded the engine planning deadline")
+                    with suppress(TimeoutError):
+                        await asyncio.wait_for(stop.wait(), timeout=poll_backoff)
+                    poll_backoff = min(poll_backoff * 2, 30)
+                    continue
                 raise
+            poll_backoff = 1
             cycle += 1
             heartbeat("agent-worker")
             try:

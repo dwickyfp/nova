@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.database import db
+from app.modules.agents.run_coordination import update_run
 
 RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RUNS (
@@ -101,7 +102,8 @@ class AgentRunJournal:
             + ", ".join(["(%s, %s, %s, %s)"] * len(frames)),
             values,
         )
-        await db.execute_system(
+        await update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
             "SET last_sequence = %s, updated_at = %s "
             "WHERE run_id = %s AND status = 'running'",
@@ -110,16 +112,18 @@ class AgentRunJournal:
         return sequences[-1]
 
     async def finish(self, run_id: str, status: str) -> None:
-        if status not in {"completed", "failed", "interrupted"}:
+        if status not in {"completed", "failed", "interrupted", "cancelled"}:
             raise ValueError("Invalid run status")
-        await db.execute_system(
+        await update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET status = %s, updated_at = %s "
             "WHERE run_id = %s AND status = 'running'",
             [status, _now(), run_id],
         )
 
     async def heartbeat(self, run_id: str) -> None:
-        await db.execute_system(
+        await update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET updated_at = %s "
             "WHERE run_id = %s AND status = 'running'",
             [_now(), run_id],
@@ -144,7 +148,8 @@ class AgentRunJournal:
         cutoff = _now() - timedelta(seconds=stale_after_seconds)
         if updated > cutoff:
             return False
-        await db.execute_system(
+        await update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
             "SET status = 'interrupted', updated_at = %s "
             "WHERE run_id = %s AND owner_name = %s AND agent_id = %s "
@@ -159,7 +164,8 @@ class AgentRunJournal:
         return state is not None and state["status"] == "interrupted"
 
     async def block_replay_after_role_change(self, run_id: str) -> None:
-        await db.execute_system(
+        await update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
             "SET role_name = '__role_changed__', updated_at = %s WHERE run_id = %s",
             [_now(), run_id],
@@ -179,6 +185,26 @@ class AgentRunJournal:
             return None
         row = result["rows"][0]
         return dict(zip(("run_id", "status", "last_sequence", "updated_at"), row, strict=True))
+
+    async def current(
+        self, *, owner_name: str, agent_id: str, thread_id: str,
+        role_name: str, security_version: int,
+    ) -> str | None:
+        result = await db.execute_system(
+            "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
+            "WHERE owner_name=%s AND agent_id=%s AND thread_id=%s AND role_name=%s "
+            "AND security_version=%s AND status='running' ORDER BY started_at DESC LIMIT 1",
+            [owner_name, agent_id, thread_id, role_name, security_version],
+        )
+        return str(result["rows"][0][0]) if result["rows"] else None
+
+    async def has_security_version(self, run_id: str, security_version: int) -> bool:
+        result = await db.execute_system(
+            "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
+            "WHERE run_id=%s AND security_version=%s",
+            [run_id, security_version],
+        )
+        return bool(result["rows"])
 
     async def events_after(self, run_id: str, sequence: int, *, limit: int = 100) -> list[str]:
         result = await db.execute_system(

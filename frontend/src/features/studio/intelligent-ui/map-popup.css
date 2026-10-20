@@ -1,0 +1,20 @@
+.nova-public-map .maplibregl-popup-content {
+  background: var(--popover);
+  color: var(--popover-foreground);
+}
+
+.nova-public-map [class*="maplibregl-popup-anchor-bottom"] .maplibregl-popup-tip {
+  border-top-color: var(--popover);
+}
+
+.nova-public-map [class*="maplibregl-popup-anchor-top"] .maplibregl-popup-tip {
+  border-bottom-color: var(--popover);
+}
+
+.nova-public-map .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--popover);
+}
+
+.nova-public-map .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--popover);
+}

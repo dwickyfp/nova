@@ -334,6 +334,14 @@ export const agentsApi = {
     api.get<{ thread: AgentThread; messages: AgentMessage[]; next_cursor?: string | null }>(
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}${historyQuery(cursor)}`,
     ),
+  activeRun: (agentId: string, threadId: string) =>
+    api.get<{ run_id: string | null }>(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/active-run`,
+    ),
+  cancelRun: (agentId: string, threadId: string, runId: string) =>
+    api.post(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(runId)}/cancel`, {},
+    ),
   deleteThread: (agentId: string, threadId: string) =>
     api.delete<void>(
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
@@ -369,6 +377,7 @@ export const agentsApi = {
 };
 
 export type StreamAgentTurnOptions = {
+  uiAction?: import('../studio/intelligent-ui/types').UiAction;
   signal?: AbortSignal;
   onEvent: (event: AssistantEvent) => void;
   role?: string | null;
@@ -392,7 +401,7 @@ export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId, uiAction }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -403,7 +412,7 @@ export async function streamAgentTurn(
         Accept: "text/event-stream",
       }),
       body: JSON.stringify({ content, role, model, provider_id: providerId, attachments,
-        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId }),
+        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId, ui_action: uiAction }),
       signal,
     },
   );
@@ -419,9 +428,31 @@ export async function streamAgentTurn(
   if (!response.body) throw new Error("The agent returned an empty stream");
   onAccepted?.();
 
-  let activeRun: string | undefined = response.headers.get("X-Nova-Run-ID") || undefined;
+  await consumeAgentRun(agentId, threadId, response, {
+    signal, onEvent, onRunId,
+  });
+}
+
+export async function resumeAgentTurn(
+  agentId: string, threadId: string, runId: string,
+  options: Pick<StreamAgentTurnOptions, "signal" | "onEvent" | "onRunId">,
+): Promise<void> {
+  const response = await fetch(
+    `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(runId)}/events?after=-1`,
+    { headers: authHeaders({ Accept: "text/event-stream" }), signal: options.signal },
+  );
+  if (!response.ok || !response.body) throw new Error("Could not reconnect to the agent run");
+  await consumeAgentRun(agentId, threadId, response, options, runId);
+}
+
+async function consumeAgentRun(
+  agentId: string, threadId: string, response: Response,
+  { signal, onEvent, onRunId }: Pick<StreamAgentTurnOptions, "signal" | "onEvent" | "onRunId">,
+  runId?: string,
+) {
+  let activeRun = runId || response.headers.get("X-Nova-Run-ID") || undefined;
   if (activeRun) onRunId?.(activeRun);
-  let lastSequence = -1;
+  let lastSequence = -1n;
   let finished = false;
   async function consume(body: ReadableStream<Uint8Array>) {
     for await (const frame of readSseFrames(body)) {
@@ -429,11 +460,11 @@ export async function streamAgentTurn(
       if (!event) continue;
       if (event.run_id && event.run_id !== activeRun) {
         activeRun = event.run_id;
-        lastSequence = -1;
+        lastSequence = -1n;
       }
       if (event.sequence !== undefined) {
-        if (event.sequence <= lastSequence) continue;
-        lastSequence = event.sequence;
+        if (BigInt(event.sequence) <= lastSequence) continue;
+        lastSequence = BigInt(event.sequence);
       }
       if (event.type === "role_changed") {
         const auth = useAuthStore.getState().auth;
@@ -445,7 +476,7 @@ export async function streamAgentTurn(
     }
   }
   try {
-    await consume(response.body);
+    if (response.body) await consume(response.body);
   } catch (error) {
     if (signal?.aborted) throw error;
   }
@@ -936,6 +967,10 @@ export type TraceStep =
       duration_ms?: number;
     }
   | {
+      kind: "turn_outcome";
+      finish_reason: string;
+    }
+  | {
       kind: "answer";
       step_id?: string;
       started_offset_ms?: number;
@@ -948,6 +983,7 @@ export type TraceStep =
       text: string;
     }
   /** A result grid the turn rendered, recorded so a reload can show it again. */
+  | ({ kind: 'ui'; content_index: number; content_id: string } & import('../studio/intelligent-ui/types').UiBlock)
   | {
       kind: "table";
       content_index?: number;

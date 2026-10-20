@@ -3,8 +3,9 @@ import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent } from "@/features/agents/api";
+import { AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
+import { registerUiFlush } from "./intelligent-ui/state";
 import "@/styles/index.css";
 
 /**
@@ -236,6 +237,201 @@ function renderStudio(
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+it.each([false, true])("reconnects a direct run after reload and supports server stop: %s", async (cancel) => {
+  const fetch = mockFetch();
+  const fallback = fetch.getMockImplementation()!;
+  let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  fetch.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (/\/threads\/t-past(?:\?|$)/.test(url))
+      return Response.json({ thread: { thread_id: "t-past" }, messages: [PERSISTED_MESSAGES[0]] });
+    if (url.endsWith("/active-run")) return Response.json({ run_id: "direct-run" });
+    if (url.includes("/runs/direct-run/events")) return new Response(new ReadableStream({
+      start(controller) {
+        stream = controller;
+        controller.enqueue(new TextEncoder().encode(
+          'event: thinking\ndata: {"phase":"act","text":"Resumed work","status":"running"}\n\n',
+        ));
+        if (!cancel) {
+          controller.enqueue(new TextEncoder().encode(
+            'event: text_delta\ndata: {"text":"Recovered answer."}\n\n'
+            + 'event: done\ndata: {"message_id":"recovered","finish_reason":"stop"}\n\n',
+          ));
+          controller.close();
+        }
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } });
+    if (url.endsWith("/runs/direct-run/cancel")) {
+      stream?.enqueue(new TextEncoder().encode(
+        'event: done\ndata: {"message_id":"stopped","finish_reason":"cancelled"}\n\n',
+      ));
+      stream?.close();
+      return Response.json({ cancelling: true });
+    }
+    return fallback(input, init);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(<StrictMode><QueryClientProvider client={client}>
+    <StudioChat agent={AGENT} agents={[AGENT]} onSelectAgent={() => {}}
+      currentRole="ACCOUNTADMIN" activeThreadId="t-past" onThreadChange={() => {}} />
+  </QueryClientProvider></StrictMode>);
+  if (cancel) {
+    await expect.element(screen.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+    await screen.getByRole("button", { name: "Stop", exact: true }).click();
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/runs/direct-run/cancel"))).toBe(true));
+  } else {
+    await expect.element(screen.getByText("Recovered answer.")).toBeVisible();
+  }
+  expect(fetch.mock.calls.filter(([url, init]) =>
+    String(url).endsWith("/messages") && init?.method === "POST")).toHaveLength(0);
+});
+
+it("remembers Smart Stop before acceptance and cancels the accepted server run", async () => {
+  const fetch = mockFetch();
+  const fallback = fetch.getMockImplementation()!;
+  let accept: ((value: Response) => void) | undefined;
+  let responseStream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  fetch.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/messages") && init?.method === "POST") {
+      init.signal?.addEventListener("abort", () =>
+        responseStream?.error(new DOMException("Aborted", "AbortError")));
+      return new Promise<Response>((resolve) => { accept = resolve; });
+    }
+    if (url.endsWith("/smart/runs/pending-smart/cancel")) {
+      return Response.json({ status: "cancelled" });
+    }
+    if (url.includes("/smart/") && init?.method !== "POST")
+      return Response.json({ runs: [], events: [] });
+    return fallback(input, init);
+  });
+  const smart = { ...AGENT, agent_id: AUTO_AGENT_ID, name: "Smart" };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(<QueryClientProvider client={client}>
+    <StudioChat agent={smart} agents={[smart]} onSelectAgent={() => {}}
+      currentRole="ACCOUNTADMIN" activeThreadId={null} onThreadChange={() => {}} />
+  </QueryClientProvider>);
+  await screen.getByRole("textbox", { name: "Message Nova" }).fill("Make a calculator");
+  await screen.getByRole("button", { name: "Send", exact: true }).click();
+  await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
+  await screen.getByRole("button", { name: "Stop", exact: true }).click();
+  expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/cancel"))).toBe(false);
+  accept!(new Response(new ReadableStream({
+    start(controller) { responseStream = controller; },
+  }), { headers: { "Content-Type": "text/event-stream", "X-Nova-Run-ID": "pending-smart" } }));
+  await vi.waitFor(() => expect(fetch.mock.calls.filter(([url]) =>
+    String(url).endsWith("/smart/runs/pending-smart/cancel"))).toHaveLength(1));
+  const request = fetch.mock.calls.find(([url, init]) =>
+    String(url).endsWith("/messages") && init?.method === "POST");
+  await vi.waitFor(() => expect(request?.[1]?.signal?.aborted).toBe(true));
+});
+
+it("keeps a direct provider-format failure visible after reload without resubmitting", async () => {
+  const fetch = mockFetch();
+  const fallback = fetch.getMockImplementation()!;
+  fetch.mockImplementation(async (input, init) => {
+    if (/\/threads\/t-past(?:\?|$)/.test(String(input)))
+      return Response.json({ thread: { thread_id: "t-past" }, messages: [
+        PERSISTED_MESSAGES[0],
+        { ...PERSISTED_MESSAGES[1], content: "", steps: [
+          { kind: "turn_outcome", finish_reason: "unexpected_tool_call" },
+        ] },
+      ] });
+    return fallback(input, init);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(<QueryClientProvider client={client}>
+    <StudioChat agent={AGENT} agents={[AGENT]} onSelectAgent={() => {}}
+      currentRole="ACCOUNTADMIN" activeThreadId="t-past" onThreadChange={() => {}} />
+  </QueryClientProvider>);
+  await expect.element(screen.getByText(
+    "The run did not finish. Review its activity before retrying.",
+  )).toBeVisible();
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
+it.each(["cancelled", "failed", "interrupted"])("restores a Smart %s outcome from its durable run after reload", async (status) => {
+  const fetch = mockFetch();
+  const fallback = fetch.getMockImplementation()!;
+  fetch.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (/\/threads\/t-past(?:\?|$)/.test(url))
+      return Response.json({ thread: { thread_id: "t-past" }, messages: [PERSISTED_MESSAGES[0]] });
+    if (url.endsWith("/smart/threads/t-past/runs"))
+      return Response.json({ runs: [{
+        run_id: "terminal", status, user_message_id: PERSISTED_MESSAGES[0].message_id,
+        objective: PERSISTED_MESSAGES[0].content, started_at: "2026-01-01T00:00:00",
+      }] });
+    if (url.includes("/smart/runs/terminal"))
+      return Response.json({ runs: [], events: [] });
+    return fallback(input, init);
+  });
+  const smart = { ...AGENT, agent_id: AUTO_AGENT_ID, name: "Smart" };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(<QueryClientProvider client={client}>
+    <StudioChat agent={smart} agents={[smart]} onSelectAgent={() => {}}
+      currentRole="ACCOUNTADMIN" activeThreadId="t-past" onThreadChange={() => {}} />
+  </QueryClientProvider>);
+  await expect.element(screen.getByText(status === "cancelled"
+    ? "Stopped before the answer finished."
+    : "The run did not finish. Review its activity before retrying.")).toBeVisible();
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
+it("preserves the draft across Smart and manual selection and restores the last accessible agent", async () => {
+  mockFetch("read_only", false);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const smart = { ...AGENT, agent_id: AUTO_AGENT_ID, name: "Smart" };
+  const choices = [smart, AGENT];
+  function ModeHarness() {
+    const [agent, setAgent] = useState(smart);
+    return <QueryClientProvider client={client}>
+      <StudioChat agent={agent} agents={choices}
+        onSelectAgent={(id) => setAgent(choices.find((item) => item.agent_id === id)!)}
+        currentRole="ACCOUNTADMIN" activeThreadId={null} onThreadChange={() => {}} />
+    </QueryClientProvider>;
+  }
+  const screen = await render(<ModeHarness />);
+  const draft = screen.getByRole("textbox", { name: "Message Nova" });
+  const toggle = screen.getByRole("button", { name: "Smart mode" });
+  await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect.element(screen.getByRole("button", { name: "Revenue Analyst" })).not.toBeInTheDocument();
+  await userEvent.fill(draft, "Keep this draft");
+  await toggle.click();
+  await expect.element(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect.element(draft).toHaveValue("Keep this draft");
+  await screen.getByRole("button", { name: "Select an agent" }).click();
+  await page.getByRole("menuitem", { name: "Revenue Analyst" }).click();
+  await expect.element(draft).toHaveValue("Keep this draft");
+  await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  await toggle.click();
+  await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
+  await toggle.click();
+  await expect.element(screen.getByRole("button", { name: "Revenue Analyst" })).toBeVisible();
+  await expect.element(draft).toHaveValue("Keep this draft");
+});
+
+it("sends once when repeated Enter waits for an interactive state flush", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const unregister = registerUiFlush(() => pending);
+  try {
+    const screen = await renderStudio();
+    await userEvent.fill(screen.getByRole("textbox", { name: "Message Nova" }), "Review results");
+    await userEvent.keyboard("{Enter}{Enter}");
+    release();
+    await expect.element(screen.getByText("Omzet tertinggi ada di", { exact: false })).toBeVisible();
+    const sent = vi.mocked(globalThis.fetch).mock.calls.filter(([input, init]) =>
+      String(input).endsWith("/messages") && init?.method === "POST",
+    );
+    expect(sent).toHaveLength(1);
+  } finally {
+    release();
+    unregister();
+  }
 });
 
 /**
@@ -514,14 +710,14 @@ describe("studio transcript click-through", () => {
       )
       .toBeVisible();
     await expect
-      .element(page.getByText("What insights can I help with?"))
+      .element(page.getByText("What would you like to work on?"))
       .toBeVisible();
     await expect
       .element(page.getByText("Nova Studio", { exact: true }))
       .not.toBeInTheDocument();
   });
 
-  it("centers the welcome composer above suggestions and moves it down on send", async () => {
+  it("keeps welcome suggestions above a stationary composer across the first send", async () => {
     renderStudio();
     const greetingLocator = page.getByRole("heading", {
       name: /Good (morning|afternoon|evening), Dwicky/,
@@ -535,11 +731,10 @@ describe("studio transcript click-through", () => {
     expect(greeting.getBoundingClientRect().bottom).toBeLessThan(
       composer.getBoundingClientRect().top,
     );
-    expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      suggestion.getBoundingClientRect().top,
+    expect(suggestion.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      composer.getBoundingClientRect().top,
     );
     const welcomeTop = composer.getBoundingClientRect().top;
-    const animate = vi.spyOn(Element.prototype, "animate");
 
     await userEvent.fill(
       page.getByRole("textbox", { name: "Message Nova" }),
@@ -552,13 +747,11 @@ describe("studio transcript click-through", () => {
     expect(page.getByRole("textbox", { name: "Message Nova" }).element()).toBe(
       textarea,
     );
-    expect(composer.getBoundingClientRect().top).toBeGreaterThan(welcomeTop);
+    expect(composer.getBoundingClientRect().top).toBeCloseTo(welcomeTop, 0);
+    expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
     await expect
       .element(page.getByRole("button", { name: "Top SKUs last quarter" }))
       .not.toBeInTheDocument();
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      expect(animate).toHaveBeenCalled();
-    }
   });
 
   it("clears the composer and shows progress while a new thread is still being created", async () => {
@@ -617,8 +810,8 @@ describe("studio transcript click-through", () => {
     await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeVisible();
     const composer = page.getByTestId("studio-composer").element();
     const composerRect = composer.getBoundingClientRect();
-    const composerCenter = composerRect.top + composerRect.height / 2;
-    expect(Math.abs(composerCenter - window.innerHeight / 2)).toBeLessThan(window.innerHeight / 6);
+    expect(composerRect.top).toBeGreaterThan(window.innerHeight / 2);
+    expect(composerRect.bottom).toBeLessThanOrEqual(window.innerHeight);
     await expect.element(page.getByRole("button", { name: questions[4] })).not.toBeInTheDocument();
 
     await page.getByRole("button", { name: "View all (8)" }).click();
@@ -657,9 +850,11 @@ describe("studio transcript click-through", () => {
       .element(page.getByRole("cell", { name: "D. COKLAT" }))
       .toBeVisible();
 
-    // The rail opens with the turn, so its detail is never a click away.
+    // The answer stays readable; recorded work is available on request.
     const rail = page.getByTestId("process-rail-toggle");
     await expect.element(rail).toBeVisible();
+    await expect.element(rail).toHaveAttribute("data-state", "closed");
+    await rail.click();
     await expect.element(rail).toHaveAttribute("data-state", "open");
     await expect
       .element(page.getByText("Loaded skill: revenue-playbook"))
@@ -736,6 +931,7 @@ describe("studio transcript click-through", () => {
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
     await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
+    await page.getByTestId("process-rail-toggle").click();
 
     // The tool step's detail is what the tool returned, and it is only shown
     // once the step is opened.
@@ -788,6 +984,7 @@ describe("studio transcript click-through", () => {
 
     // So does the process that produced it: the reasoning rows, the tool row
     // with its SQL, the grid, and the chart.
+    await page.getByTestId("process-rail-toggle").click();
     await expect
       .element(
         page.getByText("Loaded skill: revenue-playbook", { exact: false }),
@@ -851,7 +1048,7 @@ describe("studio transcript click-through", () => {
     await page.getByRole("button", { name: "Start fresh" }).click();
 
     await expect
-      .element(page.getByText("What insights can I help with?"))
+      .element(page.getByText("What would you like to work on?"))
       .toBeVisible();
     await new Promise((resolve) => window.setTimeout(resolve, 50));
     await expect

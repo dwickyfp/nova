@@ -24,8 +24,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import AsyncIterator
-from contextlib import suppress
+from collections.abc import AsyncIterator, Callable
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
@@ -53,6 +54,18 @@ from app.modules.assistant.streaming import StreamAccumulator, parse_sse_data_li
 logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS_CODES = frozenset({429, *range(500, 600)})
+_retry_allowance: ContextVar[Callable[[], bool] | None] = ContextVar(
+    "assistant_provider_retry_allowance", default=None,
+)
+
+
+@contextmanager
+def provider_retry_scope(allowance: Callable[[], bool]):
+    token = _retry_allowance.set(allowance)
+    try:
+        yield
+    finally:
+        _retry_allowance.reset(token)
 
 
 def normalize_tool_schema_for_provider(schema: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -356,6 +369,9 @@ class AssistantProviderClient:
 
     async def _backoff(self, attempt: int, response: httpx.Response | None = None) -> None:
         """Bound retry delay without exposing provider response content."""
+        allowance = _retry_allowance.get()
+        if allowance is not None and not allowance():
+            raise AssistantProviderError("This turn exhausted its recovery allowance.")
         delay = min(self._retry_base_seconds * (2**attempt), 2.0)
         if response is not None:
             retry_after = response.headers.get("retry-after")

@@ -26,6 +26,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
@@ -109,6 +110,22 @@ SQL_WRITE_MAX_CALLS = 4
 CONSENT_TIMEOUT_SECONDS = 300.0
 _budget_time = time.monotonic
 
+
+def remaining_loop_seconds(limit: float, checkpoint: dict | None) -> float:
+    """Recovery cannot extend the turn's persisted deadline or remaining allowance."""
+    if not checkpoint or "remaining_time_seconds" not in checkpoint:
+        return limit
+    remaining = checkpoint["remaining_time_seconds"]
+    if type(remaining) not in (int, float) or not math.isfinite(remaining):
+        return 0.0
+    remaining = min(limit, max(0.0, float(remaining)))
+    if "deadline_unix_seconds" in checkpoint:
+        expires = checkpoint["deadline_unix_seconds"]
+        if type(expires) not in (int, float) or not math.isfinite(expires):
+            return 0.0
+        remaining = min(remaining, max(0.0, expires - time.time()))
+    return remaining
+
 # Only the latest small working set may seed a follow-up transform. The table
 # itself is already capped when it is persisted, and this second bound prevents
 # a malformed/legacy trace from turning context restoration into an unbounded
@@ -154,6 +171,10 @@ class LoopContext:
     user_name: str
     collaboration_tools: tuple[str, ...] = ()
     collaboration_root: bool = False
+    intelligent_ui: bool = False
+    ui_action_accepted: bool = False
+    ui_prompt: str = ""
+    ui_private_context: bool = False
     business_turn_hook: Any = None
     mission_continuation: dict | None = None
     business_result_hook: Any = None
@@ -302,6 +323,8 @@ _TOOL_MARKUP = re.compile(
 )
 
 REPAIR_LIMITS = {
+    "provider_retry": 3,
+    "intelligent_ui": 1,
     "composer_tool_call": 1,
     "missing_required": 1,
     "business_evidence": 2,
@@ -310,14 +333,27 @@ REPAIR_LIMITS = {
     "recoverable_tool": 2,
     "unverified_number": 1,
 }
+MAX_TURN_REPAIRS = 6
 
 
 class RepairBudget:
     def __init__(self, used: dict[str, int] | int | None = None) -> None:
-        self.used: dict[str, int] = dict(used) if isinstance(used, dict) else {}
+        self.used: dict[str, int] = {}
+        if used is None:
+            return
+        values = used if isinstance(used, dict) else {"legacy": used}
+        for key, count in values.items():
+            # Corrupt recovery data must not refund consumed retries.
+            self.used[str(key)] = (
+                min(count, MAX_TURN_REPAIRS)
+                if isinstance(count, int) and not isinstance(count, bool) and count >= 0
+                else MAX_TURN_REPAIRS
+            )
 
     def take(self, kind: str) -> bool:
-        if self.used.get(kind, 0) >= REPAIR_LIMITS[kind]:
+        if sum(self.used.values()) >= MAX_TURN_REPAIRS or (
+            self.used.get(kind, 0) >= REPAIR_LIMITS[kind]
+        ):
             return False
         self.used[kind] = self.used.get(kind, 0) + 1
         return True
@@ -640,8 +676,10 @@ class AssistantLoop:
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
     ) -> AsyncGenerator[str, None]:
         from app.core.config import settings
+        from app.modules.assistant.provider import provider_retry_scope
 
         context.execution_now = context.execution_now or _now()
+        repairs = RepairBudget((resume_state or {}).get("repairs"))
 
         context.quality_measurements = (
             _QualityMeasurements(
@@ -651,25 +689,61 @@ class AssistantLoop:
                 ),
                 resumed=resume_state is not None,
             )
-            if (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation)
-            and context.agent_id else None
+            if self._spend_limit is not None or (
+                (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation)
+                and context.agent_id
+            ) else None
         )
+        if resume_state is not None and self._spend_limit is not None:
+            consumed = resume_state.get("consumed_tokens")
+            if (
+                type(consumed) is not int or consumed < 0
+                or consumed >= self._spend_limit
+            ):
+                yield events.error(
+                    "token_budget", "The recovered turn has no remaining verified token allowance."
+                )
+                yield events.done(str(uuid4()), finish_reason="token_budget")
+                return
+            assert context.quality_measurements is not None
+            context.quality_measurements.reported_total_tokens = consumed
         iterator = self._run(
             thread=thread, user_content=user_content, context=context,
             resolve_consent=resolve_consent, cancelled=cancelled, model=model,
             provider_id=provider_id, on_checkpoint=on_checkpoint, resume_state=resume_state,
             save_state=save_state, before_final=before_final,
+            repair_budget=repairs,
         )
         finish_reason = "interrupted"
+        response_started = time.monotonic()
+        first_useful = False
         try:
             while True:
                 # Bind only while driving the engine; callers consuming an SSE
                 # frame must not inherit this attempt's measurements.
-                with measurement_scope(context.quality_measurements):
+                with (
+                    measurement_scope(context.quality_measurements),
+                    provider_retry_scope(lambda: repairs.take("provider_retry")),
+                ):
                     try:
                         frame = await anext(iterator)
                     except StopAsyncIteration:
                         break
+                    if not first_useful and frame.startswith((
+                        "event: text_delta\n", "event: table\n", "event: chart\n",
+                        "event: citation\n", "event: content_block_done\n",
+                    )):
+                        from app.observability.metrics import STUDIO_FIRST_USEFUL_RESPONSE
+
+                        elapsed = max(0.0, time.monotonic() - response_started)
+                        STUDIO_FIRST_USEFUL_RESPONSE.labels(
+                            "smart" if context.collaboration_root else "direct"
+                        ).observe(elapsed)
+                        context.quality_facts = context.quality_facts or {}
+                        context.quality_facts["presentation"] = {
+                            "first_useful_response_ms": round(elapsed * 1000),
+                        }
+                        first_useful = True
                     if frame.startswith("event: done\n"):
                         payload = json.loads(frame.split("data: ", 1)[1])
                         finish_reason = payload.get("finish_reason", "error")
@@ -703,6 +777,7 @@ class AssistantLoop:
         resume_state: dict[str, Any] | None = None,
         save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
+        repair_budget: RepairBudget | None = None,
     ) -> AsyncGenerator[str, None]:
         """Drive one turn, yielding SSE frames.
 
@@ -738,12 +813,18 @@ class AssistantLoop:
         if context.last_result is None:
             context.last_result = _latest_thread_result(thread)
         events.begin_run(context.run_id)
-        deadline = _budget_time() + self._time_budget
+        time_budget = remaining_loop_seconds(self._time_budget, resume_state)
+        deadline_unix_seconds = time.time() + time_budget
+        deadline = _budget_time() + time_budget
+        if time_budget <= 0:
+            yield events.error("timeout", "The assistant turn exhausted its time budget.")
+            yield events.done(str(uuid4()), finish_reason="timeout")
+            return
         if _has_semantic_binding(context):
             from app.modules.agents.semantic.access import load_authorized_models
 
             try:
-                await asyncio.wait_for(load_authorized_models(context), timeout=self._time_budget)
+                await asyncio.wait_for(load_authorized_models(context), timeout=time_budget)
             except Exception:
                 yield events.error(
                     "semantic_access_unavailable", "Semantic access could not be verified."
@@ -755,7 +836,7 @@ class AssistantLoop:
         planning_scope = getattr(catalog_tool, "planning_scope", None)
         if context.agent_id and callable(planning_scope):
             context.agent_scope = planning_scope(context)
-        repairs = RepairBudget()
+        repairs = repair_budget or RepairBudget((resume_state or {}).get("repairs"))
         completed_capabilities: set[str] = set()
         composing_final = False
         clarification_requested = False
@@ -1060,6 +1141,12 @@ class AssistantLoop:
             summary_lookup=lambda lines: summary_cache.get(thread_key, lines),
         )
         messages = self._build_messages(thread, user_content, context, route=route)
+        from app.modules.assistant.intelligent_ui import composer_prompt
+
+        context.ui_prompt = composer_prompt(
+            enabled=context.intelligent_ui, presentation=turn_plan.presentation,
+            token_room=self._context_manager.token_budget - estimate_messages_tokens(messages),
+        )
         language = _turn_language(context)
         if context.intent_frame is not None:
             leading = next(
@@ -1172,7 +1259,6 @@ class AssistantLoop:
             context.pending_output = _pending_trace(pending_artifacts)
             composing_final = bool(resume_state.get("composing_final"))
             clarification_requested = bool(resume_state.get("clarification_requested"))
-            repairs = RepairBudget(resume_state.get("repairs"))
             context.quality_facts.update(resume_state.get("quality_facts", {}))
             first_iteration = int(resume_state.get("iteration", 0))
 
@@ -1198,6 +1284,10 @@ class AssistantLoop:
                     "messages": messages, "iteration": _iteration,
                     "seen_calls": seen_calls, "tool_uses": tool_uses,
                     "usage": context.usage, "evidence": evidence.snapshot(),
+                    "consumed_tokens": (
+                        context.quality_measurements.reported_total_tokens
+                        if context.quality_measurements is not None else None
+                    ),
                     "completed_capabilities": sorted(completed_capabilities),
                     "deferred_calls": deferred_calls,
                     "pending_artifacts": [asdict(item) for item in pending_artifacts],
@@ -1205,6 +1295,8 @@ class AssistantLoop:
                     "clarification_requested": clarification_requested,
                     "quality_facts": context.quality_facts,
                     "safe_to_resume": True,
+                    "remaining_time_seconds": max(0.0, deadline - _budget_time()),
+                    "deadline_unix_seconds": deadline_unix_seconds,
                 })
             if cancelled() or (
                 callable(context.business_cancelled) and await context.business_cancelled()
@@ -1215,6 +1307,23 @@ class AssistantLoop:
             if _budget_time() >= deadline:
                 yield events.error("timeout", "The assistant turn exceeded its time budget.")
                 yield events.done(str(uuid4()), finish_reason="timeout")
+                return
+
+            measured = context.quality_measurements
+            if self._spend_limit is not None and measured is not None and (
+                measured.reported_total_tokens >= self._spend_limit
+                or (
+                    context.quality_evaluation
+                    and (
+                        measured.missing_usage or measured.pending_usage
+                        or measured.provider_unavailable
+                    )
+                )
+            ):
+                yield events.error(
+                    "token_budget", "The assistant turn exhausted its token allowance."
+                )
+                yield events.done(str(uuid4()), finish_reason="token_budget", usage=context.usage)
                 return
 
             phase = "compose" if composing_final else "act"
@@ -1311,6 +1420,13 @@ class AssistantLoop:
                         len(json.dumps(current_schemas, separators=(",", ":"), default=str)) // 4
                     )
                     message_budget = self._context_manager.token_budget - schema_tokens
+                    if context.ui_prompt and estimate_messages_tokens(messages) > message_budget:
+                        messages = [{**item, "content": item["content"].replace(
+                            "\n" + context.ui_prompt, ""
+                        )} if isinstance(item.get("content"), str) else item for item in messages]
+                        context.ui_prompt = ""
+                        _record_step(context, {"kind": "runtime_decision",
+                                               "ui_fallback": "context_budget", "status": "done"})
                     if message_budget > 0:
                         curated_request = ContextManager(
                             token_budget=message_budget,
@@ -1455,11 +1571,20 @@ class AssistantLoop:
                         for item in evidence.import_results(participant):
                             table = evidence.tables.get(item.evidence_id) or {}
                             context.last_result = {**table, "title": item.summary}
+                if context.ui_prompt and not composing_final:
+                    composing_final = True
+                    messages.append({"role": "system", "content": _final_composer_prompt(
+                        evidence, context
+                    )})
+                    continue
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
-                draft, answer_claims = split_claims("".join(buffered_text))
-                if answer_claims is not None:
-                    buffered_text = [draft]
+                draft_text, answer_claims = split_claims("".join(buffered_text))
+                from app.modules.assistant.intelligent_ui import split_program
+
+                fallback_markdown, ui_program = split_program(draft_text)
+                if answer_claims is not None or fallback_markdown != draft_text:
+                    buffered_text = [fallback_markdown]
                 language = _turn_language(context)
                 # A turn that already holds results answers from them, verified like any
                 # other answer, even when a later step could not be expressed.
@@ -1707,6 +1832,67 @@ class AssistantLoop:
                     "missing_metrics": missing_metrics,
                 }
                 context.verified_evidence = evidence.snapshot()
+                if context.ui_prompt:
+                    from app.modules.assistant.intelligent_ui import (
+                        UiValidationError,
+                        compose_block,
+                    )
+
+                    try:
+                        if not ui_program:
+                            raise UiValidationError("The requested interactive program is missing")
+                        ui_block = await compose_block(
+                            ui_program, answer_text, tables=answer_tables,
+                            business=route.needs_data or business_request,
+                            private_context=bool(
+                                context.attachments or context.has_attachment_history
+                                or context.ui_private_context
+                            ),
+                            question=_asked(thread, user_content), claims=answer_claims,
+                            language=language,
+                        )
+                    except UiValidationError:
+                        context.quality_facts["ui_validity"] = {"valid": False}
+                        from app.observability.metrics import studio_operation
+
+                        if repairs.take("intelligent_ui"):
+                            with studio_operation("ui", "repair"):
+                                _record_step(
+                                    context, {"kind": "runtime_decision", "ui_repair": True}
+                                )
+                            messages.append({"role": "system", "content": (
+                                "The requested interactive program is missing or invalid. "
+                                "Provide or repair it once: "
+                                "use only the Nova catalog, valid declared state and exact "
+                                "@Evidence ids; business values must bind verified results, "
+                                "and media/HTML must be static public content. Keep the "
+                                "verified Markdown fallback. Include a useful Markdown answer "
+                                "even when omitting the program."
+                            )})
+                            continue
+                        with studio_operation("ui", "fallback"):
+                            _record_step(context, {
+                                "kind": "runtime_decision", "ui_fallback": "validation_failed",
+                                "status": "done",
+                            })
+                        answer_text = (
+                            say("loop.ui_fallback_notice", language) + "\n\n" + answer_text
+                        ).strip()
+                    else:
+                        answer_text = ui_block["fallback"]
+                        if ui_block["provenance"].get("prose_rebuilt"):
+                            answer_text = say("loop.simulation_values", language)
+                        if ui_block["provenance"].get("prose_adjusted"):
+                            _record_step(context, {
+                                "kind": "runtime_decision", "ui_simulation_prose_adjusted": True,
+                            })
+                        context.quality_facts["ui_validity"] = {"valid": True}
+                        context.quality_facts["ui_evidence"] = {
+                            "bound": bool(ui_block["provenance"]["evidence_ids"]),
+                        }
+                        pending_artifacts.append(PendingArtifact("ui", ui_block))
+                if not answer_text.strip():
+                    answer_text = say("loop.ui_unavailable", language)
                 for frame in _ordered_output_frames(
                     answer_text,
                     pending_artifacts,
@@ -2251,7 +2437,7 @@ class AssistantLoop:
                     )
                     composing_final = True
                     messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence)}
+                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
                     )
                     continue
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
@@ -2581,7 +2767,7 @@ class AssistantLoop:
                 # now, rather than spend the rest on a call that ends the turn empty.
                 composing_final = True
                 messages.append(
-                    {"role": "system", "content": _final_composer_prompt(evidence)}
+                    {"role": "system", "content": _final_composer_prompt(evidence, context)}
                 )
             elif self._iterative and not context.collaboration_root:
                 remaining_steps = self._max_iterations - _iteration - 1
@@ -2598,14 +2784,14 @@ class AssistantLoop:
                 ):
                     composing_final = True
                     messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence)}
+                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
                     )
             elif required_done:
                 composing_final = True
                 messages.append(
                     {
                         "role": "system",
-                        "content": _final_composer_prompt(evidence),
+                        "content": _final_composer_prompt(evidence, context),
                     }
                 )
 
@@ -3164,7 +3350,7 @@ def _studio_fallback_plan(
     )
 
 
-def _final_composer_prompt(evidence: EvidenceTracker) -> str:
+def _final_composer_prompt(evidence: EvidenceTracker, context: LoopContext | None = None) -> str:
     return (
         "<FINAL_COMPOSER>\n"
         "Tools are disabled. Answer only from the verified evidence JSON below. "
@@ -3174,6 +3360,11 @@ def _final_composer_prompt(evidence: EvidenceTracker) -> str:
         "one result column. State uncertainty when evidence is incomplete.\n"
         + evidence.composer_context()
         + "\n</FINAL_COMPOSER>"
+        + ("\n" + context.ui_prompt if context and context.ui_prompt else "")
+        + ("\nThis conversation contains private form or attachment inputs. "
+           "Do not use public media, external links or HtmlView."
+           if context and (context.ui_private_context or context.attachments
+                           or context.has_attachment_history) else "")
     )
 
 
@@ -3432,6 +3623,19 @@ def _ordered_output_frames(
                     "chart_spec": chart_spec,
                 },
             )
+        elif kind == "ui":
+            payload = dict(item["payload"])
+            program = payload.pop("program")
+            frames.append(events.format_sse("ui", {
+                "content_index": index, "content_id": content_id, "payload": payload,
+            }))
+            for offset in range(0, len(program), 4096):
+                frames.append(events.format_sse("ui_delta", {
+                    "content_index": index, "content_id": content_id,
+                    "text": program[offset:offset + 4096],
+                }))
+            _record_step(context, {"kind": "ui", "content_index": index,
+                                   "content_id": content_id, **payload, "program": program})
         elif kind == "citation":
             payload = dict(item["payload"])
             frames.append(events.citation(payload, content_index=index, content_id=content_id))
@@ -4065,6 +4269,10 @@ def _record_quality_observation(
     if any(step.get("kind") == "quality_observation" for step in context.steps or []):
         return
     facts = dict(context.quality_facts or {})
+    if context.ui_action_accepted:
+        facts["ui_action_success"] = {
+            "accepted": True, "completed": finish_reason == "stop",
+        }
     if finish_reason != "stop":
         facts["task_completeness"] = {**facts.get("task_completeness", {}), "completed": False}
     facts["execution"] = {"finish_reason": finish_reason}

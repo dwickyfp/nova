@@ -39,7 +39,7 @@ import {
 import {
   replayThread,
   type TranscriptTurn,
-} from "@/features/studio/studio-chat";
+} from "@/features/studio/studio-transcript";
 import { ProcessRail } from "@/features/studio/thought-turn";
 import { TurnContent } from "@/features/studio/turn-content";
 import { cn } from "@/lib/utils";

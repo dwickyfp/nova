@@ -7,8 +7,7 @@ import hashlib
 import json
 import logging
 import time
-import weakref
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -22,25 +21,14 @@ from app.modules.agents.identity import (
     participant_id,
     participant_path,
 )
+from app.modules.agents.run_coordination import coordination_lock
+from app.modules.agents.run_coordination import update_run as _update_run
 from app.modules.agents.run_journal import run_journal
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools.redaction import is_credential_value
 
 logger = logging.getLogger(__name__)
-
-#: The engine applies an UPDATE as a rewrite of the whole row it read. Two statements
-#: on one run that overlap can therefore undo each other: a heartbeat restores the
-#: `running` status a completion just replaced. A process writes a run row in turn.
-_ROW_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
-
-
-async def _update_run(run_id: str, sql: str, params: list[Any]) -> dict:
-    lock = _ROW_LOCKS.get(run_id)
-    if lock is None:
-        lock = _ROW_LOCKS[run_id] = asyncio.Lock()
-    async with lock:
-        return await db.execute_system(sql, params)
 
 RUN_COLUMNS = (
     ("session_id", "VARCHAR(64)"),
@@ -165,46 +153,11 @@ def _run(row: list[Any]) -> dict[str, Any]:
 
 @asynccontextmanager
 async def _event_lock(client: Any, root_run_id: str):
-    lock = client.lock(
-        f"nova:auto:event:lock:{root_run_id}",
-        timeout=EVENT_LOCK_SECONDS,
-        blocking_timeout=30,
-    )
-    async with lock:
-        stopped = asyncio.Event()
-        lost = asyncio.Event()
-
-        async def renew() -> None:
-            while not stopped.is_set():
-                try:
-                    await asyncio.wait_for(
-                        stopped.wait(), timeout=EVENT_LOCK_RENEW_SECONDS
-                    )
-                    return
-                except TimeoutError:
-                    pass
-                try:
-                    if not await lock.extend(EVENT_LOCK_SECONDS, replace_ttl=True):
-                        lost.set()
-                        return
-                except Exception as exc:
-                    logger.warning("Auto event lock renewal failed: %s", type(exc).__name__)
-                    lost.set()
-                    return
-
-        renewal = asyncio.create_task(renew())
-
-        async def assert_owned() -> None:
-            if lost.is_set() or not await lock.owned():
-                raise RuntimeError("Auto event lock was lost")
-
-        try:
-            yield assert_owned
-        finally:
-            stopped.set()
-            renewal.cancel()
-            with suppress(asyncio.CancelledError):
-                await renewal
+    async with coordination_lock(
+        client, f"nova:auto:event:lock:{root_run_id}",
+        ttl_seconds=EVENT_LOCK_SECONDS, renew_seconds=EVENT_LOCK_RENEW_SECONDS,
+    ) as owned:
+        yield owned
 
 
 class HarnessRepository:
@@ -317,6 +270,7 @@ class HarnessRepository:
         provider_id: str | None = None,
         model: str | None = None,
         user_message_id: str | None = None,
+        ui_action_accepted: bool = False,
         work_intent: str | None = None,
         new_mission: bool = False,
         continue_mission_id: str | None = None,
@@ -352,6 +306,7 @@ class HarnessRepository:
                 "provider_id": provider_id,
                 "model": model,
                 "user_message_id": user_message_id,
+                "ui_action_accepted": ui_action_accepted,
                 "work_intent": work_intent,
                 "new_mission": new_mission,
                 "continue_mission_id": continue_mission_id,
@@ -878,7 +833,8 @@ class HarnessRepository:
                 if (replayable or (not smart and str(root_id or run_id) == str(run_id)))
                 else "interrupted"
             )
-            changed = await db.execute_system(
+            changed = await _update_run(
+                str(run_id),
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = %s, error_class = 'worker_lost', updated_at = %s "
                 "WHERE run_id = %s AND status = 'running' AND updated_at < %s",
@@ -898,7 +854,8 @@ class HarnessRepository:
                         try:
                             await self._restore_prior_terminal(str(root_id), str(run_id))
                         except RuntimeError as repair_error:
-                            await db.execute_system(
+                            await _update_run(
+                                str(run_id),
                                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                                 "SET status = 'running', error_class = NULL, updated_at = %s "
                                 "WHERE run_id = %s AND root_run_id = %s "
@@ -974,7 +931,8 @@ class HarnessRepository:
             values.append(str(payload.get("error_class") or "")[:64])
         elif status == "cancelled":
             assignments.append("error_class = NULL")
-        await db.execute_system(
+        await _update_run(
+            run_id,
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET " + ", ".join(assignments)
             + " WHERE run_id = %s AND root_run_id = %s "
             "AND status = 'interrupted' AND error_class = 'worker_lost'",
@@ -992,7 +950,8 @@ class HarnessRepository:
         expired = []
         for row in result["rows"]:
             root_id = str(row[0])
-            changed = await db.execute_system(
+            changed = await _update_run(
+                root_id,
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = 'failed', error_class = 'session_timeout', updated_at = %s "
                 "WHERE run_id = %s AND started_at < %s "
@@ -1001,13 +960,7 @@ class HarnessRepository:
             )
             if changed.get("affected", 0) == 1:
                 expired.append(root_id)
-                await db.execute_system(
-                    "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-                    "SET status = 'cancelled', updated_at = %s "
-                    "WHERE root_run_id = %s AND status IN "
-                    "('queued', 'running', 'waiting_for_message', 'waiting_for_auth')",
-                    [_now(), root_id],
-                )
+                await self._cancel_descendants(root_id)
                 await self.event(
                     root_id,
                     root_id,
@@ -1730,8 +1683,17 @@ class HarnessRepository:
         raise RuntimeError("Auto message query returned inconsistent rows")
 
     async def cancel_tree(self, root_run_id: str) -> bool:
+        root = await self.get(root_run_id)
+        if not root or root["agent_id"] not in SMART_AGENT_IDS or root["depth"] != 0:
+            return False
+        async with self.admission_lock(root_run_id, root["owner_name"]) as owned:
+            await owned()
+            return await self._cancel_tree_locked(root_run_id)
+
+    async def _cancel_tree_locked(self, root_run_id: str) -> bool:
         for attempt in range(10):
-            result = await db.execute_system(
+            result = await _update_run(
+                root_run_id,
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = 'cancelled', updated_at = %s "
                 "WHERE run_id = %s AND agent_id IN ('__auto__', '__smart__') AND depth = 0 "
@@ -1751,22 +1713,29 @@ class HarnessRepository:
             if attempt == 9:
                 raise RuntimeError("Auto cancellation could not verify the root state")
             await asyncio.sleep(0.1)
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET status = 'cancelled', updated_at = %s "
-            "WHERE root_run_id = %s AND depth > 0 "
-            "AND status IN ('queued', 'running', 'waiting_for_message', 'waiting_for_agent', "
-            "'waiting_for_auth', 'waiting_for_turn')",
-            [_now(), root_run_id],
-        )
+        await self._cancel_descendants(root_run_id)
         return True
+
+    async def _cancel_descendants(self, root_run_id: str) -> None:
+        result = await db.execute_system(
+            "SELECT run_id, root_run_id, depth FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
+            "WHERE root_run_id = %s AND depth > 0",
+            [root_run_id],
+        )
+        for row in result["rows"]:
+            if len(row) != 3 or row[1] != root_run_id or int(row[2]) < 1:
+                raise RuntimeError("Cancellation crossed a run boundary")
+            await self.cancel_child(root_run_id, str(row[0]))
 
     async def cancel_child(self, root_run_id: str, child_run_id: str) -> bool:
         for attempt in range(10):
-            result = await db.execute_system(
+            result = await _update_run(
+                child_run_id,
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = 'cancelled', updated_at = %s "
                 "WHERE run_id = %s AND root_run_id = %s AND depth > 0 "
-                "AND status IN ('queued', 'running', 'waiting_for_message', 'waiting_for_auth')",
+                "AND status IN ('queued', 'running', 'waiting_for_message', 'waiting_for_agent', "
+                "'waiting_for_auth', 'waiting_for_turn')",
                 [_now(), child_run_id, root_run_id],
             )
             if result.get("affected", 0) == 1:

@@ -7,8 +7,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.redis import session_store
 from app.modules.agents import harness_repository as repository_module
 from app.modules.agents.harness_repository import HarnessRepository
+from tests.unit.test_agent_harness import _EventRedis
+
+
+@pytest.fixture(autouse=True)
+def run_write_coordination(monkeypatch):
+    monkeypatch.setattr(session_store, "_redis", _EventRedis())
 
 
 @pytest.mark.asyncio

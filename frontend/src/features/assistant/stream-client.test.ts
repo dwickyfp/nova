@@ -47,6 +47,34 @@ afterEach(() => {
 });
 
 describe("toConsentPayload", () => {
+  it("preserves adjacent Smart cursors above JavaScript's safe integer limit", async () => {
+    const frame = (sequence: string, text: string) =>
+      `event: text_delta\ndata: ${JSON.stringify({run_id: "smart", sequence, text})}\n\n`;
+    fetchMock.mockResolvedValueOnce(new Response(
+      frame("183551631220940801", "First") + frame("183551631220940802", "Second") +
+      frame("183551631220940802", "Duplicate"),
+      {status: 200, headers: {"Content-Type": "text/event-stream"}},
+    ));
+    const onEvent = vi.fn();
+    await streamAssistantTurn("thread", "Continue", {onEvent});
+    expect(onEvent.mock.calls.map(([event]) => event.text)).toEqual(["First", "Second"]);
+  });
+  it("drops duplicate UI program chunks during journal replay", async () => {
+    const chunk =
+      'event: ui_delta\ndata: {"run_id":"run-ui","sequence":2,"content_index":1,"content_id":"content-1","text":"root = Col([])"}\n\n';
+    fetchMock.mockResolvedValueOnce(
+      new Response(chunk + chunk, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+    const onEvent = vi.fn();
+    await streamAssistantTurn("thread", "Build a calculator", { onEvent });
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "ui_delta", sequence: 2 }),
+    );
+  });
   it("updates the sidebar role from the server role-change event", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(

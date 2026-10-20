@@ -1,7 +1,8 @@
 import { Fragment, useRef } from "react";
-import { ArrowUp, ChevronDown, FileText, ImageIcon, Plus, Square, Telescope, X } from "lucide-react";
+import { ArrowUp, Brain, ChevronDown, FileText, ImageIcon, Plus, Square, Telescope, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
@@ -11,10 +12,12 @@ function AgentPicker({
   agent,
   agents,
   onSelectAgent,
+  disabled,
 }: {
   agent: Agent | null;
   agents: Agent[];
   onSelectAgent: (id: string) => void;
+  disabled: boolean;
 }) {
   if (agent?.agent_id === SKILL_AUTHOR_ID) {
     return <span className="text-xs text-muted-foreground">Skill creator</span>;
@@ -24,6 +27,7 @@ function AgentPicker({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           className="flex h-8 min-w-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 text-xs text-card-foreground shadow-xs transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <span className="truncate">{agent?.name ?? "Select an agent"}</span>
@@ -68,7 +72,13 @@ export const Composer = ({
   agent,
   agents,
   onSelectAgent,
+  smartEnabled = agent?.agent_id === AUTO_AGENT_ID,
+  onToggleSmart,
+  sendDisabled = false,
 }: {
+  sendDisabled?: boolean;
+  smartEnabled?: boolean;
+  onToggleSmart?: () => void;
   ref: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
   onChange: (v: string) => void;
@@ -160,11 +170,24 @@ export const Composer = ({
             <Plus aria-hidden="true" className="size-4" strokeWidth={1} />
           </Button>
 
-          <AgentPicker
-            agent={agent}
-            agents={agents}
-            onSelectAgent={onSelectAgent}
-          />
+          {agent?.agent_id !== SKILL_AUTHOR_ID && onToggleSmart ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" aria-label="Smart mode" aria-pressed={smartEnabled}
+                  disabled={streaming || readingFiles}
+                  onClick={onToggleSmart}
+                  className={cn("flex size-8 items-center justify-center rounded-full border transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40", smartEnabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:bg-accent")}>
+                  <Brain aria-hidden="true" className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{smartEnabled ? "Smart chooses the right agents" : "Turn on Smart"}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {!smartEnabled || agent?.agent_id === SKILL_AUTHOR_ID ? (
+            <AgentPicker agent={agent} agents={agents.filter((item) => item.agent_id !== AUTO_AGENT_ID)}
+              disabled={streaming || readingFiles}
+              onSelectAgent={onSelectAgent} />
+          ) : null}
 
           <div className="flex-1" />
           {onResearch ? (
@@ -183,7 +206,7 @@ export const Composer = ({
           <button
             type="button"
             onClick={streaming ? onStop : onSend}
-            disabled={disabled || readingFiles || (!streaming && !value.trim() && !attachments.length)}
+            disabled={disabled || sendDisabled || readingFiles || (!streaming && !value.trim() && !attachments.length)}
             aria-label={streaming ? "Stop" : "Send"}
             className={cn(
               "flex size-9 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",

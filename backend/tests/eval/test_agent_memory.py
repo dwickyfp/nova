@@ -43,10 +43,17 @@ class MemoryStore(AgentMemoryRepository):
         source_quote,
         source_thread_id,
         existing_id,
+        source_message_id=None,
+        source_scope=None,
+        observed_at=None,
     ):
         if existing_id:
             row = next(row for row in self.rows if row["memory_id"] == existing_id)
-            row.update(fact=fact, source_quote=source_quote, source_thread_id=source_thread_id)
+            row.update(
+                fact=fact, source_quote=source_quote, source_thread_id=source_thread_id,
+                source_message_id=source_message_id, source_scope=source_scope,
+                observed_at=observed_at,
+            )
             return existing_id
         memory_id = str(len(self.rows) + 1)
         self.rows.append(
@@ -59,6 +66,9 @@ class MemoryStore(AgentMemoryRepository):
                 fact=fact,
                 source_quote=source_quote,
                 source_thread_id=source_thread_id,
+                source_message_id=source_message_id,
+                source_scope=source_scope,
+                observed_at=observed_at,
             )
         )
         return memory_id

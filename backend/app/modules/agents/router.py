@@ -27,7 +27,7 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Coroutine
 from typing import Annotated
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -131,6 +131,8 @@ from app.modules.assistant.schemas import (
     ThreadListResponse,
     ThreadUpdateRequest,
     ThreadView,
+    UiMediaInput,
+    UiStateInput,
 )
 from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import (
@@ -362,15 +364,38 @@ def _thread_view(row: dict) -> ThreadView:
     )
 
 
-def _message_view(row: dict) -> MessageView:
+def _message_view(row: dict, user: dict | None = None) -> MessageView:
+    from app.core.config import settings
     from app.modules.agents.public_projections import sanitize_workflow_payload
 
+    steps = row.get("steps") or []
+    stamp = row.get("security_context") or {}
+    current = observation_context(session_security(user)) if user is not None and any(
+        item.get("kind") == "ui" for item in steps
+    ) else {}
+    ui_visible = bool(current) and isinstance(stamp, dict) and all(
+        stamp.get(key) == current.get(key)
+        for key in ("principal", "active_role", "security_context_version")
+    )
+    content = row.get("content") or ""
+    if ui_visible and not settings.STUDIO_INTELLIGENT_UI_ENABLED:
+        rebuilt = [item for item in steps if item.get("kind") == "ui"
+                   and (item.get("provenance") or {}).get("prose_rebuilt")]
+        if len(rebuilt) == 1 and rebuilt[0].get("fallback"):
+            content = rebuilt[0]["fallback"]
+            steps = [item for item in steps if item.get("kind") != "text"]
+            steps.append({"kind": "text", "text": content, "content_index": 0,
+                          "content_id": "fallback"})
+    if not settings.STUDIO_INTELLIGENT_UI_ENABLED or not ui_visible:
+        steps = [item for item in steps if item.get("kind") != "ui"]
+    if row["role"] == "user" and any(item.get("kind") == "ui_action" for item in steps):
+        content = content.split("\n\nUI form input (user supplied):\n", 1)[0]
     return MessageView(
         message_id=row["message_id"],
         role=row["role"],
-        content=row.get("content") or "",
+        content=content,
         created_at=row["created_at"],
-        steps=sanitize_workflow_payload(row.get("steps") or []),
+        steps=sanitize_workflow_payload(steps),
         prompt_tokens=row.get("prompt_tokens"),
         completion_tokens=row.get("completion_tokens"),
         total_tokens=row.get("total_tokens"),
@@ -476,9 +501,39 @@ def _auto_frame(kind: str, payload: dict) -> str:
     return f"event: {kind}\ndata: {json.dumps(payload, default=str)}\n\n"
 
 
+def _smart_final_frames(payload: dict, message_id: str) -> list[tuple[str, dict]]:
+    """Each terminal fragment gets its own reconnect cursor, including sealed UI."""
+    frames: list[tuple[str, dict]] = []
+    ordered_text = False
+    for artifact in payload.get("artifacts") or []:
+        kind = artifact.get("kind")
+        identity = {key: artifact[key] for key in ("content_id", "content_index")
+                    if key in artifact}
+        if kind == "ui":
+            block = {key: value for key, value in artifact.items()
+                     if key not in {"kind", "content_id", "content_index", "program"}}
+            frames.append(("ui", {**identity, "payload": block}))
+            program = str(artifact.get("program") or "")
+            for offset in range(0, len(program), 4096):
+                frames.append(("ui_delta", {**identity, "text": program[offset:offset + 4096]}))
+            frames.append(("content_block_done", identity))
+        elif kind == "text":
+            ordered_text = True
+            frames.append(("text_delta", {**identity, "text": artifact.get("text", "")}))
+            frames.append(("content_block_done", identity))
+        elif kind in {"table", "chart", "automation_proposal"}:
+            frames.append((kind, {key: value for key, value in artifact.items() if key != "kind"}))
+    if not ordered_text:
+        frames.append(("text_delta", {"text": str(payload.get("answer") or "")}))
+    frames.append(("done", {"message_id": message_id, "finish_reason": "stop"}))
+    if len(frames) >= 1024:
+        raise ValueError("Smart answer exceeds its event frame budget")
+    return frames
+
+
 async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str]:
     """Replay a unified tree in session order; the worker never waits on SSE."""
-    cursor = max(-1, after // 3 - 1) if after >= 0 else -1
+    cursor = max(-1, after // 1024 - 1) if after >= 0 else -1
     deadline = asyncio.get_running_loop().time() + 3690
     final_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root_run_id}"))
     while asyncio.get_running_loop().time() < deadline:
@@ -487,57 +542,36 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
         )
         for item in batch:
             cursor = int(item["event_id"])
-            base = cursor * 3
+            base = cursor * 1024
             payload = {
                 **item["payload"],
                 "run_id": root_run_id,
-                "sequence": base,
+                "sequence": str(base),
                 "child_run_id": item["run_id"],
             }
             if base > after:
                 yield _auto_frame(item["type"], payload)
             if item["run_id"] == root_run_id and item["type"] == "agent_completed":
-                answer = str(item["payload"].get("answer") or "")
-                if base + 1 > after:
-                    for artifact in item["payload"].get("artifacts") or []:
-                        kind = artifact.get("kind")
-                        if kind in {"table", "chart", "automation_proposal"}:
-                            yield _auto_frame(kind, {
-                                **{name: value for name, value in artifact.items()
-                                   if name != "kind"},
-                                "run_id": root_run_id, "sequence": base + 1,
-                            })
-                    yield _auto_frame(
-                        "text_delta",
-                        {
-                            "text": answer,
-                            "run_id": root_run_id,
-                            "sequence": base + 1,
-                        },
-                    )
-                if base + 2 > after:
-                    yield _auto_frame(
-                        "done",
-                        {
-                            "message_id": final_id,
-                            "finish_reason": "stop",
-                            "run_id": root_run_id,
-                            "sequence": base + 2,
-                        },
-                    )
+                terminal = _smart_final_frames(item["payload"], final_id)
+                for offset, (kind, payload) in enumerate(terminal, 1):
+                    if base + offset > after:
+                        yield _auto_frame(kind, {
+                            **payload, "run_id": root_run_id, "sequence": str(base + offset),
+                        })
                 return
             if item["run_id"] == root_run_id and item["type"] in {
                 "agent_failed",
                 "agent_cancelled",
+                "agent_interrupted",
             }:
-                if base + 1 > after:
+                if base + 1 > after and item["type"] != "agent_cancelled":
                     yield _auto_frame(
                         "error",
                         {
                             "code": item["type"],
                             "message": "The Smart run did not complete.",
                             "run_id": root_run_id,
-                            "sequence": base + 1,
+                            "sequence": str(base + 1),
                         },
                     )
                 if base + 2 > after:
@@ -545,9 +579,11 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
                         "done",
                         {
                             "message_id": final_id,
-                            "finish_reason": "error",
+                            "finish_reason": (
+                                "cancelled" if item["type"] == "agent_cancelled" else "error"
+                            ),
                             "run_id": root_run_id,
-                            "sequence": base + 2,
+                            "sequence": str(base + 2),
                         },
                     )
                 return
@@ -558,12 +594,14 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
 
 async def _scoped_auto_root(root_run_id: str, user: dict) -> dict:
     root = await harness_repository.get(root_run_id)
+    security = session_security(user)
     invalid = (
         not root
         or root["depth"] != 0
         or root["agent_id"] not in SMART_AGENT_IDS
         or root["owner_name"] != user["username"]
-        or root["role_name"] != session_security(user).active_role
+        or root["role_name"] != security.active_role
+        or root.get("security_version") != security.security_context_version
     )
     if root is None or invalid:
         raise HTTPException(status_code=404, detail="Run not found in this role")
@@ -1891,7 +1929,7 @@ async def get_agent_thread(
                 status_code=503, detail="Conversation history is temporarily unavailable"
             ) from exc
         return ThreadDetailResponse(
-            thread=_thread_view(thread), messages=[_message_view(m) for m in messages],
+            thread=_thread_view(thread), messages=[_message_view(m, user) for m in messages],
             next_cursor=next_cursor,
         )
     messages = await assistant_repository.list_messages(
@@ -1901,7 +1939,7 @@ async def get_agent_thread(
     )
     return ThreadDetailResponse(
         thread=_thread_view(thread),
-        messages=[_message_view(m) for m in messages],
+        messages=[_message_view(m, user) for m in messages],
     )
 
 
@@ -2301,6 +2339,49 @@ async def rename_agent_thread(
     return _thread_view(renamed)
 
 
+@router.get("/{agent_id}/threads/{thread_id}/active-run")
+async def active_agent_run(
+    agent_id: str, thread_id: str, user: dict = Depends(get_current_user),
+):
+    await _require_agent(agent_id, user)
+    await _require_agent_thread(thread_id, agent_id, user["username"])
+    security = session_security(user)
+    run_id = await run_journal.current(
+        owner_name=user["username"], agent_id=agent_id, thread_id=thread_id,
+        role_name=security.active_role, security_version=security.security_context_version,
+    )
+    return {"run_id": run_id}
+
+
+@router.post("/{agent_id}/threads/{thread_id}/runs/{run_id}/cancel")
+async def cancel_agent_run(
+    agent_id: str, thread_id: str, run_id: str, user: dict = Depends(get_current_user),
+):
+    from app.core.redis import session_store
+
+    await _require_agent(agent_id, user)
+    await _require_agent_thread(thread_id, agent_id, user["username"])
+    security = session_security(user)
+    state = await run_journal.get(
+        run_id, owner_name=user["username"], agent_id=agent_id, thread_id=thread_id,
+        role_name=security.active_role,
+    )
+    if state is None or not await run_journal.has_security_version(
+        run_id, security.security_context_version,
+    ):
+        raise HTTPException(404, "Run not found in this security context")
+    if state["status"] == "running":
+        if session_store._redis is None:
+            raise HTTPException(503, "Run coordination is unavailable")
+        await session_store._redis.set(f"nova:agent-run:cancel:{run_id}", "1", ex=3600)
+        await write_audit_log(
+            event_type="AGENT_RUN", user_name=user["username"], action="CANCEL",
+            object_type="AGENT_RUN", object_name=run_id, status="SUCCESS",
+            active_role=security.active_role, session_id=user.get("session_id"),
+        )
+    return {"run_id": run_id, "cancelling": state["status"] == "running"}
+
+
 @router.get("/{agent_id}/threads/{thread_id}/runs/{run_id}/events")
 async def replay_agent_run(
     agent_id: str,
@@ -2313,14 +2394,8 @@ async def replay_agent_run(
     await _require_agent_thread(thread_id, agent_id, user["username"])
     role = session_security(user).active_role
     if agent_id in SMART_AGENT_IDS:
-        root = await harness_repository.get(run_id)
-        if (
-            not root
-            or root["depth"] != 0
-            or root["thread_id"] != thread_id
-            or root["owner_name"] != user["username"]
-            or root["role_name"] != role
-        ):
+        root = await _scoped_auto_root(run_id, user)
+        if root["thread_id"] != thread_id:
             raise HTTPException(status_code=404, detail="Run not found in this role")
         return StreamingResponse(
             _stream_auto_events(run_id, after),
@@ -2333,7 +2408,11 @@ async def replay_agent_run(
         thread_id=thread_id,
         role_name=role,
     )
-    if await run_journal.get(run_id, **scope) is None:
+    if await run_journal.get(run_id, **scope) is None or not (
+        await run_journal.has_security_version(
+            run_id, session_security(user).security_context_version,
+        )
+    ):
         raise HTTPException(status_code=404, detail="Run not found in this role")
 
     async def replay() -> AsyncIterator[str]:
@@ -2360,7 +2439,7 @@ async def replay_agent_run(
                 state = await run_journal.get(run_id, **scope)
             if (
                 state is not None
-                and state["status"] in {"interrupted", "failed"}
+                and state["status"] in {"interrupted", "failed", "cancelled"}
                 and not terminal_seen
             ):
                 code = "run_interrupted" if state["status"] == "interrupted" else "run_failed"
@@ -2395,6 +2474,91 @@ async def replay_agent_run(
     )
 
 
+async def _ui_denied(user: dict, resource: str, reason: str, status: int = 422) -> HTTPException:
+    await write_audit_log(
+        event_type="ASSISTANT_UI", user_name=user["username"], action="REFUSE",
+        object_type="UI_BLOCK", object_name=resource, status="DENIED",
+        error_message=reason, session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+        security_context_version=user.get("security_context_version"),
+    )
+    return HTTPException(status, reason)
+
+
+async def _ui_source(agent_id: str, thread_id: str, message_id: str,
+                     content_id: str, user: dict) -> dict:
+    from app.core.config import settings
+    from app.modules.assistant.intelligent_ui import CATALOG_VERSION
+
+    if not settings.STUDIO_INTELLIGENT_UI_ENABLED:
+        raise HTTPException(404, "Interactive UI is disabled")
+    await _require_agent(agent_id, user)
+    await _require_agent_thread(thread_id, agent_id, user["username"])
+    block = await assistant_repository.ui_source(
+        thread_id, message_id, content_id, user_name=user["username"],
+        security_context=observation_context(session_security(user)),
+    )
+    import hashlib
+
+    if (not block or block.get("catalog_version") != CATALOG_VERSION
+            or hashlib.sha256(str(block.get("program", "")).encode()).hexdigest()
+            != block.get("program_sha256")):
+        raise await _ui_denied(user, content_id,
+                               "UI source is unavailable in this security context", 404)
+    return block
+
+
+@router.get("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
+async def get_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
+                             user: dict = Depends(get_current_user)):
+    block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
+    return await assistant_repository.get_ui_state(
+        thread_id, message_id, content_id, user_name=user["username"],
+        security_context=observation_context(session_security(user)), block=block,
+    )
+
+
+@router.put("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
+async def put_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
+                             body: UiStateInput, user: dict = Depends(get_current_user)):
+    from app.modules.assistant.intelligent_ui import UiValidationError
+
+    block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
+    if body.program_sha256 != block["program_sha256"]:
+        raise await _ui_denied(user, content_id, "UI program changed", 409)
+    try:
+        return await assistant_repository.put_ui_state(
+            thread_id, message_id, content_id, user_name=user["username"],
+            security_context=observation_context(session_security(user)), block=block,
+            revision=body.revision, state=body.state,
+        )
+    except UiValidationError as exc:
+        raise await _ui_denied(user, content_id, str(exc)) from exc
+
+
+@router.post("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/media")
+async def get_agent_ui_media(agent_id: str, thread_id: str, message_id: str, content_id: str,
+                             body: UiMediaInput, user: dict = Depends(get_current_user)):
+    from app.modules.assistant.intelligent_ui import UiValidationError, parse_program
+    from app.modules.assistant.ui_media import public_media
+
+    block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
+    if block.get("evidence") or len(json.dumps(body.props).encode()) > 64_000:
+        raise await _ui_denied(
+            user, content_id, "Public media cannot receive business or form data"
+        )
+    try:
+        parsed = await parse_program(block["program"])
+    except UiValidationError as exc:
+        raise HTTPException(422, "Public media source is invalid") from exc
+    if not any(item["type"] == body.type and item["props"] == body.props
+               for item in parsed["media"]):
+        raise await _ui_denied(
+            user, content_id, "Media parameters must match the static source program"
+        )
+    return await public_media(body.type, body.props)
+
+
 @router.post("/{agent_id}/threads/{thread_id}/messages")
 async def send_agent_message(
     agent_id: str,
@@ -2416,6 +2580,53 @@ async def send_agent_message(
     agent = await _require_agent(agent_id, user)
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
+    ui_trace = []
+    if body.ui_action is not None:
+        from app.core.redis import session_store
+        from app.modules.assistant.intelligent_ui import UiValidationError, action_context
+        from app.modules.intelligence.engine_repository import metadata_lock
+
+        source = await _ui_source(agent_id, thread_id, body.ui_action.message_id,
+                                  body.ui_action.content_id, user)
+        if source["program_sha256"] != body.ui_action.program_sha256:
+            raise await _ui_denied(user, body.ui_action.content_id, "Invalid UI action source")
+        try:
+            ui_context = await action_context(
+                source, body.ui_action.state, action_id=body.ui_action.action_id,
+            )
+        except UiValidationError as exc:
+            raise await _ui_denied(user, body.ui_action.content_id, str(exc)) from exc
+        action = body.ui_action
+        action_content = body.content + "\n\nUI form input (user supplied):\n" + json.dumps(
+            {"action_id": action.action_id, **ui_context}, ensure_ascii=False,
+        )
+        if len(action_content) > 32_000:
+            raise await _ui_denied(user, action.content_id, "UI action input is too large")
+        import hashlib
+
+        key = hashlib.sha256(f"{user_name}:{thread_id}:{action.operation_id}".encode()).hexdigest()
+        async with metadata_lock(f"ui-action:{key}"):
+            redis = session_store._redis
+            if redis is None:
+                raise HTTPException(503, "Metadata coordination is unavailable")
+            if await assistant_repository.ui_action_seen(
+                thread_id, action.operation_id, user_name=user_name
+            ) or not await redis.set(
+                f"nova:studio:ui-action:{key}", "accepted", nx=True, ex=86400
+            ):
+                raise await _ui_denied(user, action.content_id,
+                                       "This UI action has already been accepted", 409)
+        ui_trace = [{"kind": "ui_action", **action.model_dump()}]
+        await write_audit_log(
+            event_type="ASSISTANT_UI", user_name=user_name, action="CONTINUE",
+            object_type="UI_BLOCK", object_name=action.content_id, status="SUCCESS",
+            session_id=user.get("session_id"), active_role=security.active_role,
+            security_context_version=security.security_context_version,
+        )
+        # The validated source provides context, not tool authority. Its form data
+        # is ordinary untrusted user input and never becomes a system instruction.
+        body.content = action_content
+        prompt = attachment_prompt(body.content, attachments)
     learning_enabled = agent_id != SKILL_AUTHOR_ID and await assistant_repository.learning_enabled(
         thread_id, user_name=user_name)
     if agent_id in SMART_AGENT_IDS:
@@ -2446,6 +2657,7 @@ async def send_agent_message(
                 thread_id,
                 user_name=user_name,
                 role="user",
+                steps=ui_trace,
                 content=body.content,
                 attachments=attachments,
                 security_context=stamp,
@@ -2467,6 +2679,7 @@ async def send_agent_message(
                 provider_id=body.provider_id,
                 model=body.model,
                 user_message_id=user_message["message_id"],
+                ui_action_accepted=body.ui_action is not None,
                 work_intent=body.work_intent,
                 new_mission=body.new_mission,
                 continue_mission_id=getattr(body, "continue_mission_id", None),
@@ -2579,6 +2792,7 @@ async def send_agent_message(
         thread_id,
         user_name=user_name,
         role="user",
+        steps=ui_trace,
         content=body.content,
         security_context=stamp,
         attachments=attachments,
@@ -2622,6 +2836,11 @@ async def send_agent_message(
 
     context = LoopContext(
         user_name=user_name,
+        intelligent_ui=agent_id != SKILL_AUTHOR_ID,
+        ui_action_accepted=body.ui_action is not None,
+        ui_private_context=bool(body.ui_action) or any(
+            step.get("kind") == "ui_action" for row in history for step in row.get("steps") or []
+        ),
         execution_timezone=configured_timezone(),
         database=await _resolve_database(agent, user),
         schema_name=agent.get("schema_name"),
@@ -2721,11 +2940,12 @@ async def send_agent_message(
         finally:
             consent_broker.resolve(invocation.tool_call_id, None, user_name=user_name)
 
-    async def generate() -> AsyncIterator[str]:
+    async def generate() -> AsyncGenerator[str, None]:
         reply_parts: list[str] = []
         reply_stamp = stamp
         reply_message_id = str(uuid4())
         done_frame: str | None = None
+        finish_reason: str | None = None
         try:
             async for frame in loop.run(
                 thread=runtime,
@@ -2744,17 +2964,27 @@ async def send_agent_message(
                 if frame.startswith(f"event: {events.EVENT_DONE}\n"):
                     payload = json.loads(frame.split("data: ", 1)[1])
                     reply_message_id = payload["message_id"]
+                    finish_reason = payload.get("finish_reason")
                     done_frame = frame
                     continue
                 yield frame
+        except asyncio.CancelledError:
+            finish_reason = "cancelled"
+            done_frame = events.done(reply_message_id, finish_reason="cancelled")
+        except GeneratorExit:
+            finish_reason = "cancelled"
+            raise
         except Exception as exc:  # noqa: BLE001 - never leak an internal trace
+            finish_reason = "error"
             logger.exception("Agent stream failed")
             yield events.error("internal_error", f"The agent failed: {type(exc).__name__}")
             done_frame = events.done(reply_message_id, finish_reason="error")
         finally:
-            if reply_parts or context.steps or context.pending_output:
+            if reply_parts or context.steps or context.pending_output or finish_reason:
                 try:
                     steps = list(context.steps or [])
+                    if finish_reason:
+                        steps.append({"kind": "turn_outcome", "finish_reason": finish_reason})
                     # A disconnect can happen after a query completed but before
                     # the final response compositor ran. Keep those redacted
                     # artifacts on the partial assistant turn instead of losing
@@ -2815,10 +3045,21 @@ async def send_agent_message(
         batch: list[str] = []
 
         async def keep_alive() -> None:
+            from app.core.redis import session_store
+
+            next_heartbeat = asyncio.get_running_loop().time() + 15
             while True:
-                await asyncio.sleep(15)
+                await asyncio.sleep(0.5)
                 try:
-                    await run_journal.heartbeat(run_id)
+                    if session_store._redis is not None and await session_store._redis.get(
+                        f"nova:agent-run:cancel:{run_id}"
+                    ):
+                        task.cancel()
+                        return
+                    now = asyncio.get_running_loop().time()
+                    if now >= next_heartbeat:
+                        await run_journal.heartbeat(run_id)
+                        next_heartbeat = now + 15
                 except Exception:
                     logger.exception("Could not renew agent run lease")
 
@@ -2835,8 +3076,9 @@ async def send_agent_message(
                     if update:
                         queue_frame(update)
 
+        iterator = generate()
         try:
-            async for frame in generate():
+            async for frame in iterator:
                 if frame.startswith("event: role_changed\n"):
                     await run_journal.block_replay_after_role_change(run_id)
                 queue_frame(frame)
@@ -2856,6 +3098,14 @@ async def send_agent_message(
                     payload = json.loads(frame.split("data: ", 1)[1])
                     if payload.get("finish_reason") == "stop":
                         status = "completed"
+                    elif payload.get("finish_reason") == "cancelled":
+                        status = "cancelled"
+        except asyncio.CancelledError:
+            status = "cancelled"
+            await iterator.aclose()
+            frame = events.done("", finish_reason="cancelled")
+            queue_frame(frame)
+            batch.append(frame)
         except Exception:
             logger.exception("Agent run journal failed")
         finally:

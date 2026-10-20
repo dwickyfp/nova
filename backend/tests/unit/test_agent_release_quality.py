@@ -33,6 +33,9 @@ EXPECTED = {
     "task_completeness": {"completed": True},
     "policy_compliance": {"consent_resolved": True},
     "action_verification": {"verified": True},
+    "ui_validity": {"valid": True},
+    "ui_evidence": {"bound": True},
+    "ui_action_success": {"accepted": True, "completed": True},
     "latency": {"max_ms": 2000},
     "efficiency": {"tool_calls": 2},
 }

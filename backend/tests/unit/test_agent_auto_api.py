@@ -26,7 +26,8 @@ def test_auto_tree_is_scoped_to_owner_role_and_thread(monkeypatch) -> None:
     root = {
         "run_id": "root", "root_run_id": None, "parent_run_id": None,
         "agent_id": "__auto__", "depth": 0, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread", "objective": "Revenue?",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread",
+        "objective": "Revenue?",
         "status": "waiting_for_agent", "result_summary": None,
         "prompt_tokens": 2, "completion_tokens": 1,
         "started_at": "2026-09-24", "updated_at": "2026-09-24",
@@ -52,10 +53,31 @@ def test_auto_tree_is_scoped_to_owner_role_and_thread(monkeypatch) -> None:
     assert thread.await_count == 1
 
 
+@pytest.mark.parametrize("version", [None, 0, 2])
+async def test_smart_observation_and_replay_refuse_changed_security_version(monkeypatch, version):
+    root = {"run_id": "root", "agent_id": "__smart__", "depth": 0, "owner_name": "alice",
+            "role_name": "analyst", "security_version": version, "thread_id": "thread"}
+    monkeypatch.setattr(router.harness_repository, "get", AsyncMock(return_value=root))
+    monkeypatch.setattr(router, "_require_agent", AsyncMock())
+    monkeypatch.setattr(router, "_require_agent_thread", AsyncMock())
+    observed = AsyncMock()
+    monkeypatch.setattr(router.harness_repository, "events_after", observed)
+    user = _user("alice", "analyst")
+    for operation in (
+        lambda: router.get_auto_run_tree("root", user),
+        lambda: router.get_auto_events("root", "", user),
+        lambda: router.cancel_auto_run("root", user),
+        lambda: router.replay_agent_run("__smart__", "thread", "root", -1, user),
+    ):
+        with pytest.raises(HTTPException) as refusal:
+            await operation()
+        assert refusal.value.status_code == 404
+    observed.assert_not_awaited()
+
 def test_user_message_to_child_uses_trusted_root_identity(monkeypatch) -> None:
     root = {"run_id": "root", "root_run_id": None, "parent_run_id": None,
             "agent_id": "__auto__", "depth": 0, "owner_name": "alice",
-            "role_name": "analyst", "thread_id": "thread"}
+            "role_name": "analyst", "security_version": 1, "thread_id": "thread"}
     child = {"run_id": "finance", "root_run_id": "root", "parent_run_id": "root",
              "agent_id": "finance", "depth": 1, "status": "running"}
     monkeypatch.setattr(router.harness_repository, "get", AsyncMock(
@@ -89,12 +111,13 @@ def test_child_timeline_is_scoped_and_replays_in_order(monkeypatch) -> None:
     root = {
         "run_id": "root", "root_run_id": None, "parent_run_id": None,
         "agent_id": "__auto__", "depth": 0, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread",
     }
     child = {
         "run_id": "child", "root_run_id": "root", "parent_run_id": "root",
         "agent_id": "sales", "depth": 1, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread", "objective": "Compare revenue",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread",
+        "objective": "Compare revenue",
         "status": "running", "result_summary": None, "error_class": None,
         "prompt_tokens": 12, "completion_tokens": 3,
     }
@@ -149,7 +172,7 @@ def test_cancel_completed_auto_run_does_not_replace_terminal_event(monkeypatch) 
     root = {
         "run_id": "root", "root_run_id": None, "parent_run_id": None,
         "agent_id": "__auto__", "depth": 0, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread", "status": "completed",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread", "status": "completed",
     }
     monkeypatch.setattr(router.harness_repository, "get", AsyncMock(return_value=root))
     monkeypatch.setattr(router, "_require_agent_thread", AsyncMock(return_value={}))
@@ -174,7 +197,7 @@ def test_cancel_auto_root_reconciles_children_before_root_terminal(monkeypatch) 
     root = {
         "run_id": "root", "root_run_id": None, "parent_run_id": None,
         "agent_id": "__auto__", "depth": 0, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread", "status": "running",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread", "status": "running",
     }
     monkeypatch.setattr(router.harness_repository, "get", AsyncMock(return_value=root))
     monkeypatch.setattr(router, "_require_agent_thread", AsyncMock(return_value={}))
@@ -207,12 +230,13 @@ def test_cancelled_child_drawer_repairs_missing_terminal_before_replay(monkeypat
     root = {
         "run_id": "root", "root_run_id": None, "parent_run_id": None,
         "agent_id": "__auto__", "depth": 0, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread", "status": "cancelled",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread", "status": "cancelled",
     }
     child = {
         "run_id": "child", "root_run_id": "root", "parent_run_id": "root",
         "agent_id": "sales", "depth": 1, "owner_name": "alice",
-        "role_name": "analyst", "thread_id": "thread", "objective": "Compare revenue",
+        "role_name": "analyst", "security_version": 1, "thread_id": "thread",
+        "objective": "Compare revenue",
         "status": "cancelled", "result_summary": None, "error_class": None,
         "prompt_tokens": 12, "completion_tokens": 3,
     }
@@ -351,6 +375,20 @@ async def _frames(root_id: str, after: int) -> list[str]:
     return [frame async for frame in router._stream_auto_events(root_id, after)]
 
 
+@pytest.mark.parametrize("kind,reason", [
+    ("agent_cancelled", "cancelled"), ("agent_failed", "error"), ("agent_interrupted", "error"),
+])
+async def test_smart_terminal_replay_distinguishes_cancellation(monkeypatch, kind, reason):
+    monkeypatch.setattr(router.harness_repository, "events_page", AsyncMock(return_value=[
+        {"event_id": 4, "run_id": "root", "type": kind, "payload": {}},
+    ]))
+    frames = await _frames("root", -1)
+    assert any(frame.startswith("event: error\n") for frame in frames) == (reason == "error")
+    done = json.loads(frames[-1].split("data: ", 1)[1])
+    assert done["finish_reason"] == reason
+    assert int(done["sequence"]) == 4 * 1024 + 2
+
+
 @pytest.mark.asyncio
 async def test_auto_sse_replay_keeps_final_message_identity(monkeypatch) -> None:
     async def page(root_id: str, after: int, *, ensure_complete: bool = False):
@@ -370,7 +408,7 @@ async def test_auto_sse_replay_keeps_final_message_identity(monkeypatch) -> None
     first_done = json.loads(first[-1].split("data: ", 1)[1])
     replay_done = json.loads(replay[-1].split("data: ", 1)[1])
     assert first_done["message_id"] == replay_done["message_id"]
-    assert replay_done["sequence"] == 2
+    assert replay_done["sequence"] == "2"
 
 
 @pytest.mark.asyncio

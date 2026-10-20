@@ -1,9 +1,25 @@
-import type { AssistantEvent, AutomationProposal, ChartBlock as ChartBlockType, CitationBlock, TableBlock, ToolCallView } from "@/features/assistant/types";
+import type {
+  AssistantEvent,
+  AutomationProposal,
+  ChartBlock as ChartBlockType,
+  CitationBlock,
+  TableBlock,
+  ToolCallView,
+} from "@/features/assistant/types";
 import type { AgentMessage } from "@/features/agents/api";
 import type { RailStep } from "./thought-turn";
 import type { AnswerFeedback } from "./answer-footer";
 import type { SentAttachment } from "./studio-attachments";
-import { evidenceHealthFromTrace, evidenceEnvelopeFromTrace, workflowProvenanceFromTrace, evidenceIdentity, mergeToolEvidence, readEvidenceEnvelope, readEvidenceHealth, type ToolEvidence } from "./evidence-health";
+import {
+  evidenceHealthFromTrace,
+  evidenceEnvelopeFromTrace,
+  workflowProvenanceFromTrace,
+  evidenceIdentity,
+  mergeToolEvidence,
+  readEvidenceEnvelope,
+  readEvidenceHealth,
+  type ToolEvidence,
+} from "./evidence-health";
 
 export type StudioAssistantEvent = AssistantEvent;
 
@@ -11,6 +27,13 @@ export type StudioAssistantEvent = AssistantEvent;
 export type PendingCall = ToolCallView & { tool_call_id: string };
 
 export type OrderedContent =
+  | {
+      id: string;
+      index: number;
+      type: "ui";
+      block: import("./intelligent-ui/types").UiBlock;
+      complete: boolean;
+    }
   | {
       id: string;
       index: number;
@@ -96,7 +119,6 @@ export type TranscriptTurn = {
   toolPreviews?: Record<string, string>;
 };
 
-
 /**
  * Rebuild a transcript from a persisted thread.
  *
@@ -162,6 +184,21 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
 
     for (const step of message.steps ?? []) {
       switch (step.kind) {
+        case "turn_outcome":
+          open.stopReason = step.finish_reason === "stop" ? undefined : step.finish_reason;
+          if (step.finish_reason === "cancelled") open.state = "cancelled";
+          else if (step.finish_reason && step.finish_reason !== "stop")
+            open.state = "error";
+          break;
+        case "ui":
+          open.content.push({
+            id: step.content_id,
+            index: step.content_index,
+            type: "ui",
+            block: step,
+            complete: true,
+          });
+          break;
         case "reasoning":
           open.steps.push({
             id: uniqueStepId(open.steps, `think-${step.phase}`),
@@ -175,16 +212,19 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         case "tool": {
           const envelope = evidenceEnvelopeFromTrace(step);
           const health = envelope?.health ?? evidenceHealthFromTrace(step);
-          const workflowProvenance = workflowProvenanceFromTrace(step) ?? undefined;
-          if (health) open.evidence = mergeToolEvidence(open.evidence ?? [], {
-            toolCallId: step.tool_call_id || `${step.name}-${open.steps.length}`,
-            toolName: step.name,
-            health,
-            envelope: envelope ?? undefined,
-            workflowProvenance,
-            runId: workflowProvenance?.run_id ?? step.run_id,
-            sqlPreview: step.preview || undefined,
-          });
+          const workflowProvenance =
+            workflowProvenanceFromTrace(step) ?? undefined;
+          if (health)
+            open.evidence = mergeToolEvidence(open.evidence ?? [], {
+              toolCallId:
+                step.tool_call_id || `${step.name}-${open.steps.length}`,
+              toolName: step.name,
+              health,
+              envelope: envelope ?? undefined,
+              workflowProvenance,
+              runId: workflowProvenance?.run_id ?? step.run_id,
+              sqlPreview: step.preview || undefined,
+            });
           open.steps.push({
             id: step.tool_call_id || `${step.name}-${open.steps.length}`,
             kind: "tool",
@@ -196,8 +236,12 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
                 ? describeStatus(step.name, step.status, step.arguments?.name)
                 : step.status_text || describeTool(step.name),
             status: step.status === "failed" ? "failed" : "done",
-            preview: step.name === "load_skill" ? undefined : step.preview || undefined,
-            detail: step.name === "load_skill" ? undefined : step.detail || undefined,
+            preview:
+              step.name === "load_skill"
+                ? undefined
+                : step.preview || undefined,
+            detail:
+              step.name === "load_skill" ? undefined : step.detail || undefined,
           });
           break;
         }
@@ -383,23 +427,41 @@ export function applyEvent(
     switch (event.type) {
       case "evidence_envelope":
       case "evidence_health": {
-        const envelope = event.type === "evidence_envelope" ? readEvidenceEnvelope(event.payload) : null;
-        const health = envelope?.health ?? (event.type === "evidence_health" ? readEvidenceHealth(event.payload) : null);
+        const envelope =
+          event.type === "evidence_envelope"
+            ? readEvidenceEnvelope(event.payload)
+            : null;
+        const health =
+          envelope?.health ??
+          (event.type === "evidence_health"
+            ? readEvidenceHealth(event.payload)
+            : null);
         if (!health) return turn;
-        const workflowProvenance = workflowProvenanceFromTrace(event) ?? undefined;
-        if ((event.workflow ?? event.workflow_provenance) != null && !workflowProvenance) return turn;
+        const workflowProvenance =
+          workflowProvenanceFromTrace(event) ?? undefined;
+        if (
+          (event.workflow ?? event.workflow_provenance) != null &&
+          !workflowProvenance
+        )
+          return turn;
         const step = turn.steps.find((item) => item.id === event.tool_call_id);
         const runId = workflowProvenance?.run_id ?? event.run_id;
-        const preview = turn.toolPreviews?.[evidenceIdentity({ toolCallId: event.tool_call_id, runId })] ?? (!runId ? step?.preview : undefined);
-        return { ...turn, evidence: mergeToolEvidence(turn.evidence ?? [], {
-          toolCallId: event.tool_call_id,
-          toolName: event.tool_name ?? step?.label ?? "Query",
-          health,
-          ...(envelope ? { envelope } : {}),
-          ...(workflowProvenance ? { workflowProvenance } : {}),
-          runId,
-          ...(preview ? { sqlPreview: preview } : {}),
-        }) };
+        const preview =
+          turn.toolPreviews?.[
+            evidenceIdentity({ toolCallId: event.tool_call_id, runId })
+          ] ?? (!runId ? step?.preview : undefined);
+        return {
+          ...turn,
+          evidence: mergeToolEvidence(turn.evidence ?? [], {
+            toolCallId: event.tool_call_id,
+            toolName: event.tool_name ?? step?.label ?? "Query",
+            health,
+            ...(envelope ? { envelope } : {}),
+            ...(workflowProvenance ? { workflowProvenance } : {}),
+            runId,
+            ...(preview ? { sqlPreview: preview } : {}),
+          }),
+        };
       }
       case "plan": {
         const plan: RailStep = {
@@ -487,7 +549,11 @@ export function applyEvent(
           skillName: payload.skill_name || undefined,
           text:
             payload.tool_name === "load_skill"
-              ? describeStatus(payload.tool_name, payload.status, payload.skill_name)
+              ? describeStatus(
+                  payload.tool_name,
+                  payload.status,
+                  payload.skill_name,
+                )
               : describeTool(payload.tool_name),
           status: payload.status,
           preview:
@@ -500,7 +566,17 @@ export function applyEvent(
         );
         return {
           ...turn,
-          ...(row.preview ? { toolPreviews: { ...turn.toolPreviews, [evidenceIdentity({ toolCallId: payload.tool_call_id, runId: event.run_id })]: row.preview } } : {}),
+          ...(row.preview
+            ? {
+                toolPreviews: {
+                  ...turn.toolPreviews,
+                  [evidenceIdentity({
+                    toolCallId: payload.tool_call_id,
+                    runId: event.run_id,
+                  })]: row.preview,
+                },
+              }
+            : {}),
           steps:
             existing === -1
               ? [...turn.steps, row]
@@ -536,7 +612,11 @@ export function applyEvent(
                   ? {
                       ...step,
                       status: event.status,
-                       text: describeStatus(step.label, event.status, step.skillName),
+                      text: describeStatus(
+                        step.label,
+                        event.status,
+                        step.skillName,
+                      ),
                     }
                   : step,
               );
@@ -552,10 +632,26 @@ export function applyEvent(
       case "tool_progress":
         return {
           ...turn,
-          ...(event.sql_preview ? {
-            toolPreviews: { ...turn.toolPreviews, [evidenceIdentity({ toolCallId: event.tool_call_id, runId: event.run_id })]: event.sql_preview },
-            evidence: turn.evidence?.map((item) => evidenceIdentity(item) === evidenceIdentity({ toolCallId: event.tool_call_id, runId: event.run_id }) ? { ...item, sqlPreview: event.sql_preview } : item),
-          } : {}),
+          ...(event.sql_preview
+            ? {
+                toolPreviews: {
+                  ...turn.toolPreviews,
+                  [evidenceIdentity({
+                    toolCallId: event.tool_call_id,
+                    runId: event.run_id,
+                  })]: event.sql_preview,
+                },
+                evidence: turn.evidence?.map((item) =>
+                  evidenceIdentity(item) ===
+                  evidenceIdentity({
+                    toolCallId: event.tool_call_id,
+                    runId: event.run_id,
+                  })
+                    ? { ...item, sqlPreview: event.sql_preview }
+                    : item,
+                ),
+              }
+            : {}),
           steps: turn.steps.map((step) =>
             step.id === event.tool_call_id
               ? {
@@ -564,7 +660,7 @@ export function applyEvent(
                   preview:
                     step.label === "load_skill"
                       ? undefined
-                      : event.sql_preview ?? step.preview,
+                      : (event.sql_preview ?? step.preview),
                   status:
                     event.stage === "query_completed"
                       ? ("done" as const)
@@ -674,6 +770,38 @@ export function applyEvent(
         };
       }
 
+      case "ui": {
+        const id = event.content_id!;
+        if (turn.content.some((item) => item.id === id)) return turn;
+        return {
+          ...turn,
+          content: [
+            ...turn.content,
+            {
+              id,
+              index: event.content_index!,
+              type: "ui",
+              block: { ...event.payload, program: "" },
+              complete: false,
+            },
+          ],
+        };
+      }
+      case "ui_delta":
+        return {
+          ...turn,
+          content: turn.content.map((item) =>
+            item.id === event.content_id && item.type === "ui" && !item.complete
+              ? {
+                  ...item,
+                  block: {
+                    ...item.block,
+                    program: (item.block.program + event.text).slice(0, 64000),
+                  },
+                }
+              : item,
+          ),
+        };
       case "content_block_done":
         return {
           ...turn,
@@ -688,10 +816,18 @@ export function applyEvent(
         const health = evidenceHealthFromTrace(event);
         return {
           ...turn,
-          ...(health ? { evidence: mergeToolEvidence(turn.evidence ?? [], {
-            toolCallId: event.tool_call_id, toolName: turn.steps.find((step) => step.id === event.tool_call_id)?.label ?? "Query", health,
-            runId: event.run_id,
-          }) } : {}),
+          ...(health
+            ? {
+                evidence: mergeToolEvidence(turn.evidence ?? [], {
+                  toolCallId: event.tool_call_id,
+                  toolName:
+                    turn.steps.find((step) => step.id === event.tool_call_id)
+                      ?.label ?? "Query",
+                  health,
+                  runId: event.run_id,
+                }),
+              }
+            : {}),
           steps: turn.steps.map((step) =>
             step.id === event.tool_call_id && step.label !== "load_skill"
               ? { ...step, detail: event.text }
@@ -727,10 +863,14 @@ export function applyEvent(
               ? { ...step, status: "done" as const }
               : step,
           ),
-          content: (turn.content ?? []).map((item) => ({
-            ...item,
-            complete: true,
-          })),
+          content: (turn.content ?? []).map((item) =>
+            item.type === "ui"
+              ? item
+              : {
+                  ...item,
+                  complete: true as const,
+                },
+          ),
           state:
             turn.state === "error"
               ? "error"

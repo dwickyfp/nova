@@ -12,14 +12,21 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.redis import session_store
 from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS, register_collaboration_tools
 from app.modules.agents.harness_worker import AgentHarnessWorker
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.tools import ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, text_frame, thread
 from tests.eval.harness import EvalTool, TurnResult
+from tests.unit.test_agent_harness import _EventRedis
 from tests.unit.test_smart_collaboration import USER
 from tests.unit.test_smart_collaboration import collaboration as collaboration
+
+
+@pytest.fixture(autouse=True)
+def run_write_coordination(monkeypatch):
+    monkeypatch.setattr(session_store, "_redis", _EventRedis())
 
 
 def call(name: str, **arguments) -> dict:

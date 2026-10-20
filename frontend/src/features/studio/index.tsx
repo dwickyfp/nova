@@ -17,6 +17,7 @@ import { StudioShared } from "./studio-shared";
 import { StudioIntelligence } from "./studio-intelligence";
 import { NewspaperPage } from "./news/newspaper-page";
 import { ShareDialog } from "./share-dialog";
+import { flushUiStates } from "./intelligent-ui/state";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 
 const AUTO_WHILE_CATALOG_LOADS: Agent = {
@@ -68,9 +69,6 @@ function StudioAppContent() {
     : agentsQuery.isError || search.agent === AUTO_AGENT_ID
       ? [AUTO_WHILE_CATALOG_LOADS]
       : [];
-  // The owner's agents that Studio and Smart leave out until access is verified.
-  const waiting = agentsQuery.data?.needs_access ?? [];
-  const [waitingDismissed, setWaitingDismissed] = useState(false);
   const authorQuery = useQuery({
     queryKey: ["studio", "skill-author"],
     queryFn: studioApi.skillAuthor,
@@ -95,7 +93,7 @@ function StudioAppContent() {
   const requestedAgentId = search.agent === "__auto__" ? AUTO_AGENT_ID : search.agent;
   const agentId = requestedAgentId && (
     requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
-  ) ? requestedAgentId : (agents[0]?.agent_id ?? null);
+  ) ? requestedAgentId : (agents.find((item) => item.agent_id === AUTO_AGENT_ID)?.agent_id ?? agents[0]?.agent_id ?? null);
   const [view, setView] = useState<StudioView>(search.view ?? "chat");
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
@@ -161,7 +159,9 @@ function StudioAppContent() {
       freshChat
     )
       return;
-    const newest = threads[0];
+    const newest = requestedAgentId
+      ? threads.find((thread) => (thread.agent_id === "__auto__" ? AUTO_AGENT_ID : thread.agent_id) === requestedAgentId)
+      : threads[0];
     if (!newest?.agent_id) return;
     navigate({
       to: "/studio",
@@ -172,22 +172,28 @@ function StudioAppContent() {
     freshChat,
     navigate,
     search.thread,
+    requestedAgentId,
     threads,
     threadsQuery.isSuccess,
     view,
   ]);
 
-  const selectAgent = (id: string) => {
+  const selectAgent = async (id: string) => {
+    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return false; }
+
     setMobileSidebarOpen(false);
     setInitialPrompt("");
     setNewChatNonce(0);
     setView("chat");
     // A new agent starts a fresh conversation, so the thread is dropped.
     setFreshChat(true);
-    navigate({ to: "/studio", search: { agent: id }, replace: true });
+    await navigate({ to: "/studio", search: { agent: id }, replace: true });
+    return true;
   };
 
-  const selectThread = (id: string) => {
+  const selectThread = async (id: string) => {
+    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
+
     const owner = threadAgentId(id);
     if (!owner) return;
     setMobileSidebarOpen(false);
@@ -200,7 +206,9 @@ function StudioAppContent() {
     });
   };
 
-  const startNewChat = () => {
+  const startNewChat = async () => {
+    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
+
     setMobileSidebarOpen(false);
     setInitialPrompt("");
     setView("chat");
@@ -208,7 +216,7 @@ function StudioAppContent() {
     setNewChatNonce((n) => n + 1);
     navigate({
       to: "/studio",
-      search: { agent: agentId ?? undefined },
+      search: { agent: AUTO_AGENT_ID },
       replace: true,
     });
   };
@@ -237,8 +245,8 @@ function StudioAppContent() {
       queryClient.setQueryData(["studio", "skill-author"], author);
       return author;
     },
-    onSuccess: (selected) => {
-      selectAgent(selected.agent_id);
+    onSuccess: async (selected) => {
+      if (!await selectAgent(selected.agent_id)) return;
       setNewChatNonce((n) => n + 1);
       setInitialPrompt(`${CREATE_SKILL_COMMAND} `);
     },
@@ -284,7 +292,8 @@ function StudioAppContent() {
         <StudioSidebar
           newsEnabled={settingsQuery.data?.identity.news_enabled === true}
           view={view}
-          onView={(nextView) => {
+          onView={async (nextView) => {
+            try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
             setView(nextView);
             setMobileSidebarOpen(false);
             navigate({
@@ -347,22 +356,6 @@ function StudioAppContent() {
               Retry specialists
             </Button>
           </div>
-        ) : waiting.length && !waitingDismissed ? (
-          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-            <span>
-              {waiting.length === 1
-                ? `${waiting[0].name} is not available here yet. Verify its access for your current role.`
-                : `${waiting.length} of your agents are not available here yet. Verify their access for your current role.`}
-            </span>
-            {waiting.slice(0, 3).map((item) => (
-              <Button key={item.agent_id} type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void navigate({ to: "/agents/$agentId", params: { agentId: item.agent_id } })}>
-                {waiting.length === 1 ? "Open access settings" : item.name}
-              </Button>
-            ))}
-            <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setWaitingDismissed(true)}>
-              Dismiss
-            </Button>
-          </div>
         ) : null}
         {view === "chat" ? (
           <StudioChat
@@ -405,7 +398,7 @@ function StudioAppContent() {
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
               setView("chat");
-              navigate({ to: "/studio", search: { agent: agentId ?? undefined }, replace: true });
+              navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
             }} />
         ) : view === "news" || view === "decisions" ? (
           <StudioIntelligence view={view} item={search.item}
@@ -416,7 +409,7 @@ function StudioAppContent() {
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
               setView("chat");
-              navigate({ to: "/studio", search: { agent: agentId ?? undefined }, replace: true });
+              navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
             }} />
         ) : view === "artifacts" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />

@@ -311,11 +311,21 @@ class CustomToolRunner:
         if output_mode == "run":
             affected = sum(getattr(r, "affected_rows", 0) or 0 for r in results)
             return ToolOutcome(ok=True, summary=f"The tool ran successfully ({affected} row(s)).")
+        from app.modules.assistant.data_evidence import sql_evidence_kind
+
         _expose_last_result(context, results)
+        result_index = next((index for index, result in enumerate(results)
+                             if getattr(result, "columns", None)), None)
+        evidence_kind = (
+            sql_evidence_kind(statements[result_index])
+            if result_index is not None and len(results) == len(statements)
+            else "catalog"
+        )
         return ToolOutcome(
             ok=True,
             summary="\n".join(_render_result(result) for result in results)[:8000],
             table=_table_from_results(results),
+            metadata={"execution_source": "nova_sql_frontend", "evidence_kind": evidence_kind},
         )
 
     def _description(self) -> str:

@@ -304,15 +304,25 @@ async def evaluate(
     cases: list[dict],
     user: dict,
     gates: PromotionGates | None = None,
+    *,
+    token_limit: int | None = None,
 ) -> dict:
     from app.observability.metrics import studio_operation
 
     with studio_operation("quality", "evaluate"):
-        return await _evaluate(agent, manifest, cases, user, gates or PromotionGates())
+        return await _evaluate(
+            agent, manifest, cases, user, gates or PromotionGates(), token_limit=token_limit
+        )
 
 
 async def _evaluate(
-    agent: dict, manifest: dict, cases: list[dict], user: dict, gates: PromotionGates
+    agent: dict,
+    manifest: dict,
+    cases: list[dict],
+    user: dict,
+    gates: PromotionGates,
+    *,
+    token_limit: int | None = None,
 ) -> dict:
     from app.modules.agents.service import agent_service, loop_limits
     from app.modules.assistant.context import ContextManager
@@ -343,6 +353,7 @@ async def _evaluate(
             "status": "running",
             "promotion_eligible": False,
             "results": [],
+            "total_tokens": 0,
         },
         user,
     )
@@ -359,6 +370,11 @@ async def _evaluate(
         registry = evaluation_registry(registry)
         async with asyncio.timeout(600):
             for case in cases:
+                remaining_tokens = (
+                    None if token_limit is None else token_limit - run["total_tokens"]
+                )
+                if remaining_tokens is not None and remaining_tokens <= 0:
+                    raise ValueError("Evaluation token budget exhausted")
                 context = LoopContext(
                     user_name=user["username"],
                     execution_timezone=configured_timezone(),
@@ -376,6 +392,7 @@ async def _evaluate(
                     user_question=case["prompt"],
                     steps=[],
                     quality_evaluation=True,
+                    intelligent_ui=True,
                 )
 
                 async def consent(_invocation, classification):
@@ -383,6 +400,7 @@ async def _evaluate(
 
                 loop = AssistantLoop(
                     provider=assistant_provider,
+                    spend_limit=remaining_tokens,
                     registry=registry,
                     system_prompt=prompt,
                     iterative=True,
@@ -414,6 +432,19 @@ async def _evaluate(
                                 )
                 except Exception as exc:
                     runtime_error = type(exc).__name__
+                measured = context.quality_measurements
+                run["total_tokens"] += (
+                    measured.reported_total_tokens if measured is not None
+                    else int((context.usage or {}).get("total_tokens") or 0)
+                )
+                if token_limit is not None and (
+                    measured is None or measured.missing_usage or measured.pending_usage
+                    or measured.provider_unavailable
+                ):
+                    run["token_usage_complete"] = False
+                    raise ValueError("Evaluation token accounting is unavailable")
+                if token_limit is not None and run["total_tokens"] > token_limit:
+                    raise ValueError("Evaluation token budget exhausted")
                 trace = observed_trace(context.steps or [])
                 # The elapsed clock is an execution measurement even when observation is disabled.
                 trace["duration_ms"] = round((time.monotonic() - started) * 1000)

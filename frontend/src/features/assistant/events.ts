@@ -23,29 +23,42 @@ export function parseAssistantEvent(
   } catch {
     return null;
   }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload))
+    return null;
   const record = payload as Record<string, unknown>;
   const parsed = (() => {
     switch (eventName) {
       case "mission_updated": {
         const mission = record.mission;
-        if (!mission || typeof mission !== "object" || Array.isArray(mission)) return null;
+        if (!mission || typeof mission !== "object" || Array.isArray(mission))
+          return null;
         const value = mission as Record<string, unknown>;
-        return typeof value.mission_id === "string" && typeof value.thread_id === "string" &&
+        return typeof value.mission_id === "string" &&
+          typeof value.thread_id === "string" &&
           Number.isInteger(value.revision)
-          ? { type: "mission_updated", mission: value } : null;
+          ? { type: "mission_updated", mission: value }
+          : null;
       }
       case "evidence_health":
       case "evidence_envelope": {
         const workflow = record.workflow ?? record.workflow_provenance;
         const provenance = readWorkflowProvenance(workflow);
         if (workflow != null && !provenance) return null;
-        return typeof record.tool_call_id === "string" && record.payload &&
-          typeof record.payload === "object" && !Array.isArray(record.payload)
-          ? { type: eventName, tool_call_id: record.tool_call_id,
-              tool_name: typeof record.tool_name === "string" ? record.tool_name : undefined,
+        return typeof record.tool_call_id === "string" &&
+          record.payload &&
+          typeof record.payload === "object" &&
+          !Array.isArray(record.payload)
+          ? {
+              type: eventName,
+              tool_call_id: record.tool_call_id,
+              tool_name:
+                typeof record.tool_name === "string"
+                  ? record.tool_name
+                  : undefined,
               payload: record.payload,
-              ...(provenance ? { workflow: provenance } : {}) } : null;
+              ...(provenance ? { workflow: provenance } : {}),
+            }
+          : null;
       }
       case "role_changed":
         return typeof record.active_role === "string" &&
@@ -63,6 +76,56 @@ export function parseAssistantEvent(
               text: record.text,
               ...contentPosition(record),
             }
+          : null;
+      case "ui": {
+        const value = record.payload;
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          return null;
+        const block = value as Record<string, unknown>;
+        const plain = (v: unknown): v is Record<string, unknown> =>
+          !!v && typeof v === "object" && !Array.isArray(v);
+        if (
+          !plain(block.state_defaults) ||
+          !plain(block.evidence) ||
+          !plain(block.provenance) ||
+          !Array.isArray(block.provenance.evidence_ids) ||
+          !block.provenance.evidence_ids.every(
+            (id) => typeof id === "string",
+          ) ||
+          typeof block.provenance.scope !== "string" ||
+          typeof block.provenance.assumption !== "boolean" ||
+          !Array.isArray(block.actions) ||
+          block.actions.length > 50 ||
+          !block.actions.every(
+            (a) =>
+              plain(a) &&
+              typeof a.id === "string" &&
+              typeof a.assistant === "boolean",
+          ) ||
+          !/^[a-f0-9]{64}$/.test(String(block.program_sha256)) ||
+          JSON.stringify(block).length > 512000
+        )
+          return null;
+        if (
+          typeof block.catalog_version !== "string" ||
+          typeof block.program_sha256 !== "string" ||
+          typeof block.fallback !== "string" ||
+          !block.state_defaults ||
+          !block.evidence ||
+          !block.provenance ||
+          !Array.isArray(block.actions) ||
+          typeof record.content_id !== "string" ||
+          !Number.isInteger(record.content_index)
+        )
+          return null;
+        return { type: "ui", payload: block, ...contentPosition(record) };
+      }
+      case "ui_delta":
+        return typeof record.text === "string" &&
+          record.text.length <= 64000 &&
+          typeof record.content_id === "string" &&
+          Number.isInteger(record.content_index)
+          ? { type: "ui_delta", text: record.text, ...contentPosition(record) }
           : null;
       case "thinking":
         return parseThinking(record);
@@ -105,28 +168,53 @@ export function parseAssistantEvent(
       case "citation":
         return parseCitation(record);
       case "automation_proposal": {
-        const { title, prompt, schedule_kind: kind, schedule_expr: expr, timezone } = record;
+        const {
+          title,
+          prompt,
+          schedule_kind: kind,
+          schedule_expr: expr,
+          timezone,
+        } = record;
         if (
-          typeof title !== "string" || typeof prompt !== "string" || typeof expr !== "string"
-          || typeof timezone !== "string" || (kind !== "cron" && kind !== "interval")
-        ) return null;
-        const raw = record.condition as Record<string, unknown> | null | undefined;
-        const condition = raw && typeof raw.metric === "string" && typeof raw.operator === "string"
-          && typeof raw.value === "number"
-          ? { metric: raw.metric, operator: raw.operator, value: raw.value }
-          : null;
+          typeof title !== "string" ||
+          typeof prompt !== "string" ||
+          typeof expr !== "string" ||
+          typeof timezone !== "string" ||
+          (kind !== "cron" && kind !== "interval")
+        )
+          return null;
+        const raw = record.condition as
+          Record<string, unknown> | null | undefined;
+        const condition =
+          raw &&
+          typeof raw.metric === "string" &&
+          typeof raw.operator === "string" &&
+          typeof raw.value === "number"
+            ? { metric: raw.metric, operator: raw.operator, value: raw.value }
+            : null;
         return {
           type: "automation_proposal",
           proposal: {
-            title, prompt, schedule_kind: kind, schedule_expr: expr, timezone, condition,
-            next_run: typeof record.next_run === "string" ? record.next_run : undefined,
+            title,
+            prompt,
+            schedule_kind: kind,
+            schedule_expr: expr,
+            timezone,
+            condition,
+            next_run:
+              typeof record.next_run === "string" ? record.next_run : undefined,
           },
         };
       }
       case "suggestions": {
-        const items = Array.isArray(record.suggestions) ? record.suggestions : [];
+        const items = Array.isArray(record.suggestions)
+          ? record.suggestions
+          : [];
         const suggestions = items
-          .filter((item): item is string => typeof item === "string" && item.trim() !== "")
+          .filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim() !== "",
+          )
           .slice(0, 5);
         return suggestions.length ? { type: "suggestions", suggestions } : null;
       }
@@ -154,14 +242,21 @@ export function parseAssistantEvent(
         // the panel must show nothing rather than a zero it invented.
         const total = (record.usage as { total_tokens?: unknown } | undefined)
           ?.total_tokens;
-        const usage = record.usage as { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;
+        const usage = record.usage as
+          { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;
         return {
           type: "done",
           message_id: record.message_id,
           finish_reason: record.finish_reason,
           total_tokens: typeof total === "number" ? total : undefined,
-          prompt_tokens: typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined,
-          completion_tokens: typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined,
+          prompt_tokens:
+            typeof usage?.prompt_tokens === "number"
+              ? usage.prompt_tokens
+              : undefined,
+          completion_tokens:
+            typeof usage?.completion_tokens === "number"
+              ? usage.completion_tokens
+              : undefined,
         };
       }
       case "error":
@@ -178,13 +273,17 @@ export function parseAssistantEvent(
           !record.args ||
           typeof record.args !== "object" ||
           Array.isArray(record.args)
-        ) return null;
+        )
+          return null;
         return {
           type: "client_action",
           capability: record.capability,
           args: record.args as Record<string, unknown>,
           correlation_id: record.correlation_id,
-          surface_id: typeof record.surface_id === "string" ? record.surface_id : undefined,
+          surface_id:
+            typeof record.surface_id === "string"
+              ? record.surface_id
+              : undefined,
         };
       }
       default:
@@ -195,22 +294,37 @@ export function parseAssistantEvent(
   return { ...parsed, ...eventMetadata(record) } as AssistantEvent;
 }
 
-export function readWorkflowProvenance(value: unknown): WorkflowProvenance | null {
+export function readWorkflowProvenance(
+  value: unknown,
+): WorkflowProvenance | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const reference = (item: unknown): item is string | null => item === null ||
+  const reference = (item: unknown): item is string | null =>
+    item === null ||
     (typeof item === "string" && item.length > 0 && item.length <= 128);
-  if (!reference(record.mission_id) || !reference(record.run_id) || !reference(record.root_run_id)) return null;
-  return { mission_id: record.mission_id, run_id: record.run_id, root_run_id: record.root_run_id };
+  if (
+    !reference(record.mission_id) ||
+    !reference(record.run_id) ||
+    !reference(record.root_run_id)
+  )
+    return null;
+  return {
+    mission_id: record.mission_id,
+    run_id: record.run_id,
+    root_run_id: record.root_run_id,
+  };
 }
 
 function eventMetadata(record: Record<string, unknown>): {
   run_id?: string;
-  sequence?: number;
+  sequence?: number | string;
 } {
-  const metadata: { run_id?: string; sequence?: number } = {};
+  const metadata: { run_id?: string; sequence?: number | string } = {};
   if (typeof record.run_id === "string") metadata.run_id = record.run_id;
-  if (typeof record.sequence === "number") metadata.sequence = record.sequence;
+  if (typeof record.sequence === "number" && Number.isSafeInteger(record.sequence))
+    metadata.sequence = record.sequence;
+  else if (typeof record.sequence === "string" && /^\d{1,24}$/.test(record.sequence))
+    metadata.sequence = record.sequence;
   return metadata;
 }
 

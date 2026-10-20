@@ -140,6 +140,12 @@ STUDIO_WORKFLOW_OPERATIONS = Counter(
     "Governed Studio operations by bounded component, operation, and outcome.",
     ("component", "operation", "status"),
 )
+STUDIO_FIRST_USEFUL_RESPONSE = Histogram(
+    "nova_studio_first_useful_response_seconds",
+    "Time until the shared engine emits its first answer content.",
+    ("mode",),
+    buckets=(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600),
+)
 STUDIO_WORKFLOW_DURATION = Histogram(
     "nova_studio_workflow_duration_seconds",
     "Governed Studio operation duration, excluding arguments and source content.",
@@ -150,9 +156,12 @@ STUDIO_WORKFLOW_DURATION = Histogram(
 
 @contextmanager
 def studio_operation(component: str, operation: str):
-    if component not in {"release", "quality", "mission", "resource", "action", "workspace"}:
+    if component not in {"release", "quality", "mission", "resource", "action", "workspace", "ui"}:
         raise ValueError("Unknown Studio metric component")
-    if operation not in {"capture", "evaluate", "score", "project", "grant", "execute", "verify"}:
+    if operation not in {
+        "capture", "evaluate", "score", "project", "grant", "execute", "verify",
+        "validate", "repair", "fallback", "state",
+    }:
         raise ValueError("Unknown Studio metric operation")
     started = time.perf_counter()
     status = "failed"
