@@ -39,6 +39,7 @@ Final local run on 21 October 2026 against the delivered tree (feature branch le
 12. Product decision after live review: the right-hand navigation column (zoom, compass, locate, fullscreen) was removed from Studio maps. Fit padding no longer reserves room for it, and a browser test asserts none of those controls render.
 13. A live state probe found every page load re-saving an unchanged `$viewport`, because the server returns object keys sorted and the client compared state with order-sensitive JSON. Revisions climbed on each visit and concurrent tabs could conflict. State is now compared by content; a renderer test fails without the fix.
 14. Product decisions after live review: public maps gained a 3D view (OpenFreeMap Liberty, pitch 60°, as in mapcn's example), and routine save labels were removed because they shifted the answer on every camera move. Save failures and conflicts still show. Browser tests cover the missing 3D control on business maps and the absence of save labels during a camera save.
+15. Product decision: round map markers (public numbered markers, business clusters and points, route endpoints) use a translucent `--primary` fill with a solid `--primary` outline and theme-coloured numbers, so the basemap stays visible underneath.
 
 ## Live configured-provider acceptance
 

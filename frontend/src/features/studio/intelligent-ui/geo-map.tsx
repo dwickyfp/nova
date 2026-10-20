@@ -166,12 +166,12 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
                   <RouteProgress color={primary} width={6} />
                   <RouteMarker at="start">
                     <MarkerContent>
-                      <span className="block size-3 rounded-full border-2 border-background bg-primary" />
+                      <span className="block size-3 rounded-full border-2 border-primary bg-primary/25" />
                     </MarkerContent>
                   </RouteMarker>
                   <RouteMarker at="end">
                     <MarkerContent>
-                      <span className="block size-3 rounded-full border-2 border-background bg-primary" />
+                      <span className="block size-3 rounded-full border-2 border-primary bg-primary/25" />
                     </MarkerContent>
                   </RouteMarker>
                 </MapRoute>

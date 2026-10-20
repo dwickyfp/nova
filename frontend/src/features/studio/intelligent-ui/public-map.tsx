@@ -99,7 +99,7 @@ export default function PublicMap({
               <button
                 type="button"
                 aria-label={`Open ${place.label}`}
-                className="grid min-h-11 min-w-11 place-items-center rounded-full border-2 border-background bg-primary text-sm text-primary-foreground shadow-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="grid min-h-11 min-w-11 place-items-center rounded-full border-2 border-primary bg-primary/25 text-sm font-semibold text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
                 {index + 1}
               </button>
