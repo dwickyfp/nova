@@ -37,6 +37,7 @@ function block(program: string): UiBlock {
 
 let originalTheme = "";
 beforeEach(() => {
+  vi.spyOn(uiApi, "mapMetric").mockResolvedValue({});
   originalTheme = document.documentElement.className;
   vi.spyOn(uiApi, "get").mockImplementation(async () => ({
     revision: 0,
@@ -425,4 +426,40 @@ it("renders verified geometry and links table selection to declarative state", a
   await expect.element(screen.getByText("Invalid or missing coordinates; excluded from map")).toBeVisible();
   await flushUiStates();
   expect(uiApi.put).toHaveBeenCalledWith(source,expect.objectContaining({state:{$selected:0}}));
+});
+
+it("saves the camera after the user moves a verified map", async () => {
+  const program = '$selected=-1\n$viewport=null\nroot = Col([GeoMap(@Evidence("branches"),"lon","lat",null,"name","Verified branches",$selected,{advanced:true},$viewport)])';
+  const evidence = {branches:[{name:"Jakarta",lon:106.8,lat:-6.2},{name:"Surabaya",lon:112.7,lat:-7.3}]};
+  const parsed = validateProgram(program,evidence,true);
+  const ui: UiBlock = {...parsed,program,program_sha256:"b".repeat(64),fallback:"Two mapped locations.",
+    state_defaults:parsed.state,evidence,provenance:{scope:"verified_result_rows",assumption:false,evidence_ids:["branches"]}};
+  vi.mocked(uiApi.get).mockResolvedValue({revision:0,state:ui.state_defaults,program_sha256:ui.program_sha256});
+  const screen = await render(<ThemeProvider><IntelligentUi block={ui} complete source={source} onAction={async () => {}} /></ThemeProvider>);
+  await expect.element(screen.getByLabelText("Map viewport")).toHaveAttribute("aria-busy", "false");
+  // Saving runs in the background without a progress label.
+  const seen: string[] = [];
+  const observer = new MutationObserver(() => seen.push(screen.container.textContent ?? ""));
+  observer.observe(screen.container, {subtree:true, childList:true, characterData:true});
+  await screen.getByRole("button",{name:"Show all locations"}).click();
+  await vi.waitFor(() => expect(uiApi.put).toHaveBeenCalledWith(source,expect.objectContaining({
+    state: expect.objectContaining({$viewport: expect.objectContaining({center: expect.any(Array)})}),
+  })), {timeout: 3000});
+  observer.disconnect();
+  expect(seen.join(" ")).not.toMatch(/Unsaved changes|Saving…/);
+});
+
+it("does not re-save a restored camera whose keys come back in another order", async () => {
+  const program = '$selected=-1\n$viewport=null\nroot = Col([GeoMap(@Evidence("branches"),"lon","lat",null,"name","Verified branches",$selected,{},$viewport)])';
+  const evidence = {branches:[{name:"Jakarta",lon:106.8,lat:-6.2},{name:"Surabaya",lon:112.7,lat:-7.3}]};
+  const parsed = validateProgram(program,evidence,true);
+  const ui: UiBlock = {...parsed,program,program_sha256:"c".repeat(64),fallback:"Two mapped locations.",
+    state_defaults:parsed.state,evidence,provenance:{scope:"verified_result_rows",assumption:false,evidence_ids:["branches"]}};
+  vi.mocked(uiApi.get).mockResolvedValue({revision:4,program_sha256:ui.program_sha256,
+    state:{$selected:-1,$viewport:{bearing:0,center:[109.75,-6.75],pitch:0,zoom:5}}});
+  const screen = await render(<ThemeProvider><IntelligentUi block={ui} complete source={source} onAction={async () => {}} /></ThemeProvider>);
+  await expect.element(screen.getByLabelText("Map viewport")).toHaveAttribute("aria-busy", "false");
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  await flushUiStates();
+  expect(uiApi.put).not.toHaveBeenCalled();
 });

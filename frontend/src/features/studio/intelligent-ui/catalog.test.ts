@@ -7,7 +7,7 @@ describe("catalog prompt examples", () => {
     const business = program.includes("@Evidence");
     const validation = validateProgram(program, {
       "result-id": [{
-        month: "January", revenue: 100, longitude: 106.8, latitude: -6.2, branch: "A",
+        month: "January", revenue: 100, longitude: 106.8, latitude: -6.2, branch: "A", name: "A", geometry: "LINESTRING (106.8 -6.2,107.6 -6.9)", progress: 0.5, destination_longitude: 107.6, destination_latitude: -6.9,
       }],
     }, business);
     expect(validation.catalog_version).toBe(UI_CATALOG_VERSION);

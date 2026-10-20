@@ -18,7 +18,8 @@ from app.modules.assistant.tools.redaction import is_credential_column, is_crede
 RUNTIME = Path(__file__).with_name("ui_runtime")
 MAX_PROGRAM_BYTES = 64_000
 MAX_STATE_BYTES = 16_384
-CATALOG_VERSION = "nova-openui-2"
+CATALOG_VERSION = "nova-openui-3"
+SUPPORTED_CATALOGS = frozenset({"nova-openui-2", CATALOG_VERSION})
 _FENCE = re.compile(r"```openui[^\n]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 _RUNTIME_SLOTS = asyncio.Semaphore(4)
 
@@ -39,11 +40,14 @@ def runtime_available() -> bool:
     return bool(shutil.which("node") and (RUNTIME / "validator.cjs").is_file())
 
 
-@lru_cache(maxsize=1)
-def catalog() -> dict:
-    value = json.loads((RUNTIME / "catalog.json").read_text())
-    digest = hashlib.sha256((RUNTIME / "validator.cjs").read_bytes()).hexdigest()
-    if value["version"] != CATALOG_VERSION or value["bundle_sha256"] != digest:
+@lru_cache(maxsize=2)
+def catalog(version: str = CATALOG_VERSION) -> dict:
+    if version not in SUPPORTED_CATALOGS:
+        raise UiValidationError("Unsupported UI catalog")
+    suffix = "-v2" if version == "nova-openui-2" else ""
+    value = json.loads((RUNTIME / f"catalog{suffix}.json").read_text())
+    digest = hashlib.sha256((RUNTIME / f"validator{suffix}.cjs").read_bytes()).hexdigest()
+    if value["version"] != version or value["bundle_sha256"] != digest:
         raise UiValidationError("UI catalog and validator do not match")
     return value
 
@@ -133,6 +137,7 @@ def _records(tables: dict[str, dict]) -> dict[str, list[dict]]:
 async def parse_program(
     program: str, *, tables: dict | None = None, business: bool = False,
     state: dict | None = None, private_context: bool = False,
+    catalog_version: str = CATALOG_VERSION,
 ) -> dict:
     from app.observability.metrics import studio_operation
 
@@ -142,7 +147,10 @@ async def parse_program(
         node_path = shutil.which("node")
         if not runtime_available() or node_path is None:
             raise UiValidationError("UI validator runtime is unavailable")
-        catalog()
+        catalog(catalog_version)
+        validator_file = (
+            "validator-v2.cjs" if catalog_version == "nova-openui-2" else "validator.cjs"
+        )
         data = {"program": program, "evidence": _records(tables or {}), "business": business,
                 "private_context": private_context}
         if state is not None:
@@ -157,7 +165,7 @@ async def parse_program(
                     node_path,
                     "--max-old-space-size=64",
                     "--disallow-code-generation-from-strings",
-                    str(RUNTIME / "validator.cjs"),
+                    str(RUNTIME / validator_file),
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
@@ -276,17 +284,23 @@ def _simulation_prose(
     return "\n\n".join(parts), True
 
 
-async def action_context(source: dict, state: dict, *, action_id: str | None = None) -> dict:
-    """Resolve selections from the scoped source, never from client-supplied rows."""
+async def validate_source_state(source: dict, state: dict) -> dict:
+    """Validate bound state using the source catalog and immutable evidence."""
     validate_state(state, source["state_defaults"])
     tables = {
         key: {"columns": list(rows[0]) if rows else [], "rows": rows}
         for key, rows in source.get("evidence", {}).items()
     }
-    parsed = await parse_program(
+    return await parse_program(
         source["program"], tables=tables, state=state,
+        catalog_version=source.get("catalog_version", CATALOG_VERSION),
         business=source.get("provenance", {}).get("scope") == "verified_result_rows",
     )
+
+
+async def action_context(source: dict, state: dict, *, action_id: str | None = None) -> dict:
+    """Resolve selections from the scoped source, never from client-supplied rows."""
+    parsed = await validate_source_state(source, state)
     if action_id is not None and not any(
         item["id"] == action_id and item["assistant"] for item in parsed["actions"]
     ):

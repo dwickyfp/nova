@@ -7,8 +7,9 @@ import {
 } from "@openuidev/lang-core";
 import { z } from "zod";
 import { uiFunctions } from "./functions";
+import { mapOptionsSchema } from "./map-options";
 
-export const UI_CATALOG_VERSION = "nova-openui-2";
+export const UI_CATALOG_VERSION = "nova-openui-3";
 export const MAX_PROGRAM_BYTES = 64000;
 export const MAX_STATE_BYTES = 16384;
 export type EvidenceRows = Record<string, Record<string, unknown>[]>;
@@ -28,6 +29,9 @@ const rows = z.array(z.record(z.string(), value)).max(1000);
 const childProps = { children, gap: num.min(0).max(12).default(3) };
 const bound = z.unknown();
 markReactive(bound);
+// `.optional()` returns a new schema, which must be marked reactive itself.
+const optionalBound = bound.optional();
+markReactive(optionalBound);
 const inputProps = {
   value: bound,
   label: short,
@@ -252,7 +256,7 @@ export const componentDefinitions = [
   {
     name: "GeoMap",
     description: "Governed business map. data must bind @Evidence(id). Use longitude/latitude columns or a geometry column containing WKT or GeoJSON Point, LineString or Polygon. Coordinates are WGS84 longitude first. selected binds a $variable: zero-based index into currently displayed rows, -1 for none. Use deterministic filters/sorts, never Shuffle/Pick/Random. Use a separate Button @ToAssistant for drill-down; Nova resolves the selected row.",
-    props: z.object({ data: rows, longitude: short.optional(), latitude: short.optional(), geometry: short.optional(), label: short.optional(), title: short.default("Locations"), selected: bound }),
+    props: z.object({ data: rows, longitude: short.optional(), latitude: short.optional(), geometry: short.optional(), label: short.optional(), title: short.default("Locations"), selected: bound, options: mapOptionsSchema.optional(), viewport: optionalBound }),
   },
   {
     name: "Map",
@@ -262,6 +266,9 @@ export const componentDefinitions = [
       markers: children,
       route: z.boolean().default(false),
       label: short.default("Map"),
+      options: mapOptionsSchema.optional(),
+      viewport: optionalBound,
+      routeSelected: optionalBound,
     }),
   },
   {
@@ -397,12 +404,15 @@ export const uiPromptRules = [
   "HtmlView is offline and isolated: inline JavaScript/CSS only, no external scripts, fetch, storage, parent, navigation or business data. Provide keyboard controls and a fallback description.",
   "HtmlView receives Nova CSS variables. For canvas paint use getComputedStyle(canvas).color; its default black paint may be invisible in dark mode. Avoid dynamic property names and Object introspection/assignment in scripts.",
   "Compose answers inline: avoid wrapping the whole answer in Card. Use Card only for a related input group. Choose a visual when it helps the task; plain questions need prose. Do not repeat the Markdown answer inside the UI.",
+  'Map options are a literal object: controls (map action buttons), advanced, editable (public assumptions only), simulation (public only), popupFields (up to 8 columns), layer (geometry/route/arc), progress (business progress column 0..1), toLongitude/toLatitude (arc destination columns). Append options and optional $viewport after existing arguments. $viewport starts null; Map also accepts $routeSelected after it. Never put data, URLs, functions, or expressions in options. Business route requires a supplied LineString; arcs connect evidence endpoints, not road paths or travel measurements.',
   "GeoMap is for verified business locations only. Never send business coordinates to Map, routing, images or external URLs. Select column names from actual evidence. Use Geometry WKT or GeoJSON only when supplied by the query; never invent a boundary.",
   "Apply the same local filter to a business map and its companion table. Map selection is an index into that filtered result, not the original evidence. Assistant actions receive selected_rows_snapshot resolved by Nova; do not ask the user to interpret internal indices.",
   "Use Nova token tones, no custom CSS colors. Keep prose short and responsive; make all controls labelled and usable with keyboard.",
 ];
 
 export const uiExamples = [
+  { purpose: "Verified route geometry and observed progress; no new routing request.", program: '$selected=-1\n$viewport=null\nroot=Col([GeoMap(@Evidence("result-id"),null,null,"geometry","name","Routes",$selected,{layer:"route",progress:"progress",advanced:true},$viewport)])' },
+  { purpose: "Origin–destination relationships, not road distances.", program: '$selected=-1\nroot=Col([GeoMap(@Evidence("result-id"),"longitude","latitude",null,"name","Connections",$selected,{layer:"arc",toLongitude:"destination_longitude",toLatitude:"destination_latitude"})])' },
   {
     purpose: "Verified comparison. Use the actual result id and column names.",
     program: 'root = Col([Chart(@Evidence("result-id"), "month", "revenue", "line", "Revenue")])',

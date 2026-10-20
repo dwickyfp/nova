@@ -57,10 +57,12 @@ const geoBlock: UiBlock = {
   state_defaults: geoParsed.state, evidence: geoEvidence,
   provenance: { evidence_ids: ["branches"], scope: "business", assumption: false },
 };
+if (new URLSearchParams(location.search).get("catalog") === "v2") geoBlock.catalog_version = "nova-openui-2";
 const states: Record<string, UiState> = {
   "content-1": {revision: 0, state: parsed.state, program_sha256: block.program_sha256},
   "content-geo": {revision: 0, state: geoParsed.state, program_sha256: geoBlock.program_sha256},
 };
+uiApi.mapMetric = async () => ({});
 uiApi.get = async (source) => states[source.contentId];
 uiApi.put = async (source, input) =>
   (states[source.contentId] = { ...input, revision: input.revision + 1 });
@@ -83,6 +85,22 @@ uiApi.media = async (_, type) => {
 Object.assign(window, {
   uiAcceptance: { flush: flushUiStates, saved: () => states["content-1"] },
 });
+const mapcnEvidence = { lanes: [
+  { name: "Jakarta–Bandung", lon: 106.8272, lat: -6.1754, endLon: 107.6191, endLat: -6.9175, geometry: "LINESTRING (106.8272 -6.1754,107.1 -6.4,107.6191 -6.9175)", progress: 0.4 },
+  { name: "Bandung–Surabaya", lon: 107.6191, lat: -6.9175, endLon: 112.7521, endLat: -7.2575, geometry: "LINESTRING (107.6191 -6.9175,110 -7,112.7521 -7.2575)", progress: 0.7 },
+] };
+const mapcnPrograms = [
+  '$s=-1\n$v=null\nroot=Col([Text("Synthetic route acceptance fixture"),GeoMap(@Evidence("lanes"),null,null,"geometry","name","Verified routes",$s,{layer:"route",progress:"progress",advanced:true,popupFields:["progress"]},$v)])',
+  '$s=-1\n$v=null\nroot=Col([Text("Synthetic relationship acceptance fixture"),GeoMap(@Evidence("lanes"),"lon","lat",null,"name","Verified connections",$s,{layer:"arc",toLongitude:"endLon",toLatitude:"endLat",advanced:true},$v)])',
+];
+const mapcnBlocks = mapcnPrograms.map((program, index): UiBlock => {
+  const parsed = validateProgram(program, mapcnEvidence, true);
+  const hash = String(index + 1).repeat(64);
+  states[`mapcn-${index}`] = { revision: 0, state: parsed.state, program_sha256: hash };
+  return { ...parsed, program, program_sha256: hash, state_defaults: parsed.state, evidence: mapcnEvidence,
+    fallback: "Synthetic route and relationship fixtures.", provenance: { evidence_ids: ["lanes"], scope: "verified_result_rows", assumption: false } };
+});
+const mapcnOnly = new URLSearchParams(location.search).get("component") === "mapcn";
 const mode = new URLSearchParams(location.search).get("mode");
 const geoOnly = new URLSearchParams(location.search).get("component") === "geo";
 const agent: Agent = {
@@ -173,7 +191,7 @@ if (mode) {
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={query}>
     <ThemeProvider defaultTheme={theme} storageKey="ui-acceptance-theme">
-      {geoOnly ? <main className="mx-auto max-w-3xl p-4"><IntelligentUi block={geoBlock} complete onAction={async () => {}} source={{agentId:"qa",threadId:"qa",messageId:"geo",contentId:"content-geo"}} /></main> : mode ? (
+      {mapcnOnly ? <main className="mx-auto max-w-3xl space-y-8 p-4">{mapcnBlocks.map((block, index) => <IntelligentUi key={index} block={block} complete onAction={async () => {}} source={{agentId:"qa",threadId:"qa",messageId:"mapcn",contentId:`mapcn-${index}`}} />)}</main> : geoOnly ? <main className="mx-auto max-w-3xl p-4"><IntelligentUi block={geoBlock} complete onAction={async () => {}} source={{agentId:"qa",threadId:"qa",messageId:"geo",contentId:"content-geo"}} /></main> : mode ? (
         <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
           <header className="shrink-0 border-b border-border px-4 py-3">
             Nova Studio

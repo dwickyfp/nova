@@ -522,6 +522,35 @@ try {
     report.push({businessMap:true,webgl,externalRequests:external.length,tableSelection:true});
     await page.close();
   }
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1440, 768, 320]) {
+      const page = await browser.newPage({ viewport: {width, height: 900}, colorScheme: theme, reducedMotion: "reduce" });
+      const external = [], errors = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await page.route("**/*", async route => {
+        if (new URL(route.request().url()).hostname !== "127.0.0.1") { external.push(route.request().url()); await route.abort(); }
+        else await route.continue();
+      });
+      await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/.nova-ui-acceptance.html?component=mapcn&theme=${theme}`);
+      for (const name of ["Verified routes", "Verified connections"]) {
+        const map = page.getByRole("region", {name, exact:true});
+        await map.locator('[aria-label="Map viewport"][aria-busy="false"]').waitFor();
+        await map.getByText("View locations", {exact:true}).click();
+        await map.getByRole("button", {name:"Select Jakarta–Bandung",exact:true}).click();
+        await map.getByText("Selected: Jakarta–Bandung",{exact:true}).waitFor();
+        await map.getByRole("button", {name:"Map view",exact:true}).click();
+        await map.getByRole("button", {name:"Tilt view",exact:true}).click();
+        await map.getByRole("button", {name:"Reset view",exact:true}).click();
+        await map.getByRole("button", {name:"Show all locations",exact:true}).click();
+        await map.getByRole("button", {name:"Close popup",exact:true}).click();
+      }
+      if (external.length || errors.length) throw new Error(`Mapcn privacy/runtime failure: ${JSON.stringify({external,errors})}`);
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Mapcn horizontal overflow");
+      await page.screenshot({path:`${output}/mapcn-${theme}-${width}.png`,fullPage:true});
+      report.push({mapcn:true,theme,width,routes:true,arcs:true,selection:true,advancedControls:true,externalRequests:0});
+      await page.close();
+    }
+  }
   writeFileSync(`${output}/report.json`, JSON.stringify(report, null, 2));
   console.log(
     `PASS: ${report.length} browser cases across both themes and three viewports, 200% zoom, Studio scroll/composer, real canvas click and isolation. Evidence: ${output}`,
