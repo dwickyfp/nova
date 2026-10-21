@@ -3,7 +3,7 @@ import { page, userEvent } from "vitest/browser";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api-client";
-import { DecisionShares, EffectivenessPanel } from "./decision-governance";
+import { DecisionShares } from "./decision-governance";
 import "@/styles/index.css";
 
 function mount(child: React.ReactNode) {
@@ -124,33 +124,4 @@ it("hides old shares when the security epoch changes and access is denied", asyn
   await expect
     .element(screen.getByText("private_reviewer · user"))
     .not.toBeInTheDocument();
-});
-
-it("keeps missing effectiveness dimensions unavailable and follows the authorized cursor", async () => {
-  const get = vi
-    .spyOn(api, "get")
-    .mockResolvedValueOnce({
-      dimensions: {
-        attributed_business_impact: { mean: null, available_outcomes: 0 },
-      },
-      next_after: "opaque/page",
-    })
-    .mockResolvedValueOnce({
-      dimensions: {
-        forecast_relative_error: { mean: 0.25, available_outcomes: 2 },
-      },
-      next_after: null,
-    });
-  const screen = await mount(<EffectivenessPanel epoch={1} />);
-  await screen.getByRole("button", { name: "Decision effectiveness" }).click();
-  await expect
-    .element(screen.getByText("Unavailable · 0 measured outcomes"))
-    .toBeVisible();
-  await screen.getByRole("button", { name: "Load more outcomes" }).click();
-  await expect
-    .element(screen.getByText("0.25 · 2 measured outcomes"))
-    .toBeVisible();
-  expect(get).toHaveBeenLastCalledWith(
-    "/intelligence/effectiveness?after=opaque%2Fpage",
-  );
 });

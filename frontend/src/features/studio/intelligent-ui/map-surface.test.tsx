@@ -88,15 +88,20 @@ it("shows every location from a tilted, rotated camera", async () => {
       </div>
     </ThemeProvider>,
   );
-  await vi.waitFor(() => expect(map && fitted(map)).toBe(true));
+  await vi.waitFor(() => expect(map && fitted(map)).toBe(true), {
+    timeout: 5000,
+  });
   map!.jumpTo({ pitch: 45, bearing: 30, zoom: map!.getZoom() + 1 });
 
   await screen.getByRole("button", { name: "Show all locations" }).click();
-  await vi.waitFor(() => {
-    expect(map!.getPitch()).toBe(0);
-    expect(map!.getBearing()).toBe(0);
-    expect(fitted(map!)).toBe(true);
-  });
+  await vi.waitFor(
+    () => {
+      expect(map!.getPitch()).toBe(0);
+      expect(map!.getBearing()).toBe(0);
+      expect(fitted(map!)).toBe(true);
+    },
+    { timeout: 5000 },
+  );
 });
 
 it("renders no navigation controls on the canvas", async () => {

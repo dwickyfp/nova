@@ -59,40 +59,6 @@ try {
       await page.locator('summary').filter({ hasText: /^Evidence \(/ }).click();
       await page.getByText('query · semantic-compiler-v1', { exact: true }).first().waitFor();
       await page.screenshot({ path: path.join(destination, `${name}-news.png`), fullPage: true });
-      await page.goto(base + '/studio?view=decisions&item=' + fixture.decision_id);
-      await page.getByRole('heading', { name: 'Ranger governed recovery', exact: true }).waitFor({ timeout: 120000 });
-      const select = page.getByRole('button', { name: 'Select option', exact: true });
-      await select.waitFor({ timeout: 120000 });
-      await select.focus();
-      assert(await select.evaluate((el) => el === document.activeElement));
-      await page.keyboard.press('Enter');
-      await page.getByText('REQUIRE APPROVAL', { exact: true }).waitFor({ timeout: 120000 });
-      assert.equal(await page.getByRole('button', { name: 'Approve this revision' }).count(), 0);
-      await page.getByText('Lineage', { exact: true }).waitFor({ timeout: 120000 });
-      const lineage = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Lineage', exact: true }) });
-      await lineage.getByText(/→ Investigation → Decision revision/).waitFor({ timeout: 120000 });
-      await lineage.locator('summary').filter({ hasText: /^Evidence \(/ }).click();
-      await lineage.getByText('query · semantic-compiler-v1', { exact: true }).first().waitFor();
-      await page.locator('summary').filter({ hasText: /^Assumptions$/ }).click();
-      await page.screenshot({ path: path.join(destination, `${name}-decision.png`), fullPage: true });
-    } else if (fixture.stage === 'stale') {
-      await page.goto(base + '/studio?view=decisions&item=' + fixture.decision_id);
-      await page.getByText('Evidence needs revalidation', { exact: true }).waitFor({ timeout: 120000 });
-      assert.equal(await page.getByRole('button', { name: 'Select option' }).count(), 0);
-      await page.screenshot({ path: path.join(destination, `${name}-stale.png`), fullPage: true });
-    } else if (fixture.stage === 'empty_denied') {
-      await page.goto(base + '/studio?view=decisions');
-      await page.getByLabel('Decision visibility').getByRole('button', { name: 'Shared with me', exact: true }).click();
-      await page.getByText('No decisions yet', { exact: true }).waitFor({ timeout: 120000 });
-      await page.screenshot({ path: path.join(destination, `${name}-empty.png`), fullPage: true });
-      await page.goto(base + '/studio?view=decisions&item=' + encodeURIComponent(fixture.decision_id));
-      await page.getByText('This item is unavailable with your current access', { exact: true }).waitFor({ timeout: 120000 });
-      const retry = page.getByRole('button', { name: 'Retry', exact: true });
-      await retry.focus();
-      assert(await retry.evaluate((el) => el === document.activeElement));
-      await page.keyboard.press('Enter');
-      await page.getByText('This item is unavailable with your current access', { exact: true }).waitFor({ timeout: 120000 });
-      await page.screenshot({ path: path.join(destination, `${name}-denied.png`), fullPage: true });
     } else {
       throw new Error('Unknown browser checkpoint');
     }

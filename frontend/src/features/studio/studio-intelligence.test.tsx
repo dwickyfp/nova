@@ -72,13 +72,20 @@ function mount(props: Partial<Parameters<typeof StudioIntelligence>[0]> = {}) {
   return render(
     <QueryClientProvider client={client}>
       <div className="flex h-dvh min-w-0 flex-col">
-        <StudioIntelligence
-          view="news"
-          onOpen={vi.fn()}
-          onDecision={vi.fn()}
-          onFollowUp={vi.fn()}
-          {...props}
-        />
+        <StudioIntelligence onOpen={vi.fn()} onFollowUp={vi.fn()} {...props} />
+      </div>
+    </QueryClientProvider>,
+  );
+}
+
+function mountDecision(value: Decision) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <div className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-6">
+        <DecisionDetail decision={value} refresh={vi.fn()} epoch={1} />
       </div>
     </QueryClientProvider>,
   );
@@ -144,7 +151,6 @@ it("removes cached News when the principal changes, including same-role users", 
 });
 
 it("requires the current policy and reviewer permission before approval", async () => {
-  vi.spyOn(intelligenceApi, "get").mockResolvedValue(decision);
   vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
     current: false,
     policy_revision: 2,
@@ -160,7 +166,7 @@ it("requires the current policy and reviewer permission before approval", async 
     outcomes: [],
   });
   const operate = vi.spyOn(intelligenceApi, "operate");
-  const screen = await mount({ view: "decisions", item: decision.id });
+  const screen = await mountDecision(decision);
   await expect.element(screen.getByText(/Policy changed/)).toBeVisible();
   await expect
     .element(screen.getByRole("button", { name: "Approve this revision" }))
@@ -172,7 +178,6 @@ it("requires the current policy and reviewer permission before approval", async 
 });
 
 it("submits approval for the displayed decision revision", async () => {
-  vi.spyOn(intelligenceApi, "get").mockResolvedValue(decision);
   vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
     current: true,
     policy_revision: 1,
@@ -190,7 +195,7 @@ it("submits approval for the displayed decision revision", async () => {
   const operate = vi
     .spyOn(intelligenceApi, "operate")
     .mockResolvedValue({ ...decision, status: "approved", revision: 3 });
-  const screen = await mount({ view: "decisions", item: decision.id });
+  const screen = await mountDecision(decision);
   await screen.getByRole("button", { name: "Approve this revision" }).click();
   expect(operate).toHaveBeenCalledWith(decision, "approve", undefined);
 });
@@ -229,7 +234,6 @@ it.each([
         },
       ],
     };
-    vi.spyOn(intelligenceApi, "get").mockResolvedValue(generic);
     vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
       current: true,
       policy_revision: 1,
@@ -244,7 +248,7 @@ it.each([
       events: [],
       outcomes: [],
     });
-    const screen = await mount({ view: "decisions", item: generic.id });
+    const screen = await mountDecision(generic);
     await expect
       .element(
         screen.getByRole("heading", { name: "Additional scenario results" }),
@@ -271,12 +275,12 @@ it.each([
 );
 
 it("displays existing gross profit once when canonical effects include the legacy result", async () => {
-  vi.spyOn(intelligenceApi, "get").mockResolvedValue({
+  const legacy: Decision = {
     ...decision,
     options: [
       { ...decision.options[0], effects: { incremental_gross_profit: 20 } },
     ],
-  });
+  };
   vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
     current: true,
     policy_revision: 1,
@@ -291,7 +295,7 @@ it("displays existing gross profit once when canonical effects include the legac
     events: [],
     outcomes: [],
   });
-  const screen = await mount({ view: "decisions", item: decision.id });
+  const screen = await mountDecision(legacy);
   await expect
     .element(screen.getByText("incremental gross profit", { exact: true }))
     .toBeVisible();

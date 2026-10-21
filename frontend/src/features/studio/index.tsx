@@ -400,10 +400,9 @@ function StudioAppContent() {
               setView("chat");
               navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
             }} />
-        ) : view === "news" || view === "decisions" ? (
-          <StudioIntelligence view={view} item={search.item}
-            onDecision={(item) => { setView("decisions"); navigate({ to: "/studio", search: { view: "decisions", item }, replace: true }); }}
-            onOpen={(item) => navigate({ to: "/studio", search: view === "news" ? { view, item, desk: "alerts" } : { view, item }, replace: true })}
+        ) : view === "news" ? (
+          <StudioIntelligence item={search.item}
+            onOpen={(item) => navigate({ to: "/studio", search: { view, item, desk: "alerts" }, replace: true })}
             onFollowUp={(prompt) => {
               setInitialPrompt(prompt);
               setFreshChat(true);

@@ -78,10 +78,11 @@ describe("StudioSidebar", () => {
 
     const withNews = await mount(true);
     await expect.element(withNews.getByRole("button", { name: "News" })).toBeVisible();
+    expect(withNews.getByRole("button", { name: "Decisions" }).query()).toBeNull();
     await withNews.unmount();
 
     const withoutNews = await mount(false);
-    await expect.element(withoutNews.getByRole("button", { name: "Decisions" })).toBeVisible();
+    await expect.element(withoutNews.getByRole("button", { name: "Artifacts" })).toBeVisible();
     expect(withoutNews.getByRole("button", { name: "News" }).query()).toBeNull();
   });
 

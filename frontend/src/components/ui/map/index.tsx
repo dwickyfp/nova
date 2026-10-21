@@ -2550,9 +2550,18 @@ function MapClusterLayer<
           clusterThresholds[1],
           40,
         ],
-        "circle-stroke-width": 0.75,
-        "circle-stroke-color": mapColor("--background"),
-        "circle-opacity": 0.85,
+        // Translucent fill with a solid outline keeps the basemap readable.
+        "circle-opacity": 0.25,
+        "circle-stroke-width": 2,
+        "circle-stroke-color": [
+          "step",
+          ["get", "point_count"],
+          clusterColors[0],
+          clusterThresholds[0],
+          clusterColors[1],
+          clusterThresholds[1],
+          clusterColors[2],
+        ],
       },
     });
 
@@ -2568,7 +2577,7 @@ function MapClusterLayer<
         "text-size": 12,
       },
       paint: {
-        "text-color": mapColor("--primary-foreground"),
+        "text-color": mapColor("--foreground"),
       },
     });
 
@@ -2580,9 +2589,10 @@ function MapClusterLayer<
       filter: ["!", ["has", "point_count"]],
       paint: {
         "circle-color": pointColor,
-        "circle-radius": 5,
+        "circle-opacity": 0.25,
+        "circle-radius": 6,
         "circle-stroke-width": 2,
-        "circle-stroke-color": mapColor("--background"),
+        "circle-stroke-color": pointColor,
       },
     });
 
@@ -2621,7 +2631,7 @@ function MapClusterLayer<
 
     // Update cluster layer colors and sizes
     if (map.getLayer(clusterLayerId) && colorsChanged) {
-      map.setPaintProperty(clusterLayerId, "circle-color", [
+      const steps = [
         "step",
         ["get", "point_count"],
         clusterColors[0],
@@ -2629,7 +2639,9 @@ function MapClusterLayer<
         clusterColors[1],
         clusterThresholds[1],
         clusterColors[2],
-      ]);
+      ] as MapLibreGL.ExpressionSpecification;
+      map.setPaintProperty(clusterLayerId, "circle-color", steps);
+      map.setPaintProperty(clusterLayerId, "circle-stroke-color", steps);
       map.setPaintProperty(clusterLayerId, "circle-radius", [
         "step",
         ["get", "point_count"],
@@ -2644,6 +2656,11 @@ function MapClusterLayer<
     // Update unclustered point layer color
     if (map.getLayer(unclusteredLayerId) && prev.pointColor !== pointColor) {
       map.setPaintProperty(unclusteredLayerId, "circle-color", pointColor);
+      map.setPaintProperty(
+        unclusteredLayerId,
+        "circle-stroke-color",
+        pointColor,
+      );
     }
 
     stylePropsRef.current = { clusterColors, clusterThresholds, pointColor };

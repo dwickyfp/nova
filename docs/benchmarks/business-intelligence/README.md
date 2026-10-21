@@ -60,10 +60,10 @@ test-stack endpoint overrides, as required by the integration CI job. The test
 does not load a developer's deployment secrets into its report.
 
 The patched-FE lifecycle test can pause for actual browser checks with
-`NOVA_INTELLIGENCE_BROWSER_ACCEPTANCE=1`. Its populated, stale and
-empty/denied checkpoints retain the same restricted identity and real API.
-The browser runner verifies loaded lineage and evidence, keyboard actions,
-desktop/light and narrow/dark layouts before acknowledging each checkpoint.
+`NOVA_INTELLIGENCE_BROWSER_ACCEPTANCE=1`. Its populated checkpoint retains
+the same restricted identity and real API. The browser runner verifies the
+News investigation and evidence in desktop/light and narrow/dark layouts
+before acknowledging the checkpoint.
 
 ## Reproduction
 
