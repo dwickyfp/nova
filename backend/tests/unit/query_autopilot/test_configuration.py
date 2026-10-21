@@ -6,20 +6,8 @@ import pytest
 from scripts.configure_autopilot_model import configure
 
 
-@pytest.mark.parametrize("routing_failure", [False, True])
-async def test_model_setup_preserves_decision_and_parameters_and_reports_partial_write(
-    routing_failure,
-):
-    routing = {
-        "enabled": True,
-        "decision_model_id": "decision",
-        "light_model_id": "old",
-        "heavy_model_id": "old",
-        "min_probability": 0.9,
-        "min_confidence": 0.7,
-        "timeout_seconds": 3.5,
-    }
-    state = {"default": {"model_id": "old"}, "routing": routing.copy()}
+async def test_model_setup_saves_and_verifies_the_global_default():
+    state = {"default": {"model_id": "old"}}
     calls = []
 
     def handle(request):
@@ -31,37 +19,20 @@ async def test_model_setup_preserves_decision_and_parameters_and_reports_partial
             value = {"providers": [{"id": "kenari", "name": "Kenari", "has_api_key": True}]}
         elif path == "ai/providers/kenari/models":
             value = {"models": [{"id": "deepseek", "name": "deepseek-v4-1-flash", "type": "llm"}]}
-        elif path == "ai/default-model":
+        else:
+            assert path == "ai/default-model"
             if request.method == "PUT":
                 state["default"] = json.loads(request.content)
             value = state["default"]
-        else:
-            assert path == "ai/decision-settings"
-            if request.method == "PUT":
-                if routing_failure:
-                    return httpx.Response(503)
-                state["routing"] = json.loads(request.content)
-            value = state["routing"]
         return httpx.Response(200, json=value)
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(handle), base_url="http://localhost"
     ) as client:
-        if routing_failure:
-            with pytest.raises(ValueError, match="Global default saved; routing update failed"):
-                await configure(client)
-            assert state["default"] == {"model_id": "deepseek"}
-            assert state["routing"] == routing
-        else:
-            result = await configure(client)
-            assert result["model"] == "deepseek-v4-1-flash"
-            assert state["routing"] == {
-                **routing,
-                "light_model_id": "deepseek",
-                "heavy_model_id": "deepseek",
-            }
-            assert state["default"] == {"model_id": "deepseek"}
-            assert not any("api-key" in path for _, path in calls)
+        result = await configure(client)
+    assert result["model"] == "deepseek-v4-1-flash"
+    assert state["default"] == {"model_id": "deepseek"}
+    assert not any("api-key" in path for _, path in calls)
 
 
 async def test_model_setup_refuses_inactive_administrator_before_writing():

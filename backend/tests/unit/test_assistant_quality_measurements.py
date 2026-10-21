@@ -30,8 +30,6 @@ def budget(record, **limits):
 @pytest.fixture
 def quality_enabled(monkeypatch):
     monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
-    monkeypatch.setattr("app.modules.assistant.decision.decision_session",
-                        AsyncMock(return_value=None))
 
 
 def http_provider(monkeypatch, responses, *, max_attempts=1):
@@ -214,48 +212,6 @@ async def test_resolution_failure_proves_zero_provider_requests(monkeypatch, qua
     assert budget(observation(context), provider_calls=0, total_tokens=0) == "pass"
 
 
-async def test_decision_workload_and_refinement_requests_cannot_be_ignored(
-    monkeypatch, quality_enabled,
-):
-    from app.modules.assistant.decision import DecisionSession
-    from tests.unit.test_decision_runtime import settings as decision_settings
-
-    decision = DecisionSession(decision_settings())
-
-    async def judgment(payload, timeout):
-        answers = {}
-        for key, question in payload["questions"].items():
-            criteria = question["criteria"]
-            answers[key] = {
-                "type": "choice", "choice": "none" if "none" in criteria else "support",
-                "confidence": 0.99,
-                "probabilities": {
-                    label: 1 if label == ("none" if "none" in criteria else "support") else 0
-                    for label in criteria
-                },
-            }
-        return {"answers": answers, "model": "fixture"}
-
-    decision._post = AsyncMock(side_effect=judgment)
-    monkeypatch.setattr("app.modules.assistant.decision.decision_session",
-                        AsyncMock(return_value=decision))
-    registry = ToolRegistry()
-    registry.register(EvalTool("load_skill"))
-    registry.register(EvalTool("search_knowledge"))
-    provider = ScriptedProvider([text_frame("Ready.")], turn_plan={
-        "intent": "capability_help", "tools": registry.names(), "required_tools": [],
-    })
-    context, _ = await run(provider, registry=registry)
-    assert decision._post.await_count == 2
-    assert decision.calls == 2
-    assert provider.calls == 1
-    record = observation(context)
-    assert "decision_requests_unmeasured" in record["measurement"]["unavailable"][
-        "provider_calls"
-    ]
-    assert budget(record, provider_calls=1) == "unavailable"
-
-
 @pytest.mark.parametrize("allowed", [False, True])
 async def test_tool_dispatch_counts_exclude_denials_and_do_not_guess_nested_cost(
     monkeypatch, quality_enabled, allowed,
@@ -384,8 +340,6 @@ async def test_recovery_charges_previous_usage_and_new_planning(monkeypatch, qua
 
 async def test_disabled_quality_preserves_provider_path_and_public_trace(monkeypatch):
     monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
-    monkeypatch.setattr("app.modules.assistant.decision.decision_session",
-                        AsyncMock(return_value=None))
     provider, requests = http_provider(monkeypatch, [
         (json.dumps(PLAN), {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
         ("Ready.", {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}),

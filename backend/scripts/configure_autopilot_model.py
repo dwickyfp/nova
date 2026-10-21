@@ -13,7 +13,6 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from app.modules.ai_ml.decision_settings import DecisionSettings
 from app.modules.query_autopilot.judge import MODEL_NAME
 
 
@@ -41,28 +40,15 @@ async def configure(client: httpx.AsyncClient) -> dict:
     if len(selected) != 1:
         raise ValueError("Exactly one active registered DeepSeek Flash LLM is required")
     model_id = selected[0]["id"]
-    previous = DecisionSettings.model_validate(await request("GET", "ai/decision-settings"))
-    intended = previous.model_copy(update={"light_model_id": model_id, "heavy_model_id": model_id})
-    # These existing endpoints are separate durable writes. A failed second
-    # write is reported as partial configuration and can be safely rerun.
     await request("PUT", "ai/default-model", json={"model_id": model_id})
-    try:
-        await request("PUT", "ai/decision-settings", json=intended.model_dump())
-    except Exception:
-        raise ValueError(
-            "Global default saved; routing update failed. Rerun to reconcile."
-        ) from None
     global_value = await request("GET", "ai/default-model")
-    routing = DecisionSettings.model_validate(await request("GET", "ai/decision-settings"))
-    if global_value != {"model_id": model_id} or routing != intended:
+    if global_value != {"model_id": model_id}:
         raise ValueError("Stored configuration differs from the requested model selection")
     return {
         "provider": "Kenari",
         "model": MODEL_NAME,
         "model_id": model_id,
         "global_default": "verified",
-        "light_and_heavy": "verified",
-        "decision_and_routing_parameters": "preserved",
     }
 
 

@@ -5,7 +5,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.database import db
-from app.modules.ai_ml.decision_settings import registered_model
+from app.modules.ai_ml.service import ai_service
 
 
 class DefaultModelSettings(BaseModel):
@@ -22,6 +22,18 @@ async def read_default_model() -> DefaultModelSettings:
     )
     rows = result.get("rows") or []
     return DefaultModelSettings.model_validate_json(rows[0][0]) if rows else DefaultModelSettings()
+
+
+async def registered_model(model_id: str, kind: str) -> tuple[dict, dict]:
+    model = await ai_service.get_model(model_id)
+    if not model or model.get("type") != kind or not model.get("is_active", True):
+        raise ValueError(f"Selected {kind} model is unavailable.")
+    provider = await ai_service.get_provider(model["provider_id"])
+    if not provider or not provider.get("is_active", True):
+        raise ValueError("Selected model's provider is unavailable.")
+    if kind == "llm" and not provider.get("has_api_key"):
+        raise ValueError("Selected LLM provider requires an API key.")
+    return model, provider
 
 
 async def save_default_model(value: DefaultModelSettings) -> DefaultModelSettings:

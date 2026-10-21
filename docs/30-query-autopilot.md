@@ -19,11 +19,8 @@ uv run python scripts/configure_autopilot_model.py --url http://127.0.0.1:8000
 ```
 
 The command reads `NOVA_ACCESS_TOKEN`, validates the registry, saves the global
-selection through `/api/v1/ai/default-model`, updates only light/heavy model IDs
-through decision settings, and reads both settings back. It preserves the
-decision model, thresholds, timeout and enabled state. Embeddings and explicit
-agent/user model choices remain under their existing owners. The two API writes
-are separate: a partial result is an error and rerunning reconciles it.
+selection through `/api/v1/ai/default-model`, and reads it back. Embeddings and
+explicit agent/user model choices remain under their existing owners.
 
 To explicitly test the stored provider credential, completion, streaming, tool
 calling and structured judge output against the configured backend environment:

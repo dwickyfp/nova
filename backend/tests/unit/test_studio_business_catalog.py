@@ -340,28 +340,6 @@ async def test_studio_raw_sql_denied_before_engine_even_for_admin(monkeypatch, s
     assert tool._audit.await_args.kwargs["status"] == "DENIED"
 
 
-@pytest.mark.asyncio
-async def test_jev_cannot_add_execution_to_catalog_plan():
-    from app.modules.assistant.intelligence import SkillDefinition
-    from app.modules.assistant.planning import refine_turn_plan
-
-    registry = ToolRegistry()
-    registry.register(DescribeAgentTool(registry))
-    registry.register(EvalTool("load_skill"))
-    registry.discoverable_skills = ("sql",)
-    registry.skill_definitions["sql"] = SkillDefinition(
-        "sql", "SQL tasks", (), "SQL", "platform_skill",
-    )
-    decision = AsyncMock()
-    decision.relevance.return_value = {"tool:describe_agent": 0, "skill:sql": 2}
-    plan = validate_turn_plan({"intent": "agent_catalog", "tools": [], "required_tools": []},
-                              set(registry.names()))
-    refined = await refine_turn_plan(plan, registry, "Data apa saja?", decision)
-    assert refined.selected_tools == ("describe_agent",)
-    assert refined.route.required_capabilities == ("describe_agent",)
-    assert not refined.selected_skills
-
-
 def test_scope_names_dimensions_shared_across_facts():
     from tests.benchmark.studio_accuracy.model import bench_model
 

@@ -207,8 +207,6 @@ class LLMGateway:
         if not template or not provider or not provider.get("is_active", True):
             raise GatewayRefusal(503, "AI function provider is unavailable")
         model = await ai_service.get_model(alias["model_id"]) if alias.get("model_id") else None
-        if provider.get("type") == "decision" or (model and model.get("type") == "decision"):
-            raise GatewayRefusal(503, "AI function provider is unavailable")
         api_key = await ai_service.get_provider_api_key(alias["provider_id"])
         if not api_key or not provider.get("endpoint"):
             raise GatewayRefusal(503, "AI function provider is unavailable")
