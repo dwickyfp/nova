@@ -637,7 +637,7 @@ class TestStageQueryEndToEnd:
         provider = FakeProvider(SecretValue(ACCESS_KEY, SECRET_KEY))
         svc, recorded, _audits = self._wire(monkeypatch, provider)
 
-        result = await svc.execute(
+        result = await svc.execute(role="analyst",
             sql="SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",
@@ -655,7 +655,7 @@ class TestStageQueryEndToEnd:
         provider = FakeProvider(error=RuntimeError("AccessDenied"))
         svc, recorded, audits = self._wire(monkeypatch, provider)
 
-        result = await svc.execute(
+        result = await svc.execute(role="analyst",
             sql="SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",
@@ -748,7 +748,7 @@ class TestStageQueryEndToEnd:
         monkeypatch.setattr(service_module, "check_stage_access", allowed_stage)
         monkeypatch.setattr(injector_module, "get_storage_connection", fake_connection)
 
-        await svc.execute(
+        await svc.execute(role="analyst",
             sql="SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",

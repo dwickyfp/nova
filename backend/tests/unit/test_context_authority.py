@@ -143,7 +143,6 @@ async def test_usage_projection_reuses_identity_and_keeps_observation_authority(
     from tests.unit.test_intelligence_engine import MemoryRepository
 
     definition = semantic_ir_to_definition(sales_model())
-    monkeypatch.setattr(context_graph.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     monkeypatch.setattr(context_graph.intelligence_service, "authorize_semantic",
                         AsyncMock(return_value={"status": "ACTIVE", "definition": definition}))
     monkeypatch.setattr(context_graph.intelligence_service, "_audit", AsyncMock())

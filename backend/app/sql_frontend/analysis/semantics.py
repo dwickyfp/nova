@@ -78,7 +78,6 @@ class StatementSemanticsRegistry:
             statement.parsed.normalized_sql,
             context.database,
             context.schema,
-            context.ranger_enabled,
         )
         if cache is not None and key in cache:
             return cache[key]

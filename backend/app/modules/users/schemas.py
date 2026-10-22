@@ -4,8 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.config import settings
-
 DefaultRoleMode = Literal["explicit", "all", "none"]
 PrivilegeScope = Literal[
     "SYSTEM",
@@ -75,11 +73,11 @@ class UserUpdate(BaseModel):
 
 
 def validate_ranger_default(mode: str | None, roles: list[str]) -> None:
-    if settings.RANGER_ENABLED and (
+    if (
         mode != "explicit" or len(roles) != 1
         or any(not role.strip() or role.upper() in {"ALL", "NONE", "DEFAULT"} for role in roles)
     ):
-        raise ValueError("Ranger mode requires exactly one explicit default role")
+        raise ValueError("Exactly one explicit default role is required")
 
 
 class UserResponse(BaseModel):

@@ -155,8 +155,7 @@ longer emits a conflicting terminal event; deletion blocks late event writes.
 
 The smoke creates temporary Finance and Marketing sample agents, a temporary
 role/user, and a Studio thread, then removes them. Run it with
-`STARROCKS_FE_MYSQL_PORT=29030 RANGER_ENABLED=true .venv/bin/python -m
-scripts.smoke_auto_two_agents` from `backend/` on a configured local stack.
+`STARROCKS_FE_MYSQL_PORT=29030 .venv/bin/python -m scripts.smoke_auto_two_agents` from `backend/` on a configured local stack.
 
 The isolated worker-loss probe used `scripts.probe_auto_worker_kill` with the API
 up and no competing Auto worker. It killed the process with `SIGKILL` after a

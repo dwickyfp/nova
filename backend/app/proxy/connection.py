@@ -26,7 +26,6 @@ from dataclasses import dataclass
 
 import asyncmy
 
-from app.core.config import settings
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
@@ -334,34 +333,29 @@ class ProxyConnection:
         self._ctx.upstream = upstream
 
         requested_role = response.connect_attrs.get("nova_role") or None
-        if settings.RANGER_ENABLED or requested_role is not None:
-            try:
-                active_role, assignments = await role_activation_service.activate(
-                    self._ctx.connection,
-                    principal=response.username,
-                    requested_role=requested_role,
-                )
-            except RoleActivationError as exc:
-                logger.info(
-                    "[%s] role activation failed for %r from %s",
-                    self._ctx.connection_id,
-                    response.username,
-                    self._ctx.peer,
-                )
-                await self._write_error(ER_ACCESS_DENIED_ERROR, str(exc), sequence=2)
-                await upstream.close()
-                return False
-
-            self._ctx.session.establish_security(
+        try:
+            active_role, assignments = await role_activation_service.activate(
+                self._ctx.connection,
                 principal=response.username,
-                assigned_roles=assignments.assigned_roles,
-                default_role=assignments.default_role or "",
-                active_role=active_role,
+                requested_role=requested_role,
             )
-        else:
-            # Native-RBAC compatibility mode predates mandatory role markers.
-            # Keep the authenticated principal, but never manufacture a role.
-            self._ctx.session.principal = response.username
+        except RoleActivationError as exc:
+            logger.info(
+                "[%s] role activation failed for %r from %s",
+                self._ctx.connection_id,
+                response.username,
+                self._ctx.peer,
+            )
+            await self._write_error(ER_ACCESS_DENIED_ERROR, str(exc), sequence=2)
+            await upstream.close()
+            return False
+
+        self._ctx.session.establish_security(
+            principal=response.username,
+            assigned_roles=assignments.assigned_roles,
+            default_role=assignments.default_role or "",
+            active_role=active_role,
+        )
 
         self._ctx.user = AuthenticatedUser(
             username=response.username,

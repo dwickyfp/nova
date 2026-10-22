@@ -8,6 +8,7 @@ parsing the question text.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -56,7 +57,8 @@ def setup_tool(monkeypatch, *responses):
 
 
 async def _run(tool, question, *, active_state=None):
-    context = LoopContext(user_name="alice", user=USER.copy())
+    context = LoopContext(user_name="alice", user=USER.copy(),
+                          execution_now=datetime(2026, 10, 22, 12, tzinfo=UTC))
     context.active_state = active_state
     return await tool.run(
         ToolInvocation(tool_call_id="s1", tool_name="semantic_query",
@@ -76,7 +78,8 @@ async def test_every_question_is_planned_by_the_model(monkeypatch):
     provider.complete.assert_awaited_once()
     sql = execute.call_args.kwargs["sql"]
     assert "`orders`.`city`" in sql
-    assert "DATE_SUB(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 1 MONTH)" in sql
+    assert ">= '2026-09-01 00:00:00.000000'" in sql
+    assert "< '2026-10-01 00:00:00.000000'" in sql
     payload = json.loads(provider.complete.call_args.kwargs["messages"][1]["content"])
     # The whole catalog, not a slice chosen by shared words.
     assert {item["name"] for item in payload["catalog"]["metrics"]} >= {"total_revenue"}
@@ -140,7 +143,8 @@ async def test_second_invalid_model_plan_is_a_recoverable_plan_error(monkeypatch
 # ── the turn planner's primary plan ─────────────────────────────────────────
 
 def _context(frame=None, *, question="x", primary=None):
-    context = LoopContext(user_name="alice", user=USER.copy())
+    context = LoopContext(user_name="alice", user=USER.copy(),
+                          execution_now=datetime(2026, 10, 22, 12, tzinfo=UTC))
     context.user_question = question
     context.intent_frame = frame
     context.primary_plan = primary
@@ -182,6 +186,7 @@ async def test_later_queries_plan_for_themselves(monkeypatch):
 # ── the user's constraints, from the intent frame ────────────────────────────
 
 async def test_the_users_period_wins_over_the_models_rewrite(monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.NOVA_TIMEZONE", "UTC")
     tool, _provider, execute = setup_tool(monkeypatch, _plan(time={
         "dimension": "order_date", "grain": "month", "range": "last_3_months", "compare": None,
     }))
@@ -190,7 +195,10 @@ async def test_the_users_period_wins_over_the_models_rewrite(monkeypatch):
     assert outcome.ok, outcome.safe_detail
     sql = execute.call_args.kwargs["sql"]
     assert "comparison_period" in sql
-    assert "DATE_TRUNC('month', CURRENT_DATE())" in sql
+    assert ">= '2026-10-01 00:00:00.000000'" in sql
+    assert "< '2026-10-22 12:00:00.000000'" in sql
+    assert ">= '2026-09-01 00:00:00.000000'" in sql
+    assert "< '2026-09-22 12:00:00.000000'" in sql
     assert outcome.metadata["period_from_user"].startswith("Used the period the user asked for")
 
 
@@ -204,7 +212,8 @@ async def test_later_analysis_queries_keep_their_own_period(monkeypatch):
     outcome = await _ask(tool, context)
     assert outcome.ok, outcome.safe_detail
     assert outcome.metadata["period_from_user"] is None
-    assert "INTERVAL 1 MONTH)" in execute.call_args.kwargs["sql"]
+    assert ">= '2026-09-01 00:00:00.000000'" in execute.call_args.kwargs["sql"]
+    assert "< '2026-10-01 00:00:00.000000'" in execute.call_args.kwargs["sql"]
 
 
 async def test_the_users_top_n_survives_a_rewrite_that_drops_it(monkeypatch):

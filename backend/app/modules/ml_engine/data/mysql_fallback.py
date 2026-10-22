@@ -1,4 +1,4 @@
-"""Bounded MySQL-protocol fallback for deployments without Arrow Flight."""
+"""Bounded MySQL-protocol data source for governed ML reads."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import pyarrow as pa
 from app.common.identifiers import check_identifier
 from app.core.config import settings
 from app.core.database import db
-from app.modules.ml_engine.data.arrow_flight import ArrowFlightDataSource
 from app.modules.ml_engine.spec import MLSecurityContext
 
 
@@ -32,15 +31,14 @@ class MySQLBatchDataSource:
         ):
             if security.role:
                 await cursor.execute(f"SET ROLE {check_identifier(security.role, field='role')}")
-                if settings.RANGER_ENABLED:
-                    from app.modules.access_control.role_activation import _active_role_names
+                from app.modules.access_control.role_activation import _active_role_names
 
-                    await cursor.execute("SELECT CURRENT_ROLE()")
-                    row = await cursor.fetchone()
-                    # SSCursor.fetchone() leaves the EOF packet unread before the next command.
-                    await cursor.fetchall()
-                    if not row or _active_role_names(str(row[0])) != {security.role}:
-                        raise PermissionError("ML connection did not confirm the active role")
+                await cursor.execute("SELECT CURRENT_ROLE()")
+                row = await cursor.fetchone()
+                # SSCursor.fetchone() leaves the EOF packet unread before the next command.
+                await cursor.fetchall()
+                if not row or _active_role_names(str(row[0])) != {security.role}:
+                    raise PermissionError("ML connection did not confirm the active role")
             await cursor.execute(sql)
             columns = [item[0] for item in cursor.description or ()]
             while True:
@@ -74,29 +72,16 @@ class ExistingConnectionBatchDataSource:
 
 
 class PreferredDataSource:
-    """Use Arrow first; fall back only when transport setup fails before data arrives."""
+    """Stream over the caller's MySQL session, where Ranger enforcement applies.
+
+    Arrow Flight is not qualified for Ranger enforcement, so it is never used
+    for governed data.
+    """
 
     def __init__(self) -> None:
-        self.arrow = ArrowFlightDataSource()
         self.mysql = MySQLBatchDataSource()
-        self.transport_used = "unknown"
-
-    @property
-    def queue_wait_seconds(self) -> float:
-        return self.arrow.queue_wait_seconds
+        self.transport_used = "mysql_fallback"
 
     async def stream(self, sql: str, security: MLSecurityContext) -> AsyncIterator[pa.RecordBatch]:
-        if settings.ML_ARROW_ENABLED and not settings.RANGER_ENABLED:
-            self.transport_used = "arrow_flight"
-            yielded = False
-            try:
-                async for batch in self.arrow.stream(sql, security):
-                    yielded = True
-                    yield batch
-                return
-            except Exception:
-                if yielded:
-                    raise
-        self.transport_used = "mysql_fallback"
         async for batch in self.mysql.stream(sql, security):
             yield batch

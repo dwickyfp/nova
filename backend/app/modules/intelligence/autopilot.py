@@ -10,7 +10,6 @@ from uuid import NAMESPACE_URL, uuid5
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
-from app.core.config import settings
 from app.modules.agents.rule_proposals import rule_proposal_repository
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.learning_sources import LearningRequest, collect_observations
@@ -255,8 +254,6 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
 
 @router.get("/{view_id}/autopilot/usage")
 async def usage_observations(view_id: str, agent_id: str, user: CurrentUser):
-    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        raise HTTPException(status_code=404, detail="Usage learning is unavailable")
     from app.modules.agents.router import _require_agent
     from app.modules.agents.semantic.access import bound_view_ids
     from app.modules.agents.semantic.usage_learning import load_scoped_usage
@@ -287,8 +284,6 @@ async def project_usage(view_id: str, body: SemanticRef, user: CurrentUser):
 
 @router.post("/{view_id}/autopilot/observations")
 async def learning_observations(view_id: str, body: LearningRequest, user: CurrentUser):
-    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        raise HTTPException(404, "Governed learning is unavailable")
     if body.semantic.view_id != view_id:
         raise HTTPException(422, "Use the selected Semantic View")
     return await collect_observations(body, user)
@@ -321,8 +316,6 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
     if (body.learning is None) != (body.learning_digest is None):
         raise HTTPException(422, "Review the exact learning observations before proposing")
     if body.learning:
-        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-            raise HTTPException(404, "Governed learning is unavailable")
         if body.learning.agent_id != body.agent_id or body.learning.semantic != body.base:
             raise HTTPException(422, "Learning must use the proposal agent and semantic base")
         learning = await collect_observations(body.learning, user)
@@ -331,8 +324,6 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
         if not learning["observations"]:
             raise HTTPException(422, "No authorized learning observations support this proposal")
     if body.usage_digest:
-        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-            raise HTTPException(status_code=404, detail="Usage learning is unavailable")
         from app.modules.agents.semantic.usage_learning import load_scoped_usage
 
         usage = await load_scoped_usage(scope, body.base, base["definition"])

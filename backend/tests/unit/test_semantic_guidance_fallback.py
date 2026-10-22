@@ -114,7 +114,7 @@ async def test_natural_guidance_uses_validated_fallback_and_required_filters(mon
     provider.complete.assert_awaited_once()
     assert outcome.data["semantic_plan"]["named_filters"] == ("completed_order",)
     assert execute.call_args.kwargs["username"] == "alice"
-    assert ">= '2025-01-01'" in execute.call_args.kwargs["sql"]
+    assert ">= '2025-01-01 00:00:00.000000'" in execute.call_args.kwargs["sql"]
     assert "private-test-value" not in str(provider.complete.call_args)
 
 
@@ -170,4 +170,4 @@ async def test_a_plan_that_drops_the_users_year_gets_it_back_from_the_frame(monk
         context,
     )
     assert outcome.ok, outcome.safe_detail
-    assert ">= '2025-01-01'" in execute.call_args.kwargs["sql"]
+    assert ">= '2025-01-01 00:00:00.000000'" in execute.call_args.kwargs["sql"]

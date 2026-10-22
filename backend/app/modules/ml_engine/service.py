@@ -642,10 +642,7 @@ class MLEngineService:
         """Train in this process, as the identity given."""
         del created_by
         if as_system:
-            if settings.RANGER_ENABLED:
-                raise ValueError("System identity cannot train on user data")
-            username = settings.STARROCKS_ROOT_USER
-            password = settings.STARROCKS_ROOT_PASSWORD
+            raise ValueError("System identity cannot train on user data")
         if username is None or password is None:
             raise ValueError("Training requires caller credentials")
         parameters = {
@@ -819,10 +816,7 @@ class MLEngineService:
         )
         engine_sql = await self._prepare_user_sql(prediction_sql, security)
         if as_system:
-            if settings.RANGER_ENABLED:
-                raise ValueError("System identity cannot run prediction on user data")
-            username = settings.STARROCKS_ROOT_USER
-            password = settings.STARROCKS_ROOT_PASSWORD
+            raise ValueError("System identity cannot run prediction on user data")
         if username is None or (password is None and connection is None):
             raise ValueError("Batch prediction requires caller credentials")
         security = MLSecurityContext(

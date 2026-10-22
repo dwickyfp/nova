@@ -228,6 +228,8 @@ class DurableJournal(HarnessRepository):
                 return {"affected": 0}
             row["consumed_at"] = params[0]
             return {"affected": 1}
+        if sql.startswith("SELECT resource_id FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS"):
+            return {"rows": []}
         raise AssertionError(sql)
 
 
@@ -235,6 +237,14 @@ class DurableJournal(HarnessRepository):
 async def collaboration(monkeypatch):
     from app.modules.agents import agent_control, harness_repository
 
+    monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.project_run",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.for_turn",
+        AsyncMock(return_value=None),
+    )
     repo = DurableJournal()
     monkeypatch.setattr(harness_repository.db, "execute_system", repo.execute)
     monkeypatch.setattr(repo, "_audit_message", AsyncMock())

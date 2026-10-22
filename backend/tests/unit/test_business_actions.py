@@ -146,7 +146,6 @@ async def action_program(program, monkeypatch):
         yield lease
 
     monkeypatch.setattr(actions, "metadata_lock", lock)
-    monkeypatch.setattr(actions, "settings", SimpleNamespace(STUDIO_ACTIONS_ENABLED=True))
     monkeypatch.setattr(actions, "read_business_policy", AsyncMock(side_effect=lambda: policy))
     monkeypatch.setattr(actions, "write_audit_log", AsyncMock())
     monkeypatch.setattr(actions.session_store, "get", AsyncMock(return_value=deepcopy(USER)))

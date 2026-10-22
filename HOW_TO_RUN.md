@@ -754,18 +754,12 @@ uv run python scripts/provision_task_worker_access.py --owner <username>
 Without it a scheduled Smart run ends as `scheduled_run_unauthorized`. The
 `nova-worker` process (Terminal 5) fires the schedules.
 
-The four Studio rollout controls default to `false` in `backend/.env.example`
-and `docker/.env.example`: `STUDIO_BUSINESS_WORKFLOW_ENABLED`,
-`STUDIO_ACTIONS_ENABLED`, `STUDIO_QUALITY_ENABLED`, and
-`STUDIO_ANALYSIS_WORKSPACE_ENABLED`. Keep them false until the
-[governed Studio acceptance gates](docs/governed-studio-operations.md) pass.
-Compose's app profile forwards them to the API and task worker; `dev.sh` passes
-the backend's effective settings to every existing host process, including Smart.
-Standalone workers read the same backend `.env` when launched from `backend/`.
-Check each process's safe Studio capability startup log and Studio's Business
-workflow capability view after changing flags. The shipped analytical executor
-remains unavailable: enabling its flag reports `BLOCKED_BY_INFRASTRUCTURE`
-and execution returns `503` until a reviewed isolated executor is configured.
+Studio's Mission workflow, Actions, quality monitoring, and analysis workspace
+are always on; there are no rollout flags. The analysis workspace still needs
+an isolated executor: the shipped one reports `BLOCKED_BY_INFRASTRUCTURE` and
+execution returns `503` until a reviewed isolated executor is configured. Each
+process logs its Studio capability snapshot at startup, and Studio's Business
+workflow capability view shows the same state.
 
 Kemudian buka:
 

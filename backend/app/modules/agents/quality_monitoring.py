@@ -5,7 +5,6 @@ from copy import deepcopy
 
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.core.database import db
 from app.modules.agents import quality
 from app.modules.agents.quality_scoring import PromotionGates, aggregate_status
@@ -21,8 +20,6 @@ async def score_production(configuration_id: str, user: dict) -> dict:
 
 
 async def _score_production(configuration_id: str, user: dict) -> dict:
-    if not settings.STUDIO_QUALITY_ENABLED:
-        return {"status": "disabled"}
     from app.modules.agents.router import _require_agent
     from app.modules.intelligence.schedules import require_execution_binding
 

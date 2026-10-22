@@ -72,7 +72,6 @@ async def test_user_creation_failure_never_returns_password(monkeypatch) -> None
     }
     previous = dict(_app.dependency_overrides)
     _app.dependency_overrides[get_current_user] = lambda: user
-    monkeypatch.setattr("app.modules.users.router.settings.RANGER_ENABLED", False)
     monkeypatch.setattr(
         "app.modules.users.router.user_service.create_user",
         AsyncMock(side_effect=RuntimeError("CREATE USER maya IDENTIFIED BY 'private-marker'")),
@@ -82,7 +81,12 @@ async def test_user_creation_failure_never_returns_password(monkeypatch) -> None
             transport=httpx.ASGITransport(app=_app), base_url="http://nova.internal"
         ) as client:
             response = await client.post(
-                "/api/v1/users", json={"username": "maya", "password": "private-marker"}
+                "/api/v1/users",
+                json={
+                    "username": "maya", "password": "private-marker",
+                    "granted_roles": ["analyst"], "default_role_mode": "explicit",
+                    "default_roles": ["analyst"],
+                },
             )
     finally:
         _app.dependency_overrides.clear()

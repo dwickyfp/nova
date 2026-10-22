@@ -26,8 +26,6 @@ class EvidenceUnsupported(ValueError):
 
 
 async def current_policy_revision() -> str | None:
-    if not settings.RANGER_ENABLED:
-        return None
     from app.integrations.ranger.client import ranger_client
 
     try:
@@ -37,7 +35,7 @@ async def current_policy_revision() -> str | None:
 
 
 async def validate_policy_revision(scope: Scope) -> None:
-    if settings.RANGER_ENABLED and scope.policy_revision != await current_policy_revision():
+    if scope.policy_revision != await current_policy_revision():
         raise AuthorizationUnavailable("ranger_policy_revision_changed")
 
 

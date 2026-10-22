@@ -245,12 +245,11 @@ resubmits the captured SQL, tab and namespace. Cancel submits nothing. On narrow
 viewports a pending confirmation closes the assistant sheet so it cannot cover
 the dialog or trap its keyboard controls; the desktop assistant stays open.
 
-Ranger-enabled planning decodes role creation/deletion, membership, hierarchy,
+Planning decodes role creation/deletion, membership, hierarchy,
 supported table grants, role listings and access listings from grammar contexts.
 Unsupported managed governance forms are rejected; they are never forwarded as
 native grants. Native user-account operations retain their prior routing.
 The ACCOUNTADMIN/root/UDF/egress guard runs before parsing and Ranger actions.
-Ranger-disabled security SQL keeps native execution.
 Native `SET sql_dialect` to anything other than StarRocks is refused with
 `capability_unsupported`: the engine would parse later statements with another
 grammar while Nova classified them with the pinned StarRocks grammar.

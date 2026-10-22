@@ -47,7 +47,7 @@ Evidence transport caps each result at 200 rows and records the omitted row coun
 
 UI source and state are scoped to owner, role, security-context version, message, content and program hash. Optimistic revisions reject stale writes. Action operation IDs are idempotent; the server reloads and validates the source, declared action, state, current agent/thread access and security context. Form content is untrusted user input. Navigation flushes pending state; a failed save leaves the user in the current context. Assistant form submission sends values through Nova to its configured model provider; local filters and calculators do not issue model requests.
 
-`STUDIO_INTELLIGENT_UI_ENABLED=false` disables generation and state/action APIs, while history renders its Markdown fallback. Unknown catalog versions and malformed programs also fall back. HTML/canvas runs in an offline sandbox with no business evidence and no parent access.
+Interactive UI generation and its state/action APIs are always on. Unknown catalog versions and malformed programs also fall back. HTML/canvas runs in an offline sandbox with no business evidence and no parent access.
 
 Smart is the default for a new chat. The brain toggle exposes `aria-pressed`; the manual agent selector appears only when Smart is off. Draft and attachments survive mode changes, and the last accessible manual selection is restored. A pending manual selection blocks sending. Mode changes are disabled during a run so its identity stays stable. The existing composer dimensions and styling remain intact.
 

@@ -5,7 +5,6 @@ import re
 import secrets
 import string
 from collections import defaultdict
-from typing import Literal
 
 import asyncmy
 import asyncmy.cursors
@@ -27,46 +26,6 @@ BUILT_IN_ROLES = {
     "root",
     "ACCOUNTADMIN",
 }
-PRIVILEGE_OPTIONS: dict[str, list[str]] = {
-    "SYSTEM": [
-        "GRANT",
-        "NODE",
-        "CREATE RESOURCE",
-        "PLUGIN",
-        "FILE",
-        "BLACKLIST",
-        "OPERATE",
-        "CREATE EXTERNAL CATALOG",
-        "REPOSITORY",
-        "CREATE RESOURCE GROUP",
-        "CREATE GLOBAL FUNCTION",
-        "CREATE STORAGE VOLUME",
-        "SECURITY",
-        "ALL",
-    ],
-    "CATALOG": ["USAGE", "CREATE DATABASE", "DROP", "ALTER", "ALL"],
-    "DATABASE": [
-        "ALTER",
-        "DROP",
-        "CREATE TABLE",
-        "CREATE VIEW",
-        "CREATE FUNCTION",
-        "CREATE MATERIALIZED VIEW",
-        "ALL",
-    ],
-    "TABLE": ["ALTER", "DROP", "SELECT", "INSERT", "UPDATE", "EXPORT", "DELETE", "ALL"],
-    "VIEW": ["SELECT", "ALTER", "DROP", "ALL"],
-    "MATERIALIZED VIEW": ["SELECT", "ALTER", "REFRESH", "DROP", "ALL"],
-}
-
-
-async def _retire_news_proofs() -> None:
-    """A role change alters what a reader can prove, so cached proofs go now."""
-    from app.modules.intelligence.newsroom_cache import proof_cache
-
-    await proof_cache.bump()
-
-
 class UserService:
     """Manage StarRocks users, roles, memberships, and privileges."""
 
@@ -143,26 +102,13 @@ class UserService:
         Delegates to the guard's own unquoting rather than re-deriving the
         rules: this value is compared against ``PROTECTED_ROLES``, and a second
         spelling of ``ACCOUNTADMIN`` that only this side knows about would be a
-        bypass in exactly the way ``_protect_role`` used to be.
+        mismatch between SQL guards and administration metadata.
         """
         return normalize_role_name(role)
 
     def _protect_user(self, username: str) -> None:
         if username in PROTECTED_USERS:
             raise PermissionError(f"Cannot modify protected user '{username}'")
-
-    def _protect_role(self, role_name: str) -> None:
-        """Refuse to modify a protected role, in any of its accepted spellings.
-
-        StarRocks accepts ``ACCOUNTADMIN``, ``'ACCOUNTADMIN'``, ``"ACCOUNTADMIN"``
-        and `` `ACCOUNTADMIN` `` as the same role. The name is therefore
-        normalized through the same path ``guard_sql`` uses before comparing —
-        otherwise the two controls hold different definitions of identity and a
-        quoted spelling walks past this check while the guard still recognizes
-        it, or vice versa.
-        """
-        if self._normalize_role_name(role_name).upper() in PROTECTED_ROLES:
-            raise PermissionError(f"Cannot modify protected role '{role_name}'")
 
     def _role_flags(self, role_name: str) -> dict[str, bool]:
         normalized = role_name.lower()
@@ -173,102 +119,6 @@ class UserService:
             "is_protected": is_protected,
             "is_mutable": not is_builtin and not is_protected,
         }
-
-    def _validate_privilege(self, scope: str, privilege: str) -> str:
-        normalized_scope = scope.upper()
-        normalized_privilege = " ".join(privilege.upper().split())
-        allowed = PRIVILEGE_OPTIONS.get(normalized_scope, [])
-        if normalized_privilege not in allowed:
-            raise ValueError(
-                f"Privilege '{normalized_privilege}' is not supported for scope "
-                f"'{normalized_scope}'"
-            )
-        return normalized_privilege
-
-    def _build_privilege_sql(
-        self,
-        action: Literal["GRANT", "REVOKE"],
-        role_name: str,
-        privilege: str,
-        scope: str,
-        selector_mode: str,
-        catalog: str | None = None,
-        database: str | None = None,
-        object_name: str | None = None,
-        with_grant_option: bool = False,
-    ) -> str:
-        normalized_scope = scope.upper()
-        normalized_privilege = self._validate_privilege(normalized_scope, privilege)
-        role_sql = self._quote_ident(role_name)
-
-        # GRANT attaches the grantee with `TO ROLE`; REVOKE detaches it with
-        # `FROM ROLE`. The two are not interchangeable and `TO ROLE` on a REVOKE
-        # is a syntax error, so the builder has to pick the right one per action
-        # rather than emitting one and letting the caller string-replace it.
-        role_clause = self._role_clause(action, role_sql)
-
-        if normalized_scope == "SYSTEM":
-            sql = f"{action} {normalized_privilege} ON SYSTEM {role_clause}"
-        elif normalized_scope == "CATALOG":
-            sql = (
-                f"{action} {normalized_privilege} ON CATALOG {self._quote_ident(catalog or '')} "
-                f"{role_clause}"
-            )
-        elif normalized_scope == "DATABASE":
-            if selector_mode == "all_databases":
-                sql = f"{action} {normalized_privilege} ON ALL DATABASES {role_clause}"
-            else:
-                sql = (
-                    f"{action} {normalized_privilege} ON DATABASE "
-                    f"{self._quote_ident(database or '')} "
-                    f"{role_clause}"
-                )
-        else:
-            scope_keyword = normalized_scope
-            if selector_mode == "all_databases":
-                plural = {
-                    "TABLE": "TABLES",
-                    "VIEW": "VIEWS",
-                    "MATERIALIZED VIEW": "MATERIALIZED VIEWS",
-                }[normalized_scope]
-                sql = (
-                    f"{action} {normalized_privilege} ON ALL {plural} IN ALL DATABASES "
-                    f"{role_clause}"
-                )
-            elif selector_mode == "all_in_database":
-                plural = {
-                    "TABLE": "TABLES",
-                    "VIEW": "VIEWS",
-                    "MATERIALIZED VIEW": "MATERIALIZED VIEWS",
-                }[normalized_scope]
-                sql = (
-                    f"{action} {normalized_privilege} ON ALL {plural} IN DATABASE "
-                    f"{self._quote_ident(database or '')} {role_clause}"
-                )
-            else:
-                sql = (
-                    f"{action} {normalized_privilege} ON {scope_keyword} "
-                    f"{self._quote_ident(database or '')}.{self._quote_ident(object_name or '')} "
-                    f"{role_clause}"
-                )
-
-        if action == "GRANT" and with_grant_option:
-            sql += " WITH GRANT OPTION"
-
-        return sql
-
-    @staticmethod
-    def _role_clause(action: Literal["GRANT", "REVOKE"], role_sql: str) -> str:
-        """Return ``TO ROLE `x``` for GRANT and ``FROM ROLE `x``` for REVOKE.
-
-        Raising on anything else keeps a future third action from silently
-        inheriting the GRANT wording.
-        """
-        if action == "GRANT":
-            return f"TO ROLE {role_sql}"
-        if action == "REVOKE":
-            return f"FROM ROLE {role_sql}"
-        raise ValueError(f"Unsupported privilege action '{action}'")
 
     async def list_users(self) -> list[dict]:
         conn = await self._root_connect()
@@ -539,26 +389,16 @@ class UserService:
         username: str,
         password: str,
         host: str = "%",
-        granted_roles: list[str] | None = None,
-        default_role_mode: str = "none",
-        default_roles: list[str] | None = None,
         max_user_connections: int | None = None,
         catalog: str | None = None,
         database: str | None = None,
         session_properties: dict[str, str] | None = None,
     ) -> None:
-        granted_roles = granted_roles or []
-        default_roles = default_roles or []
         session_properties = session_properties or {}
 
         identity = self._user_identity(username, host)
         safe_pass = self._escape(password)
         await db.execute_system(f"CREATE USER {identity} IDENTIFIED BY '{safe_pass}'")
-
-        for role in granted_roles:
-            await self.assign_role(username, role, host=host)
-
-        await self._apply_default_roles(username, host, default_role_mode, default_roles)
 
         await self._apply_user_properties(
             username=username,
@@ -575,8 +415,6 @@ class UserService:
         username: str,
         host: str = "%",
         password: str | None = None,
-        granted_roles_add: list[str] | None = None,
-        granted_roles_remove: list[str] | None = None,
         default_role_mode: str | None = None,
         default_roles: list[str] | None = None,
         max_user_connections: int | None = None,
@@ -588,8 +426,6 @@ class UserService:
         self._protect_user(username)
 
         executed: list[str] = []
-        granted_roles_add = granted_roles_add or []
-        granted_roles_remove = granted_roles_remove or []
         default_roles = default_roles or []
         session_properties = session_properties or {}
         clear_properties = clear_properties or []
@@ -599,14 +435,6 @@ class UserService:
             safe_pass = self._escape(password)
             await db.execute_system(f"ALTER USER {identity} IDENTIFIED BY '{safe_pass}'")
             executed.append("ALTER USER IDENTIFIED BY")
-
-        for role in granted_roles_add:
-            await self.assign_role(username, role, host=host)
-            executed.append(f"GRANT ROLE {role}")
-
-        for role in granted_roles_remove:
-            await self.revoke_role(username, role, host=host)
-            executed.append(f"REVOKE ROLE {role}")
 
         if default_role_mode is not None:
             await self._apply_default_roles(username, host, default_role_mode, default_roles)
@@ -636,18 +464,6 @@ class UserService:
         identity = self._user_identity(username, host)
         await db.execute_system(f"DROP USER {identity}")
 
-    async def assign_role(self, username: str, role: str, host: str = "%") -> None:
-        role_sql = self._quote_ident(role)
-        identity = self._user_identity(username, host)
-        await db.execute_system(f"GRANT {role_sql} TO USER {identity}")
-        await _retire_news_proofs()
-
-    async def revoke_role(self, username: str, role: str, host: str = "%") -> None:
-        role_sql = self._quote_ident(role)
-        identity = self._user_identity(username, host)
-        await db.execute_system(f"REVOKE {role_sql} FROM USER {identity}")
-        await _retire_news_proofs()
-
     async def list_roles(self) -> list[dict]:
         result = await db.execute_system("SHOW ROLES")
         roles: list[dict] = []
@@ -658,22 +474,6 @@ class UserService:
             flags = self._role_flags(name)
             roles.append({"name": name, **flags})
         return sorted(roles, key=lambda item: item["name"].lower())
-
-    async def create_role(self, name: str) -> None:
-        await db.execute_system(f"CREATE ROLE {self._quote_ident(name)}")
-
-    async def drop_role(self, name: str) -> None:
-        self._protect_role(name)
-        await db.execute_system(f"DROP ROLE {self._quote_ident(name)}")
-
-    async def get_role_privileges(self, name: str) -> list[dict]:
-        safe_name = self._escape(name)
-        result = await db.execute_system(
-            "SELECT GRANTEE, OBJECT_CATALOG, OBJECT_DATABASE, OBJECT_NAME, "
-            "OBJECT_TYPE, PRIVILEGE_TYPE, IS_GRANTABLE "
-            f"FROM sys.grants_to_roles WHERE GRANTEE = '{safe_name}'"
-        )
-        return [dict(zip(result["columns"], row, strict=False)) for row in result["rows"]]
 
     async def get_role_members(self, name: str) -> dict:
         safe_name = self._escape(name)
@@ -706,103 +506,15 @@ class UserService:
             "parent_roles": sorted(set(parent_roles)),
         }
 
-    async def get_role_grants(self, name: str) -> list[str]:
-        result = await db.execute_system(f"SHOW GRANTS FOR ROLE {self._quote_ident(name)}")
-        grants: list[str] = []
-        for row in result["rows"]:
-            if len(row) >= 3:
-                grants.append(str(row[2]))
-            elif row:
-                grants.append(str(row[-1]))
-        return grants
-
     async def get_role_detail(self, name: str) -> dict:
         flags = self._role_flags(name)
-        privileges = await self.get_role_privileges(name)
         members = await self.get_role_members(name)
-        grants = await self.get_role_grants(name)
 
         return {
             "name": name,
             **flags,
-            "privileges": privileges,
             "members": members,
-            "grants": grants,
         }
-
-    async def grant_role_to_role(self, role_name: str, member_role: str) -> None:
-        self._protect_role(role_name)
-        await db.execute_system(
-            f"GRANT {self._quote_ident(member_role)} TO ROLE {self._quote_ident(role_name)}"
-        )
-
-    async def revoke_role_from_role(self, role_name: str, member_role: str) -> None:
-        self._protect_role(role_name)
-        await db.execute_system(
-            f"REVOKE {self._quote_ident(member_role)} FROM ROLE {self._quote_ident(role_name)}"
-        )
-
-    async def grant_role_to_member_user(
-        self, role_name: str, username: str, host: str = "%"
-    ) -> None:
-        self._protect_role(role_name)
-        await self.assign_role(username, role_name, host=host)
-
-    async def revoke_role_from_member_user(
-        self, role_name: str, username: str, host: str = "%"
-    ) -> None:
-        self._protect_role(role_name)
-        await self.revoke_role(username, role_name, host=host)
-
-    async def grant_privilege(
-        self,
-        name: str,
-        privilege: str,
-        scope: str,
-        selector_mode: str,
-        catalog: str | None = None,
-        database: str | None = None,
-        object_name: str | None = None,
-        with_grant_option: bool = False,
-    ) -> str:
-        self._protect_role(name)
-        sql = self._build_privilege_sql(
-            "GRANT",
-            name,
-            privilege,
-            scope,
-            selector_mode,
-            catalog=catalog,
-            database=database,
-            object_name=object_name,
-            with_grant_option=with_grant_option,
-        )
-        await db.execute_system(sql)
-        return sql
-
-    async def revoke_privilege(
-        self,
-        name: str,
-        privilege: str,
-        scope: str,
-        selector_mode: str,
-        catalog: str | None = None,
-        database: str | None = None,
-        object_name: str | None = None,
-    ) -> str:
-        self._protect_role(name)
-        sql = self._build_privilege_sql(
-            "REVOKE",
-            name,
-            privilege,
-            scope,
-            selector_mode,
-            catalog=catalog,
-            database=database,
-            object_name=object_name,
-        )
-        await db.execute_system(sql)
-        return sql
 
     async def list_databases(self) -> list[str]:
         result = await db.execute_system("SHOW DATABASES")
@@ -823,12 +535,6 @@ class UserService:
 
         validate_ranger_default(mode, roles)
         identity = self._user_identity(username, host)
-        if mode == "all":
-            await db.execute_system(f"SET DEFAULT ROLE ALL TO {identity}")
-            return
-        if mode == "none":
-            await db.execute_system(f"SET DEFAULT ROLE NONE TO {identity}")
-            return
         joined_roles = ", ".join(self._quote_ident(role) for role in roles)
         await db.execute_system(f"SET DEFAULT ROLE {joined_roles} TO {identity}")
 

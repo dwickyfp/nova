@@ -41,8 +41,8 @@ In Monitoring > Autopilot, activate ACCOUNTADMIN, choose a family, and register
 an existing snapshot database. Supply a complete mapping for the query and its
 control workload, snapshot provenance, the dedicated replay principal/role,
 and a bounded resource group. The replay identity must already have privileges
-on its sandbox objects. In native-RBAC fixtures, materialized views have their
-own REFRESH/SELECT/ALTER/DROP grants; table grants do not imply these privileges.
+on its sandbox objects. Materialized views need their own REFRESH/SELECT/ALTER/DROP
+access; table access does not imply these privileges.
 
 Replay sampling is opt-in per exact cohort. Turning it off or changing the
 enrollment version invalidates pending uploads and candidate validation.

@@ -56,26 +56,9 @@ export function StudioRuntimeCapabilitiesPanel({
                 </span>
               </dt>
               <dd className="flex max-w-full flex-col items-start gap-2 sm:items-end">
-                <StatusBadge
-                  tone={
-                    feature.available
-                      ? "success"
-                      : feature.enabled
-                        ? "warning"
-                        : "neutral"
-                  }
-                >
-                  {feature.available
-                    ? "Available"
-                    : feature.enabled
-                      ? "Unavailable"
-                      : "Disabled"}
+                <StatusBadge tone={feature.available ? "success" : "warning"}>
+                  {feature.available ? "Available" : "Unavailable"}
                 </StatusBadge>
-                <span className="text-xs text-muted-foreground">
-                  {feature.enabled
-                    ? "Enabled for this deployment"
-                    : "Disabled for this deployment"}
-                </span>
                 {feature.executor_available === false ? (
                   <span className="max-w-64 text-sm leading-relaxed text-muted-foreground sm:text-right">
                     An isolated executor is not configured.

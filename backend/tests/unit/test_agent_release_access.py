@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.modules.access_control.service import access_control_service
 from app.modules.agents import access, releases
 from app.modules.agents.repository import agent_repository
@@ -94,7 +93,6 @@ datasets:
         return {"object_access": ["SELECT", "USAGE"] if kwargs["resource"] in allowed else []}
 
     effective = AsyncMock(side_effect=effective_access)
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     monkeypatch.setattr(access_control_service, "effective_access", effective)
     query = AsyncMock(return_value=SimpleNamespace(error=None))
     monkeypatch.setattr(query_service, "execute", query)

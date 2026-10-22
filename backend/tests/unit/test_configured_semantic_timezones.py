@@ -50,7 +50,6 @@ BOUNDARIES = {
 @pytest.mark.parametrize("period", ("today", "this_week", "this_month", "previous_month"))
 async def test_configured_tool_calendar_crosses_year_boundary(monkeypatch, zone, period):
     monkeypatch.setattr(settings, "NOVA_TIMEZONE", f" {zone} ")
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     tool, _, execute = setup_tool(monkeypatch, _plan(time={
         "dimension": "order_date", "grain": None, "range": period, "compare": None,
     }))
@@ -77,7 +76,6 @@ async def test_configured_tool_calendar_crosses_year_boundary(monkeypatch, zone,
 @pytest.mark.parametrize("override", ("America/New_York", ""))
 async def test_explicit_tool_timezone_is_preserved_or_rejected(monkeypatch, override):
     monkeypatch.setattr(settings, "NOVA_TIMEZONE", "UTC")
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     tool, _, execute = setup_tool(monkeypatch, _plan(time={
         "dimension": "order_date", "grain": None, "range": "today", "compare": None,
     }))

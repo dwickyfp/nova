@@ -92,7 +92,7 @@ async def run(
     from app.modules.task_orchestration.execution import DelegateExecutor
     from app.sql_frontend.fingerprint import fingerprint
 
-    if os.getenv("NOVA_AUTOPILOT_FIXTURE_STACK") != "1" or not settings.RANGER_ENABLED:
+    if os.getenv("NOVA_AUTOPILOT_FIXTURE_STACK") != "1":
         raise ValueError("Explicit isolated patched-FE fixture required")
     if not 30 <= repetitions <= 100:
         raise ValueError("fixture_repetition_budget")

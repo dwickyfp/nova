@@ -105,14 +105,12 @@ async def test_native_stream_load_and_catalog_names_unchanged():
         assert (await SQLPlanner().plan(node, PlanningContext())).engine_sql == sql
 
 
-def test_runtime_flags_cannot_enable_an_unverified_provider(monkeypatch):
+def test_runtime_refuses_an_unverified_provider():
     from app.modules.streams import runtime
     from app.sql_frontend.errors import CapabilityUnsupportedError
 
-    for enabled, message in ((False, "disabled"), (True, "provider is unavailable")):
-        monkeypatch.setattr(runtime.settings, "STREAMS_ENABLED", enabled)
-        with pytest.raises(CapabilityUnsupportedError, match=message):
-            runtime.require_stream_runtime()
+    with pytest.raises(CapabilityUnsupportedError, match="provider is unavailable"):
+        runtime.require_stream_runtime()
 
 
 @pytest.mark.parametrize("argument", ["'s'", "'db.s'", "'db.default.s'"])

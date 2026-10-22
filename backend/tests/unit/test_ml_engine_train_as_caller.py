@@ -109,6 +109,12 @@ class _RecordingCursor:
         del params
         self.executed.append(sql)
 
+    async def fetchone(self):
+        return ("analyst_role",)
+
+    async def fetchall(self):
+        return []
+
     async def fetchmany(self, size):
         assert size > 0
         return self._batches.pop(0)
@@ -160,6 +166,7 @@ async def test_mysql_fallback_executes_as_caller_and_sets_role(monkeypatch):
     ]
     assert factory.cursor.executed == [
         "SET ROLE analyst_role",
+        "SELECT CURRENT_ROLE()",
         "SELECT age, churned FROM customers",
     ]
     assert batches[0].num_rows == 2
@@ -190,7 +197,6 @@ async def test_ranger_role_result_is_drained_before_streaming_caller_data(monkey
     factory = _UserConnectionFactory()
     factory.cursor = RoleCursor()
     monkeypatch.setattr("app.modules.ml_engine.data.mysql_fallback.db.user_conn", factory)
-    monkeypatch.setattr("app.modules.ml_engine.data.mysql_fallback.settings.RANGER_ENABLED", True)
     security = MLSecurityContext(
         username="analyst", password=CALLER_PASSWORD, database="analytics", role="analyst_role"
     )

@@ -7,7 +7,6 @@ import time
 
 import pytest
 
-from app.core.config import settings
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolOutcome, ToolRegistry
@@ -103,7 +102,6 @@ async def test_calls_that_need_approval_are_not_started_early():
 
 
 async def test_workflow_flag_keeps_independent_reads_concurrent_with_a_barrier(monkeypatch):
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
 
     class SynchronizedSemantic(SlowSemantic):
         def __init__(self):

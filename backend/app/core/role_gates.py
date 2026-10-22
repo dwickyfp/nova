@@ -23,7 +23,6 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.core.config import settings
 from app.core.deps import get_current_user
 from app.core.exceptions import InsufficientRoleError
 
@@ -36,19 +35,13 @@ def require_active_role(*allowed_roles: str):
         async def backup(user=Depends(require_active_role("ACCOUNTADMIN"))):
             ...
 
-    Ranger-backed sessions are fail-closed: they must carry an explicit active
-    role. Legacy deployments retain the granted-role fallback until they are
-    migrated to explicit role activation.
+    Sessions are fail-closed: they must carry an explicit active role.
     """
 
     async def _check(user: Annotated[dict, Depends(get_current_user)]) -> dict:
         active_role = user.get("active_role")
         if active_role is None:
-            if settings.RANGER_ENABLED:
-                raise InsufficientRoleError("An active role is required")
-            if not any(r in user["roles"] for r in allowed_roles):
-                raise InsufficientRoleError(f"Requires one of: {', '.join(allowed_roles)}")
-            return user
+            raise InsufficientRoleError("An active role is required")
         if active_role not in allowed_roles:
             raise InsufficientRoleError(
                 f"Requires active role to be one of: {', '.join(allowed_roles)} "

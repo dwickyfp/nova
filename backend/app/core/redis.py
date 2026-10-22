@@ -48,11 +48,10 @@ class SessionStore:
             raise RuntimeError("SessionStore not initialized. Call init() first.")
 
         session_id = str(uuid.uuid4())
-        if settings.RANGER_ENABLED:
-            if not default_role or default_role not in roles:
-                raise ValueError("A valid explicit default role is required")
-            if not active_role or active_role not in roles:
-                raise ValueError("A valid active role is required")
+        if not default_role or default_role not in roles:
+            raise ValueError("A valid explicit default role is required")
+        if not active_role or active_role not in roles:
+            raise ValueError("A valid active role is required")
         data: Mapping[FieldT, EncodableT] = {
             "username": username,
             "encrypted_password": encrypted_password,

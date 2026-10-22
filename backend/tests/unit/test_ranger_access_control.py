@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -126,19 +127,21 @@ def test_security_context_requires_one_non_root_role() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_store_requires_explicit_roles_only_in_ranger_mode(monkeypatch) -> None:
+async def test_session_store_requires_explicit_roles() -> None:
     store = SessionStore()
     recorder = _RedisRecorder()
     store._redis = recorder  # type: ignore[assignment]
 
-    monkeypatch.setattr("app.core.redis.settings.RANGER_ENABLED", True)
     with pytest.raises(ValueError, match="explicit default role"):
         await store.create("alice", "encrypted", [])
+    with pytest.raises(ValueError, match="active role"):
+        await store.create("alice", "encrypted", ["analyst"], default_role="analyst")
 
-    monkeypatch.setattr("app.core.redis.settings.RANGER_ENABLED", False)
-    await store.create("legacy", "encrypted", [])
-    assert recorder.mapping["default_role"] == ""
-    assert recorder.mapping["active_role"] == ""
+    await store.create(
+        "alice", "encrypted", ["analyst"], default_role="analyst", active_role="analyst"
+    )
+    assert recorder.mapping["default_role"] == "analyst"
+    assert recorder.mapping["active_role"] == "analyst"
 
 
 def test_proxy_role_parser_and_commit_are_fail_closed() -> None:
@@ -337,7 +340,6 @@ async def test_ranger_usersync_serializes_role_scoped_attributes() -> None:
 async def test_security_statement_router_never_forwards_native_grant(
     monkeypatch, statement: str
 ) -> None:
-    monkeypatch.setattr("app.core.config.settings.RANGER_ENABLED", True)
     calls: list[tuple[str, dict]] = []
 
     class Service:
@@ -367,7 +369,6 @@ async def test_security_statement_router_never_forwards_native_grant(
 
 @pytest.mark.asyncio
 async def test_security_statement_router_routes_role_hierarchy(monkeypatch) -> None:
-    monkeypatch.setattr("app.core.config.settings.RANGER_ENABLED", True)
     calls: list[dict] = []
 
     class Service:
@@ -496,7 +497,6 @@ async def test_effective_access_includes_accountadmin_bootstrap_policy(monkeypat
 
     from app.modules.agents import access as agent_access
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
 
     async def dependencies(_agent):
         return [("table", "NOVA_SALES.fact_sales"), ("database", "NOVA_SALES")]
@@ -580,3 +580,30 @@ async def test_ranger_preview_fails_closed_when_full_object_access_cannot_be_pro
     assert result["object_access"] == []
     assert result["object_access_comparison_supported"] is False
     assert result["policy_health"] == "UNSUPPORTED"
+
+
+@pytest.mark.parametrize("role", [
+    "ACCOUNTADMIN", "accountadmin", "AccountAdmin", "'ACCOUNTADMIN'", "`ACCOUNTADMIN`",
+    '"ACCOUNTADMIN"', "[ACCOUNTADMIN]", " ACCOUNTADMIN ",
+])
+@pytest.mark.parametrize("operation", ["create_role", "drop_role", "revoke_role"])
+async def test_accountadmin_mutations_rejected_before_ranger_or_engine(
+    monkeypatch, role, operation,
+):
+    from app.common.identifiers import InvalidIdentifierError
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.access_control.service import AccessControlError, AccessControlService
+
+    ranger = AsyncMock()
+    execute = AsyncMock()
+    monkeypatch.setattr("app.modules.access_control.service.db.execute_system", execute)
+    service = AccessControlService(ranger=ranger)
+    ranger.reset_mock()
+    security = SecurityContext(principal="nova_admin", active_role="ACCOUNTADMIN")
+    with pytest.raises((AccessControlError, InvalidIdentifierError)):
+        if operation == "revoke_role":
+            await service.revoke_role(security, role=role, username="alice")
+        else:
+            await getattr(service, operation)(security, role)
+    assert not ranger.mock_calls
+    execute.assert_not_awaited()

@@ -3,14 +3,12 @@
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.core import config
 from app.modules.intelligence import engine
 from app.modules.intelligence.contracts import MonitorConfiguration, Window
 from app.modules.intelligence.engine import ChatInvestigationRequest
@@ -23,7 +21,6 @@ lifecycle = _lifecycle
 @pytest.fixture
 def comparison(lifecycle, monkeypatch):
     service, repo, source = lifecycle
-    monkeypatch.setattr(config, "settings", SimpleNamespace(STUDIO_BUSINESS_WORKFLOW_ENABLED=True))
     from app.modules.agents import router
 
     monkeypatch.setattr(router, "_require_agent", AsyncMock())
