@@ -4,21 +4,14 @@ import { ArrowLeft, LayoutDashboard, MessageSquare, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ChartBlock } from "@/features/agents/chart-block";
-import {
   sharingApi,
   type ResultRows,
   type Share,
   type SharedThread,
 } from "@/features/agents/studio-intelligence-api";
 import { chartSpecWithRows } from "./artifact-chart-spec";
+import { UiChart } from "./intelligent-ui/ui-chart";
+import { ResultTable } from "./result-table";
 
 /** Conversations and dashboards others shared with you, run with your own access. */
 export function StudioShared() {
@@ -161,19 +154,12 @@ function SharedResult({
       {run.isError ? (
         <p role="alert" className="px-3 py-2 text-sm text-destructive">{run.error.message}</p>
       ) : run.data ? (
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>{run.data.columns.map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow>
-            </TableHeader>
-            <TableBody>
-              {run.data.rows.slice(0, 100).map((row, index) => (
-                <TableRow key={index}>
-                  {row.map((cell, cellIndex) => <TableCell key={cellIndex}>{String(cell ?? "")}</TableCell>)}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="p-2">
+          <ResultTable
+            block={{ title: question, columns: run.data.columns, rows: run.data.rows }}
+            heading={false}
+            note={null}
+          />
         </div>
       ) : null}
     </div>
@@ -240,30 +226,15 @@ function SharedTileCard({ dashboardId, artifactId }: { dashboardId: string; arti
             {tile.error instanceof Error ? tile.error.message : "This tile could not be loaded."}
           </p>
         ) : data.artifact.artifact_type === "chart" && data.artifact.chart_spec ? (
-          <ChartBlock spec={chartSpecWithRows(data)} fillHeight />
+          <UiChart spec={chartSpecWithRows(data)} />
         ) : (
-          <ResultTable result={data} />
+          <ResultTable
+            block={{ title: data.artifact.title, columns: data.columns, rows: data.rows }}
+            heading={false}
+            note={null}
+          />
         )}
       </div>
     </article>
-  );
-}
-
-function ResultTable({ result }: { result: ResultRows }) {
-  return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>{result.columns.map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow>
-        </TableHeader>
-        <TableBody>
-          {result.rows.slice(0, 100).map((row, index) => (
-            <TableRow key={index}>
-              {row.map((cell, cellIndex) => <TableCell key={cellIndex}>{String(cell ?? "")}</TableCell>)}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
   );
 }

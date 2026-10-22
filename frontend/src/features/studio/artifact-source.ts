@@ -1,10 +1,23 @@
 import { format as formatSql } from "sql-formatter";
 import type { OrderedContent, TranscriptTurn } from "./studio-chat";
+import type { UiArtifactRequest } from "./intelligent-ui/types";
 
-export type SavableContent = Extract<
-  OrderedContent,
-  { type: "table" | "chart" }
->;
+export type SavableContent =
+  | Extract<OrderedContent, { type: "table" | "chart" }>
+  | {
+      /** One chart, table or map inside an interactive answer block. */
+      id: string;
+      type: "ui-node";
+      request: UiArtifactRequest;
+      block: { tool_call_id?: string };
+    };
+
+/** The saved-state key for a node inside an interactive answer block. */
+export function uiNodeContentId(contentId: string, request: UiArtifactRequest): string {
+  return `${contentId}:${request.evidenceId}:${request.kind}:${JSON.stringify([
+    request.title, request.chart ?? null,
+  ])}`;
+}
 
 /** Find the latest recorded SQL that produced a result block. */
 export function findArtifactSql(
@@ -16,6 +29,16 @@ export function findArtifactSql(
   if (turnIndex < 0) return null;
 
   const toolCallId = item.block.tool_call_id;
+  if (item.type === "ui-node") {
+    // Interactive blocks bind a particular result. A nearby query can produce
+    // different rows, so missing provenance must not turn into a guessed SQL.
+    const source = turns[turnIndex].steps.find(
+      (step) => toolCallId && step.id === toolCallId && step.kind === "tool"
+        && (step.label === "query_execute" || step.label === "semantic_query")
+        && step.status === "done" && isReusableSql(step.preview),
+    );
+    return source?.preview?.trim() ?? null;
+  }
   if (toolCallId) {
     const exact = turns[turnIndex].steps.find(
       (step) => step.id === toolCallId && isReusableSql(step.preview),

@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { ChartBlock } from "@/features/agents/chart-block";
 import {
   studioApi,
   type StudioArtifact,
@@ -25,6 +24,8 @@ import {
   type StudioDashboardTile,
 } from "@/features/agents/api";
 import { chartSpecWithRows } from "./artifact-chart-spec";
+import { UiChart } from "./intelligent-ui/ui-chart";
+import { ResultTable } from "./result-table";
 import { ShareDialog } from "./share-dialog";
 import {
   canPlaceTile,
@@ -712,16 +713,17 @@ function DashboardTileCard({
         ) : data.isError || !data.data ? (
           <p className="text-xs text-destructive">Artifact data could not be loaded.</p>
         ) : data.data.artifact.artifact_type === "chart" && data.data.artifact.chart_spec ? (
-          <ChartBlock spec={chartSpecWithRows(data.data)} fillHeight />
+          <UiChart spec={chartSpecWithRows(data.data)} />
         ) : (
-          <table className="w-full border-collapse text-xs">
-            <thead><tr>{data.data.columns.map((column) => <th key={column} className="border-b p-1.5 text-left font-medium">{column}</th>)}</tr></thead>
-            <tbody>{data.data.rows.slice(0, 20).map((row, index) => (
-              <tr key={index} className="border-b last:border-0">
-                {row.map((value, cellIndex) => <td key={cellIndex} className="whitespace-nowrap p-1.5">{value == null ? "—" : String(value)}</td>)}
-              </tr>
-            ))}</tbody>
-          </table>
+          <ResultTable
+            block={{
+              title: data.data.artifact.title,
+              columns: data.data.columns,
+              rows: data.data.rows,
+            }}
+            heading={false}
+            note={null}
+          />
         )}
       </div>
       {mode === "edit" ? <button

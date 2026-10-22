@@ -28,7 +28,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChartBlock as VegaChart } from "@/features/agents/chart-block";
 import {
   studioApi,
   type StudioArtifact,
@@ -40,6 +39,8 @@ import { downloadArtifact, type ExportFormat } from "@/features/agents/studio-in
 import { cn } from "@/lib/utils";
 import { formatArtifactSql } from "./artifact-source";
 import { ArtifactFilterBar } from "./artifact-filter-bar";
+import { UiChart } from "./intelligent-ui/ui-chart";
+import { ResultTable } from "./result-table";
 import {
   filterArtifactRows,
   type ArtifactFilter,
@@ -404,9 +405,9 @@ function ArtifactDetail({
           </TabsList>
           <TabsContent value="table" className="mt-2">
             <ArtifactTable
+              title={artifact.title}
               columns={activeData.columns}
               rows={filteredRows}
-              showRowNumbers
               emptyMessage={
                 activeData.rows.length > 0
                   ? "No rows match these filters."
@@ -641,84 +642,39 @@ function ArtifactVisual({
   if (data.artifact.artifact_type === "chart" && data.artifact.chart_spec) {
     return (
       <div className={cn("min-w-0", compact && "text-xs")}>
-        <VegaChart spec={chartSpecWithRows(data)} />
+        <UiChart spec={chartSpecWithRows(data)} />
       </div>
     );
   }
   return (
     <ArtifactTable
+      title={data.artifact.title}
       columns={data.columns}
       rows={compact ? data.rows.slice(0, 6) : data.rows}
     />
   );
 }
 
+/** Artifact rows in the Studio result grid; the page names and filters them. */
 function ArtifactTable({
+  title,
   columns,
   rows,
-  showRowNumbers = false,
   emptyMessage = "The query returned no rows.",
 }: {
+  title: string;
   columns: string[];
   rows: (string | number | null)[][];
-  showRowNumbers?: boolean;
   emptyMessage?: string;
 }) {
   return (
-    <div className="min-w-0 overflow-auto rounded-lg border">
-      <table className="w-full border-collapse text-sm">
-        <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
-          <tr>
-            {showRowNumbers ? (
-              <th className="w-px whitespace-nowrap border-b px-3 py-2 text-right font-medium text-muted-foreground">
-                #
-              </th>
-            ) : null}
-            {columns.map((column) => (
-              <th
-                key={column}
-                className="whitespace-nowrap border-b px-3 py-2 text-left font-medium"
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr
-              key={rowIndex}
-              className="border-b last:border-0 even:bg-muted/20"
-            >
-              {showRowNumbers ? (
-                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                  {rowIndex + 1}
-                </td>
-              ) : null}
-              {columns.map((_, cellIndex) => (
-                <td key={cellIndex} className="whitespace-nowrap px-3 py-2">
-                  {row[cellIndex] === null ? (
-                    <span className="text-muted-foreground">null</span>
-                  ) : (
-                    String(row[cellIndex] ?? "")
-                  )}
-                </td>
-              ))}
-            </tr>
-          ))}
-          {!rows.length ? (
-            <tr>
-              <td
-                colSpan={columns.length + (showRowNumbers ? 1 : 0)}
-                className="px-3 py-8 text-center text-muted-foreground"
-              >
-                {emptyMessage}
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
-    </div>
+    <ResultTable
+      block={{ title, columns, rows }}
+      heading={false}
+      filterable={false}
+      note={null}
+      emptyText={emptyMessage}
+    />
   );
 }
 
