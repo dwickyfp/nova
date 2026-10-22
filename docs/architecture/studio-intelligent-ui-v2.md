@@ -27,6 +27,14 @@ Harness² is an optimization reference, not a replacement for Nova's runtime. Pu
 
 ## UI contract
 
+Studio makes interactive presentation available by default within its existing
+shared assistant loop. The planner's `text` choice is a starting preference:
+the answering model can still use the catalog when controls or visuals help.
+Ordinary prose needs no UI block or extra composition call. Explicit interactive
+plans retain final composition and missing-program repair. Feature disablement,
+runtime availability, context budgets, evidence validation and caller
+authorization remain enforced.
+
 The `nova-openui-2` block contains `catalog_version`, `program_sha256`, `program`, `fallback`, `state_defaults`, `evidence`, declared `actions`, and `provenance`. Transcript blocks retain `content_id` and `content_index`; old Markdown/table/chart records remain readable.
 
 The backend parses programs in a bounded Node subprocess with code generation disabled. The frontend uses the same catalog/validator source. Programs are limited to 64,000 UTF-8 bytes, state to 16,384 bytes, and validator input to 512,000 bytes. Validation takes at most five seconds including admission to its semaphore. State defaults contain literal declarative values only; expression ASTs are refused. Derived calculations use ordinary reactive variables, separate from editable state. Controls remain passive until the full server-validated block is sealed. Validation inspects all conditional branches, including initially hidden controls, evidence bindings and sandbox content. Action IDs are unique across branches. Each repeats passive text/layout only; controls, media and business visuals are declared explicitly. One UI repair is allowed within the shared turn allowance, including when an interactive request omits its program entirely. Failure leaves the Markdown answer with an explicit notice that no interactive view is available.

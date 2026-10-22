@@ -1097,6 +1097,12 @@ class AssistantLoop:
             enabled=context.intelligent_ui, presentation=turn_plan.presentation,
             token_room=self._context_manager.token_budget - estimate_messages_tokens(messages),
         )
+        if context.ui_prompt and turn_plan.presentation != "interactive":
+            leading = next(
+                (index for index, item in enumerate(messages) if item.get("role") != "system"),
+                len(messages),
+            )
+            messages.insert(leading, {"role": "system", "content": "\n" + context.ui_prompt})
         language = _turn_language(context)
         if context.intent_frame is not None:
             leading = next(
@@ -1520,7 +1526,10 @@ class AssistantLoop:
                         for item in evidence.import_results(participant):
                             table = evidence.tables.get(item.evidence_id) or {}
                             context.last_result = {**table, "title": item.summary}
-                if context.ui_prompt and not composing_final:
+                if (
+                    context.ui_prompt and turn_plan.presentation == "interactive"
+                    and not composing_final
+                ):
                     composing_final = True
                     messages.append({"role": "system", "content": _final_composer_prompt(
                         evidence, context
@@ -1781,7 +1790,10 @@ class AssistantLoop:
                     "missing_metrics": missing_metrics,
                 }
                 context.verified_evidence = evidence.snapshot()
-                if context.ui_prompt:
+                if context.ui_prompt and (
+                    turn_plan.presentation == "interactive"
+                    or ui_program or "```openui" in draft_text.lower()
+                ):
                     from app.modules.assistant.intelligent_ui import (
                         UiValidationError,
                         compose_block,

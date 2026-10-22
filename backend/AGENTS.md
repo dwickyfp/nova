@@ -61,8 +61,10 @@ relative to `backend/`, as additional arguments. This is blocking. Full-tree
 `uv run mypy app --no-error-summary` is blocking; do not hide failures.
 
 For DB access, SQL execution, auth, storage, or proxy changes, run the real-engine
-suite with CI's services, seed data, and environment. Start an isolated test
-stack, not production services. From `backend/`:
+suite with CI's services, seed data, and environment. Run it against the
+`docker-compose.test.yml` project that is already running, not development or
+production services, and start the stack only when none runs
+([Docker guide](../docker/AGENTS.md)). From `backend/`:
 
 ```bash
 docker pull mysql:8.0

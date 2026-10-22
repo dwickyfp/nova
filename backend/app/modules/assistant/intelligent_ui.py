@@ -53,7 +53,7 @@ def catalog(version: str = CATALOG_VERSION) -> dict:
 
 
 def composer_prompt(*, enabled: bool, presentation: str, token_room: int) -> str:
-    if not enabled or presentation != "interactive" or not settings.STUDIO_INTELLIGENT_UI_ENABLED:
+    if not enabled or not settings.STUDIO_INTELLIGENT_UI_ENABLED:
         return ""
     if not runtime_available():
         return ""
@@ -61,6 +61,17 @@ def composer_prompt(*, enabled: bool, presentation: str, token_room: int) -> str
         prompt = catalog()["prompt"]
     except (OSError, KeyError, ValueError):
         return ""
+    if presentation != "interactive":
+        prompt = (
+            "Choose the most useful presentation as the answer develops. Plain Markdown "
+            "is a complete answer for greetings, explanations and clarifications. "
+            "Add an interactive UI when controls, a visual comparison, a map or a "
+            "simulation helps the user; no special mode, data source or explicit UI "
+            "request is required. Do not add a widget just to restate prose. "
+            "The following catalog instructions apply ONLY when you choose to include "
+            "an interactive program. Otherwise return Markdown without an OpenUI fence.\n"
+            "<OPTIONAL_UI_CATALOG>\n" + prompt + "\n</OPTIONAL_UI_CATALOG>"
+        )
     return prompt if len(prompt) // 3 + 512 <= token_room else ""
 
 
