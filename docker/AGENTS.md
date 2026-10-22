@@ -52,12 +52,19 @@ start another stack next to them.
   files; `docker ps` shows host ports. Use the project that runs the file you
   need, whatever its name, and pass its `-p <project>` and the same `-f` files
   on every compose command so the command acts on those containers.
+- Inspect selected test fixtures and scripts before running them: automatic
+  Compose/Testcontainers provisioning also counts as creating a stack. Set
+  their endpoints to existing compatible services and verify they will reuse
+  them without teardown. Unreachable default ports do not prove no stack exists.
 - Match the stack to the work. The `docker/docker-compose-engine.yml` project is
   the governed development stack and holds development data: use it for live
   Studio/Smart, Ranger, and UI checks, never for suites that drop or reseed
   data. The `backend/docker-compose.test.yml` project is the unpatched test
-  stack: run integration suites against it, with its host ports set through the
+  stack: reuse it when already running, with its host ports set through the
   `NOVA_TEST_*` and endpoint variables in [HOW_TO_RUN.md](../HOW_TO_RUN.md).
+  If only the governed stack is running, use it for compatible, non-destructive
+  checks. Report incompatible suite requirements and ask before creating a
+  separate test stack; a different compose file does not authorize duplication.
 - Apply new work to the running stack:
   - Backend, worker, and frontend run as host processes in local development
     (`dev.sh` or a local launch configuration). Restart them to load new
@@ -75,10 +82,13 @@ start another stack next to them.
     exists, ask before recreating any of its services, because recreating
     without that override changes the service configuration.
 - A port conflict, leftover data, or another checkout is not a reason to start
-  a new project. Reuse the stack that holds the port and reseed it. Start a
-  stack only when none runs for that compose file; use its default project name
-  and leave it running for the next check. When a check needs fresh
-  initialization or a separate patched acceptance stack, ask the user first.
+  a new project. Reuse compatible services at their actual ports; reseed only
+  an existing disposable test stack. Start a local stack automatically only
+  when no Nova stack is running and initialization is safe; use its default
+  project name and leave it running for the next check. When a check needs
+  fresh initialization, a data reset on a shared stack, or a separate acceptance
+  stack, ask the user first. CI startup/teardown applies to its ephemeral runner,
+  not the developer's running stack.
   The dedicated project names and shifted ports in
   [HOW_TO_RUN.md](../HOW_TO_RUN.md) and
   [governed Studio operations](../docs/governed-studio-operations.md) describe
