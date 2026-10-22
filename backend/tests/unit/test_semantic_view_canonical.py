@@ -57,6 +57,7 @@ def _user(name: str = "reader") -> dict:
         "username": name,
         "encrypted_password": "test-encrypted-value",
         "active_role": "ANALYST",
+        "assigned_roles": ["ANALYST"],
         "session_id": "session-1",
     }
 
@@ -88,6 +89,10 @@ async def test_source_probe_uses_caller_role_and_fails_closed(monkeypatch):
     import app.modules.intelligence.semantic_views as module
 
     probe = AsyncMock(return_value=SimpleNamespace(error=None))
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access",
+        AsyncMock(return_value={"object_access": ["SELECT"]}),
+    )
     monkeypatch.setattr(module.query_service, "execute", probe)
     definition = {"datasets": [{"source": "NOVA_DEMO.orders"}]}
     assert await SemanticViewService._source_access(definition, _user())

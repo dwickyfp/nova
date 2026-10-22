@@ -346,6 +346,9 @@ async def test_image_file_reaches_vision_provider_and_agent_answer(tmp_path):
 
 
 async def test_studio_endpoint_persists_attachment_and_streams_answer(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.for_turn", AsyncMock(return_value=None),
+    )
     class FakeRepository:
         def __init__(self):
             self.messages = []

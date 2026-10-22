@@ -8,7 +8,6 @@ from app.proxy.session import SessionState
 from app.sql_frontend.capabilities.starrocks import EngineCapabilities
 
 
-@pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("proxy", [False, True])
 @pytest.mark.parametrize(
     "sql",
@@ -24,8 +23,7 @@ from app.sql_frontend.capabilities.starrocks import EngineCapabilities
         "SELECT NOVA_STREAM_HAS_DATA('analytics.default.s')",
     ],
 )
-async def test_disabled_stream_sql_keeps_public_source(monkeypatch, proxy, sql, enabled):
-    monkeypatch.setattr("app.modules.streams.runtime.settings.STREAMS_ENABLED", enabled)
+async def test_unavailable_stream_sql_keeps_public_source(monkeypatch, proxy, sql):
     metadata = AsyncMock(side_effect=AssertionError("Metadata mutation or read"))
     monkeypatch.setattr("app.core.database.db.execute_system", metadata)
     audit = AsyncMock()
@@ -44,7 +42,7 @@ async def test_disabled_stream_sql_keeps_public_source(monkeypatch, proxy, sql, 
         service = QueryService(capability_resolver=AsyncMock(return_value=EngineCapabilities()))
         service._repo = repository
         result = await service.execute(sql, "alice", "enc", database="analytics", role="reader")
-    assert result.error and ("unavailable" if enabled else "disabled") in result.error
+    assert result.error and "unavailable" in result.error
     if not proxy:
         assert result.original_sql == sql
     assert any(call.kwargs.get("sql_text") == sql for call in audit.await_args_list)
@@ -54,11 +52,9 @@ async def test_disabled_stream_sql_keeps_public_source(monkeypatch, proxy, sql, 
 
 @pytest.mark.parametrize("conditional", [False, True])
 @pytest.mark.parametrize("confirmed", [False, True])
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_drop_confirmation_precedes_admission(monkeypatch, conditional, confirmed, enabled):
+async def test_drop_confirmation_precedes_admission(monkeypatch, conditional, confirmed):
     from app.sql_frontend.errors import ConfirmationRequiredError
 
-    monkeypatch.setattr("app.modules.streams.runtime.settings.STREAMS_ENABLED", enabled)
     monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
     metadata = AsyncMock(side_effect=AssertionError("Metadata touched"))
     monkeypatch.setattr("app.core.database.db.execute_system", metadata)
@@ -77,23 +73,21 @@ async def test_drop_confirmation_precedes_admission(monkeypatch, conditional, co
             role="reader",
             confirm_destructive=True,
         )
-        assert ("unavailable" if enabled else "disabled") in result.error
+        assert "unavailable" in result.error
         assert result.original_sql == sql
     service._repo.execute_as_user.assert_not_awaited()
     metadata.assert_not_awaited()
 
 
 @pytest.mark.parametrize("sql", ["DROP STREAM analytics.s", "DROP STREAM IF EXISTS analytics.s"])
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_proxy_drop_reaches_admission_without_engine_submission(monkeypatch, sql, enabled):
+async def test_proxy_drop_reaches_admission_without_engine_submission(monkeypatch, sql):
     # A MySQL client has no confirmation exchange, so the proxy submits its
     # statement as confirmed; stream admission still decides, before the engine.
-    monkeypatch.setattr("app.modules.streams.runtime.settings.STREAMS_ENABLED", enabled)
     monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
     repository = AsyncMock()
     monkeypatch.setattr(query_service, "_repo", repository)
     result = await ProxyQueryExecutor(
         SessionState(database="analytics", active_role="reader"),
     ).execute(sql, username="alice", connection=object())
-    assert result.error and ("unavailable" if enabled else "disabled") in result.error
+    assert result.error and "unavailable" in result.error
     repository.execute_as_user.assert_not_awaited()

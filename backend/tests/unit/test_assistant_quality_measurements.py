@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 
-from app.core.config import settings
 from app.modules.agents.quality_scoring import Assertion, score_assertion
 from app.modules.assistant import provider as provider_module
 from app.modules.assistant.provider import AssistantProviderClient, ProviderConfig
@@ -25,11 +24,6 @@ def observation(context):
 
 def budget(record, **limits):
     return score_assertion(Assertion(scorer="efficiency", expected=limits), record).status
-
-
-@pytest.fixture
-def quality_enabled(monkeypatch):
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
 
 
 def http_provider(monkeypatch, responses, *, max_attempts=1):
@@ -87,8 +81,7 @@ async def run(provider, *, registry=None, context=None, consent=None, **kwargs):
 
 
 async def test_real_planner_repair_and_response_are_counted_without_extra_calls(
-    monkeypatch, quality_enabled,
-):
+    monkeypatch, ):
     provider, requests = http_provider(monkeypatch, [
         ("invalid plan", {"prompt_tokens": 80, "completion_tokens": 10, "total_tokens": 90}),
         (json.dumps(PLAN), {"prompt_tokens": 120, "completion_tokens": 20, "total_tokens": 140}),
@@ -118,7 +111,7 @@ async def test_real_planner_repair_and_response_are_counted_without_extra_calls(
         assert private not in safe_measurement
 
 
-async def test_transport_retry_cannot_pass_a_one_call_budget(monkeypatch, quality_enabled):
+async def test_transport_retry_cannot_pass_a_one_call_budget(monkeypatch):
     provider, requests = http_provider(monkeypatch, [
         503,
         (json.dumps(PLAN), {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
@@ -138,7 +131,7 @@ async def test_transport_retry_cannot_pass_a_one_call_budget(monkeypatch, qualit
 
 @pytest.mark.parametrize("usage", [None, {}, {"total_tokens": True}, {"total_tokens": -1}])
 async def test_missing_or_invalid_usage_is_not_a_zero_token_pass(
-    monkeypatch, quality_enabled, usage,
+    monkeypatch, usage,
 ):
     provider, requests = http_provider(monkeypatch, [
         (json.dumps(PLAN), usage),
@@ -155,7 +148,7 @@ async def test_missing_or_invalid_usage_is_not_a_zero_token_pass(
     assert budget(record, context_tokens=20) == "unavailable"
 
 
-async def test_failure_before_http_dispatch_proves_zero_requests(monkeypatch, quality_enabled):
+async def test_failure_before_http_dispatch_proves_zero_requests(monkeypatch):
     provider, requests = http_provider(monkeypatch, [])
     provider._validate_endpoint = AsyncMock(side_effect=RuntimeError("private-endpoint"))
     context, frames = await run(provider)
@@ -166,8 +159,7 @@ async def test_failure_before_http_dispatch_proves_zero_requests(monkeypatch, qu
 
 
 async def test_failed_stream_does_not_treat_planner_usage_as_complete(
-    monkeypatch, quality_enabled,
-):
+    monkeypatch, ):
     provider, requests = http_provider(monkeypatch, [
         (json.dumps(PLAN), {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
         503,
@@ -184,8 +176,7 @@ async def test_failed_stream_does_not_treat_planner_usage_as_complete(
 
 
 async def test_single_attempt_redirect_does_not_claim_one_transport_request(
-    monkeypatch, quality_enabled,
-):
+    monkeypatch, ):
     provider, requests = http_provider(monkeypatch, [
         httpx.Response(307, headers={"location": "https://fixture.invalid/redirect"}),
         (json.dumps(PLAN), {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
@@ -199,7 +190,7 @@ async def test_single_attempt_redirect_does_not_claim_one_transport_request(
     assert budget(record, provider_calls=2) == "fail"
 
 
-async def test_resolution_failure_proves_zero_provider_requests(monkeypatch, quality_enabled):
+async def test_resolution_failure_proves_zero_provider_requests(monkeypatch):
     provider, requests = http_provider(monkeypatch, [])
     provider.resolve = AsyncMock(side_effect=RuntimeError("Unavailable"))
     context, frames = await run(provider)
@@ -214,7 +205,7 @@ async def test_resolution_failure_proves_zero_provider_requests(monkeypatch, qua
 
 @pytest.mark.parametrize("allowed", [False, True])
 async def test_tool_dispatch_counts_exclude_denials_and_do_not_guess_nested_cost(
-    monkeypatch, quality_enabled, allowed,
+    monkeypatch, allowed,
 ):
     tool = EvalTool("query_execute", classification="destructive")
     registry = ToolRegistry()
@@ -235,14 +226,14 @@ async def test_tool_dispatch_counts_exclude_denials_and_do_not_guess_nested_cost
         assert budget(record, participants=1) == "unavailable"
 
 
-async def test_collaboration_does_not_guess_participant_count(quality_enabled):
+async def test_collaboration_does_not_guess_participant_count():
     context = LoopContext(user_name="alice", agent_id="agent", collaboration_root=True)
     context, _ = await run(ScriptedProvider([text_frame("Ready.")]), context=context)
     assert budget(observation(context), participants=1) == "unavailable"
 
 
 @pytest.mark.parametrize("duplicate", [False, True])
-async def test_prefetch_and_cache_hits_do_not_double_count_dispatches(quality_enabled, duplicate):
+async def test_prefetch_and_cache_hits_do_not_double_count_dispatches(duplicate):
     tool = EvalTool("search_knowledge")
     registry = ToolRegistry()
     registry.register(tool)
@@ -267,8 +258,7 @@ async def test_prefetch_and_cache_hits_do_not_double_count_dispatches(quality_en
 
 
 async def test_delayed_translation_keeps_request_and_token_totals_unavailable(
-    monkeypatch, quality_enabled,
-):
+    monkeypatch, ):
     plan = {"intent": "raw_sql_query", "tools": ["query_execute"],
             "required_tools": ["query_execute"], "ml_task": None}
     provider, requests = http_provider(monkeypatch, [
@@ -289,7 +279,7 @@ async def test_delayed_translation_keeps_request_and_token_totals_unavailable(
     assert budget(record, provider_calls=1, total_tokens=15) == "unavailable"
 
 
-async def test_resumed_attempt_does_not_reset_required_count_budgets(quality_enabled):
+async def test_resumed_attempt_does_not_reset_required_count_budgets():
     context, _ = await run(ScriptedProvider([text_frame("Ready.")]), resume_state={})
     record = observation(context)
     assert budget(record, tool_calls=0) == "unavailable"
@@ -311,7 +301,7 @@ async def test_recovery_refuses_unverified_or_exhausted_token_budget(consumed):
     assert TurnResult(frames=frames).finish_reason == "token_budget"
 
 
-async def test_recovery_charges_previous_usage_and_new_planning(monkeypatch, quality_enabled):
+async def test_recovery_charges_previous_usage_and_new_planning(monkeypatch):
     usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
     provider, requests = http_provider(monkeypatch, [
         (json.dumps(PLAN), usage), ("Ready.", usage), (json.dumps(PLAN), usage),
@@ -338,13 +328,12 @@ async def test_recovery_charges_previous_usage_and_new_planning(monkeypatch, qua
     assert TurnResult(frames=frames).finish_reason == "token_budget"
 
 
-async def test_disabled_quality_preserves_provider_path_and_public_trace(monkeypatch):
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
+async def test_quality_without_an_agent_preserves_provider_path_and_public_trace(monkeypatch):
     provider, requests = http_provider(monkeypatch, [
         (json.dumps(PLAN), {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
         ("Ready.", {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}),
     ])
-    context, _ = await run(provider)
+    context, _ = await run(provider, context=LoopContext(user_name="alice"))
     assert len(requests) == 2
     assert context.quality_measurements is None
     assert not any(step["kind"] == "quality_observation" for step in context.steps)
@@ -386,7 +375,7 @@ async def test_token_allowance_composes_near_limit_and_stops_when_exhausted(limi
     assert TurnResult(frames=frames).finish_reason == finish_reason
 
 
-async def test_first_useful_content_and_validated_ui_action_are_observed(quality_enabled):
+async def test_first_useful_content_and_validated_ui_action_are_observed():
     from app.observability.metrics import STUDIO_FIRST_USEFUL_RESPONSE
 
     metric = STUDIO_FIRST_USEFUL_RESPONSE.labels("direct")
@@ -409,7 +398,6 @@ async def test_first_useful_content_and_validated_ui_action_are_observed(quality
 def test_interrupted_ui_actions_do_not_score_as_completed(monkeypatch, finish_reason):
     from app.modules.assistant.service import _record_quality_observation
 
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
     context = LoopContext(user_name="alice", agent_id="agent", steps=[], ui_action_accepted=True)
     _record_quality_observation(context, "Continue", finish_reason)
     assert score_assertion(

@@ -210,9 +210,8 @@ def unquote_identifier(value: str) -> str:
     returned unchanged.
 
     This exists so that a second control can ask "is this the same identifier?"
-    without re-deriving the quoting rules. ``UserService._protect_role`` and
-    ``guard_sql`` disagreeing about what counts as ACCOUNTADMIN is exactly the
-    kind of drift that turns one bypass into two, so both go through here.
+    without re-deriving the quoting rules. Role metadata and
+    ``guard_sql`` use this helper to agree on protected ACCOUNTADMIN spellings.
 
     Only the *identifier-shaped* body is unquoted — the same restriction
     ``_QUOTED_IDENTIFIER`` applies — so a real string literal keeps its quotes

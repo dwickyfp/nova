@@ -83,8 +83,8 @@ async def _run() -> None:
         raise RuntimeError("worker impersonation credentials must be configured")
     if settings.WORKER_IMPERSONATION_USER.lower() in {"root", "nova_admin"}:
         raise RuntimeError("the task worker requires a dedicated unprivileged account")
-    if settings.RANGER_ENABLED and not settings.WORKER_IMPERSONATION_ROLE:
-        raise RuntimeError("Ranger mode requires a dedicated task worker role")
+    if not settings.WORKER_IMPERSONATION_ROLE:
+        raise RuntimeError("the task worker requires a dedicated task worker role")
     await db.init_system_pool()
     try:
         await init_task_orchestration()

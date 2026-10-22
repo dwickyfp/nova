@@ -366,7 +366,6 @@ def _thread_view(row: dict) -> ThreadView:
 
 
 def _message_view(row: dict, user: dict | None = None) -> MessageView:
-    from app.core.config import settings
     from app.modules.agents.public_projections import sanitize_workflow_payload
 
     steps = row.get("steps") or []
@@ -379,15 +378,7 @@ def _message_view(row: dict, user: dict | None = None) -> MessageView:
         for key in ("principal", "active_role", "security_context_version")
     )
     content = row.get("content") or ""
-    if ui_visible and not settings.STUDIO_INTELLIGENT_UI_ENABLED:
-        rebuilt = [item for item in steps if item.get("kind") == "ui"
-                   and (item.get("provenance") or {}).get("prose_rebuilt")]
-        if len(rebuilt) == 1 and rebuilt[0].get("fallback"):
-            content = rebuilt[0]["fallback"]
-            steps = [item for item in steps if item.get("kind") != "text"]
-            steps.append({"kind": "text", "text": content, "content_index": 0,
-                          "content_id": "fallback"})
-    if not settings.STUDIO_INTELLIGENT_UI_ENABLED or not ui_visible:
+    if not ui_visible:
         steps = [item for item in steps if item.get("kind") != "ui"]
     if row["role"] == "user" and any(item.get("kind") == "ui_action" for item in steps):
         content = content.split("\n\nUI form input (user supplied):\n", 1)[0]
@@ -2488,11 +2479,8 @@ async def _ui_denied(user: dict, resource: str, reason: str, status: int = 422) 
 
 async def _ui_source(agent_id: str, thread_id: str, message_id: str,
                      content_id: str, user: dict) -> dict:
-    from app.core.config import settings
     from app.modules.assistant.intelligent_ui import SUPPORTED_CATALOGS
 
-    if not settings.STUDIO_INTELLIGENT_UI_ENABLED:
-        raise HTTPException(404, "Interactive UI is disabled")
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     block = await assistant_repository.ui_source(
@@ -2647,11 +2635,6 @@ async def send_agent_message(
     learning_enabled = agent_id != SKILL_AUTHOR_ID and await assistant_repository.learning_enabled(
         thread_id, user_name=user_name)
     if agent_id in SMART_AGENT_IDS:
-        if attachments:
-            from app.core.config import settings
-
-            if not settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
-                raise HTTPException(422, "Smart attachment resources are unavailable")
         from app.modules.assistant.skills import contains_credential_shape
 
         if (not body.content.strip() and not attachments) or contains_credential_shape(

@@ -672,7 +672,7 @@ class TestEngineObservationResilience:
                 submitted.append(statement)
 
             async def fetchone(self):
-                return None
+                return ("analyst",)
 
         from app.modules.task_orchestration import execution as execution_module
 
@@ -701,10 +701,14 @@ class TestEngineObservationResilience:
 
         executor = DelegateExecutor(StaticCredentialProvider({"bob": "pw"}))
         result = await executor.execute(
-            TaskSpec("A", "INSERT INTO secret SELECT 1", database="db"), "bob"
+            TaskSpec("A", "INSERT INTO secret SELECT 1", database="db", active_role="analyst"),
+            "bob",
         )
         assert result.state == "FINISHED"
-        assert submitted == ["USE `db`", "SUBMIT TASK `db`.`A` AS INSERT INTO secret SELECT 1"]
+        assert submitted == [
+            "SET ROLE analyst", "SELECT CURRENT_ROLE() AS nova_active_role",
+            "USE `db`", "SUBMIT TASK `db`.`A` AS INSERT INTO secret SELECT 1",
+        ]
 
     async def test_poll_failure_is_retried_not_fatal(self):
         calls = {"n": 0}

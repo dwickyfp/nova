@@ -95,12 +95,14 @@ async def test_write_reports_partial_completion_without_retry(monkeypatch):
 async def test_provision_protected_input_and_default_password_change(monkeypatch):
     from app.modules.assistant.tools import provision_user as module
 
-    monkeypatch.setattr(module.settings, "RANGER_ENABLED", False)
-    service = SimpleNamespace(
+    ranger = SimpleNamespace(
         list_roles=AsyncMock(return_value=[{"name": "ACCOUNTADMIN"}]),
+        assign_role=AsyncMock(),
+    )
+    monkeypatch.setattr(module, "access_control_service", ranger)
+    service = SimpleNamespace(
         user_exists=AsyncMock(return_value=False),
         create_user=AsyncMock(),
-        assign_role=AsyncMock(),
         set_default_roles=AsyncMock(),
         drop_user=AsyncMock(),
     )
@@ -116,6 +118,9 @@ async def test_provision_protected_input_and_default_password_change(monkeypatch
     result = await ProvisionUserTool().run(invocation, ctx)
     assert result.ok
     flag.assert_awaited_once_with("dwicky.f.putra", required=True)
+    assert ranger.assign_role.await_args.kwargs == {
+        "role": "ACCOUNTADMIN", "username": "dwicky.f.putra"
+    }
     service.set_default_roles.assert_awaited_once_with(
         "dwicky.f.putra", "%", "explicit", ["ACCOUNTADMIN"]
     )

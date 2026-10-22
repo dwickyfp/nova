@@ -49,7 +49,6 @@ import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 type Health = {
-  enabled: boolean;
   healthy: boolean;
   service_name?: string;
   pending_propagation?: number;

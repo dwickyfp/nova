@@ -90,7 +90,6 @@ def automatic_mission(comparison, monkeypatch):
     monkeypatch.setattr(module.mission_service, "_save", save_mission)
     monkeypatch.setattr(module.mission_service, "audit", AsyncMock())
     monkeypatch.setattr(module, "require_thread", AsyncMock())
-    monkeypatch.setattr(module, "require_workflow", lambda: None)
     monkeypatch.setattr(module.harness_repository, "admission_lock", admission)
     monkeypatch.setattr(engine, "intelligence_service", service)
     state.history = history
@@ -440,13 +439,11 @@ async def test_no_automatic_seed_is_derived_from_failed_or_unbounded_execution(m
 
 
 async def test_time_context_is_durable_before_query(monkeypatch):
-    from app.core.config import settings
     from app.modules.assistant.service import LoopContext
     from app.modules.assistant.tools import ToolInvocation
     from tests.unit.test_semantic_guidance_fallback import USER as TOOL_USER
     from tests.unit.test_semantic_llm_planner import _plan, setup_tool
 
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     tool, _, execute = setup_tool(monkeypatch, _plan(time={
         "dimension": "order_date", "grain": None,
         "range": "current_month", "compare": "previous_period",

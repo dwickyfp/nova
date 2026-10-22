@@ -38,7 +38,7 @@ async def test_natural_guidance_runs_through_consent_and_returns_grounded_result
     planner.complete.assert_awaited_once()
     execute.assert_awaited_once()
     sql = execute.call_args.kwargs["sql"]
-    assert ">= '2025-01-01'" in sql and "< '2026-01-01'" in sql
+    assert ">= '2025-01-01 00:00:00.000000'" in sql and "< '2026-01-01 00:00:00.000000'" in sql
     assert "private-test-value" not in "".join(frames)
     assert any('"finish_reason":"stop"' in frame.replace(" ", "") for frame in frames)
     assert any("Jakarta revenue for 2025 is 100." in frame for frame in frames)

@@ -56,6 +56,12 @@ async def test_shared_semantic_model_uses_owner_metadata_but_caller_sql(monkeypa
         .read_text()
     ).as_dict()
     calls = []
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access",
+        AsyncMock(return_value={"object_access": ["SELECT"]}),
+    )
 
     async def get_view(view_id):
         calls.append(("view", view_id))
@@ -91,7 +97,8 @@ async def test_shared_semantic_model_uses_owner_metadata_but_caller_sql(monkeypa
     context = LoopContext(
         user_name="rbac_jakarta", role="city_reader", database="rbac_city_demo",
         agent_owner_name="nova_admin", semantic_view_ids=["model-1"],
-        user={"username": "rbac_jakarta", "encrypted_password": "opaque"},
+        user={"username": "rbac_jakarta", "encrypted_password": "opaque",
+              "active_role": "city_reader", "assigned_roles": ["city_reader"]},
     )
     models = await load_authorized_models(context)
     assert len(models) == 1

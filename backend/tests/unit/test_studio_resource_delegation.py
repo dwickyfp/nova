@@ -73,7 +73,6 @@ class ResourceIO:
 def resource_io(monkeypatch):
     io = ResourceIO()
     io.fallback = module.db.execute_system
-    monkeypatch.setattr(module, "settings", SimpleNamespace(STUDIO_BUSINESS_WORKFLOW_ENABLED=True))
     monkeypatch.setattr(module.db, "execute_system", io.execute)
     monkeypatch.setattr(
         module.assistant_repository,
@@ -254,6 +253,7 @@ async def test_agent_control_persists_resource_refs_and_recovers_grants_on_spawn
     monkeypatch,
 ):
     repo, control = collaboration
+    monkeypatch.setattr(module.resource_delegation, "load", AsyncMock(return_value=([], [])))
     metadata = SimpleNamespace(resource_id="resource")
     available = AsyncMock(return_value=[metadata])
     grant = AsyncMock(return_value=["resource"])

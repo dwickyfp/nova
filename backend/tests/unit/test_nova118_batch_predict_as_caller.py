@@ -25,7 +25,6 @@ QA_ALLOWED_STATEMENTS = [
     "SET ROLE ACCOUNTADMIN",
     "CREATE TABLE t (x int)",
     "INSERT INTO t VALUES (1)",
-    "GRANT SELECT ON *.* TO ROLE analyst",
     "SELECT 1",
 ]
 
@@ -195,23 +194,26 @@ class TestPredictionSqlUsesCallerScope:
             )
         assert service.recording_source.calls == []
 
-    async def test_explicit_system_scope_is_opt_in(self, service, monkeypatch):
-        async def successful_predict(*args, **kwargs):
-            del args, kwargs
-            return {"model_name": "m", "version": 1}, [2.0], None
+    async def test_system_identity_cannot_substitute_for_caller(self, service):
+        with pytest.raises(ValueError, match="System identity cannot run prediction"):
+            await service.batch_predict(
+                model_alias="churn_model",
+                prediction_sql=CALLER_SQL,
+                database_name=None,
+                as_system=True,
+            )
+        assert service.recording_source.calls == []
 
-        monkeypatch.setattr(service.runtime, "predict_alias", successful_predict)
-        result = await service.batch_predict(
-            model_alias="churn_model",
-            prediction_sql=CALLER_SQL,
-            database_name=None,
-            as_system=True,
-        )
+    async def test_native_grant_is_rejected_before_extraction(self, service):
+        from app.modules.access_control.service import AccessControlError
 
-        _, security = service.recording_source.calls[-1]
-        assert security.username
-        assert security.username != "analyst"
-        assert result["total_rows"] == 1
+        with pytest.raises(AccessControlError, match="no native grant was sent"):
+            await service.batch_predict(
+                model_alias="churn_model", prediction_sql="GRANT SELECT ON *.* TO ROLE analyst",
+                database_name="prod_db", username="analyst", password=SECRET_PASSWORD,
+                role="analyst",
+            )
+        assert service.recording_source.calls == []
 
     async def test_authenticated_proxy_connection_needs_no_password(self, service, monkeypatch):
         async def successful_predict(*args, **kwargs):

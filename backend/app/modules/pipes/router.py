@@ -5,7 +5,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.common.responses import SanitizingJSONResponse
-from app.core.config import settings
 from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.pipes.schemas import (
@@ -22,12 +21,10 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 
 def _caller(user: dict) -> dict:
-    role = user.get("active_role")
-    if settings.RANGER_ENABLED or role is not None:
-        try:
-            role = SecurityContext.from_session(user).active_role
-        except SecurityContextError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        role = SecurityContext.from_session(user).active_role
+    except SecurityContextError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {
         "username": user["username"],
         "encrypted_password": user["encrypted_password"],

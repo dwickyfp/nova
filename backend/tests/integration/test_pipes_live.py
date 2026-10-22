@@ -6,7 +6,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from app.core.config import settings
 from app.core.security import encrypt_password
 from app.modules.query.service import query_service
 from tests.conftest import engine_host_ports
@@ -110,7 +109,6 @@ async def test_pipe_api_metadata_permissions_and_redaction(
     ],
 )
 async def test_ranger_pipe_gate_precedes_engine_execution(app, monkeypatch, sql):
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     result = await query_service.execute(
         sql=sql, username="testanalyst", encrypted_password=encrypt_password("testpass"),
         role="test_analyst", security_context_version=3,

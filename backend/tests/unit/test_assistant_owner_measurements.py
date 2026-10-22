@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.core.config import settings
 from app.modules.agents.quality_scoring import (
     Assertion,
     PromotionGates,
@@ -41,11 +40,6 @@ from tests.unit.test_assistant_quality_measurements import (
 
 CONFIG = ProviderConfig("owner", "fixture", "https://fixture.invalid/v1", "private-key")
 USAGE = {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}
-
-
-@pytest.fixture
-def quality_enabled(monkeypatch):
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
 
 
 def native_provider(monkeypatch, handler, *, max_attempts=1):
@@ -127,8 +121,7 @@ async def test_failed_transport_dispatches_and_retries_have_exact_count(monkeypa
 
 async def test_native_nested_tool_calls_are_observed_without_claiming_unknown_tool_coverage(
     monkeypatch,
-    quality_enabled,
-):
+    ):
     nested, requests = http_provider(monkeypatch, [("inner", USAGE), ("inner", USAGE)])
     registry = ToolRegistry()
     tool = EvalTool("load_skill")
@@ -160,8 +153,7 @@ async def test_native_nested_tool_calls_are_observed_without_claiming_unknown_to
 
 
 async def test_sse_consumers_do_not_inherit_scope_and_closed_children_cannot_add_reads(
-    quality_enabled,
-):
+    ):
     context = LoopContext(user_name="alice", agent_id="agent")
     iterator = AssistantLoop(
         provider=ScriptedProvider([text_frame("Ready.")]),
@@ -195,7 +187,7 @@ async def test_sse_consumers_do_not_inherit_scope_and_closed_children_cannot_add
     assert measured.metadata_reads == 0
 
 
-async def test_cancellation_restores_scope_and_closes_attempt(quality_enabled):
+async def test_cancellation_restores_scope_and_closes_attempt():
     context = LoopContext(user_name="alice", agent_id="agent")
     entered = asyncio.Event()
 
@@ -373,7 +365,6 @@ def test_metadata_budget_and_independent_scoring_duration_use_existing_safe_metr
         }
     )
     assertion = gates.performance_assertions()[0]
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
     completed = STUDIO_WORKFLOW_OPERATIONS.labels("quality", "score", "completed")
     before = completed._value.get()
     trace = {"duration_ms": 999, "counts": {"metadata_reads": 3}}
@@ -385,10 +376,9 @@ def test_metadata_budget_and_independent_scoring_duration_use_existing_safe_metr
     assert assertion.expected["metadata_reads"] == 2
 
 
-def test_explicit_offline_scoring_measures_overhead_with_production_feature_disabled(monkeypatch):
+def test_explicit_offline_scoring_measures_overhead():
     from app.observability.metrics import STUDIO_WORKFLOW_OPERATIONS
 
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
     completed = STUDIO_WORKFLOW_OPERATIONS.labels("quality", "score", "completed")
     before = completed._value.get()
     score = score_assertion(Assertion(scorer="efficiency", expected={"metadata_reads": 0}), {})
@@ -397,14 +387,12 @@ def test_explicit_offline_scoring_measures_overhead_with_production_feature_disa
     assert completed._value.get() == before + 1
 
 
-async def test_explicit_offline_evaluation_measures_with_production_feature_disabled(monkeypatch):
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
+async def test_explicit_offline_evaluation_measures_provider_budget(monkeypatch):
     plan = {"intent": "direct_answer", "tools": [], "required_tools": [], "ml_task": None}
     provider, requests = http_provider(monkeypatch, [(json.dumps(plan), USAGE), ("Ready.", USAGE)])
     context = LoopContext(user_name="alice", agent_id="agent", quality_evaluation=True)
     context, _ = await run(provider, context=context)
     record = observation(context)
-    assert settings.STUDIO_QUALITY_ENABLED is False
     assert len(requests) == 2
     assert record["counts"]["provider_calls"] == 2
     assert budget(record, provider_calls=1) == "fail"

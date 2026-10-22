@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.config import settings
 from app.modules.access_control.service import access_control_service
 from app.modules.query.repository import QueryResult
 from app.modules.query_autopilot.acceptance import (
@@ -42,7 +41,6 @@ async def test_scoped_governed_proof_requires_real_complete_equivalence_and_unch
     reason,
 ):
     service, repo, candidate, enrollment, _, _ = setup
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     candidate = candidate.model_copy(
         update={
             "kind": ActionKind.MATERIALIZED_VIEW,
@@ -192,9 +190,11 @@ async def test_scoped_governed_proof_requires_real_complete_equivalence_and_unch
         assert not calls and not readers
 
 
-async def test_native_engine_cannot_issue_governed_proof(setup, monkeypatch):
+async def test_missing_policy_revision_cannot_issue_governed_proof(setup):
     service, repo, candidate, enrollment, _, _ = setup
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
+    candidate = candidate.model_copy(
+        update={"scope": candidate.scope.model_copy(update={"policy_revision": None})}
+    )
     with pytest.raises(ValueError, match="ranger_acceptance_unsupported"):
         await collect_ranger_acceptance(
             service.sql,

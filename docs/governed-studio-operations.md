@@ -3,40 +3,25 @@
 Use this guide with [Architecture 15](arch-15-governed-studio.md),
 [Ranger operations](29-ranger-access-control.md), and the
 [CI workflow](../.github/workflows/ci.yml). It describes migration,
-rollout controls, recovery, and required acceptance checks.
+capabilities, recovery, and required acceptance checks.
 
-## Rollout controls
+## Capabilities
 
-Keep these settings at their shipped defaults until their required acceptance
-gates have evidence:
-
-```dotenv
-STUDIO_BUSINESS_WORKFLOW_ENABLED=false
-STUDIO_ACTIONS_ENABLED=false
-STUDIO_QUALITY_ENABLED=false
-STUDIO_ANALYSIS_WORKSPACE_ENABLED=false
-```
-
-The engine Compose app profile forwards these settings from `docker/.env` to
-the API and task worker, with false defaults. `dev.sh` resolves the existing
-backend settings once and forwards the same booleans to its API, scheduler,
-task worker, and Smart worker. A separately launched Smart worker must receive
-the same settings through its process environment or backend `.env`; the Compose
-app profile does not create that process. Restart affected processes after
-environment changes. Production scoring also needs per-agent opt-in and
-an authorized role execution binding. Keep analytical execution disabled while
-no isolated executor exists, including after other workflow gates pass.
+Mission workflow, Actions, quality monitoring, and the analysis workspace are
+always on; there are no rollout flags. Production scoring also needs per-agent
+opt-in and an authorized role execution binding. Analytical execution stays
+blocked while no isolated executor exists.
 
 API, task-worker, and Smart-worker startup logs contain a credential-free Studio
 capability snapshot. Studio's Capabilities → Business workflow view reads the
 same additive `runtime` contract from `/api/v1/agents/studio/capabilities`.
-`enabled` describes the rollout flag; `available` describes whether that feature
-can operate with its configured infrastructure. These fields do not promise
-caller permission or replace policy and consent checks. Analysis additionally
-reports `executor_available`. If its flag is true but no isolated executor is
-configured, status is `BLOCKED_BY_INFRASTRUCTURE`, and execution returns HTTP
-`503`, an unavailable result with that blocker, and no output. This is the
-selected production state until isolated infrastructure passes acceptance.
+`available` describes whether a capability can operate with its configured
+infrastructure. It does not promise caller permission or replace policy and
+consent checks. Analysis additionally reports `executor_available`. Without an
+isolated executor its status is `BLOCKED_BY_INFRASTRUCTURE`, and execution
+returns HTTP `503`, an unavailable result with that blocker, and no output. This
+is the selected production state until isolated infrastructure passes
+acceptance.
 
 Use stable signing/encryption keys shared by API/workers, existing managed
 storage, and the patched FE/Ranger path for governed data. Start the existing
@@ -84,9 +69,9 @@ payloads. Legacy Mission fields are synthesized from their original scope on
 read. Existing session/security columns remain execution metadata; historical
 canonical object scopes and proof digests remain immutable.
 
-For a configured operator environment, run this from `backend/` before enabling
+For a configured operator environment, run this from `backend/` before serving
 workflow traffic. It uses the existing control-plane connection and initializers
-without enabling flags or reading caller business data:
+without reading caller business data:
 
 ```bash
 uv run python - <<'PY'
@@ -120,7 +105,7 @@ asyncio.run(upgrade())
 PY
 ```
 
-Keep flags disabled if a statement/initializer fails. Startup schema checks are
+Do not serve workflow traffic if a statement/initializer fails. Startup schema checks are
 best-effort and can log warnings while the API starts; startup alone is not
 migration evidence. Acceptance must cover fresh initialization, repeat
 application, and upgrades from actual legacy tables with existing rows. The seed
@@ -330,7 +315,6 @@ export STARROCKS_ROOT_USER=root STARROCKS_ROOT_PASSWORD=
 export STARROCKS_PORT=45930 S3_PORT=45900
 export REDIS_URL=redis://127.0.0.1:45379/0
 export S3_ENDPOINT=http://127.0.0.1:45900
-export RANGER_ENABLED=false
 export SECRET_KEY="$(uv run python -c 'import secrets; print(secrets.token_hex(32))')"
 export FERNET_KEY="$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
 # Docker Desktop on macOS; Linux uses network=host and host=127.0.0.1.
@@ -473,8 +457,6 @@ environment. Then, from `backend/`:
 set -a
 source "$NOVA_GOVERNED_ACCEPTANCE_ENV"
 set +a
-export RANGER_ENABLED=true
-export RANGER_STRICT_SINGLE_ACTIVE_ROLE=true
 export NOVA_GOVERNED_STUDIO_RANGER_ACCEPTANCE=1
 uv run pytest tests/integration/test_governed_studio_ranger.py -m engine -v -rs \
   --log-cli-level=WARNING --junit-xml=governed-studio-ranger.xml
@@ -532,7 +514,7 @@ telemetry/reports.
 
 `GET /api/v1/agents/studio/analysis-workspace/capability` reports unavailable for
 the shipped executor. `POST .../executions` returns an unavailable result with
-`503`; toggling the flag alone cannot provide isolation.
+`503`; only an isolated executor can make it available.
 
 A future adapter must enforce CPU/memory/wall/output limits outside the request
 process, deny network access, isolate filesystem/package access, terminate and

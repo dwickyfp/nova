@@ -24,7 +24,6 @@ async def seed(port: int, database: str, artifacts: Path, owner: str, role: str)
     check_identifier(source_database, field="source database")
     settings.STARROCKS_HOST = "127.0.0.1"
     settings.STARROCKS_FE_MYSQL_PORT = port
-    settings.RANGER_ENABLED = True
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,127}", owner):
         raise ValueError("Invalid demo owner")
     check_identifier(role, field="execution role")

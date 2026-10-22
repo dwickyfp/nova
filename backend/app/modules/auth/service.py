@@ -75,19 +75,6 @@ class AuthService:
 
     async def _resolve_security_state(self, username: str, password: str) -> dict:
         """Resolve and verify the explicit default role on a real user session."""
-        if not settings.RANGER_ENABLED:
-            # Legacy/native-RBAC deployments may grant privileges directly to
-            # users and legitimately have CURRENT_ROLE() = NONE. Do not invent
-            # a role from list ordering. Strict role activation begins when the
-            # deployment enables Ranger, which is Nova's production target.
-            roles = await self.get_user_roles(username, password)
-            return {
-                "roles": roles,
-                "assigned_roles": roles,
-                "default_role": None,
-                "active_role": None,
-                "security_context_version": 1,
-            }
         try:
             async with db.user_conn(username=username, password=password) as conn:
                 active_role, assignments = await role_activation_service.activate(

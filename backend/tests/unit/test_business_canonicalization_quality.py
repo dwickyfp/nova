@@ -122,7 +122,6 @@ def test_skip_projection_and_legacy_observations_remain_explicit():
 async def test_answer_lookup_and_analysis_skip_automatic_investigation(
     monkeypatch, intent, comparison,
 ):
-    monkeypatch.setattr(business_results.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     automatic = AsyncMock()
     monkeypatch.setattr(business_results.intelligence_service, "automatic_investigation", automatic)
     anchor = AsyncMock(return_value=SimpleNamespace(mission_id="mission"))
@@ -143,7 +142,6 @@ async def test_complete_hook_includes_mission_reauthorization_queries_and_linkag
     timed, automatic_mission, monkeypatch, reused,
 ):
     service, _, source, _, clock = timed
-    monkeypatch.setattr(business_results.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     monkeypatch.setattr(business_results, "intelligence_service", service)
 
     async def anchor(*args, **kwargs):

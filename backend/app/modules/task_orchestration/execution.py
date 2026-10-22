@@ -435,8 +435,6 @@ class DelegateExecutor:
     @staticmethod
     async def _activate_task_role(cur: Any, spec: TaskSpec) -> None:
         if not spec.active_role:
-            if not settings.RANGER_ENABLED:
-                return
             raise NodeExecutionError(
                 f"task {spec.name!r} has no execution role; refusing service-account fallback"
             )

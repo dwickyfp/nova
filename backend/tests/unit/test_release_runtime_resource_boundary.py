@@ -378,7 +378,13 @@ async def test_tool_owner_discards_wrong_version_before_return(boundary):
     )
     assert not outcome.ok
     assert outcome.error_class == "RELEASE_DRIFT"
-    assert outcome.data is None and outcome.evidence is None
+    if boundary.tool.name == "feature_lookup":
+        assert set(outcome.data) == {"summary", "evidence_health"}
+        assert set(outcome.evidence) == {"health", "evidence_health"}
+        assert outcome.data["evidence_health"]["facts"]["execution_status"] == "failed"
+    else:
+        assert outcome.data is None and outcome.evidence is None
+    assert "RESOURCE_DATA" not in str(outcome)
     assert outcome.table is None and not outcome.citations
     assert "RESOURCE_DATA" not in outcome.summary
 

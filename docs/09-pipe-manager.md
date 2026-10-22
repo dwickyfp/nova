@@ -12,7 +12,7 @@ privileges. Pipe administration does not open a root or system connection.
 Source statements and errors pass through the shared credential redactor before
 they appear in responses or audit records.
 
-With `RANGER_ENABLED=true`, Nova rejects `CREATE PIPE` and execution-enabling
+Nova rejects `CREATE PIPE` and execution-enabling
 `ALTER PIPE` operations (`RESUME`, `RETRY`, and `SET`) during SQL planning. The
 StarRocks 4.1.4 background pipe task builder does not carry the initiating
 principal and active role required by Nova's Ranger contract. This gate applies
@@ -21,12 +21,8 @@ Inspection, `SUSPEND`, and `DROP` remain available subject to authorization.
 Use caller-scoped `COPY` or scheduled Nova tasks for governed ingestion until
 background pipe execution preserves the security context end to end.
 
-Before enabling Ranger on a deployment that already has native pipes, suspend
-those pipes. The planning gate does not stop tasks already running in the engine.
-
-Native-RBAC deployments can create and resume pipes. Their background loading
-follows StarRocks' native execution behavior; API caller propagation alone does
-not establish Ranger-safe background ingestion.
+Before upgrading a deployment that already has pipes, suspend them. The planning
+gate does not stop tasks already running in the engine.
 
 ## SQL operations
 

@@ -67,15 +67,15 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 ### Security and authorization
 
 - StarRocks authenticates Nova users; do not create another user/password store.
-- In Ranger-enabled execution, preserve the authenticated principal, exactly
-  one named active role, and security-context version across SQL, Studio,
+- Preserve the authenticated principal, exactly one named active role, and
+  security-context version across SQL, Studio,
   Semantic Views, ML, delegation, and data-derived caches. Ranger policies,
   row filters, and masks govern user data through the patched StarRocks FE.
 - Do not substitute root, system, service, or agent-owner credentials for a
   caller's data access. Existing explicitly authorized service-principal work
-  and native-RBAC compatibility are separate supported paths, not bypasses.
-- `SHOW GRANTS` can establish role-marker assignments and support native-RBAC
-  compatibility; it cannot replace Ranger authorization. Reject ambiguous
+  is a separate supported path, not a bypass.
+- `SHOW GRANTS` can establish role-marker assignments; it cannot replace Ranger
+  authorization. Reject ambiguous
   security contexts and preserve fail-closed checks and consent boundaries.
 - Preserve `ACCOUNTADMIN` protection in SQL guards, administration services,
   bootstrap, and UI. Do not drop, alter, rename, or revoke its privileges.
@@ -100,6 +100,18 @@ Do not copy stale examples into production. Report unrelated documentation debt.
   responses, logs, diagnostics, frontend state, or provider context. Keep
   deliberate credential-entry flows separate from stored-secret readback.
 - Preserve redacted audit logging for governed actions, including refusals.
+
+### Feature flags
+
+- Core features are always on. Do not add a setting, environment variable, or
+  UI toggle that enables or disables a feature (an `*_ENABLED` style flag)
+  unless the user explicitly asks for that flag. Ship a new feature active, and
+  gate it only on real prerequisites such as authorization or infrastructure.
+- Ranger authorization is not optional: every session activates exactly one
+  named role, starting from the user's default role. Do not reintroduce a
+  native-RBAC or "Ranger disabled" mode.
+- Deployment topology, transport, tuning, and explicit safety acknowledgements
+  for destructive operations are configuration, not feature flags.
 
 ### SQL and agents
 

@@ -142,13 +142,12 @@ The pipeline uses provider-agnostic FILES() parameters supplied by the storage p
 
 ### 3.5 Authentication and authorization retain caller context
 
-StarRocks authenticates the caller. In Ranger-enabled execution, the caller's
-principal and exactly one active role reach the patched FE, which applies
+StarRocks authenticates the caller. The caller's principal and exactly one
+active role reach the patched FE, which applies
 Ranger access policies, row filters, and masking. Preserve session identity and
 security-context version through delegation and security-scoped caches.
 `SHOW GRANTS` establishes role-marker assignments; it does not replace Ranger
-policy decisions. Explicit Ranger-disabled deployments retain native-RBAC
-compatibility rather than falling back to it on a governed authorization failure.
+policy decisions, and Ranger is always on: there is no native-RBAC fallback.
 
 System metadata reads do not authorize caller-visible data. Never substitute
 root, system, service, or agent-owner credentials to widen the caller's access.

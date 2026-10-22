@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.config import settings
 from app.integrations.ranger.client import RangerClient, ranger_client
 from app.modules.query_autopilot.models import Scope
 from app.modules.query_autopilot.runtime import (
@@ -42,7 +41,6 @@ async def test_revision_uses_only_available_control_plane_counters(metadata, exp
 async def test_changed_or_newly_available_revision_invalidates_scope(
     monkeypatch, recorded, current, blocked,
 ):
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     monkeypatch.setattr(ranger_client, "policy_revision", AsyncMock(return_value=current))
     scope = Scope(
         principal="alice", active_role="analyst", security_context_version=1,
@@ -58,7 +56,6 @@ async def test_changed_or_newly_available_revision_invalidates_scope(
 async def test_metadata_outage_blocks_delegated_statement_before_engine_execution(monkeypatch):
     from app.modules.query.service import query_service
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     monkeypatch.setattr(ranger_client, "policy_revision", AsyncMock(side_effect=RuntimeError()))
     execute = AsyncMock()
     monkeypatch.setattr(query_service, "execute", execute)
@@ -82,7 +79,7 @@ async def test_engine_authorization_codes_remain_distinct_from_operational_outag
     from app.core.exceptions import StarRocksError
     from app.modules.query.service import query_service
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
+    monkeypatch.setattr(ranger_client, "policy_revision", AsyncMock(return_value=None))
     failure = StarRocksError("redacted engine refusal")
     failure.__cause__ = OperationalError(code, "fixture failure")
     execute = AsyncMock(side_effect=failure)

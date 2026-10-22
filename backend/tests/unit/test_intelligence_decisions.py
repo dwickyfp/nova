@@ -85,13 +85,6 @@ def advance_mission_pin(mission, record):
 
 
 @pytest.fixture
-def mission_workflow(monkeypatch):
-    from app.modules.agents import mission
-
-    monkeypatch.setattr(mission.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
-
-
-@pytest.fixture
 async def program(monkeypatch):
     @asynccontextmanager
     async def lock(_key):
@@ -242,7 +235,7 @@ async def test_shared_same_role_viewer_still_must_reproduce_evidence(program, mo
 
 @pytest.mark.asyncio
 async def test_resumed_mission_creates_under_current_binding_from_exact_investigation_pin(
-    program, monkeypatch, mission_workflow
+    program, monkeypatch
 ):
     from app.modules.agents import mission, router
     from app.modules.assistant.repository import assistant_repository
@@ -322,7 +315,7 @@ async def test_resumed_mission_creates_under_current_binding_from_exact_investig
 
 @pytest.mark.asyncio
 async def test_resumed_decision_still_reauthorizes_evidence_before_numerical_execution(
-    program, monkeypatch, mission_workflow
+    program, monkeypatch
 ):
     from app.modules.agents import mission
 
@@ -396,7 +389,7 @@ async def test_historical_decision_digest_ignores_absent_additive_fields(program
 
 
 @pytest.fixture
-async def resumed_decision(program, monkeypatch, mission_workflow):
+async def resumed_decision(program, monkeypatch):
     from app.modules.agents import mission
 
     service, repo, source, policy, body = program

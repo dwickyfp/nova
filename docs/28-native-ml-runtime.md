@@ -16,7 +16,7 @@ CREATE ML_MODEL / POST /ml/execute / ml_execute
     -> SQL guard and @stage translation
     -> encrypted MLWorkerJob descriptor
     -> worker process
-       -> StarRocks Arrow Flight SQL (MySQL batches on transport fallback)
+       -> caller MySQL session with its active role (Ranger-governed)
        -> bounded Arrow RecordBatches
        -> one bounded Arrow Table for full-dataset engines
        -> FLAML                 classification / regression
@@ -252,8 +252,7 @@ does not expose provider-specific storage URLs or credentials.
 Central configuration variables are defined in `app/core/config.py`:
 
 ```text
-ML_ARROW_ENABLED                 ML_ARROW_BATCH_SIZE
-ML_ARROW_QUEUE_DEPTH             ML_MYSQL_BATCH_SIZE
+ML_MYSQL_BATCH_SIZE
 ML_INTERACTIVE_TIMEOUT_SECONDS
 ML_BALANCED_TIMEOUT_SECONDS      ML_BEST_TIMEOUT_SECONDS
 ML_MAX_INTERACTIVE_ROWS          ML_MAX_INTERACTIVE_BYTES
@@ -306,8 +305,8 @@ measurements.
 - Nova SQL surfaces use vectorized `ML_PREDICT` and task-aware `ML_FORECAST`;
   direct clients that bypass Nova and connect to StarRocks cannot use those
   interception paths.
-- Inference bounds cover logical prediction batches. An incoming Arrow Flight
-  batch and preprocessing/library scratch space can exceed one output batch;
+- Inference bounds cover logical prediction batches. An incoming MySQL batch
+  and preprocessing/library scratch space can exceed one output batch;
   worker RSS is reported separately. Training remains in-memory within its
   configured input budget.
 - Metadata durability requires the StarRocks registry and configured artifact

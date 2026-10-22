@@ -77,13 +77,11 @@ def _native_statement_checks(statement: ast.Statement, context: Any = None) -> N
     """Refuse native statements Nova would misread or that would mislead the engine."""
     _stage_paths_end_cleanly(statement)
     _native_session_settings(statement)
-    _native_pipe_execution(statement, context)
+    _native_pipe_execution(statement)
     return None
 
 
-def _native_pipe_execution(statement: ast.Statement, context: Any) -> None:
-    if not context or not context.ranger_enabled:
-        return
+def _native_pipe_execution(statement: ast.Statement) -> None:
     root = statement.parsed.statement_context
     kind = type(root).__name__
     starts_execution = kind == "CreatePipeStatementContext"
@@ -153,7 +151,29 @@ def _native_session_settings(statement: ast.Statement, context: Any = None) -> N
 
 
 def _security_context(statement: ast.Statement, context: Any) -> Any:
-    return _security(statement) if context and context.ranger_enabled else None
+    del context
+    root = statement.parsed.statement_context
+    kind = type(root).__name__
+    if kind in {
+        "CreateUserStatementContext", "AlterUserStatementContext",
+        "DropUserStatementContext", "SetDefaultRoleStatementContext",
+    }:
+        from app.modules.access_control.service import AccessControlError
+
+        roles = root.roleList() if hasattr(root, "roleList") else None
+        if kind == "CreateUserStatementContext" and roles is not None:
+            raise AccessControlError("Assign roles through Ranger after creating the account")
+        if kind == "SetDefaultRoleStatementContext" or (
+            kind == "AlterUserStatementContext" and root.DEFAULT() is not None
+        ):
+            from app.modules.users.schemas import validate_ranger_default
+
+            names = [] if roles is None else [
+                node.getText().strip("`'\"") for node in roles.identifierOrString()
+            ]
+            validate_ranger_default("explicit", names)
+        return None
+    return _security(statement)
 
 
 def validate_action(statement: ast.Statement, context=None) -> Any:

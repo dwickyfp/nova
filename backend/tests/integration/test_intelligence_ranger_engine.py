@@ -50,8 +50,6 @@ async def browser_checkpoint(stage, **resources):
 
 
 async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monkeypatch):
-    if not settings.RANGER_ENABLED:
-        raise RuntimeError("Ranger must be enabled for this acceptance")
     from app.common.nova_system import init_task_orchestration
     from app.modules.intelligence import decisions, engine
     from app.modules.intelligence.engine_schema import ensure_engine_schema

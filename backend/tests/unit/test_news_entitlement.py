@@ -228,10 +228,7 @@ def users(store, monkeypatch):
     return fake
 
 
-@pytest.mark.parametrize("ranger", [False, True])
-async def test_the_switch_alone_updates_no_engine_state(store, users, monkeypatch, ranger):
-    monkeypatch.setattr(users_router.settings, "RANGER_ENABLED", ranger)
-
+async def test_the_switch_alone_updates_no_engine_state(store, users):
     result = await users_router.update_user(
         "manager", UserUpdate(news_enabled=True), host="%", user=ADMIN
     )
@@ -241,9 +238,7 @@ async def test_the_switch_alone_updates_no_engine_state(store, users, monkeypatc
     assert await news_entitlement.is_news_enabled("manager") is True
 
 
-async def test_the_switch_combines_with_an_engine_update(store, users, monkeypatch):
-    monkeypatch.setattr(users_router.settings, "RANGER_ENABLED", False)
-
+async def test_the_switch_combines_with_an_engine_update(store, users):
     result = await users_router.update_user(
         "manager", UserUpdate(password="N3w-secret!", news_enabled=False), host="%", user=ADMIN
     )
@@ -252,9 +247,7 @@ async def test_the_switch_combines_with_an_engine_update(store, users, monkeypat
     assert len(users.engine_updates) == 1
 
 
-async def test_the_switch_is_refused_for_an_unknown_user(store, users, monkeypatch):
-    monkeypatch.setattr(users_router.settings, "RANGER_ENABLED", False)
-
+async def test_the_switch_is_refused_for_an_unknown_user(store, users):
     with pytest.raises(HTTPException) as refused:
         await users_router.update_user(
             "ghost", UserUpdate(news_enabled=True), host="%", user=ADMIN
@@ -265,7 +258,6 @@ async def test_the_switch_is_refused_for_an_unknown_user(store, users, monkeypat
 
 
 async def test_an_empty_update_is_still_rejected(store, users, monkeypatch):
-    monkeypatch.setattr(users_router.settings, "RANGER_ENABLED", True)
 
     with pytest.raises(HTTPException) as refused:
         await users_router.update_user("manager", UserUpdate(), host="%", user=ADMIN)

@@ -12,7 +12,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
 from app.modules.assistant.tools.redaction import is_credential_column, is_credential_value
 
 RUNTIME = Path(__file__).with_name("ui_runtime")
@@ -53,7 +52,7 @@ def catalog(version: str = CATALOG_VERSION) -> dict:
 
 
 def composer_prompt(*, enabled: bool, presentation: str, token_room: int) -> str:
-    if not enabled or not settings.STUDIO_INTELLIGENT_UI_ENABLED:
+    if not enabled:
         return ""
     if not runtime_available():
         return ""

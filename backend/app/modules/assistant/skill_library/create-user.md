@@ -36,15 +36,14 @@ engine connections bypassing Nova.
 For "buatkan akun" or "create the user", use provision_user with username and
 one existing default role. Its approval form collects the temporary password
 outside the model. It checks the active administrative role, creates the
-account, requires a password change, assigns the role through the configured
-authorization service and sets the default role. Confirm success only from
+account, requires a password change, assigns the role through Ranger and sets
+the default role. Confirm success only from
 its result. Never put passwords in tool arguments.
 
-In Ranger mode, prefer provision_user for execution. Native CREATE USER with
-DEFAULT ROLE does not provision Ranger membership. For SQL drafting use the
-separate GRANT above so Nova routes it to Ranger. In native mode, CREATE USER
-with DEFAULT ROLE can combine creation and grant; password change is still
-a separate Nova statement.
+Use provision_user for execution. For SQL drafting, use the separate GRANT
+above so Nova provisions Ranger membership before setting the default role.
+Nova rejects CREATE USER with DEFAULT ROLE because it bypasses that membership
+step. Each account needs exactly one explicit default role.
 
 Granting ACCOUNTADMIN to the requested user is allowed for an authorized
 administrator. Mention its full administrative scope briefly; do not replace

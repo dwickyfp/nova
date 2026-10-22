@@ -64,7 +64,6 @@ class FakeExecutor:
 
 @pytest.fixture
 def analysis_environment(monkeypatch):
-    monkeypatch.setattr(module, "settings", SimpleNamespace(STUDIO_ANALYSIS_WORKSPACE_ENABLED=True))
     monkeypatch.setattr(mission, "require_thread", AsyncMock())
     monkeypatch.setattr(module, "write_audit_log", AsyncMock())
     monkeypatch.setattr(
@@ -98,9 +97,8 @@ def request(**kwargs):
     return AnalysisRequest(thread_id="thread", run_id="run", code="print(1 + 2)", **kwargs)
 
 
-async def test_default_executor_is_unavailable_even_when_feature_enabled(analysis_environment):
+async def test_default_executor_is_unavailable(analysis_environment):
     workspace = AnalyticalWorkspace()
-    assert workspace.capability().enabled
     assert not workspace.capability().available
     assert workspace.capability().status == "BLOCKED_BY_INFRASTRUCTURE"
     assert not workspace.capability().executor_available
@@ -234,22 +232,6 @@ async def test_tool_cannot_select_another_thread_or_run(analysis_environment):
     context = SimpleNamespace(user=USER, thread_id="another", run_id="run")
     result = await tool.run(ToolInvocation("call", tool.name, request().model_dump()), context)
     assert not result.ok and result.error_class == "ANALYSIS_REJECTED"
-
-
-async def test_disabled_fake_executor_is_never_called(analysis_environment, monkeypatch):
-    monkeypatch.setattr(
-        module, "settings", SimpleNamespace(STUDIO_ANALYSIS_WORKSPACE_ENABLED=False)
-    )
-    fake = FakeExecutor()
-    workspace = AnalyticalWorkspace(fake)
-    capability = workspace.capability()
-    assert not capability.enabled and not capability.available
-    assert capability.status == "DISABLED"
-    assert capability.executor_available and capability.isolation == "isolated"
-    result = await workspace.execute(request(), USER)
-    assert result.status == "unavailable"
-    assert result.blocker == "FEATURE_DISABLED"
-    assert fake.calls == []
 
 
 async def test_uncooperative_executor_cancel_is_bounded_and_withholds_result(

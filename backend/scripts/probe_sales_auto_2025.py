@@ -7,7 +7,7 @@ place so their evidence can be inspected in Nova Studio.
 
 Run from ``backend/`` with the same environment as ``dev.sh``::
 
-    STARROCKS_FE_MYSQL_PORT=29030 RANGER_ENABLED=true \
+    STARROCKS_FE_MYSQL_PORT=29030 \
       .venv/bin/python -m scripts.probe_sales_auto_2025
 """
 

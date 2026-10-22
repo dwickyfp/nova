@@ -66,8 +66,9 @@ The upstream-compatible default remains `assigned_roles`; Nova's XML opts in.
 
 ## Configuration
 
-Set `RANGER_ENABLED=true`, the Ranger Admin URL and service name, control-plane
-credentials, TLS verification, bounded timeouts, and the managed policy prefix.
+Ranger is always on; there is no switch to disable it. Configure the Ranger
+Admin URL and service name, control-plane credentials, TLS verification, bounded
+timeouts, and the managed policy prefix.
 StarRocks FE must set `access_control = ranger` and load
 `conf/ranger-starrocks-security.xml` plus `conf/ranger-starrocks-audit.xml`.
 See `29-ranger-access-control.md` for deployment and migration.

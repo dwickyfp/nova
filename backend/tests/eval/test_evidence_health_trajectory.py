@@ -24,9 +24,7 @@ from tests.unit.test_semantic_intelligence import sales_model
 async def test_governed_health_survives_loop_replay_without_extra_model_call(
     monkeypatch, truncated, label,
 ):
-    from app.core.config import settings
 
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True, raising=False)
     definition = semantic_ir_to_definition(sales_model())
     view = {
         "id": "sales", "version": 2, "name": "sales", "status": "ACTIVE",

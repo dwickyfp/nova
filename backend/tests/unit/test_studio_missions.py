@@ -123,7 +123,6 @@ class MissionIO:
 @pytest.fixture
 def mission_io(monkeypatch):
     io = MissionIO()
-    monkeypatch.setattr(module, "settings", SimpleNamespace(STUDIO_BUSINESS_WORKFLOW_ENABLED=True))
     monkeypatch.setattr(module.db, "execute_system", io.execute)
     monkeypatch.setattr(module, "require_thread", AsyncMock(return_value={"thread_id": "thread"}))
     monkeypatch.setattr(module, "write_audit_log", AsyncMock())
@@ -732,25 +731,6 @@ async def test_schema_and_routes_are_mountable(mission_io, monkeypatch):
         response = await client.get("/api/v1/studio/threads/thread/missions")
         assert len(response.json()["missions"]) == 1
         assert app.openapi()["paths"]["/api/v1/studio/missions/{mission_id}/objects"]
-
-
-async def test_disabled_workflow_does_not_touch_metadata(mission_io, monkeypatch):
-    io, service = mission_io
-    monkeypatch.setattr(module, "settings", SimpleNamespace(STUDIO_BUSINESS_WORKFLOW_ENABLED=False))
-    assert (
-        await service.for_turn(
-            "thread",
-            USER,
-            operation_id="op",
-            objective="Investigate",
-            work_intent=WorkIntent.INVESTIGATE,
-        )
-        is None
-    )
-    with pytest.raises(HTTPException) as error:
-        await create(service)
-    assert error.value.status_code == 404
-    assert not io.statements
 
 
 async def test_causal_labels_are_not_upgraded_by_projection(mission_io):

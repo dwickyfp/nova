@@ -1,4 +1,4 @@
-"""Credential-free effective Studio rollout capabilities."""
+"""Credential-free effective Studio capabilities."""
 
 from __future__ import annotations
 
@@ -7,23 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-STUDIO_FLAG_NAMES = (
-    "STUDIO_BUSINESS_WORKFLOW_ENABLED",
-    "STUDIO_ACTIONS_ENABLED",
-    "STUDIO_QUALITY_ENABLED",
-    "STUDIO_ANALYSIS_WORKSPACE_ENABLED",
-)
-
-CapabilityStatus = Literal["DISABLED", "AVAILABLE", "BLOCKED_BY_INFRASTRUCTURE"]
+CapabilityStatus = Literal["AVAILABLE", "BLOCKED_BY_INFRASTRUCTURE"]
 
 
 class StudioFeatureCapability(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool
     available: bool
     status: CapabilityStatus
-    reason_code: Literal["FEATURE_DISABLED", "READY", "ISOLATED_EXECUTOR_UNAVAILABLE"]
+    reason_code: Literal["READY", "ISOLATED_EXECUTOR_UNAVAILABLE"]
     executor_available: bool | None = None
 
 
@@ -38,44 +30,24 @@ class StudioRuntimeCapabilities(BaseModel):
 
 
 def effective_studio_capabilities(
-    config: object | None = None, *, analysis_executor_isolated: bool = False
+    *, analysis_executor_isolated: bool = False
 ) -> StudioRuntimeCapabilities:
     from app.core.database import configured_timezone
 
-    if config is None:
-        from app.core.config import settings
-
-        config = settings
-
-    def feature(name: str, *, executor: bool | None = None) -> StudioFeatureCapability:
-        enabled = getattr(config, name, False) is True
-        available = enabled and executor is not False
-        status: CapabilityStatus = (
-            "AVAILABLE"
-            if available
-            else "BLOCKED_BY_INFRASTRUCTURE"
-            if enabled
-            else "DISABLED"
-        )
+    def feature(*, executor: bool | None = None) -> StudioFeatureCapability:
+        available = executor is not False
         return StudioFeatureCapability(
-            enabled=enabled,
             available=available,
-            status=status,
-            reason_code="READY"
-            if available
-            else "ISOLATED_EXECUTOR_UNAVAILABLE"
-            if enabled
-            else "FEATURE_DISABLED",
+            status="AVAILABLE" if available else "BLOCKED_BY_INFRASTRUCTURE",
+            reason_code="READY" if available else "ISOLATED_EXECUTOR_UNAVAILABLE",
             executor_available=executor,
         )
 
     return StudioRuntimeCapabilities(
-        business_workflow=feature(STUDIO_FLAG_NAMES[0]),
-        actions=feature(STUDIO_FLAG_NAMES[1]),
-        quality=feature(STUDIO_FLAG_NAMES[2]),
-        analysis_workspace=feature(
-            STUDIO_FLAG_NAMES[3], executor=analysis_executor_isolated is True
-        ),
+        business_workflow=feature(),
+        actions=feature(),
+        quality=feature(),
+        analysis_workspace=feature(executor=analysis_executor_isolated is True),
         execution_timezone=configured_timezone(),
     )
 

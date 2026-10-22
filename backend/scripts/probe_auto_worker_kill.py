@@ -2,7 +2,7 @@
 
 Run with the API and infrastructure up, but with no other Auto worker polling::
 
-    STARROCKS_FE_MYSQL_PORT=29030 RANGER_ENABLED=true \
+    STARROCKS_FE_MYSQL_PORT=29030 \
       .venv/bin/python -m scripts.probe_auto_worker_kill
 
 The probe kills a gated root worker, then a gated child worker. It backdates

@@ -23,8 +23,8 @@ data, shared business definitions, and organizational context.
 The warehouse, SQL, stages, and ML form its data foundation. StarRocks provides
 Nova's analytical query and storage engine and authenticates users. Nova owns
 SQL semantics and execution routing, business context, and governed workflows.
-In Ranger-enabled deployments, Apache Ranger policies govern user-data access
-through the patched StarRocks frontend.
+Apache Ranger policies always govern user-data access through the patched
+StarRocks frontend.
 
 ## The enterprise intelligence loop
 

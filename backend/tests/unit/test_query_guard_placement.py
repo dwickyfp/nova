@@ -51,7 +51,7 @@ def patched(monkeypatch):
 
 
 async def _execute(svc, sql, confirm_destructive=False):
-    return await svc.execute(
+    return await svc.execute(role="analyst",
         sql=sql,
         username="analyst",
         encrypted_password="enc",
@@ -162,7 +162,7 @@ class TestExecuteStatementsPath:
     async def test_destructive_statement_in_script_requires_confirmation(self, patched):
         make, created = patched
         svc = make()
-        results = await svc.execute_statements(
+        results = await svc.execute_statements(role="analyst",
             sql="SELECT 1; DROP TABLE t",
             username="analyst",
             encrypted_password="enc",
@@ -175,7 +175,7 @@ class TestExecuteStatementsPath:
     async def test_clean_script_executes_every_statement(self, patched):
         make, created = patched
         svc = make()
-        await svc.execute_statements(
+        await svc.execute_statements(role="analyst",
             sql="SELECT 1; SELECT 2",
             username="analyst",
             encrypted_password="enc",

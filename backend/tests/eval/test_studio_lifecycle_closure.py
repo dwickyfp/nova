@@ -17,7 +17,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.modules.agents import business_results, mission, releases, router
 from app.modules.agents.memory import memory_repository
 from app.modules.agents.mission_schema import MissionResume, ObjectRef, StageKind
@@ -346,8 +345,6 @@ async def journey(program, mission_io, monkeypatch):
     monkeypatch.setattr(business_results, "mission_service", missions)
     monkeypatch.setattr(engine, "utc_now", lambda: NOW)
     monkeypatch.setattr(decisions, "utc_now", lambda: NOW)
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
-    monkeypatch.setattr(settings, "STUDIO_ACTIONS_ENABLED", True)
     monkeypatch.setattr(
         scenarios,
         "scenario_registry",

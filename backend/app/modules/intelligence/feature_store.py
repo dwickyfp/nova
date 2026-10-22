@@ -1,4 +1,4 @@
-"""Versioned offline and online features governed by shared Nova entities."""
+"""Versioned features governed by shared Nova entities."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
-from redis.exceptions import RedisError
 
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
@@ -30,7 +29,6 @@ from app.modules.intelligence.feature_pit import (
     TrainingRelation,
     compile_training_set,
 )
-from app.modules.intelligence.online_features import OnlineFeatureRecord, RedisOnlineFeatureStore
 from app.modules.query.service import query_service
 from app.modules.users.router import ADMIN_ROLES
 
@@ -38,12 +36,10 @@ router = APIRouter()
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 AdminUser = Annotated[dict, Depends(require_role(*ADMIN_ROLES))]
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-_ONLINE_LIMIT = 100_000
-online_store = RedisOnlineFeatureStore()
 logger = logging.getLogger(__name__)
 
 
-def _online_value(value: Any) -> Any:
+def _feature_value(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, (date, datetime)):
@@ -100,11 +96,6 @@ class TrainingSetCreate(BaseModel):
     label_columns: list[str] = Field(min_length=1, max_length=32)
     group_version: int | None = Field(default=None, ge=1)
     preview_rows: int = Field(default=0, ge=0, le=100)
-
-
-class OnlineMaterializeRequest(BaseModel):
-    entity_keys: list[dict[str, str | int]] = Field(min_length=1, max_length=100)
-    group_version: int | None = Field(default=None, ge=1)
 
 
 class FeatureTrainRequest(TrainingSetCreate):
@@ -557,25 +548,9 @@ class FeatureStoreService:
         assert entity is not None
         if set(body.entity_key) != set(entity.key_columns):
             raise HTTPException(status_code=422, detail="Entity key does not match registry")
-        if body.as_of is None and not settings.RANGER_ENABLED:
-            try:
-                cached = await online_store.get(name, group_version["version"], body.entity_key)
-            except (ConnectionError, TimeoutError, OSError, RedisError):
-                logger.warning("Online Feature Store unavailable; using offline lookup")
-                cached = None
-            if cached:
-                await _audit("LOOKUP", name, user)
-                return {
-                    "group": name,
-                    "version": group_version["version"],
-                    "values": cached["values"],
-                    "as_of": cached["as_of"],
-                    "source": "online",
-                }
         values: dict[str, Any] = {}
         times: list[datetime] = []
         freshness: dict[str, dict[str, str]] = {}
-        ttl_values: list[int] = []
         for member in members:
             view = await self._view(member["view_name"])
             version = await self._view_version(member["view_name"], member["version"])
@@ -589,11 +564,7 @@ class FeatureStoreService:
             ]
             if body.as_of is not None:
                 conditions.append(f"{quote_identifier(timestamp)}<={_literal(body.as_of)}")
-            relation = (
-                quote_source(definition["source_relation"])
-                if settings.RANGER_ENABLED
-                else version["relation_name"]
-            )
+            relation = quote_source(definition["source_relation"])
             sql = (
                 "SELECT "
                 + ",".join(quote_identifier(column) for column in [timestamp, *columns])
@@ -601,19 +572,16 @@ class FeatureStoreService:
                 + " AND ".join(conditions)
                 + f" ORDER BY {quote_identifier(timestamp)} DESC LIMIT 1"
             )
-            if settings.RANGER_ENABLED:
-                queried = await query_service.execute(
-                    sql=sql,
-                    username=user["username"],
-                    encrypted_password=user["encrypted_password"],
-                    database=definition["source_relation"].split(".")[-2],
-                    role=user.get("active_role"),
-                    session_id=user.get("session_id"),
-                    max_rows=1,
-                )
-                rows = queried.rows if not queried.error else []
-            else:
-                rows = (await db.execute_system(sql))["rows"]
+            queried = await query_service.execute(
+                sql=sql,
+                username=user["username"],
+                encrypted_password=user["encrypted_password"],
+                database=definition["source_relation"].split(".")[-2],
+                role=user.get("active_role"),
+                session_id=user.get("session_id"),
+                max_rows=1,
+            )
+            rows = queried.rows if not queried.error else []
             if not rows:
                 continue
             row = rows[0]
@@ -622,7 +590,7 @@ class FeatureStoreService:
                 observed = observed.replace(tzinfo=ZoneInfo(settings.NOVA_TIMEZONE))
             times.append(observed)
             values.update({
-                column: _online_value(value)
+                column: _feature_value(value)
                 for column, value in zip(columns, row[1:], strict=True)
             })
             age = (datetime.now(UTC) - observed.astimezone(UTC)).total_seconds()
@@ -630,20 +598,9 @@ class FeatureStoreService:
                 "as_of": observed.isoformat(),
                 "status": "FRESH" if age <= view["freshness_seconds"] else "STALE",
             }
-            ttl_values.append(int(view["ttl_seconds"]))
         if not values:
             raise HTTPException(status_code=404, detail="Features not found for entity")
         observed = max(times)
-        if body.as_of is None and not settings.RANGER_ENABLED:
-            ttl = min(ttl_values)
-            try:
-                await online_store.publish(
-                    OnlineFeatureRecord(
-                        name, group_version["version"], body.entity_key, values, observed, ttl
-                    )
-                )
-            except (ConnectionError, TimeoutError, OSError, RedisError):
-                logger.warning("Online Feature Store unavailable; offline lookup succeeded")
         await _audit("LOOKUP", name, user)
         return {
             "group": name,
@@ -651,7 +608,7 @@ class FeatureStoreService:
             "values": values,
             "as_of": observed.isoformat(),
             "freshness": freshness,
-            "source": "offline" if body.as_of else "offline_fallback",
+            "source": "offline",
         }
 
     async def create_training_set(self, name: str, body: TrainingSetCreate, user: dict) -> dict:
@@ -681,11 +638,7 @@ class FeatureStoreService:
             assert version is not None
             definition = version["definition"]
             relation = FeatureRelation(
-                (
-                    definition["source_relation"]
-                    if settings.RANGER_ENABLED
-                    else version["relation_name"]
-                ),
+                definition["source_relation"],
                 member["version"],
                 tuple(body.entity_keys),
                 definition["event_timestamp"],
@@ -798,48 +751,6 @@ class FeatureStoreService:
         )
         await _audit("CREATE_TRAINING_SET", name, user)
         return {"id": training_id, "sql": sql, "lineage": lineage, "preview": preview}
-
-    async def materialize_online(
-        self, name: str, body: OnlineMaterializeRequest, user: dict
-    ) -> dict:
-        if settings.RANGER_ENABLED:
-            raise HTTPException(
-                status_code=409,
-                detail="Online materialization is unavailable with row-level policies",
-            )
-        group, row, _ = await self._authorized_group(name, user, body.group_version)
-        if not can_manage(group["owner_name"], user):
-            raise HTTPException(status_code=404, detail="Feature Group not found")
-        published = 0
-        missing = 0
-        failed = 0
-        for entity_key in body.entity_keys:
-            try:
-                await self.lookup(
-                    name,
-                    FeatureLookup(entity_key=entity_key, version=row["version"]),
-                    user,
-                )
-                cached = await online_store.get(name, row["version"], entity_key)
-                if cached:
-                    published += 1
-                else:
-                    failed += 1
-            except HTTPException as exc:
-                if exc.status_code == 404:
-                    missing += 1
-                else:
-                    failed += 1
-            except (ConnectionError, TimeoutError, OSError, RedisError):
-                failed += 1
-        await _audit("MATERIALIZE_ONLINE", name, user)
-        return {
-            "group": name,
-            "version": row["version"],
-            "published": published,
-            "missing": missing,
-            "failed": failed,
-        }
 
     async def train(self, name: str, body: FeatureTrainRequest, user: dict) -> dict:
         from app.modules.ml_engine.service import ml_engine_service
@@ -975,11 +886,6 @@ async def lookup_features(name: str, body: FeatureLookup, user: CurrentUser):
 @router.post("/groups/{name}/training-set", response_class=SanitizingJSONResponse)
 async def create_training_set(name: str, body: TrainingSetCreate, user: CurrentUser):
     return await feature_store.create_training_set(name, body, user)
-
-
-@router.post("/groups/{name}/materialize-online", response_class=SanitizingJSONResponse)
-async def materialize_online(name: str, body: OnlineMaterializeRequest, user: AdminUser):
-    return await feature_store.materialize_online(name, body, user)
 
 
 @router.post("/groups/{name}/train", response_class=SanitizingJSONResponse)

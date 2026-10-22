@@ -17,13 +17,6 @@ from app.modules.assistant.tools import ToolOutcome
 NOW = datetime(2026, 10, 3, 10, tzinfo=UTC)
 
 
-@pytest.fixture(autouse=True)
-def enabled(monkeypatch):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
-
-
 def _strong():
     return assess_evidence(EvidenceFacts(
         semantic_grounding="published", semantic_view_id="sales", semantic_version=2,
@@ -169,11 +162,3 @@ def test_mapping_preserves_non_object_data_and_other_envelope_fields():
     assert result.artifacts == outcome.artifacts
     assert result.warnings == outcome.warnings and result.state_patch == outcome.state_patch
     assert "health" in result.envelope(tool_name="configured_tool")["evidence"]
-
-
-def test_disabled_feature_retains_original_outcome(monkeypatch):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False)
-    outcome = ToolOutcome(ok=True, summary="Executed")
-    assert attach_execution_health(outcome, "query_execute") is outcome

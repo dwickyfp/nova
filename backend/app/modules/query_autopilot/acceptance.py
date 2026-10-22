@@ -59,7 +59,6 @@ async def collect_ranger_acceptance(
     from uuid import uuid4
 
     from app.common.identifiers import check_identifier
-    from app.core.config import settings
     from app.modules.access_control.service import access_control_service
     from app.modules.query_autopilot.correctness import (
         equivalent,
@@ -74,7 +73,7 @@ async def collect_ranger_acceptance(
     from app.modules.query_autopilot.models import utcnow
     from app.sql_frontend.autopilot import deterministic_order
 
-    if not settings.RANGER_ENABLED or not candidate.scope.policy_revision:
+    if not candidate.scope.policy_revision:
         raise ValueError("ranger_acceptance_unsupported")
     group = check_identifier(enrollment.budget.resource_group, field="resource group")
     now = utcnow()

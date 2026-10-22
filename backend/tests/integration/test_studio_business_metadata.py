@@ -9,7 +9,6 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
 from app.main import create_app
@@ -35,7 +34,6 @@ pytestmark = pytest.mark.engine
 @pytest.fixture
 async def studio_metadata(intelligence_db, monkeypatch):
     scope = intelligence_db
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     await assistant_repository.ensure_schema()
     await harness_repository.ensure_schema()
     await MissionService().ensure_schema()
@@ -356,7 +354,6 @@ async def test_real_mission_attachment_fake_workspace_and_deliverable_journey(
     monkeypatch,
 ):
     user, thread_id = studio_metadata
-    monkeypatch.setattr(settings, "STUDIO_ANALYSIS_WORKSPACE_ENABLED", True)
     body = "region,sales\nwest,100\neast,150\n"
     files = [
         {

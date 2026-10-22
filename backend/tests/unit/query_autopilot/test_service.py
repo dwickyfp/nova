@@ -124,6 +124,13 @@ async def setup(monkeypatch):
     monkeypatch.setattr(module, "exclusive", unlocked)
     monkeypatch.setattr(module.session_store, "get", AsyncMock(return_value=None))
     candidate, enrollment, policy = fixtures()
+    scope = candidate.scope.model_copy(update={"policy_revision": "1:42:0"})
+    candidate = candidate.model_copy(update={"scope": scope})
+    enrollment = enrollment.model_copy(update={"scope": scope})
+    monkeypatch.setattr(
+        "app.integrations.ranger.client.ranger_client.policy_revision",
+        AsyncMock(return_value="1:42:0"),
+    )
     candidate = candidate.model_copy(
         update={"state": State.PROPOSED, "experiment_id": None, "experiment_digest": None}
     )

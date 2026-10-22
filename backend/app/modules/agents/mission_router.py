@@ -9,7 +9,7 @@ from app.core.deps import get_current_user
 from app.modules.agents.agent_control import AgentControl
 from app.modules.agents.harness_repository import harness_repository
 from app.modules.agents.identity import participant_path
-from app.modules.agents.mission import mission_service, require_thread, require_workflow
+from app.modules.agents.mission import mission_service, require_thread
 from app.modules.agents.mission_schema import (
     DeliverableCreate,
     MissionCreate,
@@ -166,7 +166,6 @@ async def list_deliverables(mission_id: str, user: Annotated[dict, Depends(get_c
 
 
 async def _resource_control(thread_id: str, root_run_id: str, user: dict) -> AgentControl:
-    require_workflow()
     await require_thread(thread_id, user)
     root = await harness_repository.get(root_run_id)
     if root is None or root["thread_id"] != thread_id or root["depth"] != 0:

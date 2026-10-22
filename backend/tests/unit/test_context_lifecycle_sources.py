@@ -32,7 +32,6 @@ def setup(monkeypatch, status="ACTIVE"):
     monkeypatch.setattr(service, "authorize_semantic", authorize)
     monkeypatch.setattr(service, "repository", repository)
     monkeypatch.setattr(service, "_audit", AsyncMock())
-    monkeypatch.setattr(context_graph.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     return service, repository, authorize
 
 
