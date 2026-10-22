@@ -38,7 +38,7 @@ export async function listModelOptions(): Promise<ModelOption[]> {
     "/ai/providers",
   );
   const usable = providers.filter(
-    (provider) => provider.is_active && provider.has_api_key && provider.type !== "decision",
+    (provider) => provider.is_active && provider.has_api_key,
   );
 
   const options = await Promise.all(

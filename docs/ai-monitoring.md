@@ -63,7 +63,7 @@ The endpoint accepts `days` from 1 through 30, `source`, `model`, `user_name`,
 - AI SQL wrappers currently return their result without token metadata to Nova.
   SQL activity therefore has unavailable tokens and model, never an estimated
   count or a false zero. Failed statements may have failed before any AI call.
-- AI Search embeddings, decision routing, and connection tests do not have
+- AI Search embeddings and connection tests do not have
   independently queryable usage accounting here. Nested calls already included
   in a saved turn are part of that turn's total. This is an activity dashboard,
   not a provider billing ledger. Dollar cost is not calculated without historical

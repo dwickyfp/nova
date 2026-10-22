@@ -7,9 +7,9 @@ import '@/styles/index.css'
 
 afterEach(() => vi.restoreAllMocks())
 
-it.each([1280, 320])('registers and edits a decision provider at %ipx', async (width) => {
+it.each([1280, 320])('registers and edits an LLM provider at %ipx', async (width) => {
   await page.viewport(width, 900)
-  const endpoint = 'https://api.example.com/custom/decide/?version=2'
+  const endpoint = 'https://api.example.com/v1'
   let providers: Record<string, unknown>[] = []
   vi.spyOn(api, 'get').mockImplementation(async (path) =>
     path === '/ai/providers'
@@ -29,41 +29,41 @@ it.each([1280, 320])('registers and edits a decision provider at %ipx', async (w
 
   const screen = await render(<ProvidersTab />)
   await screen.getByRole('button', { name: 'Add Provider' }).click()
-  await screen.getByLabelText('Name', { exact: true }).fill('Decision service')
+  await screen.getByLabelText('Name', { exact: true }).fill('Gateway')
   await screen.getByRole('combobox', { name: 'Type', exact: true }).click()
-  await screen.getByRole('option', { name: 'Decision', exact: true }).click()
-  await screen.getByLabelText('Inference Endpoint').fill(endpoint)
+  await expect
+    .element(screen.getByRole('option', { name: 'Decision', exact: true }))
+    .not.toBeInTheDocument()
+  await screen
+    .getByRole('option', { name: 'OpenAI Compatible', exact: true })
+    .click()
+  await screen.getByLabelText('Endpoint', { exact: true }).fill(endpoint)
   const dialog = document.querySelector('[role="dialog"]')!
   expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth)
   await page.screenshot()
   await expect
     .element(screen.getByRole('button', { name: 'Test Connection' }))
-    .not.toBeInTheDocument()
+    .toBeInTheDocument()
   await screen.getByRole('button', { name: 'Create Provider' }).click()
   expect(post).toHaveBeenCalledWith(
     '/ai/providers',
-    expect.objectContaining({
-      type: 'decision',
-      endpoint,
-    })
+    expect.objectContaining({ type: 'openai_compatible', endpoint })
   )
 
-  const row = screen.getByRole('row').filter({ hasText: /decision service/i })
+  const row = screen.getByRole('row').filter({ hasText: /gateway/i })
   await row.getByRole('button').click()
   await screen.getByRole('menuitem', { name: 'Edit Provider' }).click()
   await expect
-    .element(screen.getByLabelText('Inference Endpoint'))
+    .element(screen.getByLabelText('Endpoint', { exact: true }))
     .toHaveValue(endpoint)
-  await screen
-    .getByLabelText('Name', { exact: true })
-    .fill('Renamed decision service')
+  await screen.getByLabelText('Name', { exact: true }).fill('Renamed gateway')
   await screen.getByRole('button', { name: 'Save Changes' }).click()
   expect(put).toHaveBeenCalledWith(
     '/ai/providers/p1',
     expect.objectContaining({
-      type: 'decision',
+      type: 'openai_compatible',
       endpoint,
-      name: 'Renamed decision service',
+      name: 'Renamed gateway',
     })
   )
 
@@ -71,7 +71,10 @@ it.each([1280, 320])('registers and edits a decision provider at %ipx', async (w
   await screen.getByRole('menuitem', { name: 'Add Model' }).click()
   await expect
     .element(screen.getByRole('combobox', { name: 'Type', exact: true }))
-    .toHaveTextContent('Decision')
-  await expect.element(screen.getByLabelText('Max Tokens')).not.toBeInTheDocument()
-  await screen.getByRole('button', { name: 'Cancel', exact: true }).click()
+    .toHaveTextContent('LLM')
+  await expect.element(screen.getByLabelText('Max Tokens')).toBeInTheDocument()
+  await screen.getByRole('combobox', { name: 'Type', exact: true }).click()
+  await expect
+    .element(screen.getByRole('option', { name: 'Decision', exact: true }))
+    .not.toBeInTheDocument()
 })

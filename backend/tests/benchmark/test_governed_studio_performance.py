@@ -127,9 +127,6 @@ def _native_loop(monkeypatch, *, tool=False):
     monkeypatch.setattr(provider_module, "guarded_async_client", client)
     monkeypatch.setattr(provider_module, "resolve_and_validate_url", lambda _endpoint: None)
     monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
-    monkeypatch.setattr(
-        "app.modules.assistant.decision.decision_session", AsyncMock(return_value=None)
-    )
     provider = AssistantProviderClient(max_attempts=1, retry_base_seconds=0)
     provider.resolve = AsyncMock(
         return_value=ProviderConfig(

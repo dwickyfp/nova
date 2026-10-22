@@ -72,7 +72,7 @@ from app.modules.assistant.intelligence import (
 )
 from app.modules.assistant.measurements import AttemptMeasurements, measurement_scope
 from app.modules.assistant.messages import say
-from app.modules.assistant.planning import TurnPlan, plan_turn, refine_turn_plan
+from app.modules.assistant.planning import TurnPlan, plan_turn
 from app.modules.assistant.provider import (
     AssistantProviderClient,
     normalize_tool_schema_for_provider,
@@ -287,7 +287,6 @@ class LoopContext:
     active_state: dict[str, Any] | None = None
     selected_tools: list[str] | None = None
     selected_skills: list[str] | None = None
-    decision: Any = None
     harness_mode: str | None = None
     evidence_count: int = 0
     prompt_telemetry: dict[str, int] | None = None
@@ -915,49 +914,8 @@ class AssistantLoop:
         yield events.plan(_initial_plan(self._registry))
         yield _thinking_step(context, "plan", "Understanding the request and choosing a skill")
 
-        if context.agent_id or context.collaboration_root:
-            from app.modules.assistant.decision import decision_session
-
-            if context.release_manifest:
-                from app.modules.ai_ml.decision_settings import DecisionSettings
-                from app.modules.assistant.decision import DecisionSession
-
-                routing = DecisionSettings.model_validate(
-                    context.release_manifest["dependencies"]["routing"]
-                )
-                context.decision = DecisionSession(routing) if routing.enabled else None
-            else:
-                context.decision = await decision_session()
-        routed_model = None
-        if context.decision is not None:
-            context.decision.time_remaining = lambda: deadline - _budget_time()
-            routed_model = await context.decision.workload(
-                context.routing_content or user_content,
-                has_attachments=bool(context.attachments or context.has_attachment_history),
-                recent_conversation=_planning_history(thread, user_content),
-            )
         try:
-            if routed_model:
-                try:
-                    provider = await asyncio.wait_for(
-                        self._provider.resolve(
-                            provider_id=routed_model["provider_id"], model=routed_model["name"],
-                        ),
-                        timeout=max(0.01, min(
-                            context.decision.settings.timeout_seconds, deadline - _budget_time(),
-                        )),
-                    )
-                except Exception:
-                    if context.decision.trace:
-                        context.decision.trace[-1].update(
-                            status="fallback", reason="target_unavailable",
-                        )
-                    routed_model = None
-            if not routed_model:
-                provider = await self._provider.resolve(provider_id=provider_id, model=model)
-            else:
-                context.model_provider_id = routed_model["provider_id"]
-                context.model_name = routed_model["name"]
+            provider = await self._provider.resolve(provider_id=provider_id, model=model)
         except Exception as exc:  # noqa: BLE001 - surfaced as a redacted frame
             logger.warning("Assistant provider resolution failed: %s", type(exc).__name__)
             yield events.error("provider_unavailable", str(exc))
@@ -1015,14 +973,6 @@ class AssistantLoop:
             turn_plan = await asyncio.wait_for(
                 plan_with(provider), timeout=max(0.01, deadline - _budget_time()),
             )
-            if context.decision is not None:
-                turn_plan = await asyncio.wait_for(
-                    refine_turn_plan(
-                        turn_plan, self._registry, context.routing_content or user_content,
-                        context.decision,
-                    ),
-                    timeout=max(0.01, deadline - _budget_time()),
-                )
         except Exception as exc:  # noqa: BLE001 - Studio has a governed fallback; Nove stops
             logger.warning("Assistant turn planning failed: %s", type(exc).__name__)
             fallback = (
@@ -1147,6 +1097,12 @@ class AssistantLoop:
             enabled=context.intelligent_ui, presentation=turn_plan.presentation,
             token_room=self._context_manager.token_budget - estimate_messages_tokens(messages),
         )
+        if context.ui_prompt and turn_plan.presentation != "interactive":
+            leading = next(
+                (index for index, item in enumerate(messages) if item.get("role") != "system"),
+                len(messages),
+            )
+            messages.insert(leading, {"role": "system", "content": "\n" + context.ui_prompt})
         language = _turn_language(context)
         if context.intent_frame is not None:
             leading = next(
@@ -1234,7 +1190,6 @@ class AssistantLoop:
                 "harness_mode": context.harness_mode,
                 "selected_tools": list(selected_tools),
                 "selected_skills": list(context.selected_skills or []),
-                "decisions": context.decision.trace if context.decision else [],
                 "semantic_view_ids": list(context.semantic_view_ids or []),
                 "prompt_telemetry": dict(context.prompt_telemetry or {}),
                 "status": "done",
@@ -1571,7 +1526,10 @@ class AssistantLoop:
                         for item in evidence.import_results(participant):
                             table = evidence.tables.get(item.evidence_id) or {}
                             context.last_result = {**table, "title": item.summary}
-                if context.ui_prompt and not composing_final:
+                if (
+                    context.ui_prompt and turn_plan.presentation == "interactive"
+                    and not composing_final
+                ):
                     composing_final = True
                     messages.append({"role": "system", "content": _final_composer_prompt(
                         evidence, context
@@ -1832,7 +1790,10 @@ class AssistantLoop:
                     "missing_metrics": missing_metrics,
                 }
                 context.verified_evidence = evidence.snapshot()
-                if context.ui_prompt:
+                if context.ui_prompt and (
+                    turn_plan.presentation == "interactive"
+                    or ui_program or "```openui" in draft_text.lower()
+                ):
                     from app.modules.assistant.intelligent_ui import (
                         UiValidationError,
                         compose_block,
@@ -4277,7 +4238,7 @@ def _record_quality_observation(
         facts["task_completeness"] = {**facts.get("task_completeness", {}), "completed": False}
     facts["execution"] = {"finish_reason": finish_reason}
     counts, measurement = (
-        context.quality_measurements.observation(context.decision)
+        context.quality_measurements.observation()
         if context.quality_measurements is not None
         else ({}, {"unavailable": {"provider_calls": ["instrumentation_unavailable"]}})
     )

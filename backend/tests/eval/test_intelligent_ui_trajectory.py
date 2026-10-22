@@ -48,13 +48,16 @@ async def test_simulation_prose_and_ui_share_checked_values(root, table_conflict
     assert provider.calls == 2
 
 
-async def test_interactive_direct_and_smart_root_use_verified_final_composer():
+@pytest.mark.parametrize("presentation", ["interactive", "text", None])
+async def test_interactive_direct_and_smart_root_use_verified_final_composer(presentation):
     for root in (False, True):
         provider = ScriptedProvider(
-            script=[text_frame("Draft."), text_frame("Adjust the assumptions.\n```openui\n" +
-                                                   CALCULATOR + "\n```")],
+            script=([text_frame("Draft.")] if presentation == "interactive" else []) + [
+                text_frame("Adjust the assumptions.\n```openui\n" + CALCULATOR + "\n```")
+            ],
             turn_plan={"intent": "direct_answer", "tools": [], "required_tools": [],
-                       "skills": [], "ml_task": None, "presentation": "interactive"},
+                       "skills": [], "ml_task": None,
+                       **({"presentation": presentation} if presentation else {})},
         )
         context = LoopContext(user_name="alice", intelligent_ui=True, collaboration_root=root)
         frames = [frame async for frame in AssistantLoop(
@@ -64,11 +67,12 @@ async def test_interactive_direct_and_smart_root_use_verified_final_composer():
         assert any(frame.startswith("event: ui\n") for frame in frames)
         assert "```openui" not in "".join(frame for frame in frames
                                         if frame.startswith("event: text_delta\n"))
-        assert provider.calls == 2
+        assert provider.calls == (2 if presentation == "interactive" else 1)
+        assert context.quality_facts["ui_validity"] == {"valid": True}
         assert not any(frame.startswith("event: tool_call\n") for frame in frames)
 
 
-async def test_specialist_and_simple_text_do_not_receive_ui_catalog():
+async def test_specialist_does_not_receive_ui_catalog():
     provider = ScriptedProvider(script=[text_frame("Hello.")])
     context = LoopContext(user_name="alice", intelligent_ui=False)
     frames = [frame async for frame in AssistantLoop(
@@ -77,6 +81,44 @@ async def test_specialist_and_simple_text_do_not_receive_ui_catalog():
           user_content="Hello", context=context, resolve_consent=allow)]
     assert provider.calls == 1 and not context.ui_prompt
     assert not any(frame.startswith("event: ui\n") for frame in frames)
+
+
+@pytest.mark.parametrize("root", [False, True])
+async def test_default_ui_keeps_plain_answers_in_one_provider_call(root):
+    from tests.unit.test_assistant_stage_b import FakeProvider
+
+    provider = FakeProvider([text_frame("Hello.")])
+    context = LoopContext(user_name="alice", intelligent_ui=True, collaboration_root=root)
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=ToolRegistry(),
+    ).run(thread=AssistantThread(thread_id="greeting", user_name="alice", title="Hello"),
+          user_content="Hello", context=context, resolve_consent=allow)]
+    assert len(provider.calls) == 1
+    assert any("OPTIONAL_UI_CATALOG" in message.get("content", "")
+               for message in provider.calls[0]["messages"])
+    assert not any(frame.startswith("event: ui\n") for frame in frames)
+    assert not any(step.get("ui_repair") or step.get("ui_fallback") for step in context.steps)
+    assert "ui_validity" not in context.quality_facts
+    text = "".join(json.loads(frame.split("data: ", 1)[1])["text"] for frame in frames
+                   if frame.startswith("event: text_delta\n"))
+    assert text == "Hello."
+
+
+@pytest.mark.parametrize("program", ['root=Col([Unknown("x")])', 'root=Col([Text("unfinished")])'])
+async def test_optional_ui_still_repairs_invalid_or_unclosed_programs(program):
+    suffix = "\n```" if "Unknown" in program else ""
+    provider = ScriptedProvider(script=[
+        text_frame("Useful answer.\n```openui\n" + program + suffix),
+        text_frame("Adjust the assumptions.\n```openui\n" + CALCULATOR + "\n```"),
+    ])
+    context = LoopContext(user_name="alice", intelligent_ui=True)
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=ToolRegistry(),
+    ).run(thread=AssistantThread(thread_id="optional-repair", user_name="alice", title="UI"),
+          user_content="Help me explore these assumptions", context=context, resolve_consent=allow)]
+    assert provider.calls == 2
+    assert any(frame.startswith("event: ui\n") for frame in frames)
+    assert sum(bool(step.get("ui_repair")) for step in context.steps) == 1
 
 
 @pytest.mark.parametrize("draft", [

@@ -185,8 +185,7 @@ class AssistantProviderClient:
         provider-side error.
         """
         if provider_id is None and model is None:
-            from app.modules.ai_ml.decision_settings import registered_model
-            from app.modules.ai_ml.default_model import read_default_model
+            from app.modules.ai_ml.default_model import read_default_model, registered_model
 
             try:
                 preference = await read_default_model()
@@ -202,8 +201,6 @@ class AssistantProviderClient:
                 provider_id, model = selected["provider_id"], selected["name"]
         providers = await ai_service.list_providers()
         for provider in providers:
-            if provider.get("type") == "decision":
-                continue
             if not provider.get("is_active", True) or not provider.get("has_api_key"):
                 continue
             if provider_id and provider["id"] != provider_id:

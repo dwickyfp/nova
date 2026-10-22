@@ -200,7 +200,7 @@ async def test_deleted_or_disabled_alias_stops_its_token(stack):
 
 @pytest.mark.parametrize(
     "change",
-    [{"is_active": False}, {"type": "decision"}, {"endpoint": ""}],
+    [{"is_active": False}, {"endpoint": ""}],
 )
 async def test_unusable_provider_is_unavailable(stack, change):
     llm, provider, _, upstream = stack
