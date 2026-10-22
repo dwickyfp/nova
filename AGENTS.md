@@ -149,6 +149,15 @@ do not interrupt clear reversible work for routine choices. Use safe repository
 search/editing tools and shell commands suited to the environment. Preserve
 unrelated changes; avoid destructive or broad edits.
 
+Reuse the local containers that are already running. Before any `docker compose
+up` or `docker run`, check `docker compose ls` and `docker ps`. When a project
+already runs the compose file you need, test against its ports and apply your
+changes to it. Do not start a second project, a new `-p` name, or replacement
+containers beside it: a duplicate stack wastes memory and disk, and the stack
+people actually use never receives the new code. Start a stack only when none
+runs for that compose file, and ask the user before starting a fresh one for a
+check that needs clean state. The [Docker guide](docker/AGENTS.md) has the steps.
+
 For implementation requests, finish the requested behavior and validation rather
 than leaving scaffolding, required TODOs, or only a happy path. Review the final
 diff, security/secret boundaries, and affected documentation. Remove temporary
