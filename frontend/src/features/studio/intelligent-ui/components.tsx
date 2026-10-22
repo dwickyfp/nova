@@ -26,6 +26,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Markdown } from "@/features/assistant/markdown";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/context/theme-provider";
+import { ResultTable } from "../result-table";
+import { useNodeArtifact } from "./use-node-artifact";
 import { PublicMedia } from "./media";
 import { UiRuntimeContext } from "./runtime-context";
 const DataChart = lazy(() => import("./data-chart"));
@@ -311,51 +313,29 @@ function Flashcard({ p }: { p: Props }) {
   );
 }
 
+function cell(value: unknown): string | number | null {
+  if (value == null) return null;
+  if (typeof value === "number") return value;
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+/** The Studio result table, so query results and interactive answers read alike. */
 export function DataTable({ p }: { p: Props }) {
   const data = Array.isArray(p.data) ? (p.data as Props[]) : [];
-  const cols = Array.isArray(p.columns)
+  const columns = Array.isArray(p.columns)
     ? p.columns.map(String)
     : Object.keys(data[0] ?? {});
+  const title = str(p, "title") || "Result table";
+  const save = useNodeArtifact(p.data, { kind: "table", title });
   return (
-    <section className="min-w-0">
-      <p className="mb-2 text-sm font-medium">{str(p, "title")}</p>
-      {data.length ? (
-        <div
-          className="max-w-full overflow-x-auto rounded-lg border border-border"
-          tabIndex={0}
-          aria-label={str(p, "title") || "Result table"}
-        >
-          <table className="w-full text-left text-sm">
-            <thead className="bg-muted">
-              <tr>
-                {cols.map((c) => (
-                  <th key={c} scope="col" className="px-3 py-2 font-medium">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((r, i) => (
-                <tr key={i} className="border-t border-border">
-                  {cols.map((c) => (
-                    <td key={c} className="max-w-64 break-words px-3 py-2">
-                      {typeof r[c] === "object" && r[c] !== null
-                        ? JSON.stringify(r[c])
-                        : String(r[c] ?? "")}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          No rows match these filters.
-        </p>
-      )}
-    </section>
+    <ResultTable
+      block={{ title, columns, rows: data.map((r) => columns.map((c) => cell(r[c]))) }}
+      note={null}
+      emptyText="No rows match these filters."
+      onSave={save?.onSave}
+      saving={save?.saving}
+      saved={save?.saved}
+    />
   );
 }
 

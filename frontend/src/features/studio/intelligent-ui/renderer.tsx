@@ -12,17 +12,16 @@ import { useAuthStore } from "@/stores/auth-store";
 import {
   componentDefinitions,
   createSchemaLibrary,
-  UI_CATALOG_VERSION,
 } from "./catalog";
 import { componentDefinitions as legacyDefinitions, createSchemaLibrary as legacyLibrary } from "./catalog-v2";
 import { validateProgram as validateLegacyProgram } from "./validator-v2";
-import { MAPCN_ENABLED } from "./map-flag";
+import { rendersCatalog } from "./catalog-support";
 import { UiNode } from "./components";
-import { UiRuntimeContext } from "./runtime-context";
+import { UiRuntimeContext, type UiArtifacts, type UiArtifactTarget } from "./runtime-context";
 import { validateDeclarativeState, validateProgram } from "./validator";
 import { uiApi } from "./api";
 import { registerUiFlush } from "./state";
-import type { UiAction, UiBlock, UiSource, UiState } from "./types";
+import type { UiAction, UiArtifactRequest, UiBlock, UiSource, UiState } from "./types";
 
 // Saved state comes back with object keys sorted, while the client emits them in
 // creation order; compare by content so reopening an answer does not re-save it.
@@ -49,11 +48,18 @@ export function IntelligentUi({
   source,
   onAction,
   complete,
+  onSaveArtifact,
+  artifactStatus,
+  artifactKinds,
 }: {
   block: UiBlock;
   source?: UiSource;
   complete: boolean;
   onAction?: (message: string, action: UiAction) => Promise<void>;
+  onSaveArtifact?: (request: UiArtifactRequest) => void;
+  artifactStatus?: (request: UiArtifactRequest) => "idle" | "saving" | "saved";
+  /** Which visuals offer saving; all of them when omitted. */
+  artifactKinds?: UiArtifactRequest["kind"][];
 }) {
   const epoch = useAuthStore((s) => s.securityEpoch);
   return (
@@ -63,8 +69,16 @@ export function IntelligentUi({
       source={source}
       complete={complete}
       onAction={onAction}
+      onSaveArtifact={onSaveArtifact}
+      artifactStatus={artifactStatus}
+      artifactKinds={artifactKinds}
     />
   );
+}
+
+function sameRecords(a: unknown, b: unknown) {
+  return a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && JSON.stringify(a) === JSON.stringify(b));
 }
 
 function UiSession({
@@ -72,11 +86,35 @@ function UiSession({
   source,
   onAction,
   complete,
+  onSaveArtifact,
+  artifactStatus,
+  artifactKinds,
 }: Parameters<typeof IntelligentUi>[0]) {
   const readOnly = !source || !onAction;
+  // Nova draws deterministic blocks from results already shown; their local
+  // controls work without a saved session because they have nothing to send.
+  const deterministic = block.provenance.composer === "deterministic";
+  const artifacts = useMemo<UiArtifacts | undefined>(() => {
+    if (!onSaveArtifact || !artifactStatus) return undefined;
+    const ids = block.provenance.evidence_ids;
+    const request = (target: UiArtifactTarget): UiArtifactRequest => ({
+      ...target,
+      columns: Object.keys(block.evidence[target.evidenceId]?.[0] ?? {}),
+      toolCallId: block.provenance.tool_calls?.[target.evidenceId],
+    });
+    return {
+      kinds: artifactKinds,
+      // Local filters and sorts make new records; one bound result is still their source.
+      evidenceFor: (data) =>
+        ids.find((id) => sameRecords(block.evidence[id], data))
+        ?? (ids.length === 1 ? ids[0] : null),
+      save: (target) => onSaveArtifact(request(target)),
+      status: (target) => artifactStatus(request(target)),
+    };
+  }, [artifactKinds, artifactStatus, block, onSaveArtifact]);
   const validation = useMemo(() => {
     try {
-      return block.catalog_version === "nova-openui-2" || (MAPCN_ENABLED && block.catalog_version === UI_CATALOG_VERSION)
+      return rendersCatalog(block)
         ? (block.catalog_version === "nova-openui-2" ? validateLegacyProgram : validateProgram)(
             block.program,
             block.evidence,
@@ -312,7 +350,7 @@ function UiSession({
       className="min-w-0 space-y-3"
       aria-label="Interactive answer"
     >
-      {readOnly ? (
+      {readOnly && !deterministic ? (
         <p className="mb-3 text-xs text-muted-foreground">Read-only preview</p>
       ) : notice || blocked.current ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -345,11 +383,12 @@ function UiSession({
       {saved ? (
         <UiRuntimeContext.Provider
           value={{
-            readOnly: readOnly || blocked.current,
+            readOnly: (readOnly && !deterministic) || blocked.current,
             source: stableSource,
             markAction: (id) => {
               actionId.current = id;
             },
+            artifacts,
           }}
         >
           <Renderer
@@ -372,7 +411,14 @@ function UiSession({
       ) : (
         <Markdown offline>{block.fallback}</Markdown>
       )}
-      {block.provenance.evidence_ids.length ? (
+      {block.provenance.composer === "deterministic" ? (
+        (block.provenance.omitted_rows ?? 0) > 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {block.provenance.omitted_rows} result rows were omitted from this visual. Ask Nova
+            to narrow the query for more detail.
+          </p>
+        ) : null
+      ) : block.provenance.evidence_ids.length ? (
         <p className="mt-3 text-xs text-muted-foreground">
           Within these verified result rows. Inputs are assumptions; filters and
           calculations do not fetch new data.
@@ -385,7 +431,8 @@ function UiSession({
           Inputs, sample data and calculated values are assumptions.
         </p>
       ) : null}
-      {!readOnly && Object.keys(block.state_defaults).length > 0 && (
+      {!readOnly && block.provenance.composer !== "deterministic"
+        && Object.keys(block.state_defaults).length > 0 && (
         <p className="mt-2 text-xs text-muted-foreground">
           Inputs and filters are saved with this conversation in Nova.
           {validation?.actions.some((action) => action.assistant)

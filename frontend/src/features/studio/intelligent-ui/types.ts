@@ -9,7 +9,29 @@ export type UiBlock = {
   evidence: EvidenceRows;
   state_defaults: Record<string, unknown>;
   actions: UiValidation["actions"];
-  provenance: { evidence_ids: string[]; scope: string; assumption: boolean; omitted_rows?: number };
+  provenance: {
+    evidence_ids: string[];
+    scope: string;
+    assumption: boolean;
+    omitted_rows?: number;
+    /** "deterministic" blocks are drawn from verified results without a model call. */
+    composer?: "model" | "deterministic";
+    /** The query tool call behind each bound result, for saving it as an artifact. */
+    tool_calls?: Record<string, string>;
+  };
+};
+/** What a chart, table or map node asks to save. */
+export type UiArtifactDraft = {
+  kind: "chart" | "table";
+  title: string;
+  chart?: { type: string; x: string; y: string; series: string[] };
+};
+/** A node saved by its source query; columns are the verified result's own. */
+export type UiArtifactRequest = UiArtifactDraft & {
+  evidenceId: string;
+  columns: string[];
+  /** Tool call of the query behind the result, when Nova recorded it. */
+  toolCallId?: string;
 };
 export type UiSource = {
   agentId: string;

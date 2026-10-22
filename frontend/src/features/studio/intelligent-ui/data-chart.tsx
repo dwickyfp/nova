@@ -1,6 +1,7 @@
 import { useContext, useState } from "react";
 import { useStateField } from "@openuidev/react-lang";
 import { UiRuntimeContext } from "./runtime-context";
+import { NodeArtifactButton } from "./artifact-button";
 import { DataTable } from "./components";
 import {
   Area,
@@ -25,6 +26,7 @@ type Props = Record<string, unknown>;
 const str = (p: Props, key: string) => String(p[key] ?? "");
 export default function DataChart({ p }: { p: Props }) {
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
+  const [showData, setShowData] = useState(false);
   const selected = useStateField("selected", p.selected);
   const { readOnly } = useContext(UiRuntimeContext);
   const data = Array.isArray(p.data) ? (p.data as Props[]) : [];
@@ -64,7 +66,18 @@ export default function DataChart({ p }: { p: Props }) {
   );
   return (
     <section className="min-w-0" aria-label={str(p, "title") || "Chart"}>
-      <p className="mb-2 text-sm font-medium">{str(p, "title")}</p>
+      <div className="mb-2 flex min-h-7 items-center gap-2">
+        <p className="min-w-0 flex-1 text-sm font-medium">{str(p, "title")}</p>
+        <NodeArtifactButton
+          data={p.data}
+          noun="chart"
+          draft={{
+            kind: "chart",
+            title: str(p, "title") || "Saved chart",
+            chart: { type: String(p.type ?? "bar"), x, y, series },
+          }}
+        />
+      </div>
       {series.length > 1 && !["pie", "donut", "scatter"].includes(String(p.type)) ? (
         <fieldset className="mb-2 flex flex-wrap gap-x-4 gap-y-1">
           <legend className="sr-only">Chart series</legend>
@@ -195,11 +208,17 @@ export default function DataChart({ p }: { p: Props }) {
           {data.map((row, index) => <option key={index} value={index}>{String(row[x] ?? index + 1)}</option>)}
         </select>
       </label> : null}
-      <details className="mt-2">
+      <details
+        className="mt-2"
+        onToggle={(event) => setShowData(event.currentTarget.open)}
+      >
         <summary className="min-h-11 cursor-pointer text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
           View chart data
         </summary>
-        <DataTable p={{ data, columns: [x, ...series] }} />
+        {/* The grid is built on request, not for every chart in a long thread. */}
+        {showData ? (
+          <DataTable p={{ data, columns: [x, ...series], title: "Chart data" }} />
+        ) : null}
       </details>
     </section>
   );

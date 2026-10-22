@@ -36,6 +36,7 @@ import { TurnContent } from "./turn-content";
 import { flushUiStates } from './intelligent-ui/state';
 import type { UiAction } from './intelligent-ui/types';
 import { findArtifactSql, type SavableContent } from "./artifact-source";
+import { descriptorToVegaLite } from "./artifact-chart-descriptor";
 import { splitChartTitle } from "./chart-title";
 import {
   CREATE_SKILL_COMMAND,
@@ -844,11 +845,25 @@ export function StudioChat({
       }
 
       let chartSpec: Record<string, unknown> | null = null;
+      let artifactType = item.type === "ui-node" ? item.request.kind : item.type;
+      let saved = "Artifact saved";
       let title =
         item.type === "table"
           ? item.block.title?.trim() || turn.question.trim()
           : turn.question.trim();
-      if (item.type === "chart") {
+      if (item.type === "ui-node") {
+        const { request } = item;
+        title = request.title.trim() || title;
+        if (request.kind === "chart") {
+          chartSpec = request.chart
+            ? descriptorToVegaLite(request.chart, request.columns, title)
+            : null;
+          if (!chartSpec) {
+            artifactType = "table";
+            saved = "Saved its result as a table: this chart plots values calculated in the answer.";
+          }
+        }
+      } else if (item.type === "chart") {
         const chartTitle = splitChartTitle(item.block.chart_spec).title;
         title = chartTitle || turn.question.trim() || "Saved chart";
         try {
@@ -867,7 +882,7 @@ export function StudioChat({
       try {
         await studioApi.createArtifact({
           title,
-          artifact_type: item.type,
+          artifact_type: artifactType,
           sql_text: sql,
           database_name: agent.database_name,
           schema_name: agent.schema_name,
@@ -879,7 +894,7 @@ export function StudioChat({
         await queryClient.invalidateQueries({
           queryKey: ["studio", "artifacts"],
         });
-        toast.success("Artifact saved");
+        toast.success(saved);
       } catch (error) {
         toast.error((error as Error).message || "Artifact could not be saved.");
       } finally {
