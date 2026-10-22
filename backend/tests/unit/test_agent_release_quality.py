@@ -173,6 +173,36 @@ async def test_runtime_manifest_rejects_model_drift(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_runtime_manifest_skips_retired_routing_models(monkeypatch):
+    def pinned(model_id):
+        return {
+            "id": model_id,
+            "provider_id": "provider",
+            "name": model_id,
+            "configuration_digest": "original",
+            "externally_mutable": True,
+        }
+
+    dependencies = {
+        "models": [pinned("agent-model"), pinned("decision"), pinned("light")],
+        "routing": {
+            "enabled": True,
+            "decision_model_id": "decision",
+            "light_model_id": "light",
+            "heavy_model_id": "agent-model",
+        },
+    }
+    manifest = {"dependencies": dependencies, "fingerprint": fingerprint(dependencies)}
+    contract = AsyncMock(return_value=pinned("agent-model"))
+    monkeypatch.setattr(releases, "get_manifest", AsyncMock(return_value=manifest))
+    monkeypatch.setattr(releases, "model_contract", contract)
+    assert await releases.load_runtime_manifest(
+        {"agent_id": "agent", "owner_name": "alice", "release_manifest_id": "release"}
+    ) == manifest
+    contract.assert_awaited_once_with("provider", "agent-model")
+
+
+@pytest.mark.asyncio
 async def test_pinned_skills_ignore_current_catalog(monkeypatch):
     dependencies = {
         "configuration": {

@@ -28,8 +28,6 @@ async def test_proposer_uses_shared_engine_without_tools_and_requires_measured_s
     from app.modules.assistant import provider as provider_module
     from tests.unit.test_assistant_quality_measurements import PLAN, http_provider
 
-    monkeypatch.setattr("app.modules.assistant.decision.decision_session",
-                        AsyncMock(return_value=None))
     provider, requests = http_provider(monkeypatch, [
         (json.dumps(PLAN), {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}),
         (payload, usage),

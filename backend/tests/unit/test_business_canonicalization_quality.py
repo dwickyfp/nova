@@ -51,7 +51,7 @@ async def test_quality_preserves_internal_cost_without_changing_selected_tools(c
     with measurement_scope(measured):
         measured.increment("tool_dispatches")
         result = await service.initiate_investigation(body, USER)
-    counts, measurement = measured.observation(None)
+    counts, measurement = measured.observation()
     trace = observed_trace([
         {"kind": "tool", "name": "semantic_query"},
         {"kind": "quality_observation", "duration_ms": 100, "counts": counts,

@@ -449,7 +449,6 @@ async def plan_turn(
     has_semantic_model: bool = False,
     application_context: dict[str, Any] | None = None,
     conversation_context: list[dict[str, str]] | None = None,
-    decision: Any = None,
     agent_scope: dict[str, Any] | None = None,
     semantic_context: dict[str, Any] | None = None,
 ) -> TurnPlan:
@@ -461,7 +460,7 @@ async def plan_turn(
         plan = validate_turn_plan(
             value, set(available), skill_names, studio=agent_scope is not None
         )
-        return await refine_turn_plan(plan, registry, user_content, decision) if decision else plan
+        return plan
     catalog = [
         {
             "name": name,
@@ -514,13 +513,10 @@ async def plan_turn(
             response_format=response_format,
         )
         try:
-            plan = validate_turn_plan(
+            return validate_turn_plan(
                 _read_json(message.get("content")), set(available), skill_names,
                 studio=agent_scope is not None,
             )
-            if decision is not None:
-                plan = await refine_turn_plan(plan, registry, user_content, decision)
-            return plan
         except TurnPlanningError as exc:
             if attempt:
                 raise
@@ -537,66 +533,3 @@ async def plan_turn(
             ]
     raise TurnPlanningError("The provider did not return a valid turn plan.")
 
-
-async def refine_turn_plan(
-    plan: TurnPlan, registry: ToolRegistry, request: str, decision: Any,
-) -> TurnPlan:
-    """Rank optional capabilities without removing the planner's required evidence path."""
-    if plan.route.clarification_required:
-        return plan
-    options = {
-        f"tool:{name}": f"Tool {name}: {getattr(registry.get(name), 'description', '')}"
-        for name in plan.selected_tools
-    }
-    options.update({
-        f"skill:{name}": f"Instruction skill {name}: {registry.skill_definitions[name].summary}"
-        for name in registry.discoverable_skills if name in registry.skill_definitions
-    })
-    if len(options) <= 1:
-        # Nothing to rank: a decision call would only add latency.
-        return plan
-    planning_context = {"intent": plan.route.intent.value,
-                        "required_tools": list(plan.route.required_capabilities)}
-    scores = await decision.relevance(
-        "tools_skills", request, options, planning_context=planning_context,
-    )
-    if not scores:
-        return plan
-    required = plan.route.required_capabilities
-    tools = list(dict.fromkeys([
-        *(name for name in required if name in registry.names()),
-        *(name for name in plan.selected_tools if scores.get(f"tool:{name}", 1) > 0),
-    ]))[:12]
-    proposed_skills = list(dict.fromkeys([
-        *plan.selected_skills,
-        *sorted({
-            name for name in registry.discoverable_skills if scores.get(f"skill:{name}") == 2
-        }),
-    ]))[:4]
-    confirmations = await decision.relevance("skills_confirm", request, {
-        f"skill:{name}": (
-            f"Instruction skill {name}. Load only for the task actually requested; do not "
-            "introduce model creation, persistence or future tasks that were not requested. "
-            f"{registry.skill_definitions[name].summary}\n"
-            f"{registry.skill_definitions[name].body[:3000]}"
-        )
-        for name in proposed_skills if name in registry.skill_definitions
-    }, planning_context=planning_context) if proposed_skills else {}
-    skills = [
-        name for name in proposed_skills
-        if confirmations.get(f"skill:{name}", 1 if name in plan.selected_skills else 0) > 0
-    ][:2]
-    if skills and "load_skill" in registry.names() and "load_skill" not in tools:
-        tools = [*tools[:11], "load_skill"]
-    try:
-        return validate_turn_plan({
-            "intent": plan.route.intent.value,
-            "tools": tools, "required_tools": list(required), "skills": skills,
-            "ml_task": plan.route.ml_task,
-            "intent_frame": plan.intent_frame.as_dict() if plan.intent_frame else None,
-            "primary_plan": plan.primary_plan, "primary_view": plan.primary_view,
-            "work_intent": plan.work_intent.value if plan.work_intent else None,
-            "public_work_steps": [s.value for s in plan.public_work_steps],
-        }, set(registry.names()), set(registry.discoverable_skills))
-    except TurnPlanningError:
-        return plan

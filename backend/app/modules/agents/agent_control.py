@@ -182,16 +182,11 @@ class AgentControl:
             ), tree
         raise ValueError("Agent is not visible in this collaboration")
 
-    async def discover_agents(self, capability: str = "", *, decision: Any = None) -> list[dict]:
+    async def discover_agents(self, capability: str = "") -> list[dict]:
         await self._tree()
         candidates = await authorized_candidates(self.user)
         matches = semantic_matches(capability, candidates)
-        from app.modules.assistant.decision import rank_agents
-
-        ranked = await rank_agents(
-            decision, capability, rank_candidates(capability, candidates, matches),
-            semantic_matches=matches,
-        )
+        ranked = rank_candidates(capability, candidates, matches)
         return [
             {
                 **candidate.prompt_view(),

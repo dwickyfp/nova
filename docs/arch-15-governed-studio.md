@@ -54,12 +54,14 @@ Existing agent configuration history remains the draft/version owner. A release
 manifest adds immutable, credential-free dependency content beside those
 snapshots. It captures Semantic View versions/fingerprints, skill bodies/trust
 metadata, tool schemas/classification and safe configuration digests, tool code
-revisions, compiled instructions/prompt, resolved models, routing settings,
+revisions, compiled instructions/prompt, resolved models,
 resource-definition digests, agent-policy fingerprint, and scorer-set version.
 Its dependency fingerprint excludes `created_at`.
 
 Runtime composition loads pinned configuration, prompt, skills, model selection,
-routing, and Semantic Views. Existing owners check tool/model/resource contracts
+and Semantic Views. Manifests captured before System One routing was removed may
+still list its routing models; runtime ignores those pins because they no longer
+run. Existing owners check tool/model/resource contracts
 and semantic identities. Missing or incompatible dependencies produce explicit
 errors rather than silently adopting current definitions. A new active Semantic
 View does not replace the version pinned by a manifested agent.

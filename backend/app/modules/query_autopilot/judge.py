@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.ai_ml.decision_settings import registered_model
+from app.modules.ai_ml.default_model import registered_model
 from app.modules.ai_ml.service import ai_service
 from app.modules.assistant.provider import AssistantProviderClient
 from app.modules.query_autopilot.guidance import EXPLANATIONS, explain, next_steps

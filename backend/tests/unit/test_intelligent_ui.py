@@ -278,10 +278,21 @@ def test_missing_runtime_disabled_feature_and_budget_keep_markdown(monkeypatch):
     monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", False)
     assert ui.composer_prompt(enabled=True, presentation="interactive", token_room=100000) == ""
     monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", True)
-    assert ui.composer_prompt(enabled=True, presentation="text", token_room=100000) == ""
+    assert ui.composer_prompt(enabled=False, presentation="text", token_room=100000) == ""
     assert ui.composer_prompt(enabled=True, presentation="interactive", token_room=10) == ""
     monkeypatch.setattr(ui, "runtime_available", lambda: False)
     assert ui.composer_prompt(enabled=True, presentation="interactive", token_room=100000) == ""
+
+
+@pytest.mark.parametrize("presentation", ["text", "interactive"])
+def test_ui_catalog_is_available_without_a_presentation_gate(monkeypatch, presentation):
+    monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", True)
+    monkeypatch.setattr(ui, "runtime_available", lambda: True)
+    monkeypatch.setattr(ui, "catalog", lambda: {"prompt": "Catalog instructions"})
+    prompt = ui.composer_prompt(enabled=True, presentation=presentation, token_room=100000)
+    assert "Catalog instructions" in prompt
+    assert ("OPTIONAL_UI_CATALOG" in prompt) == (presentation == "text")
+    assert ui.composer_prompt(enabled=True, presentation=presentation, token_room=10) == ""
 
 
 async def test_ordered_ui_stream_is_validated_sealed_and_replayable():

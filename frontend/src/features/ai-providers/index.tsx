@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { Bot, GitBranch, Wand2 } from 'lucide-react'
+import { Bot, Wand2 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProvidersTab } from './providers-tab'
 import { FunctionsTab } from './functions-tab'
-import { DecisionTab } from './decision-tab'
 
 export function AIProviders() {
   const [activeTab, setActiveTab] = useState('providers')
@@ -21,8 +20,7 @@ export function AIProviders() {
         <div className="mb-2">
           <h1 className="text-2xl leading-8 font-normal">AI Providers</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage AI providers, register models, and configure SQL functions
-            and Studio decisions.
+            Manage AI providers, register models, and configure SQL functions.
           </p>
         </div>
 
@@ -36,19 +34,12 @@ export function AIProviders() {
               <Wand2 className="size-3.5" />
               Functions
             </TabsTrigger>
-            <TabsTrigger value="decision" className="gap-1.5">
-              <GitBranch className="size-3.5" />
-              Decision
-            </TabsTrigger>
           </TabsList>
           <TabsContent value="providers" className="mt-4">
             <ProvidersTab />
           </TabsContent>
           <TabsContent value="functions" className="mt-4">
             <FunctionsTab />
-          </TabsContent>
-          <TabsContent value="decision" className="mt-4">
-            <DecisionTab />
           </TabsContent>
         </Tabs>
       </Main>

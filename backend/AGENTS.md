@@ -61,12 +61,22 @@ relative to `backend/`, as additional arguments. This is blocking. Full-tree
 `uv run mypy app --no-error-summary` is blocking; do not hide failures.
 
 For DB access, SQL execution, auth, storage, or proxy changes, run the real-engine
-suite with CI's services, seed data, and environment. Start an isolated test
-stack, not production services. From `backend/`:
+suite with CI's services, seed data, and environment. First inspect
+`docker compose ls`, `docker ps`, and the selected fixtures' setup/teardown.
+Reuse the existing compatible stack and map its actual ports to the test
+endpoints. Destructive seed/reset suites require an existing disposable test
+stack, never development or production data. If only the development stack is
+running and a suite cannot safely use it, report the incompatibility and ask
+before provisioning another stack ([Docker guide](../docker/AGENTS.md)).
+
+Do not copy CI's unconditional stack startup into local test runs. Fixtures
+such as `docker_services` in `tests/conftest.py` can start Compose when their
+configured endpoints are unreachable; verify their reuse path before invoking
+them. Do not select free ports merely to make automatic provisioning succeed.
+After verifying the target is the existing disposable test stack, from `backend/`:
 
 ```bash
 docker pull mysql:8.0
-docker compose -f docker-compose.test.yml up -d --wait
 bash tests/integration/seed_engine.sh
 uv run pytest tests/integration -m engine -v -rs --log-cli-level=WARNING --junit-xml=integration.xml
 ```

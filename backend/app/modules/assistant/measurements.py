@@ -21,7 +21,6 @@ _REASONS = frozenset(
         "custom_transport_unmeasured",
         "failed_dispatch_unmeasured",
         "nested_tool_requests_unmeasured",
-        "decision_requests_unmeasured",
         "background_translation",
         "background_summary",
         "prior_attempt_unmeasured",
@@ -98,7 +97,7 @@ class AttemptMeasurements:
         if self.active:
             self.provider_unavailable.add(reason)
 
-    def response(self, message: Any, *, dispatched: bool = False, decision: bool = False) -> None:
+    def response(self, message: Any, *, dispatched: bool = False) -> None:
         if not self.active:
             return
         if dispatched and self.pending_usage:
@@ -107,16 +106,6 @@ class AttemptMeasurements:
         usage = usage if isinstance(usage, dict) else {}
         prompt = usage.get("prompt_tokens")
         total = usage.get("total_tokens")
-        if decision:
-            if "prompt_tokens" not in usage:
-                prompt = usage.get("input_tokens")
-            if "total_tokens" not in usage:
-                output = usage.get("completion_tokens", usage.get("output_tokens"))
-                total = (
-                    prompt + output
-                    if (type(prompt) is int and prompt >= 0 and type(output) is int and output >= 0)
-                    else None
-                )
         if type(total) is int and 0 <= total <= MAX_COUNT - self.reported_total_tokens:
             self.reported_total_tokens += total
         else:
@@ -126,15 +115,7 @@ class AttemptMeasurements:
         else:
             self.missing_prompt_usage = True
 
-    def observation(self, decision: Any) -> tuple[dict[str, int], dict[str, Any]]:
-        if decision is not None:
-            from app.modules.assistant.decision import DecisionSession
-
-            if type(decision) is not DecisionSession or (
-                decision.calls
-                and getattr(decision._post, "__func__", None) is not DecisionSession._post
-            ):
-                self.unavailable_provider("decision_requests_unmeasured")
+    def observation(self) -> tuple[dict[str, int], dict[str, Any]]:
         if self.resumed:
             self.unavailable_provider("prior_attempt_unmeasured")
         counts: dict[str, int] = {}
@@ -228,10 +209,10 @@ def provider_started(messages: list[dict] | None = None, extra: Any = None) -> N
     measured.estimated_peak_context_tokens = max(measured.estimated_peak_context_tokens, size)
 
 
-def provider_response(message: Any, *, decision: bool = False) -> None:
+def provider_response(message: Any) -> None:
     measured = current_measurements()
     if measured is not None:
-        measured.response(message, dispatched=True, decision=decision)
+        measured.response(message, dispatched=True)
 
 
 @asynccontextmanager

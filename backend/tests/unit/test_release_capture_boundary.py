@@ -6,7 +6,6 @@ import pytest
 
 from app.modules.agents import releases
 from app.modules.agents.service import agent_service
-from app.modules.ai_ml import decision_settings
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.tools import ToolRegistry
 
@@ -54,16 +53,12 @@ async def test_dependency_capture_precedes_lease_and_first_manifest_wins(
 
     read = AsyncMock(side_effect=[None, concurrent_manifest])
     write = AsyncMock(side_effect=persist)
-    routing = SimpleNamespace(enabled=False, model_dump=lambda: {"enabled": False})
     monkeypatch.setattr(releases, "get_manifest", read)
     monkeypatch.setattr(releases, "metadata_lock", lock)
     monkeypatch.setattr(releases, "model_contract", model_contract)
     monkeypatch.setattr(releases, "resource_contracts", resources)
     monkeypatch.setattr(releases.db, "execute_system", write)
     monkeypatch.setattr(agent_service, "build_loop_inputs", build_inputs)
-    monkeypatch.setattr(
-        decision_settings, "read_decision_settings", AsyncMock(return_value=routing),
-    )
     monkeypatch.setattr(assistant_provider, "resolve", AsyncMock(return_value=SimpleNamespace(
         provider_id="provider", model="model",
     )))
