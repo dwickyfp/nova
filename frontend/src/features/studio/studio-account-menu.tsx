@@ -105,7 +105,7 @@ export function StudioAccountMenu({
             </Avatar>
             {collapsed ? null : (
               <>
-                <div className="grid flex-1 text-start text-sm leading-tight">
+                <div className="grid min-w-0 flex-1 text-start text-sm leading-tight">
                   <span className="truncate font-semibold">{username}</span>
                   <span className="truncate text-xs text-sidebar-navigation-muted-foreground">
                     {activeRole}
@@ -130,7 +130,7 @@ export function StudioAccountMenu({
                   {initials}
                 </AvatarFallback>
               </Avatar>
-              <div className="grid flex-1 text-start text-sm leading-tight">
+              <div className="grid min-w-0 flex-1 text-start text-sm leading-tight">
                 <span className="truncate font-semibold">{username}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {activeRole}
@@ -146,11 +146,11 @@ export function StudioAccountMenu({
             </span>
           </div>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2">
+            <DropdownMenuSubTrigger className="gap-2 [&_svg]:shrink-0" title={activeRole}>
               <SquareUser className="size-4" />
-              <span>{activeRole}</span>
+              <span className="min-w-0 truncate">{activeRole}</span>
             </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-48">
+            <DropdownMenuSubContent className="w-56">
               <div className="px-2 py-1.5">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -168,19 +168,22 @@ export function StudioAccountMenu({
                   No roles found
                 </div>
               ) : (
-                filteredRoles.map((role) => (
-                  <DropdownMenuItem
-                    key={role}
-                    className="gap-2"
-                    onSelect={() => void handleSwitchRole(role)}
-                  >
-                    <SquareUser className="size-4" />
-                    <span className="flex-1">{role}</span>
-                    {role === activeRole && (
-                      <Check className="size-4 text-sidebar-accent-foreground" />
-                    )}
-                  </DropdownMenuItem>
-                ))
+                <div className="max-h-64 overflow-y-auto">
+                  {filteredRoles.map((role) => (
+                    <DropdownMenuItem
+                      key={role}
+                      className="gap-2"
+                      title={role}
+                      onSelect={() => void handleSwitchRole(role)}
+                    >
+                      <SquareUser className="size-4" />
+                      <span className="min-w-0 flex-1 truncate">{role}</span>
+                      {role === activeRole && (
+                        <Check className="size-4 text-sidebar-accent-foreground" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </div>
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
