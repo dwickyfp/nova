@@ -1,7 +1,7 @@
 ---
 name: nova-streams
 title: Explain and draft Nova Streams SQL
-summary: Draft database-scoped Stream SQL and explain its current disabled or provider-unavailable execution status.
+summary: Draft database-scoped Stream SQL and explain its current provider-unavailable execution status.
 triggers: nova streams, create stream, drop stream, change journal, backlog, nova_stream_has_data, buat stream, hapus stream, perubahan tabel
 source: docs/sql_docs/13-nova-streams.md
 ---
@@ -11,10 +11,9 @@ source: docs/sql_docs/13-nova-streams.md
 ## Current availability
 
 Nova parses Stream DDL and resolves its namespace, but production execution is
-not available. With `STREAMS_ENABLED=false`, commands return Streams are disabled.
-Setting it to true still returns Streams provider is unavailable. Neither this
-flag nor `MANAGED_APPEND_ENABLED` establishes source readiness. Do not recommend
-turning flags on as a way to make these examples work.
+not available: commands return Streams provider is unavailable. No configuration
+setting changes that, so do not recommend one as a way to make these examples
+work.
 
 Explain the syntax or prepare a draft when requested. Label drafts as not
 executable in the current implementation. Never report that a Stream was created,

@@ -1225,9 +1225,7 @@ async def _deny() -> bool:
 
 
 async def test_mission_cancelled_during_consent_never_starts_mutation(monkeypatch):
-    from app.core.config import settings
 
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
     provider = FakeProvider([
         {"role": "assistant", "content": "", "tool_calls": [_tool_call("cancel-after-consent")]},
     ])

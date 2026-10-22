@@ -98,12 +98,14 @@ async def test_new_mutation_registers_semantics_binding_rule_and_typed_handler(m
         catalog_provider_factory=lambda *args: catalog,
         capability_resolver=AsyncMock(return_value=StarRocksCapabilityProvider().for_version()),
     )
-    refusal = await service.execute_statements("SELECT 1", "alice", "enc", database="db")
+    refusal = await service.execute_statements(
+        "SELECT 1", "alice", "enc", role="analyst", database="db",
+    )
     assert refusal[0].needs_confirmation and refusal[0].effects["deletes_rows"]
     assert "validate" not in calls
     handler.assert_not_awaited()
     result = await service.execute_statements(
-        "SELECT 1", "alice", "enc", database="db", confirm_destructive=True
+        "SELECT 1", "alice", "enc", role="analyst", database="db", confirm_destructive=True
     )
     assert result[0].success and result[0].destructive and not result[0].needs_confirmation
     assert result[0].effects["changes_schema"]
@@ -127,7 +129,8 @@ async def test_warm_native_lifecycle_has_zero_binding_and_capability_network_cal
     monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
     monkeypatch.setattr("app.modules.query.service.decrypt_password", lambda _: "pw")
     for _ in range(10):
-        assert (await service.execute_statements("SELECT 1", "alice", "enc"))[0].success
+        result = await service.execute_statements("SELECT 1", "alice", "enc", role="analyst")
+        assert result[0].success
     reader.assert_awaited_once()
     assert catalog.mock_calls == []
     assert warmed.identity.version.prerelease is None and warmed.identity.build == "4a9848e"

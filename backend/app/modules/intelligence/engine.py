@@ -719,7 +719,6 @@ class IntelligenceService:
         from app.modules.agents.mission import (
             mission_service,
             require_thread,
-            require_workflow,
             workflow_scope,
         )
         from app.modules.agents.mission_schema import object_binding_key
@@ -728,7 +727,6 @@ class IntelligenceService:
                      "actions": "action", "outcomes": "outcome"}
         if kind not in canonical or (revision is not None and revision < 1):
             raise HTTPException(status_code=404, detail="Mission record unavailable")
-        require_workflow()
         scope = workflow_scope(user)
         mission = await mission_service._get_owner(mission_id, scope)
         await require_thread(mission.thread_id, user)
@@ -1560,11 +1558,8 @@ class IntelligenceService:
         _comparison: ChatComparison | None = None,
         collector: CanonicalizationCollector,
     ) -> dict:
-        from app.core.config import settings
         from app.modules.agents.router import _require_agent
 
-        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-            raise HTTPException(status_code=503, detail="Studio business workflow is disabled")
         await _require_agent(body.configuration.agent_id, user)
         await self.authorize_semantic(body.configuration.semantic, user, active=_comparison is None)
         if not body.current_window or not body.baseline_window:

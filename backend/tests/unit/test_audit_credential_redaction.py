@@ -110,7 +110,7 @@ async def _execute_stage_query(svc, **kwargs):
     needed: the pipeline's injection step is a no-op (credentials are already
     present) and the statement goes straight to the recording repo.
     """
-    return await svc.execute(
+    return await svc.execute(role="analyst",
         sql=_credential_sql(),
         username="analyst",
         encrypted_password="enc",
@@ -262,7 +262,7 @@ class TestStagePipelineEndToEnd:
                 "aws.s3.secret_key": SECRET_KEY,
             },
         )
-        result = await svc.execute(
+        result = await svc.execute(role="analyst",
             sql="SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",

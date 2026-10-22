@@ -19,16 +19,6 @@ async def run(tool):
                        arguments={"question": "Revenue by city"}),
         LoopContext(user_name="alice", user={**USER, "security_context_version": 7}),
     )
-
-
-@pytest.fixture
-def enabled(monkeypatch):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True, raising=False)
-
-
-@pytest.mark.usefixtures("enabled")
 async def test_successful_published_execution_has_unknown_freshness_without_watermark(monkeypatch):
     tool, provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
     tool._resolve_model.return_value.update(
@@ -47,9 +37,6 @@ async def test_successful_published_execution_has_unknown_freshness_without_wate
     assert '"confidence"' not in dumps(outcome.envelope(tool_name="semantic_query"))
     provider.complete.assert_awaited_once()
     assert execute.await_args.kwargs["security_context_version"] == 7
-
-
-@pytest.mark.usefixtures("enabled")
 @pytest.mark.parametrize("results, expected", [
     ([QueryResult(columns=["total_revenue"], rows=[[100]], truncated=True)], "truncated"),
     ([QueryResult(columns=["total_revenue"], rows=[[n] for n in range(51)])], "truncated"),
@@ -63,9 +50,6 @@ async def test_fetch_and_preview_bounds_reduce_coverage(monkeypatch, results, ex
     outcome = await run(tool)
     assert outcome.evidence["health"]["facts"]["coverage"] == expected
     assert outcome.evidence["health"]["label"] in {"limited", "insufficient"}
-
-
-@pytest.mark.usefixtures("enabled")
 async def test_clarification_and_execution_failure_never_claim_strong_evidence(monkeypatch):
     from app.modules.agents.repository import agent_repository
 
@@ -85,19 +69,6 @@ async def test_clarification_and_execution_failure_never_claim_strong_evidence(m
     assert agent_repository.record_semantic_usage.await_args.kwargs["succeeded"] is False
     assert agent_repository.record_semantic_usage.await_args.kwargs["active_role"] == "analyst"
     assert agent_repository.record_semantic_usage.await_args.kwargs["security_context_version"] == 7
-
-
-async def test_feature_disabled_retains_trace_confidence_and_suppresses_new_assessment(monkeypatch):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False, raising=False)
-    tool, _, _ = setup_tool(monkeypatch, _plan())
-    outcome = await run(tool)
-    assert outcome.trace_detail["confidence"] == 0.8
-    assert "confidence" not in outcome.data
-    assert '"confidence"' not in dumps(outcome.envelope(tool_name="semantic_query"))
-    assert "evidence_health" not in outcome.data
-    assert "confidence:" not in outcome.summary
 
 
 def test_artifact_preview_retains_actual_fetch_truncation_and_marks_local_bound():

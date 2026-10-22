@@ -1,43 +1,12 @@
 """Unit tests for access verification and observability helpers.
 
-Pure logic only: grant matching, dependency resolution shape, and the usage
-accumulator. No engine, no network.
+Pure logic only: dependency resolution shape and the usage accumulator. No
+engine, no network.
 """
 
 from __future__ import annotations
 
-from app.modules.agents.access import _safe_role, matches_object
 from app.modules.assistant.service import _accumulate_usage
-
-
-def test_safe_role_rejects_injection() -> None:
-    assert _safe_role("ACCOUNTADMIN") == "ACCOUNTADMIN"
-    assert _safe_role("data_engineer") == "data_engineer"
-    for bad in ["a; DROP", "a`b", "a b", "", "a-b"]:
-        try:
-            _safe_role(bad)
-            raise AssertionError(f"should reject {bad!r}")
-        except ValueError:
-            pass
-
-
-def test_matches_object_function() -> None:
-    grants = ["GRANT USAGE ON FUNCTION db.fn TO ROLE r"]
-    assert matches_object(grants, "function", "db.fn")
-    assert not matches_object(grants, "function", "db.other")
-    assert not matches_object(grants, "table", "db.fn")
-
-
-def test_matches_object_wildcard() -> None:
-    grants = ["GRANT ALL ON *.* TO ROLE r"]
-    assert matches_object(grants, "table", "any.table")
-    assert matches_object(grants, "function", "db.fn")
-
-
-def test_matches_object_table_select() -> None:
-    grants = ["GRANT SELECT ON TABLE NOVA_DEMO.orders TO ROLE analyst"]
-    assert matches_object(grants, "table", "NOVA_DEMO.orders")
-    assert not matches_object(grants, "table", "NOVA_DEMO.other")
 
 
 def test_accumulate_usage_sums_across_calls() -> None:

@@ -37,22 +37,15 @@ const skill = {
 };
 
 const readyCapability = {
-  enabled: true,
   available: true,
   status: "AVAILABLE",
   reason_code: "READY",
 };
 const runtime = {
   business_workflow: readyCapability,
-  actions: {
-    enabled: false,
-    available: false,
-    status: "DISABLED",
-    reason_code: "FEATURE_DISABLED",
-  },
+  actions: readyCapability,
   quality: readyCapability,
   analysis_workspace: {
-    enabled: true,
     available: false,
     status: "BLOCKED_BY_INFRASTRUCTURE",
     reason_code: "ISOLATED_EXECUTOR_UNAVAILABLE",
@@ -98,7 +91,7 @@ describe("Studio personal capabilities", () => {
     document.documentElement.classList.remove("dark");
   });
 
-  it("distinguishes enabled flags from available business capabilities", async () => {
+  it("shows which business capabilities the deployment can run", async () => {
     mocks.capabilities.mockResolvedValue({ connectors: [], runtime });
     const screen = await render(
       wrap(<StudioCapabilities onCreateWithChat={vi.fn()} />),
@@ -110,9 +103,9 @@ describe("Studio personal capabilities", () => {
     await expect
       .element(screen.getByText("Unavailable", { exact: true }))
       .toBeVisible();
-    await expect
-      .element(screen.getByText("Disabled", { exact: true }))
-      .toBeVisible();
+    expect(screen.getByText("Available", { exact: true }).elements()).toHaveLength(
+      3,
+    );
     await expect
       .element(screen.getByText("An isolated executor is not configured."))
       .toBeVisible();

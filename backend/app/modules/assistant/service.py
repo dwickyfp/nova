@@ -674,7 +674,6 @@ class AssistantLoop:
         save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
     ) -> AsyncGenerator[str, None]:
-        from app.core.config import settings
         from app.modules.assistant.provider import provider_retry_scope
 
         context.execution_now = context.execution_now or _now()
@@ -688,10 +687,7 @@ class AssistantLoop:
                 ),
                 resumed=resume_state is not None,
             )
-            if self._spend_limit is not None or (
-                (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation)
-                and context.agent_id
-            ) else None
+            if self._spend_limit is not None or context.agent_id else None
         )
         if resume_state is not None and self._spend_limit is not None:
             consumed = resume_state.get("consumed_tokens")
@@ -4223,9 +4219,7 @@ def _measure_tool_dispatch(context: LoopContext) -> None:
 def _record_quality_observation(
     context: LoopContext, user_content: str, finish_reason: str
 ) -> None:
-    from app.core.config import settings
-
-    if not (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation) or not context.agent_id:
+    if not context.agent_id:
         return
     if any(step.get("kind") == "quality_observation" for step in context.steps or []):
         return

@@ -195,28 +195,24 @@ class SemanticViewQueryTool:
                 "version": result["version"],
             },
         )
-        from app.core.config import settings
-
-        if settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
-            try:
-                facts = EvidenceFacts(
-                    semantic_grounding="published", semantic_view_id=view_id,
-                    semantic_version=result["version"],
-                    semantic_fingerprint=result.get("model_fingerprint"),
-                    plan_source="compiled", verified_query_hit=False,
-                    execution_status="success",
-                    coverage=(
-                        "truncated" if truncated else "complete"
-                        if result.get("truncated") is False else "unknown"
-                    ),
-                    semantic_ambiguity="none", unsupported_numeric_claims=False,
-                )
-            except ValidationError:
-                return outcome
-            return attach_evidence_health(
-                outcome, assess_evidence(facts, assessed_at=datetime.now(UTC)),
+        try:
+            facts = EvidenceFacts(
+                semantic_grounding="published", semantic_view_id=view_id,
+                semantic_version=result["version"],
+                semantic_fingerprint=result.get("model_fingerprint"),
+                plan_source="compiled", verified_query_hit=False,
+                execution_status="success",
+                coverage=(
+                    "truncated" if truncated else "complete"
+                    if result.get("truncated") is False else "unknown"
+                ),
+                semantic_ambiguity="none", unsupported_numeric_claims=False,
             )
-        return outcome
+        except ValidationError:
+            return outcome
+        return attach_evidence_health(
+            outcome, assess_evidence(facts, assessed_at=datetime.now(UTC)),
+        )
 
 
 class FeatureLookupTool:

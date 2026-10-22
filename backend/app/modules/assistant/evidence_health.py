@@ -233,11 +233,6 @@ def attach_execution_health(outcome: ToolOutcome, tool_name: str) -> ToolOutcome
     The loop calls this before processing successes, failures, or clarification.
     Detailed assessments supplied by execution owners retain their original clock.
     """
-    from app.core.config import settings
-
-    if not settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
-        return outcome
-
     sources = [
         value for value in (
             outcome.metadata, outcome.evidence, outcome.trace_detail, outcome.data, outcome.table,

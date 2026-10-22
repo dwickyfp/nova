@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     STARROCKS_HOST: str = "localhost"
     STARROCKS_FE_MYSQL_PORT: int = 9030
     STARROCKS_HTTP_PORT: int = 8030
-    STARROCKS_ARROW_FLIGHT_PORT: int = 9408
     STARROCKS_ROOT_USER: str = "root"
     STARROCKS_ROOT_PASSWORD: str = ""
 
@@ -46,8 +45,6 @@ class Settings(BaseSettings):
     # Values mirror the ``proxy:`` block in docker/nova.yaml; the defaults here
     # are what the embedded lifespan uses when nothing overrides them.
     PROXY_ENABLED: bool = True
-    STREAMS_ENABLED: bool = False
-    MANAGED_APPEND_ENABLED: bool = False
     PROXY_HOST: str = "0.0.0.0"
     PROXY_PORT: int = 4406
     PROXY_MAX_CONNECTIONS: int = 100
@@ -98,12 +95,6 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     QUERY_AUTOPILOT_LOCAL_LOG_FIXTURES: dict[str, list[Path]] = {}
-
-    STUDIO_BUSINESS_WORKFLOW_ENABLED: bool = False
-    STUDIO_INTELLIGENT_UI_ENABLED: bool = True
-    STUDIO_ACTIONS_ENABLED: bool = False
-    STUDIO_QUALITY_ENABLED: bool = False
-    STUDIO_ANALYSIS_WORKSPACE_ENABLED: bool = False
 
     SMART_MAX_AGENT_DEPTH: int = 4
     SMART_MAX_CONCURRENT_AGENTS: int = 8
@@ -208,9 +199,8 @@ class Settings(BaseSettings):
     NEWS_PROOF_READER_IDLE_SECONDS: int = 900
 
     # --- Centralized authorization (Apache Ranger) ---
-    # Disabled only for migration/bootstrap. A production Nova deployment is
-    # expected to run with Ranger enabled and strict single-role semantics.
-    RANGER_ENABLED: bool = False
+    # Ranger is always on: every session activates exactly one named role and
+    # user data access is governed by Ranger policies through the patched FE.
     RANGER_ADMIN_URL: str = "http://localhost:6080"
     RANGER_SERVICE_NAME: str = "nova_starrocks"
     RANGER_USERNAME: str = "admin"
@@ -222,7 +212,6 @@ class Settings(BaseSettings):
     RANGER_RETRY_BACKOFF_SECONDS: float = 0.25
     RANGER_RETRY_MAX_BACKOFF_SECONDS: float = 2.0
     RANGER_MANAGED_POLICY_PREFIX: str = "nova-managed"
-    RANGER_STRICT_SINGLE_ACTIVE_ROLE: bool = True
     RANGER_POLICY_PROPAGATION_SECONDS: float = 30.0
 
     # --- Internal machine-to-machine channel (/api/v1/internal/*) ---
@@ -235,9 +224,6 @@ class Settings(BaseSettings):
     NOVA_INTERNAL_TRUSTED_PROXY: str = ""
 
     # --- ML execution ---
-    ML_ARROW_ENABLED: bool = True
-    ML_ARROW_BATCH_SIZE: int = 65536
-    ML_ARROW_QUEUE_DEPTH: int = 4
     ML_MYSQL_BATCH_SIZE: int = 4096
     ML_INTERACTIVE_TIMEOUT_SECONDS: float = 10.0
     ML_BALANCED_TIMEOUT_SECONDS: float = 60.0

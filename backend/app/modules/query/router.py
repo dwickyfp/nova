@@ -11,7 +11,6 @@ from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import (
     split_sql_statements,
 )
-from app.core.config import settings
 from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.auth.service import auth_service
@@ -34,7 +33,7 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 __all__ = ["SanitizingJSONResponse", "router"]
 
 
-def _resolve_active_role(user: dict) -> str | None:
+def _resolve_active_role(user: dict) -> str:
     """Return the role the engine must activate for this request.
 
     The session's ``active_role`` (set at login and changed through
@@ -45,12 +44,8 @@ def _resolve_active_role(user: dict) -> str | None:
     while executing under another (the bottom-left switcher versus the
     workspace tab picker).
 
-    Ranger sessions require an assigned active role. Native StarRocks RBAC
-    sessions may have no active role; any named role is still validated against
-    the session's grants.
+    Every session requires an assigned active role.
     """
-    if not settings.RANGER_ENABLED and user.get("active_role") is None:
-        return None
     try:
         return SecurityContext.from_session(user).active_role
     except SecurityContextError as exc:

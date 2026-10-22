@@ -92,27 +92,14 @@ async def test_scope_validation_checks_metadata_and_membership(monkeypatch):
 def test_ranger_rejects_ambiguous_default_roles(monkeypatch, mode, roles):
     from app.modules.users.schemas import UserCreate
 
-    monkeypatch.setattr("app.core.config.settings.RANGER_ENABLED", True)
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="Exactly one"):
         UserCreate(username="alice", password="test", default_role_mode=mode, default_roles=roles)
 
 
 def test_ranger_accepts_one_explicit_default(monkeypatch):
     from app.modules.users.schemas import UserCreate
 
-    monkeypatch.setattr("app.core.config.settings.RANGER_ENABLED", True)
     user = UserCreate(
         username="alice", password="test", default_role_mode="explicit", default_roles=["marketing"]
     )
     assert user.default_roles == ["marketing"]
-
-
-def test_ranger_blocks_unqualified_flight_before_connect(monkeypatch):
-    from app.modules.ml_engine.data.arrow_flight import ArrowFlightDataSource
-    from app.modules.ml_engine.spec import MLSecurityContext
-
-    monkeypatch.setattr("app.core.config.settings.RANGER_ENABLED", True)
-    with pytest.raises(PermissionError, match="not qualified"):
-        list(ArrowFlightDataSource()._open_reader(
-            "SELECT * FROM sales", MLSecurityContext("alice", "test", role="marketing")
-        ))

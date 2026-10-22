@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.config import settings
 from app.modules.agents import business_results
 from app.modules.assistant.evidence_health import assess_evidence
 from app.modules.assistant.service import LoopContext
@@ -40,7 +39,6 @@ def governed_outcome():
 async def test_non_investigate_turn_never_runs_automatic_comparison(
     comparison, automatic_mission, monkeypatch, intent,
 ):
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     automatic = AsyncMock()
     monkeypatch.setattr(business_results.intelligence_service, "automatic_investigation", automatic)
     context = LoopContext(user_name="alice", user=USER, mission_id="mission", run_id="run",
@@ -58,7 +56,6 @@ async def test_non_investigate_turn_never_runs_automatic_comparison(
 async def test_validated_investigate_snapshot_is_exact_bounded_and_reusable(
     comparison, automatic_mission, monkeypatch,
 ):
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     monkeypatch.setattr(business_results, "intelligence_service", comparison[0])
     context = LoopContext(user_name="alice", user=USER, mission_id="mission", run_id="run",
                           agent_id="finance", effective_work_intent="INVESTIGATE")
@@ -78,7 +75,6 @@ async def test_validated_investigate_snapshot_is_exact_bounded_and_reusable(
 async def test_unsafe_seed_returns_existing_inputs_instead_of_an_invented_investigation(
     comparison, automatic_mission, monkeypatch,
 ):
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     context = LoopContext(user_name="alice", user=USER, mission_id="mission", run_id="run",
                           agent_id="finance", effective_work_intent="INVESTIGATE")
     outcome = governed_outcome()
@@ -98,7 +94,6 @@ async def test_unsafe_seed_returns_existing_inputs_instead_of_an_invented_invest
 async def test_refused_anchor_records_failed_cost_without_control_fields(monkeypatch):
     from fastapi import HTTPException
 
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     monkeypatch.setattr(business_results.mission_service, "record_anchor",
                         AsyncMock(side_effect=HTTPException(403, "secret lease owner")))
     context = LoopContext(user_name="alice", user=USER, mission_id="mission", run_id="run",
@@ -113,7 +108,6 @@ async def test_refused_anchor_records_failed_cost_without_control_fields(monkeyp
 async def test_canonical_observation_truncates_utf8_and_preserves_causal_labels(
     comparison, automatic_mission, monkeypatch,
 ):
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     service = comparison[0]
     result = await service.automatic_investigation(seed(), USER, mission_id="mission",
                                                  agent_id="finance")

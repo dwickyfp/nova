@@ -50,13 +50,7 @@ class TestActiveRoleGate:
         with pytest.raises(InsufficientRoleError):
             await _run(require_active_role, BACKUP_ROLES, user)
 
-    async def test_missing_active_role_falls_back_to_grants(self):
-        """A session that never switched keeps working on its granted role."""
-        user = {"username": "admin", "roles": ["ACCOUNTADMIN"], "active_role": None}
-        assert await _run(require_active_role, BACKUP_ROLES, user) == user
-
-    async def test_ranger_mode_requires_explicit_active_role(self, monkeypatch):
-        monkeypatch.setattr("app.core.role_gates.settings.RANGER_ENABLED", True)
+    async def test_requires_explicit_active_role(self):
         user = {"username": "admin", "roles": ["ACCOUNTADMIN"], "active_role": None}
 
         with pytest.raises(InsufficientRoleError, match="active role is required"):

@@ -264,7 +264,7 @@ async def test_query_service_regular_sql_still_uses_repository(monkeypatch):
     monkeypatch.setattr(service._repo, "execute_as_user", fake_execute_as_user)
     monkeypatch.setattr("app.modules.query.service.write_audit_log", fake_audit_log)
 
-    result = await service.execute(
+    result = await service.execute(role="analyst",
         sql="SELECT 1",
         username="analyst",
         encrypted_password="encrypted",
@@ -286,7 +286,7 @@ async def test_query_service_execute_statements_continues_until_error(monkeypatc
 
     monkeypatch.setattr(service, "execute", fake_execute)
 
-    results = await service.execute_statements(
+    results = await service.execute_statements(role="analyst",
         sql="SELECT 1; SELECT 2; SELECT fail; SELECT 3",
         username="analyst",
         encrypted_password="encrypted",

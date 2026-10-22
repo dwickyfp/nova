@@ -91,9 +91,7 @@ class ActionPlanner:
 
 class SecurityPlanner(ActionPlanner):
     async def plan(self, logical: LogicalPlan, context: PlanningContext) -> ExecutionPlan:
-        if not context.ranger_enabled or type(
-            logical.statement.parsed.statement_context
-        ).__name__ in {
+        if type(logical.statement.parsed.statement_context).__name__ in {
             "CreateUserStatementContext",
             "AlterUserStatementContext",
             "DropUserStatementContext",

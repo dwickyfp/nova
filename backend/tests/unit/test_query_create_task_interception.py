@@ -264,13 +264,15 @@ class TestQualifiedTaskScopeThroughPipeline:
 class TestValidationFailureIsReported:
     async def test_missing_role_is_rejected_without_metadata_or_engine_write(self, wired):
         service, engine, tasks, audit = wired
-        result = await service.execute(
-            sql="CREATE TASK t1 AS INSERT INTO t SELECT 1",
-            username="alice",
-            encrypted_password="enc",
-            database="db1",
-        )
-        assert "explicit execution role" in result.error
+        from app.modules.access_control.security_context import SecurityContextError
+
+        with pytest.raises(SecurityContextError, match="Exactly one active role"):
+            await service.execute(
+                sql="CREATE TASK t1 AS INSERT INTO t SELECT 1",
+                username="alice",
+                encrypted_password="enc",
+                database="db1",
+            )
         assert engine.calls == []
         assert tasks.tasks == {}
         assert audit.statuses == ["ERROR"]

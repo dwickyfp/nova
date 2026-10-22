@@ -1,7 +1,7 @@
 # Architecture 15: Governed Studio workflow
 
-The [operator guide](governed-studio-operations.md) covers migrations, rollout
-controls, recovery, and acceptance checks for these contracts.
+The [operator guide](governed-studio-operations.md) covers migrations,
+capabilities, recovery, and acceptance checks for these contracts.
 
 Nova Studio is the intelligence workspace in Nova's Enterprise Intelligence OS.
 The workflow connects a question to investigation, evidence, scenarios, a
@@ -22,29 +22,22 @@ leases, admission, and wakeups. Attachment bodies stay in existing message
 attachment storage; references and grants do not copy bodies into another store.
 Mission projection and Evidence Health assessment make no model calls.
 
-## Controls and defaults
+## Capabilities
 
-[Settings](../backend/app/core/config.py) define four independent controls:
-
-| Environment variable | Default | Current effect |
-| --- | --- | --- |
-| `STUDIO_BUSINESS_WORKFLOW_ENABLED` | `false` | Enables Mission workflow, common tool-result health projection, and governed Smart attachment registration/delegation. Disabled Mission/resource routes return unavailable. |
-| `STUDIO_ACTIONS_ENABLED` | `false` | Enables Action preview, review, dispatch, and verification. These operations return `503` when disabled; existing ledger read/cancellation paths retain their authorization checks. |
-| `STUDIO_QUALITY_ENABLED` | `false` | Enables persisted quality observations and production trace scoring. Offline quality APIs and manifested-release promotion checks are separate from this switch. |
-| `STUDIO_ANALYSIS_WORKSPACE_ENABLED` | `false` | Allows an isolated analytical executor when one exists. The shipped executor remains unavailable even if this flag is enabled. |
-
-Per-agent production monitoring also defaults to disabled. Switches do not
-authorize data access, satisfy consent, or demonstrate acceptance. The engine
-Compose app profile forwards the four false-default variables to its API and
-task worker. `dev.sh` resolves their values from the existing backend settings
-and passes the same values to the API, scheduler, task worker, and Smart worker.
-Standalone processes use their existing environment and backend `.env`.
+Mission workflow, Actions, quality observations with production trace scoring,
+and the analysis workspace are always on; there are no rollout flags. Mission
+workflow covers common tool-result health projection and governed Smart
+attachment registration and delegation. Offline quality APIs and
+manifested-release promotion checks are separate from production scoring, which
+still needs per-agent opt-in. Capability availability does not authorize data
+access, satisfy consent, or demonstrate acceptance.
 
 The [effective-capability helper](../backend/app/core/studio_capabilities.py)
-reports bounded enabled/available states independently for each control. API,
-task-worker, and Smart-worker startup diagnostics use that same snapshot. The
-additive `runtime` field in Studio capabilities reports `DISABLED`, `AVAILABLE`,
-or `BLOCKED_BY_INFRASTRUCTURE`; analysis also reports executor availability.
+reports bounded availability for each capability. API, task-worker, and
+Smart-worker startup diagnostics use that same snapshot. The additive `runtime`
+field in Studio capabilities reports `AVAILABLE` or `BLOCKED_BY_INFRASTRUCTURE`.
+Only the analysis workspace depends on infrastructure: it reports executor
+availability and stays blocked until an isolated analytical executor exists.
 These deployment facts contain no credentials and do not replace current
 authorization, consent, or per-agent quality opt-in checks.
 
@@ -139,8 +132,7 @@ Evidence coverage thresholds use the public health labels `insufficient`,
 produces an unavailable comparison rather than a passing score.
 
 Production scoring reads persisted assistant traces without invoking their tools.
-It requires the global quality flag, per-agent opt-in, and an authorized role
-execution binding. Defaults are sample rate `0.1`, at most `20` traces per cycle,
+It requires per-agent opt-in and an authorized role execution binding. Defaults are sample rate `0.1`, at most `20` traces per cycle,
 and a `60` minute cadence. Matching uses the exact prompt digest or an explicit
 `all_traces` case. Principal, role, and security version scope trace selection.
 A production run cannot serve as promotion evidence.
@@ -324,7 +316,7 @@ while coordination prose remains untrusted.
 
 Mission work and active ordered hooks remain serial. Independent read-only calls
 retain overlap subject to existing consent, dependency, release, and budget checks;
-the global workflow flag alone does not serialize them. Trace and Quality records
+Mission workflow alone does not serialize them. Trace and Quality records
 separate semantic-tool duration from canonicalization, analytical queries, and
 persistence. Created/reused/incomplete/skipped/failed status and actual query/cache
 counts describe the recorded operation, and replay adds no dispatch. Internal
@@ -407,11 +399,9 @@ outputs. The default executor is `UnavailableAnalysisExecutor`; HTTP execution
 returns `503` with an explicit unavailable result. The existing thread-based ML
 executor does not provide sandbox isolation.
 
-When enabled without isolation, capability status and the execution result's
-`blocker` are `BLOCKED_BY_INFRASTRUCTURE`. A disabled workspace returns
-`FEATURE_DISABLED`; both refusals remain audited and return no rows or artifacts.
-The capability separates executor availability from the flag, so an isolated
-test adapter cannot become usable while disabled. Tool refusals retain the
+Without isolation, capability status and the execution result's `blocker` are
+`BLOCKED_BY_INFRASTRUCTURE`; the refusal remains audited and returns no rows or
+artifacts. Tool refusals retain the
 legacy `ANALYSIS_UNAVAILABLE` error code and carry the bounded blocker in metadata.
 No local code, subprocess, or thread executor substitutes for missing isolation.
 

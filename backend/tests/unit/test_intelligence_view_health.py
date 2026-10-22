@@ -14,13 +14,6 @@ from app.modules.intelligence.semantic_views import semantic_view_service
 from tests.unit.test_semantic_view_canonical import _version, _view
 
 
-@pytest.fixture(autouse=True)
-def enabled(monkeypatch):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
-
-
 def _context(*, fingerprint="sales-v2", version=2):
     return SimpleNamespace(
         user={"username": "alice", "encrypted_password": "private-encrypted-state",

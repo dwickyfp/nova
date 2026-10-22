@@ -165,7 +165,6 @@ async def test_worker_followup_uses_existing_grant_without_regrant_from_parent(
 
 @pytest.mark.eval
 async def test_analysis_tool_trajectory_reports_unavailable_without_execution(monkeypatch):
-    from types import SimpleNamespace
 
     from app.modules.assistant import analysis_workspace as workspace
     from app.modules.assistant.analysis_workspace import (
@@ -177,9 +176,6 @@ async def test_analysis_tool_trajectory_reports_unavailable_without_execution(mo
     from tests.benchmark.harness import tool_call_frame
     from tests.eval.harness import TurnResult
 
-    monkeypatch.setattr(
-        workspace, "settings", SimpleNamespace(STUDIO_ANALYSIS_WORKSPACE_ENABLED=True)
-    )
     monkeypatch.setattr(workspace, "analytical_workspace", AnalyticalWorkspace())
     monkeypatch.setattr(workspace, "write_audit_log", AsyncMock())
     monkeypatch.setattr("app.modules.agents.mission.require_thread", AsyncMock())

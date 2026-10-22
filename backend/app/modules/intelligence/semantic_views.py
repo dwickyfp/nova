@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import split_sql_statements
-from app.core.config import settings
 from app.core.database import db
 from app.core.deps import get_current_user
 from app.modules.agents.semantic.compiler import SemanticCompiler
@@ -233,14 +232,13 @@ class SemanticViewService:
             try:
                 async with semaphore:
                     for source in batch:
-                        if settings.RANGER_ENABLED:
-                            access = await access_control_service.effective_access(
-                                principal=user["username"],
-                                active_role=user.get("active_role"),
-                                resource=source,
-                            )
-                            if not {"SELECT", "ALL"}.intersection(access["object_access"]):
-                                return False
+                        access = await access_control_service.effective_access(
+                            principal=user["username"],
+                            active_role=user.get("active_role"),
+                            resource=source,
+                        )
+                        if not {"SELECT", "ALL"}.intersection(access["object_access"]):
+                            return False
                         result = await asyncio.wait_for(
                             query_service.execute(
                                 # Plan a real SELECT so FE authorization runs without

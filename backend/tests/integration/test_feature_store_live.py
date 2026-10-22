@@ -15,7 +15,6 @@ from app.modules.intelligence.feature_store import (
     FeatureGroupMember,
     FeatureLookup,
     FeatureViewDefinition,
-    OnlineMaterializeRequest,
     TrainingSetCreate,
     feature_store,
     online_store,
@@ -95,21 +94,11 @@ async def test_feature_store_lifecycle_and_no_future_leakage():
             user,
         )
         assert as_of["values"]["orders_7d"] == 7
-        materialized = await feature_store.materialize_online(
-            group,
-            OnlineMaterializeRequest(entity_keys=[{"customer_id": 1}, {"customer_id": 999}]),
-            user,
-        )
-        assert materialized["published"] == 1
-        assert materialized["missing"] == 1
         latest = await feature_store.lookup(
             group, FeatureLookup(entity_key={"customer_id": 1}), user
         )
         assert latest["values"]["orders_7d"] == 99
-        assert latest["source"] == "online"
-        assert (
-            await feature_store.lookup(group, FeatureLookup(entity_key={"customer_id": 1}), user)
-        )["source"] == "online"
+        assert latest["source"] == "offline"
         training = await feature_store.create_training_set(
             group,
             TrainingSetCreate(

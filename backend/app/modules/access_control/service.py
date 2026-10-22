@@ -771,12 +771,10 @@ class AccessControlService:
         return ",".join(f"'{value}'" for value in escaped)
 
     async def health(self) -> dict:
-        if not settings.RANGER_ENABLED:
-            return {"enabled": False, "healthy": False, "reason": "Ranger is disabled"}
         try:
             health = await self._ranger.health()
         except RangerError as exc:
-            return {"enabled": True, "healthy": False, "reason": str(exc)}
+            return {"healthy": False, "reason": str(exc)}
         pending = await db.execute_system(
             "SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_SECURITY_POLICIES "
             "WHERE state IN ('PENDING', 'PROPAGATING')"
@@ -786,7 +784,6 @@ class AccessControlService:
             "WHERE state = 'DRIFTED'"
         )
         return {
-            "enabled": True,
             "healthy": bool(health.get("reachable") and health.get("service_exists")),
             **health,
             "pending_propagation": int(pending["rows"][0][0]) if pending["rows"] else 0,

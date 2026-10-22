@@ -48,18 +48,34 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 
 ## Architecture invariants
 
+### New features are active by default
+
+- Implement requested features as normal, active product behavior. Do not add
+  an enable/disable flag unless the user's requirements explicitly call for it.
+  This includes environment variables, backend configuration, frontend flags,
+  UI switches, rollout gates, and flags whose default is `true`.
+- Do not invent opt-in modes, kill switches, or parallel old/new behavior for
+  hypothetical rollout, rollback, experimentation, or compatibility needs.
+  If a requirement explicitly needs a switch, implement and document its
+  purpose and default as specified by that requirement.
+- Verify new behavior through the normal application path without setting an
+  extra enable flag. Preserve authorization, consent, and required provider or
+  connection setup; active by default does not bypass those controls.
+- Existing flags are not a precedent for adding new ones. Change or remove
+  existing flags only when the requested work covers them.
+
 ### Security and authorization
 
 - StarRocks authenticates Nova users; do not create another user/password store.
-- In Ranger-enabled execution, preserve the authenticated principal, exactly
-  one named active role, and security-context version across SQL, Studio,
+- Preserve the authenticated principal, exactly one named active role, and
+  security-context version across SQL, Studio,
   Semantic Views, ML, delegation, and data-derived caches. Ranger policies,
   row filters, and masks govern user data through the patched StarRocks FE.
 - Do not substitute root, system, service, or agent-owner credentials for a
   caller's data access. Existing explicitly authorized service-principal work
-  and native-RBAC compatibility are separate supported paths, not bypasses.
-- `SHOW GRANTS` can establish role-marker assignments and support native-RBAC
-  compatibility; it cannot replace Ranger authorization. Reject ambiguous
+  is a separate supported path, not a bypass.
+- `SHOW GRANTS` can establish role-marker assignments; it cannot replace Ranger
+  authorization. Reject ambiguous
   security contexts and preserve fail-closed checks and consent boundaries.
 - Preserve `ACCOUNTADMIN` protection in SQL guards, administration services,
   bootstrap, and UI. Do not drop, alter, rename, or revoke its privileges.
@@ -84,6 +100,18 @@ Do not copy stale examples into production. Report unrelated documentation debt.
   responses, logs, diagnostics, frontend state, or provider context. Keep
   deliberate credential-entry flows separate from stored-secret readback.
 - Preserve redacted audit logging for governed actions, including refusals.
+
+### Feature flags
+
+- Core features are always on. Do not add a setting, environment variable, or
+  UI toggle that enables or disables a feature (an `*_ENABLED` style flag)
+  unless the user explicitly asks for that flag. Ship a new feature active, and
+  gate it only on real prerequisites such as authorization or infrastructure.
+- Ranger authorization is not optional: every session activates exactly one
+  named role, starting from the user's default role. Do not reintroduce a
+  native-RBAC or "Ranger disabled" mode.
+- Deployment topology, transport, tuning, and explicit safety acknowledgements
+  for destructive operations are configuration, not feature flags.
 
 ### SQL and agents
 
@@ -149,6 +177,30 @@ do not interrupt clear reversible work for routine choices. Use safe repository
 search/editing tools and shell commands suited to the environment. Preserve
 unrelated changes; avoid destructive or broad edits.
 
+Reuse the running local Nova stack, including StarRocks and its supporting
+services, for tests and checks. Before running a container-dependent test,
+script, fixture, `docker compose up`, or `docker run`:
+
+- Inspect `docker compose ls` and `docker ps`, identify the existing project,
+  services, and published ports, and configure the test endpoints to use them.
+- Inspect test setup and teardown for automatic container creation or removal.
+  A fixture or helper that starts a stack is subject to the same reuse rule as
+  a direct Docker command. Do not run it until reuse is verified.
+- Do not create another StarRocks FE/BE or supporting stack per test, suite,
+  feature, chat, branch, or worktree. A different compose file, project name,
+  default port, or unavailable endpoint is not permission to create a duplicate.
+- Preserve existing data and volumes. Use an existing disposable test stack
+  for destructive seed/reset suites. If the running stack cannot safely satisfy
+  a check, report the specific prerequisite and ask before creating a separate
+  stack or resetting shared state. Never silently substitute an unpatched
+  engine for governed acceptance or count skipped checks as passed.
+- Start a local stack automatically only when no Nova stack is running and
+  initialization is safe; keep it available for subsequent checks. Rebuild a
+  changed service within its existing project when required by the task.
+  Ephemeral CI provisioning does not authorize duplicate local stacks.
+
+The [Docker guide](docker/AGENTS.md) gives the operational steps.
+
 For implementation requests, finish the requested behavior and validation rather
 than leaving scaffolding, required TODOs, or only a happy path. Review the final
 diff, security/secret boundaries, and affected documentation. Remove temporary
@@ -167,7 +219,39 @@ distinguish local checks from verified GitHub Actions results.
   integration/conflict resolution. Reuse a passing result only when tested code,
   dependencies, and configuration remain unchanged. Documentation-only work
   needs documentation checks; code/configuration edits need application checks.
-- A synchronization, required-check, commit, or push failure blocks completion.
+- A synchronization, required-check, commit, push, required merge, or worktree
+  cleanup failure blocks completion.
+
+### Deliver features to the active checkout and clean up worktrees
+
+- Do not create a worktree automatically for every feature. Prefer the user's
+  active checkout when work can proceed safely there. Use a worktree only when
+  requested or needed to isolate changes from concurrent or unrelated work.
+- Before working in a separate worktree, record the user's original checkout
+  path and its active branch as the delivery target. Inspect `git worktree list`
+  and branch/status information; do not assume the target is `main` or the
+  temporary feature branch. If the target cannot be established, clarify it.
+- After implementation and required checks pass, commit the feature and merge
+  it into that recorded target branch in the original checkout. This merge is
+  part of completing the feature and does not need another routine approval.
+  Preserve unrelated staged, unstaged, and untracked work. Resolve conflicts
+  without discarding others' changes; if the target branch has changed or safe
+  integration requires a user decision, report the blocker before proceeding.
+- Follow the synchronization rules above, validate the integrated result, and
+  push the target branch before reporting completion. A commit or push confined
+  to the feature worktree does not complete delivery. Ensure local development
+  processes use the original checkout and reload/restart affected processes as
+  needed, reusing the existing containers, so the user can test there directly.
+- Once delivery succeeds, verify the feature commits are included in the target
+  and preserve any needed uncommitted, untracked, or ignored files before
+  removing the task's temporary worktree. Use the owning app's cleanup tool for
+  managed worktrees; otherwise use `git worktree remove` from outside that
+  worktree. Never force removal, delete the original checkout, or remove a
+  worktree still used by another task. Verify cleanup with `git worktree list`.
+- Report the delivery branch, validation result, and worktree cleanup status.
+  Do not leave completed features only in a worktree or require the user to
+  switch directories to test them. If integration or cleanup is blocked,
+  preserve the work and report what remains instead of claiming completion.
 
 <!-- antislop:start -->
 ## Task-specific skills

@@ -14,7 +14,6 @@ class PlanningContext:
     relation_binder: Any = None
     capabilities: Any = None
     semantics: Any = None
-    ranger_enabled: bool = False
     confirm_destructive: bool = False
     validated: dict[int, Any] = field(default_factory=dict, repr=False)
 

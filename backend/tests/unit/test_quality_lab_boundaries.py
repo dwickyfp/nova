@@ -11,7 +11,6 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.core.config import settings
 from app.modules.agents import quality, quality_monitoring, quality_router, router, service
 from app.modules.agents.quality_scoring import (
     Assertion,
@@ -335,7 +334,6 @@ async def test_schedule_failure_leaves_durable_pause(metadata, monkeypatch):
         await quality.configure_monitoring("agent", quality.MonitoringRequest(enabled=True), USER)
     stored = (await quality.records("monitoring", "agent", USER))[0]
     assert stored["enabled"] is False and stored["desired_enabled"] is True
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
     assert await quality_monitoring.score_production(stored["id"], USER) == {"status": "disabled"}
 
 
@@ -350,14 +348,12 @@ async def test_monitoring_binding_is_required_before_schedule_or_trace_read(meta
     assert exc.value.status_code == 403
     schedule.assert_not_awaited()
     metadata.execute.assert_not_awaited()
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
     with pytest.raises(HTTPException):
         await quality_monitoring.score_production("config", USER)
     metadata.execute.assert_not_awaited()
 
 
 async def production_setup(metadata, monkeypatch, **config_overrides):
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
     config = await quality.save_record(
         "monitoring",
         {
@@ -476,13 +472,6 @@ async def test_report_only_production_performance_findings_are_reviewable(
         assert proposals[0]["observations"][0]["status"] == status
         assert (await quality_monitoring.score_production("config", USER))["scored"] == 0
         assert len(await quality.records("proposals", "agent", USER)) == 1
-
-
-@pytest.mark.asyncio
-async def test_global_monitoring_opt_out_reads_nothing(metadata, monkeypatch):
-    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", False)
-    assert await quality_monitoring.score_production("config", USER) == {"status": "disabled"}
-    metadata.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio

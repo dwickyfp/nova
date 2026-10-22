@@ -7,7 +7,6 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.modules.agents.child_timeline import safe_public_text
 from app.modules.agents.mission import mission_service
 from app.modules.agents.mission_schema import ObjectRef, SemanticAnchor
@@ -76,7 +75,7 @@ async def pin_time(invocation, payload, context):
 
 
 def bind_business_hooks(context):
-    if context.mission_id and settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
+    if context.mission_id:
         context.business_result_hook = governed_result
         context.business_time_hook = pin_time
         context.business_clock_hook = execution_clock
@@ -201,7 +200,7 @@ async def governed_result(invocation, outcome, context) -> BusinessResultHookRes
 
 
 async def _governed_result(invocation, outcome, context, collector) -> BusinessResultHookResult:
-    if not context.mission_id or not settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
+    if not context.mission_id:
         collector.complete("skipped")
         return BusinessResultHookResult()
     business = outcome.business_result

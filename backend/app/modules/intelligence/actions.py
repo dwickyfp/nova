@@ -10,7 +10,6 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.common.audit import write_audit_log
-from app.core.config import settings
 from app.core.redis import session_store
 from app.modules.access_control.business_policy import (
     evaluate_business_policy,
@@ -37,11 +36,6 @@ from app.modules.intelligence.contracts import Scope, fingerprint, utc_now
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.modules.intelligence.monitor_action import MonitorActionAdapter
 from app.observability.metrics import studio_operation
-
-
-def require_actions_enabled() -> None:
-    if not getattr(settings, "STUDIO_ACTIONS_ENABLED", False):
-        raise HTTPException(status_code=503, detail="Business action execution is disabled")
 
 
 class ActionService:
@@ -353,7 +347,6 @@ class ActionService:
         from app.core.database import configured_timezone
         from app.modules.intelligence.decisions import decision_digest
 
-        require_actions_enabled()
         await self.revalidate(user)
         scope = Scope.from_user(user)
         identity = fingerprint([scope.model_dump(exclude={"session_id"}), body.idempotency_key])
@@ -465,7 +458,6 @@ class ActionService:
         return await self.get(identity, user)
 
     async def review(self, action_id: str, body: ActionReview, user: dict) -> dict:
-        require_actions_enabled()
         await self.revalidate(user)
         candidate = await self.repository.action_for_review(action_id, Action)
         if candidate is None:
@@ -527,7 +519,6 @@ class ActionService:
     async def _dispatch(
         self, action_id: str, body: ActionOperation, user: dict, *, compensate=False
     ) -> Action:
-        require_actions_enabled()
         candidate = await self.get(action_id, user)
         async with metadata_lock("action-dispatch:" + action_id, timeout_seconds=120) as lease:
             action = await self.repository.get("actions", action_id, candidate.scope, Action)
@@ -686,7 +677,6 @@ class ActionService:
         )
 
     async def verify(self, action_id: str, user: dict, *, expected_revision=None) -> Action:
-        require_actions_enabled()
         candidate = await self.get(action_id, user)
         async with metadata_lock("action-dispatch:" + action_id, timeout_seconds=120) as lease:
             action = await self.repository.get("actions", action_id, candidate.scope, Action)
@@ -821,7 +811,6 @@ async def supervised_action(
     from app.modules.assistant.tool_gate import resolve_tool_consent, validate_tool_invocation
     from app.modules.assistant.tools import invocation_classification
 
-    require_actions_enabled()
     action = await action_service.get(action_id, user)
     thread_row = await _require_agent_thread(
         body.thread_id, action.configuration.agent_id, user["username"]

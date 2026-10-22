@@ -80,7 +80,7 @@ class TestGuardRejectionIsAudited:
         service, repo, sink = wired
 
         with pytest.raises(ForbiddenSQLError):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql=sql,
                 username="analyst",
                 encrypted_password="enc",
@@ -115,7 +115,7 @@ class TestGuardRejectionIsAudited:
         service, _, sink = wired
 
         with pytest.raises(ForbiddenSQLError):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql="DROP TABLE NOVA_DEMO.customers",
                 username="analyst",
                 encrypted_password="enc",
@@ -140,7 +140,7 @@ class TestGuardRejectionIsAudited:
         monkeypatch.setattr("app.modules.query.service.write_audit_log", exploding_sink)
 
         with pytest.raises(ForbiddenSQLError) as excinfo:
-            await service.execute(
+            await service.execute(role="analyst",
                 sql="DROP ROLE ACCOUNTADMIN",
                 username="analyst",
                 encrypted_password="enc",
@@ -160,7 +160,7 @@ class TestTranslationFailureIsAudited:
 
         monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
 
-        result = await service.execute(
+        result = await service.execute(role="analyst",
             sql="SELECT * FROM @qa_audit_t1.file.csv",
             username="analyst",
             encrypted_password="enc",
@@ -184,7 +184,7 @@ class TestTranslationFailureIsAudited:
 
         monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
 
-        result = await service.execute(
+        result = await service.execute(role="analyst",
             sql="SELECT * FROM @missing.file.csv",
             username="analyst",
             encrypted_password="enc",
@@ -207,7 +207,7 @@ class TestTranslationFailureIsAudited:
         monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
         monkeypatch.setattr("app.modules.query.service.write_audit_log", exploding_sink)
 
-        result = await service.execute(
+        result = await service.execute(role="analyst",
             sql="SELECT * FROM @missing.file.csv",
             username="analyst",
             encrypted_password="enc",
@@ -244,7 +244,7 @@ class TestEnginePathsStillAuditExactlyOnce:
         service._repo = ExplodingRepo()
 
         with pytest.raises(RuntimeError):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql="SELECT 1",
                 username="analyst",
                 encrypted_password="enc",
@@ -257,7 +257,7 @@ class TestEnginePathsStillAuditExactlyOnce:
         """The proxy path goes through ``execute_statements``; no doubling."""
         service, _, sink = wired
 
-        results = await service.execute_statements(
+        results = await service.execute_statements(role="analyst",
             sql="DROP ROLE ACCOUNTADMIN",
             username="analyst",
             encrypted_password="enc",
@@ -270,7 +270,7 @@ class TestEnginePathsStillAuditExactlyOnce:
         """A refusal mid-script stops there and is recorded."""
         service, repo, sink = wired
 
-        results = await service.execute_statements(
+        results = await service.execute_statements(role="analyst",
             sql="SELECT 1; DROP ROLE ACCOUNTADMIN",
             username="analyst",
             encrypted_password="enc",
@@ -290,7 +290,7 @@ class TestPreEngineRowShape:
         service, _, sink = wired
 
         with pytest.raises(ForbiddenSQLError):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql="DROP ROLE ACCOUNTADMIN",
                 username="analyst",
                 encrypted_password="enc",
@@ -309,7 +309,7 @@ class TestPreEngineRowShape:
         service, _, sink = wired
 
         with pytest.raises(ForbiddenSQLError):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql="DROP ROLE ACCOUNTADMIN",
                 username="analyst",
                 encrypted_password="enc",
@@ -332,7 +332,7 @@ class TestPreEngineRowShape:
 
         monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
 
-        await service.execute(
+        await service.execute(role="analyst",
             sql="SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",
@@ -365,7 +365,7 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
     async def test_success_row_carries_no_credential(self, wired):
         service, repo, sink = wired
 
-        await service.execute(
+        await service.execute(role="analyst",
             sql=self.STATEMENT,
             username="admin",
             encrypted_password="enc",
@@ -388,7 +388,7 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
         monkeypatch.setattr(repo, "execute_as_user", failing)
 
         with pytest.raises(RuntimeError):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql=self.STATEMENT,
                 username="admin",
                 encrypted_password="enc",
@@ -421,7 +421,7 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
         monkeypatch.setattr(repo, "execute_as_user", failing)
 
         with pytest.raises(RuntimeError, match="unterminated"):
-            await service.execute(
+            await service.execute(role="analyst",
                 sql="SELECT 1",
                 username="admin",
                 encrypted_password="enc",

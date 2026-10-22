@@ -123,13 +123,12 @@ async def test_planned_ml_prediction_reaches_inference_with_the_caller_context(m
         ("SHOW GRANTS FOR ROLE reader", "role_grants"),
     ],
 )
-async def test_ranger_is_typed_and_native_mode_is_preserved(sql, operation):
+async def test_security_statements_are_always_typed_ranger_actions(sql, operation):
     statement = ast_builders.build(parse_statement(sql))
-    managed = await SQLPlanner().plan(statement, PlanningContext(ranger_enabled=True))
+    managed = await SQLPlanner().plan(statement, PlanningContext())
     assert isinstance(managed, NovaActionPlan)
     assert isinstance(managed.payload, SecurityPayload)
     assert managed.payload.operation == operation
-    assert isinstance(await SQLPlanner().plan(statement, PlanningContext()), EngineSqlPlan)
 
 
 @pytest.mark.parametrize(
@@ -146,14 +145,13 @@ async def test_strict_ranger_rejects_unsupported_governance(sql):
 
     with pytest.raises(AccessControlError):
         await SQLPlanner().plan(
-            ast_builders.build(parse_statement(sql)), PlanningContext(ranger_enabled=True)
+            ast_builders.build(parse_statement(sql)), PlanningContext()
         )
 
 
 async def test_hard_guard_runs_before_parser_and_ranger_action(monkeypatch):
     service = QueryService()
     service._frontend = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("parser ran"))
-    monkeypatch.setattr("app.core.config.settings.RANGER_ENABLED", True)
     monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
     with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
         await service.execute(
@@ -352,3 +350,36 @@ async def test_planning_falls_back_to_the_event_loop_when_a_planner_waits(monkey
     )
 
     assert result.error is None and waited == [True]
+
+
+@pytest.mark.parametrize("sql", [
+    "CREATE USER alice IDENTIFIED BY 'temporary'",
+    "ALTER USER alice IDENTIFIED BY 'temporary'",
+    "DROP USER alice",
+    "SET DEFAULT ROLE analyst TO alice",
+    "ALTER USER alice DEFAULT ROLE analyst",
+])
+async def test_account_lifecycle_uses_starrocks_authentication(sql):
+    plan = await SQLPlanner().plan(ast_builders.build(parse_statement(sql)), PlanningContext())
+    assert isinstance(plan, EngineSqlPlan)
+    if "IDENTIFIED BY" in sql:
+        assert "temporary" not in repr(plan)
+        assert len(plan.private_bindings) == 1
+    else:
+        assert plan.engine_sql == sql
+
+
+@pytest.mark.parametrize("sql", [
+    "CREATE USER alice DEFAULT ROLE analyst",
+    "SET DEFAULT ROLE ALL TO alice",
+    "SET DEFAULT ROLE NONE TO alice",
+    "SET DEFAULT ROLE analyst, reader TO alice",
+    "ALTER USER alice DEFAULT ROLE ALL",
+    "ALTER USER alice DEFAULT ROLE NONE",
+    "ALTER USER alice DEFAULT ROLE analyst, reader",
+])
+async def test_account_sql_cannot_assign_or_activate_ambiguous_roles(sql):
+    from app.modules.access_control.service import AccessControlError
+
+    with pytest.raises((ValueError, AccessControlError)):
+        await SQLPlanner().plan(ast_builders.build(parse_statement(sql)), PlanningContext())

@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.core.config import settings
 from app.modules.query.repository import QueryResult
 
 from .security_context import SecurityContext
@@ -60,9 +59,6 @@ class SecurityStatementRouter:
         *,
         security: SecurityContext,
     ) -> RoutedSecurityStatement:
-        if not settings.RANGER_ENABLED:
-            return RoutedSecurityStatement(False)
-
         if match := _CREATE_ROLE.match(sql):
             role = _identifier(match)
             await self._service.create_role(security, role)

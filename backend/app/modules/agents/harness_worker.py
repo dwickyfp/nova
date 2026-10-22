@@ -1117,7 +1117,7 @@ class AgentHarnessWorker:
         smart = root["agent_id"] == SMART_AGENT_ID
         attachments: list[dict] = []
         resource_refs: list[str] = []
-        if smart and resource_delegation.enabled():
+        if smart:
             if is_root:
                 await resource_delegation.register_root(child, user)
             elif child.get("payload", {}).get("resource_refs"):

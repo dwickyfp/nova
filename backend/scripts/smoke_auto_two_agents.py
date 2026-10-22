@@ -7,7 +7,7 @@ mailbox and removes its test records in a finally block.
 
 Run from backend with the same environment as dev.sh::
 
-    STARROCKS_FE_MYSQL_PORT=29030 RANGER_ENABLED=true \
+    STARROCKS_FE_MYSQL_PORT=29030 \
       .venv/bin/python -m scripts.smoke_auto_two_agents
 
 Set NOVA_SMOKE_EXTERNAL_WORKER=1 when dev.sh already runs the agent worker.

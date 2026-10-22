@@ -275,6 +275,9 @@ def test_cancelled_child_drawer_repairs_missing_terminal_before_replay(monkeypat
 @pytest.mark.asyncio
 async def test_concurrent_auto_posts_admit_only_one_root(monkeypatch) -> None:
     monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.for_turn", AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
         router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
     )
     lock = asyncio.Lock()

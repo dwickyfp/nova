@@ -58,7 +58,7 @@ def query_service(monkeypatch):
 async def test_query_execute_refuses_egress_before_the_engine(query_service, sql):
     svc, repo = query_service
     with pytest.raises(ForbiddenSQLError):
-        await svc.execute(sql=sql, username="analyst", encrypted_password="enc")
+        await svc.execute(role="analyst", sql=sql, username="analyst", encrypted_password="enc")
     assert repo.calls == [], "the engine was reached with an egress statement"
 
 
@@ -67,7 +67,7 @@ async def test_query_execute_refuses_egress_even_when_destructive_is_confirmed(q
     # ``confirm_destructive`` is for DROP/TRUNCATE, not for consenting to egress.
     svc, repo = query_service
     with pytest.raises(ForbiddenSQLError):
-        await svc.execute(
+        await svc.execute(role="analyst",
             sql=sql,
             username="analyst",
             encrypted_password="enc",
@@ -79,7 +79,7 @@ async def test_query_execute_refuses_egress_even_when_destructive_is_confirmed(q
 async def test_query_execute_still_runs_an_ordinary_select(query_service):
     # The over-block control: a plain SELECT must still reach the engine.
     svc, repo = query_service
-    await svc.execute(sql="SELECT 1", username="analyst", encrypted_password="enc")
+    await svc.execute(role="analyst", sql="SELECT 1", username="analyst", encrypted_password="enc")
     assert repo.calls == ["SELECT 1"]
 
 
@@ -87,7 +87,7 @@ async def test_query_explain_refuses_egress_before_the_engine(query_service):
     # ``query/service.py:949`` — the EXPLAIN path consults the same guard.
     svc, repo = query_service
     with pytest.raises(ForbiddenSQLError):
-        await svc.explain(
+        await svc.explain(role="analyst",
             sql="SELECT 1 INTO OUTFILE 's3://b/x'",
             username="analyst",
             encrypted_password="enc",

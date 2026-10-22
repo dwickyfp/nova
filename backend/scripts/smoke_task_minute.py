@@ -102,7 +102,6 @@ async def main() -> None:
     existing_redis = urlsplit(settings.REDIS_URL)
     settings.REDIS_URL = os.environ.get("NOVA_SMOKE_REDIS_URL", "redis://nova-redis:6379/15")
     settings.NOVA_TIMEZONE = "UTC"
-    settings.RANGER_ENABLED = False
     settings.TASK_STREAM_KEY = stream_key
     settings.TASK_STREAM_GROUP = f"nova-smoke-{suffix}"
     settings.WORKER_TASK_POLL_INTERVAL_SECONDS = 0.5
