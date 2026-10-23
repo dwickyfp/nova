@@ -121,6 +121,22 @@ export type TranscriptTurn = {
 };
 
 /**
+ * Whether a tool's recorded summary is written for the reader.
+ *
+ * `load_skill` carries the skill body, and `semantic_query` /
+ * `semantic_search` carry the bounded readback the model consumes (question,
+ * statement, rows). The rail already discloses those statements and results,
+ * so the payload would only repeat them under the step.
+ */
+function showsToolDetail(name: string | null | undefined): boolean {
+  return (
+    name !== "load_skill" &&
+    name !== "semantic_query" &&
+    name !== "semantic_search"
+  );
+}
+
+/**
  * Rebuild a transcript from a persisted thread.
  *
  * The live transcript is built from SSE frames; this rebuilds the same shape
@@ -244,8 +260,9 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               step.name === "load_skill"
                 ? undefined
                 : step.preview || undefined,
-            detail:
-              step.name === "load_skill" ? undefined : step.detail || undefined,
+            detail: showsToolDetail(step.name)
+              ? step.detail || undefined
+              : undefined,
           });
           break;
         }
@@ -838,7 +855,7 @@ export function applyEvent(
               }
             : {}),
           steps: turn.steps.map((step) =>
-            step.id === event.tool_call_id && step.label !== "load_skill"
+            step.id === event.tool_call_id && showsToolDetail(step.label)
               ? { ...step, detail: event.text }
               : step,
           ),

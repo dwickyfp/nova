@@ -3970,8 +3970,13 @@ def _finish_step(
 
 
 def _tool_detail(tool_name: str, outcome: Any) -> str:
-    """A visible result summary, excluding skill instructions."""
+    """A visible result summary, excluding skill and readback payloads."""
     if tool_name == "load_skill":
+        return ""
+    if tool_name in ("semantic_query", "semantic_search"):
+        # Their summary is the bounded text the model reads back (question,
+        # statement, rows). The rail already discloses the statement and the
+        # result, so the payload would only repeat them under the step.
         return ""
     summary = str(getattr(outcome, "summary", "") or "").strip()
     return summary

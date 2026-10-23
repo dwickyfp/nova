@@ -316,6 +316,62 @@ describe("studio transcript reducer", () => {
     expect(saved[0].steps[0].text).toBe("Loaded a skill: native-ml");
   });
 
+  it("keeps the semantic readback out of live and saved transcripts", () => {
+    // The semantic tools' summary is the bounded text the model reads back
+    // (question, statement, rows). The rail already discloses the statement
+    // and the result, so the payload must not land under the step.
+    const readback =
+      "question: Compare channels\nsql:\nSELECT 1\nexplanation: Compiled.";
+    const turn = run([
+      {
+        type: "tool_call",
+        payload: {
+          tool_call_id: "c1",
+          tool_name: "semantic_query",
+          sql_preview: "SELECT 1",
+          classification: "read_only",
+          status: "running",
+        },
+      },
+      { type: "tool_status", tool_call_id: "c1", status: "done" },
+      { type: "tool_detail", tool_call_id: "c1", text: readback },
+    ]);
+    expect(turn.steps[0]).toMatchObject({
+      label: "semantic_query",
+      status: "done",
+    });
+    expect(turn.steps[0].preview).toBe("SELECT 1");
+    expect(turn.steps[0].detail).toBeUndefined();
+
+    const saved = replayThread([
+      {
+        message_id: "u1",
+        role: "user",
+        content: "Compare channels",
+        created_at: "2026-10-24T00:00:00Z",
+      },
+      {
+        message_id: "a1",
+        role: "assistant",
+        content: "Done.",
+        created_at: "2026-10-24T00:00:01Z",
+        steps: [
+          {
+            kind: "tool",
+            tool_call_id: "c1",
+            name: "semantic_query",
+            arguments: { question: "Compare channels" },
+            preview: "SELECT 1",
+            status: "done",
+            detail: readback,
+          },
+        ],
+      },
+    ]);
+    expect(saved[0].steps[0].preview).toBe("SELECT 1");
+    expect(saved[0].steps[0].detail).toBeUndefined();
+  });
+
   it("keeps a body on every reasoning phase so any step can open", () => {
     const turn = run([thinking("plan", "Understanding the request")]);
     expect(turn.steps[0].body).toBe("Understanding the request");

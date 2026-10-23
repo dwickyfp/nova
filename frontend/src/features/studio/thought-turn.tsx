@@ -1,5 +1,7 @@
 import { processSummary } from "./process-summary";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { highlightExplorerSql as highlightSql } from "@/features/database-explorer/sql-highlighter";
+import { formatArtifactSql } from "./artifact-source";
 import {
   BookOpen,
   Check,
@@ -316,6 +318,9 @@ export function ReasoningBody({ text }: { text: string }) {
  */
 export function SqlDisclosure({ preview }: { preview: string }) {
   const [copied, setCopied] = useState(false);
+  // Formatted for reading; Copy keeps the statement exactly as it ran.
+  const formatted = useMemo(() => formatArtifactSql(preview), [preview]);
+  const highlighted = useMemo(() => highlightSql(formatted), [formatted]);
 
   const copy = async () => {
     try {
@@ -345,8 +350,17 @@ export function SqlDisclosure({ preview }: { preview: string }) {
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className="max-h-48 min-w-0 flex-1 overflow-auto rounded-md bg-muted/40 p-2 text-xs leading-relaxed">
-        <code className="font-mono">{preview}</code>
+      <pre className="sql-code-block hljs max-h-48 min-w-0 flex-1 overflow-auto rounded-md bg-muted/40 p-2 text-xs leading-relaxed">
+        {highlighted ? (
+          <code
+            className="font-mono"
+            // highlight.js emits only spans with token class names, so the
+            // markup is inert.
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <code className="font-mono">{formatted}</code>
+        )}
       </pre>
     </div>
   );
