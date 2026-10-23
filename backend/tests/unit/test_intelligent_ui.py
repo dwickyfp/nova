@@ -281,6 +281,41 @@ def test_missing_runtime_or_disabled_participant_keep_markdown(monkeypatch):
     assert ui.composer_prompt(enabled=True, presentation="interactive") == ""
 
 
+def test_catalog_prompt_asks_for_markdown_and_a_fenced_program():
+    prompt = ui.catalog()["prompt"]
+    assert "ENTIRE response" not in prompt
+    assert prompt.startswith("You write Nova answers")
+    assert "exactly one fenced ```openui block" in prompt
+
+
+UNFENCED = (
+    '$selected = null\n'
+    'root = Col([Title("Rute"), GeoMap(@Evidence("evidence_2"), null, null, "geometry", '
+    '"label", "Rute", $selected)])\n'
+    '$viewport = null'
+)
+
+
+@pytest.mark.parametrize(("answer", "fallback"), [
+    (f"Rute Budi tercatat lengkap.\n\n{UNFENCED}", "Rute Budi tercatat lengkap."),
+    (f"Rute Budi tercatat lengkap.\n\n{UNFENCED}\n\nKlik marker untuk detail.",
+     "Rute Budi tercatat lengkap.\n\n\nKlik marker untuk detail."),
+    (f"Rute Budi tercatat lengkap.\n\n```\n{UNFENCED}\n```", "Rute Budi tercatat lengkap."),
+    (UNFENCED, ""),
+])
+def test_unfenced_programs_are_taken_out_of_the_markdown(answer, fallback):
+    assert ui.split_program(answer) == (fallback, UNFENCED)
+
+
+@pytest.mark.parametrize("answer", [
+    "Set root = the top node of the tree.",
+    "```sql\nSELECT 1\n```",
+    'root = Col([Text("a")])\nroot = Col([Text("b")])',
+])
+def test_prose_and_other_code_stay_markdown(answer):
+    assert ui.split_program(answer) == (answer.strip(), None)
+
+
 @pytest.mark.parametrize("presentation", ["text", "interactive"])
 def test_ui_catalog_is_available_without_a_presentation_gate(monkeypatch, presentation):
     monkeypatch.setattr(ui, "runtime_available", lambda: True)
@@ -313,8 +348,14 @@ async def test_source_is_owner_role_version_scoped_and_cross_device(monkeypatch)
                                 security_context={**STAMP, "session_id": "device-b"}) == block
     sql, params = db.execute_system.call_args.args
     assert "user_name=%s" in sql and params == ["thread", "message", "alice"]
+    # Versions restart with each sign-in, so another session's version is not compared.
+    assert await repo.ui_source(
+        "thread", "message", "content-1", user_name="alice",
+        security_context={**STAMP, "session_id": "device-b", "security_context_version": 2},
+    ) == block
     for change in [{"principal": "bob"}, {"active_role": "other"},
-                   {"security_context_version": 2}]:
+                   {"security_context_version": 2},
+                   {"session_id": "device-b", "active_role": "other"}]:
         assert await repo.ui_source("thread", "message", "content-1", user_name="alice",
                                     security_context={**STAMP, **change}) is None
 

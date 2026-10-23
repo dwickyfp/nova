@@ -68,9 +68,15 @@ def test_action_history_displays_message_without_internal_form_envelope():
     assert router._message_view(row, USER).content == row["content"]
 
 
-@pytest.mark.parametrize("changed", [{}, {"principal": "bob"}, {"active_role": "viewer"},
-                                    {"security_context_version": 2}])
-def test_history_projection_keeps_ui_only_in_its_original_security_context(changed):
+@pytest.mark.parametrize(("changed", "visible"), [
+    ({}, True),
+    # Another sign-in restarts the version count; principal and role still match.
+    ({"security_context_version": 2}, True),
+    ({"principal": "bob"}, False),
+    ({"active_role": "viewer"}, False),
+    ({"session_id": "device", "security_context_version": 2}, False),
+])
+def test_history_projection_keeps_ui_only_in_its_original_security_context(changed, visible):
     from datetime import datetime
 
     stamp = {"principal": "alice", "active_role": "analyst", "security_context_version": 1,
@@ -80,7 +86,7 @@ def test_history_projection_keeps_ui_only_in_its_original_security_context(chang
            "steps": [{"kind": "ui", "program": CALCULATOR, "evidence": {"x": []}},
                      {"kind": "answer"}]}
     projection = router._message_view(row, USER)
-    assert any(step.get("kind") == "ui" for step in projection.steps) == (not changed)
+    assert any(step.get("kind") == "ui" for step in projection.steps) == visible
     assert projection.content == "Markdown fallback."
     assert {"kind": "answer"} in projection.steps
 

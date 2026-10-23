@@ -154,11 +154,14 @@ async def _block(program: str, tables: dict[str, dict[str, Any]], fallback: str,
 async def compose(
     tables: dict[str, dict[str, Any]],
     summaries: dict[str, str],
+    *,
+    maps_only: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """A map, or else KPI tiles, for an answer no other visual shows.
 
-    ``tables`` are the verified results the answer displays. Returns the blocks
-    and the reasons any were skipped.
+    ``tables`` are the verified results the answer displays. A chart does not
+    show locations, so ``maps_only`` still draws a located result but no KPI.
+    Returns the blocks and the reasons any were skipped.
     """
     blocks: list[dict[str, Any]] = []
     skipped: list[str] = []
@@ -171,6 +174,8 @@ async def compose(
             blocks.append(await _block(program, {evidence_id: table}, f"**{title}**", "map"))
         except UiValidationError:
             skipped.append("map_validation")
+        return blocks, skipped
+    if maps_only:
         return blocks, skipped
 
     metrics = [(evidence_id, column, table) for evidence_id, table in tables.items()

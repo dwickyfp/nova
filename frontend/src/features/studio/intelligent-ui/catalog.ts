@@ -391,6 +391,11 @@ export function createSchemaLibrary(evidence: EvidenceRows = {}) {
   });
 }
 
+// Replaces the OpenUI default, which asks for code only: Nova answers are
+// Markdown first, and the server finds the program by its fence.
+export const uiPromptPreamble =
+  "You write Nova answers that can include an interactive view in openui-lang, a declarative UI language. Write the answer in Markdown. When an interactive view helps, add its openui-lang program after the Markdown in exactly one fenced ```openui block. Never return openui-lang outside that fence: unfenced statements are shown to the user as text.";
+
 export const uiPromptRules = [
   "Return short useful Markdown explaining the answer, then exactly one fenced ```openui program, then optional <claims> as usual. Markdown must independently explain the answer when the UI is unavailable.",
   "Use one root = Col([...]) statement. Declare $state variables with literal primitive/list defaults only, never expressions or references. Use regular variables without $ for derived expressions, e.g. weights=[$a,$b]; total=@Sum(weights). Inputs bind state variables and must affect displayed content or a form action.",

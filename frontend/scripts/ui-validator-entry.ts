@@ -3,6 +3,7 @@ import { generateSystemPrompt } from "@openuidev/lang-core";
 import {
   createSchemaLibrary,
   UI_CATALOG_VERSION,
+  uiPromptPreamble,
   uiPromptRules,
   uiPromptExamples,
 } from "../src/features/studio/intelligent-ui/catalog";
@@ -18,7 +19,12 @@ try {
         schema: library.toJSONSchema(),
         prompt: generateSystemPrompt({
           library: library.toSpec(),
-          promptOptions: { bindings: true, additionalRules: uiPromptRules, examples: uiPromptExamples },
+          promptOptions: {
+            preamble: uiPromptPreamble,
+            bindings: true,
+            additionalRules: uiPromptRules,
+            examples: uiPromptExamples,
+          },
         }),
       }),
     );

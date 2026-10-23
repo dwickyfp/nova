@@ -20,6 +20,10 @@ MAX_STATE_BYTES = 16_384
 CATALOG_VERSION = "nova-openui-3"
 SUPPORTED_CATALOGS = frozenset({"nova-openui-2", CATALOG_VERSION})
 _FENCE = re.compile(r"```openui[^\n]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+_ANY_FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+# A program starts at `root = Component(`; prose rarely does.
+_ROOT = re.compile(r"^\s*root\s*=\s*[A-Z]\w*\s*\(", re.MULTILINE)
+_STATEMENT = re.compile(r"^\s*\$?[A-Za-z_]\w*\s*=(?!=)")
 _RUNTIME_SLOTS = asyncio.Semaphore(4)
 
 
@@ -28,11 +32,45 @@ class UiValidationError(ValueError):
 
 
 def split_program(answer: str) -> tuple[str, str | None]:
+    """The Markdown answer and its one OpenUI program, if any.
+
+    Some models drop the ```openui fence or use a bare one. Their program is
+    still taken out of the Markdown, so it is validated rather than shown as
+    text.
+    """
     programs = _FENCE.findall(answer)
-    fallback = _FENCE.sub("", answer).strip()
-    if "```openui" in fallback.lower():
-        fallback = re.split(r"```openui", fallback, flags=re.IGNORECASE)[0].strip()
-    return fallback, programs[0].strip() if len(programs) == 1 else None
+    if programs:
+        fallback = _FENCE.sub("", answer).strip()
+        if "```openui" in fallback.lower():
+            fallback = re.split(r"```openui", fallback, flags=re.IGNORECASE)[0].strip()
+        return fallback, programs[0].strip() if len(programs) == 1 else None
+    if "```openui" in answer.lower():
+        return re.split(r"```openui", answer, flags=re.IGNORECASE)[0].strip(), None
+    fenced = [match for match in _ANY_FENCE.finditer(answer) if _ROOT.search(match.group(1))]
+    if len(fenced) == 1:
+        match = fenced[0]
+        fallback = (answer[:match.start()] + answer[match.end():]).strip()
+        return fallback, match.group(1).strip()
+    return _split_unfenced(answer)
+
+
+def _split_unfenced(answer: str) -> tuple[str, str | None]:
+    lines = answer.splitlines()
+    roots = [index for index, line in enumerate(lines) if _ROOT.match(line)]
+    if len(roots) != 1:
+        return answer.strip(), None
+    start = end = roots[0]
+    while start > 0 and _STATEMENT.match(lines[start - 1]):
+        start -= 1
+    while end + 1 < len(lines) and (
+        _STATEMENT.match(lines[end + 1]) or not lines[end + 1].strip()
+    ):
+        end += 1
+    while not lines[end].strip():
+        end -= 1
+    program = "\n".join(lines[start:end + 1]).strip()
+    fallback = "\n".join(lines[:start] + lines[end + 1:]).strip()
+    return fallback, program
 
 
 def runtime_available() -> bool:

@@ -1805,6 +1805,7 @@ class AssistantLoop:
                     "missing_metrics": missing_metrics,
                 }
                 context.verified_evidence = evidence.snapshot()
+                ui_unavailable = False
                 if context.ui_prompt and (
                     turn_plan.presentation == "interactive"
                     or ui_program or "```openui" in draft_text.lower()
@@ -1838,7 +1839,8 @@ class AssistantLoop:
                                 )
                             messages.append({"role": "system", "content": (
                                 "The requested interactive program is missing or invalid. "
-                                "Provide or repair it once: "
+                                "Provide or repair it once, after the Markdown answer and "
+                                "inside exactly one ```openui fence: "
                                 "use only the Nova catalog, valid declared state and exact "
                                 "@Evidence ids; business values must bind verified results, "
                                 "and media/HTML must be static public content. Keep the "
@@ -1851,9 +1853,7 @@ class AssistantLoop:
                                 "kind": "runtime_decision", "ui_fallback": "validation_failed",
                                 "status": "done",
                             })
-                        answer_text = (
-                            say("loop.ui_fallback_notice", language) + "\n\n" + answer_text
-                        ).strip()
+                        ui_unavailable = True
                     else:
                         answer_text = ui_block["fallback"]
                         if ui_block["provenance"].get("prose_rebuilt"):
@@ -1870,6 +1870,11 @@ class AssistantLoop:
                 pending_artifacts = await _autocompose_artifacts(
                     pending_artifacts, evidence, context, shown=answer_tables
                 )
+                # A verified map drawn in its place is still an interactive view.
+                if ui_unavailable and not any(item.kind == "ui" for item in pending_artifacts):
+                    answer_text = (
+                        say("loop.ui_fallback_notice", language) + "\n\n" + answer_text
+                    ).strip()
                 if not answer_text.strip():
                     answer_text = say("loop.ui_unavailable", language)
                 for frame in _ordered_output_frames(
@@ -4003,21 +4008,23 @@ async def _autocompose_artifacts(
 ) -> list[PendingArtifact]:
     """Add a map or KPI tiles for verified results that no other visual shows.
 
-    No provider call is made. Every UI block also records the query behind each
-    result it binds, so its visuals can be saved as artifacts.
+    A tool chart does not show locations, so a located result still gets its
+    map beside it. No provider call is made. Every UI block also records the
+    query behind each result it binds, so its visuals can be saved as artifacts.
     """
     from app.modules.assistant.intelligent_ui import runtime_available
     from app.modules.assistant.ui_autocompose import compose
 
     ordered = list(artifacts)
     if (context.intelligent_ui and runtime_available()
-            and not any(item.kind in {"ui", "chart"} for item in artifacts)):
+            and not any(item.kind == "ui" for item in artifacts)):
         business = evidence.business_tables
         tables = business if shown is None else {
             key: table for key, table in shown.items() if key in business
         }
         blocks, skipped = await compose(
-            tables, {item.evidence_id: item.summary for item in evidence.items}
+            tables, {item.evidence_id: item.summary for item in evidence.items},
+            maps_only=any(item.kind == "chart" for item in artifacts),
         )
         for reason in skipped:
             _record_step(context, {"kind": "runtime_decision",

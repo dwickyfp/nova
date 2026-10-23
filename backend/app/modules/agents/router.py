@@ -135,7 +135,11 @@ from app.modules.assistant.schemas import (
     UiMediaInput,
     UiStateInput,
 )
-from app.modules.assistant.security import observation_context, session_security
+from app.modules.assistant.security import (
+    observation_context,
+    same_ui_context,
+    session_security,
+)
 from app.modules.assistant.service import (
     AssistantLoop,
     LoopContext,
@@ -374,10 +378,7 @@ def _message_view(row: dict, user: dict | None = None) -> MessageView:
     current = observation_context(session_security(user)) if user is not None and any(
         item.get("kind") == "ui" for item in steps
     ) else {}
-    ui_visible = bool(current) and isinstance(stamp, dict) and all(
-        stamp.get(key) == current.get(key)
-        for key in ("principal", "active_role", "security_context_version")
-    )
+    ui_visible = bool(current) and same_ui_context(stamp, current)
     content = row.get("content") or ""
     if not ui_visible:
         steps = [item for item in steps if item.get("kind") != "ui"]

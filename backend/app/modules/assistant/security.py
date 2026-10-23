@@ -26,6 +26,24 @@ def observation_context(security: SecurityContext) -> dict:
     }
 
 
+def same_ui_context(stamp: object, current: dict) -> bool:
+    """Whether a stored interactive answer belongs to this caller's context.
+
+    The security-context version counts role changes within one sign-in and
+    restarts with every session, so it only separates stamps from the same
+    session. Across sessions the same principal and active role suffice, as
+    they do for the message's tables and charts.
+    """
+    if not isinstance(stamp, dict) or not current.get("principal") or not current.get(
+        "active_role"
+    ):
+        return False
+    if any(stamp.get(key) != current.get(key) for key in ("principal", "active_role")):
+        return False
+    return (stamp.get("session_id") != current.get("session_id")
+            or stamp.get("security_context_version") == current.get("security_context_version"))
+
+
 def secured_thread(thread: AssistantThread, security: SecurityContext) -> AssistantThread:
     stamp = observation_context(security)
     # Legacy messages and old user text can contain privileged rows too.
