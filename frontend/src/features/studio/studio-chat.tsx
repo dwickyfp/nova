@@ -64,7 +64,6 @@ import { useTranscriptStream } from "./use-transcript-stream";
 import { WorkflowRail } from "./workflow-rail";
 import { ThreadMissionObjects } from "./mission-objects";
 import { mergeMissionProjection, type Mission } from "./workflow-api";
-import { MissionTurnControls, type MissionTurnChoice } from "./mission-turn-controls";
 import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
@@ -151,7 +150,7 @@ export function StudioChat({
   const [research, setResearch] = useState<{ agentId: string; runId: string } | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [workflowAvailable, setWorkflowAvailable] = useState(false);
-  const [missionChoice, setMissionChoice] = useState<MissionTurnChoice>({ mode: "automatic" });
+  const [followUpMissionId, setFollowUpMissionId] = useState<string>();
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
   const manualSecurityEpoch = useRef(securityEpoch);
   useEffect(() => {
@@ -161,7 +160,7 @@ export function StudioChat({
     preserveDraft.current = false;
     setManualPending(false);
   }, [securityEpoch]);
-  useEffect(() => setMissionChoice({ mode: "automatic" }), [activeThreadId, agent?.agent_id, securityEpoch]);
+  useEffect(() => setFollowUpMissionId(undefined), [activeThreadId, agent?.agent_id, securityEpoch]);
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const workflowButtonRef = useRef<HTMLButtonElement | null>(null);
   const changeWorkflowOpen = useCallback((open: boolean) => {
@@ -617,16 +616,13 @@ export function StudioChat({
           uiAction,
           signal: controller.signal,
           role: currentRole,
-          newMission: missionChoice.mode === "new",
-          continueMissionId: missionChoice.mode === "continue" ? missionChoice.missionId : undefined,
+          continueMissionId: followUpMissionId,
           attachments: pending.map(({ name, content: fileContent, mediaType }) => ({
             name, content: fileContent, media_type: mediaType,
           })),
           onAccepted: () => {
             accepted = true;
-            if (missionChoice.mode === "new" || missionChoice.mode === "continue") {
-              setMissionChoice((current) => current === missionChoice ? { mode: "automatic" } : current);
-            }
+            setFollowUpMissionId((current) => current === followUpMissionId ? undefined : current);
           },
           onRunId: (runId) => {
             if (agent.agent_id === AUTO_AGENT_ID) {
@@ -700,7 +696,7 @@ export function StudioChat({
       flushEvents,
       cancelSmartRun,
       input,
-      missionChoice,
+      followUpMissionId,
       queryClient,
       queueEvent,
       onTurnEvent,
@@ -1042,7 +1038,7 @@ export function StudioChat({
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
                 ); })}
-                {workflowAvailable && threadId && <ThreadMissionObjects threadId={threadId} onFollowUp={(prompt, missionId) => { setInput(prompt); if (missionId) setMissionChoice({ mode: "continue", missionId }); textareaRef.current?.focus(); }} />}
+                {workflowAvailable && threadId && <ThreadMissionObjects threadId={threadId} onFollowUp={(prompt, missionId) => { setInput(prompt); setFollowUpMissionId(missionId); textareaRef.current?.focus(); }} />}
               </div>
             )}
           </div>
@@ -1068,7 +1064,6 @@ export function StudioChat({
             />
           </div>
         ) : null}
-        {workflowAvailable && threadId && <MissionTurnControls key={`${securityEpoch}:${threadId}`} threadId={threadId} value={missionChoice} onChange={setMissionChoice} disabled={streaming || loadingThread} />}
         <Composer
             ref={textareaRef}
             value={input}
