@@ -168,25 +168,22 @@ async def test_persisted_workload_rejects_controlled_clock_before_sql(monkeypatc
     execute.assert_not_called()
 
 
-@pytest.mark.parametrize("ranger,flag,sales,customers,reason", [
-    (False, "1", 50000, 200, "Explicit isolated patched-FE fixture required"),
-    (True, "0", 50000, 200, "Explicit isolated patched-FE fixture required"),
-    (True, "1", 999, 200, "fixture_row_budget"),
-    (True, "1", 1000001, 200, "fixture_row_budget"),
-    (True, "1", 50000, 99, "fixture_row_budget"),
-    (True, "1", 50000, 1001, "fixture_row_budget"),
+@pytest.mark.parametrize("flag,sales,customers,reason", [
+    ("0", 50000, 200, "Explicit isolated patched-FE fixture required"),
+    ("1", 999, 200, "fixture_row_budget"),
+    ("1", 1000001, 200, "fixture_row_budget"),
+    ("1", 50000, 99, "fixture_row_budget"),
+    ("1", 50000, 1001, "fixture_row_budget"),
 ])
 async def test_governed_cycle_requires_an_explicit_fixture_and_bounded_rows_before_database(
-    monkeypatch, tmp_path, ranger, flag, sales, customers, reason,
+    monkeypatch, tmp_path, flag, sales, customers, reason,
 ):
     from unittest.mock import AsyncMock
 
-    from app.core.config import settings
     from app.core.database import db
     from scripts import verify_autopilot_governed_cycle as cycle
 
     monkeypatch.setattr(cycle, "_inherit_pid_one_environment", lambda: None)
-    monkeypatch.setattr(settings, "RANGER_ENABLED", ranger)
     monkeypatch.setenv("NOVA_AUTOPILOT_FIXTURE_STACK", flag)
     connect = AsyncMock()
     monkeypatch.setattr(db, "init_system_pool", connect)
@@ -361,12 +358,10 @@ async def test_governed_repetition_and_reuse_budgets_fail_before_database(
 ):
     from unittest.mock import AsyncMock
 
-    from app.core.config import settings
     from app.core.database import db
     from scripts import verify_autopilot_governed_cycle as cycle
 
     monkeypatch.setattr(cycle, "_inherit_pid_one_environment", lambda: None)
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     monkeypatch.setenv("NOVA_AUTOPILOT_FIXTURE_STACK", "1")
     connect = AsyncMock()
     monkeypatch.setattr(db, "init_system_pool", connect)

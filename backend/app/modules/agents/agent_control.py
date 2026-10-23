@@ -108,8 +108,6 @@ class AgentControl:
     async def _reject_resource_copy(self, *contents: str) -> None:
         from app.modules.agents.resource_delegation import reference_checkpoint, resource_delegation
 
-        if not resource_delegation.enabled():
-            return
         attachments, refs = await resource_delegation.load(self.caller, self.user)
         if reference_checkpoint(
             {"contents": list(contents)}, prompt="", attachments=attachments, refs=refs

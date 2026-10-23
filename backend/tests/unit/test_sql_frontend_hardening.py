@@ -90,7 +90,7 @@ async def test_script_preflight_never_executes_before_confirmation(sql, monkeypa
     service._repo.execute_as_user = engine
     audit = AsyncMock()
     monkeypatch.setattr("app.modules.query.service.write_audit_log", audit)
-    result = await service.execute_statements(sql, "alice", "enc")
+    result = await service.execute_statements(sql, "alice", "enc", role="analyst")
     assert len(result) == 1 and result[0].needs_confirmation
     assert result[0].error_code == "confirmation_required" and result[0].effects
     engine.assert_not_awaited()
@@ -104,7 +104,7 @@ async def test_confirmed_create_then_insert_and_overwrite_policy(monkeypatch):
     monkeypatch.setattr("app.modules.query.service.write_audit_log", AsyncMock())
     monkeypatch.setattr("app.modules.query.service.decrypt_password", lambda _: "pw")
     results = await service.execute_statements(
-        "CREATE TABLE t (x INT); INSERT OVERWRITE t SELECT 1", "alice", "enc"
+        "CREATE TABLE t (x INT); INSERT OVERWRITE t SELECT 1", "alice", "enc", role="analyst"
     )
     assert len(results) == 2 and all(result.success for result in results)
     assert results[-1].effects["replaces_data"] and not results[-1].destructive

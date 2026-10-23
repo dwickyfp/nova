@@ -239,7 +239,7 @@ class TestExplainFailsClosedAndRedacted:
         provider = FakeProvider(error=RuntimeError("AccessDenied"))
         svc, audits = self._service(monkeypatch, provider)
 
-        result = await svc.explain(
+        result = await svc.explain(role="analyst",
             sql="EXPLAIN SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",
@@ -273,7 +273,7 @@ class TestExplainFailsClosedAndRedacted:
 
         svc._repo = Repo()
 
-        await svc.explain(
+        await svc.explain(role="analyst",
             sql="EXPLAIN SELECT * FROM @stage1.data.csv",
             username="analyst",
             encrypted_password="enc",

@@ -19,7 +19,7 @@ Harness² is an optimization reference, not a replacement for Nova's runtime. Pu
 | Behavior | Baseline `d068264f` | Implemented behavior under acceptance |
 | --- | --- | --- |
 | Composer mode | Agent-oriented selection | Default Smart brain toggle; manual selector only when disabled; original composer styling |
-| Interactive answers | Markdown and existing result artifacts | Validated inline controls, charts and separate public/business maps; Markdown fallback retained |
+| Interactive answers | Markdown and existing result artifacts | One renderer for every Studio visual: model programs, deterministic maps/KPIs, tool charts, artifacts and dashboard tiles; Markdown fallback retained |
 | UI continuation | No versioned UI state/action contract | Source-bound revisions and idempotent action operations through the agent endpoint |
 | Direct run reload/Stop | In-memory reconnect; Stop disconnected the browser | Discover/replay the scoped journal after reload; explicit server cancellation |
 | Recovery allowance | Per-attempt time and repair handling | Absolute deadline, consumed tokens and shared repair counts survive checkpoints |
@@ -47,7 +47,17 @@ Evidence transport caps each result at 200 rows and records the omitted row coun
 
 UI source and state are scoped to owner, role, security-context version, message, content and program hash. Optimistic revisions reject stale writes. Action operation IDs are idempotent; the server reloads and validates the source, declared action, state, current agent/thread access and security context. Form content is untrusted user input. Navigation flushes pending state; a failed save leaves the user in the current context. Assistant form submission sends values through Nova to its configured model provider; local filters and calculators do not issue model requests.
 
-`STUDIO_INTELLIGENT_UI_ENABLED=false` disables generation and state/action APIs, while history renders its Markdown fallback. Unknown catalog versions and malformed programs also fall back. HTML/canvas runs in an offline sandbox with no business evidence and no parent access.
+Interactive UI generation and its state/action APIs are always on. Unknown catalog versions and malformed programs also fall back. HTML/canvas runs in an offline sandbox with no business evidence and no parent access.
+
+## One Studio renderer
+
+Studio has one visual system: the intelligent UI catalog components (`Chart`, `Table`, `GeoMap`, `Kpi` and the rest). No surface uses a second chart or table renderer.
+
+- **Model programs.** `presentation: "interactive"` asks the model for a composed view: calculators, forms, simulations, local filters, dashboards that combine results, diagrams, route maps, flashcards, timers and canvases. The catalog remains available when the planner prefers text and joins the pinned system prompt; context curation trims history and stale tool payloads instead, so the prompt is never dropped to save tokens. The provider's own context window still ends a turn through `context_overflow`.
+- **Deterministic blocks.** When an answer has no model program and no tool chart, `assistant/ui_autocompose.py` adds one block for its displayed verified results without a provider call: a governed `GeoMap` for the first result with latitude/longitude columns (or WKT/GeoJSON geometry), otherwise up to four `Kpi` tiles for single-metric results. These blocks pass the same Node validator, bind `@Evidence`, carry `provenance.composer = "deterministic"` and follow the same security-context visibility as model blocks.
+- **Stored charts.** `data_to_chart`, saved artifacts and dashboard tiles keep Vega-Lite v5 as their stored data template. The frontend adapter `intelligent-ui/chart-spec-block.ts` turns a spec and its rows into a catalog program for the same renderer: bar/line/area/arc/point marks, nominal colour through `@Pivot`, quantitative colour as a second series, descending category sort through `@Sort`, and `count` aggregates counted from the rows. Donut marks retain their inner radius. Unsupported transforms, time buckets, bins and extra grouping fall back to a `Table` of the original rows rather than silently changing the plotted values. Vega is no longer a frontend dependency.
+- **Tables.** `result-table.tsx` is the only result grid: answer tables, catalog `Table` nodes, chart companion data, artifacts, dashboard tiles and shared results.
+- **Saving.** Charts, tables and maps inside a block save as artifacts. Every block records `provenance.tool_calls` (evidence id → query tool call), so the artifact reuses that query's read-only SQL. Missing query provenance refuses saving instead of guessing a nearby query. Distinct chart definitions keep independent saved states. A chart of the result's own columns (one measure, or two with the second as colour) is saved as a Vega-Lite template; a chart of values calculated in the answer is saved as its source table, and the reader is told so.
 
 Smart is the default for a new chat. The brain toggle exposes `aria-pressed`; the manual agent selector appears only when Smart is off. Draft and attachments survive mode changes, and the last accessible manual selection is restored. A pending manual selection blocks sending. Mode changes are disabled during a run so its identity stays stable. The existing composer dimensions and styling remain intact.
 

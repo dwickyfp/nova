@@ -26,6 +26,10 @@ async def test_auto_carries_query_evidence_and_withholds_unsupported_numbers(
     synthesis_text: str,
     replan_failure: bool,
 ) -> None:
+    monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.project_run",
+        AsyncMock(return_value=None),
+    )
     question = (
         "Bandingkan recognized revenue, gross margin, "
         "dan order count per channel untuk 2025."
@@ -114,6 +118,7 @@ async def test_auto_carries_query_evidence_and_withholds_unsupported_numbers(
             run = self.runs[run_id]
             assert run["status"] == from_status
             run["status"] = to_status
+            run["error_class"] = updates.get("error_class")
             if "checkpoint" in updates:
                 run["checkpoint"] = updates["checkpoint"]
             if "summary" in updates:
@@ -165,7 +170,7 @@ async def test_auto_carries_query_evidence_and_withholds_unsupported_numbers(
     monkeypatch.setattr(
         module.agent_service,
         "build_loop_inputs",
-        AsyncMock(return_value=(registry, "Specialist", 30, 1000)),
+        AsyncMock(return_value=(registry, "Specialist", 30, 24000)),
     )
     monkeypatch.setattr(module.memory_repository, "list", AsyncMock(return_value=[]))
     monkeypatch.setattr(module, "has_verified_access", AsyncMock(return_value=True))
@@ -184,7 +189,7 @@ async def test_auto_carries_query_evidence_and_withholds_unsupported_numbers(
     await worker._execute_child(child, user, asyncio.Event())
 
     assert [invocation.tool_name for invocation in tool.runs] == ["query_execute"]
-    assert child["status"] == "completed"
+    assert child["status"] == "completed", (child.get("error_class"), repository.activity)
     assert child["checkpoint"]["evidence_tables"][0]["rows"] == table["rows"]
     assert child["checkpoint"]["needs_data"] is True
     assert "999" not in child["result_summary"]
@@ -212,7 +217,8 @@ async def test_auto_carries_query_evidence_and_withholds_unsupported_numbers(
     await worker._coordinate(root, user, asyncio.Event())
 
     assert root["status"] == "completed"
-    assert provider.calls == 3
+    # Query, unsupported draft, bounded numeric rewrite, and Auto synthesis.
+    assert provider.calls == 4
     assert provider.synthesis_messages is not None
     findings = json.loads(provider.synthesis_messages[1]["content"])["findings"]
     assert "| Mobile App | 125.00 | 0.37 | 3 |" in findings[0]["summary"]

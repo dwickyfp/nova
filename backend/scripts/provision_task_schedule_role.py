@@ -11,7 +11,6 @@ import secrets
 from app.common.audit import write_audit_log
 from app.common.identifiers import check_identifier
 from app.common.nova_system import init_task_orchestration
-from app.core.config import settings
 from app.core.database import db
 from app.integrations.ranger.client import ranger_client
 from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
@@ -30,25 +29,19 @@ async def bind(role_name: str, account: str, actor: str) -> None:
     existing = await repo.get_role_execution_user(role_name)
     if existing and existing != account:
         raise ValueError("Role already has a different scheduled execution account")
-    role = None
-    if settings.RANGER_ENABLED:
-        stored_role = await ranger_client.get_role(role_name)
-        if not stored_role:
-            raise ValueError("Owner role does not exist in Ranger")
-        role = RangerRole.model_validate(stored_role)
+    stored_role = await ranger_client.get_role(role_name)
+    if not stored_role:
+        raise ValueError("Owner role does not exist in Ranger")
+    role = RangerRole.model_validate(stored_role)
     password = secrets.token_hex(32)
     await db.execute_system(f"CREATE USER IF NOT EXISTS '{account}' IDENTIFIED BY %s", [password])
     del password
     await db.execute_system(f"GRANT {role_name} TO USER '{account}'")
-    if role is not None:
-        await ranger_client.put_user_attributes(account, {})
-        if not any(member.name == account for member in role.users):
-            role.users.append(RangerRoleMember(name=account))
-            await ranger_client.put_role(role)
-        await provision(account)
-    else:
-        worker_role = check_identifier(settings.WORKER_IMPERSONATION_ROLE, field="worker role")
-        await db.execute_system(f"GRANT IMPERSONATE ON USER '{account}'@'%' TO ROLE {worker_role}")
+    await ranger_client.put_user_attributes(account, {})
+    if not any(member.name == account for member in role.users):
+        role.users.append(RangerRoleMember(name=account))
+        await ranger_client.put_role(role)
+    await provision(account)
     await repo.bind_role_execution_user(role_name, account, actor)
     await write_audit_log(
         event_type="TASK_WORKER",

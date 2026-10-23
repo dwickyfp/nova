@@ -302,7 +302,6 @@ async def app(sr_root, minio_client, redis_client):
 
     cfg.settings.STARROCKS_HOST = "127.0.0.1"
     cfg.settings.STARROCKS_FE_MYSQL_PORT = ports["starrocks-fe"]
-    cfg.settings.STARROCKS_ARROW_FLIGHT_PORT = ports["starrocks-fe-arrow"]
     cfg.settings.STARROCKS_ROOT_USER = "root"
     cfg.settings.STARROCKS_ROOT_PASSWORD = ""
     cfg.settings.REDIS_URL = f"redis://127.0.0.1:{ports['redis']}/0"

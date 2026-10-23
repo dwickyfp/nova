@@ -1,10 +1,9 @@
 # Nova Streams SQL: namespace and current availability
 
 Nova accepts Stream syntax through its central grammar, typed AST, and planner.
-Production Stream execution is unavailable. Both `STREAMS_ENABLED` and
-`MANAGED_APPEND_ENABLED` default to false; enabling the first still returns
-provider unavailable. Parser success is not proof of source capture, governance,
-or an executed Stream operation.
+Production Stream execution is unavailable: every Stream command returns
+provider unavailable, and no configuration setting changes that. Parser success
+is not proof of source capture, governance, or an executed Stream operation.
 
 ## Namespace
 
@@ -20,7 +19,7 @@ of the destination Stream's namespace.
 
 | Statement | Current behavior |
 | --- | --- |
-| `CREATE STREAM [IF NOT EXISTS] name ON TABLE source APPEND_ONLY = TRUE` | Typed action; disabled/provider-unavailable at execution |
+| `CREATE STREAM [IF NOT EXISTS] name ON TABLE source APPEND_ONLY = TRUE` | Typed action; provider-unavailable at execution |
 | `DROP STREAM [IF EXISTS] name` | Requires destructive confirmation (a MySQL client's statement counts as confirmed); still unavailable after confirmation |
 | `DESCRIBE STREAM name` / `DESC STREAM name` | Typed action; unavailable |
 | `SHOW STREAMS` | Requires active database; unavailable |

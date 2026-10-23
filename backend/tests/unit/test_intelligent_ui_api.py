@@ -68,28 +68,6 @@ def test_action_history_displays_message_without_internal_form_envelope():
     assert router._message_view(row, USER).content == row["content"]
 
 
-def test_disabled_ui_restores_complete_simulation_markdown_only_for_original_scope(monkeypatch):
-    from datetime import datetime
-
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "STUDIO_INTELLIGENT_UI_ENABLED", False)
-    fallback = "Calculated assumptions:\n\n| Amount |\n| --- |\n| 100 |"
-    row = {"message_id": "message", "role": "assistant", "content": "Calculated assumptions:",
-           "created_at": datetime.now(),
-           "security_context": {"principal": "alice", "active_role": "analyst",
-                                "security_context_version": 1},
-           "steps": [{"kind": "text", "text": "Calculated assumptions:"},
-                     {"kind": "ui", "fallback": fallback,
-                      "provenance": {"prose_rebuilt": True}}]}
-    projected = router._message_view(row, USER)
-    assert projected.content == fallback
-    assert [step["text"] for step in projected.steps if step["kind"] == "text"] == [fallback]
-    assert not any(step["kind"] == "ui" for step in projected.steps)
-    row["security_context"]["active_role"] = "viewer"
-    assert router._message_view(row, USER).content == "Calculated assumptions:"
-
-
 @pytest.mark.parametrize("changed", [{}, {"principal": "bob"}, {"active_role": "viewer"},
                                     {"security_context_version": 2}])
 def test_history_projection_keeps_ui_only_in_its_original_security_context(changed):
@@ -132,7 +110,7 @@ async def test_state_uses_source_owner_and_current_role(ui_source, monkeypatch):
     assert router.write_audit_log.call_args.kwargs["status"] == "DENIED"
 
 
-async def test_changed_program_and_disabled_feature_fail_closed(ui_source, monkeypatch):
+async def test_changed_program_fails_closed(ui_source):
     with pytest.raises(HTTPException) as changed:
         await router.put_agent_ui_state("agent", "thread", "message", "content-1",
             UiStateInput(revision=0, program_sha256="b" * 64, state={"$units": 6}), USER)
@@ -141,10 +119,6 @@ async def test_changed_program_and_disabled_feature_fail_closed(ui_source, monke
     with pytest.raises(HTTPException) as digest:
         await router.get_agent_ui_state("agent", "thread", "message", "content-1", USER)
     assert digest.value.status_code == 404
-    monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", False)
-    with pytest.raises(HTTPException) as disabled:
-        await router.get_agent_ui_state("agent", "thread", "message", "content-1", USER)
-    assert disabled.value.status_code == 404
 
 
 async def test_media_must_match_static_program_not_form_or_business_data(ui_source, monkeypatch):

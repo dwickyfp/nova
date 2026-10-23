@@ -87,7 +87,6 @@ fi
 # private. Explicit shell values win when a developer uses another endpoint.
 STARROCKS_HOST="${STARROCKS_HOST:-127.0.0.1}"
 STARROCKS_FE_MYSQL_PORT="${STARROCKS_FE_MYSQL_PORT:-29030}"
-RANGER_ENABLED="${RANGER_ENABLED:-true}"
 RANGER_ADMIN_URL="${RANGER_ADMIN_URL:-http://127.0.0.1:6080}"
 RANGER_ADMIN_PORT="${RANGER_ADMIN_PORT:-6080}"
 RANGER_USERNAME="${RANGER_USERNAME:-admin}"
@@ -134,12 +133,10 @@ check_infra() {
   else
     warn "Redis NOT reachable at ${redis_host}:${redis_port}"; missing=1
   fi
-  if [[ "$RANGER_ENABLED" == "true" ]]; then
-    if port_open "$RANGER_ADMIN_PORT"; then
-      ok "Ranger Admin reachable at 127.0.0.1:${RANGER_ADMIN_PORT}"
-    else
-      warn "Ranger Admin NOT reachable at 127.0.0.1:${RANGER_ADMIN_PORT}"; missing=1
-    fi
+  if port_open "$RANGER_ADMIN_PORT"; then
+    ok "Ranger Admin reachable at 127.0.0.1:${RANGER_ADMIN_PORT}"
+  else
+    warn "Ranger Admin NOT reachable at 127.0.0.1:${RANGER_ADMIN_PORT}"; missing=1
   fi
 
   if [[ "$missing" -eq 1 ]]; then
@@ -300,15 +297,15 @@ run() {
 log "starting Nova dev processes..."
 
 RANGER_PASSWORD_VALUE="${RANGER_PASSWORD:-}"
-if [[ "$RANGER_ENABLED" == "true" && -z "$RANGER_PASSWORD_VALUE" ]]; then
+if [[ -z "$RANGER_PASSWORD_VALUE" ]]; then
   RANGER_PASSWORD_VALUE="$(container_env_value nova-ranger-admin RANGER_DB_PASSWORD || true)"
 fi
-if [[ "$RANGER_ENABLED" == "true" && -z "$RANGER_PASSWORD_VALUE" ]]; then
-  die "Ranger is enabled but its development credential could not be read. Set RANGER_PASSWORD in the shell or start the Docker infrastructure first."
+if [[ -z "$RANGER_PASSWORD_VALUE" ]]; then
+  die "Ranger's development credential could not be read. Set RANGER_PASSWORD in the shell or start the Docker infrastructure first."
 fi
 
 RANGER_SERVICE_NAME_VALUE="${RANGER_SERVICE_NAME:-}"
-if [[ "$RANGER_ENABLED" == "true" && -z "$RANGER_SERVICE_NAME_VALUE" ]]; then
+if [[ -z "$RANGER_SERVICE_NAME_VALUE" ]]; then
   RANGER_SERVICE_NAME_VALUE="$(container_env_value nova-ranger-bootstrap RANGER_SERVICE_NAME || true)"
   RANGER_SERVICE_NAME_VALUE="${RANGER_SERVICE_NAME_VALUE:-nova_starrocks}"
 fi
@@ -317,28 +314,12 @@ BACKEND_ENV=(
   env
   STARROCKS_HOST="$STARROCKS_HOST"
   STARROCKS_FE_MYSQL_PORT="$STARROCKS_FE_MYSQL_PORT"
-  RANGER_ENABLED="$RANGER_ENABLED"
   RANGER_ADMIN_URL="$RANGER_ADMIN_URL"
   RANGER_SERVICE_NAME="$RANGER_SERVICE_NAME_VALUE"
   RANGER_USERNAME="$RANGER_USERNAME"
   RANGER_PASSWORD="$RANGER_PASSWORD_VALUE"
   RANGER_TLS_VERIFY="$RANGER_TLS_VERIFY"
 )
-
-# Resolve only the rollout booleans; do not source the credential-bearing .env file.
-STUDIO_RUNTIME_ENV="$(
-  cd "$BACKEND_DIR"
-  uv run python - <<'PY'
-from app.core.config import settings
-from app.core.studio_capabilities import STUDIO_FLAG_NAMES
-
-for name in STUDIO_FLAG_NAMES:
-    print(f"{name}={str(getattr(settings, name)).lower()}")
-PY
-)"
-while IFS= read -r studio_flag; do
-  BACKEND_ENV+=("$studio_flag")
-done <<< "$STUDIO_RUNTIME_ENV"
 
 if ! (
   cd "$BACKEND_DIR"
@@ -349,10 +330,10 @@ user = settings.WORKER_IMPERSONATION_USER
 password = settings.WORKER_IMPERSONATION_PASSWORD
 role = settings.WORKER_IMPERSONATION_ROLE
 valid = bool(user and password and user.lower() not in {"root", "nova_admin"})
-raise SystemExit(0 if valid and (not settings.RANGER_ENABLED or role) else 1)
+raise SystemExit(0 if valid and role else 1)
 PY
 ); then
-  die "task worker configuration is incomplete. Set WORKER_IMPERSONATION_USER and WORKER_IMPERSONATION_PASSWORD in backend/.env for a dedicated StarRocks account. With Ranger enabled, also set WORKER_IMPERSONATION_ROLE."
+  die "task worker configuration is incomplete. Set WORKER_IMPERSONATION_USER and WORKER_IMPERSONATION_PASSWORD in backend/.env for a dedicated StarRocks account, and WORKER_IMPERSONATION_ROLE for its role."
 fi
 
 if [[ "$SPLIT" -eq 1 ]]; then

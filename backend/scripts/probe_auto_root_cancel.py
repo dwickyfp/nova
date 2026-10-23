@@ -2,7 +2,7 @@
 
 Run from backend while dev.sh serves the API and agent worker::
 
-    STARROCKS_FE_MYSQL_PORT=29030 RANGER_ENABLED=true \
+    STARROCKS_FE_MYSQL_PORT=29030 \
       .venv/bin/python -m scripts.probe_auto_root_cancel
 """
 

@@ -28,7 +28,6 @@ from asyncmy.converters import through
 
 from app.common.identifiers import check_identifier
 from app.common.sql_guard import redact_sql_credentials
-from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import StarRocksError
 
@@ -262,7 +261,7 @@ class QueryRepository:
         A user may have access through a non-default role, so selecting the
         database during connection setup would reject an authorized query.
         """
-        if settings.RANGER_ENABLED and not role:
+        if not role:
             raise StarRocksError("User-data execution requires exactly one explicit active role")
         start = time.monotonic()
         if connected is not None:

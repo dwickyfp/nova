@@ -698,7 +698,6 @@ async def main() -> None:
     settings.STARROCKS_ROOT_USER = "root"
     settings.STARROCKS_ROOT_PASSWORD = os.environ.get("NOVA_TEST_SR_PASSWORD", "")
     settings.REDIS_URL = args.redis_url
-    settings.RANGER_ENABLED = False
     settings.NOVA_TIMEZONE = "UTC"
     matrix = Matrix(args.output)
     settings.TASK_STREAM_KEY = f"nova:acceptance:{matrix.suffix}"

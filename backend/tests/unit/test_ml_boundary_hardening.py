@@ -22,7 +22,6 @@ from app.modules.agents.tools.ml_execute import MLExecuteTool
 from app.modules.assistant.tools import ToolInvocation
 from app.modules.ml_engine.artifacts.serializer import serialize_bundle
 from app.modules.ml_engine.artifacts.store import MemoryArtifactStore
-from app.modules.ml_engine.data.arrow_flight import ArrowFlightDataSource
 from app.modules.ml_engine.engines.anomaly import train_anomaly
 from app.modules.ml_engine.engines.base import TrainingOutput
 from app.modules.ml_engine.engines.forecast import train_forecast
@@ -41,82 +40,12 @@ from app.modules.ml_engine.spec import (
 )
 from tests.unit.ml_fakes import MemoryEphemeralRepository
 
-SECURITY = MLSecurityContext("alice", "secret", database="analytics")
+SECURITY = MLSecurityContext("alice", "secret", database="analytics", role="analyst")
 BUDGET = ExecutionBudget(5, 10_000, 10_000_000)
 
 
 def _long_worker() -> None:
     time.sleep(30)
-
-
-@pytest.mark.asyncio
-async def test_flight_lifecycle_stays_on_one_thread_and_queue_is_bounded(monkeypatch):
-    source = ArrowFlightDataSource(batch_size=1, queue_depth=2)
-    thread_ids: list[int] = []
-    queue_sizes: list[int] = []
-
-    def reader(sql, security):
-        del sql, security
-        thread_ids.append(threading.get_ident())  # open/execute
-        try:
-            for value in range(8):
-                thread_ids.append(threading.get_ident())  # read
-                yield pa.record_batch([pa.array([value])], names=["value"])
-        finally:
-            thread_ids.append(threading.get_ident())  # close
-
-    original_put = source._put
-
-    def recording_put(loop, queue, item, stopped):
-        result = original_put(loop, queue, item, stopped)
-        queue_sizes.append(queue.qsize())
-        return result
-
-    monkeypatch.setattr(source, "_open_reader", reader)
-    monkeypatch.setattr(source, "_put", recording_put)
-    values = []
-    async for batch in source.stream("SELECT value", SECURITY):
-        values.extend(batch.column(0).to_pylist())
-        await asyncio.sleep(0.005)
-
-    assert values == list(range(8))
-    assert len(set(thread_ids)) == 1
-    assert max(queue_sizes) <= 2
-
-
-@pytest.mark.asyncio
-async def test_flight_cancellation_stops_producer_and_closes_reader(monkeypatch):
-    source = ArrowFlightDataSource(batch_size=1, queue_depth=1)
-    closed = threading.Event()
-    produced = threading.Event()
-
-    def reader(sql, security):
-        del sql, security
-        try:
-            value = 0
-            while True:
-                produced.set()
-                yield pa.record_batch([pa.array([value])], names=["value"])
-                value += 1
-        finally:
-            closed.set()
-
-    monkeypatch.setattr(source, "_open_reader", reader)
-
-    async def consume():
-        stream = source.stream("SELECT value", SECURITY)
-        try:
-            async for _batch in stream:
-                await asyncio.sleep(60)
-        finally:
-            await stream.aclose()
-
-    task = asyncio.create_task(consume())
-    await asyncio.to_thread(produced.wait, 2)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert closed.wait(2)
 
 
 @pytest.mark.asyncio
@@ -167,7 +96,7 @@ class _DescriptorRunner:
                     "largest_batch_bytes": 80,
                     "final_materialized_bytes": 160,
                     "duration_ms": 1.0,
-                    "transport": "ArrowFlightDataSource",
+                    "transport": "mysql_fallback",
                 },
             )(),
             artifact_uri=uri,
@@ -366,6 +295,7 @@ async def test_query_service_intercepts_ml_forecast_as_table_semantics(monkeypat
     monkeypatch.setattr(query_service_module, "write_audit_log", no_audit)
     result = await QueryService().execute(
         "SELECT * FROM ML_FORECAST(MODEL => 'sales', HORIZON => 1, SERIES => 'west')",
+        role="analyst",
         username="alice",
         encrypted_password="unused",
         database="analytics",

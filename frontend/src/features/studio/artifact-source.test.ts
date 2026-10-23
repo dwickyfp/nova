@@ -3,6 +3,7 @@ import type { TranscriptTurn } from "./studio-chat";
 import {
   findArtifactSql,
   formatArtifactSql,
+  uiNodeContentId,
   type SavableContent,
 } from "./artifact-source";
 
@@ -43,6 +44,42 @@ describe("artifact SQL provenance", () => {
     expect(findArtifactSql(turns, "turn-1", item)).toBe(
       "SELECT COUNT(*) AS n FROM orders",
     );
+  });
+
+  it("uses the query recorded for a visual inside an interactive answer", () => {
+    const request = {
+      kind: "table" as const, title: "Outlets", evidenceId: "evidence_2",
+      columns: ["outlet"], toolCallId: "query-2",
+    };
+    const item: SavableContent = {
+      id: uiNodeContentId("content-3", request),
+      type: "ui-node",
+      request,
+      block: { tool_call_id: request.toolCallId },
+    };
+    const step = (id: string, preview: string) => ({
+      id, kind: "tool" as const, label: "query_execute", text: "Ran a query",
+      status: "done" as const, preview,
+    });
+    const turns = [
+      turn("turn-1", [step("query-1", "SELECT 1 AS n"), step("query-2", "SELECT outlet FROM outlets")]),
+    ];
+    expect(item.id).toContain("content-3:evidence_2:table:");
+    expect(findArtifactSql(turns, "turn-1", item)).toBe("SELECT outlet FROM outlets");
+    expect(findArtifactSql(turns, "turn-1", { ...item, block: {} })).toBeNull();
+    expect(findArtifactSql(turns, "turn-1", {
+      ...item, block: { tool_call_id: "missing-query" },
+    })).toBeNull();
+  });
+
+  it("tracks distinct charts of the same result independently", () => {
+    const request = {
+      kind: "chart" as const, title: "Revenue", evidenceId: "e1", columns: ["month", "revenue"],
+      chart: { type: "bar", x: "month", y: "revenue", series: [] },
+    };
+    expect(uiNodeContentId("ui", request)).not.toBe(uiNodeContentId("ui", {
+      ...request, chart: { ...request.chart, type: "line" },
+    }));
   });
 
   it("finds the previous query for a follow-up chart", () => {

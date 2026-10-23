@@ -33,7 +33,6 @@ async def unlocked(*args):
 def setup(monkeypatch):
     from app.modules.agents import router
 
-    monkeypatch.setattr(autopilot.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True, raising=False)
     monkeypatch.setattr(router, "_require_agent", AsyncMock(return_value={
         "semantic_view_ids": ["sales"],
     }))
@@ -111,15 +110,6 @@ async def test_new_observations_do_not_create_duplicate_semantic_change(monkeypa
     assert later["proposal_id"] == first["proposal_id"]
     assert later["details"]["usage_evidence"]["digest"] == DIGEST
     autopilot.rule_proposal_repository.create.assert_awaited_once()
-
-
-async def test_changed_scope_and_unavailable_feature_refuse_learning(monkeypatch):
-    _, load, _, _ = setup(monkeypatch)
-    monkeypatch.setattr(autopilot.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False)
-    with pytest.raises(HTTPException) as error:
-        await autopilot.usage_observations("sales", "agent", USER)
-    assert error.value.status_code == 404
-    load.assert_not_awaited()
 
 
 @pytest.mark.parametrize("summary, status", [

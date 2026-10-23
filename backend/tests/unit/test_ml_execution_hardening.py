@@ -38,7 +38,7 @@ from app.modules.ml_engine.spec import (
 )
 from tests.unit.ml_fakes import MemoryEphemeralRepository
 
-SECURITY = MLSecurityContext("alice", "password", database="analytics")
+SECURITY = MLSecurityContext("alice", "password", database="analytics", role="analyst")
 
 
 @pytest.mark.parametrize(
@@ -230,7 +230,7 @@ async def test_million_row_materialization_stays_batched(monkeypatch):
             return np.zeros(len(matrix))
 
     class Source:
-        transport_used = "arrow_flight"
+        transport_used = "mysql"
 
         async def stream(self, sql, security):
             for _ in range(100):

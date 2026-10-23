@@ -674,7 +674,6 @@ class AssistantLoop:
         save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
     ) -> AsyncGenerator[str, None]:
-        from app.core.config import settings
         from app.modules.assistant.provider import provider_retry_scope
 
         context.execution_now = context.execution_now or _now()
@@ -688,10 +687,7 @@ class AssistantLoop:
                 ),
                 resumed=resume_state is not None,
             )
-            if self._spend_limit is not None or (
-                (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation)
-                and context.agent_id
-            ) else None
+            if self._spend_limit is not None or context.agent_id else None
         )
         if resume_state is not None and self._spend_limit is not None:
             consumed = resume_state.get("consumed_tokens")
@@ -1095,7 +1091,6 @@ class AssistantLoop:
 
         context.ui_prompt = composer_prompt(
             enabled=context.intelligent_ui, presentation=turn_plan.presentation,
-            token_room=self._context_manager.token_budget - estimate_messages_tokens(messages),
         )
         if context.ui_prompt and turn_plan.presentation != "interactive":
             leading = next(
@@ -1375,13 +1370,6 @@ class AssistantLoop:
                         len(json.dumps(current_schemas, separators=(",", ":"), default=str)) // 4
                     )
                     message_budget = self._context_manager.token_budget - schema_tokens
-                    if context.ui_prompt and estimate_messages_tokens(messages) > message_budget:
-                        messages = [{**item, "content": item["content"].replace(
-                            "\n" + context.ui_prompt, ""
-                        )} if isinstance(item.get("content"), str) else item for item in messages]
-                        context.ui_prompt = ""
-                        _record_step(context, {"kind": "runtime_decision",
-                                               "ui_fallback": "context_budget", "status": "done"})
                     if message_budget > 0:
                         curated_request = ContextManager(
                             token_budget=message_budget,
@@ -1852,6 +1840,9 @@ class AssistantLoop:
                             "bound": bool(ui_block["provenance"]["evidence_ids"]),
                         }
                         pending_artifacts.append(PendingArtifact("ui", ui_block))
+                pending_artifacts = await _autocompose_artifacts(
+                    pending_artifacts, evidence, context, shown=answer_tables
+                )
                 if not answer_text.strip():
                     answer_text = say("loop.ui_unavailable", language)
                 for frame in _ordered_output_frames(
@@ -2760,6 +2751,7 @@ class AssistantLoop:
         # as an artifact-first partial response instead of silently dropping
         # evidence the tools already produced.
         if pending_artifacts:
+            pending_artifacts = await _autocompose_artifacts(pending_artifacts, evidence, context)
             for frame in _ordered_output_frames("", pending_artifacts, context):
                 yield frame
             pending_artifacts.clear()
@@ -3946,6 +3938,45 @@ def _attach_tool_trace(context: Any, tool_call_id: str, trace_detail: dict[str, 
             return
 
 
+async def _autocompose_artifacts(
+    artifacts: list[PendingArtifact],
+    evidence: EvidenceTracker,
+    context: LoopContext,
+    *,
+    shown: dict[str, dict[str, Any]] | None = None,
+) -> list[PendingArtifact]:
+    """Add a map or KPI tiles for verified results that no other visual shows.
+
+    No provider call is made. Every UI block also records the query behind each
+    result it binds, so its visuals can be saved as artifacts.
+    """
+    from app.modules.assistant.intelligent_ui import runtime_available
+    from app.modules.assistant.ui_autocompose import compose
+
+    ordered = list(artifacts)
+    if (context.intelligent_ui and runtime_available()
+            and not any(item.kind in {"ui", "chart"} for item in artifacts)):
+        business = evidence.business_tables
+        tables = business if shown is None else {
+            key: table for key, table in shown.items() if key in business
+        }
+        blocks, skipped = await compose(
+            tables, {item.evidence_id: item.summary for item in evidence.items}
+        )
+        for reason in skipped:
+            _record_step(context, {"kind": "runtime_decision",
+                                   "ui_fallback": f"autocompose_{reason}", "status": "done"})
+        ordered.extend(PendingArtifact("ui", block) for block in blocks)
+    calls = {step["evidence_id"]: step["tool_call_id"] for step in context.steps or []
+             if step.get("kind") == "tool" and step.get("evidence_id") and step.get("tool_call_id")}
+    for item in ordered:
+        if item.kind == "ui":
+            provenance = item.payload.setdefault("provenance", {})
+            provenance["tool_calls"] = {key: calls[key] for key in
+                                        provenance.get("evidence_ids") or [] if key in calls}
+    return ordered
+
+
 def _attach_tool_evidence(context: Any, tool_call_id: str, evidence_id: str) -> None:
     """Link a verified evidence record to its redacted tool trace step."""
     steps = getattr(context, "steps", None)
@@ -4223,9 +4254,7 @@ def _measure_tool_dispatch(context: LoopContext) -> None:
 def _record_quality_observation(
     context: LoopContext, user_content: str, finish_reason: str
 ) -> None:
-    from app.core.config import settings
-
-    if not (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation) or not context.agent_id:
+    if not context.agent_id:
         return
     if any(step.get("kind") == "quality_observation" for step in context.steps or []):
         return

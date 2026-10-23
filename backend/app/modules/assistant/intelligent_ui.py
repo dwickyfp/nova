@@ -12,7 +12,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
 from app.modules.assistant.tools.redaction import is_credential_column, is_credential_value
 
 RUNTIME = Path(__file__).with_name("ui_runtime")
@@ -52,13 +51,15 @@ def catalog(version: str = CATALOG_VERSION) -> dict:
     return value
 
 
-def composer_prompt(*, enabled: bool, presentation: str, token_room: int) -> str:
-    if not enabled or not settings.STUDIO_INTELLIGENT_UI_ENABLED:
+def composer_prompt(*, enabled: bool, presentation: str) -> str:
+    # The catalog joins the pinned system prompt, so context curation trims
+    # history before it; the UI is never dropped to save tokens.
+    if not enabled:
         return ""
     if not runtime_available():
         return ""
     try:
-        prompt = catalog()["prompt"]
+        prompt = str(catalog()["prompt"])
     except (OSError, KeyError, ValueError):
         return ""
     if presentation != "interactive":
@@ -72,7 +73,7 @@ def composer_prompt(*, enabled: bool, presentation: str, token_room: int) -> str
             "an interactive program. Otherwise return Markdown without an OpenUI fence.\n"
             "<OPTIONAL_UI_CATALOG>\n" + prompt + "\n</OPTIONAL_UI_CATALOG>"
         )
-    return prompt if len(prompt) // 3 + 512 <= token_room else ""
+    return prompt
 
 
 def validate_state(state: Any, defaults: dict | None = None) -> dict:
@@ -231,10 +232,22 @@ async def compose_block(
         fallback, prose_adjusted = _simulation_prose(
             fallback, result["simulation_tables"], question=question, language=language,
         )
-    bindings = _records(tables)
-    ids = result["evidence_ids"]
     from app.modules.assistant.messages import say
 
+    return block_dict(program, fallback, result, tables, provenance={
+        "composer": "model",
+        "prose_adjusted": prose_adjusted,
+        "prose_rebuilt": prose_adjusted and fallback.startswith(
+            say("loop.simulation_values", language) + "\n\n|"
+        ),
+    })
+
+
+def block_dict(program: str, fallback: str, result: dict, tables: dict, *,
+               provenance: dict | None = None) -> dict:
+    """The stored block for a validated program, whoever composed it."""
+    bindings = _records(tables)
+    ids = result["evidence_ids"]
     return {
         "catalog_version": CATALOG_VERSION,
         "program_sha256": hashlib.sha256(program.encode()).hexdigest(),
@@ -247,14 +260,13 @@ async def compose_block(
             "evidence_ids": ids,
             "scope": "verified_result_rows" if ids else "user_simulation",
             "assumption": not bool(ids),
-            "prose_adjusted": prose_adjusted,
-            "prose_rebuilt": prose_adjusted and fallback.startswith(
-                say("loop.simulation_values", language) + "\n\n|"
-            ),
+            "prose_adjusted": False,
+            "prose_rebuilt": False,
             "omitted_rows": sum(
                 max(0, len(tables[key].get("rows") or []) - len(bindings[key]))
                 for key in ids
             ),
+            **(provenance or {}),
         },
     }
 

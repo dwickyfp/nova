@@ -35,7 +35,6 @@ from app.modules.backup.router import router as backup_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
-from app.modules.governance.router import router as governance_router
 from app.modules.indexes.router import router as indexes_router
 from app.modules.intelligence.autopilot import router as semantic_autopilot_router
 from app.modules.intelligence.engine_router import router as intelligence_engine_router
@@ -463,9 +462,6 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
-    # Dynamic data masking + row access policies (roadmap #3/#4). RBAC-native:
-    # every statement runs on the caller's connection.
-    app.include_router(governance_router, prefix=f"{prefix}/governance", tags=["governance"])
     # Resource groups / warehouses (roadmap #16). Quota enforcement is the
     # engine's; Nova only configures and reads back its usage.
     app.include_router(

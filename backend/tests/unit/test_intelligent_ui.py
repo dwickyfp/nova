@@ -272,27 +272,22 @@ def test_state_rejects_secrets_query_results_and_unbounded_values(state):
         ui.validate_state(state)
 
 
-def test_missing_runtime_disabled_feature_and_budget_keep_markdown(monkeypatch):
+def test_missing_runtime_or_disabled_participant_keep_markdown(monkeypatch):
     assert ui.split_program("Fallback\n```openui\nroot = Col([Text(\"Hi\")])\n```")[0] == "Fallback"
     assert ui.split_program("Fallback\n```openui\nbroken")[0] == "Fallback"
-    monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", False)
-    assert ui.composer_prompt(enabled=True, presentation="interactive", token_room=100000) == ""
-    monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", True)
-    assert ui.composer_prompt(enabled=False, presentation="text", token_room=100000) == ""
-    assert ui.composer_prompt(enabled=True, presentation="interactive", token_room=10) == ""
+    assert ui.composer_prompt(enabled=False, presentation="text") == ""
+    assert ui.composer_prompt(enabled=True, presentation="interactive") == ui.catalog()["prompt"]
     monkeypatch.setattr(ui, "runtime_available", lambda: False)
-    assert ui.composer_prompt(enabled=True, presentation="interactive", token_room=100000) == ""
+    assert ui.composer_prompt(enabled=True, presentation="interactive") == ""
 
 
 @pytest.mark.parametrize("presentation", ["text", "interactive"])
 def test_ui_catalog_is_available_without_a_presentation_gate(monkeypatch, presentation):
-    monkeypatch.setattr(ui.settings, "STUDIO_INTELLIGENT_UI_ENABLED", True)
     monkeypatch.setattr(ui, "runtime_available", lambda: True)
     monkeypatch.setattr(ui, "catalog", lambda: {"prompt": "Catalog instructions"})
-    prompt = ui.composer_prompt(enabled=True, presentation=presentation, token_room=100000)
+    prompt = ui.composer_prompt(enabled=True, presentation=presentation)
     assert "Catalog instructions" in prompt
     assert ("OPTIONAL_UI_CATALOG" in prompt) == (presentation == "text")
-    assert ui.composer_prompt(enabled=True, presentation=presentation, token_room=10) == ""
 
 
 async def test_ordered_ui_stream_is_validated_sealed_and_replayable():

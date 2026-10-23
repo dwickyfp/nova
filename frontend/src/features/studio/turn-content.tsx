@@ -1,13 +1,14 @@
 import { Markdown } from "@/features/assistant/markdown";
 import type { TurnContext } from "@/features/assistant/stream-client";
 import { cn } from "@/lib/utils";
-import { CitationList, ResultChart, ResultTable } from "./result-cards";
+import { CitationList, ResultChart } from "./result-cards";
+import { ResultTable } from "./result-table";
 import { TextShimmer } from "./text-shimmer";
 import type { OrderedContent, TranscriptTurn } from "./studio-chat";
-import type { SavableContent } from "./artifact-source";
+import { uiNodeContentId, type SavableContent } from "./artifact-source";
 import { visibleContent } from "./turn-content-order";
 import { IntelligentUi } from "./intelligent-ui/renderer";
-import type { UiAction } from "./intelligent-ui/types";
+import type { UiAction, UiArtifactRequest } from "./intelligent-ui/types";
 import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
 
 /**
@@ -46,6 +47,22 @@ export function TurnContent({
   const representedTables = ordered.flatMap((item) =>
     item.type === "table" ? [item.block] : [],
   );
+  const uiArtifact = (contentId: string) => ({
+    onSaveArtifact: onSaveArtifact
+      ? (request: UiArtifactRequest) =>
+          onSaveArtifact({
+            id: uiNodeContentId(contentId, request),
+            type: "ui-node",
+            request,
+            block: { tool_call_id: request.toolCallId },
+          })
+      : undefined,
+    artifactStatus: (request: UiArtifactRequest) => {
+      const id = uiNodeContentId(contentId, request);
+      return savingContentId === id ? "saving" as const
+        : savedContentIds?.has(id) ? "saved" as const : "idle" as const;
+    },
+  });
   const sourceTables = ordered.filter((item) => item.type === "table");
   const foldSources = ordered.some(
     (item) => item.type === "ui" && item.complete &&
@@ -144,6 +161,7 @@ export function TurnContent({
                     : undefined
                 }
                 onAction={uiContext?.onAction}
+                {...uiArtifact(item.id)}
               />
             )
           ) : item.type === "table" ? (

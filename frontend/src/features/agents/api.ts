@@ -559,10 +559,9 @@ export type StudioSettings = {
 };
 
 export type StudioFeatureCapability = {
-  enabled: boolean;
   available: boolean;
-  status: "DISABLED" | "AVAILABLE" | "BLOCKED_BY_INFRASTRUCTURE";
-  reason_code: "FEATURE_DISABLED" | "READY" | "ISOLATED_EXECUTOR_UNAVAILABLE";
+  status: "AVAILABLE" | "BLOCKED_BY_INFRASTRUCTURE";
+  reason_code: "READY" | "ISOLATED_EXECUTOR_UNAVAILABLE";
   executor_available?: boolean | null;
 };
 

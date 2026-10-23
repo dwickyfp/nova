@@ -24,7 +24,6 @@ NOW = datetime(2026, 1, 1, 0, 30, tzinfo=UTC)
 
 async def test_configured_utc_semantic_turn_uses_injected_clock(monkeypatch):
     monkeypatch.setattr(settings, "NOVA_TIMEZONE", " UTC ")
-    monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     monkeypatch.setattr(assistant_service, "_now", lambda: NOW)
     plan = _plan(time={
         "dimension": "order_date", "grain": None, "range": "today", "compare": None,

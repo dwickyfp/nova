@@ -1086,6 +1086,9 @@ async def test_specialist_preserves_authorized_table_when_draft_fails_verificati
 ) -> None:
     from app.modules.agents import harness_worker as module
 
+    monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.project_run", AsyncMock(return_value=None),
+    )
     root = _run("root", status="waiting_for_agent")
     child = _run("sales", depth=1, status="running")
     child.update(prompt_tokens=0, completion_tokens=0, result_summary=None)

@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.common.audit import write_audit_log
-from app.core.config import settings
 from app.core.database import db
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.harness_repository import harness_repository
@@ -47,11 +46,6 @@ from app.modules.agents.run_journal import run_journal
 from app.modules.assistant.repository import assistant_repository
 from app.modules.intelligence.contracts import Scope, SemanticRef, fingerprint, utc_now
 from app.observability.metrics import studio_operation
-
-
-def require_workflow() -> None:
-    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        raise HTTPException(status_code=404, detail="Studio business workflow is unavailable")
 
 
 def workflow_scope(user: dict) -> Scope:
@@ -360,7 +354,6 @@ class MissionService:
         return mission
 
     async def get(self, mission_id: str, user: dict, *, project: bool = True) -> Mission:
-        require_workflow()
         scope = workflow_scope(user)
         mission = await self._get(mission_id, scope)
         await require_thread(mission.thread_id, user)
@@ -383,7 +376,6 @@ class MissionService:
         return mission
 
     async def resumable(self, thread_id: str, user: dict) -> builtins.list[ResumableMission]:
-        require_workflow()
         await require_thread(thread_id, user)
         scope = workflow_scope(user)
         result = await db.execute_system(
@@ -622,7 +614,6 @@ class MissionService:
                 raise HTTPException(status_code=403, detail="Pinned resources are unavailable")
 
     async def resume(self, mission_id: str, body: MissionResume, user: dict) -> Mission:
-        require_workflow()
         scope = workflow_scope(user)
         mission = None
         try:
@@ -711,7 +702,6 @@ class MissionService:
             raise
 
     async def list(self, thread_id: str, user: dict) -> builtins.list[Mission]:
-        require_workflow()
         await require_thread(thread_id, user)
         scope = workflow_scope(user)
         result = await db.execute_system(
@@ -761,7 +751,6 @@ class MissionService:
         *,
         selection: ContinuationDecision | None = None,
     ) -> Mission:
-        require_workflow()
         thread = await require_thread(thread_id, user)
         scope = workflow_scope(user)
         async with harness_repository.admission_lock(thread_id, scope.principal) as owned:
@@ -868,8 +857,6 @@ class MissionService:
         screen_follow_up: bool = False,
         continuation_sink: Callable[[ContinuationDecision], None] | None = None,
     ) -> Mission | None:
-        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-            return None
         await require_thread(thread_id, user)
         candidates = await self._turn_candidates(thread_id, workflow_scope(user), operation_id)
         missions = [await self.refresh(mission, user) for mission in candidates]
@@ -1509,8 +1496,6 @@ class MissionService:
 
     async def project_run(self, run_id: str, user: dict) -> Mission | None:
         """Refresh a linked Mission for the existing direct/Smart streaming producer."""
-        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-            return None
         scope = workflow_scope(user)
         rows = await db.execute_system(
             "SELECT thread_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS WHERE run_id=%s "

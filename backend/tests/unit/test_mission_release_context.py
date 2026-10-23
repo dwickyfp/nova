@@ -54,7 +54,6 @@ def owners(monkeypatch):
     from tests.unit.test_semantic_intelligence import sales_model
 
     io, service, repository = MissionIO(), MissionService(), PinnedRepository()
-    monkeypatch.setattr(mission_module.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
 
     async def execute(sql, params=None):
         if "CONFIG_INTELLIGENCE_INVESTIGATIONS" in sql:

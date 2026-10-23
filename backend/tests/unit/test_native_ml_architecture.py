@@ -42,7 +42,9 @@ from app.modules.ml_engine.spec import (
     TrainingTimeout,
 )
 
-SECURITY = MLSecurityContext(username="alice", password="secret", database="analytics")
+SECURITY = MLSecurityContext(
+    username="alice", password="secret", database="analytics", role="analyst",
+)
 
 
 def _slow_worker(delay: float) -> str:
@@ -248,7 +250,6 @@ async def test_arrow_transport_falls_back_before_first_batch(monkeypatch) -> Non
     source = PreferredDataSource()
     source.arrow = BrokenArrow()
     source.mysql = fallback
-    monkeypatch.setattr("app.modules.ml_engine.data.mysql_fallback.settings.ML_ARROW_ENABLED", True)
     dataset = await collect_bounded(
         source, "SELECT x FROM t", SECURITY, ExecutionBudget(10, 10, 10_000)
     )

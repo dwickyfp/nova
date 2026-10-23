@@ -11,7 +11,6 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import Field
 
 from app.common.audit import write_audit_log
-from app.core.config import settings
 from app.core.database import db
 from app.modules.agents.identity import participant_id, participant_path
 from app.modules.agents.mission import SCOPE_SQL, scope_params, workflow_scope
@@ -120,13 +119,7 @@ class ResourceDelegation:
         for ddl in RESOURCE_DDLS:
             await db.execute_system(ddl)
 
-    @staticmethod
-    def enabled() -> bool:
-        return bool(getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False))
-
     async def register_root(self, root: dict, user: dict) -> list[ResourceMetadata]:
-        if not self.enabled():
-            return []
         scope = check_participant(root, user)
         if root.get("depth") != 0:
             raise ValueError("Only a root may register message attachments")
@@ -210,8 +203,6 @@ class ResourceDelegation:
         return metadata
 
     async def available(self, run: dict, user: dict) -> list[ResourceMetadata]:
-        if not self.enabled():
-            return []
         scope = check_participant(run, user)
         root_id = run.get("root_run_id") or run["run_id"]
         grants = await db.execute_system(
@@ -255,8 +246,6 @@ class ResourceDelegation:
             != scope_params(binding)
         ):
             raise ValueError("Mission attachment binding is unavailable")
-        if not self.enabled():
-            raise ValueError("Mission attachment authorization is unavailable")
         grants = await db.execute_system(
             "SELECT resource_id FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS "
             f"WHERE participant_id=%s AND {SCOPE_SQL} AND thread_id=%s AND root_run_id=%s LIMIT 4",
@@ -326,8 +315,6 @@ class ResourceDelegation:
         self, grantor: dict, recipient: dict, refs: list[str], user: dict
     ) -> list[str]:
         refs = normalize_refs(refs)
-        if refs and not self.enabled():
-            raise ValueError("Attachment resource delegation is unavailable")
         if not refs:
             return []
         scope = check_participant(grantor, user)

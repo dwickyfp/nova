@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.core.config import settings
 from app.core.deps import get_current_user
 from app.core.exceptions import register_exception_handlers
 from app.modules.pipes import service as service_module
@@ -144,24 +143,19 @@ async def test_background_pipe_execution_rejected_by_ranger_frontend(sql):
     with pytest.raises(
         CapabilityUnsupportedError, match="Pipe execution is unavailable with Ranger"
     ):
-        await SQLPlanner().plan(statement, PlanningContext(ranger_enabled=True))
-    native = await SQLPlanner().plan(statement, PlanningContext(ranger_enabled=False))
-    assert native.effects.writes_data and native.effects.external_io
+        await SQLPlanner().plan(statement, PlanningContext())
 
 
 @pytest.mark.parametrize(
     "sql", ["SHOW PIPES FROM db", "DESCRIBE PIPE db.p", "ALTER PIPE db.p SUSPEND", "DROP PIPE db.p"]
 )
 async def test_inspection_and_shutdown_remain_available_with_ranger(sql):
-    plan = await SQLPlanner().plan(
-        ast_builders.build(parse_statement(sql)), PlanningContext(ranger_enabled=True)
-    )
+    plan = await SQLPlanner().plan(ast_builders.build(parse_statement(sql)), PlanningContext())
     assert plan.engine_sql == sql
 
 
 @pytest.fixture
 def http_client(monkeypatch):
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(router, prefix="/pipes")
@@ -200,7 +194,6 @@ def test_http_routes_propagate_authenticated_session(method, url, http_client, c
 @pytest.mark.parametrize("active_role", [None, "ADMIN", "ANALYST,ADMIN", "ALL"])
 def test_invalid_active_role_fails_before_pipeline(active_role, http_client, calls, monkeypatch):
     client, user = http_client
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     user["active_role"] = active_role
     response = client.get("/pipes?database=db")
     assert response.status_code == 403

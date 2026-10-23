@@ -22,11 +22,14 @@ from app.common.sql_guard import (
     split_sql_statements,
 )
 from app.common.user_flags import set_must_change_password
-from app.core.config import get_storage_connection, settings
+from app.core.config import get_storage_connection
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
-from app.modules.access_control.security_context import require_security_context
+from app.modules.access_control.security_context import (
+    SecurityContextError,
+    require_security_context,
+)
 from app.modules.access_control.service import AccessControlError
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.repository import QueryRepository, QueryResult
@@ -405,7 +408,7 @@ class QueryService:
                 error_message=str(exc),
             )
             raise
-        if settings.RANGER_ENABLED:
+        try:
             require_security_context(
                 principal=username,
                 active_role=role,
@@ -413,6 +416,13 @@ class QueryService:
                 session_id=session_id,
                 security_context_version=security_context_version,
             )
+        except SecurityContextError as exc:
+            await self._audit_engine_result(
+                status="ERROR", sql=sql, username=username, role=role,
+                database=database, schema=schema, session_id=session_id, file_id=file_id,
+                error_message=str(exc),
+            )
+            raise
         context = ExecutionContext(
             username=username,
             encrypted_password=encrypted_password,
@@ -457,7 +467,6 @@ class QueryService:
                 schema=schema,
                 binder=binder,
                 capabilities=await self._capability_resolver(),
-                ranger_enabled=settings.RANGER_ENABLED,
                 confirm_destructive=confirm_destructive,
             )
             from app.sql_frontend.binding.relations import RelationBinder
@@ -697,9 +706,7 @@ class QueryService:
                         len(stmt_sql),
                         self._planner.semantics.validate_preflight,
                         statement,
-                        PlanningContext(
-                            database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED
-                        ),
+                        PlanningContext(database=database, schema=schema),
                     )
             except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
                 await self._audit_engine_result(
@@ -772,9 +779,7 @@ class QueryService:
                         len(stmt_sql),
                         self._planner.semantics.validate_preflight,
                         statement,
-                        PlanningContext(
-                            database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED
-                        ),
+                        PlanningContext(database=database, schema=schema),
                     )
                     script_effects |= analysis.effects
                     if analysis.requires_confirmation and confirmation_statement is None:

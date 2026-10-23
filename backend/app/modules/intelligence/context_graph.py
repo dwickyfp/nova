@@ -8,7 +8,6 @@ from typing import Any, Literal
 from fastapi import HTTPException
 from pydantic import Field
 
-from app.core.config import settings
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.intelligence.context_sources import (
     ContextSourceRef,
@@ -198,19 +197,17 @@ async def traverse_context(node_id: str, user: dict, *, depth: int = 2, limit: i
             nodes[other], edges[edge.id] = candidate, edge
             if other not in visited:
                 queue.append((other, level + 1))
-    if getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        usage_cache: dict = {}
-        resolved = [
-            await derive_authority(node, user, budget, usage_cache=usage_cache)
-            for node in nodes.values()
-        ]
-        resolved, conflicts = mark_conflicts(resolved)
-        return {
-            "nodes": resolved, "edges": list(edges.values()), "bounded": True,
-            "conflicts": conflicts[:100], "conflict_count": len(conflicts),
-            "authority_method": "validated-source-authority-v1",
-        }
-    return {"nodes": list(nodes.values()), "edges": list(edges.values()), "bounded": True}
+    usage_cache: dict = {}
+    resolved = [
+        await derive_authority(node, user, budget, usage_cache=usage_cache)
+        for node in nodes.values()
+    ]
+    resolved, conflicts = mark_conflicts(resolved)
+    return {
+        "nodes": resolved, "edges": list(edges.values()), "bounded": True,
+        "conflicts": conflicts[:100], "conflict_count": len(conflicts),
+        "authority_method": "validated-source-authority-v1",
+    }
 
 
 async def resolve_metric(
@@ -365,8 +362,6 @@ async def project_decision(decision_id: str, user: dict) -> dict:
 
 
 async def project_canonical_context(ref: ContextSourceRef, user: dict) -> dict:
-    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        raise HTTPException(404, "Lifecycle Context is unavailable")
     scope, budget = Scope.from_user(user), CycleBudget()
     nodes, edges = {}, {}
 
@@ -669,8 +664,6 @@ def usage_node_id(scope: Scope, ref: SemanticRef, pattern_id: str) -> str:
 
 
 async def project_usage_context(ref: SemanticRef, user: dict) -> dict:
-    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-        raise HTTPException(status_code=404, detail="Usage learning is unavailable")
     from app.modules.agents.semantic.usage_learning import load_scoped_usage
 
     scope = Scope.from_user(user)

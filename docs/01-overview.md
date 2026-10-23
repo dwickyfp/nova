@@ -19,8 +19,8 @@ Data → Meaning → Context → Understand → Investigate → Decide → Act �
 
 StarRocks provides the analytical query and storage foundation and authenticates
 Nova users. Nova owns SQL semantics, execution routing, and the intelligence
-workflow; StarRocks owns physical planning and distributed execution. In the
-Ranger-enabled profile, the patched StarRocks FE enforces Ranger access policies,
+workflow; StarRocks owns physical planning and distributed execution. The
+patched StarRocks FE always enforces Ranger access policies,
 row filters, and masks using the caller's single active role.
 
 ## Product principles
@@ -84,9 +84,8 @@ StarRocks, Ranger, Redis, and storage relationships.
   payloads use managed storage. Ranger's own policy database is separate.
 - Console and Studio use React, Vite, and TanStack Router. Backend domains share
   the existing SQL, authorization, storage, audit, and assistant owners.
-- Ranger-enabled execution retains principal, one active role, and
-  security-context version. Native-RBAC compatibility is a separate supported
-  path; it cannot substitute for Ranger checks in a Ranger-enabled deployment.
+- Execution retains principal, one active role, and security-context version.
+  Ranger is always on; there is no native-RBAC mode.
 
 See the [agent guide](../AGENTS.md) for development invariants and the
 [Ranger architecture](arch-08-ranger-authorization.md) for exact trust boundaries.

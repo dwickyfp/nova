@@ -9,7 +9,7 @@ Paths below are repository-relative; local Python commands run from `backend/`.
 ## Security ownership
 
 - StarRocks authenticates principals and owns role-marker assignments/defaults.
-  Ranger-enabled user-data authorization is principal + exactly one active role
+  User-data authorization is principal + exactly one active role
   + Ranger policy, including row filters and masks in the patched FE.
 - `SecurityContext` owns validated caller state. Role activation validates
   assignment and Ranger projection, sets the requested role, and verifies it
@@ -19,10 +19,9 @@ Paths below are repository-relative; local Python commands run from `backend/`.
   SQL, Semantic Views, ML, Studio, delegation, and caches. Revalidate delegated
   state at established checkpoints. Cache data with the existing security
   partition and any policy scope required by its owner.
-- `SHOW GRANTS` is valid for marker assignment and existing native-RBAC
-  compatibility. It is not a Ranger policy engine. Preserve the explicitly
-  configured Ranger-disabled path without turning failures in governed mode
-  into silent native fallback.
+- `SHOW GRANTS` is valid for marker assignment. It is not a Ranger policy
+  engine. Ranger is always on: there is no Ranger-disabled path, and an
+  authorization failure never falls back to native grants.
 - Never substitute root/system, agent-owner, or more privileged service
   credentials for the caller. Existing scheduled service work must use its
   explicitly authorized principal/role and revalidation contract. Control-plane,

@@ -9,7 +9,6 @@ from typing import Any
 
 from app.common.audit import write_audit_log
 from app.common.user_flags import set_must_change_password
-from app.core.config import settings
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import access_control_service
 from app.modules.assistant.schemas import ToolClassification
@@ -95,8 +94,7 @@ class ProvisionUserTool:
                     summary="",
                     error="Enter a temporary password in protected input.",
                 )
-            roles = (await access_control_service.list_roles() if settings.RANGER_ENABLED
-                     else await user_service.list_roles())
+            roles = await access_control_service.list_roles()
             if not any(r.get("name", r.get("role_name")) == role for r in roles):
                 return ToolOutcome(ok=False, summary="", error="The requested role does not exist.")
             if await user_service.user_exists(username):
@@ -118,10 +116,7 @@ class ProvisionUserTool:
             await set_must_change_password(username, required=True)
             await user_service.create_user(username, password=secure_input["password"])
             completed.append("user created")
-            if settings.RANGER_ENABLED:
-                await access_control_service.assign_role(security, role=role, username=username)
-            else:
-                await user_service.assign_role(username, role)
+            await access_control_service.assign_role(security, role=role, username=username)
             completed.append("role assigned")
             await user_service.set_default_roles(username, "%", "explicit", [role])
             completed.append("default role set")

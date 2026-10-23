@@ -8,7 +8,6 @@ from dataclasses import dataclass
 import asyncmy
 
 from app.common.identifiers import check_identifier
-from app.core.config import settings
 from app.integrations.ranger.client import RangerClient, ranger_client
 
 
@@ -76,7 +75,7 @@ class RoleActivationService:
             raise RoleActivationError("Exactly one named role must be activated")
         if target not in assignments.assigned_roles:
             raise RoleActivationError(f"Requested role '{target}' is not assigned to '{principal}'")
-        if settings.RANGER_ENABLED and await self._ranger.get_role(target) is None:
+        if await self._ranger.get_role(target) is None:
             raise RoleActivationError(
                 f"Role '{target}' is not healthy in the authorization provider"
             )

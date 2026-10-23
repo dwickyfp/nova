@@ -142,14 +142,6 @@ async def _publish(client: StudioClient, view_id: str, version: int):
 
 @pytest.fixture
 async def governed(monkeypatch):
-    assert settings.RANGER_ENABLED, "An unpatched/native stack cannot satisfy this acceptance"
-    assert settings.RANGER_STRICT_SINGLE_ACTIVE_ROLE
-    for flag in (
-        "STUDIO_BUSINESS_WORKFLOW_ENABLED",
-        "STUDIO_ACTIONS_ENABLED",
-        "STUDIO_QUALITY_ENABLED",
-    ):
-        monkeypatch.setattr(settings, flag, True)
     await db.init_system_pool()
     await session_store.init()
     await init_nova_system()

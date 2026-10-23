@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from app.core.config import settings
-
 
 class MLTask(StrEnum):
     CLASSIFICATION = "classification"
@@ -46,8 +44,6 @@ class MLSecurityContext:
     tenant: str = "default"
 
     def validate(self) -> None:
-        if not settings.RANGER_ENABLED:
-            return
         if not self.username.strip() or self.username.casefold() == "root":
             raise InvalidMLSpec("ML data access requires a non-root principal")
         if not self.role or "," in self.role or self.role.upper() in {"ALL", "NONE", "DEFAULT"}:

@@ -66,6 +66,41 @@ it("discloses result rows omitted by the server's evidence transport", async () 
   await expect.element(screen.getByText(/7 result rows were omitted from this visual/)).toBeVisible();
 });
 
+it("saves a bound chart or table with its source query and the result's own columns", async () => {
+  const program = 'root = Col([Chart(@Sort(@Evidence("e1"), "revenue", "desc"), "month", "revenue", "line", "Revenue"), Table(@Evidence("e1"), ["month"], "Months")])';
+  const evidence = { e1: [{ month: "Jan", revenue: 10 }, { month: "Feb", revenue: 30 }] };
+  const parsed = validateProgram(program, evidence, true);
+  const ui: UiBlock = { ...parsed, program, program_sha256: "b".repeat(64),
+    fallback: "Revenue.", state_defaults: parsed.state, evidence,
+    provenance: { scope: "verified_result_rows", assumption: false, evidence_ids: ["e1"],
+      tool_calls: { e1: "query-1" } } };
+  const onSaveArtifact = vi.fn();
+  const screen = await render(
+    <IntelligentUi block={ui} complete onSaveArtifact={onSaveArtifact}
+      artifactStatus={(request) => (request.kind === "table" ? "saved" : "idle")} />,
+  );
+  await screen.getByRole("button", { name: "Save chart as artifact" }).click();
+  expect(onSaveArtifact).toHaveBeenCalledWith({
+    kind: "chart",
+    title: "Revenue",
+    chart: { type: "line", x: "month", y: "revenue", series: ["revenue"] },
+    evidenceId: "e1",
+    columns: ["month", "revenue"],
+    toolCallId: "query-1",
+  });
+  await expect.element(screen.getByRole("button", { name: "Artifact saved" })).toBeDisabled();
+  await screen.unmount();
+
+  const chartsOnly = await render(
+    <IntelligentUi block={ui} complete onSaveArtifact={onSaveArtifact}
+      artifactStatus={() => "idle"} artifactKinds={["chart"]} />,
+  );
+  await expect
+    .element(chartsOnly.getByRole("button", { name: "Save chart as artifact" }))
+    .toBeVisible();
+  expect(chartsOnly.getByRole("button", { name: "Save table as artifact" }).query()).toBeNull();
+});
+
 describe("Nova interactive answers", () => {
   it("dispatches a conditional follow-up after local state reveals it", async () => {
     const ui = block('$show=false\nroot=Col([Button("Calculate",@Set($show,true),"calculate"),$show ? Button("Ask agent",@ToAssistant("Explain"),"ask") : Text("Ready")])');

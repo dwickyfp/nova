@@ -1197,7 +1197,6 @@ class AutopilotService:
 
                 async def rewrite():
                     nonlocal candidate
-                    from app.core.config import settings
                     from app.modules.query_autopilot.acceptance import (
                         collect_ranger_acceptance,
                         ranger_acceptance_reason,
@@ -1213,8 +1212,7 @@ class AutopilotService:
                             if value and value.get("kind") == "ranger_acceptance":
                                 acceptance = value
                                 break
-                    if (acceptance is None and not enrollment.ranger_acceptance_ref
-                            and settings.RANGER_ENABLED):
+                    if acceptance is None and not enrollment.ranger_acceptance_ref:
                         proof = await collect_ranger_acceptance(
                             self.sql, self.repo, trial_ownership["candidate"], enrollment,
                             replay, sandbox, connection, trial_ownership["state"],

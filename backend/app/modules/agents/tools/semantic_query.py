@@ -36,7 +36,6 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from app.common.sql_guard import redact_sql_credentials
-from app.core.config import settings
 from app.core.database import configured_timezone
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.repository import agent_repository
@@ -135,10 +134,7 @@ class SemanticQueryTool:
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         outcome = await self._run(invocation, context)
-        if (
-            not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False)
-            or outcome.metadata.get("evidence_health")
-        ):
+        if outcome.metadata.get("evidence_health"):
             return outcome
         trace = outcome.trace_detail or {}
         view = trace.get("semantic_view") or {}
@@ -245,8 +241,7 @@ class SemanticQueryTool:
             if errors:
                 raise SemanticPlanError("; ".join(errors))
             time_context = None
-            if (getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False)
-                    and plan.time and plan.time.range):
+            if plan.time and plan.time.range:
                 execution_now = getattr(context, "execution_now", None) or datetime.now(UTC)
                 if callable(getattr(context, "business_clock_hook", None)):
                     execution_now = await context.business_clock_hook(invocation, context)
@@ -488,15 +483,13 @@ class SemanticQueryTool:
             question=question, sql=safe_sql, explanation=explanation,
             confidence=confidence, results=results,
         )
-        health = None
-        if getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
-            health = assess_evidence(
-                _execution_facts(
-                    semantic_model, results, plan_source, verified_hit, plan,
-                    preview_truncated=summary.endswith("… [truncated]"),
-                ),
-                assessed_at=datetime.now(UTC),
-            )
+        health = assess_evidence(
+            _execution_facts(
+                semantic_model, results, plan_source, verified_hit, plan,
+                preview_truncated=summary.endswith("… [truncated]"),
+            ),
+            assessed_at=datetime.now(UTC),
+        )
         outcome = ToolOutcome(
             ok=True,
             summary=_render(
@@ -505,7 +498,7 @@ class SemanticQueryTool:
                 explanation=explanation,
                 confidence=confidence,
                 results=results,
-                evidence_health=health.model_dump(mode="json") if health else None,
+                evidence_health=health.model_dump(mode="json"),
             ),
             table=table,
             data={
@@ -528,7 +521,7 @@ class SemanticQueryTool:
                 "warnings": list(compiled.warnings),
                 "period_from_user": period_note,
                 "verified_query_hit": verified_hit.verified_query_id if verified_hit else None,
-                **({"complete": health.facts.coverage == "complete"} if health else {}),
+                "complete": health.facts.coverage == "complete",
             },
             state_patch={
                 "semantic_plan": plan.as_dict(),
@@ -562,29 +555,27 @@ class SemanticQueryTool:
                 "semantic_plan": plan.as_dict(),
             },
         )
-        if health:
-            from app.modules.intelligence.evidence import (
-                execution_envelope,
-                investigation_seed,
-                semantic_population_fingerprint,
-            )
+        from app.modules.intelligence.evidence import (
+            execution_envelope,
+            investigation_seed,
+            semantic_population_fingerprint,
+        )
 
-            envelope = execution_envelope(
-                semantic_model, semantic_ir, plan, health, time_context,
-                evidence_id=invocation.tool_call_id,
-            )
-            seed, requirements = investigation_seed(envelope, semantic_ir, plan, time_context)
-            trace_detail = dict(outcome.trace_detail or {})
-            trace_detail["evidence_envelope"] = envelope.model_dump(mode="json")
-            if time_context:
-                trace_detail["execution_time_context"] = time_context.as_dict()
-            outcome = replace(outcome, trace_detail=trace_detail, business_result={
-                "envelope": envelope, "seed": seed, "required_inputs": requirements,
-                "population_fingerprint": semantic_population_fingerprint(plan),
-                "time_dimension": plan.time.dimension if plan.time else None,
-            })
-            return attach_evidence_health(outcome, health)
-        return outcome
+        envelope = execution_envelope(
+            semantic_model, semantic_ir, plan, health, time_context,
+            evidence_id=invocation.tool_call_id,
+        )
+        seed, requirements = investigation_seed(envelope, semantic_ir, plan, time_context)
+        trace_detail = dict(outcome.trace_detail or {})
+        trace_detail["evidence_envelope"] = envelope.model_dump(mode="json")
+        if time_context:
+            trace_detail["execution_time_context"] = time_context.as_dict()
+        outcome = replace(outcome, trace_detail=trace_detail, business_result={
+            "envelope": envelope, "seed": seed, "required_inputs": requirements,
+            "population_fingerprint": semantic_population_fingerprint(plan),
+            "time_dimension": plan.time.dimension if plan.time else None,
+        })
+        return attach_evidence_health(outcome, health)
 
     async def _resolve_model(self, context: Any, question: str) -> dict[str, Any] | None:
         from app.modules.agents.semantic.access import load_authorized_models

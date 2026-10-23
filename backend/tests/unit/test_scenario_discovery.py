@@ -369,7 +369,6 @@ async def test_resumed_discovery_uses_pinned_dependencies_and_current_credential
     original = repo.rows[("investigations", body.investigation_id)]
     caller = {**USER, "session_id": "new-session", "security_context_version": 2}
     bound = pinned_mission(original, "investigation", Scope.from_user(caller))
-    monkeypatch.setattr(mission.settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", True)
     monkeypatch.setattr(mission.mission_service, "get", AsyncMock(return_value=bound))
     monkeypatch.setattr(mission.mission_service, "_get_owner", AsyncMock(return_value=bound))
     monkeypatch.setattr(mission, "require_thread", AsyncMock())

@@ -17,7 +17,6 @@ from scripts.verify_ranger_e2e import _inherit_pid_one_environment  # noqa: E402
 
 async def run(output: Path) -> dict:
     _inherit_pid_one_environment()
-    from app.core.config import settings
     from app.core.database import db
     from app.modules.query.service import QueryService
     from app.modules.query_autopilot.correctness import equivalent, prove_result
@@ -31,7 +30,7 @@ async def run(output: Path) -> dict:
     from app.modules.query_autopilot.telemetry import purpose
     from app.sql_frontend.autopilot import materialized_view_definition
 
-    if os.getenv("NOVA_AUTOPILOT_FIXTURE_STACK") != "1" or not settings.RANGER_ENABLED:
+    if os.getenv("NOVA_AUTOPILOT_FIXTURE_STACK") != "1":
         raise ValueError("Explicit isolated patched-FE Ranger fixture required")
     await db.init_system_pool()
     service = QueryService()

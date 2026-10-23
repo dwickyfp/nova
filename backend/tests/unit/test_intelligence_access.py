@@ -1,57 +1,17 @@
-"""Intelligence native compatibility must not become a Ranger failure fallback."""
+"""Intelligence access checks never fall back to native grants."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.config import settings
 from app.modules.agents import access
 from app.modules.query.service import query_service
-
-
-async def test_native_verification_delegates_principal_role_and_context_version(monkeypatch):
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
-    monkeypatch.setattr(
-        access, "resolve_agent_dependencies", AsyncMock(return_value=[("table", "sales.orders")])
-    )
-    execute = AsyncMock(return_value=SimpleNamespace(error=None))
-    monkeypatch.setattr(query_service, "execute", execute)
-    result = await access.verify_access(
-        agent={},
-        role_name="FINANCE",
-        username="alice",
-        encrypted_password="cipher",
-        session_id="session",
-        security_context_version=7,
-    )
-    assert result[0].granted
-    assert execute.await_args.kwargs == dict(
-        sql="SELECT * FROM `sales`.`orders` LIMIT 1",
-        username="alice",
-        encrypted_password="cipher",
-        database="sales",
-        role="FINANCE",
-        session_id="session",
-        security_context_version=7,
-        max_rows=1,
-    )
-    execute.return_value.error = "denied"
-    assert not (
-        await access.verify_access(
-            agent={},
-            role_name="FINANCE",
-            username="alice",
-            encrypted_password="cipher",
-            session_id="session",
-        )
-    )[0].granted
 
 
 async def test_ranger_outage_never_uses_native_grants(monkeypatch):
     from app.modules.access_control.service import access_control_service
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     monkeypatch.setattr(
         access, "resolve_agent_dependencies", AsyncMock(return_value=[("table", "sales.orders")])
     )
@@ -81,7 +41,10 @@ async def test_semantic_probes_batch_without_sharing_delegated_connections(
     from app.modules.intelligence.semantic_views import SemanticViewService
     from app.modules.query.service import delegated_connection
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access",
+        AsyncMock(return_value={"object_access": ["SELECT"]}),
+    )
     active, peak = 0, 0
     calls = []
 
@@ -128,7 +91,10 @@ async def test_semantic_source_timeout_cancels_work_and_never_grants_access(monk
 
     from app.modules.intelligence.semantic_views import SemanticViewService
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access",
+        AsyncMock(return_value={"object_access": ["SELECT"]}),
+    )
     cancelled = asyncio.Event()
     original_wait = asyncio.wait_for
 
@@ -157,7 +123,10 @@ async def test_semantic_source_cycle_expiry_discards_successful_probes(monkeypat
 
     from app.modules.intelligence.semantic_views import SemanticViewService
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", False)
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access",
+        AsyncMock(return_value={"object_access": ["SELECT"]}),
+    )
 
     @asynccontextmanager
     async def expired(seconds):
@@ -180,7 +149,6 @@ async def test_ranger_semantic_metadata_requires_current_select_policy(monkeypat
     from app.modules.access_control.service import access_control_service
     from app.modules.intelligence.semantic_views import SemanticViewService
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     policies = AsyncMock(return_value={"object_access": permission})
     probe = AsyncMock(return_value=SimpleNamespace(error=None))
     monkeypatch.setattr(access_control_service, "effective_access", policies)
@@ -206,7 +174,6 @@ async def test_ranger_semantic_probe_plans_select_under_current_identity(monkeyp
     from app.modules.access_control.service import access_control_service
     from app.modules.intelligence.semantic_views import SemanticViewService
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     policies = AsyncMock(return_value={"object_access": ["SELECT"]})
     probe = AsyncMock(return_value=SimpleNamespace(error=None))
     if failure == "policy_outage":

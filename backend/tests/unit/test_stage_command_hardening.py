@@ -10,7 +10,7 @@ from app.modules.query.dialect.parser import CommandType, parse_sql
 from app.modules.query.dialect.translator import StorageConfig, translate_stage_query
 from app.modules.query.service import QueryService
 from app.modules.query.sql_pipeline import prepare_stage_sql
-from app.modules.stages.access import StageAccessDenied, _grant_rows_allow, check_stage_access
+from app.modules.stages.access import StageAccessDenied, check_stage_access
 from app.modules.task_orchestration.execution import (
     DelegateExecutor,
     NodeExecutionError,
@@ -22,10 +22,8 @@ from app.modules.task_orchestration.execution import (
     "privileges,allowed", [(["DELETE"], True), (["SELECT"], False), ([], False)]
 )
 async def test_ranger_stage_delete_uses_scoped_delete_privilege(monkeypatch, privileges, allowed):
-    from app.core.config import settings
     from app.modules.access_control.service import access_control_service
 
-    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     lookup = AsyncMock(return_value={"object_access": privileges})
     monkeypatch.setattr(access_control_service, "effective_access", lookup)
     kwargs = {"action": "delete", "username": "owner", "active_role": "loader"}
@@ -84,30 +82,6 @@ async def test_csv_properties_belong_only_to_their_reference() -> None:
     assert prepared.engine_sql.count("'csv.column_separator'") == 2
     assert "'csv.column_separator'=';'" in prepared.engine_sql
     assert "'csv.column_separator'='|'" in prepared.engine_sql
-
-
-@pytest.mark.parametrize(
-    ("grant", "action", "allowed"),
-    [
-        ("GRANT SELECT ON TABLE db.* TO ROLE analyst", "read", True),
-        ("GRANT INSERT ON TABLE db.* TO ROLE loader", "read", True),
-        ("GRANT INSERT ON TABLE db.* TO ROLE loader", "write", True),
-        ("GRANT SELECT ON TABLE db.* TO ROLE analyst", "write", False),
-        ("GRANT ALL ON TABLE db.* TO ROLE admin", "delete", True),
-        (
-            "GRANT DELETE, DROP, INSERT, SELECT, ALTER, EXPORT, UPDATE, REFRESH "
-            "ON ALL TABLES IN ALL DATABASES TO USER 'nova_admin'@'%' WITH GRANT OPTION",
-            "delete", True,
-        ),
-        ("GRANT DELETE ON TABLE db.* TO ROLE maintainer", "delete", True),
-        ("GRANT DELETE ON TABLE other.* TO ROLE maintainer", "delete", False),
-        ("GRANT INSERT ON TABLE db.* TO ROLE loader", "delete", False),
-        ("GRANT ALL ON DATABASE db TO ROLE admin", "read", False),
-        ("GRANT SELECT ON TABLE other.* TO ROLE analyst", "read", False),
-    ],
-)
-def test_stage_grant_scope(grant: str, action: str, allowed: bool) -> None:
-    assert _grant_rows_allow([("user", "default", grant)], "db", "bronze", action) is allowed
 
 
 @dataclass
@@ -184,57 +158,19 @@ async def test_scoped_reference_does_not_fall_back_to_foreign_stage(monkeypatch)
 
 
 async def test_only_an_active_role_grants_stage_access(monkeypatch) -> None:
-    import app.modules.stages.access as module
+    from app.modules.access_control.service import access_control_service
 
-    class Cursor:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def execute(self, sql):
-            return None
-
-        async def fetchall(self):
-            return [("user", None, "GRANT 'analyst' TO 'user'@'%'")]
-
-    class Conn:
-        def cursor(self):
-            return Cursor()
-
-    calls = []
-
-    async def role_grants(sql):
-        calls.append(sql)
-        return {"rows": [("analyst", "default", "GRANT SELECT ON TABLE db.* TO ROLE analyst")]}
-
-    monkeypatch.setattr(module.settings, "RANGER_ENABLED", False)
-    monkeypatch.setattr(module.db, "execute_system", role_grants)
+    effective = AsyncMock(return_value={"object_access": ["SELECT"]})
+    monkeypatch.setattr(access_control_service, "effective_access", effective)
     stage = {"database_name": "db", "schema_name": "bronze"}
-    await check_stage_access(
-        stage, action="read", username="user", active_role="analyst", connection=Conn()
-    )
-    assert calls == ["SHOW GRANTS FOR ROLE analyst"]
+    await check_stage_access(stage, action="read", username="user", active_role="analyst")
+    assert effective.await_args.kwargs == {
+        "principal": "user", "active_role": "analyst", "resource": "db.bronze"
+    }
     with pytest.raises(StageAccessDenied):
-        await check_stage_access(
-            stage, action="write", username="user", active_role="analyst", connection=Conn()
-        )
-
-    class RejectedCursor(Cursor):
-        async def execute(self, sql):
-            if sql.startswith("SET ROLE"):
-                raise RuntimeError("role is not assigned")
-
-    class RejectedConn:
-        def cursor(self):
-            return RejectedCursor()
-
-    with pytest.raises(StageAccessDenied):
-        await check_stage_access(
-            stage, action="read", username="user", active_role="analyst",
-            connection=RejectedConn(),
-        )
+        await check_stage_access(stage, action="write", username="user", active_role="analyst")
+    with pytest.raises(StageAccessDenied, match="active role"):
+        await check_stage_access(stage, action="read", username="user", active_role=None)
 
 
 async def test_task_stage_body_never_submits_injected_credentials(monkeypatch) -> None:
@@ -263,7 +199,7 @@ async def test_task_stage_body_never_submits_injected_credentials(monkeypatch) -
         submitted.append(statement)
 
     executor = DelegateExecutor(credentials=object())
-    monkeypatch.setattr(module.settings, "RANGER_ENABLED", False)
+    monkeypatch.setattr(executor, "_activate_task_role", AsyncMock())
     monkeypatch.setattr(executor, "_owner_conn", fake_conn)
     monkeypatch.setattr(module.db, "system_conn", fake_conn)
     monkeypatch.setattr(module, "_dict_cursor", lambda conn: Cursor())

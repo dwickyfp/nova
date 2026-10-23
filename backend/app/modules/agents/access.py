@@ -10,9 +10,7 @@ What is resolved:
   and its sources;
 * **the agent's database** → ``USAGE`` on that database (needed to run queries).
 
-In Ranger mode only policy authorization establishes data access. Explicit
-native-RBAC mode probes resources with the caller and checks native function
-USAGE grants without invoking functions.
+Only Ranger policy authorization establishes data access.
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -36,108 +33,6 @@ class AccessItem:
     name: str
     granted: bool
     detail: str = ""
-
-
-def _grant_rows(rows: list[list]) -> list[str]:
-    """Flatten SHOW GRANTS rows into lowercase text for matching."""
-    flat: list[str] = []
-    for row in rows:
-        flat.append(" ".join(str(cell) for cell in row if cell is not None))
-    return flat
-
-
-def matches_object(grants: list[str], kind: str, name: str) -> bool:
-    """True when any grant line covers ``kind name``.
-
-    The engine's grant text varies by build, so matching is deliberately loose:
-    a line counts if it carries the privilege family for the object kind and the
-    object name (case-insensitively), or a wildcard that includes it.
-    """
-    needle = name.lower()
-    for line in grants:
-        text = line.lower()
-        if needle not in text and "*.*" not in text and "all" not in text:
-            continue
-        if kind == "function" and "function" not in text and "*.*" not in text:
-            continue
-        if kind == "table" and "table" not in text and "*.*" not in text and "select" not in text:
-            continue
-        if kind == "database" and "database" not in text and "*.*" not in text:
-            continue
-        # The name appears, or a wildcard covers it.
-        if needle in text or "*.*" in text:
-            return True
-    return False
-
-
-def _native_function_usage(grants: list[str], name: str) -> bool:
-    """Admit only explicit USAGE grants for a matching native function scope."""
-    database, separator, function = name.lower().partition(".")
-    if not separator:
-        return False
-    for line in grants:
-        text = line.replace("`", "").strip().lower()
-        matched = re.fullmatch(
-            (
-                "grant (usage|all(?: privileges)?) on (?:function|functions) "
-                "([a-z0-9_$.]+)(?:\\([^)]*\\))? to role [a-z0-9_$]+"
-            ),
-            text,
-        )
-        if matched and matched[2] == name.lower():
-            return True
-        matched = re.fullmatch(
-            (
-                "grant (usage|all(?: privileges)?) on all functions in database "
-                "([a-z0-9_$]+) to role [a-z0-9_$]+"
-            ),
-            text,
-        )
-        if matched and matched[2] == database:
-            return True
-    return False
-
-
-async def _show_grants(
-    *,
-    username: str,
-    encrypted_password: str,
-    role: str | None,
-    session_id: str | None,
-    security_context_version: int = 1,
-) -> list[str]:
-    """Read the role's grants from the engine, on the caller's connection."""
-    from app.modules.query.service import query_service
-
-    sql = f"SHOW GRANTS TO ROLE `{_safe_role(role)}`" if role else "SHOW GRANTS"
-    try:
-        result = await query_service.execute(
-            sql=sql,
-            username=username,
-            encrypted_password=encrypted_password,
-            database=None,
-            role=role,
-            session_id=session_id,
-            security_context_version=security_context_version,
-            max_rows=1000,
-        )
-        if result.error:
-            logger.warning("Verify Access: grants read failed")
-            return []
-        return _grant_rows(result.rows)
-    except Exception:  # noqa: BLE001 - a failed read is reported as unknown
-        logger.warning("Verify Access: could not read grants for role %s", role)
-        return []
-
-
-_ROLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
-
-
-def _safe_role(role: str) -> str:
-    """Reject anything that is not a plain identifier before it enters SQL."""
-    if not _ROLE_RE.match(role):
-        raise ValueError(f"unsafe role name: {role!r}")
-    return role
 
 
 async def _semantic_pins(agent: dict) -> dict[str, dict] | None:
@@ -337,50 +232,6 @@ async def verify_access(
                         if view
                         else "Semantic View is unavailable"
                     ),
-                )
-            )
-            continue
-        from app.core.config import settings
-
-        if not settings.RANGER_ENABLED:
-            from app.modules.query.service import query_service
-
-            parts = name.split(".")
-            if not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part) for part in parts):
-                items.append(
-                    AccessItem(kind=kind, name=name, granted=False, detail="Invalid resource name")
-                )
-                continue
-            quoted = ".".join(f"`{part}`" for part in parts)
-            if kind == "function":
-                grants = await _show_grants(
-                    username=username,
-                    encrypted_password=encrypted_password,
-                    role=role_name,
-                    session_id=session_id,
-                    security_context_version=security_context_version,
-                )
-                granted = _native_function_usage(grants, name)
-            else:
-                result = await query_service.execute(
-                    sql=f"SELECT * FROM {quoted} LIMIT 1" if kind == "table" else "SELECT 1",
-                    username=username,
-                    encrypted_password=encrypted_password,
-                    database=parts[-2] if kind == "table" else name,
-                    role=role_name,
-                    session_id=session_id,
-                    security_context_version=security_context_version,
-                    max_rows=1,
-                )
-                granted = result.error is None
-            items.append(
-                AccessItem(
-                    kind=kind,
-                    name=name,
-                    granted=granted,
-                    detail="Native-RBAC permission check passed"
-                    if granted
-                    else "Native-RBAC permission denied",
                 )
             )
             continue
