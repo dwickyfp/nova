@@ -1,3 +1,4 @@
+import { reportBlockSchema } from "@/features/smart-reports/contracts";
 import type {
   AssistantEvent,
   PlanStep,
@@ -77,6 +78,11 @@ export function parseAssistantEvent(
               ...contentPosition(record),
             }
           : null;
+      case "smart_report": {
+        const value = reportBlockSchema.safeParse(record.payload);
+        if (!value.success || typeof record.content_id !== "string" || !Number.isInteger(record.content_index)) return null;
+        return { type: "smart_report", payload: value.data, ...contentPosition(record) };
+      }
       case "ui": {
         const value = record.payload;
         if (!value || typeof value !== "object" || Array.isArray(value))
@@ -450,6 +456,7 @@ function parseTable(record: Record<string, unknown>): AssistantEvent | null {
     ...contentPosition(record),
     payload: {
       title,
+      semantic_provenance_ref: typeof record.semantic_provenance_ref === "string" ? record.semantic_provenance_ref : undefined,
       columns: columns.map((c) => String(c)),
       rows: rows as (string | number | null)[][],
       tool_call_id:

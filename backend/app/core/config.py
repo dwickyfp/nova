@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     #: is refused (429, or a MySQL error) instead of queueing behind work the
     #: engine has not finished.
     QUERY_MAX_CONCURRENCY: int = Field(default=64, ge=0)
+    REPORT_EXPORT_MAX_CONCURRENCY: int = Field(default=2, ge=1)
 
     #: Audit rows written by one INSERT when several arrive together. Each
     #: caller still waits for its own row to be recorded. 1 writes every row

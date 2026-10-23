@@ -101,7 +101,7 @@ services:
       RANGER_ADMIN_URL: http://ranger-admin:6080
       RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
       RANGER_USERNAME: admin
-      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
       RANGER_TLS_VERIFY: "false"
       SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
       FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}

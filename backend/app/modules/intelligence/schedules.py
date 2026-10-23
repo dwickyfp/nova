@@ -28,6 +28,9 @@ async def configure_schedule(
     enabled: bool,
     cadence: int = 15,
     execution_scope: Scope | None = None,
+    schedule_kind: str = "interval",
+    schedule_expr: str | None = None,
+    timezone: str = "UTC",
 ) -> dict:
     """Create or update the schedule that runs ``handler`` for ``record``.
 
@@ -49,13 +52,14 @@ async def configure_schedule(
             raise HTTPException(
                 status_code=409, detail="Scheduled execution account binding changed"
             )
-        name = "intelligence_" + fingerprint(
-            [handler, record.id, scope.principal, scope.active_role]
-        )[:32]
+        name = (
+            "intelligence_"
+            + fingerprint([handler, record.id, scope.principal, scope.active_role])[:32]
+        )
     schedule = {
-        "schedule_kind": "interval" if enabled else "manual",
-        "schedule_expr": f"{cadence} minutes" if enabled else None,
-        "timezone": "UTC",
+        "schedule_kind": schedule_kind if enabled else "manual",
+        "schedule_expr": (schedule_expr or f"{cadence} minutes") if enabled else None,
+        "timezone": timezone,
     }
     config = InternalTaskConfiguration(
         scope=scope.model_copy(update={"session_id": None}), record_id=record.id

@@ -189,3 +189,11 @@ async def test_ui_action_refuses_forged_sources_state_and_replayed_operations(
     audit = router.write_audit_log.call_args.kwargs
     assert audit["status"] == "DENIED"
     assert "state" not in audit and "$units" not in str(audit)
+
+
+@pytest.fixture(autouse=True)
+def conversation_without_report_binding(monkeypatch):
+    """These endpoint fixtures model conversations without an attached report."""
+    from app.modules.smart_reports import context
+
+    monkeypatch.setattr(context, "bound", AsyncMock(return_value=None))

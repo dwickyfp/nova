@@ -63,7 +63,7 @@ services:
       RANGER_ADMIN_URL: http://ranger-admin:6080
       RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
       RANGER_USERNAME: admin
-      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
       RANGER_TLS_VERIFY: "false"
       SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
       FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
@@ -106,7 +106,7 @@ services:
       RANGER_ADMIN_URL: http://ranger-admin:6080
       RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
       RANGER_USERNAME: admin
-      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
       RANGER_TLS_VERIFY: "false"
       SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
       FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
@@ -159,6 +159,9 @@ services:
     image: apache/ranger:${RANGER_VERSION:-2.9.0}
     container_name: nova-ranger-admin
     hostname: ranger-admin
+    entrypoint: ["/bin/bash", "/opt/nova/ranger-admin-start.sh"]
+    volumes:
+      - ./ranger/admin-start.sh:/opt/nova/ranger-admin-start.sh:ro
     depends_on:
       ranger-db:
         condition: service_healthy
@@ -166,12 +169,13 @@ services:
         condition: service_healthy
     environment:
       POSTGRES_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_ADMIN_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
       RANGER_DB_USER: rangeradmin
       RANGER_DB_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
     ports:
       - "127.0.0.1:${RANGER_ADMIN_PORT:-6080}:6080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -u \"admin:$${RANGER_DB_PASSWORD}\" http://localhost:6080/ >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS -u \"admin:$${RANGER_ADMIN_PASSWORD}\" http://localhost:6080/service/public/v2/api/service >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 60
@@ -191,7 +195,7 @@ services:
     environment:
       RANGER_ADMIN_URL: http://ranger-admin:6080
       RANGER_USERNAME: admin
-      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
     expose:
       - "6081"
     healthcheck:
@@ -213,7 +217,7 @@ services:
     environment:
       RANGER_ADMIN_URL: http://ranger-admin:6080
       RANGER_USERNAME: admin
-      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
       RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
     restart: "no"
     networks:

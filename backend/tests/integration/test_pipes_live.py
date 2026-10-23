@@ -13,7 +13,7 @@ from tests.conftest import engine_host_ports
 pytestmark = pytest.mark.engine
 
 
-async def test_pipe_api_metadata_permissions_and_redaction(
+async def test_legacy_pipe_metadata_and_governed_execution_refusal(
     client, admin_token, analyst_token, sr_root, minio_client
 ):
     database = "pipe_api_" + uuid4().hex[:12]
@@ -49,10 +49,18 @@ async def test_pipe_api_metadata_permissions_and_redaction(
     try:
         client.headers["Authorization"] = "Bearer " + admin_token
         created = await client.post("/api/v1/pipes", json=body)
-        assert created.status_code == 201, created.text
-        assert created.json()["name"] == body["name"]
-        assert created.json()["database"] == database
+        assert created.status_code == 400, created.text
+        assert "Pipe execution is unavailable with Ranger" in created.json()["detail"]
         assert "minioadmin" not in created.text
+        absent = await client.get("/api/v1/pipes", params={"database": database})
+        assert absent.status_code == 200 and absent.json()["pipes"] == []
+        # Provision a legacy native pipe over this fixture's synthetic file so
+        # metadata, suspension and deletion remain covered after execution is denied.
+        async with sr_root.cursor() as cur:
+            await cur.execute(
+                f"CREATE PIPE `{database}`.synthetic_pipe "
+                "PROPERTIES ('AUTO_INGEST'='false', 'POLL_INTERVAL'='3600') AS " + body["sql"]
+            )
         listed = await client.get("/api/v1/pipes", params={"database": database})
         assert listed.status_code == 200, listed.text
         assert listed.json()["pipes"][0]["name"] == body["name"]
@@ -69,7 +77,8 @@ async def test_pipe_api_metadata_permissions_and_redaction(
         suspended = await client.patch(url + "/suspend", params={"database": database})
         assert suspended.status_code == 200, suspended.text
         resumed = await client.patch(url + "/resume", params={"database": database})
-        assert resumed.status_code == 200, resumed.text
+        assert resumed.status_code == 400, resumed.text
+        assert "Pipe execution is unavailable with Ranger" in resumed.json()["detail"]
 
         client.headers["Authorization"] = "Bearer " + analyst_token
         refused = await client.post("/api/v1/pipes", json={**body, "name": "forbidden_pipe"})

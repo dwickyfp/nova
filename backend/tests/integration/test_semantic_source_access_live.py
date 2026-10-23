@@ -5,9 +5,12 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
 from app.core.security import encrypt_password
+from app.integrations.ranger.client import ranger_client
+from app.integrations.ranger.schemas import RangerPolicy, RangerRole, RangerRoleMember
 from app.modules.intelligence.semantic_views import semantic_view_service
 from tests.integration.test_intelligence_metadata import intelligence_db as intelligence_db
 
@@ -20,6 +23,7 @@ async def test_source_probe_rechecks_active_role_and_revoked_select(intelligence
     reader, denied = f"PROBE_READ_{suffix}", f"PROBE_DENY_{suffix}"
     password = secrets.token_urlsafe(24)
     session_id = None
+    policy = None
     created_user = created_reader = created_denied = False
     await db.execute_system(f"CREATE DATABASE `{database}`")
     try:
@@ -35,6 +39,22 @@ async def test_source_probe_rechecks_active_role_and_revoked_select(intelligence
         await db.execute_system(f"CREATE USER '{username}' IDENTIFIED BY %s", [password])
         created_user = True
         await db.execute_system(f"GRANT `{reader}`, `{denied}` TO USER '{username}'")
+        await db.execute_system(f"SET DEFAULT ROLE `{reader}` TO '{username}'")
+        await ranger_client.put_user_attributes(username, {})
+        for role in (reader, denied):
+            await ranger_client.put_role(
+                RangerRole(name=role, users=[RangerRoleMember(name=username)])
+            )
+        policy = await ranger_client.put_policy(RangerPolicy.model_validate({
+            "name": f"source-probe/{suffix}", "service": settings.RANGER_SERVICE_NAME,
+            "resources": {
+                "catalog": {"values": ["default_catalog"]},
+                "database": {"values": [database]}, "table": {"values": ["*"]},
+                "column": {"values": ["*"]},
+            },
+            "policyItems": [{"roles": [reader],
+                             "accesses": [{"type": "select", "isAllowed": True}]}],
+        }))
         await db.execute_system(f"GRANT SELECT ON TABLE `{database}`.`source` TO ROLE `{reader}`")
         encrypted_password = encrypt_password(password)
         session_id = await session_store.create(
@@ -51,11 +71,10 @@ async def test_source_probe_rechecks_active_role_and_revoked_select(intelligence
         await session_store.set_active_role(session_id, reader)
         user = {**await session_store.get(session_id), "session_id": session_id}
         assert await semantic_view_service._source_access(definition, user)
-        await db.execute_system(
-            f"REVOKE SELECT ON TABLE `{database}`.`source` FROM ROLE `{reader}`"
-        )
+        await ranger_client.delete_policy(policy["id"])
+        policy.pop("id")
         assert not await semantic_view_service._source_access(definition, user)
-        await db.execute_system(f"GRANT SELECT ON TABLE `{database}`.`source` TO ROLE `{reader}`")
+        policy = await ranger_client.put_policy(RangerPolicy.model_validate(policy))
         assert await semantic_view_service._source_access(definition, user)
         assert not await semantic_view_service._source_access(
             {"datasets": [{"source": f"{database}.missing"}]}, user,
@@ -65,12 +84,17 @@ async def test_source_probe_rechecks_active_role_and_revoked_select(intelligence
             "WHERE user_name=%s AND event_type='query'",
             [username],
         )
-        assert {(reader, "SUCCESS"), (reader, "ERROR"), (denied, "ERROR")} <= {
+        assert {(reader, "SUCCESS"), (reader, "ERROR")} <= {
             tuple(row) for row in audit["rows"]
         }
+        assert not any(row[0] == denied for row in audit["rows"])
     finally:
         if session_id:
             await session_store.delete(session_id)
+        if policy and policy.get("id"):
+            await ranger_client.delete_policy(policy["id"])
+        for role in (reader, denied):
+            await ranger_client.delete_role(role)
         if created_user:
             await db.execute_system(f"DROP USER '{username}'")
         if created_reader:

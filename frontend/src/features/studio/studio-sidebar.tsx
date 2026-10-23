@@ -32,7 +32,7 @@ import {
 import type { AgentThread } from "@/features/agents/api";
 import { relativeUpdatedAt } from "./thread-time";
 
-export type StudioView = "chat" | "artifacts" | "dashboards" | "shared" | "capabilities" | "news";
+export type StudioView = "chat" | "artifacts" | "reports" | "dashboards" | "shared" | "capabilities" | "news";
 
 const NAV: {
   id: Exclude<StudioView, "chat">;
@@ -41,7 +41,7 @@ const NAV: {
 }[] = [
   { id: "news", label: "News", icon: Newspaper },
   { id: "artifacts", label: "Artifacts", icon: Package },
-  { id: "dashboards", label: "Dashboard", icon: LayoutDashboard },
+  { id: "reports", label: "Reports", icon: LayoutDashboard },
   { id: "shared", label: "Shared with me", icon: Users },
   { id: "capabilities", label: "Capabilities", icon: LayoutGrid },
 ];

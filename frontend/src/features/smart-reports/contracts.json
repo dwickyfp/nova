@@ -1,0 +1,2381 @@
+{
+  "ReportSpecV1": {
+    "$defs": {
+      "Calculation": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "expression": {
+            "$ref": "#/$defs/CalculationExpression"
+          }
+        },
+        "required": [
+          "name",
+          "expression"
+        ],
+        "title": "Calculation",
+        "type": "object"
+      },
+      "CalculationExpression": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "enum": [
+              "field",
+              "number",
+              "add",
+              "subtract",
+              "multiply",
+              "divide",
+              "coalesce",
+              "case",
+              "eq",
+              "ne",
+              "gt",
+              "ge",
+              "lt",
+              "le",
+              "and",
+              "or",
+              "running_total",
+              "moving_average",
+              "rank",
+              "dense_rank"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Field"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          },
+          "args": {
+            "items": {
+              "$ref": "#/$defs/CalculationExpression"
+            },
+            "maxItems": 3,
+            "title": "Args",
+            "type": "array"
+          },
+          "partition_by": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Partition By",
+            "type": "array"
+          },
+          "order_by": {
+            "items": {
+              "$ref": "#/$defs/CalculationOrder"
+            },
+            "maxItems": 12,
+            "title": "Order By",
+            "type": "array"
+          },
+          "preceding": {
+            "anyOf": [
+              {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Preceding"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "CalculationExpression",
+        "type": "object"
+      },
+      "CalculationOrder": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "direction": {
+            "default": "asc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "CalculationOrder",
+        "type": "object"
+      },
+      "ConditionalFormat": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "<",
+              "<=",
+              "=",
+              ">=",
+              ">"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          },
+          "tone": {
+            "enum": [
+              "positive",
+              "negative",
+              "attention"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "operator",
+          "value",
+          "tone"
+        ],
+        "title": "ConditionalFormat",
+        "type": "object"
+      },
+      "Encoding": {
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "X"
+          },
+          "y": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Y",
+            "type": "array"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Series"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Longitude"
+          }
+        },
+        "title": "Encoding",
+        "type": "object"
+      },
+      "FilterDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Source",
+            "type": "string"
+          },
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "single",
+              "multi",
+              "range",
+              "date_range",
+              "text",
+              "boolean"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "default": {
+            "$ref": "#/$defs/FilterValue"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "allow_null": {
+            "default": false,
+            "title": "Allow Null",
+            "type": "boolean"
+          },
+          "scope": {
+            "default": "report",
+            "enum": [
+              "report",
+              "page",
+              "section",
+              "widgets"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            },
+            "maxItems": 240,
+            "title": "Targets",
+            "type": "array"
+          },
+          "exclude_widgets": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            },
+            "maxItems": 240,
+            "title": "Exclude Widgets",
+            "type": "array"
+          },
+          "parents": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Parents",
+            "type": "array"
+          },
+          "mappings": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[\\w.-]+$": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "Mappings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "source",
+          "field",
+          "kind"
+        ],
+        "title": "FilterDefinition",
+        "type": "object"
+      },
+      "FilterValue": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "single",
+              "multi",
+              "range",
+              "date_range"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "title": "Values",
+            "type": "array"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Minimum"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maximum"
+          },
+          "relative": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Relative"
+          }
+        },
+        "title": "FilterValue",
+        "type": "object"
+      },
+      "Interaction": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "source_widget": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Source Widget",
+            "type": "string"
+          },
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            },
+            "maxItems": 240,
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          },
+          "mappings": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[\\w.-]+$": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[\\w.]+$",
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "Mappings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "source_widget",
+          "field",
+          "targets"
+        ],
+        "title": "Interaction",
+        "type": "object"
+      },
+      "MetricFormat": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "default": "number",
+            "enum": [
+              "number",
+              "currency",
+              "percent",
+              "percentage_points"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "precision": {
+            "default": 2,
+            "maximum": 12,
+            "minimum": 0,
+            "title": "Precision",
+            "type": "integer"
+          },
+          "currency": {
+            "default": "IDR",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "title": "MetricFormat",
+        "type": "object"
+      },
+      "Page": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/$defs/Section"
+            },
+            "maxItems": 24,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "sections"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "Placement": {
+        "additionalProperties": false,
+        "properties": {
+          "col": {
+            "default": 0,
+            "maximum": 11,
+            "minimum": 0,
+            "title": "Col",
+            "type": "integer"
+          },
+          "row": {
+            "default": 0,
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Row",
+            "type": "integer"
+          },
+          "width": {
+            "default": 6,
+            "maximum": 12,
+            "minimum": 1,
+            "title": "Width",
+            "type": "integer"
+          },
+          "height": {
+            "default": 2,
+            "maximum": 20,
+            "minimum": 1,
+            "title": "Height",
+            "type": "integer"
+          }
+        },
+        "title": "Placement",
+        "type": "object"
+      },
+      "Predicate": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "operator": {
+            "default": "=",
+            "enum": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "IN",
+              "NOT IN",
+              "IS NULL",
+              "IS NOT NULL",
+              "LIKE"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "Predicate",
+        "type": "object"
+      },
+      "QuerySpec": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Source",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Metrics",
+            "type": "array"
+          },
+          "dimensions": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "filters": {
+            "items": {
+              "$ref": "#/$defs/Predicate"
+            },
+            "maxItems": 40,
+            "title": "Filters",
+            "type": "array"
+          },
+          "calculations": {
+            "items": {
+              "$ref": "#/$defs/Calculation"
+            },
+            "maxItems": 16,
+            "title": "Calculations",
+            "type": "array"
+          },
+          "named_filters": {
+            "description": "Published semantic named-filter IDs only. Report filter IDs never belong here; report filters apply automatically.",
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Named Filters",
+            "type": "array"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "order_by": {
+            "items": {
+              "$ref": "#/$defs/Sort"
+            },
+            "maxItems": 12,
+            "title": "Order By",
+            "type": "array"
+          },
+          "transforms": {
+            "items": {
+              "$ref": "#/$defs/Transform"
+            },
+            "maxItems": 16,
+            "title": "Transforms",
+            "type": "array"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "QuerySpec",
+        "type": "object"
+      },
+      "ReportCalendar": {
+        "additionalProperties": false,
+        "properties": {
+          "fiscal_start_month": {
+            "default": 1,
+            "maximum": 12,
+            "minimum": 1,
+            "title": "Fiscal Start Month",
+            "type": "integer"
+          },
+          "week_start": {
+            "default": 0,
+            "maximum": 6,
+            "minimum": 0,
+            "title": "Week Start",
+            "type": "integer"
+          }
+        },
+        "title": "ReportCalendar",
+        "type": "object"
+      },
+      "Section": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Title",
+            "type": "string"
+          },
+          "widgets": {
+            "items": {
+              "$ref": "#/$defs/Widget"
+            },
+            "maxItems": 24,
+            "title": "Widgets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "Section",
+        "type": "object"
+      },
+      "SemanticSource": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "view_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "View Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "view_id",
+          "version",
+          "fingerprint"
+        ],
+        "title": "SemanticSource",
+        "type": "object"
+      },
+      "Sort": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "direction": {
+            "default": "asc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "Sort",
+        "type": "object"
+      },
+      "TimeSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Dimension",
+            "type": "string"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "week",
+                  "month",
+                  "quarter",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Grain"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Range"
+          },
+          "compare": {
+            "anyOf": [
+              {
+                "enum": [
+                  "previous_period",
+                  "year_over_year",
+                  "quarter_over_quarter",
+                  "month_over_month",
+                  "week_over_week"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Compare"
+          }
+        },
+        "required": [
+          "dimension"
+        ],
+        "title": "TimeSpec",
+        "type": "object"
+      },
+      "Transform": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Metric",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "share_of_total",
+              "running_total",
+              "rank"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "kind"
+        ],
+        "title": "Transform",
+        "type": "object"
+      },
+      "Widget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "default": "table",
+            "enum": [
+              "kpi",
+              "line",
+              "area",
+              "bar",
+              "table",
+              "stacked_bar",
+              "grouped_bar",
+              "combo",
+              "scatter",
+              "donut",
+              "heatmap",
+              "waterfall",
+              "pivot",
+              "map",
+              "funnel"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/QuerySpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "encoding": {
+            "$ref": "#/$defs/Encoding"
+          },
+          "format": {
+            "$ref": "#/$defs/MetricFormat"
+          },
+          "placement": {
+            "$ref": "#/$defs/Placement"
+          },
+          "mapping_required": {
+            "default": false,
+            "title": "Mapping Required",
+            "type": "boolean"
+          },
+          "legacy_artifact_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[\\w.-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Legacy Artifact Id"
+          },
+          "detail_fields": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Detail Fields",
+            "type": "array"
+          },
+          "drill_dimensions": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Drill Dimensions",
+            "type": "array"
+          },
+          "pivot_columns": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Pivot Columns",
+            "type": "array"
+          },
+          "conditional_formats": {
+            "items": {
+              "$ref": "#/$defs/ConditionalFormat"
+            },
+            "maxItems": 16,
+            "title": "Conditional Formats",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "Widget",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "1.0.0",
+        "default": "1.0.0",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "title": {
+        "maxLength": 256,
+        "minLength": 1,
+        "title": "Title",
+        "type": "string"
+      },
+      "description": {
+        "default": "",
+        "maxLength": 4000,
+        "title": "Description",
+        "type": "string"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "type": "string"
+      },
+      "calendar": {
+        "$ref": "#/$defs/ReportCalendar"
+      },
+      "locale": {
+        "default": "id-ID",
+        "maxLength": 35,
+        "minLength": 2,
+        "title": "Locale",
+        "type": "string"
+      },
+      "sources": {
+        "items": {
+          "$ref": "#/$defs/SemanticSource"
+        },
+        "maxItems": 20,
+        "title": "Sources",
+        "type": "array"
+      },
+      "filters": {
+        "items": {
+          "$ref": "#/$defs/FilterDefinition"
+        },
+        "maxItems": 30,
+        "title": "Filters",
+        "type": "array"
+      },
+      "pages": {
+        "items": {
+          "$ref": "#/$defs/Page"
+        },
+        "maxItems": 10,
+        "minItems": 1,
+        "title": "Pages",
+        "type": "array"
+      },
+      "interactions": {
+        "items": {
+          "$ref": "#/$defs/Interaction"
+        },
+        "maxItems": 100,
+        "title": "Interactions",
+        "type": "array"
+      }
+    },
+    "required": [
+      "title",
+      "pages"
+    ],
+    "title": "ReportSpecV1",
+    "type": "object"
+  },
+  "ReportViewStateV1": {
+    "$defs": {
+      "FilterValue": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "single",
+              "multi",
+              "range",
+              "date_range"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "title": "Values",
+            "type": "array"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Minimum"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maximum"
+          },
+          "relative": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Relative"
+          }
+        },
+        "title": "FilterValue",
+        "type": "object"
+      },
+      "Origin": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[\\w.-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Id"
+          },
+          "content_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[\\w.-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content Id"
+          }
+        },
+        "required": [
+          "agent_id",
+          "thread_id"
+        ],
+        "title": "Origin",
+        "type": "object"
+      },
+      "Predicate": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "operator": {
+            "default": "=",
+            "enum": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "IN",
+              "NOT IN",
+              "IS NULL",
+              "IS NOT NULL",
+              "LIKE"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "Predicate",
+        "type": "object"
+      },
+      "Sort": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "direction": {
+            "default": "asc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "Sort",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": 1,
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      },
+      "session_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "Session Id",
+        "type": "string"
+      },
+      "report_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "Report Id",
+        "type": "string"
+      },
+      "draft_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Draft Id"
+      },
+      "spec_revision": {
+        "minimum": 1,
+        "title": "Spec Revision",
+        "type": "integer"
+      },
+      "state_revision": {
+        "default": 1,
+        "minimum": 1,
+        "title": "State Revision",
+        "type": "integer"
+      },
+      "active_page_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "Active Page Id",
+        "type": "string"
+      },
+      "filters": {
+        "maxProperties": 30,
+        "patternProperties": {
+          "^[\\w.-]+$": {
+            "$ref": "#/$defs/FilterValue"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 64,
+          "minLength": 1
+        },
+        "title": "Filters",
+        "type": "object"
+      },
+      "cross_filters": {
+        "maxProperties": 100,
+        "patternProperties": {
+          "^[\\w.-]+$": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 64,
+          "minLength": 1
+        },
+        "title": "Cross Filters",
+        "type": "object"
+      },
+      "drill_paths": {
+        "maxProperties": 240,
+        "patternProperties": {
+          "^[\\w.-]+$": {
+            "items": {
+              "$ref": "#/$defs/Predicate"
+            },
+            "type": "array"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 64,
+          "minLength": 1
+        },
+        "title": "Drill Paths",
+        "type": "object"
+      },
+      "group_by": {
+        "maxProperties": 240,
+        "patternProperties": {
+          "^[\\w.-]+$": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[\\w.]+$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 64,
+          "minLength": 1
+        },
+        "title": "Group By",
+        "type": "object"
+      },
+      "selected_widget_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Selected Widget Id"
+      },
+      "sort": {
+        "maxProperties": 240,
+        "patternProperties": {
+          "^[\\w.-]+$": {
+            "items": {
+              "$ref": "#/$defs/Sort"
+            },
+            "type": "array"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 64,
+          "minLength": 1
+        },
+        "title": "Sort",
+        "type": "object"
+      },
+      "page_index": {
+        "maxProperties": 240,
+        "patternProperties": {
+          "^[\\w.-]+$": {
+            "type": "integer"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 64,
+          "minLength": 1
+        },
+        "title": "Page Index",
+        "type": "object"
+      },
+      "page_size": {
+        "default": 50,
+        "maximum": 200,
+        "minimum": 1,
+        "title": "Page Size",
+        "type": "integer"
+      },
+      "origin": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Origin"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "session_id",
+      "report_id",
+      "spec_revision",
+      "active_page_id"
+    ],
+    "title": "ReportViewStateV1",
+    "type": "object"
+  },
+  "ReportInteractionEvent": {
+    "$defs": {
+      "FilterValue": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "single",
+              "multi",
+              "range",
+              "date_range"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "title": "Values",
+            "type": "array"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Minimum"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maximum"
+          },
+          "relative": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Relative"
+          }
+        },
+        "title": "FilterValue",
+        "type": "object"
+      },
+      "Sort": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "title": "Field",
+            "type": "string"
+          },
+          "direction": {
+            "default": "asc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "Sort",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "event_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "Event Id",
+        "type": "string"
+      },
+      "expected_state_revision": {
+        "minimum": 1,
+        "title": "Expected State Revision",
+        "type": "integer"
+      },
+      "spec_revision": {
+        "minimum": 1,
+        "title": "Spec Revision",
+        "type": "integer"
+      },
+      "type": {
+        "enum": [
+          "FILTER_SET",
+          "FILTER_RESET",
+          "FILTER_RESET_ALL",
+          "PAGE_SET",
+          "WIDGET_FOCUS",
+          "CROSS_FILTER_APPLY",
+          "CROSS_FILTER_CLEAR",
+          "DRILL_DOWN",
+          "DRILL_UP",
+          "DRILL_BY",
+          "TABLE_SORT",
+          "TABLE_PAGE"
+        ],
+        "title": "Type",
+        "type": "string"
+      },
+      "target": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Target"
+      },
+      "value": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/FilterValue"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "field": {
+        "anyOf": [
+          {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Field"
+      },
+      "values": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxItems": 100,
+        "title": "Values",
+        "type": "array"
+      },
+      "sort": {
+        "items": {
+          "$ref": "#/$defs/Sort"
+        },
+        "maxItems": 12,
+        "title": "Sort",
+        "type": "array"
+      },
+      "page_index": {
+        "default": 0,
+        "maximum": 100000,
+        "minimum": 0,
+        "title": "Page Index",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "event_id",
+      "expected_state_revision",
+      "spec_revision",
+      "type"
+    ],
+    "title": "ReportInteractionEvent",
+    "type": "object"
+  },
+  "ReportPatch": {
+    "additionalProperties": false,
+    "properties": {
+      "op": {
+        "enum": [
+          "SET_REPORT_METADATA",
+          "ADD_PAGE",
+          "REMOVE_PAGE",
+          "RENAME_PAGE",
+          "MOVE_PAGE",
+          "ADD_WIDGET",
+          "REMOVE_WIDGET",
+          "MOVE_WIDGET",
+          "RESIZE_WIDGET",
+          "SET_WIDGET_VISUAL",
+          "SET_WIDGET_QUERY",
+          "SET_WIDGET_FORMAT",
+          "ADD_FILTER",
+          "UPDATE_FILTER",
+          "REMOVE_FILTER",
+          "SET_INTERACTION",
+          "REMOVE_INTERACTION",
+          "SET_SOURCES",
+          "RESTORE_DRAFT",
+          "UNDO_DRAFT",
+          "REDO_DRAFT"
+        ],
+        "title": "Op",
+        "type": "string"
+      },
+      "target": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Target"
+      },
+      "parent": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Parent"
+      },
+      "value": {
+        "additionalProperties": true,
+        "title": "Value",
+        "type": "object"
+      }
+    },
+    "required": [
+      "op"
+    ],
+    "title": "ReportPatch",
+    "type": "object"
+  },
+  "WidgetResult": {
+    "additionalProperties": false,
+    "properties": {
+      "widget_id": {
+        "title": "Widget Id",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "success",
+          "empty",
+          "denied",
+          "error",
+          "timeout",
+          "requires_mapping",
+          "incompatible"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "columns": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Columns",
+        "type": "array"
+      },
+      "rows": {
+        "items": {
+          "items": {},
+          "type": "array"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "totals": {
+        "additionalProperties": true,
+        "title": "Totals",
+        "type": "object"
+      },
+      "column_labels": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "title": "Column Labels",
+        "type": "object"
+      },
+      "row_kinds": {
+        "items": {
+          "enum": [
+            "detail",
+            "subtotal"
+          ],
+          "type": "string"
+        },
+        "title": "Row Kinds",
+        "type": "array"
+      },
+      "completeness": {
+        "default": "complete",
+        "enum": [
+          "complete",
+          "paged",
+          "truncated",
+          "error"
+        ],
+        "title": "Completeness",
+        "type": "string"
+      },
+      "has_more": {
+        "default": false,
+        "title": "Has More",
+        "type": "boolean"
+      },
+      "not_applied": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Not Applied",
+        "type": "array"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Warnings",
+        "type": "array"
+      },
+      "time_context": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Time Context"
+      },
+      "query_fingerprint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Query Fingerprint"
+      },
+      "query_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Query Id"
+      },
+      "semantic_view_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Semantic View Id"
+      },
+      "semantic_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Semantic Version"
+      },
+      "evaluated_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Evaluated At"
+      },
+      "message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Message"
+      }
+    },
+    "required": [
+      "widget_id",
+      "status"
+    ],
+    "title": "WidgetResult",
+    "type": "object"
+  },
+  "ReportContextRef": {
+    "additionalProperties": false,
+    "properties": {
+      "report_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "Report Id",
+        "type": "string"
+      },
+      "view_session_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "View Session Id",
+        "type": "string"
+      },
+      "state_revision": {
+        "minimum": 1,
+        "title": "State Revision",
+        "type": "integer"
+      },
+      "selected_widget_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Selected Widget Id"
+      }
+    },
+    "required": [
+      "report_id",
+      "view_session_id",
+      "state_revision"
+    ],
+    "title": "ReportContextRef",
+    "type": "object"
+  },
+  "ReportBlock": {
+    "additionalProperties": false,
+    "properties": {
+      "report_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[\\w.-]+$",
+        "title": "Report Id",
+        "type": "string"
+      },
+      "draft_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Draft Id"
+      },
+      "draft_revision": {
+        "anyOf": [
+          {
+            "minimum": 1,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Draft Revision"
+      },
+      "published_revision": {
+        "anyOf": [
+          {
+            "minimum": 1,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Published Revision"
+      },
+      "title": {
+        "maxLength": 256,
+        "minLength": 1,
+        "title": "Title",
+        "type": "string"
+      },
+      "fallback": {
+        "default": "Open the report to view current authorized data.",
+        "maxLength": 1000,
+        "title": "Fallback",
+        "type": "string"
+      }
+    },
+    "required": [
+      "report_id",
+      "title"
+    ],
+    "title": "ReportBlock",
+    "type": "object"
+  }
+}

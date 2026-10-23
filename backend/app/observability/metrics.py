@@ -156,11 +156,29 @@ STUDIO_WORKFLOW_DURATION = Histogram(
 
 @contextmanager
 def studio_operation(component: str, operation: str):
-    if component not in {"release", "quality", "mission", "resource", "action", "workspace", "ui"}:
+    if component not in {
+        "release",
+        "quality",
+        "mission",
+        "resource",
+        "action",
+        "workspace",
+        "ui",
+        "report",
+    }:
         raise ValueError("Unknown Studio metric component")
     if operation not in {
-        "capture", "evaluate", "score", "project", "grant", "execute", "verify",
-        "validate", "repair", "fallback", "state",
+        "capture",
+        "evaluate",
+        "score",
+        "project",
+        "grant",
+        "execute",
+        "verify",
+        "validate",
+        "repair",
+        "fallback",
+        "state",
     }:
         raise ValueError("Unknown Studio metric operation")
     started = time.perf_counter()
@@ -173,6 +191,7 @@ def studio_operation(component: str, operation: str):
         STUDIO_WORKFLOW_DURATION.labels(component, operation, status).observe(
             time.perf_counter() - started
         )
+
 
 SEARCH_POLL_ERRORS = Counter(
     "nova_search_poll_errors_total", "AI Search build queue poll failures."
@@ -241,3 +260,10 @@ def start_metrics_server(service: str) -> None:
 def heartbeat(service: str) -> None:
     """Record loop progress without IDs, usernames, SQL, or other sensitive labels."""
     SERVICE_HEARTBEAT.labels(service=service).set(time.time())
+
+
+REPORT_WIDGET_RESULTS = Counter(
+    "nova_report_widget_results_total",
+    "Governed report widget outcomes without source identifiers or data.",
+    ("widget_type", "status"),
+)

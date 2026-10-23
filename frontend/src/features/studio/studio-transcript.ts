@@ -27,6 +27,7 @@ export type StudioAssistantEvent = AssistantEvent;
 export type PendingCall = ToolCallView & { tool_call_id: string };
 
 export type OrderedContent =
+  | { id: string; index: number; type: "smart_report"; block: import("../smart-reports/contracts").ReportBlock; complete: true }
   | {
       id: string;
       index: number;
@@ -190,6 +191,9 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
           else if (step.finish_reason && step.finish_reason !== "stop")
             open.state = "error";
           break;
+        case "smart_report":
+          open.content.push({ id: step.content_id, index: step.content_index, type: "smart_report", block: step, complete: true });
+          break;
         case "ui":
           open.content.push({
             id: step.content_id,
@@ -264,6 +268,7 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               `${open.id}-table-${open.blocks.tables.length}`;
             const block = {
               tool_call_id: step.tool_call_id,
+              semantic_provenance_ref: step.semantic_provenance_ref,
               title: step.title,
               columns: step.columns,
               rows: step.rows,
@@ -770,6 +775,10 @@ export function applyEvent(
         };
       }
 
+      case "smart_report": {
+        if (turn.content.some(item => item.id === event.content_id)) return turn;
+        return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "smart_report", block: event.payload, complete: true }] };
+      }
       case "ui": {
         const id = event.content_id!;
         if (turn.content.some((item) => item.id === id)) return turn;

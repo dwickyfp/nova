@@ -35,6 +35,8 @@ from app.modules.intelligence.action_contracts import (
     BUSINESS_ACTION_TOOL_NAME,
     BUSINESS_ACTION_TOOL_PARAMETERS,
 )
+from app.modules.smart_reports.tool_spec import DESCRIPTION as REPORT_DESCRIPTION
+from app.modules.smart_reports.tool_spec import PARAMETERS as REPORT_PARAMETERS
 
 COMPUTE_DESCRIPTION = ComputeMetricsTool.description
 SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
@@ -43,6 +45,7 @@ PROPOSE_DESCRIPTION = PROPOSE_AUTOMATION_DESCRIPTION
 #: name -> (description, input_schema)
 
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
+    "smart_report": (REPORT_DESCRIPTION, REPORT_PARAMETERS),
     BUSINESS_ACTION_TOOL_NAME: (BUSINESS_ACTION_TOOL_DESCRIPTION, BUSINESS_ACTION_TOOL_PARAMETERS),
     analysis_workspace_tool.name: (
         analysis_workspace_tool.description, analysis_workspace_tool.parameters,
@@ -353,6 +356,7 @@ AGENT_BUNDLEABLE_TOOLS = (
     "ai_search",
     "semantic_view_query",
     "feature_lookup",
+    "smart_report",
     "data_to_chart",
     "diagnose_change",
     "context_graph",

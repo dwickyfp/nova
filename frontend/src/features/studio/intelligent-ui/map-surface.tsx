@@ -213,6 +213,7 @@ export function MapSurface({
   onError,
   onReady,
   publicMap = false,
+  basemap = "configured",
 }: {
   children: ReactNode;
   bounds: Bounds | null;
@@ -223,22 +224,24 @@ export function MapSurface({
   onError: () => void;
   onReady?: () => void;
   publicMap?: boolean;
+  basemap?: "bundled" | "configured";
 }) {
   const { resolvedTheme } = useTheme();
   const metric = useMapMetrics();
   const follow = useRef(true);
   const mapRef = useRef<MapRef | null>(null);
+  const streets = basemap !== "bundled" && publicMap;
   // Only the 3D toggle reaches 60°, so a saved camera at that pitch reopens in 3D.
   const [threeD, setThreeD] = useState(
-    () => publicMap && (mapView(viewport)?.pitch ?? 0) >= 59.5,
+    () => streets && (mapView(viewport)?.pitch ?? 0) >= 59.5,
   );
   const styles = useMemo(() => {
-    if (publicMap && threeD)
+    if (streets && threeD)
       return { light: PUBLIC_3D_STYLE, dark: PUBLIC_3D_STYLE };
-    if (publicMap) return PUBLIC_MAP_STYLES;
+    if (streets) return PUBLIC_MAP_STYLES;
     const style: StyleSpecification = businessMapStyle();
     return { light: style, dark: style };
-  }, [resolvedTheme, publicMap, threeD]);
+  }, [resolvedTheme, streets, threeD]);
   const view = mapView(viewport);
   return (
     <div className="min-w-0 space-y-2">
@@ -249,7 +252,7 @@ export function MapSurface({
           options={options}
           follow={follow}
           threeD={threeD}
-          onThreeD={publicMap ? setThreeD : undefined}
+          onThreeD={streets ? setThreeD : undefined}
         />
       )}
       <div className="h-80 w-full overflow-hidden rounded-lg border border-border">
@@ -267,7 +270,7 @@ export function MapSurface({
             metric("ready");
             onReady?.();
           }}
-          transformRequest={publicMap ? undefined : localMapRequest}
+          transformRequest={streets ? undefined : localMapRequest}
           onViewportCommit={(next) => {
             if (!follow.current) {
               const normalized = {

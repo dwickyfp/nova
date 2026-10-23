@@ -14,7 +14,7 @@ from app.modules.query.service import QueryService
 from app.modules.query_autopilot.evidence import EvidenceCollector
 from app.modules.query_autopilot.models import Observation, Scope, utcnow
 from app.modules.query_autopilot.repository import repository
-from app.modules.query_autopilot.runtime import AuthorizedSQL
+from app.modules.query_autopilot.runtime import AuthorizedSQL, current_policy_revision
 from app.modules.query_autopilot.schema import DDL, TABLES, ensure_schema
 from app.modules.query_autopilot.telemetry import collector, purpose
 from app.sql_frontend.session_functions import CORRELATION_SESSION, QueryCorrelationSession
@@ -37,7 +37,8 @@ async def autopilot_engine(app):
     )
     await db.execute_system(f"INSERT INTO {name}.facts VALUES (1,1,10),(2,1,20),(3,2,30)")
     scope = Scope(
-        principal="nova_admin", active_role=role, security_context_version=1, database=name
+        principal="nova_admin", active_role=role, security_context_version=1, database=name,
+        policy_revision=await current_policy_revision(),
     )
     try:
         yield scope
@@ -97,6 +98,7 @@ async def test_disposable_resource_trial_preserves_enrolled_group(app):
         active_role="ACCOUNTADMIN",
         security_context_version=1,
         database="NOVA_SYSTEM",
+        policy_revision=await current_policy_revision(),
     )
     candidate = Candidate(
         id=name,
@@ -327,7 +329,7 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
             assert trial["result"]["correctness"] == "EQUIVALENT"
             assert trial["result"]["repetitions"] == 30
             assert trial["state"] == "INCONCLUSIVE"
-            assert trial["result"]["reason"] == "ranger_acceptance_unavailable"
+            assert trial["result"]["reason"] == "ranger_filter_or_mask_acceptance_unproven"
             assert trial["cleanup"] == "verified_object_removed"
             assert trial["refresh_source"] == asdict(owned)
             assert (
@@ -349,6 +351,7 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
                     active_role=replay_role,
                     security_context_version=1,
                     database=sandbox,
+                    policy_revision=source.policy_revision,
                 ).cohort_id,
             ):
                 cursor = ""

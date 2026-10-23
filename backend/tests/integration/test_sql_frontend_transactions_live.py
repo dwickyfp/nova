@@ -51,6 +51,9 @@ def composite_service(sqls):
 
 @pytest.fixture
 async def transaction_database(app):
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
+
     name = "hardening_" + uuid4().hex[:12]
     role = name + "_role"
     try:
@@ -58,6 +61,10 @@ async def transaction_database(app):
         await db.execute_system(f"CREATE ROLE {role}")
         await db.execute_system(f"GRANT ALL ON {name}.* TO ROLE {role}")
         await db.execute_system(f"GRANT {role} TO USER nova_admin")
+        await ranger_client.put_user_attributes("nova_admin", {})
+        await ranger_client.put_role(
+            RangerRole(name=role, users=[RangerRoleMember(name="nova_admin")])
+        )
         for table in ("a", "b"):
             await db.execute_system(
                 f"CREATE TABLE {name}.{table} (id INT NOT NULL) PRIMARY KEY(id) "
@@ -67,6 +74,7 @@ async def transaction_database(app):
     finally:
         await db.execute_system(f"DROP DATABASE IF EXISTS {name}")
         await db.execute_system(f"DROP ROLE IF EXISTS {role}")
+        await ranger_client.delete_role(role)
 
 
 async def execute(service, database, role):

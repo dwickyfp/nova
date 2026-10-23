@@ -60,9 +60,25 @@ class SemanticCompiler:
         self, model: SemanticModelIR, plan: SemanticPlan, *,
         time_context: ExecutionTimeContext | None = None,
     ) -> CompiledSemanticQuery:
+        if type(plan.offset) is not int or not 0 <= plan.offset <= 20_000_000:
+            raise SemanticPlanError("Invalid query page offset.")
+        if plan.offset and (not plan.limit or not plan.order_by):
+            raise SemanticPlanError("Pagination requires a limit and stable ordering.")
+        if type(plan.fiscal_start_month) is not int or not 1 <= plan.fiscal_start_month <= 12:
+            raise SemanticPlanError("Invalid fiscal start month.")
+        if type(plan.week_start) is not int or not 0 <= plan.week_start <= 6:
+            raise SemanticPlanError("Invalid week start.")
+        if (
+            plan.time and plan.time.range
+            and (plan.fiscal_start_month != 1 or plan.week_start != 0)
+            and not time_context
+        ):
+            raise SemanticPlanError("Custom calendars require a pinned execution time context.")
         if time_context and (
             plan.time is None or plan.time.range != time_context.range
             or plan.time.compare != time_context.comparison
+            or plan.fiscal_start_month != time_context.fiscal_start_month
+            or plan.week_start != time_context.week_start
         ):
             raise SemanticPlanError("Execution time context does not match the validated plan.")
         errors = validate_plan(model, plan)
@@ -76,6 +92,9 @@ class SemanticCompiler:
         sql, columns = core.sql, list(core.columns)
         if plan.having or plan.transforms or plan.top_n_per_group:
             sql, columns = _wrap(sql, columns, plan)
+        if plan.calculations:
+            from app.modules.agents.semantic.calculations import compile_calculations
+            sql, columns = compile_calculations(sql, columns, plan.calculations)
         lines = [sql]
         order_by = plan.order_by
         if plan.limit and not order_by and plan.metrics:
@@ -92,6 +111,8 @@ class SemanticCompiler:
             lines.append("ORDER BY " + ", ".join(order_parts))
         if plan.limit:
             lines.append(f"LIMIT {plan.limit}")
+            if plan.offset:
+                lines.append(f"OFFSET {plan.offset}")
         return CompiledSemanticQuery(
             sql="\n".join(lines),
             model_fingerprint=model.fingerprint,
@@ -248,7 +269,10 @@ class SemanticCompiler:
         errors = validate_plan(model, plan)
         if errors:
             raise SemanticPlanError("; ".join(errors))
-        alias_map = alias_map or {}
+        alias_map = dict(alias_map or {})
+        if plan.time and plan.time_output:
+            _quote_output(plan.time_output)
+            alias_map[plan.time.dimension] = plan.time_output
 
         metric_objects = [model.metric(name) for name in plan.metrics]
         metrics = [metric for metric in metric_objects if metric is not None]
@@ -329,6 +353,16 @@ class SemanticCompiler:
         if plan.time and time_field is not None and plan.time.grain:
             expression = _qualified_expression(time_field)
             grouped_time = f"DATE_TRUNC('{_safe_grain(plan.time.grain)}', {expression})"
+            amount, unit = 0, "DAY"
+            if plan.time.grain in {"quarter", "year"}:
+                amount, unit = plan.fiscal_start_month - 1, "MONTH"
+            elif plan.time.grain == "week":
+                amount = plan.week_start
+            if amount:
+                grouped_time = (
+                    f"DATE_ADD(DATE_TRUNC('{_safe_grain(plan.time.grain)}', "
+                    f"DATE_SUB({expression}, INTERVAL {amount} {unit})), INTERVAL {amount} {unit})"
+                )
             time_alias = alias_map.get(plan.time.dimension, plan.time.dimension)
             select_parts.append(f"{grouped_time} AS {_quote_output(time_alias)}")
             group_parts.append(grouped_time)
@@ -418,7 +452,7 @@ class SemanticCompiler:
             )
 
         lines = [
-            "SELECT",
+            "SELECT DISTINCT" if plan.distinct else "SELECT",
             "  " + ",\n  ".join(select_parts),
             f"FROM {_quote_source(base.source)} AS {_quote(base_dataset)}",
         ]
@@ -632,10 +666,23 @@ def _relationship_expression(model: SemanticModelIR, dataset: str, field_name: s
 
 
 def _filter_sql(expression: str, operator: str, value: Any) -> str:
-    if operator == "IN":
-        if not isinstance(value, list) or not value:
-            raise SemanticPlanError("IN filter needs a non-empty list.")
-        return f"{expression} IN ({', '.join(_literal(item) for item in value)})"
+    if operator in {"IS NULL", "IS NOT NULL"}:
+        if value is not None:
+            raise SemanticPlanError("Null filters cannot have a value.")
+        return f"{expression} {operator}"
+    if operator in {"IN", "NOT IN"}:
+        if not isinstance(value, list):
+            raise SemanticPlanError("Set filters require a list.")
+        if not value:
+            return "FALSE" if operator == "IN" else "TRUE"
+        nonnull = [item for item in value if item is not None]
+        parts = (
+            [f"{expression} {operator} ({', '.join(_literal(item) for item in nonnull)})"]
+            if nonnull else []
+        )
+        if None in value:
+            parts.append(f"{expression} IS {'NOT ' if operator == 'NOT IN' else ''}NULL")
+        return "(" + (" AND " if operator == "NOT IN" else " OR ").join(parts) + ")"
     return f"{expression} {operator} {_literal(value)}"
 
 

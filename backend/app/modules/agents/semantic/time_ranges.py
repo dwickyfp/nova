@@ -298,6 +298,8 @@ class ExecutionTimeContext:
     current: ConcreteWindow
     baseline: ConcreteWindow | None = None
     warnings: tuple[str, ...] = ()
+    fiscal_start_month: int = 1
+    week_start: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -311,13 +313,21 @@ class ExecutionTimeContext:
                                           - self.baseline.start.astimezone(UTC)).total_seconds()
             if self.baseline else None,
             "warnings": list(self.warnings),
+            "fiscal_start_month": self.fiscal_start_month, "week_start": self.week_start,
         }
 
 
-def _calendar_start(value: datetime, unit: str) -> datetime:
+def _calendar_start(
+    value: datetime, unit: str, *, fiscal_start_month: int = 1, week_start: int = 0,
+) -> datetime:
     day = value.date()
     if unit == "week":
-        day -= timedelta(days=day.weekday())
+        day -= timedelta(days=(day.weekday() - week_start) % 7)
+    elif unit in {"quarter", "year"} and fiscal_start_month != 1:
+        year = day.year - int(day.month < fiscal_start_month)
+        start = date(year, fiscal_start_month, 1)
+        offset = ((day.month - fiscal_start_month) % 12) // 3 * 3 if unit == "quarter" else 0
+        day = _add_months(start, offset)
     elif unit in {"month", "quarter", "year"}:
         month = 1 if unit == "year" else (3 * ((day.month - 1) // 3) + 1
                                         if unit == "quarter" else day.month)
@@ -336,10 +346,15 @@ def _calendar_shift(value: datetime, interval: Interval, direction: int = -1) ->
 
 def resolve_execution_time(
     value: str, comparison: str | None = None, *, now: datetime, timezone: str,
+    fiscal_start_month: int = 1, week_start: int = 0,
 ) -> ExecutionTimeContext:
     """Pin the existing range grammar to a caller-owned clock and local calendar."""
     if now.tzinfo is None:
         raise SemanticPlanError("The execution clock must include a timezone.")
+    if type(fiscal_start_month) is not int or not 1 <= fiscal_start_month <= 12:
+        raise SemanticPlanError("Fiscal start month must be between 1 and 12.")
+    if type(week_start) is not int or not 0 <= week_start <= 6:
+        raise SemanticPlanError("Week start must be between Monday (0) and Sunday (6).")
     try:
         zone = ZoneInfo(timezone)
     except (KeyError, ValueError) as exc:
@@ -353,7 +368,8 @@ def resolve_execution_time(
         start = datetime.combine(symbolic.start_date, datetime.min.time(), zone)
         end = datetime.combine(symbolic.end_date, datetime.min.time(), zone)
     elif token in _TODATE:
-        start, end = _calendar_start(local, _TODATE[token]), local
+        start, end = _calendar_start(local, _TODATE[token], fiscal_start_month=fiscal_start_month,
+                                     week_start=week_start), local
     elif token.startswith("since_") or value.strip().endswith("+"):
         day = (date(int(token.removeprefix("since_")), 1, 1)
                if token.startswith("since_") else _parse_date(value.strip()[:-1]))
@@ -361,7 +377,8 @@ def resolve_execution_time(
     else:
         position, _, unit = token.partition("_")
         if position in {"current", "previous"} and unit in UNITS:
-            boundary = _calendar_start(local, unit)
+            boundary = _calendar_start(local, unit, fiscal_start_month=fiscal_start_month,
+                                       week_start=week_start)
             start, end = ((boundary, local) if position == "current"
                           else (_calendar_shift(boundary, _UNIT_INTERVAL[unit]), boundary))
         else:
@@ -371,7 +388,8 @@ def resolve_execution_time(
             assert match is not None
             unit = match[2]
             step = _UNIT_INTERVAL[unit]
-            end = _calendar_start(local, unit)
+            end = _calendar_start(local, unit, fiscal_start_month=fiscal_start_month,
+                                  week_start=week_start)
             start = _calendar_shift(end, Interval(step.amount * int(match[1]), step.unit))
     end = min(end, local)
     if start >= end:
@@ -400,4 +418,4 @@ def resolve_execution_time(
                 != baseline.end.astimezone(UTC) - baseline.start.astimezone(UTC)):
             warnings.append("dst_duration_difference")
     return ExecutionTimeContext(local, timezone, value, comparison, current, baseline,
-                                tuple(warnings))
+                                tuple(warnings), fiscal_start_month, week_start)

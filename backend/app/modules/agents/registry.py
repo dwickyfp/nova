@@ -40,6 +40,7 @@ KNOWN_TOOLS = frozenset(
         "ml_execute",
         "execute_business_action",
         "analysis_workspace",
+        "smart_report",
     }
 )
 
@@ -59,6 +60,10 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
     """
     selected = {t for t in (agent.get("default_tools") or []) if t in KNOWN_TOOLS}
     registry = ToolRegistry()
+    if "smart_report" in selected:
+        from app.modules.smart_reports.authoring import smart_report_tool
+
+        registry.register(smart_report_tool)
 
     if "execute_business_action" in selected:
         from app.modules.intelligence.actions import business_action_tool

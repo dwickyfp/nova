@@ -5,7 +5,10 @@ from uuid import uuid4
 import asyncmy
 import pytest
 
+from app.core.config import settings
 from app.core.database import db
+from app.integrations.ranger.client import ranger_client
+from app.integrations.ranger.schemas import RangerPolicy, RangerRole, RangerRoleMember
 from app.modules.query.repository import QueryRepository
 from app.sql_frontend.binding.catalog import Binder
 from app.sql_frontend.binding.models import TableName
@@ -22,6 +25,7 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
     task = "frontend_task_" + uuid4().hex[:12]
     role = "frontend_role_" + uuid4().hex[:12]
     database = "NOVA_ANALYTICS"
+    policy = None
 
     async def execute(sql, confirm=False, schema="default"):
         response = await client.post(
@@ -43,6 +47,20 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         await db.execute_system(f"GRANT ALL ON *.* TO ROLE {role}")
         await db.execute_system(f"GRANT CREATE TABLE ON DATABASE {database} TO ROLE {role}")
         await db.execute_system(f"GRANT {role} TO USER nova_admin")
+        await ranger_client.put_user_attributes("nova_admin", {})
+        await ranger_client.put_role(
+            RangerRole(name=role, users=[RangerRoleMember(name="nova_admin")])
+        )
+        policy = await ranger_client.put_policy(RangerPolicy.model_validate({
+            "name": f"frontend-fixture/{role}", "service": settings.RANGER_SERVICE_NAME,
+            "resources": {
+                "catalog": {"values": ["default_catalog"]},
+                "database": {"values": [database]}, "table": {"values": ["*"]},
+                "column": {"values": ["*"]},
+            },
+            "policyItems": [{"roles": [role],
+                             "accesses": [{"type": "select", "isAllowed": True}]}],
+        }))
         login = await client.post(
             "/api/v1/auth/login",
             json={
@@ -122,3 +140,6 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}_copy")
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}")
         await db.execute_system(f"DROP ROLE IF EXISTS {role}")
+        if policy:
+            await ranger_client.delete_policy(policy["id"])
+        await ranger_client.delete_role(role)

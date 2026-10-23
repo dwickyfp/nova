@@ -12,7 +12,8 @@ import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
-import { StudioDashboards } from "./studio-dashboards";
+import { ReportsLibrary } from "@/features/smart-reports/library";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { StudioShared } from "./studio-shared";
 import { StudioIntelligence } from "./studio-intelligence";
 import { NewspaperPage } from "./news/newspaper-page";
@@ -94,7 +95,8 @@ function StudioAppContent() {
   const agentId = requestedAgentId && (
     requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
   ) ? requestedAgentId : (agents.find((item) => item.agent_id === AUTO_AGENT_ID)?.agent_id ?? agents[0]?.agent_id ?? null);
-  const [view, setView] = useState<StudioView>(search.view ?? "chat");
+  const reportRoute = useRouterState({ select: state => state.location.pathname.startsWith("/studio/reports") });
+  const view: StudioView = reportRoute ? "reports" : search.view ?? "chat";
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
   // its thinking) look like it had vanished.
@@ -184,7 +186,7 @@ function StudioAppContent() {
     setMobileSidebarOpen(false);
     setInitialPrompt("");
     setNewChatNonce(0);
-    setView("chat");
+
     // A new agent starts a fresh conversation, so the thread is dropped.
     setFreshChat(true);
     await navigate({ to: "/studio", search: { agent: id }, replace: true });
@@ -198,7 +200,7 @@ function StudioAppContent() {
     if (!owner) return;
     setMobileSidebarOpen(false);
     setInitialPrompt("");
-    setView("chat");
+
     navigate({
       to: "/studio",
       search: { agent: owner, thread: id },
@@ -211,7 +213,7 @@ function StudioAppContent() {
 
     setMobileSidebarOpen(false);
     setInitialPrompt("");
-    setView("chat");
+
     setFreshChat(true);
     setNewChatNonce((n) => n + 1);
     navigate({
@@ -294,8 +296,12 @@ function StudioAppContent() {
           view={view}
           onView={async (nextView) => {
             try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
-            setView(nextView);
+
             setMobileSidebarOpen(false);
+            if (nextView === "reports") {
+              await navigate({ to: "/studio/reports" });
+              return;
+            }
             navigate({
               to: "/studio",
               search: {
@@ -357,7 +363,7 @@ function StudioAppContent() {
             </Button>
           </div>
         ) : null}
-        {view === "chat" ? (
+        {reportRoute ? <Outlet /> : view === "chat" ? (
           <StudioChat
             agent={agent}
             agents={agents}
@@ -397,7 +403,7 @@ function StudioAppContent() {
               setInitialPrompt(prompt);
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
-              setView("chat");
+
               navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
             }} />
         ) : view === "news" ? (
@@ -407,13 +413,13 @@ function StudioAppContent() {
               setInitialPrompt(prompt);
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
-              setView("chat");
+
               navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
             }} />
         ) : view === "artifacts" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />
-        ) : view === "dashboards" ? (
-          <StudioDashboards />
+        ) : view === "dashboards" || view === "reports" ? (
+          <ReportsLibrary />
         ) : view === "shared" ? (
           <StudioShared />
         ) : (

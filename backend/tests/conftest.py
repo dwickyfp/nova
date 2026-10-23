@@ -261,6 +261,7 @@ async def sr_root(docker_services):
         await cur.execute("CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'")
         await cur.execute("CREATE ROLE IF NOT EXISTS 'test_analyst'")
         await cur.execute("GRANT 'test_analyst' TO 'testanalyst'")
+        await cur.execute("SET DEFAULT ROLE 'test_analyst' TO 'testanalyst'")
         await cur.execute("GRANT SELECT ON *.* TO ROLE 'test_analyst'")
     yield conn
     conn.close()
@@ -358,6 +359,15 @@ async def admin_token(client):
 @pytest.fixture(scope="function")
 async def analyst_token(client, sr_root):
     """Login as testanalyst and return JWT token."""
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
+
+    await ranger_client.put_user_attributes("testanalyst", {})
+    existing = await ranger_client.get_role("test_analyst")
+    role = RangerRole.model_validate(existing) if existing else RangerRole(name="test_analyst")
+    if not any(member.name == "testanalyst" for member in role.users):
+        role.users.append(RangerRoleMember(name="testanalyst"))
+    await ranger_client.put_role(role)
     resp = await client.post(
         "/api/v1/auth/login",
         json={"username": "testanalyst", "password": "testpass"},

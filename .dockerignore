@@ -1,5 +1,8 @@
 .git
 .gitignore
+.claude
+.devmesh
+docker/data
 **/.DS_Store
 **/__pycache__
 **/*.py[cod]

@@ -104,6 +104,7 @@ async def _await_execute(client, response, *, timeout_seconds: float = 120) -> d
 
 #: A suite-local admin so the test does not depend on a seeded credential.
 L3_ADMIN_USER = f"nova_l3_mig_{uuid.uuid4().hex[:8]}"
+L3_ADMIN_ROLE = f"{L3_ADMIN_USER}_role"
 L3_ADMIN_PASSWORD = "nova_l3_mig_pw"
 
 
@@ -171,6 +172,16 @@ async def l3_admin_user(request):
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
     await _admin_execute(f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'")
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
+
+    await ranger_client.put_user_attributes(L3_ADMIN_USER, {})
+    await ranger_client.put_role(
+        RangerRole(name=L3_ADMIN_ROLE, users=[RangerRoleMember(name=L3_ADMIN_USER)])
+    )
+    await _admin_execute(f"CREATE ROLE '{L3_ADMIN_ROLE}'")
+    await _admin_execute(f"GRANT '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
+    await _admin_execute(f"SET DEFAULT ROLE '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     # ``GRANT ALL ON *.*`` covers table-level operations only. Migration execute
     # creates databases, tables, views, MVs and functions, which need the
     # explicit privileges below — the same grant set a migration operator needs
@@ -185,6 +196,8 @@ async def l3_admin_user(request):
     yield L3_ADMIN_USER
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
+    await ranger_client.delete_role(L3_ADMIN_ROLE)
 
 
 @pytest_asyncio.fixture

@@ -42,6 +42,30 @@ async def test_statement_over_the_cap_is_refused(monkeypatch):
         assert admission.active == 2
 
 
+async def test_workload_cap_preserves_capacity_for_other_queries(monkeypatch):
+    monkeypatch.setattr(settings, "QUERY_MAX_CONCURRENCY", 3)
+    gate = QueryAdmission()
+    async with gate.slot("report_exports", source_limit=1):
+        with pytest.raises(QueryCapacityError):
+            async with gate.slot("report_exports", source_limit=1):
+                pytest.fail("export workload exceeded its cap")
+        async with gate.slot("reports"), gate.slot("web"):
+            assert gate.active == 3
+            with pytest.raises(QueryCapacityError):
+                async with gate.slot("other", source_limit=2):
+                    pytest.fail("workload cap bypassed the global limit")
+    assert gate.active == 0 and gate._sources == {}
+
+
+async def test_workload_cap_remains_when_global_query_cap_is_unlimited(monkeypatch):
+    monkeypatch.setattr(settings, "QUERY_MAX_CONCURRENCY", 0)
+    gate = QueryAdmission()
+    async with gate.slot("report_exports", source_limit=1):
+        with pytest.raises(QueryCapacityError):
+            async with gate.slot("report_exports", source_limit=1):
+                pytest.fail("global unlimited mode disabled the export budget")
+
+
 @pytest.mark.parametrize("outcome", ["success", "error", "cancelled"])
 async def test_slot_is_released_however_the_statement_ends(monkeypatch, outcome):
     monkeypatch.setattr(settings, "QUERY_MAX_CONCURRENCY", 1)

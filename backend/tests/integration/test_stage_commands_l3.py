@@ -84,8 +84,10 @@ async def test_stage_list_load_and_export_on_engine(docker_services) -> None:
         sr_root.close()
 
 
-async def test_stage_access_uses_real_active_role_grants(docker_services, monkeypatch) -> None:
-    import app.modules.stages.access as access_module
+async def test_stage_access_uses_real_active_role_grants(docker_services) -> None:
+    from app.core.config import settings
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerPolicy, RangerRole, RangerRoleMember
 
     require_stack(docker_services)
     port = engine_host_ports()["starrocks-fe"]
@@ -95,23 +97,34 @@ async def test_stage_access_uses_real_active_role_grants(docker_services, monkey
     user = f"nova_stage_user_{suffix}"
     root = await asyncmy.connect(host="127.0.0.1", port=port, user="root", password="")
     member = None
+    policy = None
+    denied = role + "_denied"
     try:
         async with root.cursor() as cur:
             await cur.execute(f"CREATE DATABASE `{database}`")
             await cur.execute(f"CREATE ROLE `{role}`")
+            await cur.execute(f"CREATE ROLE `{denied}`")
             await cur.execute(f"CREATE USER '{user}' IDENTIFIED BY 'test-only-password'")
-            await cur.execute(f"GRANT `{role}` TO '{user}'")
+            await cur.execute(f"GRANT `{role}`, `{denied}` TO '{user}'")
             await cur.execute(
                 f"GRANT SELECT ON ALL TABLES IN DATABASE `{database}` TO ROLE `{role}`"
             )
 
-        async def role_grants(sql):
-            async with root.cursor() as cur:
-                await cur.execute(sql)
-                return {"rows": list(await cur.fetchall())}
-
-        monkeypatch.setattr(access_module.db, "execute_system", role_grants)
-        monkeypatch.setattr(access_module.settings, "RANGER_ENABLED", False)
+        await ranger_client.put_user_attributes(user, {})
+        for assigned_role in (role, denied):
+            await ranger_client.put_role(
+                RangerRole(name=assigned_role, users=[RangerRoleMember(name=user)])
+            )
+        policy = await ranger_client.put_policy(RangerPolicy.model_validate({
+            "name": f"stage-access/{suffix}", "service": settings.RANGER_SERVICE_NAME,
+            "resources": {
+                "catalog": {"values": ["default_catalog"]},
+                "database": {"values": [database]}, "table": {"values": ["bronze"]},
+                "column": {"values": ["*"]},
+            },
+            "policyItems": [{"roles": [role],
+                             "accesses": [{"type": "select", "isAllowed": True}]}],
+        }))
         member = await asyncmy.connect(
             host="127.0.0.1", port=port, user=user, password="test-only-password"
         )
@@ -123,11 +136,26 @@ async def test_stage_access_uses_real_active_role_grants(docker_services, monkey
             await check_stage_access(
                 stage, action="write", username=user, active_role=role, connection=member
             )
+        with pytest.raises(StageAccessDenied):
+            await check_stage_access(
+                stage, action="read", username=user, active_role=denied, connection=member
+            )
+        await ranger_client.delete_policy(policy["id"])
+        policy = None
+        with pytest.raises(StageAccessDenied):
+            await check_stage_access(
+                stage, action="read", username=user, active_role=role, connection=member
+            )
     finally:
         if member is not None:
             member.close()
         async with root.cursor() as cur:
             await cur.execute(f"DROP USER IF EXISTS '{user}'")
             await cur.execute(f"DROP ROLE IF EXISTS `{role}`")
+            await cur.execute(f"DROP ROLE IF EXISTS `{denied}`")
             await cur.execute(f"DROP DATABASE IF EXISTS `{database}` FORCE")
         root.close()
+        if policy:
+            await ranger_client.delete_policy(policy["id"])
+        for assigned_role in (role, denied):
+            await ranger_client.delete_role(assigned_role)

@@ -1,3 +1,4 @@
+import { AddArtifactToReport } from "@/features/smart-reports/add-artifact";
 import { chartSpecWithRows } from "./artifact-chart-spec";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -355,6 +356,7 @@ function ArtifactDetail({
         onRefresh={() => void detail.refetch()}
         onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
+        reportAction={<AddArtifactToReport artifactId={artifact.artifact_id} />}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
@@ -543,6 +545,7 @@ function DetailHeader({
   onRefresh,
   onExport,
   onDelete,
+  reportAction,
 }: {
   onBack: () => void;
   title: string;
@@ -551,6 +554,7 @@ function DetailHeader({
   onRefresh?: () => void;
   onExport?: (format: ExportFormat) => Promise<void>;
   onDelete?: () => void;
+  reportAction?: React.ReactNode;
 }) {
   const [exporting, setExporting] = useState(false);
   const exportAs = async (format: ExportFormat) => {
@@ -582,6 +586,7 @@ function DetailHeader({
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         ) : null}
       </div>
+      {reportAction}
       {onRefresh ? (
         <Button
           type="button"
