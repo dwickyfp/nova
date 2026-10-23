@@ -47,6 +47,7 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         await db.execute_system(f"GRANT ALL ON *.* TO ROLE {role}")
         await db.execute_system(f"GRANT CREATE TABLE ON DATABASE {database} TO ROLE {role}")
         await db.execute_system(f"GRANT {role} TO USER nova_admin")
+        await ranger_client.put_user_attributes("nova_admin", {})
         await ranger_client.put_role(
             RangerRole(name=role, users=[RangerRoleMember(name="nova_admin")])
         )

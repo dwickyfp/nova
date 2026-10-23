@@ -61,6 +61,7 @@ async def transaction_database(app):
         await db.execute_system(f"CREATE ROLE {role}")
         await db.execute_system(f"GRANT ALL ON {name}.* TO ROLE {role}")
         await db.execute_system(f"GRANT {role} TO USER nova_admin")
+        await ranger_client.put_user_attributes("nova_admin", {})
         await ranger_client.put_role(
             RangerRole(name=role, users=[RangerRoleMember(name="nova_admin")])
         )
