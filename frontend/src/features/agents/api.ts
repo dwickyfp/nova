@@ -609,6 +609,7 @@ export type StudioArtifactDetail = StudioArtifact & {
 };
 
 export type StudioArtifactCreate = {
+  semantic_provenance_ref?: string;
   title: string;
   artifact_type: "chart" | "table";
   sql_text: string;
@@ -982,9 +983,11 @@ export type TraceStep =
       text: string;
     }
   /** A result grid the turn rendered, recorded so a reload can show it again. */
+  | ({ kind: 'smart_report'; content_index: number; content_id: string } & import('../smart-reports/contracts').ReportBlock)
   | ({ kind: 'ui'; content_index: number; content_id: string } & import('../studio/intelligent-ui/types').UiBlock)
   | {
       kind: "table";
+      semantic_provenance_ref?: string;
       content_index?: number;
       content_id?: string;
       tool_call_id?: string;

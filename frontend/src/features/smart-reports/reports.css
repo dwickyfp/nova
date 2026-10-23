@@ -1,0 +1,15 @@
+.smart-report { container-type: inline-size; }
+.report-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+.report-widget { grid-column: var(--report-col) / span var(--report-width); grid-row: var(--report-row) / span var(--report-height); }
+@container (max-width: 48rem) {
+  .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-widget { grid-column: span 1; grid-row: auto; }
+}
+@container (max-width: 32rem) {
+  .report-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.report-grid-compact { grid-template-columns: minmax(0, 1fr); }
+.report-grid-compact .report-widget { grid-column: auto; grid-row: auto; }
+@media print {
+  .report-widget { break-inside: avoid; }
+}

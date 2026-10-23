@@ -1,0 +1,7 @@
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import type { Patch, ReportSpec } from './contracts'
+
+export function PageEditor({ spec, busy, prepare }: { spec: ReportSpec; busy: boolean; prepare: (patch: Patch[]) => Promise<void> }) {
+  return <section className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">Pages and reading order</h3>{spec.pages.map((page, index) => <form key={page.id} className="space-y-2" onSubmit={e => { e.preventDefault(); void prepare([{ op: 'RENAME_PAGE', target: page.id, value: { title: new FormData(e.currentTarget).get('title') } }]) }}><Input name="title" aria-label={`Page ${index + 1} title`} defaultValue={page.title} required maxLength={256} /><div className="flex flex-wrap gap-1"><Button size="sm" variant="outline" type="submit" disabled={busy}>Rename</Button><Button size="sm" variant="ghost" type="button" disabled={busy || index === 0} onClick={() => void prepare([{ op: 'MOVE_PAGE', target: page.id, value: { index: index - 1 } }])}>Earlier</Button><Button size="sm" variant="ghost" type="button" disabled={busy || index === spec.pages.length - 1} onClick={() => void prepare([{ op: 'MOVE_PAGE', target: page.id, value: { index: index + 1 } }])}>Later</Button><Button size="sm" variant="ghost" type="button" disabled={busy || spec.pages.length === 1} onClick={() => void prepare([{ op: 'REMOVE_PAGE', target: page.id }])}>Remove page</Button></div></form>)}</section>
+}

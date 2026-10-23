@@ -100,6 +100,12 @@ class SemanticPlan:
     having: tuple[SemanticHaving, ...] = ()
     transforms: tuple[SemanticTransform, ...] = ()
     top_n_per_group: SemanticTopN | None = None
+    offset: int = 0
+    calculations: tuple[dict[str, Any], ...] = ()
+    time_output: str | None = None
+    fiscal_start_month: int = 1
+    week_start: int = 0
+    distinct: bool = False
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> SemanticPlan:
@@ -178,13 +184,28 @@ class SemanticPlan:
             having=having,
             transforms=transforms,
             top_n_per_group=top_n,
+            offset=value.get("offset", 0),
+            calculations=tuple(value.get("calculations") or []),
+            time_output=value.get("time_output"),
+            fiscal_start_month=value.get("fiscal_start_month", 1),
+            week_start=value.get("week_start", 0),
+            distinct=value.get("distinct", False),
         )
         if not plan.metrics and not plan.dimensions:
             raise SemanticPlanError("Semantic plan needs at least one metric or dimension.")
         return plan
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        # Preserve the serialized shape of plans created before report extensions.
+        for key, default in (
+            ("offset", 0), ("calculations", ()), ("time_output", None),
+            ("fiscal_start_month", 1), ("week_start", 0),
+            ("distinct", False),
+        ):
+            if result[key] == default:
+                result.pop(key)
+        return result
 
 
 @dataclass(frozen=True)
@@ -260,6 +281,13 @@ class SemanticGraph:
 
 def validate_plan(model: SemanticModelIR, plan: SemanticPlan) -> list[str]:
     errors: list[str] = []
+    if type(plan.distinct) is not bool:
+        errors.append("distinct must be a boolean.")
+    elif plan.distinct and (
+        not plan.dimensions or plan.metrics or plan.calculations or plan.transforms
+        or plan.having or plan.top_n_per_group
+    ):
+        errors.append("distinct requires a dimension-only projection.")
     material_unresolved = [item.text for item in plan.unresolved_concepts if item.material]
     if material_unresolved:
         errors.append("Unresolved material concepts: " + ", ".join(material_unresolved))
@@ -273,7 +301,9 @@ def validate_plan(model: SemanticModelIR, plan: SemanticPlan) -> list[str]:
     for item in plan.filters:
         if model.field(item.field) is None:
             errors.append(f"Unknown filter field {item.field!r}.")
-        if item.operator not in {"=", "!=", ">", ">=", "<", "<=", "IN", "LIKE"}:
+        if item.operator not in {
+            "=", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"
+        }:
             errors.append(f"Unsupported filter operator {item.operator!r}.")
     for name in plan.named_filters:
         if model.named_filter(name) is None:

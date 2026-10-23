@@ -451,3 +451,11 @@ async def test_a_follow_up_waits_for_the_previous_run_to_settle(monkeypatch) -> 
     assert response.headers["X-Nova-Run-ID"] == "root-2"
     assert still_active.await_count == 3
     create.assert_awaited_once()
+
+
+@pytest.fixture(autouse=True)
+def conversation_without_report_binding(monkeypatch):
+    """These endpoint fixtures model conversations without an attached report."""
+    from app.modules.smart_reports import context
+
+    monkeypatch.setattr(context, "bound", AsyncMock(return_value=None))

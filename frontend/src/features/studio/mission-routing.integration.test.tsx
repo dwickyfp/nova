@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { agentsApi, studioApi, type Agent } from "@/features/agents/api";
@@ -48,6 +48,26 @@ afterEach(async () => {
 });
 
 describe("one-turn Mission routing", () => {
+  it("retains a typed prompt until the selected conversation has loaded", async () => {
+    let release: (value: Awaited<ReturnType<typeof agentsApi.getThread>>) => void = () => {};
+    vi.mocked(agentsApi.getThread).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(accepted());
+    await render(<QueryClientProvider client={client}><div className="flex h-dvh min-w-0 overflow-hidden">
+      <StudioChat agent={agent} agents={[agent]} onSelectAgent={vi.fn()} currentRole="ANALYST" activeThreadId={mission.thread_id} onThreadChange={vi.fn()} />
+    </div></QueryClientProvider>);
+    const input = page.getByRole("textbox", { name: "Message Nova" });
+    await input.fill("Create a city revenue report filtered to Jakarta");
+    await expect.element(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await userEvent.keyboard("{Enter}");
+    expect(fetch).not.toHaveBeenCalled();
+    release({ thread: { thread_id: mission.thread_id } as never, messages: [] });
+    await expect.element(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+    await expect.element(input).toHaveValue("Create a city revenue report filtered to Jakarta");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect.poll(() => fetch.mock.calls.length).toBe(1);
+    await expect.element(page.getByText("Create a city revenue report filtered to Jakarta", { exact: true })).toBeInTheDocument();
+  });
+
   for (const mode of ["continue", "new"] as const) {
     const label = mode === "continue" ? "Continue mission" : "New mission";
     it(`${mode} resets on acceptance and leaves the next objective automatic`, async () => {

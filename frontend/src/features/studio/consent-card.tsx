@@ -77,7 +77,7 @@ export function ConsentCard({
               ) : null}
               Allow once
             </Button>
-            {destructive ? null : (
+            {call.classification === "read_only" ? (
               <Button
                 type="button"
                 size="sm"
@@ -90,7 +90,7 @@ export function ConsentCard({
                 ) : null}
                 Allow for this chat
               </Button>
-            )}
+            ) : null}
             <Button
               type="button"
               size="sm"

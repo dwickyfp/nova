@@ -17,7 +17,6 @@ from app.modules.intelligence.feature_store import (
     FeatureViewDefinition,
     TrainingSetCreate,
     feature_store,
-    online_store,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -155,9 +154,6 @@ async def test_feature_store_lifecycle_and_no_future_leakage():
         )
         assert combined["preview"]["rows"][0][-2:] == [7, 3]
     finally:
-        await online_store.delete(group, 1, {"customer_id": 1})
-        await online_store.delete(group, 2, {"customer_id": 1})
-        await online_store.delete(group, 3, {"customer_id": 1})
         if await feature_store._group(group):
             await feature_store.drop_group(group, user)
         if await feature_store._view(view_two):

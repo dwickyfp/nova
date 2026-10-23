@@ -7,6 +7,8 @@ import { StudioApp } from "./index";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
+  listeners: new Set<() => void>(),
+  pathname: '/studio',
   search: { agent: "a1", thread: "thread-1" } as {
     agent?: string;
     thread?: string;
@@ -14,10 +16,27 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => mocks.navigate,
-  useSearch: () => mocks.search,
-}));
+vi.mock("@tanstack/react-router", async importOriginal => {
+  const original = await importOriginal<typeof import('@tanstack/react-router')>()
+  const { useSyncExternalStore } = await import('react')
+  const subscribe = (listener: () => void) => {
+    mocks.listeners.add(listener)
+    return () => { mocks.listeners.delete(listener) }
+  }
+  return {
+    ...original,
+    useNavigate: () => (options: { to: string; search?: typeof mocks.search }) => {
+      const result = mocks.navigate(options)
+      mocks.search = options.search ?? {}
+      mocks.pathname = options.to
+      mocks.listeners.forEach(listener => listener())
+      return result
+    },
+    useSearch: () => useSyncExternalStore(subscribe, () => mocks.search),
+    useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => unknown }) => select({ location: { pathname: useSyncExternalStore(subscribe, () => mocks.pathname) } }),
+    Outlet: () => <div>Report route content</div>,
+  }
+});
 
 vi.mock("@/features/agents/api", () => ({
   AUTO_AGENT_ID: "__smart__",
@@ -142,6 +161,7 @@ describe("StudioApp thread routing", () => {
     vi.mocked(agentsApi.deleteThread).mockClear();
     vi.mocked(agentsApi.renameThread).mockClear();
     mocks.search = { agent: "a1", thread: "thread-1" };
+    mocks.pathname = '/studio';
   });
 
   const mixedHistory = {

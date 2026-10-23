@@ -1,0 +1,167 @@
+{
+  "spec": {
+    "schema_version": "1.0.0",
+    "title": "City revenue",
+    "description": "",
+    "timezone": "Asia/Jakarta",
+    "locale": "id-ID",
+    "sources": [
+      {
+        "id": "sales",
+        "view_id": "sales-view",
+        "version": 1,
+        "fingerprint": "abc"
+      }
+    ],
+    "filters": [
+      {
+        "id": "city",
+        "label": "City",
+        "source": "sales",
+        "field": "region",
+        "kind": "single",
+        "default": {
+          "kind": "single",
+          "values": [
+            "Jakarta"
+          ],
+          "minimum": null,
+          "maximum": null,
+          "relative": null
+        },
+        "required": false,
+        "allow_null": false,
+        "scope": "report",
+        "targets": [],
+        "exclude_widgets": [],
+        "parents": [],
+        "mappings": {}
+      }
+    ],
+    "pages": [
+      {
+        "id": "overview",
+        "title": "Overview",
+        "sections": [
+          {
+            "id": "main",
+            "title": "",
+            "widgets": [
+              {
+                "id": "revenue",
+                "title": "Revenue",
+                "kind": "kpi",
+                "query": {
+                  "source": "sales",
+                  "metrics": [
+                    "total_revenue"
+                  ],
+                  "dimensions": [],
+                  "filters": [],
+                  "calculations": [],
+                  "named_filters": [],
+                  "time": null,
+                  "order_by": [],
+                  "transforms": [],
+                  "limit": null
+                },
+                "encoding": {
+                  "x": null,
+                  "y": [],
+                  "series": null,
+                  "value": null
+                },
+                "format": {
+                  "kind": "number",
+                  "precision": 2,
+                  "currency": "IDR"
+                },
+                "placement": {
+                  "col": 0,
+                  "row": 0,
+                  "width": 12,
+                  "height": 1
+                },
+                "mapping_required": false,
+                "legacy_artifact_id": null,
+                "drill_dimensions": [],
+                "pivot_columns": []
+              },
+              {
+                "id": "cities",
+                "title": "Cities",
+                "kind": "table",
+                "query": {
+                  "source": "sales",
+                  "metrics": [
+                    "total_revenue"
+                  ],
+                  "dimensions": [
+                    "region"
+                  ],
+                  "filters": [],
+                  "calculations": [],
+                  "named_filters": [],
+                  "time": null,
+                  "order_by": [],
+                  "transforms": [],
+                  "limit": null
+                },
+                "encoding": {
+                  "x": null,
+                  "y": [],
+                  "series": null,
+                  "value": null
+                },
+                "format": {
+                  "kind": "number",
+                  "precision": 2,
+                  "currency": "IDR"
+                },
+                "placement": {
+                  "col": 0,
+                  "row": 1,
+                  "width": 12,
+                  "height": 2
+                },
+                "mapping_required": false,
+                "legacy_artifact_id": null,
+                "drill_dimensions": [],
+                "pivot_columns": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "interactions": []
+  },
+  "state": {
+    "schema_version": 1,
+    "session_id": "view-a",
+    "report_id": "report-a",
+    "draft_id": null,
+    "spec_revision": 1,
+    "state_revision": 1,
+    "active_page_id": "overview",
+    "filters": {
+      "city": {
+        "kind": "single",
+        "values": [
+          "Jakarta"
+        ],
+        "minimum": null,
+        "maximum": null,
+        "relative": null
+      }
+    },
+    "cross_filters": {},
+    "drill_paths": {},
+    "group_by": {},
+    "selected_widget_id": null,
+    "sort": {},
+    "page_index": {},
+    "page_size": 50,
+    "origin": null
+  }
+}

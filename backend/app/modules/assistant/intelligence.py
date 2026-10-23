@@ -208,6 +208,7 @@ class EvidenceTracker:
         if (
             (tool in {
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
+                "smart_report",
                 "compute_metrics", "analyze_documents",
                 "canonical_investigation",
                 # A forecast or score the runtime computed is a result the answer may

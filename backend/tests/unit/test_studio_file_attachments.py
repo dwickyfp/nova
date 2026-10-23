@@ -415,3 +415,11 @@ async def test_studio_endpoint_persists_attachment_and_streams_answer(monkeypatc
         call.kwargs.get("event_type") == "AGENT_ATTACHMENT"
         for call in agent_router.write_audit_log.await_args_list
     )
+
+
+@pytest.fixture(autouse=True)
+def conversation_without_report_binding(monkeypatch):
+    """These endpoint fixtures model conversations without an attached report."""
+    from app.modules.smart_reports import context
+
+    monkeypatch.setattr(context, "bound", AsyncMock(return_value=None))

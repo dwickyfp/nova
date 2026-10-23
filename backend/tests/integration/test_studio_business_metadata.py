@@ -173,6 +173,9 @@ async def test_real_resource_grants_are_durable_selective_and_scope_bound(studio
 
 
 async def test_real_smart_resume_reauthorizes_original_attachment_in_new_login(studio_metadata):
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
+
     fixture_user, thread_id = studio_metadata
     principal = fixture_user["username"]
     role = "RESUME_" + uuid4().hex[:16]
@@ -181,6 +184,8 @@ async def test_real_smart_resume_reauthorizes_original_attachment_in_new_login(s
     await db.execute_system(f"CREATE USER '{principal}' IDENTIFIED BY %s", [password])
     await db.execute_system(f"GRANT `{role}` TO USER '{principal}'")
     await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{principal}'")
+    await ranger_client.put_user_attributes(principal, {})
+    await ranger_client.put_role(RangerRole(name=role, users=[RangerRoleMember(name=principal)]))
     service, resources = MissionService(), ResourceDelegation()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=create_app()), base_url="http://nova.test", timeout=120
@@ -272,6 +277,7 @@ async def test_real_smart_resume_reauthorizes_original_attachment_in_new_login(s
                 await client.request("POST", "auth/logout")
             await db.execute_system(f"DROP USER '{principal}'")
             await db.execute_system(f"DROP ROLE `{role}`")
+            await ranger_client.delete_role(role)
 
 
 async def test_real_mission_resource_reauthorization_across_sessions_and_source_changes(

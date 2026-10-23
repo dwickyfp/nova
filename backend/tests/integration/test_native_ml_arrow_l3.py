@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from uuid import uuid4
 
 import asyncmy
@@ -188,6 +189,9 @@ async def test_real_worker_fetches_arrow_without_api_table(
         autocommit=True,
     )
     database = f"nova_ml_worker_{uuid4().hex[:10]}"
+    username, role = f"{database}_user", f"{database}_role"
+    password = secrets.token_urlsafe(24)
+    security = MLSecurityContext(username, password, database=database, role=role)
     async with root.cursor() as cursor:
         await cursor.execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
         await cursor.execute(f"CREATE DATABASE `{database}`")
@@ -198,6 +202,11 @@ async def test_real_worker_fetches_arrow_without_api_table(
         )
         values = ",".join(f"({value},{value},{value * 2})" for value in range(1, 41))
         await cursor.execute(f"INSERT INTO `{database}`.features VALUES {values}")
+        await cursor.execute(f"CREATE ROLE `{role}`")
+        await cursor.execute(f"CREATE USER '{username}' IDENTIFIED BY %s", (password,))
+        await cursor.execute(f"GRANT SELECT ON TABLE `{database}`.features TO ROLE `{role}`")
+        await cursor.execute(f"GRANT `{role}` TO USER '{username}'")
+        await cursor.execute(f"SET DEFAULT ROLE `{role}` TO '{username}'")
 
     class Repository(ModelRegistryRepository):
         async def record_run(self, **kwargs):
@@ -216,7 +225,7 @@ async def test_real_worker_fetches_arrow_without_api_table(
             MLExecutionSpec(
                 task=MLTask.REGRESSION,
                 input_sql="SELECT x, target FROM features ORDER BY x",
-                security=MLSecurityContext("root", "", database=database),
+                security=security,
                 target_column="target",
                 algorithm="ridge",
                 budget=ExecutionBudget(20, 1000, 10_000_000),
@@ -234,10 +243,10 @@ async def test_real_worker_fetches_arrow_without_api_table(
         service.job_runner.close()
         if result:
             service.artifact_store.cleanup_upload(result.artifact_uri)
-            await service.ephemeral_repository.remove(
-                result.run_id, MLSecurityContext("root", "", database=database).scope_key
-            )
+            await service.ephemeral_repository.remove(result.run_id, security.scope_key)
         load_nova_app_config.cache_clear()
         async with root.cursor() as cursor:
+            await cursor.execute(f"DROP USER IF EXISTS '{username}'")
+            await cursor.execute(f"DROP ROLE IF EXISTS `{role}`")
             await cursor.execute(f"DROP DATABASE IF EXISTS `{database}` FORCE")
         root.close()

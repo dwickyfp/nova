@@ -50,6 +50,41 @@ async def studio_engine(intelligence_db, tmp_path):
     suffix = uuid4().hex[:12]
     username, role = f"bi_{suffix}", f"BI_{suffix}"
     password = secrets.token_urlsafe(24)
+    from app.core.config import settings
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerPolicy, RangerRole, RangerRoleMember
+
+    await ranger_client.put_user_attributes(username, {})
+    await ranger_client.put_role(RangerRole(name=role, users=[RangerRoleMember(name=username)]))
+    policy = await ranger_client.put_policy(
+        RangerPolicy.model_validate(
+            {
+                "name": f"bi-fixture/{suffix}",
+                "service": settings.RANGER_SERVICE_NAME,
+                "resources": {
+                    "catalog": {"values": ["default_catalog"]},
+                    "database": {"values": [DATABASE]},
+                    "table": {"values": ["*"]},
+                    "column": {"values": ["*"]},
+                },
+                "policyItems": [
+                    {"roles": [role], "accesses": [{"type": "select", "isAllowed": True}]}
+                ],
+            }
+        )
+    )
+    catalog_policy = await ranger_client.put_policy(
+        RangerPolicy.model_validate(
+            {
+                "name": f"bi-fixture/{suffix}/catalog",
+                "service": settings.RANGER_SERVICE_NAME,
+                "resources": {"catalog": {"values": ["default_catalog"]}},
+                "policyItems": [
+                    {"roles": [role], "accesses": [{"type": "usage", "isAllowed": True}]}
+                ],
+            }
+        )
+    )
     await db.execute_system(f"CREATE ROLE `{role}`")
     await db.execute_system(f"CREATE USER '{username}' IDENTIFIED BY %s", [password])
     await db.execute_system(f"GRANT SELECT ON ALL TABLES IN DATABASE {DATABASE} TO ROLE `{role}`")
@@ -76,6 +111,9 @@ async def studio_engine(intelligence_db, tmp_path):
             finally:
                 await db.execute_system(f"DROP USER '{username}'")
                 await db.execute_system(f"DROP ROLE `{role}`")
+                await ranger_client.delete_policy(policy["id"])
+                await ranger_client.delete_policy(catalog_policy["id"])
+                await ranger_client.delete_role(role)
                 await db.execute_system(
                     "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
                     "WHERE user_name=%s AND pref_key=%s",
@@ -193,9 +231,10 @@ async def test_randomized_analysis_uses_complete_assignment_cohort(studio_engine
         assert result["causal_status"] == "supported_effect" and result["run_id"]
         assert "scope" not in result["evidence"][0]
         assert "digest" not in result["evidence"][0]
-        assert query.await_args.args[2]["username"] == (
-            await client.request("GET", "auth/me")
-        )["username"]
+        assert (
+            query.await_args.args[2]["username"]
+            == (await client.request("GET", "auth/me"))["username"]
+        )
         assert query.await_count == 1
         body["operation_id"] = uuid4().hex
         body["plan"]["having"] = [{"metric": "outcome", "operator": ">", "value": 10}]
@@ -400,6 +439,13 @@ async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
     from tests.benchmark.business_intelligence.outcome_training import TRAINING_DATABASE, prepare
 
     await prepare(db.execute_system)
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerPolicy
+
+    policy = await ranger_client.get_policy(f"bi-fixture/{suffix}")
+    assert policy is not None
+    policy["resources"]["database"]["values"].append(TRAINING_DATABASE)
+    await ranger_client.put_policy(RangerPolicy.model_validate(policy))
     try:
         await db.execute_system(
             f"GRANT SELECT ON ALL TABLES IN DATABASE {TRAINING_DATABASE} "
@@ -480,6 +526,7 @@ async def exercise_development_stories(client, resources, learned, monkeypatch):
     await db.execute_system("CREATE ROLE IF NOT EXISTS ACCOUNTADMIN")
     await db.execute_system(f"CREATE USER '{admin_name}' IDENTIFIED BY %s", [admin_password])
     await db.execute_system(f"GRANT ACCOUNTADMIN TO USER '{admin_name}'")
+    await db.execute_system(f"SET DEFAULT ROLE ACCOUNTADMIN TO '{admin_name}'")
     async with httpx.AsyncClient(
         transport=client.http._transport, base_url="http://nova.test", timeout=180
     ) as http:

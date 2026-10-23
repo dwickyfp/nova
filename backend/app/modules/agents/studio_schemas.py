@@ -76,9 +76,10 @@ ArtifactType = Literal["chart", "table"]
 
 
 class ArtifactCreateRequest(BaseModel):
+    semantic_provenance_ref: str | None = Field(default=None, max_length=64)
     title: str = Field(min_length=1, max_length=256)
     artifact_type: ArtifactType
-    sql_text: str = Field(min_length=1, max_length=200_000)
+    sql_text: str = Field(default="", max_length=200_000)
     database_name: str | None = Field(default=None, max_length=128)
     schema_name: str | None = Field(default=None, max_length=128)
     chart_spec: dict[str, Any] | None = None

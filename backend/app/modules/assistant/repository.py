@@ -436,8 +436,13 @@ class AssistantRepository:
         title: str | None = None,
         workspace_file_id: str | None = None,
         agent_id: str | None = None,
+        thread_id: str | None = None,
     ) -> dict:
-        thread_id = str(uuid4())
+        if thread_id:
+            existing = await self.get_thread(thread_id, user_name=user_name)
+            if existing:
+                return existing
+        thread_id = thread_id or str(uuid4())
         now = _now()
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS "

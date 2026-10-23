@@ -54,6 +54,8 @@ import { Route as AuthenticatedTasksGraphIdRouteImport } from './routes/_authent
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
+import { Route as StudioReportsIndexRouteImport } from './routes/studio.reports.index'
+import { Route as StudioReportsReportIdRouteImport } from './routes/studio.reports.$reportId'
 import { Route as AuthenticatedAgentsSemanticIndexRouteImport } from './routes/_authenticated/agents/semantic/index'
 import { Route as AuthenticatedAgentsSemanticBuilderRouteImport } from './routes/_authenticated/agents/semantic/builder'
 
@@ -314,6 +316,16 @@ const AuthenticatedWorkspacesIndexRoute =
     path: '/workspaces/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const StudioReportsIndexRoute = StudioReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
+  getParentRoute: () => StudioRoute,
+} as any)
+const StudioReportsReportIdRoute = StudioReportsReportIdRouteImport.update({
+  id: '/reports/$reportId',
+  path: '/reports/$reportId',
+  getParentRoute: () => StudioRoute,
+} as any)
 const AuthenticatedAgentsSemanticIndexRoute =
   AuthenticatedAgentsSemanticIndexRouteImport.update({
     id: '/agents/semantic/',
@@ -329,7 +341,7 @@ const AuthenticatedAgentsSemanticBuilderRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
-  '/studio': typeof StudioRoute
+  '/studio': typeof StudioRouteWithChildren
   '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
@@ -360,6 +372,7 @@ export interface FileRoutesByFullPath {
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/studio/reports/$reportId': typeof StudioReportsReportIdRoute
   '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
@@ -372,11 +385,12 @@ export interface FileRoutesByFullPath {
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/studio/reports/': typeof StudioReportsIndexRoute
   '/agents/semantic/builder': typeof AuthenticatedAgentsSemanticBuilderRoute
   '/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesByTo {
-  '/studio': typeof StudioRoute
+  '/studio': typeof StudioRouteWithChildren
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
@@ -407,6 +421,7 @@ export interface FileRoutesByTo {
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/studio/reports/$reportId': typeof StudioReportsReportIdRoute
   '/agents': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
   '/external-catalogs': typeof AuthenticatedExternalCatalogsIndexRoute
@@ -419,13 +434,14 @@ export interface FileRoutesByTo {
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/studio/reports': typeof StudioReportsIndexRoute
   '/agents/semantic/builder': typeof AuthenticatedAgentsSemanticBuilderRoute
   '/agents/semantic': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
-  '/studio': typeof StudioRoute
+  '/studio': typeof StudioRouteWithChildren
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/(auth)/sign-in': typeof authSignInRoute
   '/_authenticated/access-control': typeof AuthenticatedAccessControlRoute
@@ -457,6 +473,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/studio/reports/$reportId': typeof StudioReportsReportIdRoute
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/_authenticated/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
@@ -469,6 +486,7 @@ export interface FileRoutesById {
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/studio/reports/': typeof StudioReportsIndexRoute
   '/_authenticated/agents/semantic/builder': typeof AuthenticatedAgentsSemanticBuilderRoute
   '/_authenticated/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
@@ -507,6 +525,7 @@ export interface FileRouteTypes {
     | '/settings/profile'
     | '/tasks/$graphId'
     | '/users/$username'
+    | '/studio/reports/$reportId'
     | '/agents/'
     | '/ai-providers/'
     | '/external-catalogs/'
@@ -519,6 +538,7 @@ export interface FileRouteTypes {
     | '/tasks/'
     | '/users/'
     | '/workspaces/'
+    | '/studio/reports/'
     | '/agents/semantic/builder'
     | '/agents/semantic/'
   fileRoutesByTo: FileRoutesByTo
@@ -554,6 +574,7 @@ export interface FileRouteTypes {
     | '/settings/profile'
     | '/tasks/$graphId'
     | '/users/$username'
+    | '/studio/reports/$reportId'
     | '/agents'
     | '/ai-providers'
     | '/external-catalogs'
@@ -566,6 +587,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/users'
     | '/workspaces'
+    | '/studio/reports'
     | '/agents/semantic/builder'
     | '/agents/semantic'
   id:
@@ -603,6 +625,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/profile'
     | '/_authenticated/tasks/$graphId'
     | '/_authenticated/users/$username'
+    | '/studio/reports/$reportId'
     | '/_authenticated/agents/'
     | '/_authenticated/ai-providers/'
     | '/_authenticated/external-catalogs/'
@@ -615,13 +638,14 @@ export interface FileRouteTypes {
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
     | '/_authenticated/workspaces/'
+    | '/studio/reports/'
     | '/_authenticated/agents/semantic/builder'
     | '/_authenticated/agents/semantic/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
-  StudioRoute: typeof StudioRoute
+  StudioRoute: typeof StudioRouteWithChildren
   authSignInRoute: typeof authSignInRoute
 }
 
@@ -942,6 +966,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/studio/reports/': {
+      id: '/studio/reports/'
+      path: '/reports'
+      fullPath: '/studio/reports/'
+      preLoaderRoute: typeof StudioReportsIndexRouteImport
+      parentRoute: typeof StudioRoute
+    }
+    '/studio/reports/$reportId': {
+      id: '/studio/reports/$reportId'
+      path: '/reports/$reportId'
+      fullPath: '/studio/reports/$reportId'
+      preLoaderRoute: typeof StudioReportsReportIdRouteImport
+      parentRoute: typeof StudioRoute
+    }
     '/_authenticated/agents/semantic/': {
       id: '/_authenticated/agents/semantic/'
       path: '/agents/semantic'
@@ -1073,9 +1111,22 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface StudioRouteChildren {
+  StudioReportsReportIdRoute: typeof StudioReportsReportIdRoute
+  StudioReportsIndexRoute: typeof StudioReportsIndexRoute
+}
+
+const StudioRouteChildren: StudioRouteChildren = {
+  StudioReportsReportIdRoute: StudioReportsReportIdRoute,
+  StudioReportsIndexRoute: StudioReportsIndexRoute,
+}
+
+const StudioRouteWithChildren =
+  StudioRoute._addFileChildren(StudioRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
-  StudioRoute: StudioRoute,
+  StudioRoute: StudioRouteWithChildren,
   authSignInRoute: authSignInRoute,
 }
 export const routeTree = rootRouteImport

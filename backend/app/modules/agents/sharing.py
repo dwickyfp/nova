@@ -76,7 +76,7 @@ def shared_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     for step in steps or []:
         if not isinstance(step, dict):
             continue
-        if step.get("kind") in {"ui", "ui_action"}:
+        if step.get("kind") in {"ui", "ui_action", "smart_report", "report_context"}:
             continue
         kept = strip_rows(step)
         trace = step.get("trace_detail") or {}
@@ -95,8 +95,12 @@ def shared_messages(messages: list[dict]) -> list[dict]:
     output = []
     for message in messages:
         steps = message.get("steps") or []
-        private = private or any(isinstance(step, dict) and step.get("kind") == "ui_action"
-                                 for step in steps)
+        private = private or any(
+            isinstance(step, dict) and (
+                step.get("kind") in {"ui_action", "report_context"}
+                or step.get("kind") == "tool" and step.get("name") == "smart_report"
+            ) for step in steps
+        )
         if message.get("role") not in {"user", "assistant"}:
             continue
         output.append({

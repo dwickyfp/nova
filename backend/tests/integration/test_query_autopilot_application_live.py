@@ -48,7 +48,7 @@ async def test_approved_statistics_application_is_durable_and_verification_waits
     service = AutopilotService(sql=runtime)
     session_id = await session_store.create(
         "nova_admin", encrypt_password(password), ["ACCOUNTADMIN"],
-        active_role="ACCOUNTADMIN",
+        default_role="ACCOUNTADMIN", active_role="ACCOUNTADMIN",
     )
     user = {**await session_store.get(session_id), "session_id": session_id}
     statement = "SELECT SUM(amount) FROM facts"

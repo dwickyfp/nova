@@ -30,19 +30,30 @@ class QueryAdmission:
 
     def __init__(self) -> None:
         self.active = 0
+        self._sources: dict[str, int] = {}
 
     @asynccontextmanager
-    async def slot(self, source: str = "web") -> AsyncIterator[None]:
+    async def slot(
+        self, source: str = "web", *, source_limit: int | None = None,
+    ) -> AsyncIterator[None]:
+        if source_limit is not None and source_limit < 1:
+            raise ValueError("Workload concurrency must be positive")
         limit = settings.QUERY_MAX_CONCURRENCY
-        if limit and self.active >= limit:
+        if (limit and self.active >= limit) or (
+            source_limit is not None and self._sources.get(source, 0) >= source_limit
+        ):
             QUERY_ADMISSION_REFUSED.labels(source=source).inc()
             raise QueryCapacityError
         self.active += 1
+        self._sources[source] = self._sources.get(source, 0) + 1
         QUERY_ADMISSION_ACTIVE.set(self.active)
         try:
             yield
         finally:
             self.active -= 1
+            self._sources[source] -= 1
+            if not self._sources[source]:
+                del self._sources[source]
             QUERY_ADMISSION_ACTIVE.set(self.active)
 
 

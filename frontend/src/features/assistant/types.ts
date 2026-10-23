@@ -54,6 +54,7 @@ export type PlanStep = {
 
 /** A structured result grid emitted by a tool (Phase 12). Rows are redacted. */
 export type TableBlock = {
+  semantic_provenance_ref?: string;
   /** The query-producing tool, used to preserve artifact provenance. */
   tool_call_id?: string;
   title?: string;
@@ -111,6 +112,7 @@ export type AssistantEvent = (
       security_context_version: number;
     }
   | ({ type: "text_delta"; text: string } & ContentPosition)
+  | ({ type: "smart_report"; payload: import("../smart-reports/contracts").ReportBlock } & ContentPosition)
   | ({ type: "ui"; payload: Omit<import('../studio/intelligent-ui/types').UiBlock, 'program'> } & ContentPosition)
   | ({ type: "ui_delta"; text: string } & ContentPosition)
   | {

@@ -566,11 +566,16 @@ export function StudioChat({
     }
   }, [abortRef, flushEvents]);
 
+  const openingConversation = loadingThread || Boolean(
+    activeThreadId && activeThreadId !== threadId &&
+    activeThreadId !== staleThreadAfterNewChatRef.current,
+  );
+
   const send = useCallback(
     async (override?: string, uiAction?: UiAction) => {
       const content = (override ?? input).trim();
       const pending = attachments;
-      if (manualPending || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
+      if (openingConversation || manualPending || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
       try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
       if (abortRef.current) return;
 
@@ -700,6 +705,7 @@ export function StudioChat({
       queueEvent,
       onTurnEvent,
       readingFiles,
+      openingConversation,
       streaming,
       turns.length,
     manualPending, ],
@@ -838,8 +844,9 @@ export function StudioChat({
   const saveArtifact = useCallback(
     async (turn: TranscriptTurn, item: SavableContent) => {
       if (!agent || savingContentId) return;
-      const sql = findArtifactSql(turns, turn.id, item);
-      if (!sql) {
+      const provenance = item.type === "table" ? item.block.semantic_provenance_ref : undefined;
+      const sql = provenance ? "" : findArtifactSql(turns, turn.id, item);
+      if (!sql && !provenance) {
         toast.error("This result has no reusable SQL to save.");
         return;
       }
@@ -883,7 +890,8 @@ export function StudioChat({
         await studioApi.createArtifact({
           title,
           artifact_type: artifactType,
-          sql_text: sql,
+          sql_text: sql ?? "",
+          semantic_provenance_ref: provenance,
           database_name: agent.database_name,
           schema_name: agent.schema_name,
           chart_spec: chartSpec,
@@ -1075,7 +1083,7 @@ export function StudioChat({
           onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
             streaming={streaming}
             disabled={!agent}
-            sendDisabled={manualPending}
+            sendDisabled={manualPending || openingConversation}
             agent={manualPending ? null : agent}
             agents={agents}
             onSelectAgent={(id) => void selectComposerAgent(id)}

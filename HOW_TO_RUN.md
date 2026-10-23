@@ -46,13 +46,30 @@ cd /Users/dwickyferiansyahputra/Public/Research/nova
 ## 1. Jalankan Infrastructure
 
 Backend Nova membutuhkan StarRocks, Redis, dan object storage sebelum dapat
-berjalan.
+berjalan. Untuk instalasi pertama, siapkan file environment; pertahankan file
+yang sudah ada bila stack sedang berjalan.
 
 ```bash
 cd docker
 cp .env.example .env
+```
+
+Isi `RANGER_ADMIN_PASSWORD` dengan secret lokal yang berbeda dari
+`RANGER_DB_PASSWORD`, serta konfigurasi signing/encryption yang diwajibkan file
+tersebut. Simpan `.env` dengan izin `600` dan jangan commit isinya. Password admin
+digunakan oleh Ranger Admin, policy proxy, bootstrap, dan client Nova. Mengubah
+file environment saja tidak merotasi akun Ranger yang sudah tersimpan; rotasi akun
+dan client harus diselaraskan. Catatan perbaikan stack lokal ada di
+[LOCAL_RANGER.md](docs/smart-reports/LOCAL_RANGER.md).
+
+Untuk stack baru, setelah konfigurasi lengkap:
+
+```bash
 docker compose -f docker-compose-engine.yml up -d
 ```
+
+Untuk stack yang sudah berjalan, gunakan nama project dan seluruh file Compose
+yang tercatat pada `docker compose ls`.
 
 Versi engine yang di-pin adalah **StarRocks 4.1.4** (commit `4a9848e`), naik dari
 4.1.1 pada NOVA-51. Bila volume data dari stack 4.1.1 masih ada, StarRocks

@@ -298,7 +298,7 @@ log "starting Nova dev processes..."
 
 RANGER_PASSWORD_VALUE="${RANGER_PASSWORD:-}"
 if [[ -z "$RANGER_PASSWORD_VALUE" ]]; then
-  RANGER_PASSWORD_VALUE="$(container_env_value nova-ranger-admin RANGER_DB_PASSWORD || true)"
+  RANGER_PASSWORD_VALUE="$(container_env_value nova-ranger-admin RANGER_ADMIN_PASSWORD || true)"
 fi
 if [[ -z "$RANGER_PASSWORD_VALUE" ]]; then
   die "Ranger's development credential could not be read. Set RANGER_PASSWORD in the shell or start the Docker infrastructure first."

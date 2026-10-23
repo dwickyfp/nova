@@ -28,6 +28,7 @@ from app.modules.agents.semantic.runtime import (
     semantic_quality,
     validate_semantic_model_ir,
 )
+from app.modules.agents.semantic.time_ranges import ExecutionTimeContext
 from app.modules.agents.semantic.verification import verify_sql_compatibility
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools import policy
@@ -1081,7 +1082,8 @@ class SemanticViewService:
         return await self._execute_plan(view, row, ir, plan, user, body.limit)
 
     async def execute_plan(
-        self, view_id: str, version: int, plan: SemanticPlan, user: dict
+        self, view_id: str, version: int, plan: SemanticPlan, user: dict,
+        *, time_context: ExecutionTimeContext | None = None,
     ) -> dict:
         """Execute a pinned plan through the same authorization and compiler as QUERY."""
         view, row = await self._readable_version(view_id, version, user)
@@ -1090,7 +1092,8 @@ class SemanticViewService:
         ir = SemanticModelIR.from_ossie(row["definition"])
         if ir.fingerprint != row["fingerprint"]:
             raise HTTPException(status_code=409, detail="Semantic fingerprint does not match")
-        return await self._execute_plan(view, row, ir, plan, user, plan.limit or 1000)
+        return await self._execute_plan(view, row, ir, plan, user, plan.limit or 1000,
+                                        time_context=time_context)
 
     async def _execute_plan(
         self,
@@ -1100,8 +1103,9 @@ class SemanticViewService:
         plan: SemanticPlan,
         user: dict,
         limit: int,
+        *, time_context: ExecutionTimeContext | None = None,
     ) -> dict:
-        compiled = SemanticCompiler().compile(ir, plan)
+        compiled = SemanticCompiler().compile(ir, plan, time_context=time_context)
         result = await query_service.execute(
             sql=compiled.sql,
             username=user["username"],
@@ -1125,6 +1129,8 @@ class SemanticViewService:
             "rows": result.rows,
             "query_id": getattr(result, "query_id", None),
             "truncated": result.truncated,
+            "warnings": list(compiled.warnings),
+            "time_context": time_context.as_dict() if time_context else None,
         }
 
     @staticmethod

@@ -1,0 +1,14 @@
+.report-snapshot { width: 1200px; }
+.report-snapshot [data-snapshot-page] { break-before: page; }
+.report-snapshot .report-grid { display: block; }
+.report-snapshot .report-widget { margin-bottom: 1rem; }
+.report-snapshot .overflow-x-auto { overflow: visible; }
+.report-snapshot table { table-layout: fixed; }
+.report-snapshot th, .report-snapshot td { white-space: normal; overflow-wrap: anywhere; }
+.report-snapshot summary { list-style: none; }
+@media print {
+  .report-snapshot { width: 1200px; }
+  .report-snapshot .report-widget { break-inside: auto; }
+  .report-snapshot tr { break-inside: avoid; }
+  .report-snapshot thead { display: table-header-group; }
+}

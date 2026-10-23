@@ -855,11 +855,8 @@ async def _consented(fixture, action, *, compensate=False, allow=True):
                 await pending
 
 
-async def test_actions_require_review_consent_verify_schedule_and_live_authorization(
-    governed, monkeypatch,
-):
-    fixture = governed
-    client = fixture.primary
+@pytest.fixture
+async def governed_review_policy(governed):
     from app.modules.access_control.business_policy import (
         BusinessPolicy,
         read_business_policy,
@@ -867,13 +864,26 @@ async def test_actions_require_review_consent_verify_schedule_and_live_authoriza
     )
 
     current_policy = await read_business_policy()
-    await save_business_policy(
-        BusinessPolicy(reviewer_roles=[fixture.role], revision=current_policy.revision),
-        {
-            "username": "nova_admin",
-            "active_role": "ACCOUNTADMIN",
-        },
+    operator = {"username": "nova_admin", "active_role": "ACCOUNTADMIN"}
+    installed = await save_business_policy(
+        BusinessPolicy(reviewer_roles=[governed.role], revision=current_policy.revision),
+        operator,
     )
+    try:
+        yield governed
+    finally:
+        latest = await read_business_policy()
+        assert latest == installed, "Concurrent policy edit requires manual reconciliation"
+        await save_business_policy(
+            current_policy.model_copy(update={"revision": installed.revision}), operator
+        )
+
+
+async def test_actions_require_review_consent_verify_schedule_and_live_authorization(
+    governed_review_policy, monkeypatch,
+):
+    fixture = governed_review_policy
+    client = fixture.primary
     await task_orchestration_repository.bind_role_execution_user(
         fixture.role,
         fixture.principal,

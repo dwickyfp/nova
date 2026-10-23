@@ -44,8 +44,7 @@ SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 
 MINIO_HOST = os.getenv("NOVA_ORCH_S3_HOST", "127.0.0.1")
 MINIO_PORT = int(
-    os.getenv("NOVA_ORCH_S3_PORT")
-    or shared_stack_host_port("NOVA_TEST_MINIO_PORT", 29000)
+    os.getenv("NOVA_ORCH_S3_PORT") or shared_stack_host_port("NOVA_TEST_MINIO_PORT", 29000)
 )
 MINIO_ACCESS = "minioadmin"
 MINIO_SECRET = "minioadmin"
@@ -63,6 +62,7 @@ TABLE_NAME = "events"
 #: the shared ``nova_admin`` account or another test's session state.
 L3_ADMIN_USER = f"nova_l3_admin_{uuid.uuid4().hex[:8]}"
 L3_ADMIN_PASSWORD = "nova_l3_admin_pw"
+L3_ADMIN_ROLE = f"nova_l3_catalog_{uuid.uuid4().hex[:8]}"
 
 pytestmark = pytest.mark.engine
 
@@ -146,18 +146,24 @@ async def l3_admin_user(request):
         pytest.skip("StarRocks not reachable")
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
-    await _admin_execute(
-        f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'"
-    )
+    await _admin_execute(f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'")
     await _admin_execute(f"GRANT ALL ON *.* TO '{L3_ADMIN_USER}' WITH GRANT OPTION")
+    from app.integrations.ranger.client import ranger_client
+    from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
+
+    await ranger_client.put_user_attributes(L3_ADMIN_USER, {})
+    await ranger_client.put_role(
+        RangerRole(name=L3_ADMIN_ROLE, users=[RangerRoleMember(name=L3_ADMIN_USER)])
+    )
+    await _admin_execute(f"CREATE ROLE '{L3_ADMIN_ROLE}'")
+    await _admin_execute(f"GRANT '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
+    await _admin_execute(f"SET DEFAULT ROLE '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     # Creating an external catalog is a SYSTEM-level privilege, distinct from
     # ``ALL ON *.*`` (AGENTS.md §6), and ALTER/DROP are per-catalog grants that
     # cannot be granted ON SYSTEM. Provisioning them on the suite's own account
     # proves the delegate-first RBAC path rather than bypassing it.
     with contextlib.suppress(Exception):
-        await _admin_execute(
-            f"GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO '{L3_ADMIN_USER}'"
-        )
+        await _admin_execute(f"GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO '{L3_ADMIN_USER}'")
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT ALTER, DROP ON CATALOG * TO '{L3_ADMIN_USER}'")
 
@@ -165,6 +171,8 @@ async def l3_admin_user(request):
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
+    await ranger_client.delete_role(L3_ADMIN_ROLE)
 
 
 @pytest_asyncio.fixture
@@ -310,9 +318,7 @@ class TestCatalogCrudThroughApi:
             "hive.metastore.account.key",
         ],
     )
-    async def test_dotted_secret_property_is_rejected(
-        self, admin_client, namespace, key
-    ):
+    async def test_dotted_secret_property_is_rejected(self, admin_client, namespace, key):
         catalog = namespace["catalog"]
         body = _create_body(namespace)
         body["properties"][key] = SECRET_SENTINEL
@@ -335,9 +341,7 @@ class TestCatalogCrudThroughApi:
 
     async def test_dotted_secret_alter_is_rejected(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        resp = await admin_client.post(
-            "/api/v1/external-catalogs", json=_create_body(namespace)
-        )
+        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
         assert resp.status_code == 201, resp.text
 
         resp = await admin_client.patch(
@@ -346,18 +350,14 @@ class TestCatalogCrudThroughApi:
         )
         assert resp.status_code == 422, resp.text
 
-        detail = (
-            await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
-        ).json()
+        detail = (await admin_client.get(f"/api/v1/external-catalogs/{catalog}")).json()
         assert SECRET_SENTINEL not in str(detail)
         assert "azure.account.key" not in detail.get("properties", {})
 
 
 class TestExternalTableQuery:
     async def test_create_insert_select_through_engine(self, admin_client, namespace):
-        resp = await admin_client.post(
-            "/api/v1/external-catalogs", json=_create_body(namespace)
-        )
+        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
         assert resp.status_code == 201, resp.text
 
         catalog, database, table = (
@@ -370,18 +370,14 @@ class TestExternalTableQuery:
             f"CREATE TABLE {catalog}.{database}.{table} (id INT, name STRING) "
             "PROPERTIES ('write.format.default'='parquet')"
         )
-        await _admin_execute(
-            f"INSERT INTO {catalog}.{database}.{table} VALUES (1,'a'),(2,'b')"
-        )
+        await _admin_execute(f"INSERT INTO {catalog}.{database}.{table} VALUES (1,'a'),(2,'b')")
         rows = await _admin_execute(
             f"SELECT id, name FROM {catalog}.{database}.{table} ORDER BY id"
         )
         assert [tuple(r) for r in (rows or [])] == [(1, "a"), (2, "b")], rows
 
     async def test_external_table_appears_in_catalog_tree(self, admin_client, namespace):
-        resp = await admin_client.post(
-            "/api/v1/external-catalogs", json=_create_body(namespace)
-        )
+        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
         assert resp.status_code == 201, resp.text
 
         catalog, database, table = (
@@ -430,9 +426,7 @@ class TestNoCredentialLeak:
 
     async def test_audit_row_statement_is_redacted(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        resp = await admin_client.post(
-            "/api/v1/external-catalogs", json=_create_body(namespace)
-        )
+        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
         assert resp.status_code == 201, resp.text
 
         rows = await _admin_execute(
@@ -447,9 +441,7 @@ class TestNoCredentialLeak:
 
     async def test_metadata_table_has_no_credential(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        resp = await admin_client.post(
-            "/api/v1/external-catalogs", json=_create_body(namespace)
-        )
+        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
         assert resp.status_code == 201, resp.text
 
         rows = await _admin_execute(
