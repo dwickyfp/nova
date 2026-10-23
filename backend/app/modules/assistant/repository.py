@@ -218,12 +218,11 @@ class AssistantRepository:
         )
         if not result["rows"]:
             return None
+        from app.modules.assistant.security import same_ui_context
+
         row = result["rows"][0]
         stamp = _security_or_none(row[1]) if len(row) == 3 else None
-        if not stamp or row[0] != "assistant" or any(
-            stamp.get(key) != security_context.get(key)
-            for key in ("principal", "active_role", "security_context_version")
-        ):
+        if row[0] != "assistant" or not same_ui_context(stamp, security_context):
             return None
         blocks = [step for step in _steps_or_empty(row[2]) if isinstance(step, dict)
                   and step.get("kind") == "ui" and step.get("content_id") == content_id]
@@ -231,12 +230,14 @@ class AssistantRepository:
 
     async def get_ui_state(self, thread_id: str, message_id: str, content_id: str, *,
                            user_name: str, security_context: dict, block: dict) -> dict:
+        # State follows the user's active role, like the answer it belongs to;
+        # rows saved under earlier sessions' versions carry lower revisions.
         result = await db.execute_system(
             "SELECT revision,state,program_sha256 FROM NOVA_SYSTEM.CONFIG_ASSISTANT_UI_STATE "
             "WHERE user_name=%s AND thread_id=%s AND message_id=%s AND content_id=%s "
-            "AND active_role=%s AND security_context_version=%s AND program_sha256=%s",
+            "AND active_role=%s AND program_sha256=%s ORDER BY revision DESC LIMIT 1",
             [user_name, thread_id, message_id, content_id, security_context["active_role"],
-             security_context["security_context_version"], block["program_sha256"]],
+             block["program_sha256"]],
         )
         if not result["rows"]:
             return {"revision": 0, "state": block["state_defaults"],
@@ -263,7 +264,7 @@ class AssistantRepository:
         validate_state(state, block["state_defaults"])
         state_id = hashlib.sha256(_dump([
             user_name, thread_id, message_id, content_id, security_context["active_role"],
-            security_context["security_context_version"], block["program_sha256"],
+            block["program_sha256"],
         ]).encode()).hexdigest()
         async with metadata_lock(f"assistant-ui:{state_id}") as lease:
             current = await self.get_ui_state(

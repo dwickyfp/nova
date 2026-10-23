@@ -124,6 +124,32 @@ async def test_participant_gate_preserves_the_map_for_user_answers() -> None:
     assert len(_payloads(frames, "table")) == 1
 
 
+async def test_a_charted_located_result_still_gets_its_map() -> None:
+    registry = _chart_registry()
+    registry.register(TableQuery(OUTLETS))
+    frames, _, _ = await _run(
+        [dict(item) for item in CHART_SCRIPT], registry, intelligent_ui=True, plan=CHART_PLAN,
+    )
+    ui = _payloads(frames, "ui")
+    assert len(_payloads(frames, "chart")) == 1
+    assert len(ui) == 1 and ui[0]["payload"]["provenance"]["auto"] == "map"
+
+
+async def test_a_rejected_program_on_a_located_result_still_shows_its_map() -> None:
+    invalid = 'Two outlets are listed.\n```openui\nroot = Col([Unknown("x")])\n```'
+    registry = ToolRegistry()
+    registry.register(TableQuery(OUTLETS))
+    frames, context, _ = await _run(
+        [tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
+         text_frame(invalid), text_frame(invalid)],
+        registry, intelligent_ui=True, plan=MAP_PLAN,
+    )
+    ui = _payloads(frames, "ui")
+    assert len(ui) == 1 and ui[0]["payload"]["provenance"]["auto"] == "map"
+    assert any(step.get("ui_fallback") == "validation_failed" for step in context.steps)
+    assert "Only text is available" not in "".join(frames)
+
+
 async def test_located_result_gets_a_governed_map() -> None:
     frames, _, provider = await _map_run()
     ui = _payloads(frames, "ui")
