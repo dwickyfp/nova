@@ -126,6 +126,13 @@ and verifies its policy revision before running pytest. The JUnit report is
 uploaded even on failure. The stock FE remains unpatched; this job does not claim
 row-filter/masking enforcement from the patched-FE acceptance suite.
 
+The next hosted run (`39957897974`) passed Ranger startup, service bootstrap and
+authenticated policy-revision checks. Seeding exposed an overlay network error:
+FE advertised its second-network address, which BE could not reach for disk and
+tablet reports. The resulting missing capacity was reported as insufficient disk.
+The overlay now leaves FE/BE on their original single network and connects Ranger
+Admin to that network for JDBC access. No engine disk thresholds are changed.
+
 Local checks validate the combined Compose graph and mount/build paths, execute
 the credential-generation step without local `.env` inputs, and verify the real
 Ranger service/revision. Existing local engines and Ranger are reused; CI's fresh

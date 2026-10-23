@@ -1,11 +1,6 @@
 # CI adds the existing Ranger control plane to its disposable engine project.
 # Local acceptance reuses an already running Ranger through RANGER_ADMIN_URL.
 services:
-  starrocks-fe:
-    networks:
-      - default
-      - nova
-
   ranger-db:
     extends:
       file: ../docker/docker-compose-engine.yml
@@ -25,6 +20,12 @@ services:
       file: ../docker/docker-compose-engine.yml
       service: ranger-admin
     container_name: ${COMPOSE_PROJECT_NAME:-backend}-test-ranger-admin
+    # Keep FE/BE on their original single network so FE advertises an address
+    # reachable by BE. Admin joins it for the service's JDBC connection.
+    networks:
+      - default
+      - nova
+      - ranger-policy
 
   ranger-bootstrap:
     extends:
