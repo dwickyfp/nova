@@ -111,14 +111,27 @@ changed-file Ruff (109 Python files) and user-data boundary checks passed.
 
 ## Hosted CI prerequisite
 
-No GitHub Actions run is claimed. The current workflow triggers on main pushes
-and pull requests, and its integration setup provisions the stock test Compose
-services only. After the upstream Ranger-only change, those checks also need an
-initialized Ranger control plane and its credentials. The local runs above supply
-that prerequisite from the existing governed `docker` project while retaining the
-separate disposable data engine. Hosted Ranger provisioning remains an upstream
-CI-infrastructure prerequisite; local success must not be presented as a verified
-hosted CI result.
+The first PR #195 run (`39917396358`) passed backend static, grammar drift,
+backend unit/eval and frontend checks. L3 failed with 29 failures and 62 setup
+errors: its stock engine stack had no Ranger control plane. The leading exception
+was `RangerUnavailableError`, followed by failed proxy authentication and missing
+policy revisions. Local acceptance had supplied Ranger from the existing governed
+`docker` project, so it did not test this missing hosted prerequisite.
+
+Hosted L3 now combines `backend/docker-compose.test.yml` with
+`backend/docker-compose.test-ranger.yml`. The overlay inherits the existing pinned
+Ranger DB, Solr, Admin and bootstrap definitions. Each run generates masked,
+disposable credentials, waits for authenticated health, bootstraps the service,
+and verifies its policy revision before running pytest. The JUnit report is
+uploaded even on failure. The stock FE remains unpatched; this job does not claim
+row-filter/masking enforcement from the patched-FE acceptance suite.
+
+Local checks validate the combined Compose graph and mount/build paths, execute
+the credential-generation step without local `.env` inputs, and verify the real
+Ranger service/revision. Existing local engines and Ranger are reused; CI's fresh
+provisioning and teardown apply only to its disposable runner. Hosted results must
+be read from the check attached to the latest PR commit, separately from local
+results below.
 
 Final complete seeded-engine run after the admission change: 225 passed, 24
 prerequisite/optional skips, 29 non-engine deselections, 7 warnings, 1,378.50 s.

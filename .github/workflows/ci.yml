@@ -177,6 +177,10 @@ jobs:
     needs: [backend-unit]
     env:
       NOVA_TEST_FE_HEAP_MB: "2048"
+      COMPOSE_FILE: docker-compose.test.yml:docker-compose.test-ranger.yml
+      RANGER_ADMIN_URL: http://127.0.0.1:6080
+      RANGER_SERVICE_NAME: nova_starrocks_ci
+      RANGER_USERNAME: admin
     steps:
       - uses: actions/checkout@v4
 
@@ -201,9 +205,50 @@ jobs:
       - name: Pull the MySQL client image
         run: docker pull mysql:8.0
 
-      - name: Start the real engine stack
+      - name: Generate disposable CI credentials
+        run: |
+          admin_password="CiA9$(openssl rand -hex 24)"
+          db_password="CiD9$(openssl rand -hex 24)"
+          signing_key="$(openssl rand -hex 32)"
+          encryption_key="$(openssl rand -base64 32 | tr '+/' '-_')"
+          echo "::add-mask::$admin_password"
+          echo "::add-mask::$db_password"
+          echo "::add-mask::$signing_key"
+          echo "::add-mask::$encryption_key"
+          {
+            echo "RANGER_ADMIN_PASSWORD=$admin_password"
+            echo "RANGER_PASSWORD=$admin_password"
+            echo "RANGER_DB_PASSWORD=$db_password"
+            echo "SECRET_KEY=$signing_key"
+            echo "FERNET_KEY=$encryption_key"
+            # Compose also interpolates the unselected app-profile services
+            # in the file from which the Ranger definitions are inherited.
+            echo "NOVA_SECRET_KEY=$signing_key"
+            echo "NOVA_FERNET_KEY=$encryption_key"
+          } >> "$GITHUB_ENV"
+
+      - name: Start the real engine and Ranger control plane
         working-directory: backend
-        run: docker compose -f docker-compose.test.yml up -d --wait
+        run: |
+          docker compose config --quiet
+          docker compose up -d --wait starrocks-fe starrocks-be minio redis ranger-admin
+          docker compose run --rm ranger-bootstrap
+
+      - name: Verify authenticated Ranger service and policy revision
+        working-directory: backend
+        run: |
+          uv run python - <<'PY'
+          import asyncio
+          from app.integrations.ranger.client import ranger_client
+
+          async def verify():
+              health = await ranger_client.health()
+              assert health["service_exists"], "Ranger service bootstrap is missing"
+              assert await ranger_client.policy_revision(), "Ranger policy revision is unavailable"
+              print("Authenticated Ranger service and policy revision are ready")
+
+          asyncio.run(verify())
+          PY
 
       # The suite assumes a populated environment and provisions none of it.
       # Same script a developer runs locally; see its header.
@@ -223,10 +268,6 @@ jobs:
           STARROCKS_FE_MYSQL_PORT: "29030"
           REDIS_URL: redis://127.0.0.1:26379/0
           S3_ENDPOINT: http://127.0.0.1:29000
-          # NOVA-108: the app refuses to start without real signing/encryption
-          # keys. These are throwaway CI values, never used outside this run.
-          SECRET_KEY: ci-signing-key-not-for-deployment-0123456789abcdef
-          FERNET_KEY: 8f3Q1sVx0m2pR7tY5uW9zB4cD6eF1gH3jK5lM7nO9pQ=
           # The suite runs a MySQL client container per query. Host networking
           # lets it reach the proxy bound in the pytest process at
           # 127.0.0.1:<ephemeral>, so no compose network name and no
@@ -308,12 +349,21 @@ jobs:
       - name: Dump compose logs on failure
         if: failure()
         working-directory: backend
-        run: docker compose -f docker-compose.test.yml logs --no-color || true
+        run: docker compose logs --no-color || true
+
+      - name: Upload integration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration
+          path: backend/integration.xml
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Tear down the engine stack
         if: always()
         working-directory: backend
-        run: docker compose -f docker-compose.test.yml down -v || true
+        run: docker compose down -v || true
 
   frontend:
     name: Frontend (lint, build, vitest)

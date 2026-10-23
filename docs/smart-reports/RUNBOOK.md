@@ -156,3 +156,17 @@ host and container free space, not just Docker health. If the journal refuses
 writes, stop acceptance, recover disk space using explicitly owned build outputs,
 restart the same stopped FE containers, verify readiness, and rerun affected tests.
 Do not lower the journal reserve, prune unrelated images, or reset metadata.
+
+## Hosted integration prerequisites
+
+The L3 workflow starts the disposable stock test engine with
+`backend/docker-compose.test-ranger.yml`, which inherits the existing Ranger
+services from the governed Compose definition. Authentication, service bootstrap
+and a readable policy revision are checked before pytest. The workflow generates
+its own throwaway credentials and uploads `backend/integration.xml` on failure.
+This validates application integration with a real Ranger control plane; FE row
+filters and masks still require the separate patched-FE acceptance environment.
+
+Local reruns use the existing disposable engine and existing Ranger endpoint from
+`backend/.env.ranger.local`. Do not start the CI overlay beside those running
+services or copy CI teardown commands into local validation.
