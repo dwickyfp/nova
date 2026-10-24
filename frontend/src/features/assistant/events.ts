@@ -1,5 +1,6 @@
 import { reportBlockSchema } from "@/features/smart-reports/contracts";
 import type {
+  ChartBlock,
   AssistantEvent,
   PlanStep,
   ThinkingPhase,
@@ -493,8 +494,12 @@ function parseChart(record: Record<string, unknown>): AssistantEvent | null {
     payload: {
       tool_call_id: toolCallId,
       chart_spec: spec,
-      viz_spec: plain(record.viz_spec) ? record.viz_spec : null,
-      presmodel: plain(record.presmodel) ? record.presmodel : null,
+      viz_spec: plain(record.viz_spec)
+        ? (record.viz_spec as ChartBlock["viz_spec"])
+        : null,
+      presmodel: plain(record.presmodel)
+        ? (record.presmodel as ChartBlock["presmodel"])
+        : null,
     },
   };
 }

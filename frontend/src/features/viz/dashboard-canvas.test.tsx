@@ -14,8 +14,28 @@ vi.mock("@/features/agents/api", () => ({
 }));
 
 const charts = [
-  { artifact_id: "chart-1", title: "Revenue", artifact_type: "chart" as const },
-  { artifact_id: "chart-2", title: "Trend", artifact_type: "chart" as const },
+  {
+    artifact_id: "chart-1",
+    title: "Revenue",
+    artifact_type: "chart" as const,
+    agent_id: null,
+    thread_id: null,
+    database_name: null,
+    schema_name: null,
+    created_at: "2026-10-24T07:00:00",
+    updated_at: "2026-10-24T07:00:00",
+  },
+  {
+    artifact_id: "chart-2",
+    title: "Trend",
+    artifact_type: "chart" as const,
+    agent_id: null,
+    thread_id: null,
+    database_name: null,
+    schema_name: null,
+    created_at: "2026-10-24T07:00:00",
+    updated_at: "2026-10-24T07:00:00",
+  },
 ];
 
 const spec: DashboardSpec = {
