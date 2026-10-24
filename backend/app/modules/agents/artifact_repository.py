@@ -7,7 +7,7 @@ data and RBAC remain current.
 
 Two artifact kinds exist:
 
-* ``chart`` — a worksheet (``viz_spec``, the Tableau-adapted model in
+* ``chart`` — a worksheet (``viz_spec``, the worksheet model in
   :mod:`app.modules.viz.spec`) plus the read-only source statement that
   rebuilds it. Charts saved before the viz core carry a sanitized Vega-Lite
   ``chart_spec`` instead and render through the legacy path until re-saved.

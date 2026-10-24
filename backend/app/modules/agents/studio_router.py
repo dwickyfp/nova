@@ -92,8 +92,11 @@ from app.modules.agents.studio_schemas import (
     StudioSettingsResponse,
     ThreadTraceResponse,
     UsageSummary,
+    VizCalcCheckRequest,
     VizComputeRequest,
     VizComputeResponse,
+    VizFieldDomainRequest,
+    VizSourceRequest,
     VizSuggestRequest,
     VizSuggestResponse,
 )
@@ -250,7 +253,91 @@ async def compute_viz(body: VizComputeRequest, user: dict = Depends(get_current_
         rows=computed.rows,
         row_count=computed.row_count,
         elapsed_ms=computed.elapsed_ms,
+        fields=computed.fields,
+        spec=computed.spec,
     )
+
+
+def _source_spec(body: VizSourceRequest):
+    """A worksheet holding only a source, calculations and filters.
+
+    The authoring endpoints below need no shelves, so the shelf rule is not
+    applied; every part that is present is still validated.
+    """
+    from pydantic import TypeAdapter
+
+    from app.modules.viz.spec import (
+        CalculatedField,
+        VizSource,
+        VizSourceSql,
+        VizSourceTable,
+        WorksheetSpec,
+        parse_filter,
+    )
+
+    source: VizSourceSql | VizSourceTable = TypeAdapter(VizSource).validate_python(body.source)
+    calculations = [CalculatedField.model_validate(item) for item in body.calculations]
+    names = [calc.name for calc in calculations]
+    if len(set(names)) != len(names):
+        raise ValueError("Calculated field names must be unique.")
+    filters = [parse_filter(item) for item in body.filters]
+    return WorksheetSpec.model_construct(
+        source=source, calculations=calculations, filters=filters, columns=[], rows=[]
+    )
+
+
+@router.post("/studio/viz/describe", response_class=SanitizingJSONResponse)
+async def describe_viz_source(
+    body: VizSourceRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """The data pane for a worksheet source: fields, types and a sample."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+
+    try:
+        return await viz_service.describe(_source_spec(body), user)
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/studio/viz/calc/check", response_class=SanitizingJSONResponse)
+async def check_viz_calculation(
+    body: VizCalcCheckRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """Type-check one formula against the worksheet's fields."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+
+    try:
+        return await viz_service.check_calculation(
+            _source_spec(body), user, formula=body.formula, name=body.name
+        )
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/studio/viz/calc/functions")
+async def list_viz_functions(user: dict = Depends(get_current_user)) -> dict:
+    """The formula editor's function reference."""
+    from app.modules.viz.calc import catalog
+
+    return {"functions": catalog()}
+
+
+@router.post("/studio/viz/field-domain", response_class=SanitizingJSONResponse)
+async def viz_field_domain(
+    body: VizFieldDomainRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """Members or bounds of one field, for a filter card."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+
+    try:
+        return await viz_service.field_domain(
+            _source_spec(body), user, field_name=body.field, date_part=body.date_part
+        )
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/studio/viz/suggest", response_model=VizSuggestResponse)
@@ -457,13 +544,20 @@ async def refresh_artifact(
             status_code=422,
             detail=result.error or "The artifact query could not be refreshed.",
         )
+    from app.modules.viz.service import derive_worksheet
+
+    derived = derive_worksheet(artifact, list(result.columns), [list(r) for r in result.rows])
     return ArtifactRefreshResponse(
         artifact=ArtifactView(**artifact),
         columns=result.columns,
         rows=result.rows,
         row_count=result.row_count,
         elapsed_ms=result.elapsed_ms,
+        presmodel=derived[1] if derived else None,
+        derived_viz_spec=derived[0] if derived else None,
     )
+
+
 
 
 @router.post(

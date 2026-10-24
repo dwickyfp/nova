@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Loader2, PencilLine, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import { VizView } from "./viz-view";
 import type { DashboardComputeResponse, DashboardSpec, Filter, Zone } from "./types";
 
 /**
- * DashboardCanvas is Tableau's dashboard on Nova tokens: a tiled zone grid
+ * DashboardCanvas is the Studio dashboard on Nova tokens: a tiled zone grid
  * over chart artifacts. Quick filters and mark clicks re-compile every
  * affected sheet through the viz core, so a dashboard is live data, not a
  * screenshot.
@@ -31,6 +31,7 @@ export function DashboardCanvas({
   expectedUpdatedAt,
   editable = false,
   onSaved,
+  onEditSheet,
 }: {
   artifactId: string;
   spec: DashboardSpec;
@@ -38,6 +39,8 @@ export function DashboardCanvas({
   expectedUpdatedAt: string;
   editable?: boolean;
   onSaved?: (spec: DashboardSpec) => void;
+  /** Open a zone's sheet in the worksheet editor ("go to sheet"). */
+  onEditSheet?: (artifactId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [working, setWorking] = useState<DashboardSpec>(spec);
@@ -185,6 +188,11 @@ export function DashboardCanvas({
                 result={sheetResults.get(zone.zone_id)}
                 pending={compute.isPending}
                 onMarkClick={(values) => applySelection(zone.zone_id, values)}
+                onEdit={
+                  onEditSheet && zone.artifact_id
+                    ? () => onEditSheet(zone.artifact_id as string)
+                    : undefined
+                }
               />
             ) : zone.kind === "text" ? (
               zone.text?.style === "title" ? (
@@ -246,16 +254,31 @@ function SheetZone({
   result,
   pending,
   onMarkClick,
+  onEdit,
 }: {
   zone: Zone;
   title: string;
   result: { presmodel?: DashboardComputeResponse["zones"][number]["presmodel"]; error?: string } | undefined;
   pending: boolean;
   onMarkClick: (values: Record<string, string | number | null>) => void;
+  onEdit?: () => void;
 }) {
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <h3 className="mb-1 truncate text-xs font-medium text-muted-foreground">{title}</h3>
+      <div className="mb-1 flex items-center gap-1">
+        <h3 className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">{title}</h3>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Edit sheet ${title}`}
+            title="Edit sheet"
+            className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <PencilLine aria-hidden="true" className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
       <div className="relative min-w-0 flex-1">
         {pending ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center">

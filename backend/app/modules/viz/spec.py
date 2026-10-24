@@ -1,7 +1,7 @@
-"""Worksheet and dashboard specifications — Nova's Tableau document model.
+"""Worksheet and dashboard specifications.
 
-Tableau authors a view by placing fields on shelves; the same contract is
-expressed here as typed JSON so the assistant, the Studio editor and persisted
+A view is authored by placing fields on shelves; the contract is expressed
+here as typed JSON so the assistant, the Studio editor and persisted
 artifacts all speak one language:
 
 * a **worksheet** (``WorksheetSpec``) is a chart: column/row shelves of field
@@ -10,8 +10,8 @@ artifacts all speak one language:
 * a **dashboard** (``DashboardSpec``) is a zone layout over chart artifacts,
   with dashboard-level filters and filter/highlight actions.
 
-Every field pill carries Tableau's discrete/continuous distinction: discrete
-fields make headers (blue pills), continuous fields make axes (green pills).
+Every field pill is discrete or continuous: discrete fields make headers,
+continuous fields make axes.
 """
 
 from __future__ import annotations
@@ -22,8 +22,27 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 FieldType = Literal["nominal", "ordinal", "quantitative", "temporal"]
 
-#: Aggregations StarRocks and the in-core compute view both implement.
-Aggregation = Literal["sum", "avg", "min", "max", "count", "distinct_count"]
+#: Pill aggregations. ``agg`` marks a pill over a calculated field that is
+#: already an aggregate or table calculation (shown as ``AGG(name)``).
+Aggregation = Literal[
+    "sum",
+    "avg",
+    "median",
+    "min",
+    "max",
+    "count",
+    "distinct_count",
+    "stdev",
+    "stdevp",
+    "var",
+    "varp",
+    "attr",
+    "agg",
+]
+
+#: Date levels a date dimension pill can show. A discrete pill shows the
+#: part (``MONTH`` = 1..12); a continuous pill truncates to it (a timeline).
+DatePart = Literal["year", "quarter", "month", "week", "day"]
 
 MarkType = Literal[
     "bar",
@@ -50,13 +69,16 @@ TableCalcKind = Literal[
 #: The longest field identifier accepted when no column list can validate it.
 MAX_FIELD_LENGTH = 128
 
+#: Most calculated fields one worksheet may define.
+MAX_CALCULATIONS = 64
+
 
 class FieldRef(BaseModel):
     """A field pill: a source column plus how it participates in the view.
 
     ``aggregation`` marks a measure pill (``SUM(Sales)``); its absence marks a
-    dimension pill. ``discrete`` follows Tableau: discrete pills produce
-    headers, continuous pills produce axes.
+    dimension pill. Discrete pills produce headers, continuous pills produce
+    axes.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -65,6 +87,7 @@ class FieldRef(BaseModel):
     field_type: FieldType = "nominal"
     aggregation: Aggregation | None = None
     discrete: bool = True
+    date_part: DatePart | None = None
 
     @property
     def is_measure(self) -> bool:
@@ -72,9 +95,15 @@ class FieldRef(BaseModel):
 
     @property
     def label(self) -> str:
-        if self.aggregation is None:
+        """The result column this pill produces (unique per pill meaning)."""
+        if self.aggregation == "agg":
             return self.field
-        return f"{self.aggregation}({self.field})"
+        if self.aggregation is not None:
+            return f"{self.aggregation}({self.field})"
+        if self.date_part is not None:
+            suffix = "" if self.discrete else "_trunc"
+            return f"{self.date_part}{suffix}({self.field})"
+        return self.field
 
     def continuous(self) -> Self:
         clone = self.model_copy()
@@ -83,7 +112,7 @@ class FieldRef(BaseModel):
 
 
 class QuantitativeFilter(BaseModel):
-    """A numeric or date range filter (Tableau's ``QuantitativeFilter``)."""
+    """A numeric or date range filter."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -91,10 +120,15 @@ class QuantitativeFilter(BaseModel):
     field: str = Field(min_length=1, max_length=MAX_FIELD_LENGTH)
     min: float | str | None = None
     max: float | str | None = None
+    #: Set for a measure filter: the range applies to the aggregated value
+    #: per mark (after aggregation) instead of to each row.
+    aggregation: Aggregation | None = None
+    #: A context filter applies before FIXED level-of-detail calculations.
+    context: bool = False
 
 
 class CategoricalFilter(BaseModel):
-    """A member-list filter (Tableau's ``ArbitraryFilter``)."""
+    """A member-list filter."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -103,10 +137,11 @@ class CategoricalFilter(BaseModel):
     values: list[str] = Field(default_factory=list, max_length=1000)
     exclude: bool = False
     null_included: bool | None = None
+    context: bool = False
 
 
 class RelativeDateFilter(BaseModel):
-    """A rolling or to-date window filter (Tableau's ``RelativeDateFilter``)."""
+    """A rolling or to-date window filter."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -120,6 +155,7 @@ class RelativeDateFilter(BaseModel):
         "year_to_date",
     ]
     n: int = Field(default=1, ge=1, le=1000)
+    context: bool = False
 
 
 Filter = Annotated[
@@ -141,12 +177,28 @@ def parse_filter(raw: object) -> Filter:
 
 
 class TableCalc(BaseModel):
-    """A table calculation applied after aggregation (Tableau ``TableCalcSpec``)."""
+    """A quick table calculation applied after aggregation."""
 
     model_config = ConfigDict(extra="forbid")
 
     kind: TableCalcKind
     field: str = Field(min_length=1, max_length=MAX_FIELD_LENGTH)
+
+
+class CalculatedField(BaseModel):
+    """A named formula (see :mod:`app.modules.viz.calc`).
+
+    ``addressing`` sets the direction of table calculations in the formula:
+    the view dimensions they run along. The remaining view dimensions
+    partition (restart) the calculation. ``None`` runs along every
+    dimension of the view (the whole table).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=MAX_FIELD_LENGTH)
+    formula: str = Field(min_length=1, max_length=8000)
+    addressing: list[str] | None = Field(default=None, max_length=8)
 
 
 class SortSpec(BaseModel):
@@ -179,7 +231,7 @@ VizSource = Annotated[VizSourceSql | VizSourceTable, Field(discriminator="kind")
 
 
 class MarksCard(BaseModel):
-    """Tableau's marks card: the mark type and its field encodings."""
+    """The marks card: the mark type and its field encodings."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -192,7 +244,7 @@ class MarksCard(BaseModel):
 
 
 class WorksheetSpec(BaseModel):
-    """A chart: Tableau's worksheet as typed JSON."""
+    """A chart: one worksheet as typed JSON."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -206,6 +258,7 @@ class WorksheetSpec(BaseModel):
     sort: list[SortSpec] = Field(default_factory=list, max_length=4)
     limit: int | None = Field(default=None, ge=1, le=10_000)
     table_calcs: list[TableCalc] = Field(default_factory=list, max_length=8)
+    calculations: list[CalculatedField] = Field(default_factory=list, max_length=MAX_CALCULATIONS)
     #: Field-type hints from the producing result, keyed by column name.
     field_types: dict[str, FieldType] = Field(default_factory=dict)
 
@@ -213,7 +266,16 @@ class WorksheetSpec(BaseModel):
     def shelves_not_empty(self) -> Self:
         if not self.columns and not self.rows:
             raise ValueError("A worksheet needs at least one field on a shelf.")
+        names = [calc.name for calc in self.calculations]
+        if len(set(names)) != len(names):
+            raise ValueError("Calculated field names must be unique.")
         return self
+
+    def calculation_formulas(self) -> dict[str, str]:
+        return {calc.name: calc.formula for calc in self.calculations}
+
+    def calculation(self, name: str) -> CalculatedField | None:
+        return next((calc for calc in self.calculations if calc.name == name), None)
 
     def all_fields(self) -> list[FieldRef]:
         """Every field pill the view reads: shelves, encodings, filters, sort."""
@@ -225,11 +287,11 @@ class WorksheetSpec(BaseModel):
         return pills
 
     def dimensions(self) -> list[FieldRef]:
-        """Discrete pills that group the view (Tableau's level of detail)."""
+        """Dimension pills that group the view (its level of detail)."""
         seen: dict[str, FieldRef] = {}
         for pill in self.all_fields():
             if not pill.is_measure:
-                seen.setdefault(pill.field, pill)
+                seen.setdefault(pill.label, pill)
         return list(seen.values())
 
     def measures(self) -> list[FieldRef]:
@@ -244,8 +306,8 @@ class WorksheetSpec(BaseModel):
         """A copy with dashboard/cross-filter filters merged in.
 
         A filter already present for the same field is replaced: the more
-        specific interactive filter wins, which is how Tableau dashboard
-        filter actions compose with worksheet filters.
+        specific interactive filter wins, which is how dashboard filter
+        actions compose with worksheet filters.
         """
         merged = {f.field: f for f in self.filters}
         for item in extra:
@@ -278,7 +340,7 @@ class TextZone(BaseModel):
 
 
 class FilterZone(BaseModel):
-    """A dashboard filter: one field applied to sheets (Tableau quick filter)."""
+    """A dashboard quick filter: one field applied to sheets."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -287,7 +349,7 @@ class FilterZone(BaseModel):
 
 
 class Zone(BaseModel):
-    """One dashboard zone (Tableau ``Zone``): sheet, text, filter or spacer."""
+    """One dashboard zone: sheet, text, filter or spacer."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -314,7 +376,7 @@ class Zone(BaseModel):
 
 
 class DashboardAction(BaseModel):
-    """A dashboard action, ported from Tableau's action model.
+    """A dashboard action.
 
     ``filter`` re-queries target sheets with the selected members; ``highlight``
     marks matching the selection without changing any data.
@@ -379,10 +441,10 @@ class DashboardSpec(BaseModel):
         return [zone for zone in self.zones if zone.kind == "sheet"]
 
 
-class NotionalSpec(BaseModel):
-    """The AI↔viz bridge, ported from Tableau Agent's ``NotionalSpec``.
+class ChartIntent(BaseModel):
+    """The assistant↔viz bridge: a small, checkable chart request.
 
-    The model (or a user's ShowMe pick) names a chart type and fields; the
+    The model (or a user's Show Me pick) names a chart type and fields; the
     ShowMe placement engine resolves it into a full worksheet.
     """
 

@@ -1,7 +1,7 @@
 """``dashboard_build`` — compose a dashboard artifact from the conversation.
 
-Tableau authors a dashboard by placing worksheets on a canvas; this tool does
-the same from chat: each chart request resolves through the ShowMe engine
+A dashboard places worksheets on a canvas; this tool composes one from
+chat: each chart request resolves through the ShowMe engine
 into a worksheet over the turn's verified result, each worksheet is saved as
 a chart artifact, and a zone layout composes them into one dashboard
 artifact. Everything persists under the caller's ownership; refresh and
@@ -18,10 +18,10 @@ from typing import Any
 
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
-from app.modules.viz.showme import from_notional
+from app.modules.viz.showme import from_intent
 from app.modules.viz.spec import (
+    ChartIntent,
     DashboardSpec,
-    NotionalSpec,
     VizSourceSql,
     Zone,
     ZoneRect,
@@ -82,7 +82,7 @@ _PARAMETERS = {
 
 
 def _zone_grid(count: int) -> list[ZoneRect]:
-    """Two sheets per row on the 24-column grid (Tableau's tiled default)."""
+    """Two sheets per row on the 24-column tiled grid."""
     rects: list[ZoneRect] = []
     per_row = 2 if count > 1 else 1
     width = 24 // per_row
@@ -161,14 +161,14 @@ class DashboardBuildTool:
             chart_title = str(request.get("title") or "Chart").strip()[:256]
             y = request.get("y")
             try:
-                notional = NotionalSpec(
+                chart_intent = ChartIntent(
                     chart_type=str(request.get("chart_type") or "auto"),  # type: ignore[arg-type]
                     x=_str_or_none(request.get("x")),
                     y=y if isinstance(y, (str, list)) else None,
                     color=_str_or_none(request.get("color")),
                     size=_str_or_none(request.get("size")),
                 )
-                spec = from_notional(notional, columns, rows, source=source, title=chart_title)
+                spec = from_intent(chart_intent, columns, rows, source=source, title=chart_title)
                 artifact = await viz_service.save_chart(
                     user=user,
                     title=chart_title,

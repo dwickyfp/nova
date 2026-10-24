@@ -124,6 +124,10 @@ class ArtifactRefreshResponse(BaseModel):
     presmodel: dict[str, Any] | None = None
     #: The StarRocks statement the presentation model was computed from.
     sql: str | None = None
+    #: For a chart saved before worksheets existed: the worksheet derived from
+    #: its SQL and chart encoding, so it renders and opens in the editor.
+    #: Saving it from the editor makes it the artifact's worksheet.
+    derived_viz_spec: dict[str, Any] | None = None
 
 
 class ArtifactDraft(BaseModel):
@@ -186,6 +190,29 @@ class VizComputeResponse(BaseModel):
     rows: list[list[Any]] = Field(default_factory=list)
     row_count: int = 0
     elapsed_ms: float = 0.0
+    #: The data pane: source columns and calculated fields with types.
+    fields: list[dict[str, Any]] = Field(default_factory=list)
+    #: The worksheet as resolved (pill types, aggregate calculations).
+    spec: dict[str, Any] | None = None
+
+
+class VizSourceRequest(BaseModel):
+    """A worksheet's data source and calculations, without its shelves."""
+
+    source: dict[str, Any]
+    calculations: list[dict[str, Any]] = Field(default_factory=list, max_length=64)
+    filters: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+
+
+class VizCalcCheckRequest(VizSourceRequest):
+    formula: str = Field(min_length=1, max_length=8000)
+    #: The calculated field being edited, so its saved formula is replaced.
+    name: str | None = Field(default=None, max_length=128)
+
+
+class VizFieldDomainRequest(VizSourceRequest):
+    field: str = Field(min_length=1, max_length=128)
+    date_part: Literal["year", "quarter", "month", "week", "day"] | None = None
 
 
 class VizSuggestRequest(BaseModel):

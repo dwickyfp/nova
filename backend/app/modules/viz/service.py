@@ -2,7 +2,7 @@
 
 Every computation runs under the caller's own StarRocks session through
 ``QueryService`` — the viz core holds no connection of its own and broadens no
-access. A chart computes in two steps that mirror Tableau's VizQL flow:
+access. A chart computes in two steps:
 
 1. probe the source for its columns (and the caller's right to read it),
 2. compile the worksheet and execute it, then build the presentation model.
@@ -21,18 +21,33 @@ from uuid import NAMESPACE_URL, uuid5
 
 from app.modules.agents.artifact_repository import artifact_repository
 from app.modules.query.service import query_service
+from app.modules.viz.calc import CalcError, check_formula
+from app.modules.viz.calc.analyzer import DataType
 from app.modules.viz.compiler import (
+    PROBE_ROWS,
     CompileError,
     compile_worksheet,
+    infer_column_types,
     source_probe_sql,
 )
 from app.modules.viz.presmodel import build as build_presmodel
+from app.modules.viz.showme import from_intent
 from app.modules.viz.showme import suggest as showme_suggest
-from app.modules.viz.spec import DashboardSpec, Filter, WorksheetSpec
+from app.modules.viz.spec import (
+    ChartIntent,
+    DashboardSpec,
+    FieldRef,
+    Filter,
+    VizSourceSql,
+    WorksheetSpec,
+)
 
 logger = logging.getLogger(__name__)
 
 MAX_COMPUTE_ROWS = 500
+
+#: Most distinct members a filter card lists.
+MAX_DOMAIN_VALUES = 500
 
 
 class VizError(ValueError):
@@ -49,7 +64,50 @@ class ComputeResult:
     rows: list[list[Any]] = field(default_factory=list)
     row_count: int = 0
     elapsed_ms: float = 0.0
+    #: The data pane: source columns and calculated fields with their types.
+    fields: list[dict[str, Any]] = field(default_factory=list)
+    spec: dict[str, Any] | None = None
 
+
+@dataclass
+class SourceSchema:
+    """The source's columns, inferred data types, and a few sample rows."""
+
+    columns: list[str]
+    types: dict[str, DataType]
+    sample: list[list[Any]] = field(default_factory=list)
+
+
+def data_pane(
+    schema: SourceSchema, spec: WorksheetSpec, calcs: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Fields the authoring data pane lists, dimensions before measures."""
+    fields: list[dict[str, Any]] = []
+    for name in schema.columns:
+        data_type = schema.types.get(name, "unknown")
+        fields.append(
+            {
+                "name": name,
+                "kind": "column",
+                "data_type": data_type,
+                "role": "measure" if data_type == "number" else "dimension",
+                "level": "row",
+            }
+        )
+    for calc in spec.calculations:
+        info = (calcs or {}).get(calc.name)
+        fields.append(
+            {
+                "name": calc.name,
+                "kind": "calculation",
+                "data_type": info.data_type if info else "unknown",
+                "role": info.role if info else "measure",
+                "level": info.level if info else "row",
+                "formula": calc.formula,
+                "addressing": calc.addressing,
+            }
+        )
+    return fields
 
 def canonical_source_sql(spec: WorksheetSpec) -> str:
     """The single read-only statement that rebuilds this worksheet's data."""
@@ -61,9 +119,16 @@ def canonical_source_sql(spec: WorksheetSpec) -> str:
 class VizService:
     async def probe_columns(self, spec: WorksheetSpec, user: dict[str, Any]) -> list[str]:
         """Learn the source's columns under the caller's own access."""
-        probe = source_probe_sql(spec)
-        results = await self._execute(probe, user, max_rows=1)
-        return list(results.columns)
+        return (await self.probe_schema(spec, user)).columns
+
+    async def probe_schema(self, spec: WorksheetSpec, user: dict[str, Any]) -> SourceSchema:
+        """Learn the source's columns and their data types from a small sample,
+        under the caller's own access."""
+        probe = source_probe_sql(spec, rows=PROBE_ROWS)
+        results = await self._execute(probe, user, max_rows=PROBE_ROWS)
+        columns = list(results.columns)
+        sample = [list(row) for row in results.rows]
+        return SourceSchema(columns, infer_column_types(columns, sample), sample)
 
     async def compute(
         self,
@@ -76,11 +141,17 @@ class VizService:
     ) -> ComputeResult:
         """Compile and execute the worksheet, then build its presentation model."""
         effective = spec.with_extra_filters(extra_filters or [])
-        columns = await self.probe_columns(effective, user)
-        compiled = compile_worksheet(effective, known_columns=columns)
+        schema = await self.probe_schema(effective, user)
+        compiled = compile_worksheet(
+            effective, known_columns=schema.columns, column_types=schema.types
+        )
         result = await self._execute(compiled.sql, user)
+        resolved = compiled.spec or effective
         presmodel = build_presmodel(
-            effective, list(result.columns), [list(row) for row in result.rows]
+            resolved,
+            list(result.columns),
+            [list(row) for row in result.rows],
+            preserve_order=compiled.ordered,
         )
         return ComputeResult(
             presmodel=presmodel,
@@ -89,7 +160,113 @@ class VizService:
             rows=[list(row) for row in result.rows],
             row_count=result.row_count,
             elapsed_ms=result.elapsed_ms,
+            fields=data_pane(schema, effective, compiled.calculations),
+            spec=resolved.model_dump(mode="json"),
         )
+
+    async def describe(self, spec: WorksheetSpec, user: dict[str, Any]) -> dict[str, Any]:
+        """The data pane for a worksheet's source, without computing the view."""
+        schema = await self.probe_schema(spec, user)
+        try:
+            compiled = compile_worksheet(
+                spec, known_columns=schema.columns, column_types=schema.types
+            )
+            calcs: dict[str, Any] = compiled.calculations
+        except CompileError:
+            calcs = {}
+        return {
+            "fields": data_pane(schema, spec, calcs),
+            "sample_columns": schema.columns,
+            "sample_rows": schema.sample[:50],
+        }
+
+    async def check_calculation(
+        self,
+        spec: WorksheetSpec,
+        user: dict[str, Any],
+        *,
+        formula: str,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """Check one formula against the worksheet's fields (the formula
+        editor). Only the probe touches data, under the caller's access."""
+        schema = await self.probe_schema(spec, user)
+        try:
+            info = check_formula(
+                formula,
+                dict(schema.types),
+                spec.calculation_formulas(),
+                name=name,
+            )
+        except CalcError as exc:
+            return {
+                "valid": False,
+                "error": {"message": exc.message, "start": exc.start, "end": exc.end},
+            }
+        return {
+            "valid": True,
+            "data_type": info.data_type,
+            "level": info.level,
+            "role": info.role,
+            "references": info.references,
+        }
+
+    async def field_domain(
+        self,
+        spec: WorksheetSpec,
+        user: dict[str, Any],
+        *,
+        field_name: str,
+        date_part: str | None = None,
+    ) -> dict[str, Any]:
+        """Members (or the range) of one field, for a filter card.
+
+        It compiles a one-field view of the same source — with the
+        worksheet's context filters — so calculated fields work and every
+        value comes from the caller's own session.
+        """
+        schema = await self.probe_schema(spec, user)
+        probe = WorksheetSpec(
+            source=spec.source,
+            calculations=spec.calculations,
+            filters=[item for item in spec.filters if item.context],
+            columns=[FieldRef(field=field_name, date_part=date_part)],  # type: ignore[arg-type]
+            marks={"type": "text"},  # type: ignore[arg-type]
+            sort=[{"field": field_name, "direction": "asc"}],  # type: ignore[list-item]
+            limit=MAX_DOMAIN_VALUES + 1,
+        )
+        compiled = compile_worksheet(probe, known_columns=schema.columns, column_types=schema.types)
+        field_type = compiled.output_fields[0].field_type if compiled.output_fields else "nominal"
+        domain: dict[str, Any] = {"field": field_name, "field_type": field_type}
+        if field_type == "quantitative" and date_part is None:
+            # A range filter needs the bounds, not every member.
+            bounds = probe.model_copy(
+                update={
+                    "columns": [],
+                    "rows": [
+                        FieldRef(field=field_name, aggregation="min", discrete=False),
+                        FieldRef(field=field_name, aggregation="max", discrete=False),
+                    ],
+                    "sort": [],
+                    "limit": None,
+                }
+            )
+            ranged = compile_worksheet(
+                bounds, known_columns=schema.columns, column_types=schema.types
+            )
+            result = await self._execute(ranged.sql, user, max_rows=1)
+            low, high = (list(result.rows[0]) + [None, None])[:2] if result.rows else (None, None)
+            domain.update({"min": low, "max": high, "values": [], "truncated": False})
+            return domain
+        result = await self._execute(compiled.sql, user, max_rows=MAX_DOMAIN_VALUES + 1)
+        values = [row[0] for row in result.rows]
+        domain.update(
+            {
+                "values": values[:MAX_DOMAIN_VALUES],
+                "truncated": len(values) > MAX_DOMAIN_VALUES,
+            }
+        )
+        return domain
 
     def compute_in_memory(
         self, spec: WorksheetSpec, columns: list[str], rows: list[list[Any]]
@@ -229,8 +406,8 @@ class VizService:
                 zones_out.append(entry)
                 continue
             try:
-                worksheet = WorksheetSpec.model_validate(artifact.get("viz_spec") or {})
-            except ValueError:
+                worksheet = await self._worksheet_for(artifact, user)
+            except (ValueError, VizError):
                 entry["error"] = "This chart has no worksheet to compute."
                 zones_out.append(entry)
                 continue
@@ -268,6 +445,21 @@ class VizService:
             zones_out.append(entry)
         return {"title": spec.title, "zones": zones_out}
 
+    async def _worksheet_for(self, artifact: dict[str, Any], user: dict[str, Any]) -> WorksheetSpec:
+        """The chart's worksheet; a pre-worksheet chart derives one from its
+        query (run under the caller's session) and saved encoding."""
+        if artifact.get("viz_spec"):
+            return WorksheetSpec.model_validate(artifact["viz_spec"])
+        if not artifact.get("sql_text"):
+            raise VizError("This chart has no query.")
+        result = await self._execute(artifact["sql_text"], user)
+        derived = derive_worksheet(
+            artifact, list(result.columns), [list(row) for row in result.rows]
+        )
+        if derived is None:
+            raise VizError("This chart has no worksheet to compute.")
+        return WorksheetSpec.model_validate(derived[0])
+
     async def _execute(self, sql: str, user: dict[str, Any], *, max_rows: int = MAX_COMPUTE_ROWS):
         active_role = None
         granted = user.get("roles") or []
@@ -289,6 +481,60 @@ class VizService:
         if not result.success:
             raise VizError(result.error or "The viz query could not be executed.")
         return result
+
+
+_VEGA_CHART_TYPES = {
+    "bar": "bar",
+    "line": "line",
+    "area": "area",
+    "point": "scatter",
+    "circle": "scatter",
+    "square": "scatter",
+    "arc": "pie",
+    "rect": "heatmap",
+    "text": "text_table",
+}
+
+
+def derive_worksheet(
+    artifact: dict[str, Any], columns: list[str], rows: list[list[Any]]
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """A worksheet (and its presentation model) for a pre-worksheet chart.
+
+    The chart's Vega encoding names its axes; the Show Me engine places the
+    rest. Nothing is stored: the editor saves it when the user edits.
+    """
+    if artifact.get("artifact_type") != "chart" or not columns or not artifact.get("sql_text"):
+        return None
+    vega = artifact.get("chart_spec") or {}
+    mark = vega.get("mark")
+    mark = mark.get("type") if isinstance(mark, dict) else mark
+    encoding = vega.get("encoding") or {}
+
+    def field_of(channel: str) -> str | None:
+        value = (encoding.get(channel) or {}).get("field")
+        return value if isinstance(value, str) and value in columns else None
+
+    x = field_of("x") or field_of("color") if mark == "arc" else field_of("x")
+    y = field_of("theta") if mark == "arc" else field_of("y")
+    try:
+        intent = ChartIntent(
+            chart_type=_VEGA_CHART_TYPES.get(str(mark), "auto"),  # type: ignore[arg-type]
+            x=x,
+            y=y,
+            color=field_of("color") if mark != "arc" else None,
+        )
+        spec = from_intent(
+            intent,
+            columns,
+            rows,
+            source=VizSourceSql(sql=artifact["sql_text"]),
+            title=artifact.get("title") or "",
+        )
+        presmodel = build_presmodel(spec, columns, rows)
+    except ValueError:
+        return None
+    return spec.model_dump(mode="json"), presmodel
 
 
 def legacy_dashboard_artifact_id(dashboard_id: str) -> str:

@@ -58,8 +58,12 @@ describe("VizView", () => {
 });
 
 describe("formatMeasure", () => {
-  it("abbreviates Tableau-style", () => {
+  it("abbreviates large numbers", () => {
     expect(formatMeasure(950)).toBe("950");
+    expect(formatMeasure(0.15)).toBe("0.15");
+    expect(formatMeasure(0.1)).toBe("0.1");
+    expect(formatMeasure(12.34)).toBe("12.3");
+    expect(formatMeasure(3)).toBe("3");
     expect(formatMeasure(1200)).toBe("1.2K");
     expect(formatMeasure(2_400_000)).toBe("2.4M");
     expect(formatMeasure(5_100_000_000)).toBe("5.1B");

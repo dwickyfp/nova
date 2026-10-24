@@ -1,10 +1,9 @@
-"""ShowMe — chart-type requirements, ranking and field placement.
+"""Show Me — chart-type requirements, ranking and field placement.
 
-Ported from Tableau's ShowMe resolver (``ShowMeTypeResolver::RankValidShowMeTypes``
-and ``ChooseForMePicker``). Each chart type declares the pills it needs; the
-ranker orders the types a set of classified fields can satisfy, and the
-placement engine resolves a notional chart request into a full worksheet —
-the same engine Tableau Agent drives with ``GenerateVizFromNotionalSpec``.
+Each chart template declares the pills it needs; the ranker orders the
+templates a set of classified fields can satisfy, and the placement engine
+resolves a chart intent (from the assistant or a user's pick) into a full
+worksheet.
 """
 
 from __future__ import annotations
@@ -13,11 +12,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.modules.viz.spec import (
+    ChartIntent,
     FieldRef,
     FieldType,
     MarksCard,
     MarkType,
-    NotionalSpec,
     WorksheetSpec,
 )
 
@@ -40,7 +39,7 @@ class Requirement:
 
 
 @dataclass(frozen=True)
-class ShowMeType:
+class ChartTemplate:
     """One ShowMe tile: its id, mark, and the fields it needs."""
 
     id: str
@@ -62,17 +61,17 @@ class ShowMeType:
         return unmet
 
 
-#: The ShowMe catalog. Ordering matters: it is Tableau's preference order for
+#: The chart catalog. Ordering matters: it is the preference order for
 #: equally-valid suggestions (tables first when only dimensions exist, then
 #: heatmaps, bars, lines, ...). Types Nova cannot render yet are omitted.
-SHOWME_TYPES: tuple[ShowMeType, ...] = (
-    ShowMeType(
+SHOWME_TYPES: tuple[ChartTemplate, ...] = (
+    ChartTemplate(
         id="text_table",
         label="Text table",
         mark="text",
         requirements=(Requirement("dimension"), Requirement("measure")),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="heatmap",
         label="Highlight table",
         mark="text",
@@ -82,13 +81,13 @@ SHOWME_TYPES: tuple[ShowMeType, ...] = (
             Requirement("measure"),
         ),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="bar",
         label="Bars",
         mark="bar",
         requirements=(Requirement("dimension"), Requirement("measure")),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="bar_stacked",
         label="Stacked bars",
         mark="bar",
@@ -98,7 +97,7 @@ SHOWME_TYPES: tuple[ShowMeType, ...] = (
             Requirement("measure"),
         ),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="bar_side",
         label="Side-by-side bars",
         mark="bar",
@@ -108,31 +107,31 @@ SHOWME_TYPES: tuple[ShowMeType, ...] = (
             Requirement("measure"),
         ),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="line",
         label="Lines",
         mark="line",
         requirements=(Requirement("date"), Requirement("measure")),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="area",
         label="Area",
         mark="area",
         requirements=(Requirement("date"), Requirement("measure")),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="scatter",
         label="Scatter",
         mark="circle",
         requirements=(Requirement("measure"), Requirement("measure")),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="pie",
         label="Pie",
         mark="pie",
         requirements=(Requirement("dimension"), Requirement("measure")),
     ),
-    ShowMeType(
+    ChartTemplate(
         id="bubble",
         label="Circles",
         mark="circle",
@@ -148,9 +147,9 @@ SHOWME_BY_ID = {item.id: item for item in SHOWME_TYPES}
 
 
 def classify_fields(columns: list[str], rows: list[list[Any]]) -> list[FieldRef]:
-    """Classify result columns into Tableau-style pills.
+    """Classify result columns into field pills.
 
-    The rule mirrors Tableau's data-source pane: numbers become measures with
+    Numbers become measures with
     their default aggregation, everything else becomes dimensions; date-shaped
     text or date values become temporal dimensions. The first non-null sample
     decides; an all-null column is a dimension.
@@ -220,15 +219,15 @@ def _is_date_like(value: Any) -> bool:
 
 def rank(
     pills: list[FieldRef],
-) -> list[tuple[ShowMeType, list[Requirement]]]:
+) -> list[tuple[ChartTemplate, list[Requirement]]]:
     """Rank the chart types these pills can build, best first.
 
     Deterministic: catalog order among types with no unmet requirements;
     types with unmet requirements follow, ordered by how many pills are
     missing (the ShowMe greyed-tile behaviour).
     """
-    satisfied: list[tuple[ShowMeType, list[Requirement]]] = []
-    partial: list[tuple[int, int, ShowMeType, list[Requirement]]] = []
+    satisfied: list[tuple[ChartTemplate, list[Requirement]]] = []
+    partial: list[tuple[int, int, ChartTemplate, list[Requirement]]] = []
     for position, item in enumerate(SHOWME_TYPES):
         unmet = item.unmet(pills)
         if not unmet:
@@ -280,8 +279,7 @@ def place(
 ) -> WorksheetSpec:
     """Resolve one ShowMe pick into a worksheet (field placement).
 
-    This is the port of ``GenerateVizAction::GenerateVizWithFieldPlacement``:
-    dimensions flow to the column shelf in order, measures to the row shelf,
+    Dimensions flow to the column shelf in order, measures to the row shelf,
     and the chart type's signature encoding (stack color, pie angle, bubble
     size, heatmap color) picks up the remaining pills.
     """
@@ -325,8 +323,8 @@ def place(
         color_dims = [d for d in dims if d not in axis][:1]
         shows_color = item.id != "bar" and bool(color_dims)
         marks = MarksCard(type="bar", color=color_dims[0] if shows_color else None)
-        # Two measures share one canvas as length (Tableau's Measure
-        # Names/Values): each becomes its own series instead of one being lost.
+        # Two measures share one canvas as length: each becomes its own
+        # series instead of one being lost.
         rows = measures[:2] if len(measures) > 1 else measures[:1]
     elif item.id in {"line", "area"}:
         columns = dates[:1] or dims[:1]
@@ -396,15 +394,15 @@ def default_chart_id(pills: list[FieldRef]) -> str:
     return "text_table"
 
 
-def from_notional(
-    notional: NotionalSpec,
+def from_intent(
+    chart_intent: ChartIntent,
     columns: list[str],
     rows: list[list[Any]],
     *,
     source: Any,
     title: str = "",
 ) -> WorksheetSpec:
-    """Resolve a notional (AI) chart request through the ShowMe engine.
+    """Resolve a chart intent (from the assistant) through the Show Me engine.
 
     Named fields are honored when they exist; anything else is placed by the
     ShowMe rules for the requested chart type. ``auto`` picks the type ShowMe
@@ -412,26 +410,26 @@ def from_notional(
     """
     pills = classify_fields(columns, rows)
     by_name = {pill.field: pill for pill in pills}
-    y_fields = [notional.y] if isinstance(notional.y, str) else list(notional.y or [])
+    y_fields = [chart_intent.y] if isinstance(chart_intent.y, str) else list(chart_intent.y or [])
     named = [
         by_name[name]
-        for name in [notional.x, *y_fields, notional.color, notional.size]
+        for name in [chart_intent.x, *y_fields, chart_intent.color, chart_intent.size]
         if name and name in by_name
     ]
     chosen = named or pills
 
-    chart_id: str = notional.chart_type
+    chart_id: str = chart_intent.chart_type
     if chart_id == "auto":
         chart_id = default_chart_id(chosen if named else pills)
     spec = place(chart_id, pills, source=source, title=title)
 
     if named:
-        spec = _apply_named(spec, notional, by_name, chart_id)
-    if notional.aggregation:
+        spec = _apply_named(spec, chart_intent, by_name, chart_id)
+    if chart_intent.aggregation:
         spec = spec.model_copy(
             update={
                 "rows": [
-                    pill.model_copy(update={"aggregation": notional.aggregation})
+                    pill.model_copy(update={"aggregation": chart_intent.aggregation})
                     if pill.is_measure
                     else pill
                     for pill in spec.rows
@@ -452,16 +450,16 @@ def _as_measure(pill: FieldRef) -> FieldRef:
 
 def _apply_named(
     spec: WorksheetSpec,
-    notional: NotionalSpec,
+    chart_intent: ChartIntent,
     by_name: dict[str, FieldRef],
     chart_id: str,
 ) -> WorksheetSpec:
     """Override placed pills with the fields the request actually named."""
-    x = by_name.get(notional.x) if notional.x else None
-    y_names = [notional.y] if isinstance(notional.y, str) else list(notional.y or [])
+    x = by_name.get(chart_intent.x) if chart_intent.x else None
+    y_names = [chart_intent.y] if isinstance(chart_intent.y, str) else list(chart_intent.y or [])
     ys = [by_name[name] for name in y_names if name in by_name]
-    color = by_name.get(notional.color) if notional.color else None
-    size = by_name.get(notional.size) if notional.size else None
+    color = by_name.get(chart_intent.color) if chart_intent.color else None
+    size = by_name.get(chart_intent.size) if chart_intent.size else None
 
     columns = list(spec.columns)
     rows = list(spec.rows)

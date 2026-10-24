@@ -7,10 +7,24 @@ import {
 import type { AssistantEvent, AutomationProposal, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
 import type {
+  CalcCheckResult,
+  CalcFunction,
+  CalculatedField,
   DashboardComputeResponse,
+  FieldDomain,
+  Filter,
   ShowMeSuggestion,
   VizComputeResponse,
+  VizSource,
+  VizSourceDescription,
 } from "@/features/viz/types";
+
+/** A worksheet's source and calculations, for the authoring endpoints. */
+export type VizSourceBody = {
+  source: VizSource;
+  calculations?: CalculatedField[];
+  filters?: Filter[];
+};
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
@@ -635,6 +649,8 @@ export type StudioArtifactRefresh = {
   elapsed_ms: number;
   presmodel?: Record<string, unknown> | null;
   sql?: string | null;
+  /** A worksheet derived for a chart saved before worksheets existed. */
+  derived_viz_spec?: Record<string, unknown> | null;
 };
 
 export type StudioArtifactDraft = {
@@ -758,6 +774,14 @@ export const studioApi = {
     extra_filters?: Record<string, unknown>[];
   }) =>
     api.post<VizComputeResponse>("/agents/studio/viz/compute", body),
+  describeVizSource: (body: VizSourceBody) =>
+    api.post<VizSourceDescription>("/agents/studio/viz/describe", body),
+  checkVizCalculation: (body: VizSourceBody & { formula: string; name?: string | null }) =>
+    api.post<CalcCheckResult>("/agents/studio/viz/calc/check", body),
+  vizFunctions: () =>
+    api.get<{ functions: CalcFunction[] }>("/agents/studio/viz/calc/functions"),
+  vizFieldDomain: (body: VizSourceBody & { field: string; date_part?: string | null }) =>
+    api.post<FieldDomain>("/agents/studio/viz/field-domain", body),
   suggestViz: (body: { columns: string[]; rows: (string | number | null)[][] }) =>
     api.post<{ suggestions: ShowMeSuggestion[] }>("/agents/studio/viz/suggest", body),
   computeVizDashboard: (body: {

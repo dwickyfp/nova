@@ -1,10 +1,10 @@
 """``data_to_chart`` — build a chart from conversation data with the viz core.
 
-Business answers are usually charts. The tool is Tableau Agent's pattern in
-miniature: the model returns a small **notional spec** (chart type + the
-fields it wants), the ShowMe placement engine resolves it into a worksheet,
-and the viz core computes the presentation model from rows the turn already
-verified — no re-query, and no chart shaped by free-form JSON.
+Business answers are usually charts. The model returns a small **chart
+intent** (chart type + the fields it wants), the Show Me placement engine
+resolves it into a worksheet, and the viz core computes the presentation
+model from rows the turn already verified — no re-query, and no chart
+shaped by free-form JSON.
 
 A sanitized Vega-Lite mirror of the worksheet still ships as ``chart_spec``
 so persisted answers and older replay paths keep rendering.
@@ -36,8 +36,8 @@ from app.modules.assistant.tools import (
 )
 from app.modules.viz.compiler import to_vega_lite
 from app.modules.viz.presmodel import build as build_presmodel
-from app.modules.viz.showme import classify_fields, from_notional
-from app.modules.viz.spec import NotionalSpec, VizSourceSql, WorksheetSpec
+from app.modules.viz.showme import classify_fields, from_intent
+from app.modules.viz.spec import ChartIntent, VizSourceSql, WorksheetSpec
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +141,8 @@ class DataToChartTool:
         )
 
         pills = classify_fields(columns, rows)
-        notional = await self._model_notional(intent, columns, rows, context)
-        spec = self._resolve_spec(intent, pills, columns, rows, notional, source, title)
+        chart_intent = await self._model_intent(intent, columns, rows, context)
+        spec = self._resolve_spec(intent, pills, columns, rows, chart_intent, source, title)
 
         presmodel = build_presmodel(spec, columns, rows)
         vega = _vega_mirror(spec, presmodel, title)
@@ -191,22 +191,22 @@ class DataToChartTool:
         pills: list,
         columns: list[str],
         rows: list[list],
-        notional: NotionalSpec | None,
+        chart_intent: ChartIntent | None,
         source: VizSourceSql | None,
         title: str,
     ) -> WorksheetSpec:
-        """Resolve the worksheet: the model's notional, else ShowMe's pick."""
+        """Resolve the worksheet: the model's chart_intent, else ShowMe's pick."""
         from app.modules.viz.showme import default_chart_id
 
         source = source or VizSourceSql(sql="SELECT 1")
-        if notional is None:
-            notional = NotionalSpec(chart_type=default_chart_id(pills))  # type: ignore[arg-type]
-        return from_notional(notional, columns, rows, source=source, title=title)
+        if chart_intent is None:
+            chart_intent = ChartIntent(chart_type=default_chart_id(pills))  # type: ignore[arg-type]
+        return from_intent(chart_intent, columns, rows, source=source, title=title)
 
-    async def _model_notional(
+    async def _model_intent(
         self, intent: str, columns: list[str], rows: list[list], context: Any
-    ) -> NotionalSpec | None:
-        """Ask the model for a small notional spec (a typed, checkable answer)."""
+    ) -> ChartIntent | None:
+        """Ask the model for a small chart intent (a typed, checkable answer)."""
         sample = rows[:20]
         preview = {
             "columns": columns,
@@ -230,7 +230,7 @@ class DataToChartTool:
         if not isinstance(parsed, dict):
             return None
         try:
-            candidate = NotionalSpec.model_validate(
+            candidate = ChartIntent.model_validate(
                 {key: value for key, value in parsed.items() if key != "chart_type"}
                 | {"chart_type": str(parsed.get("chart_type") or "auto")}
             )

@@ -5,10 +5,20 @@ export type FieldType = "nominal" | "ordinal" | "quantitative" | "temporal";
 export type Aggregation =
   | "sum"
   | "avg"
+  | "median"
   | "min"
   | "max"
   | "count"
-  | "distinct_count";
+  | "distinct_count"
+  | "stdev"
+  | "stdevp"
+  | "var"
+  | "varp"
+  | "attr"
+  /** A pill over a calculated field that is already aggregated. */
+  | "agg";
+
+export type DatePart = "year" | "quarter" | "month" | "week" | "day";
 
 export type MarkType =
   | "bar"
@@ -25,17 +35,48 @@ export type FieldRef = {
   field_type: FieldType;
   aggregation?: Aggregation | null;
   discrete: boolean;
+  date_part?: DatePart | null;
 };
 
+export type RelativeDateRange =
+  | "last_n_days"
+  | "last_n_months"
+  | "last_n_years"
+  | "month_to_date"
+  | "year_to_date";
+
 export type Filter =
-  | { kind: "quantitative"; field: string; min?: number | string | null; max?: number | string | null }
-  | { kind: "categorical"; field: string; values: string[]; exclude?: boolean; null_included?: boolean | null }
+  | {
+      kind: "quantitative";
+      field: string;
+      min?: number | string | null;
+      max?: number | string | null;
+      /** Set for a measure filter on the aggregated value per mark. */
+      aggregation?: Aggregation | null;
+      context?: boolean;
+    }
+  | {
+      kind: "categorical";
+      field: string;
+      values: string[];
+      exclude?: boolean;
+      null_included?: boolean | null;
+      context?: boolean;
+    }
   | {
       kind: "relative_date";
       field: string;
-      range: "last_n_days" | "last_n_months" | "last_n_years" | "month_to_date" | "year_to_date";
+      range: RelativeDateRange;
       n: number;
+      context?: boolean;
     };
+
+export type CalculatedField = {
+  name: string;
+  formula: string;
+  /** View dimensions table calculations run along; null means the whole table. */
+  addressing?: string[] | null;
+};
 
 export type VizSource =
   | { kind: "sql"; sql: string }
@@ -62,7 +103,63 @@ export type WorksheetSpec = {
   sort?: { field: string; direction: "asc" | "desc" }[];
   limit?: number | null;
   table_calcs?: { kind: string; field: string }[];
+  calculations?: CalculatedField[];
   field_types?: Record<string, FieldType>;
+};
+
+export type CalcDataType =
+  | "number"
+  | "string"
+  | "date"
+  | "datetime"
+  | "boolean"
+  | "null"
+  | "unknown";
+
+export type CalcLevel = "row" | "aggregate" | "table";
+
+/** One entry of the authoring data pane. */
+export type DataPaneField = {
+  name: string;
+  kind: "column" | "calculation";
+  data_type: CalcDataType;
+  role: "dimension" | "measure";
+  level: CalcLevel;
+  formula?: string;
+  addressing?: string[] | null;
+};
+
+export type CalcCheckResult =
+  | {
+      valid: true;
+      data_type: CalcDataType;
+      level: CalcLevel;
+      role: "dimension" | "measure";
+      references: string[];
+    }
+  | { valid: false; error: { message: string; start: number; end: number } };
+
+export type CalcFunction = {
+  name: string;
+  kind: "row" | "aggregate" | "table" | "lod";
+  category: string;
+  syntax: string;
+  description: string;
+};
+
+export type FieldDomain = {
+  field: string;
+  field_type: FieldType;
+  values: (string | number | null)[];
+  truncated: boolean;
+  min?: number | string | null;
+  max?: number | string | null;
+};
+
+export type VizSourceDescription = {
+  fields: DataPaneField[];
+  sample_columns: string[];
+  sample_rows: (string | number | null)[][];
 };
 
 export type ZoneRect = { x: number; y: number; w: number; h: number };
@@ -100,6 +197,7 @@ export type PresModelColumn = {
   aggregation?: Aggregation | null;
   discrete: boolean;
   label: string;
+  date_part?: DatePart | null;
 };
 
 export type PresModel = {
@@ -135,6 +233,8 @@ export type VizComputeResponse = {
   rows: (string | number | null)[][];
   row_count: number;
   elapsed_ms: number;
+  fields?: DataPaneField[];
+  spec?: WorksheetSpec | null;
 };
 
 export type DashboardZoneResult = {

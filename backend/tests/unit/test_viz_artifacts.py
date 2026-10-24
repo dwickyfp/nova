@@ -334,3 +334,139 @@ async def test_dashboard_build_requires_provenance_sql(monkeypatch) -> None:
     )
     assert not outcome.ok
     assert "cannot be saved" in outcome.error
+
+
+@pytest.mark.asyncio
+async def test_pre_worksheet_chart_refresh_derives_an_editable_worksheet(monkeypatch) -> None:
+    artifact = {
+        "artifact_id": "legacy-1",
+        "owner_name": "nova_admin",
+        "agent_id": None,
+        "thread_id": None,
+        "title": "Revenue by channel",
+        "artifact_type": "chart",
+        "sql_text": "SELECT channel, revenue FROM sales.summary",
+        "database_name": None,
+        "schema_name": None,
+        "chart_spec": {
+            "mark": "line",
+            "encoding": {
+                "x": {"field": "channel", "type": "nominal"},
+                "y": {"field": "revenue", "type": "quantitative"},
+            },
+        },
+        "viz_spec": None,
+        "created_at": "2026-09-23 08:00:00",
+        "updated_at": "2026-09-23 08:00:00",
+    }
+    monkeypatch.setattr(
+        "app.modules.agents.studio_router.artifact_repository.get",
+        AsyncMock(return_value=artifact),
+    )
+    result = SimpleNamespace(
+        success=True,
+        error=None,
+        columns=["channel", "revenue"],
+        rows=[["Online", 1_500_000_000], ["Retail", 900_000_000]],
+        row_count=2,
+        elapsed_ms=4.0,
+    )
+    monkeypatch.setattr(
+        "app.modules.agents.studio_router.query_service.execute_statements",
+        AsyncMock(return_value=[result]),
+    )
+
+    response = await refresh_artifact("legacy-1", user=OWNER)
+
+    derived = WorksheetSpec.model_validate(response.derived_viz_spec)
+    assert derived.source.sql == artifact["sql_text"]
+    assert derived.marks.type == "line"
+    assert [pill.field for pill in derived.columns] == ["channel"]
+    assert [pill.label for pill in derived.rows] == ["sum(revenue)"]
+    assert response.presmodel is not None
+    assert response.presmodel["row_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_an_empty_query_result_stays_a_plain_result(monkeypatch) -> None:
+    artifact = {
+        "artifact_id": "table-1",
+        "owner_name": "nova_admin",
+        "agent_id": None,
+        "thread_id": None,
+        "title": "Orders",
+        "artifact_type": "chart",
+        "sql_text": "SELECT region, amount FROM sales.orders",
+        "database_name": None,
+        "schema_name": None,
+        "chart_spec": None,
+        "viz_spec": None,
+        "created_at": "2026-10-24 08:00:00",
+        "updated_at": "2026-10-24 08:00:00",
+    }
+    monkeypatch.setattr(
+        "app.modules.agents.studio_router.artifact_repository.get",
+        AsyncMock(return_value=artifact),
+    )
+    result = SimpleNamespace(
+        success=True, error=None, columns=[], rows=[], row_count=0, elapsed_ms=1.0
+    )
+    monkeypatch.setattr(
+        "app.modules.agents.studio_router.query_service.execute_statements",
+        AsyncMock(return_value=[result]),
+    )
+    response = await refresh_artifact("table-1", user=OWNER)
+    # No columns: nothing to place, so the artifact stays a plain result.
+    assert response.derived_viz_spec is None
+    assert response.presmodel is None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_zone_over_a_pre_worksheet_chart_still_computes(monkeypatch) -> None:
+    legacy = {
+        "artifact_id": "chart-1",
+        "artifact_type": "chart",
+        "title": "Revenue",
+        "sql_text": "SELECT region, revenue FROM sales.summary",
+        "chart_spec": {
+            "mark": "bar",
+            "encoding": {"x": {"field": "region"}, "y": {"field": "revenue"}},
+        },
+        "viz_spec": None,
+        "database_name": None,
+        "schema_name": None,
+    }
+    monkeypatch.setattr(
+        "app.modules.viz.service.artifact_repository.list", AsyncMock(return_value=[legacy])
+    )
+    executed: list[str] = []
+
+    async def execute(sql, user, *, max_rows=500):
+        executed.append(sql)
+        return SimpleNamespace(
+            success=True,
+            error=None,
+            columns=["region", "sum(revenue)"] if "GROUP BY" in sql else ["region", "revenue"],
+            rows=[["East", 10.0]],
+            row_count=1,
+            elapsed_ms=1.0,
+        )
+
+    monkeypatch.setattr(viz_service, "_execute", execute)
+    spec = DashboardSpec.model_validate(
+        {
+            "zones": [
+                {
+                    "zone_id": "z1",
+                    "kind": "sheet",
+                    "artifact_id": "chart-1",
+                    "rect": {"x": 0, "y": 0, "w": 24, "h": 2},
+                }
+            ]
+        }
+    )
+    result = await viz_service.compute_dashboard(spec, OWNER)
+    zone = result["zones"][0]
+    assert "error" not in zone
+    assert zone["presmodel"]["rows"] == [["East", 10.0]]
+    assert executed[0] == legacy["sql_text"]

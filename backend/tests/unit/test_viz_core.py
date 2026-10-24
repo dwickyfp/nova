@@ -1,6 +1,6 @@
 """The viz core: worksheet specs, SQL compilation, ShowMe, presentation model.
 
-Adapted from Tableau's document/query/presentation split, these are the pure
+Split into document, query and presentation layers, these are the pure
 contracts everything else (tools, routes, the editor) is built on.
 """
 
@@ -19,17 +19,17 @@ from app.modules.viz.showme import (
     SHOWME_BY_ID,
     classify_fields,
     default_chart_id,
-    from_notional,
+    from_intent,
     rank,
     suggest,
 )
 from app.modules.viz.spec import (
     CategoricalFilter,
+    ChartIntent,
     DashboardAction,
     DashboardSpec,
     FieldRef,
     MarksCard,
-    NotionalSpec,
     QuantitativeFilter,
     RelativeDateFilter,
     TableCalc,
@@ -182,7 +182,9 @@ def test_compile_rejects_a_multi_statement_source() -> None:
 def test_compile_table_calcs_become_window_functions() -> None:
     spec = worksheet(table_calcs=[TableCalc(kind="percent_of_total", field="revenue")])
     sql = compile_worksheet(spec, known_columns=COLUMNS).sql
-    assert "SUM(`sum(revenue)`) OVER ()" in sql
+    # The aggregate is hoisted, then the quick calc runs over the whole table.
+    assert "SUM(`revenue`) AS `__nova_a0`" in sql
+    assert "SUM(`__nova_a0`) OVER ()" in sql
     assert "AS `percent_of_total(sum(revenue))`" in sql
 
 
@@ -262,9 +264,9 @@ def test_default_chart_id_matches_the_data_shape() -> None:
     assert default_chart_id(classify_fields(["region"], [["W"]])) == "text_table"
 
 
-def test_from_notional_named_fields_override_showme_placement() -> None:
-    spec = from_notional(
-        NotionalSpec(chart_type="line", x="month", y="revenue"),
+def test_from_intent_named_fields_override_showme_placement() -> None:
+    spec = from_intent(
+        ChartIntent(chart_type="line", x="month", y="revenue"),
         COLUMNS,
         ROWS,
         source=SOURCE,
@@ -275,18 +277,18 @@ def test_from_notional_named_fields_override_showme_placement() -> None:
     assert [pill.label for pill in spec.rows] == ["sum(revenue)"]
 
 
-def test_from_notional_auto_resolves_and_aggregation_applies() -> None:
-    spec = from_notional(NotionalSpec(aggregation="avg"), COLUMNS, ROWS, source=SOURCE)
+def test_from_intent_auto_resolves_and_aggregation_applies() -> None:
+    spec = from_intent(ChartIntent(aggregation="avg"), COLUMNS, ROWS, source=SOURCE)
     assert spec.marks.type == "line"
     assert spec.rows[0].aggregation == "avg"
-    pie = from_notional(NotionalSpec(chart_type="pie"), COLUMNS, ROWS, source=SOURCE)
+    pie = from_intent(ChartIntent(chart_type="pie"), COLUMNS, ROWS, source=SOURCE)
     assert pie.marks.type == "pie"
     assert pie.marks.angle is not None and pie.marks.angle.is_measure
     assert pie.marks.color is not None and pie.marks.color.field == "region"
 
 
-def test_from_notional_rejects_unknown_named_fields_by_ignoring_them() -> None:
-    spec = from_notional(NotionalSpec(chart_type="bar", x="ghost"), COLUMNS, ROWS, source=SOURCE)
+def test_from_intent_rejects_unknown_named_fields_by_ignoring_them() -> None:
+    spec = from_intent(ChartIntent(chart_type="bar", x="ghost"), COLUMNS, ROWS, source=SOURCE)
     # "ghost" is not a column; ShowMe places from the real pills instead.
     assert "ghost" not in {pill.field for pill in spec.all_fields()}
 
@@ -305,7 +307,7 @@ def test_showme_catalog_types_are_placeable() -> None:
         "bubble",
         "heatmap",
     ):
-        spec = from_notional(NotionalSpec(chart_type=chart_id), COLUMNS, ROWS, source=SOURCE)  # type: ignore[arg-type]
+        spec = from_intent(ChartIntent(chart_type=chart_id), COLUMNS, ROWS, source=SOURCE)  # type: ignore[arg-type]
         assert spec.columns or spec.rows
 
 

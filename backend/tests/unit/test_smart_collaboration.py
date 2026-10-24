@@ -843,20 +843,20 @@ async def test_smart_can_fetch_data_after_a_chart_request_found_none():
 
 
 def test_a_smart_chart_of_two_measures_draws_both():
-    from app.modules.viz.showme import from_notional
-    from app.modules.viz.spec import NotionalSpec, VizSourceSql
+    from app.modules.viz.showme import from_intent
+    from app.modules.viz.spec import ChartIntent, VizSourceSql
 
     columns = ["department", "total_expense", "active_headcount"]
     rows = [["Sales", "12404000000.00", 23], ["Finance", "11553000000.00", 22]]
-    spec = from_notional(
-        NotionalSpec(),
+    spec = from_intent(
+        ChartIntent(),
         columns,
         rows,
         source=VizSourceSql(sql="SELECT * FROM finance"),
         title="Expense and headcount",
     )
 
-    # Both measures share the canvas (Tableau's Measure Names/Values): a chart
+    # Both measures share the canvas: a chart
     # that drops either one leaves out half of what was asked for.
     drawn = {pill.field for pill in spec.all_fields() if pill.is_measure}
     assert {"total_expense", "active_headcount"} <= drawn

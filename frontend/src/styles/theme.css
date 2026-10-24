@@ -73,7 +73,7 @@
   --chart-tone-5: #c4daf8;
   --chart-tone-6: #deedfb;
 
-  /* Viz shelf pills, Tableau's field convention: discrete pills make headers,
+  /* Viz shelf pills, discrete pills make headers,
      continuous pills make axes. Data-semantic colors, not decoration. */
   --pill-discrete: var(--chart-4);
   --pill-discrete-foreground: #ffffff;

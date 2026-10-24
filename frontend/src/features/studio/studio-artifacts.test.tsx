@@ -92,12 +92,16 @@ describe("Studio artifacts", () => {
     await expect
       .element(screen.getByText("Revenue by region"))
       .toBeInTheDocument();
-    await expect.element(screen.getByText("West")).toBeInTheDocument();
+    // The explorer card refreshes the sheet for its thumbnail.
+    await expect
+      .element(screen.getByRole("button", { name: "Open Revenue by region" }))
+      .toBeInTheDocument();
 
     await userEvent.click(screen.getByText("Revenue by region"));
     await expect
       .element(screen.getByRole("tab", { name: "Table" }))
       .toBeInTheDocument();
+    await expect.element(screen.getByText("West").first()).toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "SQL" }));
     await expect
       .element(

@@ -22,14 +22,14 @@ import { cn } from "@/lib/utils";
 import type { PresModel } from "./types";
 
 /**
- * VizView draws a presentation model the viz core computed: Tableau's marks
+ * VizView draws a presentation model the viz core computed: marks
  * (bar, line, area, circle, pie, text) with their encodings, on Nova tokens.
  * It never fetches and never parses SQL; it renders what the core decided.
  */
 
 const seriesColor = (index: number) => `var(--chart-${(index % 8) + 1})`;
 
-/** Tableau's abbreviated number format: 1.2K, 3.4M, 5B. */
+/** Abbreviated number format: 1.2K, 3.4M, 5B. */
 export function formatMeasure(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "–";
   const numeric = typeof value === "number" ? value : Number(value);
@@ -43,8 +43,11 @@ export function formatMeasure(value: number | string | null | undefined): string
 }
 
 function trim(value: number): string {
-  const rounded = Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1);
-  return rounded.replace(/\.0$/, "");
+  const abs = Math.abs(value);
+  // Ratios and shares need two decimals to stay distinct (0.15 vs 0.1).
+  const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  const rounded = value.toFixed(digits);
+  return digits ? rounded.replace(/\.?0+$/, "") : rounded;
 }
 
 type CellValue = string | number | null;
@@ -56,12 +59,15 @@ function toDisplay(row: (string | number | null)[], index: number): CellValue {
 export function VizView({
   presmodel,
   compact = false,
+  thumbnail = false,
   className,
   onMarkClick,
   selectedMark,
 }: {
   presmodel: PresModel;
   compact?: boolean;
+  /** Fill the parent with marks only (no axes): library thumbnails. */
+  thumbnail?: boolean;
   className?: string;
   onMarkClick?: (dimensionValues: Record<string, CellValue>) => void;
   selectedMark?: Record<string, CellValue> | null;
@@ -74,21 +80,48 @@ export function VizView({
       </p>
     );
   }
+  // Several measures on an axis mark get one pane each, sharing the
+  // dimension axis, so measures on different scales stay readable.
+  const panes =
+    PANED_MARKS.has(presmodel.mark) && geometry.dimensions.length > 0 && geometry.series.length > 1
+      ? geometry.series.map((series) => ({ ...geometry, series: [series] }))
+      : [geometry];
   return (
     <section
-      className={cn("min-w-0", className)}
+      className={cn("min-w-0", thumbnail && "flex h-full flex-col gap-1", className)}
       aria-label={presmodel.title || "Chart"}
     >
-      <Marks
-        presmodel={presmodel}
-        geometry={geometry}
-        compact={compact}
-        onMarkClick={onMarkClick}
-        selectedMark={selectedMark ?? null}
-      />
+      {panes.map((pane) => (
+        <div
+          key={pane.series.map((series) => series.name).join("|")}
+          className={cn("min-w-0", thumbnail && "min-h-0 flex-1")}
+        >
+          {panes.length > 1 && !thumbnail ? (
+            <p className="px-1 text-xs font-medium text-muted-foreground">{measureCaption(pane.series[0].name)}</p>
+          ) : null}
+          <Marks
+            presmodel={presmodel}
+            geometry={pane}
+            compact={compact || panes.length > 2}
+            thumbnail={thumbnail}
+            onMarkClick={onMarkClick}
+            selectedMark={selectedMark ?? null}
+          />
+        </div>
+      ))}
     </section>
   );
 }
+
+/** "sum(sales)" reads as "SUM(sales)", as on the shelf. */
+function measureCaption(label: string): string {
+  const match = /^([a-z_]+)\((.*)\)$/.exec(label);
+  if (!match) return label;
+  const prefix: Record<string, string> = { distinct_count: "CNTD", count: "CNT", avg: "AVG" };
+  return `${prefix[match[1]] ?? match[1].toUpperCase()}(${match[2]})`;
+}
+
+const PANED_MARKS: ReadonlySet<string> = new Set(["bar", "line", "area", "tick", "square"]);
 
 type Geometry = {
   xField: string;
@@ -103,6 +136,8 @@ type Geometry = {
   measures: { name: string; index: number }[];
 };
 
+const COMPOSITE_AXIS = "__axis";
+
 function buildGeometry(presmodel: PresModel): Geometry {
   const dimensions = presmodel.columns
     .map((column, index) => ({ name: column.name, index }))
@@ -116,11 +151,17 @@ function buildGeometry(presmodel: PresModel): Geometry {
   const colorIsDimension = dimensions.some(
     (dimension) => dimension.name === colorField,
   );
-  const axisDimension =
-    dimensions.find((dimension) => dimension.name !== colorField) ?? dimensions[0];
+  const axisDimensions = dimensions.filter((dimension) => dimension.name !== colorField);
+  const axisDimension = axisDimensions[0] ?? dimensions[0];
+  // Several dimensions on the axis read as nested headers: "East · NY".
+  const composite = axisDimensions.length > 1;
 
   const series = measures.map((measure) => ({ name: measure.name, index: measure.index }));
-  const xField = axisDimension ? axisDimension.name : measures[0]?.name ?? "value";
+  const xField = composite
+    ? COMPOSITE_AXIS
+    : axisDimension
+      ? axisDimension.name
+      : measures[0]?.name ?? "value";
   const xType =
     axisDimension || presmodel.axes.x?.discrete !== false ? "category" : "number";
 
@@ -128,6 +169,14 @@ function buildGeometry(presmodel: PresModel): Geometry {
     const entry: Record<string, unknown> = {};
     for (const dimension of dimensions) {
       entry[dimension.name] = toDisplay(row, dimension.index);
+    }
+    if (composite) {
+      entry[COMPOSITE_AXIS] = axisDimensions
+        .map((dimension) => {
+          const value = toDisplay(row, dimension.index);
+          return value === null ? "Null" : String(value);
+        })
+        .join(" · ");
     }
     for (const measure of measures) {
       entry[measure.name] = numericOr(toDisplay(row, measure.index));
@@ -168,18 +217,21 @@ function Marks({
   presmodel,
   geometry,
   compact,
+  thumbnail = false,
   onMarkClick,
   selectedMark,
 }: {
   presmodel: PresModel;
   geometry: Geometry;
   compact: boolean;
+  thumbnail?: boolean;
   onMarkClick?: (values: Record<string, CellValue>) => void;
   selectedMark: Record<string, CellValue> | null;
 }) {
   const mark = presmodel.mark;
-  const height = compact ? "h-40" : "h-64";
+  const height = thumbnail ? "h-full" : compact ? "h-40" : "h-64";
   const axisProps = {
+    hide: thumbnail,
     stroke: "var(--muted-foreground)",
     tick: { fontSize: 12, fill: "var(--muted-foreground)" },
     tickFormatter: (value: string | number) =>
@@ -255,7 +307,7 @@ function Marks({
       <div className={cn(height, "min-w-0")}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-            <CartesianGrid stroke="var(--border)" />
+            {thumbnail ? null : <CartesianGrid stroke="var(--border)" />}
             <XAxis
               dataKey="x"
               type="number"
@@ -293,7 +345,7 @@ function Marks({
       <div className={cn(height, "min-w-0")}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart {...shared}>
-            <CartesianGrid stroke="var(--border)" />
+            {thumbnail ? null : <CartesianGrid stroke="var(--border)" />}
             {xAxis}
             {yAxis}
             {tooltip}
@@ -304,7 +356,7 @@ function Marks({
                 name={series.name}
                 stroke={colorForIndex(geometry, index)}
                 strokeWidth={2.5}
-                dot={{ r: 3, fill: colorForIndex(geometry, index), strokeWidth: 0 }}
+                dot={thumbnail ? false : { r: 3, fill: colorForIndex(geometry, index), strokeWidth: 0 }}
                 isAnimationActive={false}
               />
             ))}
@@ -319,7 +371,7 @@ function Marks({
       <div className={cn(height, "min-w-0")}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart {...shared}>
-            <CartesianGrid stroke="var(--border)" />
+            {thumbnail ? null : <CartesianGrid stroke="var(--border)" />}
             {xAxis}
             {yAxis}
             {tooltip}
@@ -346,7 +398,9 @@ function Marks({
     <div className={cn(height, "min-w-0")}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart {...shared}>
-          <CartesianGrid stroke="var(--border)" vertical={mark !== "tick"} horizontal={mark === "tick"} />
+          {thumbnail ? null : (
+            <CartesianGrid stroke="var(--border)" vertical={mark !== "tick"} horizontal={mark === "tick"} />
+          )}
           {xAxis}
           {yAxis}
           {tooltip}
@@ -384,7 +438,7 @@ function Marks({
 }
 
 /** The text mark: a crosstab, shaded like a highlight table when a color
- * measure is present (Tableau's heat map). */
+ * measure is present (a heat map). */
 function TextTable({
   presmodel,
   geometry,

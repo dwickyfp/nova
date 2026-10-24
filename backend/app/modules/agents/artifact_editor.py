@@ -169,17 +169,17 @@ def _viz_spec_from_proposal(
     sql: str,
 ) -> dict[str, Any]:
     """Build a worksheet for an edited chart through the ShowMe engine."""
-    from app.modules.viz.showme import from_notional
-    from app.modules.viz.spec import NotionalSpec, VizSourceSql
+    from app.modules.viz.showme import from_intent
+    from app.modules.viz.spec import ChartIntent, VizSourceSql
 
     chart_type = {"bar": "bar", "line": "line"}.get(view, "text_table")
-    notional = NotionalSpec(
+    chart_intent = ChartIntent(
         chart_type=chart_type,  # type: ignore[arg-type]
         x=x_column,
         y=y_column,
     )
-    spec = from_notional(
-        notional,
+    spec = from_intent(
+        chart_intent,
         columns,
         rows,
         source=VizSourceSql(sql=sql),

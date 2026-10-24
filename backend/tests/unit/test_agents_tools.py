@@ -29,7 +29,7 @@ from app.modules.agents.registry import build_registry
 from app.modules.agents.tools.data_to_chart import DataToChartTool, sanitize_chart_spec
 from app.modules.assistant import events
 from app.modules.assistant.tools import ToolInvocation
-from app.modules.viz.spec import NotionalSpec
+from app.modules.viz.spec import ChartIntent
 
 
 def test_registry_is_a_structural_tool_selection() -> None:
@@ -117,8 +117,8 @@ def test_sanitize_chart_spec_rejects_missing_data() -> None:
 @pytest.mark.asyncio
 async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
     tool = DataToChartTool()
-    tool._model_notional = AsyncMock(
-        return_value=NotionalSpec(chart_type="scatter", x="x", y="y")
+    tool._model_intent = AsyncMock(
+        return_value=ChartIntent(chart_type="scatter", x="x", y="y")
     )
     context = SimpleNamespace(
         last_result={
@@ -140,20 +140,20 @@ async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("notional", "expected_mark"),
+    ("chart_intent", "expected_mark"),
     [
-        (NotionalSpec(chart_type="bar", x="invented"), "bar"),
-        # The real tool rejects this notional before it reaches the engine; the
+        (ChartIntent(chart_type="bar", x="invented"), "bar"),
+        # The real tool rejects this chart_intent before it reaches the engine; the
         # engine itself still places a chart from the pills that do exist.
-        (NotionalSpec(chart_type="pie", x="region", y="ghost"), "arc"),
+        (ChartIntent(chart_type="pie", x="region", y="ghost"), "arc"),
     ],
 )
 async def test_chart_falls_back_when_the_model_names_unknown_fields(
-    notional: NotionalSpec,
+    chart_intent: ChartIntent,
     expected_mark: str,
 ) -> None:
     tool = DataToChartTool()
-    tool._model_notional = AsyncMock(return_value=notional)
+    tool._model_intent = AsyncMock(return_value=chart_intent)
     context = SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]]})
 
     outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
@@ -167,7 +167,7 @@ async def test_chart_falls_back_when_the_model_names_unknown_fields(
 
 
 @pytest.mark.asyncio
-async def test_model_notional_naming_unknown_fields_is_discarded() -> None:
+async def test_model_intent_naming_unknown_fields_is_discarded() -> None:
     tool = DataToChartTool()
     tool._provider = SimpleNamespace(
         resolve=AsyncMock(return_value=object()),
@@ -176,11 +176,11 @@ async def test_model_notional_naming_unknown_fields_is_discarded() -> None:
         ),
     )
 
-    notional = await tool._model_notional(
+    chart_intent = await tool._model_intent(
         "sales by region", ["region", "sales"], [["West", 12]], SimpleNamespace()
     )
 
-    assert notional is None
+    assert chart_intent is None
 
 
 def test_chart_dimensions_are_bounded() -> None:

@@ -9,14 +9,14 @@ from app.modules.agents.tools.data_to_chart import DataToChartTool
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
-from app.modules.viz.spec import NotionalSpec
+from app.modules.viz.spec import ChartIntent
 from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
 
 
 async def test_chart_turn_keeps_all_verified_rows_and_finishes() -> None:
     chart_tool = DataToChartTool()
-    chart_tool._model_notional = AsyncMock(
-        return_value=NotionalSpec(chart_type="scatter", x="x", y="y")
+    chart_tool._model_intent = AsyncMock(
+        return_value=ChartIntent(chart_type="scatter", x="x", y="y")
     )
     registry = ToolRegistry()
     registry.register(chart_tool)
