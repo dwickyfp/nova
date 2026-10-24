@@ -149,8 +149,6 @@ a pill over an aggregate or table calculation.
 2. Legacy `table` artifacts become `chart` (no viz spec: they render as grids).
 3. Legacy `CONFIG_STUDIO_DASHBOARDS` rows become dashboard artifacts with
    deterministic ids (idempotent); the legacy table is never written again.
-   Smart Reports keep their own history; the boot-time
-   dashboards-into-reports migration is retired.
 
 New worksheet fields (`calculations`, `date_part`, filter `context` and
 `aggregation`) are optional, so saved worksheets keep validating unchanged.

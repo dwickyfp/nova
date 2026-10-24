@@ -12,8 +12,6 @@ import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
-import { ReportsLibrary } from "@/features/smart-reports/library";
-import { Outlet, useRouterState } from "@tanstack/react-router";
 import { StudioShared } from "./studio-shared";
 import { StudioIntelligence } from "./studio-intelligence";
 import { NewspaperPage } from "./news/newspaper-page";
@@ -95,8 +93,7 @@ function StudioAppContent() {
   const agentId = requestedAgentId && (
     requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
   ) ? requestedAgentId : (agents.find((item) => item.agent_id === AUTO_AGENT_ID)?.agent_id ?? agents[0]?.agent_id ?? null);
-  const reportRoute = useRouterState({ select: state => state.location.pathname.startsWith("/studio/reports") });
-  const view: StudioView = reportRoute ? "reports" : search.view ?? "chat";
+  const view: StudioView = search.view ?? "chat";
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
   // its thinking) look like it had vanished.
@@ -298,10 +295,6 @@ function StudioAppContent() {
             try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
 
             setMobileSidebarOpen(false);
-            if (nextView === "reports") {
-              await navigate({ to: "/studio/reports" });
-              return;
-            }
             navigate({
               to: "/studio",
               search: {
@@ -363,7 +356,7 @@ function StudioAppContent() {
             </Button>
           </div>
         ) : null}
-        {reportRoute ? <Outlet /> : view === "chat" ? (
+        {view === "chat" ? (
           <StudioChat
             agent={agent}
             agents={agents}
@@ -418,8 +411,6 @@ function StudioAppContent() {
             }} />
         ) : view === "artifacts" || view === "dashboards" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />
-        ) : view === "reports" ? (
-          <ReportsLibrary />
         ) : view === "shared" ? (
           <StudioShared />
         ) : (

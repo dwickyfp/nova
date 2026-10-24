@@ -198,8 +198,11 @@ def _auto_agent(owner_name: str) -> dict:
 #: The v1 tool surface an agent may bundle. A name outside this set is rejected
 #: before storage so a typo cannot silently grant nothing. Mirrors
 #: ``agents.registry.KNOWN_TOOLS``; the two lists change together.
+#: Retired tools are dropped from a saved selection instead of rejected, so an
+#: agent created before a tool was removed can still be saved.
+RETIRED_TOOLS = frozenset({"smart_report"})
+
 KNOWN_TOOLS = {
-    "smart_report",
     "load_skill",
     "query_execute",
     "semantic_query",
@@ -519,7 +522,7 @@ def _smart_final_frames(payload: dict, message_id: str) -> list[tuple[str, dict]
             ordered_text = True
             frames.append(("text_delta", {**identity, "text": artifact.get("text", "")}))
             frames.append(("content_block_done", identity))
-        elif kind in {"table", "chart", "automation_proposal", "smart_report"}:
+        elif kind in {"table", "chart", "automation_proposal"}:
             frames.append((kind, {key: value for key, value in artifact.items() if key != "kind"}))
     if not ordered_text:
         frames.append(("text_delta", {"text": str(payload.get("answer") or "")}))
@@ -718,6 +721,9 @@ async def create_agent(
     # Keep accepting legacy clients that send a mode, but never persist a
     # user-selected strategy. Provider capabilities and turn risk decide it.
     fields["harness_mode"] = "auto"
+    fields["default_tools"] = [
+        tool for tool in fields.get("default_tools") or [] if tool not in RETIRED_TOOLS
+    ]
     unknown = _unknown_tools(fields.get("default_tools") or [])
     if unknown:
         raise HTTPException(
@@ -1592,6 +1598,9 @@ async def update_agent(
     await validate_resources(fields, user)
     await _normalize_view_binding(fields, provided=body.model_fields_set, user=user)
     fields["harness_mode"] = "auto"
+    fields["default_tools"] = [
+        tool for tool in fields.get("default_tools") or [] if tool not in RETIRED_TOOLS
+    ]
     unknown = _unknown_tools(fields.get("default_tools") or [])
     if unknown:
         raise HTTPException(
@@ -2592,23 +2601,6 @@ async def send_agent_message(
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
     ui_trace = []
-    from app.modules.smart_reports.context import bound, reference
-    from app.modules.smart_reports.schemas import Origin
-    from app.modules.smart_reports.service import report_service
-    report_ref = body.report_context
-    if report_ref is None:
-        report_state = await bound(user, Origin(agent_id=agent_id, thread_id=thread_id))
-        if report_state:
-            report_ref = reference(report_state)
-    if report_ref:
-        _spec, report_state = await report_service.view(
-            report_ref.report_id, report_ref.view_session_id, user
-        )
-        if not report_state.origin or report_state.origin.thread_id != thread_id:
-            raise HTTPException(403, "Report context belongs to another conversation")
-        if report_state.state_revision != report_ref.state_revision:
-            raise HTTPException(409, "Report state changed; refresh the selection")
-        ui_trace.append({"kind": "report_context", **report_ref.model_dump()})
     if body.ui_action is not None:
         from app.core.redis import session_store
         from app.modules.assistant.intelligent_ui import UiValidationError, action_context
@@ -2703,7 +2695,6 @@ async def send_agent_message(
                 model=body.model,
                 user_message_id=user_message["message_id"],
                 ui_action_accepted=body.ui_action is not None,
-                report_context=report_ref.model_dump() if report_ref else None,
                 work_intent=body.work_intent,
                 new_mission=body.new_mission,
                 continue_mission_id=getattr(body, "continue_mission_id", None),
@@ -2860,10 +2851,9 @@ async def send_agent_message(
 
     context = LoopContext(
         user_name=user_name,
-        report_context_ref=report_ref.model_dump() if report_ref else None,
         intelligent_ui=agent_id != SKILL_AUTHOR_ID,
         ui_action_accepted=body.ui_action is not None,
-        ui_private_context=bool(body.ui_action or report_ref) or any(
+        ui_private_context=bool(body.ui_action) or any(
             step.get("kind") == "ui_action" for row in history for step in row.get("steps") or []
         ),
         execution_timezone=configured_timezone(),

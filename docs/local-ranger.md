@@ -64,33 +64,18 @@ and [SessionMgr](https://github.com/apache/ranger/blob/release-ranger-2.9.0/secu
 ## Verification
 
 After Admin and the policy proxy are healthy, verify authenticated service/role
-reads, then run the report acceptance from `backend/`:
+reads, then run the governed Studio acceptance from `backend/`:
 
 ```sh
 uv run --env-file .env.ranger.local pytest \
-  tests/integration/test_smart_report_ranger.py -v --tb=short
+  tests/integration/test_governed_studio_ranger.py -v --tb=short
 ```
 
 The fixture creates uniquely named test users, roles, policies and data, then
 cleans them up. A healthy HTTP root page alone does not establish authentication;
-the Docker health check now requests the authenticated service endpoint.
-Record actual test results in `TEST_MATRIX.md`; configuration repair by itself
-does not complete the Smart Reports P0–P2 acceptance gates.
+the Docker health check requests the authenticated service endpoint.
 
 Verified on 2026-10-23: authenticated service and role reads returned HTTP 200,
-Admin and policy proxy are healthy, and all six other containers kept their IDs.
-All four local environment/override files above are Git-ignored with mode `600`.
-The initial two report acceptance tests passed after correcting duplicate filter options in the
-semantic compiler. The check uses real users with the same role and different
-row policies, then verifies handoff binding, revocation, role switching and the
-editor/review/publish boundary. All five governed Studio regressions also passed.
-The action test's global reviewer policy was restored, and its fixture now restores
-that setting on exit; the affected test passed again after the cleanup correction.
-
-Post-upstream verification also confirms that the admin secret in all three local
-environment files matches and differs from the database secret; both authenticated
-endpoints still return HTTP 200. Seeded fixtures now establish explicit default
-roles and Ranger projections/policies through the current owners. The final seeded
-suite passed 225 tests; patched-FE acceptance separately passed five report cases
-and five governed Studio regressions. See [TEST_MATRIX.md](TEST_MATRIX.md) for the
-separate optional skips, real browser and export-capacity checks.
+Admin and policy proxy were healthy, and all four local environment/override
+files above are Git-ignored with mode `600`. The admin secret in all three local
+environment files matches and differs from the database secret.

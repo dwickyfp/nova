@@ -223,9 +223,6 @@ async def _bootstrap_control_plane() -> None:
         await harness_repository.ensure_schema()
         await agent_repository.migrate_legacy_skill_authors()
         await artifact_repository.ensure_schema()
-        from app.modules.smart_reports.repository import report_repository
-
-        await report_repository.ensure_schema()
         from app.modules.viz.migration import migrate_viz
 
         await migrate_viz()
@@ -504,7 +501,6 @@ def create_app() -> FastAPI:
     from app.modules.agents.quality_router import router as quality_router
     from app.modules.assistant.analysis_workspace import router as analysis_workspace_router
     from app.modules.intelligence.action_router import router as action_router
-    from app.modules.smart_reports.router import router as smart_reports_router
 
     app.include_router(mission_router, prefix=f"{prefix}/agents", tags=["studio-missions"])
     app.include_router(
@@ -515,7 +511,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(quality_router, prefix=f"{prefix}/agents", tags=["agent-quality"])
-    app.include_router(smart_reports_router, prefix=f"{prefix}/agents", tags=["smart-reports"])
     app.include_router(studio_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(agents_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(knowledge_router, prefix=f"{prefix}/agents", tags=["agent-knowledge"])

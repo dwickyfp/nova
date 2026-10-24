@@ -79,6 +79,7 @@ ArtifactType = Literal["chart", "dashboard"]
 
 
 class ArtifactCreateRequest(BaseModel):
+    #: A Semantic View result's proof; the server uses the statement it recorded.
     semantic_provenance_ref: str | None = Field(default=None, max_length=64)
     title: str = Field(min_length=1, max_length=256)
     artifact_type: ArtifactType

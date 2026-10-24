@@ -417,7 +417,6 @@ async def create_artifact(
     body: ArtifactCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    from app.modules.smart_reports.artifacts import persist_provenance, read_provenance
     from app.modules.viz.service import VizError, viz_service
 
     if body.artifact_type == "dashboard":
@@ -445,16 +444,17 @@ async def create_artifact(
         )
         return ArtifactView(**artifact)
 
-    proof = (
-        await read_provenance(body.semantic_provenance_ref, body.sql_text, user)
-        if body.semantic_provenance_ref else None
-    )
+    sql_text = body.sql_text
+    if body.semantic_provenance_ref:
+        from app.modules.agents.artifact_provenance import read_provenance
+
+        sql_text = await read_provenance(body.semantic_provenance_ref, user)
     try:
         artifact = await artifact_repository.create(
             owner_name=user["username"],
             title=body.title.strip(),
             artifact_type=body.artifact_type,
-            sql_text=proof["sql"] if proof else body.sql_text,
+            sql_text=sql_text,
             database_name=body.database_name,
             schema_name=body.schema_name,
             chart_spec=body.chart_spec,
@@ -464,8 +464,6 @@ async def create_artifact(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if proof:
-        await persist_provenance(artifact, proof, user)
     return ArtifactView(**artifact)
 
 

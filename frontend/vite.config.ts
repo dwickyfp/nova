@@ -48,7 +48,7 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     rolldownOptions: {
-      input: { app: path.resolve(import.meta.dirname, 'index.html'), snapshot: path.resolve(import.meta.dirname, 'report-snapshot.html') },
+      input: { app: path.resolve(import.meta.dirname, 'index.html') },
       output: {
         strictExecutionOrder: true,
         codeSplitting: {

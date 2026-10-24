@@ -27,7 +27,6 @@ export type StudioAssistantEvent = AssistantEvent;
 export type PendingCall = ToolCallView & { tool_call_id: string };
 
 export type OrderedContent =
-  | { id: string; index: number; type: "smart_report"; block: import("../smart-reports/contracts").ReportBlock; complete: true }
   | { id: string; index: number; type: "dashboard"; block: import("../viz/types").DashboardArtifactBlock; complete: true }
   | {
       id: string;
@@ -207,9 +206,6 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
           if (step.finish_reason === "cancelled") open.state = "cancelled";
           else if (step.finish_reason && step.finish_reason !== "stop")
             open.state = "error";
-          break;
-        case "smart_report":
-          open.content.push({ id: step.content_id, index: step.content_index, type: "smart_report", block: step, complete: true });
           break;
         case "dashboard":
           open.content.push({
@@ -809,10 +805,6 @@ export function applyEvent(
         };
       }
 
-      case "smart_report": {
-        if (turn.content.some(item => item.id === event.content_id)) return turn;
-        return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "smart_report", block: event.payload, complete: true }] };
-      }
       case "dashboard": {
         if (turn.content.some(item => item.id === event.content_id)) return turn;
         return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "dashboard", block: event.payload, complete: true }] };

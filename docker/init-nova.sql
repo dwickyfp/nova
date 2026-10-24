@@ -1983,18 +1983,3 @@ DISTRIBUTED BY HASH(state_id) BUCKETS 1
 ORDER BY (user_name, thread_id, message_id)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
--- Append-only report definitions, grants, migration records, and manifests.
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SMART_REPORT_EVENTS (
-    record_id VARCHAR(64) NOT NULL,
-    revision BIGINT NOT NULL,
-    operation_id VARCHAR(64) NOT NULL,
-    report_id VARCHAR(64) NOT NULL,
-    kind VARCHAR(32) NOT NULL,
-    owner_name VARCHAR(128) NOT NULL,
-    request_hash VARCHAR(64) NOT NULL,
-    checksum VARCHAR(64) NOT NULL,
-    payload JSON NOT NULL,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(record_id, revision, operation_id)
-DISTRIBUTED BY HASH(record_id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true");

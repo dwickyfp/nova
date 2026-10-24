@@ -60,7 +60,7 @@ tersebut. Simpan `.env` dengan izin `600` dan jangan commit isinya. Password adm
 digunakan oleh Ranger Admin, policy proxy, bootstrap, dan client Nova. Mengubah
 file environment saja tidak merotasi akun Ranger yang sudah tersimpan; rotasi akun
 dan client harus diselaraskan. Catatan perbaikan stack lokal ada di
-[LOCAL_RANGER.md](docs/smart-reports/LOCAL_RANGER.md).
+[local-ranger.md](docs/local-ranger.md).
 
 Untuk stack baru, setelah konfigurasi lengkap:
 
@@ -759,7 +759,7 @@ cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.agent_worker
 ```
 
-Scheduled Smart reports also run in this worker, as the owner of the schedule.
+Scheduled internal work also runs in this worker, as the owner of the schedule.
 Give it the same `WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD` and
 `WORKER_IMPERSONATION_ROLE` as `nova-worker`, and grant that account scoped
 impersonation of each owner whose schedules should run:

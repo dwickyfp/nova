@@ -1,4 +1,3 @@
-import { reportBlockSchema } from "@/features/smart-reports/contracts";
 import type {
   ChartBlock,
   AssistantEvent,
@@ -79,11 +78,6 @@ export function parseAssistantEvent(
               ...contentPosition(record),
             }
           : null;
-      case "smart_report": {
-        const value = reportBlockSchema.safeParse(record.payload);
-        if (!value.success || typeof record.content_id !== "string" || !Number.isInteger(record.content_index)) return null;
-        return { type: "smart_report", payload: value.data, ...contentPosition(record) };
-      }
       case "dashboard": {
         const value = record.payload;
         if (

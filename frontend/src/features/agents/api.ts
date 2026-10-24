@@ -1001,7 +1001,6 @@ export type TraceStep =
       text: string;
     }
   /** A result grid the turn rendered, recorded so a reload can show it again. */
-  | ({ kind: 'smart_report'; content_index: number; content_id: string } & import('../smart-reports/contracts').ReportBlock)
   | ({ kind: 'ui'; content_index: number; content_id: string } & import('../studio/intelligent-ui/types').UiBlock)
   | {
       kind: "table";

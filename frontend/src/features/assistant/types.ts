@@ -116,7 +116,6 @@ export type AssistantEvent = (
       security_context_version: number;
     }
   | ({ type: "text_delta"; text: string } & ContentPosition)
-  | ({ type: "smart_report"; payload: import("../smart-reports/contracts").ReportBlock } & ContentPosition)
   | ({ type: "dashboard"; payload: import("../viz/types").DashboardArtifactBlock } & ContentPosition)
   | ({ type: "ui"; payload: Omit<import('../studio/intelligent-ui/types').UiBlock, 'program'> } & ContentPosition)
   | ({ type: "ui_delta"; text: string } & ContentPosition)

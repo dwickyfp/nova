@@ -1,4 +1,3 @@
-import { AddArtifactToReport } from "@/features/smart-reports/add-artifact";
 import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
 import { ArtifactExplorer } from "./artifact-explorer";
 import { describeView } from "@/features/viz/insight";
@@ -301,7 +300,6 @@ function ArtifactDetail({
         onRefresh={() => void detail.refetch()}
         onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
-        reportAction={<AddArtifactToReport artifactId={artifact.artifact_id} />}
         extraAction={
           worksheet?.source && !editing && !draftResponse?.draft ? (
             <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
@@ -518,7 +516,6 @@ function DetailHeader({
   onRefresh,
   onExport,
   onDelete,
-  reportAction,
   extraAction,
 }: {
   onBack: () => void;
@@ -528,7 +525,6 @@ function DetailHeader({
   onRefresh?: () => void;
   onExport?: (format: ExportFormat) => Promise<void>;
   onDelete?: () => void;
-  reportAction?: React.ReactNode;
   extraAction?: React.ReactNode;
 }) {
   const [exporting, setExporting] = useState(false);
@@ -561,7 +557,6 @@ function DetailHeader({
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         ) : null}
       </div>
-      {reportAction}
       {extraAction}
       {onRefresh ? (
         <Button
