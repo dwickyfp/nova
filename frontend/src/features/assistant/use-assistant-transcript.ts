@@ -225,6 +225,8 @@ function applyEvent(
   switch (event.type) {
     case "smart_report":
       return appendAssistantText(state, `\n[Open report](/studio/reports/${event.payload.report_id})\n`);
+    case "dashboard":
+      return appendAssistantText(state, `\n[Open dashboard](/studio?view=artifacts&item=${event.payload.artifact_id})\n`);
     case "mission_updated":
     case "ui":
     case "ui_delta":

@@ -100,22 +100,43 @@ async def test_a_result_re_runs_as_the_viewer_and_is_refused_without_access(monk
     assert viewer_arg["username"] == "bob"
 
 
-async def test_only_tiles_on_the_shared_dashboard_refresh(monkeypatch):
+async def test_only_a_dashboard_artifact_shares_and_computes_as_the_viewer(monkeypatch):
+    """A shared dashboard is a dashboard artifact; its zones re-run as the viewer."""
+
+    from app.modules.viz.service import viz_service
+
     monkeypatch.setattr(sharing.share_repository, "grant_for",
                         AsyncMock(return_value={"owner_name": "alice"}))
-    layout = SimpleNamespace(tiles=[SimpleNamespace(artifact_id="art1")])
-    monkeypatch.setattr(studio_router.dashboard_repository, "get",
-                        AsyncMock(return_value={"layout": layout, "title": "D"}))
-    with pytest.raises(HTTPException) as caught:
-        await studio_router.refresh_shared_dashboard_artifact("d1", "art-other", user=VIEWER)
-    assert caught.value.status_code == 404
     monkeypatch.setattr(studio_router.artifact_repository, "get", AsyncMock(return_value={
-        "artifact_id": "art1", "title": "T", "artifact_type": "table", "chart_spec": None,
-        "sql_text": "SELECT 1", "database_name": "db", "schema_name": None,
+        "artifact_id": "d1", "title": "D", "artifact_type": "dashboard",
+        "viz_spec": {"version": 1, "title": "D", "zones": [
+            {"zone_id": "z1", "kind": "sheet", "artifact_id": "art1",
+             "rect": {"x": 0, "y": 0, "w": 12, "h": 2}},
+        ]},
     }))
-    execute = AsyncMock(return_value=[SimpleNamespace(
-        success=True, columns=["x"], rows=[[1]], row_count=1)])
-    monkeypatch.setattr(studio_router.query_service, "execute_statements", execute)
-    refreshed = await studio_router.refresh_shared_dashboard_artifact("d1", "art1", user=VIEWER)
-    assert refreshed["rows"] == [[1]]
-    assert execute.call_args.kwargs["username"] == "bob"
+    compute = AsyncMock(return_value={"title": "D", "zones": [
+        {"zone_id": "z1", "artifact_id": "art1", "presmodel": {"row_count": 1}},
+    ]})
+    monkeypatch.setattr(viz_service, "compute_dashboard", compute)
+
+    computed = await studio_router.compute_shared_dashboard(
+        "d1",
+        body=studio_router.DashboardComputeRequest(spec={}),
+        user=VIEWER,
+    )
+    assert computed["zones"][0]["presmodel"]["row_count"] == 1
+    # The owner's definitions, the viewer's credentials.
+    assert compute.call_args.kwargs["owner_name"] == "alice"
+    assert compute.call_args.args[1]["username"] == "bob"
+
+
+async def test_a_non_dashboard_artifact_cannot_be_shared_as_one(monkeypatch):
+    monkeypatch.setattr(sharing.share_repository, "grant_for",
+                        AsyncMock(return_value={"owner_name": "alice"}))
+    monkeypatch.setattr(studio_router.artifact_repository, "get", AsyncMock(return_value={
+        "artifact_id": "c1", "title": "Chart", "artifact_type": "chart",
+        "viz_spec": None,
+    }))
+    with pytest.raises(HTTPException) as caught:
+        await studio_router.open_shared_dashboard("c1", user=VIEWER)
+    assert caught.value.status_code == 404

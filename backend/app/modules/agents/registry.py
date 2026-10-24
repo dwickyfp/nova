@@ -32,6 +32,7 @@ KNOWN_TOOLS = frozenset(
         "semantic_view_query",
         "feature_lookup",
         "data_to_chart",
+        "dashboard_build",
         "diagnose_change",
         "context_graph",
         "decision_lab",
@@ -124,6 +125,11 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
             registry.register(data_to_chart_tool)
         except ImportError:  # pragma: no cover - stage ordering only
             pass
+
+    if "dashboard_build" in selected:
+        from app.modules.agents.tools.dashboard_build import dashboard_build_tool
+
+        registry.register(dashboard_build_tool)
 
     if "diagnose_change" in selected:
         from app.modules.agents.tools.diagnose_change import diagnose_change_tool

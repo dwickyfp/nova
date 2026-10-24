@@ -1,0 +1,161 @@
+/** Viz-core contracts, mirroring backend/app/modules/viz/spec.py. */
+
+export type FieldType = "nominal" | "ordinal" | "quantitative" | "temporal";
+
+export type Aggregation =
+  | "sum"
+  | "avg"
+  | "min"
+  | "max"
+  | "count"
+  | "distinct_count";
+
+export type MarkType =
+  | "bar"
+  | "line"
+  | "area"
+  | "circle"
+  | "square"
+  | "tick"
+  | "pie"
+  | "text";
+
+export type FieldRef = {
+  field: string;
+  field_type: FieldType;
+  aggregation?: Aggregation | null;
+  discrete: boolean;
+};
+
+export type Filter =
+  | { kind: "quantitative"; field: string; min?: number | string | null; max?: number | string | null }
+  | { kind: "categorical"; field: string; values: string[]; exclude?: boolean; null_included?: boolean | null }
+  | {
+      kind: "relative_date";
+      field: string;
+      range: "last_n_days" | "last_n_months" | "last_n_years" | "month_to_date" | "year_to_date";
+      n: number;
+    };
+
+export type VizSource =
+  | { kind: "sql"; sql: string }
+  | { kind: "table"; database: string; table: string };
+
+export type MarksCard = {
+  type: MarkType;
+  color?: FieldRef | null;
+  size?: FieldRef | null;
+  text?: FieldRef | null;
+  detail?: FieldRef | null;
+  angle?: FieldRef | null;
+};
+
+/** A chart artifact's worksheet. `source` is absent in chat previews until saved. */
+export type WorksheetSpec = {
+  version: 1;
+  title?: string;
+  source?: VizSource;
+  columns: FieldRef[];
+  rows: FieldRef[];
+  marks: MarksCard;
+  filters?: Filter[];
+  sort?: { field: string; direction: "asc" | "desc" }[];
+  limit?: number | null;
+  table_calcs?: { kind: string; field: string }[];
+  field_types?: Record<string, FieldType>;
+};
+
+export type ZoneRect = { x: number; y: number; w: number; h: number };
+
+export type Zone = {
+  zone_id: string;
+  kind: "sheet" | "text" | "filter" | "spacer";
+  rect: ZoneRect;
+  artifact_id?: string | null;
+  text?: { content: string; style: "title" | "body" } | null;
+  filter?: { field: string; apply_to: string[] } | null;
+};
+
+export type DashboardSpec = {
+  version: 1;
+  title?: string;
+  size?: { mode: "auto" | "fixed"; width?: number | null; height?: number | null };
+  zones: Zone[];
+  actions?: {
+    action_id: string;
+    kind: "filter" | "highlight";
+    source_zone: string;
+    target_zones: string[];
+    field?: string | null;
+    run_on: "select" | "menu";
+  }[];
+};
+
+/** The compute view the renderer consumes (backend/app/modules/viz/presmodel.py). */
+export type PresModelColumn = {
+  name: string;
+  field: string;
+  field_type: FieldType;
+  role: "dimension" | "measure";
+  aggregation?: Aggregation | null;
+  discrete: boolean;
+  label: string;
+};
+
+export type PresModel = {
+  version: number;
+  title: string;
+  mark: MarkType;
+  columns: PresModelColumn[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  axes: {
+    x: { field: string; label: string; field_type: FieldType; discrete: boolean } | null;
+    y: { field: string; label: string; field_type: FieldType; discrete: boolean } | null;
+  };
+  legend: {
+    color: { field: string; kind: "categorical" | "quantitative"; domain: (string | number)[] } | null;
+  };
+  totals: Record<string, number | null>;
+  truncated?: boolean;
+};
+
+export type ShowMeSuggestion = {
+  id: string;
+  label: string;
+  mark: MarkType;
+  enabled: boolean;
+  unmet: { kind: string; optional: boolean }[];
+};
+
+export type VizComputeResponse = {
+  presmodel: PresModel;
+  sql: string;
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  elapsed_ms: number;
+};
+
+export type DashboardZoneResult = {
+  zone_id: string;
+  artifact_id: string | null;
+  title?: string;
+  presmodel?: PresModel;
+  sql?: string;
+  row_count?: number;
+  error?: string;
+};
+
+export type DashboardComputeResponse = {
+  title: string;
+  zones: DashboardZoneResult[];
+};
+
+/** A dashboard artifact created mid-conversation by dashboard_build. */
+export type DashboardArtifactBlock = {
+  artifact_id: string;
+  title: string;
+  charts: { artifact_id: string; title: string; chart_type?: string }[];
+  fallback: string;
+};

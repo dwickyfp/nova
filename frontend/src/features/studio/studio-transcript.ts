@@ -28,6 +28,7 @@ export type PendingCall = ToolCallView & { tool_call_id: string };
 
 export type OrderedContent =
   | { id: string; index: number; type: "smart_report"; block: import("../smart-reports/contracts").ReportBlock; complete: true }
+  | { id: string; index: number; type: "dashboard"; block: import("../viz/types").DashboardArtifactBlock; complete: true }
   | {
       id: string;
       index: number;
@@ -210,6 +211,20 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         case "smart_report":
           open.content.push({ id: step.content_id, index: step.content_index, type: "smart_report", block: step, complete: true });
           break;
+        case "dashboard":
+          open.content.push({
+            id: step.content_id,
+            index: step.content_index,
+            type: "dashboard",
+            block: {
+              artifact_id: step.artifact_id,
+              title: step.title,
+              charts: step.charts,
+              fallback: step.fallback,
+            },
+            complete: true,
+          });
+          break;
         case "ui":
           open.content.push({
             id: step.content_id,
@@ -309,6 +324,8 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
             const block = {
               tool_call_id: step.tool_call_id,
               chart_spec: step.chart_spec,
+              viz_spec: step.viz_spec ?? null,
+              presmodel: step.presmodel ?? null,
             };
             open.blocks.charts.push({ id, block });
             open.content.push({
@@ -795,6 +812,10 @@ export function applyEvent(
       case "smart_report": {
         if (turn.content.some(item => item.id === event.content_id)) return turn;
         return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "smart_report", block: event.payload, complete: true }] };
+      }
+      case "dashboard": {
+        if (turn.content.some(item => item.id === event.content_id)) return turn;
+        return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "dashboard", block: event.payload, complete: true }] };
       }
       case "ui": {
         const id = event.content_id!;

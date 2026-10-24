@@ -336,7 +336,7 @@ class QueryExecuteTool:
         # Expose the first tabular result to Agent Studio's ``data_to_chart`` in
         # the same turn. Redacted at the source, like everything else that can
         # leave this tool. A context without the slot is left untouched.
-        _expose_last_result(context, results)
+        _expose_last_result(context, results, sql=safe_sql)
         # The grid the user reads has to come from here too: without it a plain
         # assistant answer that ran SQL has no table at all, only prose.
         return ToolOutcome(
@@ -443,11 +443,12 @@ def _table_from_results(results: list[Any]) -> dict[str, Any] | None:
     return None
 
 
-def _expose_last_result(context: Any, results: list[Any]) -> None:
+def _expose_last_result(context: Any, results: list[Any], *, sql: str = "") -> None:
     """Record the first tabular result on the turn context, value-redacted.
 
-    Used by Agent Studio's ``data_to_chart``. Best-effort: a context without the
-    attribute is a no-op, so the plain assistant path is unaffected.
+    Used by Agent Studio's ``data_to_chart`` (the viz core charts and persists
+    from this slot). Best-effort: a context without the attribute is a no-op,
+    so the plain assistant path is unaffected.
     """
     if not hasattr(context, "last_result"):
         return
@@ -460,6 +461,7 @@ def _expose_last_result(context: Any, results: list[Any]) -> None:
             "title": "",
             "columns": columns,
             "rows": redact_rows(columns, rows),
+            "sql": sql,
         }
         return
 

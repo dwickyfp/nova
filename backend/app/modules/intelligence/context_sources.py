@@ -185,28 +185,27 @@ async def read_context_source(ref: ContextSourceRef, user: dict, budget) -> dict
         name, digest = "Agent release", value["fingerprint"]
         authority, source_kind = "recorded_agent_release", "agent_release"
     elif ref.kind in {"dashboard", "artifact"}:
-        if ref.kind == "dashboard":
-            from app.modules.agents.dashboard_repository import dashboard_repository
+        from app.modules.agents.artifact_repository import artifact_repository
 
-            resource = await dashboard_repository.get(ref.id, owner_name=scope.principal)
-            if resource is None:
-                raise HTTPException(404, "Dashboard unavailable")
+        resource = await artifact_repository.get(ref.id, owner_name=scope.principal)
+        missing = "Dashboard unavailable" if ref.kind == "dashboard" else "Artifact unavailable"
+        if resource is None:
+            raise HTTPException(404, missing)
+        if ref.kind == "dashboard" and resource.get("artifact_type") != "dashboard":
+            raise HTTPException(404, missing)
+        if ref.kind == "dashboard":
             value = {
                 "updated_at": str(resource["updated_at"]),
-                "layout": resource["layout"].model_dump(mode="json"),
+                "viz_spec": resource.get("viz_spec"),
             }
         else:
-            from app.modules.agents.artifact_repository import artifact_repository
-
-            resource = await artifact_repository.get(ref.id, owner_name=scope.principal)
-            if resource is None:
-                raise HTTPException(404, "Artifact unavailable")
             value = {
                 key: resource.get(key)
                 for key in (
                     "updated_at",
                     "sql_text",
                     "chart_spec",
+                    "viz_spec",
                     "database_name",
                     "schema_name",
                 )

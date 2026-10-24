@@ -1,4 +1,8 @@
 import { AddArtifactToReport } from "@/features/smart-reports/add-artifact";
+import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
+import { VizEditor } from "@/features/viz/viz-editor";
+import { VizView } from "@/features/viz/viz-view";
+import type { DashboardSpec, PresModel, WorksheetSpec } from "@/features/viz/types";
 import { chartSpecWithRows } from "./artifact-chart-spec";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,12 +11,12 @@ import {
   ArrowLeft,
   BarChart3,
   Download,
+  LayoutDashboard,
   Loader2,
   PackageOpen,
   RefreshCw,
   Search,
   Send,
-  Table2,
 } from "lucide-react";
 import hljs from "highlight.js/lib/core";
 import sql from "highlight.js/lib/languages/sql";
@@ -157,7 +161,8 @@ function ArtifactCard({
   artifact: StudioArtifact;
   onOpen: () => void;
 }) {
-  const preview = useArtifactData(artifact.artifact_id);
+  const isDashboard = artifact.artifact_type === "dashboard";
+  const preview = useArtifactData(artifact.artifact_id, !isDashboard);
   return (
     <article
       role="button"
@@ -179,26 +184,30 @@ function ArtifactCard({
             Updated {formatTimestamp(artifact.updated_at)}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          aria-label={`Refresh ${artifact.title}`}
-          disabled={preview.isFetching}
-          onClick={(event) => {
-            event.stopPropagation();
-            void preview.refetch();
-          }}
-        >
-          <RefreshCw
-            aria-hidden="true"
-            className={cn("size-3.5", preview.isFetching && "animate-spin")}
-          />
-        </Button>
+        {isDashboard ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={`Refresh ${artifact.title}`}
+            disabled={preview.isFetching}
+            onClick={(event) => {
+              event.stopPropagation();
+              void preview.refetch();
+            }}
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={cn("size-3.5", preview.isFetching && "animate-spin")}
+            />
+          </Button>
+        )}
       </div>
       <div className="min-w-0 p-4">
-        {preview.isLoading ? (
+        {isDashboard ? (
+          <DashboardCardPreview artifactId={artifact.artifact_id} />
+        ) : preview.isLoading ? (
           <LoadingState label="Refreshing preview" compact />
         ) : preview.isError ? (
           <p className="flex items-center gap-2 py-8 text-sm text-destructive">
@@ -213,6 +222,45 @@ function ArtifactCard({
   );
 }
 
+/** A dashboard card sketches its zone layout; live data loads when opened. */
+function DashboardCardPreview({ artifactId }: { artifactId: string }) {
+  const detail = useQuery({
+    queryKey: ["studio", "artifact", artifactId],
+    queryFn: () => studioApi.getArtifact(artifactId),
+    staleTime: 30_000,
+  });
+  const spec = detail.data?.viz_spec as unknown as DashboardSpec | null;
+  if (!detail.isLoading && !spec) {
+    return <p className="py-8 text-sm text-muted-foreground">This dashboard is empty.</p>;
+  }
+  const zones = spec?.zones ?? [];
+  const rows = Math.max(1, ...zones.map((zone) => zone.rect.y + zone.rect.h));
+  return (
+    <div
+      className="grid h-40 gap-1"
+      style={{
+        gridTemplateColumns: "repeat(24, minmax(0, 1fr))",
+        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+      }}
+      aria-hidden="true"
+    >
+      {zones.map((zone) => (
+        <div
+          key={zone.zone_id}
+          className={cn(
+            "rounded border",
+            zone.kind === "sheet" ? "border-border bg-muted/70" : "border-dashed border-border",
+          )}
+          style={{
+            gridColumn: `${zone.rect.x + 1} / span ${zone.rect.w}`,
+            gridRow: `${zone.rect.y + 1} / span ${zone.rect.h}`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function ArtifactDetail({
   artifactId,
   onBack,
@@ -221,7 +269,13 @@ function ArtifactDetail({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
-  const detail = useArtifactData(artifactId);
+  const meta = useQuery({
+    queryKey: ["studio", "artifact-meta", artifactId],
+    queryFn: () => studioApi.getArtifact(artifactId),
+    staleTime: 30_000,
+  });
+  const isDashboard = meta.data?.artifact_type === "dashboard";
+  const detail = useArtifactData(artifactId, meta.isSuccess && !isDashboard);
   const [filters, setFilters] = useState<ArtifactFilter[]>([]);
   const [filterMode, setFilterMode] = useState<ArtifactFilterMode>("all");
   const [draftResponse, setDraftResponse] =
@@ -231,6 +285,12 @@ function ArtifactDetail({
   );
   const [chatInput, setChatInput] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const charts = useQuery({
+    queryKey: ["studio", "artifacts"],
+    queryFn: () => studioApi.listArtifacts(),
+    enabled: detail.data?.artifact.artifact_type === "dashboard",
+  });
   const [chatBusy, setChatBusy] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
   const [editNotice, setEditNotice] = useState<string | null>(null);
@@ -328,6 +388,64 @@ function ArtifactDetail({
     }
   };
 
+  if (meta.isLoading) {
+    return <LoadingState label="Opening artifact" />;
+  }
+  if (meta.isError || !meta.data) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <DetailHeader onBack={onBack} title="Artifact" />
+        <ErrorState
+          message={(meta.error as Error)?.message || "Artifact not found"}
+          onRetry={() => void meta.refetch()}
+        />
+      </div>
+    );
+  }
+
+  const artifact = meta.data;
+
+  if (artifact.artifact_type === "dashboard") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <DetailHeader
+          onBack={onBack}
+          title={artifact.title}
+          subtitle={`Dashboard · Updated ${formatTimestamp(artifact.updated_at)}`}
+          onDelete={() => setDeleteOpen(true)}
+          extraAction={
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing((value) => !value)}>
+              {editing ? "Done editing" : "Edit layout"}
+            </Button>
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+          <DashboardCanvas
+            artifactId={artifact.artifact_id}
+            spec={(artifact.viz_spec ?? { version: 1, zones: [] }) as unknown as DashboardSpec}
+            charts={charts.data?.artifacts.filter((item) => item.artifact_type === "chart") ?? []}
+            expectedUpdatedAt={artifact.updated_at}
+            editable={editing}
+            onSaved={() => void meta.refetch()}
+          />
+        </div>
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete dashboard?"
+          desc={`“${artifact.title}” will be deleted. Its charts stay in Artifacts.`}
+          confirmText="Delete dashboard"
+          destructive
+          isLoading={remove.isPending}
+          handleConfirm={() => {
+            setDeleteOpen(false);
+            remove.mutate();
+          }}
+        />
+      </div>
+    );
+  }
+
   if (detail.isLoading) {
     return <LoadingState label="Opening artifact" />;
   }
@@ -343,9 +461,9 @@ function ArtifactDetail({
     );
   }
 
-  const { artifact } = detail.data;
   const activeData = displayedData ?? detail.data;
   const visibleData = { ...activeData, rows: filteredRows };
+  const worksheet = artifact.viz_spec as unknown as WorksheetSpec | null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DetailHeader
@@ -357,6 +475,13 @@ function ArtifactDetail({
         onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
         reportAction={<AddArtifactToReport artifactId={artifact.artifact_id} />}
+        extraAction={
+          worksheet && activeData.presmodel ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing((value) => !value)}>
+              {editing ? "Done editing" : "Edit view"}
+            </Button>
+          ) : null
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
@@ -379,26 +504,42 @@ function ArtifactDetail({
           onModeChange={setFilterMode}
           visibleCount={filteredRows.length}
         />
-        <section
-          aria-label="Artifact preview"
-          aria-busy={chatBusy}
-          data-ai-processing={chatBusy ? "true" : undefined}
-          className={cn(
-            "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
-            chatBusy && "artifact-ai-active",
-          )}
-        >
-          <span className="sr-only" role="status">
-            {chatBusy ? "Nova is preparing an artifact preview." : ""}
-          </span>
-          {activeData.rows.length > 0 && filteredRows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No rows match these filters.
-            </p>
-          ) : (
-            <ArtifactVisual data={visibleData} compact />
-          )}
-        </section>
+        {editing && worksheet && activeData.presmodel ? (
+          <VizEditor
+            artifactId={artifact.artifact_id}
+            spec={worksheet}
+            initialPresmodel={activeData.presmodel as PresModel}
+            columns={activeData.columns}
+            sampleRows={activeData.rows}
+            title={artifact.title}
+            expectedUpdatedAt={artifact.updated_at}
+            onSaved={() => {
+              setEditing(false);
+              void detail.refetch();
+            }}
+          />
+        ) : (
+          <section
+            aria-label="Artifact preview"
+            aria-busy={chatBusy}
+            data-ai-processing={chatBusy ? "true" : undefined}
+            className={cn(
+              "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
+              chatBusy && "artifact-ai-active",
+            )}
+          >
+            <span className="sr-only" role="status">
+              {chatBusy ? "Nova is preparing an artifact preview." : ""}
+            </span>
+            {activeData.rows.length > 0 && filteredRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No rows match these filters.
+              </p>
+            ) : (
+              <ArtifactVisual data={visibleData} compact />
+            )}
+          </section>
+        )}
 
         <Tabs defaultValue="table" className="mt-5 min-w-0">
           <TabsList aria-label="Artifact data views">
@@ -546,6 +687,7 @@ function DetailHeader({
   onExport,
   onDelete,
   reportAction,
+  extraAction,
 }: {
   onBack: () => void;
   title: string;
@@ -555,6 +697,7 @@ function DetailHeader({
   onExport?: (format: ExportFormat) => Promise<void>;
   onDelete?: () => void;
   reportAction?: React.ReactNode;
+  extraAction?: React.ReactNode;
 }) {
   const [exporting, setExporting] = useState(false);
   const exportAs = async (format: ExportFormat) => {
@@ -587,6 +730,7 @@ function DetailHeader({
         ) : null}
       </div>
       {reportAction}
+      {extraAction}
       {onRefresh ? (
         <Button
           type="button"
@@ -644,6 +788,13 @@ function ArtifactVisual({
   data: StudioArtifactRefresh;
   compact?: boolean;
 }) {
+  if (data.presmodel) {
+    return (
+      <div className={cn("min-w-0", compact && "text-xs")}>
+        <VizView presmodel={data.presmodel as PresModel} compact={compact} />
+      </div>
+    );
+  }
   if (data.artifact.artifact_type === "chart" && data.artifact.chart_spec) {
     return (
       <div className={cn("min-w-0", compact && "text-xs")}>
@@ -683,17 +834,18 @@ function ArtifactTable({
   );
 }
 
-function useArtifactData(artifactId: string) {
+function useArtifactData(artifactId: string, enabled = true) {
   return useQuery({
     queryKey: ["studio", "artifact-data", artifactId],
     queryFn: () => studioApi.refreshArtifact(artifactId),
+    enabled,
     staleTime: 0,
     refetchOnMount: "always",
   });
 }
 
-function ArtifactIcon({ type }: { type: "chart" | "table" }) {
-  const Icon = type === "chart" ? BarChart3 : Table2;
+function ArtifactIcon({ type }: { type: "chart" | "dashboard" }) {
+  const Icon = type === "chart" ? BarChart3 : LayoutDashboard;
   return (
     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
       <Icon aria-hidden="true" className="size-4" />

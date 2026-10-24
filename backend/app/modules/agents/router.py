@@ -196,7 +196,8 @@ def _auto_agent(owner_name: str) -> dict:
 
 
 #: The v1 tool surface an agent may bundle. A name outside this set is rejected
-#: before storage so a typo cannot silently grant nothing.
+#: before storage so a typo cannot silently grant nothing. Mirrors
+#: ``agents.registry.KNOWN_TOOLS``; the two lists change together.
 KNOWN_TOOLS = {
     "smart_report",
     "load_skill",
@@ -207,10 +208,13 @@ KNOWN_TOOLS = {
     "semantic_view_query",
     "feature_lookup",
     "data_to_chart",
+    "dashboard_build",
     "diagnose_change",
     "context_graph",
     "decision_lab",
     "ml_execute",
+    "execute_business_action",
+    "analysis_workspace",
 }
 
 

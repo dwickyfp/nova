@@ -6,6 +6,11 @@ import {
 } from "@/features/assistant/events";
 import type { AssistantEvent, AutomationProposal, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
+import type {
+  DashboardComputeResponse,
+  ShowMeSuggestion,
+  VizComputeResponse,
+} from "@/features/viz/types";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
@@ -594,7 +599,7 @@ export type StudioCapabilities = {
 export type StudioArtifact = {
   artifact_id: string;
   title: string;
-  artifact_type: "chart" | "table";
+  artifact_type: "chart" | "dashboard";
   agent_id: string | null;
   thread_id: string | null;
   database_name: string | null;
@@ -606,16 +611,18 @@ export type StudioArtifact = {
 export type StudioArtifactDetail = StudioArtifact & {
   sql_text: string;
   chart_spec: Record<string, unknown> | null;
+  viz_spec: Record<string, unknown> | null;
 };
 
 export type StudioArtifactCreate = {
   semantic_provenance_ref?: string;
   title: string;
-  artifact_type: "chart" | "table";
+  artifact_type: "chart" | "dashboard";
   sql_text: string;
   database_name?: string | null;
   schema_name?: string | null;
   chart_spec?: Record<string, unknown> | null;
+  viz_spec?: Record<string, unknown> | null;
   agent_id?: string | null;
   thread_id?: string | null;
 };
@@ -626,32 +633,15 @@ export type StudioArtifactRefresh = {
   rows: (string | number | null)[][];
   row_count: number;
   elapsed_ms: number;
-};
-
-export type StudioDashboardTile = {
-  tile_id: string;
-  artifact_id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
-
-export type StudioDashboard = {
-  dashboard_id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-};
-
-export type StudioDashboardDetail = StudioDashboard & {
-  layout: { tiles: StudioDashboardTile[] };
+  presmodel?: Record<string, unknown> | null;
+  sql?: string | null;
 };
 
 export type StudioArtifactDraft = {
   sql_text: string;
-  artifact_type: "chart" | "table";
+  artifact_type: "chart";
   chart_spec: Record<string, unknown> | null;
+  viz_spec?: Record<string, unknown> | null;
 };
 
 export type StudioArtifactEditMessage = {
@@ -751,30 +741,34 @@ export const studioApi = {
     ),
   deleteArtifact: (id: string) =>
     api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}`),
-  listDashboards: () =>
-    api.get<{ dashboards: StudioDashboard[]; count: number }>(
-      "/agents/studio/dashboards",
-    ),
-  createDashboard: (title: string) =>
-    api.post<StudioDashboardDetail>("/agents/studio/dashboards", { title }),
-  getDashboard: (id: string) =>
-    api.get<StudioDashboardDetail>(
-      `/agents/studio/dashboards/${encodeURIComponent(id)}`,
-    ),
-  updateDashboard: (
+  updateArtifactSpec: (
     id: string,
     body: {
-      title: string;
-      layout: { tiles: StudioDashboardTile[] };
+      title?: string;
+      viz_spec: Record<string, unknown>;
       expected_updated_at: string;
     },
   ) =>
-    api.put<StudioDashboardDetail>(
-      `/agents/studio/dashboards/${encodeURIComponent(id)}`,
+    api.patch<StudioArtifactDetail>(
+      `/agents/studio/artifacts/${encodeURIComponent(id)}/spec`,
       body,
     ),
-  deleteDashboard: (id: string) =>
-    api.delete<void>(`/agents/studio/dashboards/${encodeURIComponent(id)}`),
+  computeViz: (body: {
+    spec: Record<string, unknown>;
+    extra_filters?: Record<string, unknown>[];
+  }) =>
+    api.post<VizComputeResponse>("/agents/studio/viz/compute", body),
+  suggestViz: (body: { columns: string[]; rows: (string | number | null)[][] }) =>
+    api.post<{ suggestions: ShowMeSuggestion[] }>("/agents/studio/viz/suggest", body),
+  computeVizDashboard: (body: {
+    spec: Record<string, unknown>;
+    filter_values?: Record<string, Record<string, unknown>>;
+    zone_filters?: Record<string, Record<string, unknown>[]>;
+  }) =>
+    api.post<DashboardComputeResponse>(
+      "/agents/studio/viz/dashboard-compute",
+      body,
+    ),
 };
 
 // ── Skill Registry ─────────────────────────────────────────────
@@ -995,14 +989,19 @@ export type TraceStep =
       columns: string[];
       rows: (string | number | null)[][];
     }
-  /** A chart the turn rendered. `chart_spec` is Vega-Lite v5 JSON. */
+  /** A chart the turn rendered. `chart_spec` is Vega-Lite v5 JSON; the viz
+   *  worksheet and its presentation model ride along when the viz core built it. */
   | {
       kind: "chart";
       content_index?: number;
       content_id?: string;
       tool_call_id: string;
       chart_spec: string;
+      viz_spec?: Record<string, unknown> | null;
+      presmodel?: import("../viz/types").PresModel | null;
     }
+  /** A dashboard artifact the turn created, replayable from Artifacts. */
+  | ({ kind: "dashboard"; content_index: number; content_id: string } & import("../viz/types").DashboardArtifactBlock)
   /** A schedule Smart drafted for the user to confirm. */
   | ({ kind: "automation_proposal" } & AutomationProposal)
   /** Sources a semantic search cited. */

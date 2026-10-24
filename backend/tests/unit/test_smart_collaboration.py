@@ -843,21 +843,20 @@ async def test_smart_can_fetch_data_after_a_chart_request_found_none():
 
 
 def test_a_smart_chart_of_two_measures_draws_both():
-    from app.modules.agents.tools.data_to_chart import _two_measure_spec, sanitize_chart_spec
+    from app.modules.viz.showme import from_notional
+    from app.modules.viz.spec import NotionalSpec, VizSourceSql
 
     columns = ["department", "total_expense", "active_headcount"]
     rows = [["Sales", "12404000000.00", 23], ["Finance", "11553000000.00", 22]]
-    one = {"mark": "bar", "encoding": {
-        "x": {"field": "active_headcount", "type": "quantitative"},
-        "y": {"field": "department", "type": "nominal"},
-    }}
-    both = _two_measure_spec(columns, rows, "Expense and headcount", one)
-    drawn = {channel["field"] for channel in both["encoding"].values()}
-    assert drawn == set(columns)
-    assert sanitize_chart_spec(both, title="Expense and headcount")["encoding"] == both["encoding"]
-    # A spec that already draws both, or a table that is not label + two measures, is kept.
-    scatter = {"mark": "point", "encoding": {
-        "x": {"field": "total_expense"}, "y": {"field": "active_headcount"},
-    }}
-    assert _two_measure_spec(columns, rows, "t", scatter) is None
-    assert _two_measure_spec(columns[:2], [row[:2] for row in rows], "t", one) is None
+    spec = from_notional(
+        NotionalSpec(),
+        columns,
+        rows,
+        source=VizSourceSql(sql="SELECT * FROM finance"),
+        title="Expense and headcount",
+    )
+
+    # Both measures share the canvas (Tableau's Measure Names/Values): a chart
+    # that drops either one leaves out half of what was asked for.
+    drawn = {pill.field for pill in spec.all_fields() if pill.is_measure}
+    assert {"total_expense", "active_headcount"} <= drawn

@@ -2,8 +2,17 @@
 
 An artifact stores presentation metadata and the redacted statement needed to
 rebuild it. Query rows are deliberately absent from the table: opening an
-artifact executes the statement again with the caller's current StarRocks
-session, so both data and RBAC remain current.
+artifact re-executes under the caller's current StarRocks session, so both
+data and RBAC remain current.
+
+Two artifact kinds exist:
+
+* ``chart`` — a worksheet (``viz_spec``, the Tableau-adapted model in
+  :mod:`app.modules.viz.spec`) plus the read-only source statement that
+  rebuilds it. Charts saved before the viz core carry a sanitized Vega-Lite
+  ``chart_spec`` instead and render through the legacy path until re-saved.
+* ``dashboard`` — a zone layout (``viz_spec`` is a ``DashboardSpec``) over
+  chart artifacts owned by the same user; it carries no SQL of its own.
 """
 
 from __future__ import annotations
@@ -30,6 +39,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS (
     database_name VARCHAR(128),
     schema_name  VARCHAR(128),
     chart_spec   JSON,
+    viz_spec     JSON,
     created_at   DATETIME NOT NULL,
     updated_at   DATETIME NOT NULL
 ) PRIMARY KEY(artifact_id)
@@ -37,9 +47,11 @@ DISTRIBUTED BY HASH(artifact_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
+ArtifactKind = Literal["chart", "dashboard"]
+
 _COLUMNS = (
     "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-    "sql_text, database_name, schema_name, chart_spec, created_at, updated_at"
+    "sql_text, database_name, schema_name, chart_spec, viz_spec, created_at, updated_at"
 )
 
 
@@ -111,6 +123,7 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
         database_name,
         schema_name,
         chart_spec,
+        viz_spec,
         created_at,
         updated_at,
     ) = values
@@ -125,37 +138,80 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
         "database_name": str(database_name) if database_name else None,
         "schema_name": str(schema_name) if schema_name else None,
         "chart_spec": _json_object(chart_spec),
+        "viz_spec": _json_object(viz_spec),
         "created_at": _datetime(created_at),
         "updated_at": _datetime(updated_at),
     }
 
 
+def _stored_viz_spec(
+    artifact_type: str, viz_spec: object | None
+) -> dict[str, Any] | None:
+    """Validate and store a worksheet/dashboard spec as plain JSON."""
+    if artifact_type != "chart" and artifact_type != "dashboard":
+        raise ValueError("Artifact type must be 'chart' or 'dashboard'.")
+    if viz_spec is None:
+        if artifact_type == "dashboard":
+            raise ValueError("A dashboard artifact needs its zone layout.")
+        return None
+    parsed = _json_object(viz_spec)
+    if parsed is None:
+        raise ValueError("The viz specification must be a JSON object.")
+    if artifact_type == "dashboard":
+        from app.modules.viz.spec import DashboardSpec
+
+        DashboardSpec.model_validate(parsed)
+    else:
+        from app.modules.viz.spec import WorksheetSpec
+
+        WorksheetSpec.model_validate(parsed)
+    return parsed
+
+
 class ArtifactRepository:
     async def ensure_schema(self) -> None:
         await db.execute_system(ARTIFACTS_DDL)
+        import contextlib
+
+        from app.modules.viz.migration import ensure_viz_columns
+
+        # An old install whose ALTER failed once still serves artifacts.
+        with contextlib.suppress(Exception):  # pragma: no cover - upgrade path
+            await ensure_viz_columns()
 
     async def create(
         self,
         *,
         owner_name: str,
         title: str,
-        artifact_type: Literal["chart", "table"],
+        artifact_type: ArtifactKind,
         sql_text: str,
         database_name: str | None,
         schema_name: str | None,
         chart_spec: object | None = None,
+        viz_spec: object | None = None,
         agent_id: str | None = None,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
         artifact_id = str(uuid4())
         now = _now()
-        stored_sql = validate_artifact_sql(sql_text)
-        stored_chart = chart_template(chart_spec, title=title) if artifact_type == "chart" else None
+        stored_viz = _stored_viz_spec(artifact_type, viz_spec)
+        if artifact_type == "dashboard":
+            stored_sql = ""
+            stored_chart = None
+        else:
+            stored_sql = validate_artifact_sql(sql_text)
+            stored_chart = (
+                chart_template(chart_spec, title=title)
+                if artifact_type == "chart" and chart_spec is not None and stored_viz is None
+                else None
+            )
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS ("
             "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-            "sql_text, database_name, schema_name, chart_spec, created_at, updated_at"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "sql_text, database_name, schema_name, chart_spec, viz_spec, "
+            "created_at, updated_at"
+            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 artifact_id,
                 owner_name,
@@ -167,6 +223,7 @@ class ArtifactRepository:
                 database_name,
                 schema_name,
                 json.dumps(stored_chart, separators=(",", ":")) if stored_chart else None,
+                json.dumps(stored_viz, separators=(",", ":")) if stored_viz else None,
                 now,
                 now,
             ],
@@ -208,20 +265,33 @@ class ArtifactRepository:
         owner_name: str,
         expected_updated_at: datetime,
         sql_text: str,
-        artifact_type: Literal["chart", "table"],
+        artifact_type: ArtifactKind,
         chart_spec: object | None,
+        viz_spec: object | None = None,
         title: str,
     ) -> dict[str, Any] | None:
-        stored_sql = validate_artifact_sql(sql_text)
-        stored_chart = chart_template(chart_spec, title=title) if artifact_type == "chart" else None
+        stored_viz = _stored_viz_spec(artifact_type, viz_spec)
+        if artifact_type == "dashboard":
+            stored_sql = ""
+            stored_chart = None
+        else:
+            stored_sql = validate_artifact_sql(sql_text)
+            stored_chart = (
+                chart_template(chart_spec, title=title)
+                if artifact_type == "chart" and chart_spec is not None and stored_viz is None
+                else None
+            )
         result = await db.execute_system(
             "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-            "SET sql_text = %s, artifact_type = %s, chart_spec = %s, updated_at = %s "
+            "SET sql_text = %s, artifact_type = %s, chart_spec = %s, viz_spec = %s, "
+            "title = %s, updated_at = %s "
             "WHERE artifact_id = %s AND owner_name = %s AND updated_at = %s",
             [
                 stored_sql,
                 artifact_type,
                 json.dumps(stored_chart, separators=(",", ":")) if stored_chart else None,
+                json.dumps(stored_viz, separators=(",", ":")) if stored_viz else None,
+                title,
                 _now(),
                 artifact_id,
                 owner_name,

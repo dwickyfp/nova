@@ -11,7 +11,6 @@ from pydantic import ValidationError
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.planning import SemanticFilter, SemanticOrder, SemanticPlan
 from app.modules.smart_reports.content import public_report_block
-from app.modules.smart_reports.migration import replacement_spec
 from app.modules.smart_reports.patches import apply_patch
 from app.modules.smart_reports.repository import decode, digest
 from app.modules.smart_reports.runtime import ReportRuntime, scalar_json, widget_plan
@@ -314,30 +313,6 @@ async def test_widget_failure_is_partial_and_totals_are_separate_engine_aggregat
     assert result["status"] == "partial_success"
     assert result["widgets"][0]["status"] == "requires_mapping"
     assert result["widgets"][1]["status"] == "success"
-
-
-def test_legacy_migration_preserves_layout_and_never_invents_queries():
-    spec, issues = replacement_spec(
-        "Old",
-        {
-            "tiles": [
-                {"artifact_id": "artifact-1", "x": 1, "y": 0, "w": 2, "h": 2},
-                {"artifact_id": "artifact-2", "x": 1, "y": 0, "w": 2, "h": 2},
-                {},
-            ]
-        },
-    )
-    widgets = list(spec.widgets().values())
-    assert widgets[0].placement.col == 2 and widgets[0].placement.width == 4
-    assert len(widgets) == 3 and all(w.mapping_required and w.query is None for w in widgets)
-    assert "tile_1:invalid_position" in issues
-    assert "tile_2:missing_artifact" in issues
-
-
-def test_malformed_legacy_source_still_has_a_replacement_draft():
-    spec, issues = replacement_spec("Broken", "{invalid")
-    assert len(spec.widgets()) == 1
-    assert issues[0] == "invalid_layout"
 
 
 def test_fixture_and_generated_schema_are_current():

@@ -142,6 +142,7 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 | Auth, active roles, stages, Ranger adapters, filtering/masking | [access-control guide](backend/app/modules/access_control/AGENTS.md), [Ranger architecture](docs/arch-08-ranger-authorization.md) |
 | Shared agent loop, context, providers, consent, tools | [assistant guide](backend/app/modules/assistant/AGENTS.md) |
 | Studio, Smart, delegation, resources, memory, recovery | [agents guide](backend/app/modules/agents/AGENTS.md), [Smart architecture](docs/arch-11-smart-collaboration.md) |
+| Viz core, charts, dashboards, ShowMe, presentation models | [viz architecture](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
 | Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
 | Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
 | StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |

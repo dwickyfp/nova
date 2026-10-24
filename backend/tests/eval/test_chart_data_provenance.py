@@ -9,20 +9,14 @@ from app.modules.agents.tools.data_to_chart import DataToChartTool
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
+from app.modules.viz.spec import NotionalSpec
 from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
 
 
 async def test_chart_turn_keeps_all_verified_rows_and_finishes() -> None:
     chart_tool = DataToChartTool()
-    chart_tool._model_spec = AsyncMock(
-        return_value={
-            "mark": "point",
-            "data": {"values": [{"x": "model-preview", "y": -1}]},
-            "encoding": {
-                "x": {"field": "x", "type": "quantitative"},
-                "y": {"field": "y", "type": "quantitative"},
-            },
-        }
+    chart_tool._model_notional = AsyncMock(
+        return_value=NotionalSpec(chart_type="scatter", x="x", y="y")
     )
     registry = ToolRegistry()
     registry.register(chart_tool)
@@ -55,9 +49,12 @@ async def test_chart_turn_keeps_all_verified_rows_and_finishes() -> None:
     chart_frames = [frame for frame in frames if frame.startswith("event: chart\n")]
     assert len(chart_frames) == 1
     payload = json.loads(chart_frames[0].split("data: ", 1)[1].split("\n", 1)[0])
-    spec = json.loads(payload["chart_spec"])
-    assert spec["mark"] == "point"
-    assert len(spec["data"]["values"]) == 35
-    assert spec["data"]["values"][0] == {"x": 0, "y": 0}
-    assert spec["data"]["values"][-1] == {"x": 34, "y": 68}
+    # The viz core keeps every verified row: one mark per row, never the
+    # twenty-row preview the model saw.
+    assert payload["viz_spec"]["marks"]["type"] == "circle"
+    assert payload["presmodel"]["row_count"] == 35
+    assert payload["presmodel"]["rows"][0] == [0, 0]
+    assert payload["presmodel"]["rows"][-1] == [34, 68]
+    # The Vega mirror still ships for replay paths that speak it.
+    assert json.loads(payload["chart_spec"])["mark"] == "circle"
     assert '"finish_reason":"stop"' in "".join(frames).replace(" ", "")

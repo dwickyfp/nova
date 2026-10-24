@@ -42,6 +42,7 @@ const BUNDLEABLE = new Set([
   "semantic_query",
   "semantic_search",
   "data_to_chart",
+  "dashboard_build",
   "diagnose_change",
   "ml_execute",
   "ai_search",

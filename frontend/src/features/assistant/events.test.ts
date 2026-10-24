@@ -307,7 +307,30 @@ describe("parseAssistantEvent structured blocks (Phase 12)", () => {
     );
     expect(event).toEqual({
       type: "chart",
-      payload: { tool_call_id: "tc-1", chart_spec: '{"mark":"bar"}' },
+      payload: {
+        tool_call_id: "tc-1",
+        chart_spec: '{"mark":"bar"}',
+        viz_spec: null,
+        presmodel: null,
+      },
+    });
+  });
+
+  it("keeps the viz worksheet and presentation model on a chart block", () => {
+    const viz = { marks: { type: "line" } };
+    const pm = { mark: "line", row_count: 3 };
+    const event = parseAssistantEvent(
+      "chart",
+      JSON.stringify({
+        tool_call_id: "tc-2",
+        chart_spec: "{}",
+        viz_spec: viz,
+        presmodel: pm,
+      }),
+    );
+    expect(event).toMatchObject({
+      type: "chart",
+      payload: { tool_call_id: "tc-2", viz_spec: viz, presmodel: pm },
     });
   });
 

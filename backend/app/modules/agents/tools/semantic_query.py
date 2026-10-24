@@ -458,11 +458,13 @@ class SemanticQueryTool:
 
         table = _table_payload(results, title=question)
         if table is not None:
-            # Expose the fetched rows to ``data_to_chart`` in the same turn.
+            # Expose the fetched rows to ``data_to_chart`` in the same turn,
+            # with the compiled statement the viz core needs for persistence.
             context.last_result = {
                 "title": question,
                 "columns": table["columns"],
                 "rows": table["rows"],
+                "sql": safe_sql,
             }
 
         row_count = len(table["rows"]) if table is not None else 0

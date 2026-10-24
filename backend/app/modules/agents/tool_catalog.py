@@ -177,7 +177,9 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "data_to_chart": (
-        "Build a sanitized Vega-Lite chart from the latest verified table. Use only when "
+        "Build a chart from the latest verified table through the viz core: the model "
+        "names a chart type and fields, ShowMe placement resolves the worksheet, and a "
+        "sanitized chart plus its presentation model are returned. Use only when "
         "the user asks for a chart or a trend/comparison materially benefits from one. "
         "Do not call it before a data result exists.",
         {
@@ -185,6 +187,45 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "properties": {
                 "intent": {"type": "string", "description": "What the chart should show."}
             },
+        },
+    ),
+    "dashboard_build": (
+        "Compose a Studio dashboard artifact from the latest verified result: one chart "
+        "artifact per requested view on a zone canvas. Requires consent; call it only "
+        "after the data has been fetched and its statement is known.",
+        {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "charts": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "chart_type": {
+                                "type": "string",
+                                "enum": [
+                                    "auto", "text_table", "bar", "bar_stacked", "bar_side",
+                                    "line", "area", "scatter", "pie", "bubble", "heatmap",
+                                ],
+                            },
+                            "x": {"type": "string"},
+                            "y": {
+                                "type": ["string", "array"],
+                                "items": {"type": "string"},
+                            },
+                            "color": {"type": "string"},
+                            "size": {"type": "string"},
+                        },
+                        "required": ["title"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["title", "charts"],
+            "additionalProperties": False,
         },
     ),
     "diagnose_change": (DIAGNOSE_DESCRIPTION, DIAGNOSE_PARAMETERS),

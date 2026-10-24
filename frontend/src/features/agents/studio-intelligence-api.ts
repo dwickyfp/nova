@@ -164,12 +164,7 @@ export type SharedDashboard = {
   dashboard_id: string;
   title: string;
   owner_name: string;
-  layout: { tiles: { tile_id: string; artifact_id: string; x: number; y: number; w: number; h: number }[] };
-};
-
-export type SharedTile = ResultRows & {
-  artifact: { artifact_id: string; title: string; artifact_type: "chart" | "table";
-    chart_spec: Record<string, unknown> | null };
+  viz_spec: Record<string, unknown> | null;
 };
 
 export const sharingApi = {
@@ -188,9 +183,17 @@ export const sharingApi = {
     api.get<SharedThread>(`/agents/studio/shared/threads/${encodeURIComponent(threadId)}`),
   openDashboard: (dashboardId: string) =>
     api.get<SharedDashboard>(`/agents/studio/shared/dashboards/${encodeURIComponent(dashboardId)}`),
-  refreshTile: (dashboardId: string, artifactId: string) =>
-    api.post<SharedTile>(
-      `/agents/studio/shared/dashboards/${encodeURIComponent(dashboardId)}/artifacts/${encodeURIComponent(artifactId)}/refresh`,
+  computeDashboard: (
+    dashboardId: string,
+    body: {
+      spec?: Record<string, unknown> | null;
+      filter_values?: Record<string, Record<string, unknown>>;
+      zone_filters?: Record<string, Record<string, unknown>[]>;
+    },
+  ) =>
+    api.post<import("../viz/types").DashboardComputeResponse>(
+      `/agents/studio/shared/dashboards/${encodeURIComponent(dashboardId)}/compute`,
+      body,
     ),
   refreshResult: (threadId: string, toolCallId: string) =>
     api.post<ResultRows>(

@@ -204,10 +204,16 @@ def chart(
     tool_call_id: str,
     chart_spec: str,
     *,
+    viz_spec: dict[str, Any] | None = None,
+    presmodel: dict[str, Any] | None = None,
     content_index: int | None = None,
     content_id: str | None = None,
 ) -> str:
     """A chart: ``chart_spec`` is a Vega-Lite v5 JSON string.
+
+    ``viz_spec``/``presmodel`` carry the viz-core worksheet and its computed
+    presentation model; a client that understands them renders those and keeps
+    the Vega mirror for replay paths that do not.
 
     The shape mirrors Snowflake Cortex Agents' ``response.chart`` so a client
     that understands one understands the other.
@@ -216,6 +222,10 @@ def chart(
         "tool_call_id": tool_call_id,
         "chart_spec": chart_spec,
     }
+    if viz_spec is not None:
+        payload["viz_spec"] = viz_spec
+    if presmodel is not None:
+        payload["presmodel"] = presmodel
     _with_content_position(payload, content_index, content_id)
     return format_sse(EVENT_CHART, payload)
 

@@ -83,6 +83,20 @@ export function parseAssistantEvent(
         if (!value.success || typeof record.content_id !== "string" || !Number.isInteger(record.content_index)) return null;
         return { type: "smart_report", payload: value.data, ...contentPosition(record) };
       }
+      case "dashboard": {
+        const value = record.payload;
+        if (
+          !value || typeof value !== "object" || Array.isArray(value) ||
+          typeof record.content_id !== "string" || !Number.isInteger(record.content_index)
+        ) return null;
+        const block = value as Record<string, unknown>;
+        if (typeof block.artifact_id !== "string" || !Array.isArray(block.charts)) return null;
+        return {
+          type: "dashboard",
+          payload: block as unknown as import("../viz/types").DashboardArtifactBlock,
+          ...contentPosition(record),
+        };
+      }
       case "ui": {
         const value = record.payload;
         if (!value || typeof value !== "object" || Array.isArray(value))
@@ -471,10 +485,17 @@ function parseChart(record: Record<string, unknown>): AssistantEvent | null {
   const toolCallId = record.tool_call_id;
   const spec = record.chart_spec;
   if (typeof toolCallId !== "string" || typeof spec !== "string") return null;
+  const plain = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === "object" && !Array.isArray(value);
   return {
     type: "chart",
     ...contentPosition(record),
-    payload: { tool_call_id: toolCallId, chart_spec: spec },
+    payload: {
+      tool_call_id: toolCallId,
+      chart_spec: spec,
+      viz_spec: plain(record.viz_spec) ? record.viz_spec : null,
+      presmodel: plain(record.presmodel) ? record.presmodel : null,
+    },
   };
 }
 

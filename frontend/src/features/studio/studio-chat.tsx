@@ -848,7 +848,7 @@ export function StudioChat({
       }
 
       let chartSpec: Record<string, unknown> | null = null;
-      let artifactType = item.type === "ui-node" ? item.request.kind : item.type;
+      let vizSpec: Record<string, unknown> | null = null;
       let saved = "Artifact saved";
       let title =
         item.type === "table"
@@ -862,21 +862,30 @@ export function StudioChat({
             ? descriptorToVegaLite(request.chart, request.columns, title)
             : null;
           if (!chartSpec) {
-            artifactType = "table";
-            saved = "Saved its result as a table: this chart plots values calculated in the answer.";
+            saved = "Saved its result as a grid: this chart plots values calculated in the answer.";
           }
         }
       } else if (item.type === "chart") {
         const chartTitle = splitChartTitle(item.block.chart_spec).title;
         title = chartTitle || turn.question.trim() || "Saved chart";
-        try {
-          chartSpec = JSON.parse(item.block.chart_spec) as Record<
-            string,
-            unknown
-          >;
-        } catch {
-          toast.error("This chart specification cannot be saved.");
-          return;
+        if (item.block.viz_spec) {
+          // A viz-core chart persists its worksheet; refresh re-compiles it.
+          vizSpec = {
+            ...item.block.viz_spec,
+            title,
+            source: { kind: "sql", sql: sql ?? "" },
+          };
+        }
+        if (!vizSpec) {
+          try {
+            chartSpec = JSON.parse(item.block.chart_spec) as Record<
+              string,
+              unknown
+            >;
+          } catch {
+            toast.error("This chart specification cannot be saved.");
+            return;
+          }
         }
       }
       title = title.slice(0, 256) || "Saved result";
@@ -885,12 +894,13 @@ export function StudioChat({
       try {
         await studioApi.createArtifact({
           title,
-          artifact_type: artifactType,
+          artifact_type: "chart",
           sql_text: sql ?? "",
           semantic_provenance_ref: provenance,
           database_name: agent.database_name,
           schema_name: agent.schema_name,
           chart_spec: chartSpec,
+          viz_spec: vizSpec,
           agent_id: agent.agent_id,
           thread_id: threadId ?? activeThreadId,
         });

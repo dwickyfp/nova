@@ -59,7 +59,7 @@ async def test_refresh_reexecutes_sql_with_current_session(monkeypatch) -> None:
         "agent_id": "agent-1",
         "thread_id": "thread-1",
         "title": "Revenue",
-        "artifact_type": "table",
+        "artifact_type": "chart",
         "sql_text": "SELECT region, revenue FROM sales.summary",
         "database_name": "sales",
         "schema_name": "analytics",
@@ -115,7 +115,7 @@ async def test_chat_edit_previews_a_chart_without_saving(monkeypatch, mark: str)
     artifact = {
         "artifact_id": "art-1",
         "title": "Revenue by region",
-        "artifact_type": "table",
+        "artifact_type": "chart",
         "sql_text": "SELECT region, revenue FROM sales.summary",
         "chart_spec": None,
         "database_name": "sales",
@@ -178,7 +178,7 @@ async def test_chat_edit_previews_a_chart_without_saving(monkeypatch, mark: str)
 async def test_chat_edit_rejects_non_read_only_sql(monkeypatch) -> None:
     artifact = {
         "title": "Revenue",
-        "artifact_type": "table",
+        "artifact_type": "chart",
         "sql_text": "SELECT revenue FROM sales.summary",
         "chart_spec": None,
         "database_name": "sales",
@@ -227,7 +227,7 @@ async def test_apply_edit_checks_owner_revision_and_audits(monkeypatch) -> None:
         "artifact_id": "art-1",
         "owner_name": "analyst",
         "title": "Revenue",
-        "artifact_type": "table",
+        "artifact_type": "chart",
         "sql_text": "SELECT region, revenue FROM sales.summary",
         "chart_spec": None,
         "database_name": "sales",
@@ -261,7 +261,7 @@ async def test_apply_edit_checks_owner_revision_and_audits(monkeypatch) -> None:
     body = ArtifactApplyRequest(
         draft=ArtifactDraft(
             sql_text=updated["sql_text"],
-            artifact_type="table",
+            artifact_type="chart",
             chart_spec=None,
         ),
         expected_updated_at="2026-09-21T08:00:00",
@@ -300,7 +300,7 @@ async def test_repository_update_requires_matching_owner_and_revision(monkeypatc
         owner_name="analyst",
         expected_updated_at=expected,
         sql_text="SELECT region FROM sales.summary",
-        artifact_type="table",
+        artifact_type="chart",
         chart_spec=None,
         title="Revenue",
     )

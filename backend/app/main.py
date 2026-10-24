@@ -201,7 +201,6 @@ async def _bootstrap_control_plane() -> None:
     # taking the whole web service down at boot.
     try:
         from app.modules.agents.artifact_repository import artifact_repository
-        from app.modules.agents.dashboard_repository import dashboard_repository
         from app.modules.agents.memory import memory_repository
         from app.modules.agents.repository import agent_repository
         from app.modules.agents.rule_proposals import rule_proposal_repository
@@ -224,12 +223,12 @@ async def _bootstrap_control_plane() -> None:
         await harness_repository.ensure_schema()
         await agent_repository.migrate_legacy_skill_authors()
         await artifact_repository.ensure_schema()
-        await dashboard_repository.ensure_schema()
-        from app.modules.smart_reports.migration import migrate_dashboards
         from app.modules.smart_reports.repository import report_repository
 
         await report_repository.ensure_schema()
-        await migrate_dashboards()
+        from app.modules.viz.migration import migrate_viz
+
+        await migrate_viz()
     except Exception as e:
         logger.warning("Could not ensure Agent Studio schema: %s", e)
 

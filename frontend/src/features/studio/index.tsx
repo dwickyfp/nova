@@ -416,9 +416,9 @@ function StudioAppContent() {
 
               navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
             }} />
-        ) : view === "artifacts" ? (
+        ) : view === "artifacts" || view === "dashboards" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />
-        ) : view === "dashboards" || view === "reports" ? (
+        ) : view === "reports" ? (
           <ReportsLibrary />
         ) : view === "shared" ? (
           <StudioShared />

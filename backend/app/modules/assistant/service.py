@@ -2514,11 +2514,17 @@ class AssistantLoop:
                 )
                 context.pending_output = _pending_trace(pending_artifacts)
             if outcome.chart is not None:
-                chart_spec = str(outcome.chart.get("chart_spec") or "")
+                chart_payload: dict[str, Any] = {
+                    "chart_spec": str(outcome.chart.get("chart_spec") or "")
+                }
+                for key in ("viz_spec", "presmodel"):
+                    value = outcome.chart.get(key)
+                    if isinstance(value, dict):
+                        chart_payload[key] = value
                 pending_artifacts.append(
                     PendingArtifact(
                         kind="chart",
-                        payload={"chart_spec": chart_spec},
+                        payload=chart_payload,
                         tool_call_id=invocation.tool_call_id,
                     )
                 )
@@ -2528,6 +2534,14 @@ class AssistantLoop:
             ):
                 pending_artifacts.append(PendingArtifact(
                     kind="smart_report", payload=outcome.metadata["smart_report"],
+                    tool_call_id=invocation.tool_call_id,
+                ))
+                context.pending_output = _pending_trace(pending_artifacts)
+            if invocation.tool_name == "dashboard_build" and isinstance(
+                outcome.metadata.get("dashboard_artifact"), dict
+            ):
+                pending_artifacts.append(PendingArtifact(
+                    kind="dashboard", payload=outcome.metadata["dashboard_artifact"],
                     tool_call_id=invocation.tool_call_id,
                 ))
                 context.pending_output = _pending_trace(pending_artifacts)
@@ -3610,10 +3624,14 @@ def _ordered_output_frames(
         elif kind == "chart":
             tool_call_id = str(item.get("tool_call_id") or "")
             chart_spec = str(item["payload"].get("chart_spec") or "")
+            viz_spec = item["payload"].get("viz_spec")
+            presmodel = item["payload"].get("presmodel")
             frames.append(
                 events.chart(
                     tool_call_id,
                     chart_spec,
+                    viz_spec=viz_spec if isinstance(viz_spec, dict) else None,
+                    presmodel=presmodel if isinstance(presmodel, dict) else None,
                     content_index=index,
                     content_id=content_id,
                 )
@@ -3626,6 +3644,14 @@ def _ordered_output_frames(
                     "content_id": content_id,
                     "tool_call_id": tool_call_id,
                     "chart_spec": chart_spec,
+                    **(
+                        {"viz_spec": viz_spec}
+                        if isinstance(viz_spec, dict) else {}
+                    ),
+                    **(
+                        {"presmodel": presmodel}
+                        if isinstance(presmodel, dict) else {}
+                    ),
                 },
             )
         elif kind == "smart_report":
@@ -3637,6 +3663,15 @@ def _ordered_output_frames(
                 "content_index": index, "content_id": content_id, "payload": payload,
             }))
             _record_step(context, {"kind": "smart_report", **positioned})
+        elif kind == "dashboard":
+            payload = dict(item["payload"])
+            frames.append(events.format_sse("dashboard", {
+                "content_index": index, "content_id": content_id, "payload": payload,
+            }))
+            _record_step(context, {
+                "kind": "dashboard", "content_index": index, "content_id": content_id,
+                **payload,
+            })
         elif kind == "ui":
             payload = dict(item["payload"])
             program = payload.pop("program")
