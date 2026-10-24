@@ -243,12 +243,15 @@ def rank(
 def suggest(pills: list[FieldRef], *, top: int = 6) -> list[dict[str, Any]]:
     """The ShowMe panel payload: ranked tiles with their unmet requirements."""
     ranked = rank(pills)
+    best = default_chart_id(pills)
     return [
         {
             "id": item.id,
             "label": item.label,
             "mark": item.mark,
             "enabled": not unmet,
+            # The one tile the panel marks as the best fit for these fields.
+            "recommended": item.id == best and not unmet,
             "unmet": [
                 {"kind": requirement.kind, "optional": requirement.optional}
                 for requirement in unmet

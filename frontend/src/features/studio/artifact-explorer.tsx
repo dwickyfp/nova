@@ -1,20 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  ArrowDown,
-  ArrowUp,
-  BarChart3,
-  LayoutDashboard,
-  LayoutGrid,
-  List,
-  Loader2,
-  MoreHorizontal,
-  PackageOpen,
-  Plus,
-  Search,
-  Star,
-} from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, BarChart3, LayoutDashboard, Loader2, MoreHorizontal, PackageOpen, Plus, Search, Star } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -45,24 +31,23 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { studioApi, type StudioArtifact } from "@/features/agents/api";
+import { describeView, sourceOf } from "@/features/viz/insight";
 import type { DashboardSpec, PresModel } from "@/features/viz/types";
 import { VizView } from "@/features/viz/viz-view";
 import { cn } from "@/lib/utils";
 
 /**
- * ArtifactExplorer is the Studio content browser: dashboards and sheets as
- * thumbnails or a sortable list, filtered by kind, searchable, with
- * favorites, and actions to open, edit, refresh, delete, or create a new
- * sheet or dashboard. Thumbnails are live: sheets compute their view and
- * dashboards draw their zones with each sheet's marks.
+ * ArtifactExplorer is the Studio content browser. Dashboards show as cards
+ * whose thumbnails draw every zone with its sheet's marks; sheets show as a
+ * table that reads each view's current answer from its own data, with its
+ * shape, source and last change. Filtered by kind, searchable, sortable, with
+ * favorites, and actions to open, edit, refresh, delete, or create.
  */
 
 type Kind = "all" | "dashboard" | "chart" | "favorites";
-type SortKey = "updated" | "created" | "title" | "type";
-type Layout = "grid" | "list";
+type SortKey = "updated" | "created" | "title";
 
 const FAVORITES_KEY = "nova.studio.favorite-artifacts";
-const LAYOUT_KEY = "nova.studio.explorer-layout";
 
 function readStored<T>(key: string, fallback: T): T {
   try {
@@ -77,14 +62,19 @@ function writeStored(key: string, value: unknown) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Favorites and layout are conveniences; nothing depends on them.
+    // Favorites are a convenience; nothing depends on them.
   }
 }
 
+function toDate(value: string): Date {
+  return new Date(value.includes("T") || value.endsWith("Z") ? value : `${value.replace(" ", "T")}Z`);
+}
+
+/** "24 Oct, 09:25" in the viewer's locale and time zone. */
 function formatModified(value: string): string {
-  const date = new Date(value.includes("T") || value.endsWith("Z") ? value : `${value.replace(" ", "T")}Z`);
+  const date = toDate(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return `${date.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 export function ArtifactExplorer({
@@ -99,7 +89,6 @@ export function ArtifactExplorer({
     key: "updated",
     direction: "desc",
   });
-  const [layout, setLayoutState] = useState<Layout>(() => readStored<Layout>(LAYOUT_KEY, "grid"));
   const [favorites, setFavorites] = useState<string[]>(() => readStored<string[]>(FAVORITES_KEY, []));
   const [creating, setCreating] = useState<"chart" | "dashboard" | null>(null);
   const [deleting, setDeleting] = useState<StudioArtifact | null>(null);
@@ -109,10 +98,6 @@ export function ArtifactExplorer({
     queryFn: () => studioApi.listArtifacts(),
   });
 
-  const setLayout = (next: Layout) => {
-    setLayoutState(next);
-    writeStored(LAYOUT_KEY, next);
-  };
   const toggleFavorite = (id: string) => {
     setFavorites((current) => {
       const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
@@ -130,13 +115,14 @@ export function ArtifactExplorer({
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const all = artifactsQuery.data?.artifacts ?? [];
-  const counts = {
+  const all = useMemo(() => artifactsQuery.data?.artifacts ?? [], [artifactsQuery.data]);
+  const counts: Record<Kind, number> = {
     all: all.length,
     dashboard: all.filter((item) => item.artifact_type === "dashboard").length,
     chart: all.filter((item) => item.artifact_type === "chart").length,
     favorites: all.filter((item) => favorites.includes(item.artifact_id)).length,
   };
+  const latest = all.reduce<string | null>((max, item) => (!max || item.updated_at > max ? item.updated_at : max), null);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -146,19 +132,15 @@ export function ArtifactExplorer({
       return !needle || item.title.toLowerCase().includes(needle);
     });
     const value = (item: StudioArtifact): string =>
-      sort.key === "title"
-        ? item.title.toLowerCase()
-        : sort.key === "type"
-          ? item.artifact_type
-          : sort.key === "created"
-            ? item.created_at
-            : item.updated_at;
+      sort.key === "title" ? item.title.toLowerCase() : sort.key === "created" ? item.created_at : item.updated_at;
     rows.sort((a, b) => {
       const order = value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0;
       return sort.direction === "asc" ? order : -order;
     });
     return rows;
   }, [all, favorites, kind, search, sort]);
+  const dashboards = visible.filter((item) => item.artifact_type === "dashboard");
+  const sheets = visible.filter((item) => item.artifact_type === "chart");
 
   const tabs: { value: Kind; label: string }[] = [
     { value: "all", label: "All" },
@@ -168,19 +150,35 @@ export function ArtifactExplorer({
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 border-b px-5 pt-3 sm:px-7">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold">Explore</h1>
-            <p className="text-xs text-muted-foreground">
-              Dashboards and sheets recompute from current data, under your access, whenever they open.
+    <div className="viz-numerals flex min-h-0 flex-1 flex-col">
+      <header className="shrink-0 border-b px-5 pt-6 sm:px-8">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="min-w-0 flex-1 basis-80">
+            <h1 className="type-display">Explore</h1>
+            <p className="type-ui mt-2 text-ink-secondary">
+              {counts.all} {counts.all === 1 ? "view" : "views"}
+              {latest ? (
+                <>
+                  <span aria-hidden="true" className="mx-1.5 text-muted-foreground">·</span>
+                  latest change {formatModified(latest)}
+                </>
+              ) : null}
             </p>
           </div>
+          <label className="relative flex w-full items-center sm:w-72">
+            <span className="sr-only">Search views</span>
+            <Search aria-hidden="true" className="absolute left-2.5 size-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search views"
+              className="type-ui h-9 pl-8"
+            />
+          </label>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" className="gap-1.5">
-                <Plus aria-hidden="true" className="size-4" /> New
+              <Button type="button" className="h-9 gap-1.5">
+                <Plus aria-hidden="true" className="size-4" /> New view
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -193,102 +191,61 @@ export function ArtifactExplorer({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <nav className="-mb-px mt-3 flex gap-1 overflow-x-auto" aria-label="Content type">
-          {tabs.map((tab) => (
-            <button
-              key={tab.value}
+        <div className="-mb-px mt-5 flex flex-wrap items-end gap-3">
+          <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]" aria-label="Content type">
+            {tabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setKind(tab.value)}
+                aria-current={kind === tab.value ? "page" : undefined}
+                className={cn(
+                  "type-ui shrink-0 border-b-2 px-3 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+                  kind === tab.value
+                    ? "border-primary font-semibold text-foreground"
+                    : "border-transparent text-ink-secondary hover:text-foreground",
+                )}
+              >
+                {tab.label}
+                <span className="type-meta ml-1.5">{counts[tab.value]}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-1.5 pb-1.5">
+            <Select value={sort.key} onValueChange={(value) => setSort((current) => ({ ...current, key: value as SortKey }))}>
+              <SelectTrigger aria-label="Sort by" className="type-ui h-8 w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="updated">Last changed</SelectItem>
+                <SelectItem value="created">Date created</SelectItem>
+                <SelectItem value="title">Name</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
               type="button"
-              onClick={() => setKind(tab.value)}
-              aria-current={kind === tab.value ? "page" : undefined}
-              className={cn(
-                "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-                kind === tab.value
-                  ? "border-primary font-medium text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label={sort.direction === "asc" ? "Sort descending" : "Sort ascending"}
+              onClick={() => setSort((current) => ({ ...current, direction: current.direction === "asc" ? "desc" : "asc" }))}
             >
-              {tab.label}
-              <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground">
-                {counts[tab.value]}
-              </span>
-            </button>
-          ))}
-        </nav>
-      </header>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-5 py-2 sm:px-7" role="toolbar" aria-label="Explore tools">
-        <div className="relative w-full sm:w-64">
-          <Search aria-hidden="true" className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search content"
-            aria-label="Search content"
-            className="h-8 pl-8"
-          />
-        </div>
-        <span className="text-xs text-muted-foreground" role="status">
-          {visible.length} {visible.length === 1 ? "item" : "items"}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={sort.key} onValueChange={(value) => setSort((current) => ({ ...current, key: value as SortKey }))}>
-            <SelectTrigger aria-label="Sort by" className="h-8 w-40 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="updated">Last modified</SelectItem>
-              <SelectItem value="created">Date created</SelectItem>
-              <SelectItem value="title">Name</SelectItem>
-              <SelectItem value="type">Type</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="size-8"
-            aria-label={sort.direction === "asc" ? "Sort descending" : "Sort ascending"}
-            onClick={() => setSort((current) => ({ ...current, direction: current.direction === "asc" ? "desc" : "asc" }))}
-          >
-            {sort.direction === "asc" ? (
-              <ArrowUp aria-hidden="true" className="size-4" />
-            ) : (
-              <ArrowDown aria-hidden="true" className="size-4" />
-            )}
-          </Button>
-          <div className="flex rounded-md border p-0.5" role="group" aria-label="Layout">
-            {(["grid", "list"] as const).map((option) => {
-              const Icon = option === "grid" ? LayoutGrid : List;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={layout === option}
-                  aria-label={option === "grid" ? "Grid view" : "List view"}
-                  onClick={() => setLayout(option)}
-                  className={cn(
-                    "rounded p-1 focus-visible:outline-2 focus-visible:outline-ring",
-                    layout === option ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon aria-hidden="true" className="size-4" />
-                </button>
-              );
-            })}
+              {sort.direction === "asc" ? <ArrowUp aria-hidden="true" className="size-4" /> : <ArrowDown aria-hidden="true" className="size-4" />}
+            </Button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-7 sm:px-8">
         {artifactsQuery.isLoading ? (
-          <p className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Loading content
+          <p className="type-ui flex items-center gap-2 py-10 text-ink-secondary" role="status">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Loading views
           </p>
         ) : artifactsQuery.isError ? (
           <EmptyState
             variant="error"
             icon={AlertCircle}
-            title="Content could not be loaded"
+            title="Views could not be loaded"
             description={(artifactsQuery.error as Error).message}
             action={<Button variant="outline" size="sm" onClick={() => void artifactsQuery.refetch()}>Try again</Button>}
           />
@@ -305,39 +262,67 @@ export function ArtifactExplorer({
             title={kind === "favorites" && !search.trim() ? "No favorites yet" : "Nothing matches"}
             description={
               kind === "favorites" && !search.trim()
-                ? "Mark dashboards and sheets with the star to keep them here."
-                : `No ${kind === "all" ? "content" : tabs.find((tab) => tab.value === kind)?.label.toLowerCase()} matches “${search.trim()}”.`
+                ? "Star a dashboard or sheet to keep it here."
+                : `No ${kind === "all" ? "view" : tabs.find((tab) => tab.value === kind)?.label.toLowerCase()} matches “${search.trim()}”.`
             }
           />
-        ) : layout === "grid" ? (
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-4" aria-label="Content">
-            {visible.map((artifact) => (
-              <li key={artifact.artifact_id}>
-                <ContentCard
-                  artifact={artifact}
-                  favorite={favorites.includes(artifact.artifact_id)}
-                  onToggleFavorite={() => toggleFavorite(artifact.artifact_id)}
-                  onOpen={(edit) => onOpen(artifact.artifact_id, { edit })}
-                  onDelete={() => setDeleting(artifact)}
-                />
-              </li>
-            ))}
-          </ul>
         ) : (
-          <ContentTable
-            rows={visible}
-            favorites={favorites}
-            sort={sort}
-            onSort={(key) =>
-              setSort((current) => ({
-                key,
-                direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
-              }))
-            }
-            onToggleFavorite={toggleFavorite}
-            onOpen={(id, edit) => onOpen(id, { edit })}
-            onDelete={setDeleting}
-          />
+          <div className="flex flex-col gap-10">
+            {dashboards.length ? (
+              <section aria-labelledby="explore-dashboards">
+                <h2 id="explore-dashboards" className="type-title mb-3">
+                  Dashboards<span className="type-meta ml-2 font-normal">{dashboards.length}</span>
+                </h2>
+                <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,26rem),1fr))] gap-5">
+                  {dashboards.map((artifact) => (
+                    <li key={artifact.artifact_id}>
+                      <DashboardCard
+                        artifact={artifact}
+                        favorite={favorites.includes(artifact.artifact_id)}
+                        onToggleFavorite={() => toggleFavorite(artifact.artifact_id)}
+                        onOpen={(edit) => onOpen(artifact.artifact_id, { edit })}
+                        onDelete={() => setDeleting(artifact)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {sheets.length ? (
+              <section aria-labelledby="explore-sheets">
+                <h2 id="explore-sheets" className="type-title mb-3">
+                  Sheets<span className="type-meta ml-2 font-normal">{sheets.length}</span>
+                </h2>
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="w-full min-w-[56rem] border-collapse">
+                    <thead className="bg-surface-1">
+                      <tr className="text-left">
+                        <th scope="col" className="type-label w-10 border-b px-3 py-2.5"><span className="sr-only">Favorite</span></th>
+                        <th scope="col" className="type-label border-b px-3 py-2.5 text-ink-secondary">View</th>
+                        <th scope="col" className="type-label w-36 border-b px-3 py-2.5 text-ink-secondary">Shape</th>
+                        <th scope="col" className="type-label border-b px-3 py-2.5 text-ink-secondary">Current answer</th>
+                        <th scope="col" className="type-label w-52 border-b px-3 py-2.5 text-ink-secondary">Source</th>
+                        <th scope="col" className="type-label w-32 border-b px-3 py-2.5 text-ink-secondary">Updated</th>
+                        <th scope="col" className="w-10 border-b px-3 py-2.5"><span className="sr-only">Actions</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sheets.map((artifact) => (
+                        <SheetRow
+                          key={artifact.artifact_id}
+                          artifact={artifact}
+                          favorite={favorites.includes(artifact.artifact_id)}
+                          onToggleFavorite={() => toggleFavorite(artifact.artifact_id)}
+                          onOpen={(edit) => onOpen(artifact.artifact_id, { edit })}
+                          onDelete={() => setDeleting(artifact)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -352,7 +337,7 @@ export function ArtifactExplorer({
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Delete ${deleting?.title ?? "this item"}?`}
+        title={`Delete ${deleting?.title ?? "this view"}?`}
         desc={
           deleting?.artifact_type === "chart"
             ? "The sheet and its saved query are removed. Dashboards that show it lose that zone."
@@ -367,11 +352,6 @@ export function ArtifactExplorer({
       />
     </div>
   );
-}
-
-function TypeIcon({ type, className }: { type: StudioArtifact["artifact_type"]; className?: string }) {
-  const Icon = type === "dashboard" ? LayoutDashboard : BarChart3;
-  return <Icon aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground", className)} />;
 }
 
 function FavoriteButton({ favorite, title, onToggle }: { favorite: boolean; title: string; onToggle: () => void }) {
@@ -419,7 +399,7 @@ function ItemMenu({
         <DropdownMenuItem onSelect={() => onOpen(true)}>
           {artifact.artifact_type === "dashboard" ? "Edit layout" : "Edit sheet"}
         </DropdownMenuItem>
-        {onRefresh ? <DropdownMenuItem onSelect={onRefresh}>Refresh thumbnail</DropdownMenuItem> : null}
+        {onRefresh ? <DropdownMenuItem onSelect={onRefresh}>Recompute</DropdownMenuItem> : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onDelete}>
           Delete
@@ -429,7 +409,7 @@ function ItemMenu({
   );
 }
 
-function ContentCard({
+function DashboardCard({
   artifact,
   favorite,
   onToggleFavorite,
@@ -442,112 +422,77 @@ function ContentCard({
   onOpen: (edit: boolean) => void;
   onDelete: () => void;
 }) {
-  const isDashboard = artifact.artifact_type === "dashboard";
-  const sheet = useQuery({
-    queryKey: ["studio", "artifact-data", artifact.artifact_id],
-    queryFn: () => studioApi.refreshArtifact(artifact.artifact_id),
-    enabled: !isDashboard,
+  const detail = useQuery({
+    queryKey: ["studio", "artifact", artifact.artifact_id],
+    queryFn: () => studioApi.getArtifact(artifact.artifact_id),
     staleTime: 60_000,
   });
+  const spec = detail.data?.viz_spec as unknown as DashboardSpec | null;
+  const sheetCount = (spec?.zones ?? []).filter((zone) => zone.kind === "sheet").length;
   return (
-    <article
-      className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:ring-2 focus-within:ring-ring hover:border-foreground/20 hover:shadow-md"
-    >
+    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card transition-colors focus-within:ring-2 focus-within:ring-ring hover:border-viz-axis">
       <button
         type="button"
         onClick={() => onOpen(false)}
         aria-label={`Open ${artifact.title}`}
-        className="relative block aspect-[16/10] w-full overflow-hidden border-b bg-surface-1 text-left focus-visible:outline-none"
+        className="relative block h-48 w-full overflow-hidden border-b bg-surface-1 text-left focus-visible:outline-none"
       >
-        {isDashboard ? (
-          <DashboardThumbnail artifactId={artifact.artifact_id} />
-        ) : sheet.isLoading ? (
-          <ThumbnailState>
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-          </ThumbnailState>
-        ) : sheet.isError ? (
-          <ThumbnailState>
-            <AlertCircle aria-hidden="true" className="size-4" /> Data unavailable
-          </ThumbnailState>
-        ) : sheet.data?.presmodel ? (
-          <div className="pointer-events-none h-full p-3">
-            <VizView presmodel={sheet.data.presmodel as PresModel} thumbnail />
-          </div>
-        ) : (
-          <ThumbnailState>No view yet</ThumbnailState>
-        )}
+        <DashboardThumbnail artifactId={artifact.artifact_id} spec={spec} loading={detail.isLoading} updatedAt={detail.data?.updated_at} />
       </button>
-      <div className="flex items-start gap-2 px-3 py-2.5">
-        <TypeIcon type={artifact.artifact_type} className="mt-0.5" />
+      <div className="flex items-start gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-medium" title={artifact.title}>
-            <button
-              type="button"
-              onClick={() => onOpen(false)}
-              className="max-w-full truncate text-left hover:underline focus-visible:outline-none"
-            >
+          <h3 className="type-title truncate" title={artifact.title}>
+            <button type="button" onClick={() => onOpen(false)} className="max-w-full truncate text-left hover:underline focus-visible:outline-none">
               {artifact.title}
             </button>
-          </h2>
-          <p className="truncate text-xs text-muted-foreground">
-            {isDashboard ? "Dashboard" : "Sheet"} · {formatModified(artifact.updated_at)}
+          </h3>
+          <p className="type-meta mt-1 truncate">
+            {detail.isLoading ? "Dashboard" : `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`}
+            <span aria-hidden="true" className="mx-1.5">·</span>
+            {formatModified(artifact.updated_at)}
           </p>
         </div>
         <FavoriteButton favorite={favorite} title={artifact.title} onToggle={onToggleFavorite} />
-        <ItemMenu
-          artifact={artifact}
-          onOpen={onOpen}
-          onRefresh={isDashboard ? undefined : () => void sheet.refetch()}
-          onDelete={onDelete}
-        />
+        <ItemMenu artifact={artifact} onOpen={onOpen} onDelete={onDelete} />
       </div>
-      {sheet.isFetching && !sheet.isLoading ? (
-        <span className="sr-only" role="status">
-          Refreshing {artifact.title}
-        </span>
-      ) : null}
     </article>
   );
 }
 
-function ThumbnailState({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="flex h-full items-center justify-center gap-1.5 text-xs text-muted-foreground">{children}</span>
-  );
-}
-
 /** A dashboard thumbnail: its zones, each drawing the sheet's marks. */
-function DashboardThumbnail({ artifactId }: { artifactId: string }) {
-  const detail = useQuery({
-    queryKey: ["studio", "artifact", artifactId],
-    queryFn: () => studioApi.getArtifact(artifactId),
-    staleTime: 60_000,
-  });
-  const spec = detail.data?.viz_spec as unknown as DashboardSpec | null;
+function DashboardThumbnail({
+  artifactId,
+  spec,
+  loading,
+  updatedAt,
+}: {
+  artifactId: string;
+  spec: DashboardSpec | null;
+  loading: boolean;
+  updatedAt?: string;
+}) {
   const compute = useQuery({
-    queryKey: ["studio", "dashboard-thumbnail", artifactId, detail.data?.updated_at],
+    queryKey: ["studio", "dashboard-thumbnail", artifactId, updatedAt],
     queryFn: () => studioApi.computeVizDashboard({ spec: spec as unknown as Record<string, unknown> }),
     enabled: Boolean(spec?.zones?.length),
     staleTime: 60_000,
   });
-  if (detail.isLoading) {
+  if (loading) {
     return (
-      <ThumbnailState>
+      <span className="flex h-full items-center justify-center text-muted-foreground">
         <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-      </ThumbnailState>
+        <span className="sr-only">Loading the layout</span>
+      </span>
     );
   }
   const zones = spec?.zones ?? [];
-  if (!zones.length) return <ThumbnailState>Empty dashboard</ThumbnailState>;
+  if (!zones.length) return <span className="type-meta flex h-full items-center justify-center">No sheets placed yet</span>;
   const rows = Math.max(1, ...zones.map((zone) => zone.rect.y + zone.rect.h));
   const results = new Map((compute.data?.zones ?? []).map((zone) => [zone.zone_id, zone]));
   return (
     <div
-      className="pointer-events-none grid h-full gap-1 p-1.5"
-      style={{
-        gridTemplateColumns: "repeat(24, minmax(0, 1fr))",
-        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-      }}
+      className="pointer-events-none grid h-full gap-1.5 p-1.5"
+      style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))", gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}
       aria-hidden="true"
     >
       {zones.map((zone) => {
@@ -555,32 +500,29 @@ function DashboardThumbnail({ artifactId }: { artifactId: string }) {
         return (
           <div
             key={zone.zone_id}
-            className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded border bg-card p-1"
-            style={{
-              gridColumn: `${zone.rect.x + 1} / span ${zone.rect.w}`,
-              gridRow: `${zone.rect.y + 1} / span ${zone.rect.h}`,
-            }}
+            className="flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden rounded border bg-card p-2"
+            style={{ gridColumn: `${zone.rect.x + 1} / span ${zone.rect.w}`, gridRow: `${zone.rect.y + 1} / span ${zone.rect.h}` }}
           >
             {zone.kind === "sheet" ? (
               <>
-                <span className="truncate text-xs leading-tight text-muted-foreground">{result?.title ?? ""}</span>
+                <span className="type-meta truncate">{result?.title ?? ""}</span>
                 <div className="min-h-0 flex-1">
                   {result?.presmodel ? (
                     <VizView presmodel={result.presmodel} thumbnail />
                   ) : result?.error ? (
-                    <span className="flex h-full items-center justify-center gap-1 text-center text-xs text-muted-foreground">
+                    <span className="type-meta flex h-full items-center gap-1">
                       <AlertCircle aria-hidden="true" className="size-3 shrink-0" />
                       <span className="line-clamp-2">{result.error}</span>
                     </span>
                   ) : compute.isLoading ? (
-                    <span className="block h-full animate-pulse rounded bg-muted" />
+                    <span className="block h-full rounded bg-muted" />
                   ) : null}
                 </div>
               </>
             ) : zone.kind === "text" ? (
-              <span className="truncate text-xs font-medium">{zone.text?.content}</span>
+              <span className="type-label truncate">{zone.text?.content}</span>
             ) : zone.kind === "filter" ? (
-              <span className="truncate text-xs text-muted-foreground">Filter · {zone.filter?.field}</span>
+              <span className="type-meta truncate">Filter: {zone.filter?.field}</span>
             ) : null}
           </div>
         );
@@ -589,83 +531,84 @@ function DashboardThumbnail({ artifactId }: { artifactId: string }) {
   );
 }
 
-function ContentTable({
-  rows,
-  favorites,
-  sort,
-  onSort,
+function SheetRow({
+  artifact,
+  favorite,
   onToggleFavorite,
   onOpen,
   onDelete,
 }: {
-  rows: StudioArtifact[];
-  favorites: string[];
-  sort: { key: SortKey; direction: "asc" | "desc" };
-  onSort: (key: SortKey) => void;
-  onToggleFavorite: (id: string) => void;
-  onOpen: (id: string, edit: boolean) => void;
-  onDelete: (artifact: StudioArtifact) => void;
+  artifact: StudioArtifact;
+  favorite: boolean;
+  onToggleFavorite: () => void;
+  onOpen: (edit: boolean) => void;
+  onDelete: () => void;
 }) {
-  const header = (key: SortKey, label: string) => (
-    <th scope="col" aria-sort={sort.key === key ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-      <button type="button" onClick={() => onSort(key)} className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-        {label}
-        {sort.key === key ? (
-          sort.direction === "asc" ? <ArrowUp aria-hidden="true" className="size-3" /> : <ArrowDown aria-hidden="true" className="size-3" />
-        ) : null}
-      </button>
-    </th>
-  );
+  const sheet = useQuery({
+    queryKey: ["studio", "artifact-data", artifact.artifact_id],
+    queryFn: () => studioApi.refreshArtifact(artifact.artifact_id),
+    staleTime: 60_000,
+  });
+  const presmodel = (sheet.data?.presmodel as PresModel | undefined) ?? null;
+  const insight = presmodel ? describeView(presmodel) : null;
+  const source = sourceOf(sheet.data?.artifact.sql_text);
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full min-w-[36rem] text-sm">
-        <thead className="border-b">
-          <tr>
-            <th scope="col" className="w-10 px-3 py-2">
-              <span className="sr-only">Favorite</span>
-            </th>
-            {header("title", "Name")}
-            {header("type", "Type")}
-            {header("created", "Created")}
-            {header("updated", "Modified")}
-            <th scope="col" className="w-10 px-3 py-2">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((artifact) => (
-            <tr key={artifact.artifact_id} className="border-b last:border-b-0 hover:bg-surface-1">
-              <td className="px-3 py-1.5">
-                <FavoriteButton
-                  favorite={favorites.includes(artifact.artifact_id)}
-                  title={artifact.title}
-                  onToggle={() => onToggleFavorite(artifact.artifact_id)}
-                />
-              </td>
-              <td className="max-w-0 px-3 py-1.5">
-                <button
-                  type="button"
-                  onClick={() => onOpen(artifact.artifact_id, false)}
-                  className="flex max-w-full items-center gap-2 text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <TypeIcon type={artifact.artifact_type} />
-                  <span className="truncate">{artifact.title}</span>
-                </button>
-              </td>
-              <td className="px-3 py-1.5 text-muted-foreground">
-                {artifact.artifact_type === "dashboard" ? "Dashboard" : "Sheet"}
-              </td>
-              <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">{formatModified(artifact.created_at)}</td>
-              <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">{formatModified(artifact.updated_at)}</td>
-              <td className="px-3 py-1.5">
-                <ItemMenu artifact={artifact} onOpen={(edit) => onOpen(artifact.artifact_id, edit)} onDelete={() => onDelete(artifact)} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <tr className="border-b border-viz-grid last:border-b-0 hover:bg-surface-1">
+      <td className="px-3 py-2">
+        <FavoriteButton favorite={favorite} title={artifact.title} onToggle={onToggleFavorite} />
+      </td>
+      <td className="type-ui max-w-72 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={() => onOpen(false)}
+          className="block max-w-full truncate text-left font-semibold text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          title={artifact.title}
+        >
+          {artifact.title}
+        </button>
+      </td>
+      <td className="px-3 py-1.5">
+        <button
+          type="button"
+          onClick={() => onOpen(false)}
+          aria-label={`Open ${artifact.title}`}
+          className="block h-8 w-28 overflow-hidden rounded focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          {presmodel ? (
+            <span className="pointer-events-none block h-full">
+              <VizView presmodel={presmodel} thumbnail />
+            </span>
+          ) : sheet.isLoading ? (
+            <span className="block h-full rounded bg-muted" />
+          ) : null}
+        </button>
+      </td>
+      <td className="type-ui px-3 py-2.5 text-ink-secondary">
+        {sheet.isLoading ? (
+          <span className="type-meta" role="status">Computing</span>
+        ) : sheet.isError ? (
+          <span className="type-meta inline-flex items-center gap-1">
+            <AlertCircle aria-hidden="true" className="size-3.5" /> Data unavailable under your access
+          </span>
+        ) : insight ? (
+          <>
+            <span className="font-semibold text-foreground">
+              {insight.lead.subject} {insight.lead.verb} {insight.lead.num}
+              {insight.lead.unit}
+            </span>
+          </>
+        ) : (
+          <span className="type-meta">{sheet.data ? `${sheet.data.row_count.toLocaleString()} rows` : ""}</span>
+        )}
+      </td>
+      <td className="px-3 py-2.5">
+        {source ? <span className="type-code block truncate text-ink-secondary" title={source}>{source}</span> : <span className="type-meta">Query</span>}
+      </td>
+      <td className="type-meta px-3 py-2.5 whitespace-nowrap">{formatModified(artifact.updated_at)}</td>
+      <td className="px-3 py-2">
+        <ItemMenu artifact={artifact} onOpen={onOpen} onRefresh={() => void sheet.refetch()} onDelete={onDelete} />
+      </td>
+    </tr>
   );
 }
 

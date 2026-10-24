@@ -1,7 +1,8 @@
 import { AddArtifactToReport } from "@/features/smart-reports/add-artifact";
 import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
 import { ArtifactExplorer } from "./artifact-explorer";
-import { WorksheetEditor } from "@/features/viz/worksheet-editor";
+import { describeView } from "@/features/viz/insight";
+import { ViewAnswer, WorksheetEditor } from "@/features/viz/worksheet-editor";
 import { VizView } from "@/features/viz/viz-view";
 import type { DashboardSpec, PresModel, WorksheetSpec } from "@/features/viz/types";
 import { chartSpecWithRows } from "./artifact-chart-spec";
@@ -620,11 +621,7 @@ function ArtifactVisual({
   compact?: boolean;
 }) {
   if (data.presmodel) {
-    return (
-      <div className={cn("min-w-0", compact && "text-xs")}>
-        <VizView presmodel={data.presmodel as PresModel} compact={compact} />
-      </div>
-    );
+    return <SheetPreview presmodel={data.presmodel as PresModel} compact={compact} />;
   }
   if (data.artifact.artifact_type === "chart" && data.artifact.chart_spec) {
     return (
@@ -639,6 +636,27 @@ function ArtifactVisual({
       columns={data.columns}
       rows={compact ? data.rows.slice(0, 6) : data.rows}
     />
+  );
+}
+
+/** A saved sheet: its answer as the headline, then the chart; selecting a
+ * mark reads it against the others. */
+function SheetPreview({ presmodel, compact }: { presmodel: PresModel; compact: boolean }) {
+  const [selected, setSelected] = useState<string | number | null>(null);
+  const insight = describeView(presmodel, selected);
+  return (
+    <div className="viz-numerals flex min-w-0 flex-col gap-5">
+      <ViewAnswer question="" insight={insight} />
+      <VizView
+        presmodel={presmodel}
+        compact={compact}
+        highlight={insight?.highlight ?? null}
+        onMarkClick={(values) => {
+          const dimension = insight?.highlight?.dimension;
+          if (dimension && dimension in values) setSelected(values[dimension]);
+        }}
+      />
+    </div>
   );
 }
 

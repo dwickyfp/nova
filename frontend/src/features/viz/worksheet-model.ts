@@ -141,6 +141,13 @@ export function pillCaption(pill: FieldRef): string {
   return name;
 }
 
+/** A pill's caption as two roles: the operator (SUM, YEAR) and the field. */
+export function pillParts(pill: FieldRef): { prefix: string | null; name: string } {
+  const caption = pillCaption(pill);
+  const match = /^([A-Z]+)\((.*)\)$/.exec(caption);
+  return match ? { prefix: match[1], name: match[2] } : { prefix: null, name: caption };
+}
+
 /** The result column a pill produces, matching the compiler's label. */
 export function pillLabel(pill: FieldRef): string {
   if (pill.aggregation === "agg") return pill.field;

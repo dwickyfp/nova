@@ -179,6 +179,10 @@ New worksheet fields (`calculations`, `date_part`, filter `context` and
   markers, function reference, and "compute using" for table calculations).
 - `features/viz/filter-dialog.tsx` edits member, range, relative-date and
   measure filters, with "add to context".
+- `features/viz/insight.ts` computes a view's answer from its own rows
+  (leader, share, gap, average, trend, low point) and the one mark it is
+  about; Explore, the sheet preview, the editor and dashboard zones show it as
+  the headline and draw that mark in `--viz-highlight` (DESIGN.md 2.6).
 - `features/viz/viz-view.tsx` renders a presentation model on Nova tokens; pills
   use `--pill-discrete`/`--pill-continuous`. Several dimensions on an axis read
   as combined headers; several measures on an axis mark get one pane each with

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { studioApi, type StudioArtifact } from "@/features/agents/api";
 import { cn } from "@/lib/utils";
+import { describeView } from "./insight";
 import { VizView } from "./viz-view";
 import type { DashboardComputeResponse, DashboardSpec, Filter, Zone } from "./types";
 
@@ -120,7 +121,8 @@ export function DashboardCanvas({
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {filterZones.length || selection ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-2" role="toolbar" aria-label="Dashboard filters">
+          <span className="type-meta">Applies to every sheet</span>
           {filterZones.map((zone) => (
             <DashboardFilter
               key={zone.zone_id}
@@ -138,13 +140,13 @@ export function DashboardCanvas({
             />
           ))}
           {selection ? (
-            <span className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="type-meta ml-auto inline-flex items-center gap-2">
               Filtering by {Object.entries(selection).map(([field, value]) => `${field}: ${value}`).join(", ")}
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-xs"
+                className="type-meta h-6 px-2"
                 onClick={() => {
                   setSelection(null);
                   setZoneFilters({});
@@ -169,7 +171,7 @@ export function DashboardCanvas({
           <div
             key={zone.zone_id}
             className={cn(
-              "relative min-w-0 rounded-xl border bg-card p-3 shadow-sm",
+              "relative min-w-0 rounded-lg border bg-card p-4",
               zoneFilters[zone.zone_id] && "border-ring",
             )}
             style={{
@@ -196,13 +198,13 @@ export function DashboardCanvas({
               />
             ) : zone.kind === "text" ? (
               zone.text?.style === "title" ? (
-                <h2 className="text-base font-semibold">{zone.text.content}</h2>
+                <h2 className="type-answer">{zone.text.content}</h2>
               ) : (
-                <p className="text-sm text-muted-foreground">{zone.text?.content}</p>
+                <p className="type-body">{zone.text?.content}</p>
               )
             ) : zone.kind === "filter" ? (
-              <p className="text-xs font-medium text-muted-foreground">
-                Filter: {zone.filter?.field}
+              <p className="type-meta">
+                Filter: <span className="type-code">{zone.filter?.field}</span>
               </p>
             ) : (
               <div className="h-full w-full" aria-label="Spacer" />
@@ -263,19 +265,28 @@ function SheetZone({
   onMarkClick: (values: Record<string, string | number | null>) => void;
   onEdit?: () => void;
 }) {
+  const insight = result?.presmodel ? describeView(result.presmodel) : null;
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      <div className="mb-1 flex items-center gap-1">
-        <h3 className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">{title}</h3>
+    <div className="viz-numerals flex h-full min-w-0 flex-col gap-3">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="type-question truncate">{title}</h3>
+          {insight ? (
+            <p className="type-title mt-1 text-foreground">
+              <span className={insight.lead.marked ? "text-viz-highlight" : undefined}>{insight.lead.subject}</span> {insight.lead.verb} {insight.lead.num}
+              {insight.lead.unit ? <span className="type-unit">{insight.lead.unit}</span> : null}
+            </p>
+          ) : null}
+        </div>
         {onEdit ? (
           <button
             type="button"
             onClick={onEdit}
             aria-label={`Edit sheet ${title}`}
-            title="Edit sheet"
-            className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            className="type-meta inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-ink-secondary hover:bg-surface-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
             <PencilLine aria-hidden="true" className="size-3.5" />
+            Edit sheet
           </button>
         ) : null}
       </div>
@@ -286,13 +297,11 @@ function SheetZone({
           </div>
         ) : null}
         {result?.error ? (
-          <p className="py-6 text-center text-xs text-destructive">{result.error}</p>
+          <p className="type-meta py-6 text-center text-destructive">{result.error}</p>
         ) : result?.presmodel ? (
-          <VizView presmodel={result.presmodel} compact onMarkClick={onMarkClick} />
+          <VizView presmodel={result.presmodel} compact onMarkClick={onMarkClick} highlight={insight?.highlight ?? null} />
         ) : !pending ? (
-          <p className="py-6 text-center text-xs text-muted-foreground">
-            This chart has no data yet.
-          </p>
+          <p className="type-meta py-6 text-center">This sheet returned no rows under your access.</p>
         ) : null}
       </div>
       <span className="sr-only">{`Sheet zone ${zone.zone_id}`}</span>
@@ -313,8 +322,8 @@ function DashboardFilter({
 }) {
   const field = zone.filter?.field ?? "";
   return (
-    <label className="inline-flex min-h-9 items-center gap-2 text-xs">
-      <span className="font-medium text-muted-foreground">{field}</span>
+    <label className="inline-flex min-h-9 items-center gap-2">
+      <span className="type-code text-ink-secondary">{field}</span>
       <Select
         value={value ? String((value as { values: string[] }).values?.[0] ?? "") : "all"}
         onValueChange={(selected) => {
@@ -325,7 +334,7 @@ function DashboardFilter({
           );
         }}
       >
-        <SelectTrigger aria-label={`Filter by ${field}`} className="h-8 w-44 bg-background text-xs">
+        <SelectTrigger aria-label={`Filter by ${field}`} className="type-ui h-8 w-44 bg-background">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

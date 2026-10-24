@@ -223,6 +223,8 @@ export type ShowMeSuggestion = {
   label: string;
   mark: MarkType;
   enabled: boolean;
+  /** The best fit for the fields, as Show Me ranks it. */
+  recommended?: boolean;
   unmet: { kind: string; optional: boolean }[];
 };
 

@@ -218,6 +218,49 @@ Grafik yang butuh warna konkret (recharts) membacanya lewat `readToken` di
 `src/lib/read-token.ts`, bukan menyalin hex. Token dibaca ulang saat tema
 berubah, jadi chart tidak memakai palet lama setelah toggle.
 
+### 2.6 Permukaan analitik (Explore, worksheet, dashboard)
+
+Layar analitik punya bahasa sendiri di atas token inti: data digambar netral,
+dan aksen hanya menunjuk temuan.
+
+| Token | Arti |
+|---|---|
+| `--viz-mark` | Isi mark data (bar, slice) dalam slate netral; lolos 3:1 terhadap card |
+| `--viz-line` | Garis dan titik data |
+| `--viz-highlight` | Satu mark yang dibicarakan jawaban view (merah bata di terang) |
+| `--viz-reference` | Garis referensi rata-rata, putus-putus |
+| `--viz-grid`, `--viz-axis` | Gridline horizontal dan garis sumbu |
+| `--pill-discrete*`, `--pill-continuous*` | Pill shelf: fill tint, border, teks kuat. Biru = header diskret, hijau = sumbu kontinu |
+| `--ink-secondary` | Tinta kedua: prosa dan pertanyaan, di antara `--foreground` dan `--muted-foreground` |
+
+**Aturan highlight.** `--viz-highlight` hanya untuk mark yang disebut di
+jawaban (`describeView` di `features/viz/insight.ts`), dan teks subjek jawaban
+memakai warna yang sama hanya kalau subjek itu mark tersebut. Encoding warna
+kategorikal tetap memakai `--chart-*`, karena di sana hue adalah data.
+
+**Peran tipe.** Setiap teks di layar analitik memakai tepat satu utilitas
+`type-*` dari `theme.css`; line-height di grid 4px, bobot membaca token
+`--weight-*` per tema.
+
+| Utilitas | Spesifikasi | Untuk |
+|---|---|---|
+| `type-display` | 32/36, semibold | Judul halaman |
+| `type-answer` | 26/32, semibold | Temuan sebuah view |
+| `type-figure` | 48/48, 400 | Satu angka utama per zona |
+| `type-title` | 15/20, semibold | Section, zona, kartu |
+| `type-question` | 13/20, medium, `--ink-secondary` | Pertanyaan yang dijawab view |
+| `type-body` | 14/22, `--ink-secondary` | Kalimat pendukung, maks 64ch |
+| `type-ui` | 13/20 | Kontrol, baris, tab |
+| `type-label` | 12/16, semibold | Judul panel, tanpa huruf kapital |
+| `type-meta` | 12/16, `--muted-foreground` | Caption, sumbu, status |
+| `type-code` | `--font-mono` 12/16, nol bergaris | Nama field, sumber, formula |
+| `type-unit` | 0.6em, `--muted-foreground` | Satuan angka (T, M, %) |
+
+`viz-numerals` menyalakan angka tabular dan set huruf `ss02` (I/l/1, 0/O
+dibedakan) untuk permukaan data. `--font-mono` menunjuk JetBrains Mono lalu
+font mono sistem; JetBrains Mono belum di-host sendiri, jadi saat ini yang
+tampil adalah mono sistem.
+
 ---
 
 ## 3. Aturan yang ditegakkan (gate)

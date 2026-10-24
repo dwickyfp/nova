@@ -67,7 +67,7 @@ it("opens a shared dashboard and runs each tile with the viewer's access", async
   mount();
   await page.getByRole("button", { name: /Dashboard from alice/ }).click();
   await expect.element(page.getByRole("heading", { name: "Weekly revenue" })).toBeVisible();
-  await expect.element(page.getByText("Medan")).toBeVisible();
+  await expect.element(page.getByText("Medan").first()).toBeVisible();
   await expect.element(page.getByText("Your access does not cover this chart")).toBeVisible();
 });
 

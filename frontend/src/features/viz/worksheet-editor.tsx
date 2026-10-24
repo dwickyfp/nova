@@ -2,20 +2,16 @@ import { type DragEvent, type ReactNode, useEffect, useMemo, useReducer, useRef,
 import { useMutation } from "@tanstack/react-query";
 import {
   ArrowDownUp,
-  Calendar,
   ChevronDown,
   Code2,
   Copy,
   Equal,
   Filter as FilterIcon,
-  Hash,
   Loader2,
   Plus,
   Redo2,
   Search,
-  ToggleLeft,
   Trash2,
-  Type,
   Undo2,
   X,
 } from "lucide-react";
@@ -57,6 +53,7 @@ import type {
   ShowMeSuggestion,
   WorksheetSpec,
 } from "./types";
+import { describeView, type ViewInsight } from "./insight";
 import { VizView } from "./viz-view";
 import {
   AGGREGATION_LABELS,
@@ -84,6 +81,7 @@ import {
   pillAt,
   pillCaption,
   pillFromField,
+  pillParts,
   placePill,
   quickTableCalc,
   recordsPill,
@@ -185,6 +183,8 @@ export function WorksheetEditor({
   const [computeError, setComputeError] = useState<string | null>(null);
   const [computing, setComputing] = useState(false);
   const [showSql, setShowSql] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
+  const [selectedMark, setSelectedMark] = useState<string | number | null>(null);
   const [suggestions, setSuggestions] = useState<ShowMeSuggestion[]>([]);
   const [calcDialog, setCalcDialog] = useState<{ open: boolean; calc: CalculatedField | null }>({
     open: false,
@@ -261,7 +261,9 @@ export function WorksheetEditor({
         .then((response) => {
           if (run !== sequence.current) return;
           setPresmodel(response.presmodel);
+          setSelectedMark(null);
           setSql(response.sql);
+          setElapsedMs(response.elapsed_ms);
           if (response.fields?.length) setFields(response.fields);
           setComputeError(null);
         })
@@ -282,7 +284,7 @@ export function WorksheetEditor({
         expected_updated_at: expectedUpdatedAt,
       }),
     onSuccess: () => {
-      toast.success("Chart saved");
+      toast.success("Sheet saved");
       onSaved(working);
     },
     onError: (error: Error) => toast.error(error.message),
@@ -356,20 +358,19 @@ export function WorksheetEditor({
   const filterInitial =
     filterDialog.index !== undefined ? (working.filters ?? [])[filterDialog.index] ?? null : null;
 
+  const insight = presmodel && !computeError ? describeView(presmodel, selectedMark) : null;
+  const recommended = suggestions.find((suggestion) => suggestion.recommended)?.id ?? null;
+
   return (
-    <div className="flex min-w-0 flex-col gap-3" onKeyDown={onKeyDown}>
-      <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Worksheet tools">
+    <div className="viz-numerals flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card" onKeyDown={onKeyDown}>
+      <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2" role="toolbar" aria-label="Worksheet tools">
         <ToolButton label="Undo" onClick={() => dispatch({ type: "undo" })} disabled={!canUndo}>
           <Undo2 aria-hidden="true" className="size-4" />
         </ToolButton>
         <ToolButton label="Redo" onClick={() => dispatch({ type: "redo" })} disabled={!canRedo}>
           <Redo2 aria-hidden="true" className="size-4" />
         </ToolButton>
-        <ToolButton
-          label="Swap rows and columns"
-          onClick={() => apply(swapShelves(working))}
-          disabled={!hasView(working)}
-        >
+        <ToolButton label="Swap rows and columns" onClick={() => apply(swapShelves(working))} disabled={!hasView(working)}>
           <ArrowDownUp aria-hidden="true" className="size-4" />
         </ToolButton>
         <ToolButton label="Clear sheet" onClick={() => apply(clearSheet(working))} disabled={!hasView(working)}>
@@ -381,25 +382,26 @@ export function WorksheetEditor({
           onChange={(event) => apply({ ...working, title: event.target.value.slice(0, 256) })}
           placeholder={title || "Sheet title"}
           aria-label="Sheet title"
-          className="h-8 w-56 text-sm"
+          className="type-ui h-8 w-full min-w-0 sm:w-72"
         />
         <div className="ml-auto flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={save.isPending}>
+          <Button type="button" variant="outline" size="sm" className="type-ui" onClick={onCancel} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
             type="button"
             size="sm"
+            className="type-ui font-semibold"
             onClick={() => save.mutate(working)}
             disabled={save.isPending || !hasView(working) || Boolean(computeError)}
           >
             {save.isPending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
-            Save chart
+            Save sheet
           </Button>
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[15rem_13rem_minmax(0,1fr)]">
+      <div className="flex min-w-0 flex-col lg:flex-row">
         <DataPane
           fields={fields}
           error={paneError}
@@ -437,10 +439,10 @@ export function WorksheetEditor({
           }}
         />
 
-        <div className="flex min-w-0 flex-col gap-3">
-          <Card title="Filters">
+        <div className="flex w-full min-w-0 shrink-0 flex-col border-b lg:w-60 lg:border-r lg:border-b-0">
+          <RailSection title="Filters">
             <div
-              className="flex min-h-12 flex-col gap-1 rounded-md border border-dashed p-1.5"
+              className="flex min-h-11 flex-col gap-1 rounded-md border border-dashed p-1.5"
               aria-label="Filters shelf"
               onDragOver={(event) => {
                 if (acceptsDrag(event)) event.preventDefault();
@@ -451,27 +453,23 @@ export function WorksheetEditor({
                 <FilterPill
                   key={`${filter.field}-${index}`}
                   filter={filter}
-                  onEdit={() =>
-                    openFilter(filter.field, filter.kind === "quantitative" && Boolean(filter.aggregation), index)
-                  }
-                  onToggleContext={() =>
-                    apply(upsertFilter(working, { ...filter, context: !filter.context } as Filter, index))
-                  }
+                  onEdit={() => openFilter(filter.field, filter.kind === "quantitative" && Boolean(filter.aggregation), index)}
+                  onToggleContext={() => apply(upsertFilter(working, { ...filter, context: !filter.context } as Filter, index))}
                   onRemove={() => apply(removeFilter(working, index))}
                 />
               ))}
               {!(working.filters ?? []).length ? (
-                <span className="px-1 py-2 text-xs text-muted-foreground">Drop fields here to filter</span>
+                <span className="type-meta px-1 py-1.5">Drop a field to filter</span>
               ) : null}
             </div>
-          </Card>
+          </RailSection>
 
-          <Card title="Marks">
+          <RailSection title="Marks">
             <Select
               value={working.marks.type}
               onValueChange={(value) => apply({ ...working, marks: { ...working.marks, type: value as MarkType } })}
             >
-              <SelectTrigger aria-label="Mark type" className="h-8 w-full text-xs">
+              <SelectTrigger aria-label="Mark type" className="type-ui h-8 w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -510,37 +508,48 @@ export function WorksheetEditor({
                   />
                 ))}
             </div>
-          </Card>
+          </RailSection>
 
           {suggestions.length ? (
-            <Card title="Show Me">
-              <div className="flex flex-wrap gap-1.5">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.id}
-                    type="button"
-                    disabled={!suggestion.enabled}
-                    title={
-                      suggestion.enabled
-                        ? `Show ${suggestion.label}`
-                        : `Needs ${suggestion.unmet.map((item) => item.kind).join(", ")}`
-                    }
-                    onClick={() => apply(applyShowMe(working, suggestion.id, fields))}
-                    className={cn(
-                      "rounded-md border px-2 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-                      suggestion.enabled ? "hover:border-ring hover:bg-muted" : "cursor-not-allowed opacity-40",
-                    )}
-                  >
-                    {suggestion.label}
-                  </button>
-                ))}
+            <RailSection title="Show Me">
+              <div className="grid grid-cols-3 gap-1">
+                {suggestions.map((suggestion) => {
+                  const best = suggestion.id === recommended;
+                  return (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      disabled={!suggestion.enabled}
+                      aria-label={`Show ${suggestion.label}`}
+                      title={
+                        suggestion.enabled
+                          ? best
+                            ? `${suggestion.label}: the best fit for these fields`
+                            : `Show ${suggestion.label}`
+                          : `Needs ${suggestion.unmet.map((item) => item.kind).join(", ")}`
+                      }
+                      onClick={() => apply(applyShowMe(working, suggestion.id, fields))}
+                      className={cn(
+                        "type-meta flex flex-col items-center gap-0.5 rounded-md border px-1 py-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+                        best
+                          ? "border-primary bg-accent text-accent-foreground"
+                          : suggestion.enabled
+                            ? "text-ink-secondary hover:border-viz-axis hover:bg-surface-1"
+                            : "cursor-not-allowed opacity-45",
+                      )}
+                    >
+                      <ShowMeIcon id={suggestion.id} />
+                      <span className="max-w-full truncate">{suggestion.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-            </Card>
+            </RailSection>
           ) : null}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3">
-          <div className="rounded-xl border bg-card p-3">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="border-b px-5 py-2">
             {(["columns", "rows"] as Shelf[]).map((shelf) => (
               <ShelfRow
                 key={shelf}
@@ -567,60 +576,68 @@ export function WorksheetEditor({
             ))}
           </div>
 
-          <section
-            className="relative min-h-72 rounded-xl border bg-card p-4"
-            aria-label="Viz canvas"
-            aria-busy={computing}
-          >
+          <section className="relative min-h-80 flex-1 px-6 py-6 sm:px-8" aria-label="Viz canvas" aria-busy={computing}>
             {computing ? (
-              <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="type-meta absolute top-3 right-4 z-10 flex items-center gap-1.5" role="status">
                 <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-                <span>Computing</span>
+                Computing
               </div>
             ) : null}
             {!hasView(working) ? (
-              <div className="flex min-h-60 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-sm font-medium">Build a view</p>
-                <p className="max-w-sm text-xs text-muted-foreground">
-                  Drag fields from the data pane to Columns and Rows, or pick a chart in Show Me.
-                </p>
+              <div className="flex min-h-64 flex-col items-center justify-center gap-1 text-center">
+                <p className="type-title">Build a view</p>
+                <p className="type-body max-w-sm">Drag fields from the data pane to Columns and Rows, or pick a chart in Show Me.</p>
               </div>
             ) : computeError ? (
-              <div className="flex min-h-60 flex-col items-center justify-center gap-1 text-center" role="alert">
-                <p className="text-sm font-medium">This view cannot be computed</p>
-                <p className="max-w-md text-xs text-destructive">{computeError}</p>
+              <div className="flex min-h-64 flex-col items-center justify-center gap-1 text-center" role="alert">
+                <p className="type-title">This view cannot be computed</p>
+                <p className="type-ui max-w-md text-destructive">{computeError}</p>
               </div>
             ) : presmodel ? (
-              <VizView presmodel={presmodel} className={cn(computing && "opacity-60")} />
+              <div className={cn("flex flex-col gap-6", computing && "opacity-60")}>
+                <ViewAnswer question={working.title || title} insight={insight} />
+                <VizView
+                  presmodel={presmodel}
+                  highlight={insight?.highlight ?? null}
+                  onMarkClick={(values) => {
+                    const dimension = insight?.highlight?.dimension;
+                    if (dimension && dimension in values) setSelectedMark(values[dimension]);
+                  }}
+                />
+              </div>
             ) : (
-              <div className="flex min-h-60 items-center justify-center">
+              <div className="flex min-h-64 items-center justify-center">
                 <Loader2 aria-hidden="true" className="size-5 animate-spin text-muted-foreground" />
+                <span className="sr-only">Computing the view</span>
               </div>
             )}
           </section>
 
-          {sql ? (
-            <div className="rounded-xl border bg-card">
+          {sql && showSql ? (
+            <pre className="type-code max-h-64 overflow-auto border-t bg-surface-1 px-5 py-3 whitespace-pre-wrap">{sql}</pre>
+          ) : null}
+          <footer className="type-meta flex flex-wrap items-center gap-x-4 gap-y-1 border-t bg-surface-1 px-5 py-2">
+            {presmodel && hasView(working) && !computeError ? (
+              <>
+                <span>{presmodel.row_count.toLocaleString()} {presmodel.row_count === 1 ? "mark" : "marks"}</span>
+                {elapsedMs !== null ? <span>computed under your access in {Math.round(elapsedMs)} ms</span> : null}
+              </>
+            ) : (
+              <span>Nothing computed yet</span>
+            )}
+            {sql ? (
               <button
                 type="button"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring"
+                className="ml-auto inline-flex items-center gap-1 rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                 aria-expanded={showSql}
                 onClick={() => setShowSql((value) => !value)}
               >
                 <Code2 aria-hidden="true" className="size-3.5" />
                 Generated SQL
-                <ChevronDown
-                  aria-hidden="true"
-                  className={cn("ml-auto size-3.5 transition-transform", showSql && "rotate-180")}
-                />
+                <ChevronDown aria-hidden="true" className={cn("size-3.5 transition-transform", showSql && "rotate-180")} />
               </button>
-              {showSql ? (
-                <pre className="max-h-64 overflow-auto border-t px-3 py-2 font-mono text-xs whitespace-pre-wrap">
-                  {sql}
-                </pre>
-              ) : null}
-            </div>
-          ) : null}
+            ) : null}
+          </footer>
         </div>
       </div>
 
@@ -647,6 +664,54 @@ export function WorksheetEditor({
         />
       ) : null}
     </div>
+  );
+}
+
+/** The view's answer, set as the headline: question, finding, one sentence. */
+export function ViewAnswer({ question, insight }: { question: string; insight: ViewInsight | null }) {
+  return (
+    <div className="max-w-[64ch]">
+      {question ? <h2 className="type-question">{question}</h2> : null}
+      {insight ? (
+        <>
+          <p className="type-answer mt-2 text-foreground">
+            <span className={insight.lead.marked ? "text-viz-highlight" : undefined}>{insight.lead.subject}</span> {insight.lead.verb} {insight.lead.num}
+            {insight.lead.unit ? <span className="type-unit">{insight.lead.unit}</span> : null}
+          </p>
+          {insight.detail ? <p className="type-body mt-2">{insight.detail}</p> : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function RailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="border-b px-3 py-3 last:border-b-0" aria-label={title}>
+      <h3 className="type-label mb-2">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+const SHOW_ME_ICONS: Record<string, string> = {
+  text_table: "M3 4h18v12H3zM3 10h18M10 4v12",
+  heatmap: "M3 4h6v6H3zM9 4h6v6H9zM15 4h6v6h-6zM3 10h6v6H3zM9 10h6v6H9zM15 10h6v6h-6z",
+  bar: "M3 17h18M5 17V9M10 17V4M15 17V11M20 17V14",
+  bar_stacked: "M3 17h18M6 17V6M6 11h4M12 17V9M12 12h4M18 17V12",
+  bar_side: "M3 17h18M5 17V8M8 17V12M13 17V5M16 17V10",
+  line: "M3 15l5-5 4 3 8-8",
+  area: "M3 15l5-5 4 3 8-8v12H3z",
+  scatter: "M6 14h.01M10 8h.01M14 12h.01M18 5h.01M8 11h.01",
+  pie: "M12 4a7 7 0 1 0 7 7h-7z",
+  bubble: "M7 13a2 2 0 1 0 0.01 0M14 8a3.5 3.5 0 1 0 0.01 0M17 15a1.5 1.5 0 1 0 0.01 0",
+};
+
+function ShowMeIcon({ id }: { id: string }) {
+  return (
+    <svg width="24" height="20" viewBox="0 0 24 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <path d={SHOW_ME_ICONS[id] ?? SHOW_ME_ICONS.bar} />
+    </svg>
   );
 }
 
@@ -677,22 +742,28 @@ function ToolButton({
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function FieldGlyph({ field }: { field: DataPaneField }) {
+  const glyph =
+    field.kind === "calculation"
+      ? "="
+      : field.data_type === "number"
+        ? "#"
+        : isTemporal(field)
+          ? "Date"
+          : field.data_type === "boolean"
+            ? "T|F"
+            : "Abc";
   return (
-    <section className="rounded-xl border bg-card p-2.5" aria-label={title}>
-      <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">{title}</h3>
-      {children}
-    </section>
+    <span
+      aria-hidden="true"
+      className={cn(
+        "type-meta w-8 shrink-0",
+        field.role === "measure" ? "text-pill-continuous-foreground" : "text-pill-discrete-foreground",
+      )}
+    >
+      {glyph}
+    </span>
   );
-}
-
-function FieldIcon({ field }: { field: DataPaneField }) {
-  const className = "size-3.5 shrink-0 text-muted-foreground";
-  if (field.kind === "calculation") return <Equal aria-hidden="true" className={className} />;
-  if (field.data_type === "number") return <Hash aria-hidden="true" className={className} />;
-  if (isTemporal(field)) return <Calendar aria-hidden="true" className={className} />;
-  if (field.data_type === "boolean") return <ToggleLeft aria-hidden="true" className={className} />;
-  return <Type aria-hidden="true" className={className} />;
 }
 
 function DataPane({
@@ -724,15 +795,15 @@ function DataPane({
   return (
     <aside
       aria-label="Data pane"
-      className="flex min-w-0 flex-col gap-2 rounded-xl border bg-card p-2.5 lg:max-h-[42rem]"
+      className="flex w-full min-w-0 shrink-0 flex-col gap-3 border-b bg-surface-1 px-3 py-3 lg:max-h-[46rem] lg:w-60 lg:border-r lg:border-b-0"
       onDragOver={(event) => {
         if (acceptsDrag(event)) event.preventDefault();
       }}
       onDrop={onDropPill}
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-medium text-muted-foreground">Data</h3>
-        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onCreateCalc}>
+        <h3 className="type-label">Data</h3>
+        <Button type="button" variant="ghost" size="sm" className="type-meta h-7 gap-1 px-2 text-ink-secondary" onClick={onCreateCalc}>
           <Plus aria-hidden="true" className="size-3.5" />
           Calculation
         </Button>
@@ -744,13 +815,13 @@ function DataPane({
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search fields"
           aria-label="Search fields"
-          className="h-8 pl-7 text-xs"
+          className="type-ui h-8 bg-card pl-7"
         />
       </div>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="type-meta text-destructive">{error}</p> : null}
       {!fields.length && !error ? (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 aria-hidden="true" className="size-3 animate-spin" /> Reading fields…
+        <p className="type-meta flex items-center gap-1.5" role="status">
+          <Loader2 aria-hidden="true" className="size-3 animate-spin" /> Reading fields
         </p>
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -785,8 +856,8 @@ function FieldGroup({
 }) {
   if (!fields.length) return null;
   return (
-    <div className="mb-2">
-      <p className="px-1 pt-1 pb-0.5 text-xs font-medium text-muted-foreground">{title}</p>
+    <div className="mb-3">
+      <p className="type-label px-1 pb-1">{title}</p>
       <ul>
         {fields.map((field) => {
           const label = field.name === RECORDS_FIELD ? "Records (count)" : field.name;
@@ -796,12 +867,18 @@ function FieldGroup({
               draggable
               onDragStart={(event) => startDrag(event, { from: "pane", field: field.name })}
               className={cn(
-                "group flex cursor-grab items-center gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-muted active:cursor-grabbing",
-                used.has(field.name) && "font-medium",
+                "group flex h-7 cursor-grab items-center gap-1 rounded px-1 hover:bg-muted active:cursor-grabbing",
+                used.has(field.name) && "bg-muted",
               )}
             >
-              <FieldIcon field={field} />
-              <span className="min-w-0 flex-1 truncate" title={field.formula ? `${label} = ${field.formula}` : label}>
+              <FieldGlyph field={field} />
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate",
+                  field.kind === "column" && field.name !== RECORDS_FIELD ? "type-code" : "type-ui",
+                )}
+                title={field.formula ? `${label} = ${field.formula}` : label}
+              >
                 {label}
               </span>
               <DropdownMenu>
@@ -815,7 +892,7 @@ function FieldGroup({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel className="text-xs">Add to</DropdownMenuLabel>
+                  <DropdownMenuLabel className="type-meta">Add to</DropdownMenuLabel>
                   {(["columns", "rows"] as const).map((target) => (
                     <DropdownMenuItem key={target} onSelect={() => onAdd(field.name, target)}>
                       {target === "columns" ? "Columns" : "Rows"}
@@ -867,12 +944,13 @@ function ShelfRow({
   const [over, setOver] = useState(false);
   const label = shelf === "columns" ? "Columns" : "Rows";
   return (
-    <div className="flex min-h-10 items-center gap-2 py-1">
-      <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+    <div className="flex min-h-9 items-center gap-3 py-0.5">
+      <span className="type-meta w-16 shrink-0">{label}</span>
       <div
         className={cn(
-          "flex min-h-9 flex-1 flex-wrap items-center gap-1.5 rounded-lg border border-dashed px-2 py-1 transition-colors",
-          over && "border-ring bg-muted",
+          "flex min-h-8 flex-1 flex-wrap items-center gap-1.5 rounded-md border border-transparent px-1 py-0.5 transition-colors",
+          !pills.length && "border-dashed border-border",
+          over && "border-ring bg-surface-1",
         )}
         aria-label={`${label} shelf`}
         onDragOver={(event) => {
@@ -900,7 +978,7 @@ function ShelfRow({
             {renderPill(pill, index)}
           </span>
         ))}
-        {!pills.length ? <span className="px-1 text-xs text-muted-foreground">Drop fields here</span> : null}
+        {!pills.length ? <span className="type-meta px-1">Drop fields here</span> : null}
       </div>
     </div>
   );
@@ -921,8 +999,8 @@ function EncodingSlot({
   return (
     <div
       className={cn(
-        "flex min-h-14 flex-col gap-1 rounded-md border border-dashed p-1.5 transition-colors",
-        over && "border-ring bg-muted",
+        "flex min-h-12 flex-col gap-1 rounded-md border border-dashed p-1.5 transition-colors",
+        over && "border-ring bg-surface-1",
         pill && "col-span-2",
       )}
       aria-label={`${ENCODING_LABELS[encoding]} encoding`}
@@ -937,7 +1015,7 @@ function EncodingSlot({
         onDrop(event);
       }}
     >
-      <span className="text-xs text-muted-foreground">{ENCODING_LABELS[encoding]}</span>
+      <span className="type-meta">{ENCODING_LABELS[encoding]}</span>
       {pill ? renderPill(pill) : null}
     </div>
   );
@@ -962,22 +1040,22 @@ function FilterPill({
         onClick={onEdit}
         title={filterSummary(filter)}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring",
+          "flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded border px-2 text-left focus-visible:outline-2 focus-visible:outline-ring",
           measure
-            ? "bg-[var(--pill-continuous)] text-[var(--pill-continuous-foreground)]"
-            : "bg-[var(--pill-discrete)] text-[var(--pill-discrete-foreground)]",
+            ? "border-pill-continuous-border bg-pill-continuous text-pill-continuous-foreground"
+            : "border-pill-discrete-border bg-pill-discrete text-pill-discrete-foreground",
         )}
       >
         <FilterIcon aria-hidden="true" className="size-3 shrink-0" />
-        <span className="truncate">{filterCaption(filter)}</span>
-        {filter.context ? <span className="shrink-0 opacity-80">· context</span> : null}
+        <span className="type-code truncate">{filterCaption(filter)}</span>
+        {filter.context ? <span className="type-meta shrink-0 text-current">context</span> : null}
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             aria-label={`Filter actions for ${filter.field}`}
-            className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
             <ChevronDown aria-hidden="true" className="size-3" />
           </button>
@@ -999,18 +1077,21 @@ function FilterPill({
   );
 }
 
-/** A field pill: blue for discrete headers, green for continuous axes. */
+/** A field pill: blue for discrete headers, green for continuous axes. The
+ * operator (SUM, YEAR) is set in the interface face, the field in mono. */
 export function Pill({ pill }: { pill: FieldRef }) {
+  const { prefix, name } = pillParts(pill);
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 truncate rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex h-6 max-w-full items-center gap-1 rounded border px-2",
         isContinuous(pill)
-          ? "bg-[var(--pill-continuous)] text-[var(--pill-continuous-foreground)]"
-          : "bg-[var(--pill-discrete)] text-[var(--pill-discrete-foreground)]",
+          ? "border-pill-continuous-border bg-pill-continuous text-pill-continuous-foreground"
+          : "border-pill-discrete-border bg-pill-discrete text-pill-discrete-foreground",
       )}
     >
-      {pillCaption(pill)}
+      {prefix ? <span className="type-label">{prefix}</span> : null}
+      <span className={cn("truncate", pill.field === RECORDS_FIELD ? "type-ui" : "type-code")}>{name}</span>
     </span>
   );
 }
@@ -1047,7 +1128,7 @@ function PillChip({
             type="button"
             draggable
             onDragStart={(event) => startDrag(event, { from: "pill", location })}
-            className="cursor-grab rounded-full focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing"
+            className="cursor-grab rounded focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing"
             aria-label={`${pillCaption(pill)} options`}
           >
             <Pill pill={pill} />

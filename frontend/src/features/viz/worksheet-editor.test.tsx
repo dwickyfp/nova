@@ -131,7 +131,7 @@ describe("WorksheetEditor", () => {
     await expect.element(screen.getByRole("button", { name: "YEAR(order_date) options" })).toBeVisible();
     await screen.getByRole("button", { name: "Undo" }).click();
     await expect.element(screen.getByRole("button", { name: "YEAR(order_date) options" })).not.toBeInTheDocument();
-    await screen.getByRole("button", { name: "Save chart" }).click();
+    await screen.getByRole("button", { name: "Save sheet" }).click();
     await vi.waitFor(() => expect(mocks.updateArtifactSpec).toHaveBeenCalled());
     const [id, body] = mocks.updateArtifactSpec.mock.calls[0] as [string, { viz_spec: WorksheetSpec }];
     expect(id).toBe("chart-1");
@@ -143,6 +143,6 @@ describe("WorksheetEditor", () => {
     const screen = await mount();
     await screen.getByRole("button", { name: "Swap rows and columns" }).click();
     await expect.element(screen.getByText("[Margin]: Unknown function NOPE.")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "Save chart" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "Save sheet" })).toBeDisabled();
   });
 });

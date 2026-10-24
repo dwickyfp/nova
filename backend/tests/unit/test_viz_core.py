@@ -255,6 +255,8 @@ def test_rank_orders_satisfied_types_first() -> None:
     ]  # needs two dimensions and only region/month qualify — month is a date
     suggestions = suggest(pills)
     assert suggestions[0]["enabled"] is True
+    # Exactly one tile is the best fit, and it is the chart Show Me would pick.
+    assert [item["id"] for item in suggestions if item["recommended"]] == [default_chart_id(pills)]
 
 
 def test_default_chart_id_matches_the_data_shape() -> None:

@@ -61,19 +61,47 @@ describe("ArtifactExplorer", () => {
     await expect.element(screen.getByText("Quarterly sales")).toBeInTheDocument();
   });
 
-  it("sorts the list view by name and keeps favorites", async () => {
+  it("lists sheets in a table, sorts by name, and keeps favorites", async () => {
     const { screen, onOpen } = await mount();
-    await screen.getByRole("button", { name: "List view" }).click();
-    await screen.getByRole("button", { name: "Name" }).click();
+    await screen.getByRole("combobox", { name: "Sort by" }).click();
+    await screen.getByRole("option", { name: "Name" }).click();
+    await screen.getByRole("button", { name: "Sort ascending" }).click();
     const rows = screen.getByRole("row");
     await expect.element(rows.nth(1)).toHaveTextContent("Accounts by region");
-    await expect.element(rows.nth(3)).toHaveTextContent("Sales overview");
+    await expect.element(rows.nth(2)).toHaveTextContent("Revenue trend");
     await screen.getByRole("button", { name: "Add Revenue trend to favorites" }).click();
     await screen.getByRole("button", { name: /^Favorites/ }).click();
     await expect.element(screen.getByText("Revenue trend")).toBeVisible();
     await expect.element(screen.getByText("Sales overview")).not.toBeInTheDocument();
     await screen.getByRole("button", { name: "Revenue trend", exact: true }).click();
     expect(onOpen).toHaveBeenCalledWith("c1", { edit: false });
+  });
+
+  it("reads each sheet's current answer and source", async () => {
+    mocks.refreshArtifact.mockReset().mockImplementation(async (id: string) => ({
+      artifact: { ...ARTIFACTS.find((item) => item.artifact_id === id), sql_text: "SELECT region, revenue FROM `NOVA_SALES`.`fact_sales`" },
+      columns: ["region", "sum(revenue)"],
+      rows: [],
+      row_count: 2,
+      elapsed_ms: 3,
+      presmodel: {
+        version: 1,
+        title: "",
+        mark: "bar",
+        columns: [
+          { name: "region", field: "region", field_type: "nominal", role: "dimension", discrete: true, label: "region" },
+          { name: "sum(revenue)", field: "revenue", field_type: "quantitative", role: "measure", aggregation: "sum", discrete: false, label: "sum(revenue)" },
+        ],
+        rows: [["East", 350], ["West", 530]],
+        row_count: 2,
+        axes: { x: null, y: null },
+        legend: { color: null },
+        totals: {},
+      },
+    }));
+    const { screen } = await mount();
+    await expect.element(screen.getByText("West leads at 530").first()).toBeVisible();
+    await expect.element(screen.getByText("NOVA_SALES.fact_sales").first()).toBeVisible();
   });
 
   it("creates a sheet from a query and opens it for editing", async () => {
