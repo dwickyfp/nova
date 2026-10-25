@@ -73,6 +73,32 @@
   --chart-tone-5: #c4daf8;
   --chart-tone-6: #deedfb;
 
+  /* Viz shelf pills, discrete pills make headers,
+     continuous pills make axes. Data-semantic colors, not decoration: tinted
+     fills with strong text, so a shelf reads calmly and the field name stays
+     the loudest thing on it. */
+  --pill-discrete: #eef3fd;
+  --pill-discrete-border: #cddcf7;
+  --pill-discrete-foreground: #2a4fa5;
+  --pill-continuous: #e6f4f2;
+  --pill-continuous-border: #bfe3de;
+  --pill-continuous-foreground: #0f5f57;
+
+  /* Second ink: prose and questions sit between --foreground (values,
+     headings) and --muted-foreground (meta, units, axes). */
+  --ink-secondary: #475569;
+
+  /* Viz marks. Data draws in neutral slate; --viz-highlight (the brand red)
+     marks only the one value the view's answer talks about, so the accent
+     points at the finding instead of painting every bar. --viz-mark keeps
+     3:1 against the card for non-text contrast. */
+  --viz-mark: #7b8da4;
+  --viz-line: #5b7088;
+  --viz-highlight: var(--primary);
+  --viz-reference: #64748b;
+  --viz-grid: #eef2f6;
+  --viz-axis: #cbd5e1;
+
   /* Code highlighting (highlight.js token roles). Kept as explicit tokens so
      the markdown renderer never carries raw hex, and so both themes read from
      the same vocabulary the charts already use. */
@@ -155,6 +181,20 @@
   --sidebar-navigation-weight-medium: 500;
   --sidebar-navigation-weight-semibold: 600;
 
+  --pill-discrete: #1a2740;
+  --pill-discrete-border: #2e4673;
+  --pill-discrete-foreground: #b4c9f6;
+  --pill-continuous: #102d2a;
+  --pill-continuous-border: #1f5049;
+  --pill-continuous-foreground: #93ddd1;
+  --ink-secondary: #c2cbd6;
+  --viz-mark: #62758d;
+  --viz-line: #93a8c0;
+  --viz-highlight: #f05a47;
+  --viz-reference: #a3adba;
+  --viz-grid: rgb(255 255 255 / 7%);
+  --viz-axis: rgb(255 255 255 / 18%);
+
   --background: #0b0f14;
   --foreground: #f7f8fa;
   --card: #11161d;
@@ -229,6 +269,8 @@
   --font-inter: 'Inter', var(--font-system);
   --font-plex: 'IBM Plex Sans', var(--font-system);
   --font-sans: var(--font-inter);
+  /* Code and data identifiers (field names, sources, formulas). */
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   /* Weight scale: 400 body, 500 labels and controls, 600 headings and
      emphasis in dark; light steps the upper two down (--weight-*). Nothing
      in the UI renders heavier than 600. */
@@ -288,6 +330,19 @@
   --color-chart-tone-4: var(--chart-tone-4);
   --color-chart-tone-5: var(--chart-tone-5);
   --color-chart-tone-6: var(--chart-tone-6);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-viz-mark: var(--viz-mark);
+  --color-viz-line: var(--viz-line);
+  --color-viz-highlight: var(--viz-highlight);
+  --color-viz-reference: var(--viz-reference);
+  --color-viz-grid: var(--viz-grid);
+  --color-viz-axis: var(--viz-axis);
+  --color-pill-discrete: var(--pill-discrete);
+  --color-pill-discrete-border: var(--pill-discrete-border);
+  --color-pill-discrete-foreground: var(--pill-discrete-foreground);
+  --color-pill-continuous: var(--pill-continuous);
+  --color-pill-continuous-border: var(--pill-continuous-border);
+  --color-pill-continuous-foreground: var(--pill-continuous-foreground);
   --color-sidebar-navigation-muted-foreground: var(--sidebar-navigation-muted-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -368,4 +423,77 @@
   --code-function: #82a9ef;
   --code-type: #b29aeb;
   --code-attr: #ee9a60;
+}
+
+/* Type roles for analytic surfaces (Explore, worksheets, dashboards). Every
+   text on those screens uses exactly one role; line heights sit on a 4px
+   grid and weights read the per-theme --weight-* tokens. */
+@utility type-display {
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.028em;
+}
+@utility type-answer {
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.022em;
+}
+@utility type-figure {
+  font-size: 48px;
+  line-height: 48px;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+}
+@utility type-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.012em;
+}
+@utility type-question {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: var(--weight-medium);
+  color: var(--ink-secondary);
+}
+@utility type-body {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink-secondary);
+}
+@utility type-ui {
+  font-size: 13px;
+  line-height: 20px;
+}
+@utility type-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: var(--weight-semibold);
+}
+@utility type-meta {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted-foreground);
+}
+@utility type-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-feature-settings: 'zero' 1;
+  letter-spacing: -0.01em;
+}
+/* A number's unit (T, M, %) at 60% in the third ink: the value reads first. */
+@utility type-unit {
+  font-size: 0.6em;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+  margin-left: 0.06em;
+}
+/* Tabular digits and disambiguated I/l/1, 0/O for data surfaces. */
+@utility viz-numerals {
+  font-feature-settings: 'tnum' 1, 'ss02' 1;
+  font-variant-numeric: tabular-nums;
 }

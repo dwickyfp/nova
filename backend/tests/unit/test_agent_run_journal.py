@@ -188,9 +188,3 @@ async def test_current_run_query_is_bound_to_role_and_security_version(monkeypat
     assert params == ["alice", "sales", "thread", "analyst", 3]
 
 
-@pytest.fixture(autouse=True)
-def conversation_without_report_binding(monkeypatch):
-    """These endpoint fixtures model conversations without an attached report."""
-    from app.modules.smart_reports import context
-
-    monkeypatch.setattr(context, "bound", AsyncMock(return_value=None))

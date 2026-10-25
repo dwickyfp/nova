@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.studio_capabilities import StudioRuntimeCapabilities
 from app.modules.assistant.schemas import utc_datetime
@@ -72,10 +72,14 @@ class StudioCapabilities(BaseModel):
 
 # ── Query-backed artifacts ───────────────────────────────────
 
-ArtifactType = Literal["chart", "table"]
+#: Studio has exactly two artifact kinds: a chart (a viz worksheet) and a
+#: dashboard (a zone layout over charts). The old table/dashboard entities are
+#: gone; legacy rows migrate into these two.
+ArtifactType = Literal["chart", "dashboard"]
 
 
 class ArtifactCreateRequest(BaseModel):
+    #: A Semantic View result's proof; the server uses the statement it recorded.
     semantic_provenance_ref: str | None = Field(default=None, max_length=64)
     title: str = Field(min_length=1, max_length=256)
     artifact_type: ArtifactType
@@ -83,6 +87,7 @@ class ArtifactCreateRequest(BaseModel):
     database_name: str | None = Field(default=None, max_length=128)
     schema_name: str | None = Field(default=None, max_length=128)
     chart_spec: dict[str, Any] | None = None
+    viz_spec: dict[str, Any] | None = None
     agent_id: str | None = Field(default=None, max_length=64)
     thread_id: str | None = Field(default=None, max_length=64)
 
@@ -102,6 +107,7 @@ class ArtifactSummary(BaseModel):
 class ArtifactView(ArtifactSummary):
     sql_text: str
     chart_spec: dict[str, Any] | None = None
+    viz_spec: dict[str, Any] | None = None
 
 
 class ArtifactListResponse(BaseModel):
@@ -115,12 +121,21 @@ class ArtifactRefreshResponse(BaseModel):
     rows: list[list[Any]] = Field(default_factory=list)
     row_count: int = 0
     elapsed_ms: float = 0.0
+    #: The computed presentation model for viz-backed charts.
+    presmodel: dict[str, Any] | None = None
+    #: The StarRocks statement the presentation model was computed from.
+    sql: str | None = None
+    #: For a chart saved before worksheets existed: the worksheet derived from
+    #: its SQL and chart encoding, so it renders and opens in the editor.
+    #: Saving it from the editor makes it the artifact's worksheet.
+    derived_viz_spec: dict[str, Any] | None = None
 
 
 class ArtifactDraft(BaseModel):
     sql_text: str = Field(min_length=1, max_length=200_000)
-    artifact_type: ArtifactType
+    artifact_type: Literal["chart"] = "chart"
     chart_spec: dict[str, Any] | None = None
+    viz_spec: dict[str, Any] | None = None
 
 
 class ArtifactEditMessage(BaseModel):
@@ -151,83 +166,71 @@ class ArtifactApplyRequest(BaseModel):
     expected_updated_at: datetime
 
 
-# ── Studio dashboards ──────────────────────────────────────────
+class ArtifactSpecUpdateRequest(BaseModel):
+    """Save an edited worksheet or dashboard layout (the Studio editor path)."""
 
-class DashboardTile(BaseModel):
-    tile_id: str = Field(min_length=1, max_length=64)
-    artifact_id: str = Field(min_length=1, max_length=64)
-    x: int = Field(ge=0, le=5)
-    y: int = Field(ge=0, le=3)
-    w: int = Field(ge=1, le=6)
-    h: int = Field(ge=1, le=4)
-
-    @model_validator(mode="after")
-    def within_grid(self) -> DashboardTile:
-        if self.x + self.w > 6 or self.y + self.h > 4:
-            raise ValueError("Dashboard tiles must fit inside the 6 × 4 grid.")
-        return self
-
-
-class DashboardLayout(BaseModel):
-    tiles: list[DashboardTile] = Field(default_factory=list, max_length=24)
-
-    @model_validator(mode="after")
-    def no_overlaps(self) -> DashboardLayout:
-        seen_ids: set[str] = set()
-        occupied: set[tuple[int, int]] = set()
-        for tile in self.tiles:
-            if tile.tile_id in seen_ids:
-                raise ValueError("Dashboard tile IDs must be unique.")
-            seen_ids.add(tile.tile_id)
-            cells = {
-                (x, y)
-                for x in range(tile.x, tile.x + tile.w)
-                for y in range(tile.y, tile.y + tile.h)
-            }
-            if occupied & cells:
-                raise ValueError("Dashboard tiles cannot overlap.")
-            occupied.update(cells)
-        return self
-
-
-class DashboardCreateRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=256)
-
-    @field_validator("title")
-    @classmethod
-    def nonblank_title(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Dashboard name cannot be blank.")
-        return value
-
-
-class DashboardUpdateRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=256)
-    layout: DashboardLayout
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    viz_spec: dict[str, Any]
     expected_updated_at: datetime
 
-    @field_validator("title")
-    @classmethod
-    def nonblank_title(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Dashboard name cannot be blank.")
-        return value
+
+# ── Viz compute ────────────────────────────────────────────────
 
 
-class DashboardSummary(BaseModel):
-    dashboard_id: str
-    title: str
-    created_at: datetime
-    updated_at: datetime
+class VizComputeRequest(BaseModel):
+    """Compile and execute one worksheet under the caller's own access."""
+
+    spec: dict[str, Any]
+    extra_filters: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
 
 
-class DashboardView(DashboardSummary):
-    layout: DashboardLayout
+class VizComputeResponse(BaseModel):
+    presmodel: dict[str, Any]
+    sql: str
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+    row_count: int = 0
+    elapsed_ms: float = 0.0
+    #: The data pane: source columns and calculated fields with types.
+    fields: list[dict[str, Any]] = Field(default_factory=list)
+    #: The worksheet as resolved (pill types, aggregate calculations).
+    spec: dict[str, Any] | None = None
 
 
-class DashboardListResponse(BaseModel):
-    dashboards: list[DashboardSummary] = Field(default_factory=list)
-    count: int = 0
+class VizSourceRequest(BaseModel):
+    """A worksheet's data source and calculations, without its shelves."""
+
+    source: dict[str, Any]
+    calculations: list[dict[str, Any]] = Field(default_factory=list, max_length=64)
+    filters: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+
+
+class VizCalcCheckRequest(VizSourceRequest):
+    formula: str = Field(min_length=1, max_length=8000)
+    #: The calculated field being edited, so its saved formula is replaced.
+    name: str | None = Field(default=None, max_length=128)
+
+
+class VizFieldDomainRequest(VizSourceRequest):
+    field: str = Field(min_length=1, max_length=128)
+    date_part: Literal["year", "quarter", "month", "week", "day"] | None = None
+
+
+class VizSuggestRequest(BaseModel):
+    columns: list[Annotated[str, Field(max_length=128)]] = Field(
+        default_factory=list, max_length=200
+    )
+    rows: list[list[Any]] = Field(default_factory=list, max_length=50)
+
+
+class VizSuggestResponse(BaseModel):
+    suggestions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DashboardComputeRequest(BaseModel):
+    spec: dict[str, Any]
+    filter_values: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    zone_filters: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
 
 # ── Observability ──────────────────────────────────────────────

@@ -204,9 +204,3 @@ async def test_direct_studio_stream_uses_configured_timezone(monkeypatch, observ
         thread_store.remove("studio-timezone", user_name=USER["username"])
 
 
-@pytest.fixture(autouse=True)
-def conversation_without_report_binding(monkeypatch):
-    """These endpoint fixtures model conversations without an attached report."""
-    from app.modules.smart_reports import context
-
-    monkeypatch.setattr(context, "bound", AsyncMock(return_value=None))

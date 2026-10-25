@@ -131,14 +131,17 @@ async def test_mission_projection_pins_refs_and_uses_mission_authorized_historic
 async def test_mutable_dashboard_reference_has_no_reviewed_authority_and_fails_on_change(
     monkeypatch,
 ):
-    from app.modules.agents.dashboard_repository import dashboard_repository
-    from app.modules.agents.studio_schemas import DashboardLayout
+    from app.modules.agents.artifact_repository import artifact_repository
     from app.modules.intelligence.contracts import fingerprint
 
-    source = {"updated_at": "2026-10-04", "layout": DashboardLayout(tiles=[])}
+    source = {
+        "updated_at": "2026-10-04",
+        "artifact_type": "dashboard",
+        "viz_spec": {"version": 1, "zones": []},
+    }
     get = AsyncMock(return_value=source)
-    monkeypatch.setattr(dashboard_repository, "get", get)
-    pinned = fingerprint({"updated_at": "2026-10-04", "layout": {"tiles": []}})
+    monkeypatch.setattr(artifact_repository, "get", get)
+    pinned = fingerprint({"updated_at": "2026-10-04", "viz_spec": {"version": 1, "zones": []}})
     request = ContextSourceRef(kind="dashboard", id="dashboard", fingerprint=pinned)
     value = await read_context_source(request, USER, CycleBudget())
     assert value["authority"] == "owner_scoped_reference"

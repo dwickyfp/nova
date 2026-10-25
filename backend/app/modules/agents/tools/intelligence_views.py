@@ -176,10 +176,10 @@ class SemanticViewQueryTool:
             result.get("truncated") is True
             or len(result["rows"]) > 100 or len(result["columns"]) > 100
         )
-        from app.modules.smart_reports.artifacts import issue_provenance
-        provenance_ref = await issue_provenance(result, user)
+        from app.modules.agents.artifact_provenance import issue_provenance
+
         table = {"title": "Semantic View result", "columns": columns, "rows": rows,
-                 "semantic_provenance_ref": provenance_ref}
+                 "semantic_provenance_ref": await issue_provenance(result, user)}
         if truncated:
             table["truncated"] = True
         outcome = ToolOutcome(

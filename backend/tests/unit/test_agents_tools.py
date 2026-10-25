@@ -29,6 +29,7 @@ from app.modules.agents.registry import build_registry
 from app.modules.agents.tools.data_to_chart import DataToChartTool, sanitize_chart_spec
 from app.modules.assistant import events
 from app.modules.assistant.tools import ToolInvocation
+from app.modules.viz.spec import ChartIntent
 
 
 def test_registry_is_a_structural_tool_selection() -> None:
@@ -116,15 +117,8 @@ def test_sanitize_chart_spec_rejects_missing_data() -> None:
 @pytest.mark.asyncio
 async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
     tool = DataToChartTool()
-    tool._model_spec = AsyncMock(
-        return_value={
-            "mark": "point",
-            "data": {"values": [{"x": 0, "y": 0}]},
-            "encoding": {
-                "x": {"field": "x", "type": "quantitative"},
-                "y": {"field": "y", "type": "quantitative"},
-            },
-        }
+    tool._model_intent = AsyncMock(
+        return_value=ChartIntent(chart_type="scatter", x="x", y="y")
     )
     context = SimpleNamespace(
         last_result={
@@ -137,45 +131,56 @@ async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
     outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
 
     assert outcome.ok
-    spec = json.loads(outcome.chart["chart_spec"])
-    assert spec["mark"] == "point"
-    assert len(spec["data"]["values"]) == 35
-    assert spec["data"]["values"][34] == {"x": 34, "y": 1.5}
+    # A scatter with no dimension keeps every verified row: one mark per row,
+    # never only the preview the model saw.
+    assert outcome.chart["presmodel"]["row_count"] == 35
+    assert outcome.chart["presmodel"]["rows"][34] == [34, 1.5]
+    assert outcome.chart["viz_spec"]["marks"]["type"] == "circle"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "encoding",
+    ("chart_intent", "expected_mark"),
     [
-        {
-            "x": {"field": "invented", "type": "nominal"},
-            "y": {"field": "sales", "type": "quantitative"},
-        },
-        {
-            "x": {"field": "region", "type": []},
-            "y": {"field": "sales", "type": "quantitative"},
-        },
+        (ChartIntent(chart_type="bar", x="invented"), "bar"),
+        # The real tool rejects this chart_intent before it reaches the engine; the
+        # engine itself still places a chart from the pills that do exist.
+        (ChartIntent(chart_type="pie", x="region", y="ghost"), "arc"),
     ],
 )
-async def test_chart_falls_back_when_model_encoding_is_invalid(
-    encoding: dict[str, object],
+async def test_chart_falls_back_when_the_model_names_unknown_fields(
+    chart_intent: ChartIntent,
+    expected_mark: str,
 ) -> None:
     tool = DataToChartTool()
-    tool._model_spec = AsyncMock(
-        return_value={
-            "mark": "point",
-            "data": {"values": []},
-            "encoding": encoding,
-        }
-    )
+    tool._model_intent = AsyncMock(return_value=chart_intent)
     context = SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]]})
 
     outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
 
     assert outcome.ok
+    # Unknown fields never reach the worksheet; ShowMe places the real pills,
+    # so the chart still builds.
     spec = json.loads(outcome.chart["chart_spec"])
-    assert spec["mark"] == "bar"
-    assert spec["data"]["values"] == [{"region": "West", "sales": 12}]
+    assert spec["mark"] == expected_mark
+    assert outcome.chart["viz_spec"]["columns"][0]["field"] == "region"
+
+
+@pytest.mark.asyncio
+async def test_model_intent_naming_unknown_fields_is_discarded() -> None:
+    tool = DataToChartTool()
+    tool._provider = SimpleNamespace(
+        resolve=AsyncMock(return_value=object()),
+        complete=AsyncMock(
+            return_value={"content": '{"chart_type": "bar", "x": "ghost"}'}
+        ),
+    )
+
+    chart_intent = await tool._model_intent(
+        "sales by region", ["region", "sales"], [["West", 12]], SimpleNamespace()
+    )
+
+    assert chart_intent is None
 
 
 def test_chart_dimensions_are_bounded() -> None:
@@ -188,34 +193,52 @@ def test_chart_dimensions_are_bounded() -> None:
     assert "height" not in spec
 
 
-def test_fallback_chart_is_a_horizontal_abbreviated_bar() -> None:
-    # A category comparison should not come back as vertical bars with rotated
-    # labels and a raw twelve-digit axis.
-    from app.modules.agents.tools.data_to_chart import _fallback_spec
+def test_no_model_chart_prefers_bars_for_a_category_comparison() -> None:
+    # With no model answer the ShowMe engine still builds a chart: a category
+    # comparison becomes bars aggregated over the measure, never rotated labels
+    # on a raw twelve-digit axis.
+    from app.modules.viz.compiler import compile_worksheet
+    from app.modules.viz.showme import classify_fields
+    from app.modules.viz.spec import VizSourceSql
 
     columns = ["customer", "total_revenue"]
     rows = [["Andi", 48098.0], ["Budi", 12000.0]]
-    spec = _fallback_spec(columns, rows, "revenue per customer", "revenue")
+    spec = DataToChartTool()._resolve_spec(
+        "revenue per customer",
+        classify_fields(columns, rows),
+        columns,
+        rows,
+        None,
+        VizSourceSql(sql="SELECT customer, total_revenue FROM sales"),
+        "revenue per customer",
+    )
 
-    assert spec["mark"] == "bar"
-    assert spec["encoding"]["y"]["field"] == "customer"
-    assert spec["encoding"]["y"]["sort"] == "-x"
-    assert spec["encoding"]["x"]["field"] == "total_revenue"
-    assert spec["encoding"]["x"]["axis"]["format"] == "~s"
-    # It has to survive the sanitizer, or the panel never receives it.
-    assert sanitize_chart_spec(spec, title="revenue per customer") is not None
+    assert spec.marks.type == "bar"
+    assert [pill.field for pill in spec.columns] == ["customer"]
+    assert [pill.label for pill in spec.rows] == ["sum(total_revenue)"]
+    sql = compile_worksheet(spec, known_columns=columns).sql
+    assert "SUM(`total_revenue`)" in sql
+    assert "GROUP BY `customer`" in sql
 
 
-def test_fallback_chart_uses_a_line_for_a_temporal_dimension() -> None:
-    from app.modules.agents.tools.data_to_chart import _fallback_spec
+def test_no_model_chart_uses_a_line_for_a_temporal_dimension() -> None:
+    from app.modules.viz.showme import classify_fields
+    from app.modules.viz.spec import VizSourceSql
 
     columns = ["day", "orders"]
     rows = [["2026-01-01", 10], ["2026-01-02", 12]]
-    spec = _fallback_spec(columns, rows, "orders per day", "orders")
+    spec = DataToChartTool()._resolve_spec(
+        "orders per day",
+        classify_fields(columns, rows),
+        columns,
+        rows,
+        None,
+        VizSourceSql(sql="SELECT day, orders FROM sales"),
+        "orders per day",
+    )
 
-    assert spec["mark"] == "line"
-    assert spec["encoding"]["x"]["type"] == "temporal"
-    assert spec["encoding"]["y"]["axis"]["format"] == "~s"
+    assert spec.marks.type == "line"
+    assert spec.columns[0].field_type == "temporal"
 
 
 def test_sse_encoder_serialises_engine_native_types() -> None:

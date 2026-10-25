@@ -32,6 +32,7 @@ KNOWN_TOOLS = frozenset(
         "semantic_view_query",
         "feature_lookup",
         "data_to_chart",
+        "dashboard_build",
         "diagnose_change",
         "context_graph",
         "decision_lab",
@@ -40,7 +41,6 @@ KNOWN_TOOLS = frozenset(
         "ml_execute",
         "execute_business_action",
         "analysis_workspace",
-        "smart_report",
     }
 )
 
@@ -60,11 +60,6 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
     """
     selected = {t for t in (agent.get("default_tools") or []) if t in KNOWN_TOOLS}
     registry = ToolRegistry()
-    if "smart_report" in selected:
-        from app.modules.smart_reports.authoring import smart_report_tool
-
-        registry.register(smart_report_tool)
-
     if "execute_business_action" in selected:
         from app.modules.intelligence.actions import business_action_tool
 
@@ -124,6 +119,11 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
             registry.register(data_to_chart_tool)
         except ImportError:  # pragma: no cover - stage ordering only
             pass
+
+    if "dashboard_build" in selected:
+        from app.modules.agents.tools.dashboard_build import dashboard_build_tool
+
+        registry.register(dashboard_build_tool)
 
     if "diagnose_change" in selected:
         from app.modules.agents.tools.diagnose_change import diagnose_change_tool

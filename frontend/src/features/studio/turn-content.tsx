@@ -1,4 +1,4 @@
-import { SmartReport } from "@/features/smart-reports/renderer";
+import { DashboardArtifactCard } from "@/features/viz/dashboard-artifact-card";
 import { Markdown } from "@/features/assistant/markdown";
 import type { TurnContext } from "@/features/assistant/stream-client";
 import { cn } from "@/lib/utils";
@@ -124,7 +124,7 @@ export function TurnContent({
           contentId={item.id}
           selected={selectedContentId === item.id}
           onSelect={
-            onSelectContent && item.type !== "ui" && item.type !== "smart_report"
+            onSelectContent && item.type !== "ui"
               ? () => onSelectContent(item)
               : undefined
           }
@@ -142,8 +142,8 @@ export function TurnContent({
                 <TextShimmer className="mt-1">Writing</TextShimmer>
               ) : null}
             </div>
-          ) : item.type === "smart_report" ? (
-            <SmartReport block={item.block} origin={uiContext ? { agent_id: uiContext.agentId, thread_id: uiContext.threadId, message_id: turn.messageId, content_id: item.id } : undefined} />
+          ) : item.type === "dashboard" ? (
+            <DashboardArtifactCard block={item.block} />
           ) : item.type === "ui" ? (
             turn.state === "cancelled" ||
             turn.state === "error" ||

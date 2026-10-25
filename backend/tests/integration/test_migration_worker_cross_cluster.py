@@ -21,7 +21,7 @@ import yaml
 
 from app.core.config import load_nova_app_config, settings
 from app.modules.migration.jobs import migration_job_repo
-from tests.conftest import BACKEND_DIR, engine_host_ports
+from tests.conftest import BACKEND_DIR, engine_host_ports, redis_url, root_password, s3_credentials
 
 pytestmark = [
     pytest.mark.engine,
@@ -126,7 +126,7 @@ async def test_batch_executes_in_standalone_worker_across_two_clusters(
         host="127.0.0.1",
         port=target_ports["starrocks-fe"],
         user="root",
-        password="",
+        password=root_password(),
         autocommit=True,
     )
     databases = [_name("nova_cross_a"), _name("nova_cross_b")]
@@ -202,11 +202,11 @@ async def test_batch_executes_in_standalone_worker_across_two_clusters(
                 "STARROCKS_HOST": "127.0.0.1",
                 "STARROCKS_FE_MYSQL_PORT": str(target_ports["starrocks-fe"]),
                 "STARROCKS_ROOT_USER": "root",
-                "STARROCKS_ROOT_PASSWORD": "",
-                "REDIS_URL": f"redis://127.0.0.1:{target_ports['redis']}/0",
+                "STARROCKS_ROOT_PASSWORD": root_password(),
+                "REDIS_URL": redis_url(target_ports['redis']),
                 "NOVA_CONFIG_PATH": str(config_path),
-                "MINIO_ACCESS_KEY": "minioadmin",
-                "MINIO_SECRET_KEY": "minioadmin",
+                "MINIO_ACCESS_KEY": s3_credentials()[0],
+                "MINIO_SECRET_KEY": s3_credentials()[1],
                 "S3_ENDPOINT": f"http://127.0.0.1:{target_ports['minio']}",
                 "SECRET_KEY": settings.SECRET_KEY,
                 "FERNET_KEY": settings.FERNET_KEY,

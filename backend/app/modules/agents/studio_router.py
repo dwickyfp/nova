@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -40,7 +41,6 @@ from app.modules.agents import mcp_client, observability, tool_catalog
 from app.modules.agents.access import access_fingerprint, has_verified_access
 from app.modules.agents.artifact_editor import propose_artifact_edit, run_artifact_draft
 from app.modules.agents.artifact_repository import artifact_repository
-from app.modules.agents.dashboard_repository import dashboard_repository
 from app.modules.agents.personal_skills import (
     SkillDocumentRequest,
     parse_skill_document,
@@ -79,13 +79,10 @@ from app.modules.agents.studio_schemas import (
     ArtifactEditResponse,
     ArtifactListResponse,
     ArtifactRefreshResponse,
+    ArtifactSpecUpdateRequest,
     ArtifactSummary,
     ArtifactView,
-    DashboardCreateRequest,
-    DashboardListResponse,
-    DashboardSummary,
-    DashboardUpdateRequest,
-    DashboardView,
+    DashboardComputeRequest,
     RoleListResponse,
     SessionListResponse,
     SessionView,
@@ -95,6 +92,13 @@ from app.modules.agents.studio_schemas import (
     StudioSettingsResponse,
     ThreadTraceResponse,
     UsageSummary,
+    VizCalcCheckRequest,
+    VizComputeRequest,
+    VizComputeResponse,
+    VizFieldDomainRequest,
+    VizSourceRequest,
+    VizSuggestRequest,
+    VizSuggestResponse,
 )
 from app.modules.agents.studio_service import studio_service
 from app.modules.agents.tools.custom_tool import validate_custom_tool_definition
@@ -222,92 +226,154 @@ async def update_personal_skill(
     return SkillView(**await save_skill(fields, user=user, skill_id=skill_id))
 
 
-# ── Studio dashboards ─────────────────────────────────────────
+# ── Viz compute ────────────────────────────────────────────────
 
 
-async def _dashboard_or_404(dashboard_id: str, owner_name: str) -> dict:
-    dashboard = await dashboard_repository.get(dashboard_id, owner_name=owner_name)
-    if dashboard is None:
-        raise HTTPException(status_code=404, detail="Dashboard not found")
-    return dashboard
+@router.post(
+    "/studio/viz/compute",
+    response_model=VizComputeResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def compute_viz(body: VizComputeRequest, user: dict = Depends(get_current_user)):
+    """Compile a worksheet and execute it under the caller's own StarRocks session."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+    from app.modules.viz.spec import WorksheetSpec, parse_filter
 
-
-@router.get("/studio/dashboards", response_model=DashboardListResponse)
-async def list_dashboards(user: dict = Depends(get_current_user)):
-    rows = await dashboard_repository.list(owner_name=user["username"])
-    dashboards = [DashboardSummary(**row) for row in rows]
-    return DashboardListResponse(dashboards=dashboards, count=len(dashboards))
-
-
-@router.post("/studio/dashboards", response_model=DashboardView, status_code=201)
-async def create_dashboard(
-    body: DashboardCreateRequest,
-    user: dict = Depends(get_current_user),
-):
-    dashboard = await dashboard_repository.create(
-        owner_name=user["username"], title=body.title.strip()
+    try:
+        spec = WorksheetSpec.model_validate(body.spec)
+        extra = [parse_filter(item) for item in body.extra_filters]
+        computed = await viz_service.compute(spec, user, extra_filters=extra)
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return VizComputeResponse(
+        presmodel=computed.presmodel,
+        sql=computed.sql,
+        columns=computed.columns,
+        rows=computed.rows,
+        row_count=computed.row_count,
+        elapsed_ms=computed.elapsed_ms,
+        fields=computed.fields,
+        spec=computed.spec,
     )
-    await write_audit_log(
-        event_type="DASHBOARD",
-        user_name=user["username"],
-        action="create",
-        object_type="DASHBOARD",
-        object_name=dashboard["dashboard_id"],
-        status="SUCCESS",
-        session_id=user.get("session_id"),
+
+
+def _source_spec(body: VizSourceRequest):
+    """A worksheet holding only a source, calculations and filters.
+
+    The authoring endpoints below need no shelves, so the shelf rule is not
+    applied; every part that is present is still validated.
+    """
+    from pydantic import TypeAdapter
+
+    from app.modules.viz.spec import (
+        CalculatedField,
+        VizSource,
+        VizSourceSql,
+        VizSourceTable,
+        WorksheetSpec,
+        parse_filter,
     )
-    return DashboardView(**dashboard)
 
-
-@router.get("/studio/dashboards/{dashboard_id}", response_model=DashboardView)
-async def get_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)):
-    return DashboardView(**await _dashboard_or_404(dashboard_id, user["username"]))
-
-
-@router.put("/studio/dashboards/{dashboard_id}", response_model=DashboardView)
-async def update_dashboard(
-    dashboard_id: str,
-    body: DashboardUpdateRequest,
-    user: dict = Depends(get_current_user),
-):
-    await _dashboard_or_404(dashboard_id, user["username"])
-    owned = await artifact_repository.list(owner_name=user["username"])
-    owned_ids = {artifact["artifact_id"] for artifact in owned}
-    if any(tile.artifact_id not in owned_ids for tile in body.layout.tiles):
-        raise HTTPException(status_code=422, detail="Dashboard contains an unavailable artifact")
-    updated = await dashboard_repository.update(
-        dashboard_id,
-        owner_name=user["username"],
-        title=body.title.strip(),
-        layout=body.layout,
-        expected_updated_at=body.expected_updated_at,
+    source: VizSourceSql | VizSourceTable = TypeAdapter(VizSource).validate_python(body.source)
+    calculations = [CalculatedField.model_validate(item) for item in body.calculations]
+    names = [calc.name for calc in calculations]
+    if len(set(names)) != len(names):
+        raise ValueError("Calculated field names must be unique.")
+    filters = [parse_filter(item) for item in body.filters]
+    return WorksheetSpec.model_construct(
+        source=source, calculations=calculations, filters=filters, columns=[], rows=[]
     )
-    if updated is None:
-        raise HTTPException(status_code=409, detail="Dashboard changed. Reload before saving.")
-    await write_audit_log(
-        event_type="DASHBOARD",
-        user_name=user["username"],
-        action="update",
-        object_type="DASHBOARD",
-        object_name=dashboard_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-    )
-    return DashboardView(**updated)
 
 
-@router.delete("/studio/dashboards/{dashboard_id}", status_code=204)
-async def delete_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)):
-    await _dashboard_or_404(dashboard_id, user["username"])
-    await dashboard_repository.delete(dashboard_id, owner_name=user["username"])
-    await write_audit_log(
-        event_type="DASHBOARD",
-        user_name=user["username"],
-        action="delete",
-        object_type="DASHBOARD",
-        object_name=dashboard_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
+@router.post("/studio/viz/describe", response_class=SanitizingJSONResponse)
+async def describe_viz_source(
+    body: VizSourceRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """The data pane for a worksheet source: fields, types and a sample."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+
+    try:
+        return await viz_service.describe(_source_spec(body), user)
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/studio/viz/calc/check", response_class=SanitizingJSONResponse)
+async def check_viz_calculation(
+    body: VizCalcCheckRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """Type-check one formula against the worksheet's fields."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+
+    try:
+        return await viz_service.check_calculation(
+            _source_spec(body), user, formula=body.formula, name=body.name
+        )
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/studio/viz/calc/functions")
+async def list_viz_functions(user: dict = Depends(get_current_user)) -> dict:
+    """The formula editor's function reference."""
+    from app.modules.viz.calc import catalog
+
+    return {"functions": catalog()}
+
+
+@router.post("/studio/viz/field-domain", response_class=SanitizingJSONResponse)
+async def viz_field_domain(
+    body: VizFieldDomainRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """Members or bounds of one field, for a filter card."""
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+
+    try:
+        return await viz_service.field_domain(
+            _source_spec(body), user, field_name=body.field, date_part=body.date_part
+        )
+    except (ValueError, VizError, CompileError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/studio/viz/suggest", response_model=VizSuggestResponse)
+async def suggest_viz(body: VizSuggestRequest, user: dict = Depends(get_current_user)):
+    """Ranked ShowMe suggestions for a result the caller already holds."""
+    from app.modules.viz.service import viz_service
+
+    suggestions = viz_service.suggest(body.columns, body.rows)
+    return VizSuggestResponse(suggestions=suggestions)
+
+
+@router.post(
+    "/studio/viz/dashboard-compute",
+    response_class=SanitizingJSONResponse,
+)
+async def compute_viz_dashboard(
+    body: DashboardComputeRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """Compute a dashboard's sheet zones with dashboard and action filters."""
+    from app.modules.viz.service import viz_service
+    from app.modules.viz.spec import DashboardSpec, parse_filter
+
+    try:
+        spec = DashboardSpec.model_validate(body.spec)
+        filter_values = {
+            zone_id: parse_filter(item)
+            for zone_id, item in body.filter_values.items()
+        }
+        zone_filters = {
+            zone_id: [parse_filter(item) for item in items]
+            for zone_id, items in body.zone_filters.items()
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await viz_service.compute_dashboard(
+        spec, user, filter_values=filter_values, zone_filters=zone_filters
     )
 
 
@@ -351,27 +417,53 @@ async def create_artifact(
     body: ArtifactCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    from app.modules.smart_reports.artifacts import persist_provenance, read_provenance
-    proof = (
-        await read_provenance(body.semantic_provenance_ref, body.sql_text, user)
-        if body.semantic_provenance_ref else None
-    )
+    from app.modules.viz.service import VizError, viz_service
+
+    if body.artifact_type == "dashboard":
+        from app.modules.viz.spec import DashboardSpec
+
+        try:
+            spec = DashboardSpec.model_validate(body.viz_spec or {})
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        try:
+            artifact = await viz_service.save_dashboard(
+                user=user, title=body.title.strip(), spec=spec,
+                agent_id=body.agent_id, thread_id=body.thread_id,
+            )
+        except (ValueError, VizError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await write_audit_log(
+            event_type="ARTIFACT",
+            user_name=user["username"],
+            action="create",
+            object_type="DASHBOARD",
+            object_name=artifact["artifact_id"],
+            status="SUCCESS",
+            session_id=user.get("session_id"),
+        )
+        return ArtifactView(**artifact)
+
+    sql_text = body.sql_text
+    if body.semantic_provenance_ref:
+        from app.modules.agents.artifact_provenance import read_provenance
+
+        sql_text = await read_provenance(body.semantic_provenance_ref, user)
     try:
         artifact = await artifact_repository.create(
             owner_name=user["username"],
             title=body.title.strip(),
             artifact_type=body.artifact_type,
-            sql_text=proof["sql"] if proof else body.sql_text,
+            sql_text=sql_text,
             database_name=body.database_name,
             schema_name=body.schema_name,
             chart_spec=body.chart_spec,
+            viz_spec=body.viz_spec,
             agent_id=body.agent_id,
             thread_id=body.thread_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if proof:
-        await persist_provenance(artifact, proof, user)
     return ArtifactView(**artifact)
 
 
@@ -394,8 +486,45 @@ async def refresh_artifact(
     artifact_id: str,
     user: dict = Depends(get_current_user),
 ):
-    """Re-run the saved statement under the caller's current DB permissions."""
+    """Re-run the artifact under the caller's current DB permissions.
+
+    A viz-backed chart re-compiles its worksheet first, so refresh reflects
+    the saved shelves, marks, filters and calculations — not just new rows.
+    """
+    from app.modules.viz.compiler import CompileError
+    from app.modules.viz.service import VizError, viz_service
+    from app.modules.viz.spec import WorksheetSpec
+
     artifact = await _artifact_or_404(artifact_id, user["username"])
+    viz_spec = artifact.get("viz_spec")
+    if artifact["artifact_type"] == "chart" and viz_spec:
+        try:
+            spec = WorksheetSpec.model_validate(viz_spec)
+            computed = await viz_service.compute(
+                spec,
+                user,
+                database_name=artifact["database_name"],
+                schema_name=artifact["schema_name"],
+            )
+        except (ValueError, VizError, CompileError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc) or "The artifact query could not be refreshed.",
+            ) from exc
+        return ArtifactRefreshResponse(
+            artifact=ArtifactView(**artifact),
+            columns=computed.columns,
+            rows=computed.rows,
+            row_count=computed.row_count,
+            elapsed_ms=computed.elapsed_ms,
+            presmodel=computed.presmodel,
+            sql=computed.sql,
+        )
+    if artifact["artifact_type"] == "dashboard":
+        raise HTTPException(
+            status_code=422,
+            detail="A dashboard refreshes its charts through the dashboard view.",
+        )
     results = await query_service.execute_statements(
         sql=artifact["sql_text"],
         username=user["username"],
@@ -413,13 +542,20 @@ async def refresh_artifact(
             status_code=422,
             detail=result.error or "The artifact query could not be refreshed.",
         )
+    from app.modules.viz.service import derive_worksheet
+
+    derived = derive_worksheet(artifact, list(result.columns), [list(r) for r in result.rows])
     return ArtifactRefreshResponse(
         artifact=ArtifactView(**artifact),
         columns=result.columns,
         rows=result.rows,
         row_count=result.row_count,
         elapsed_ms=result.elapsed_ms,
+        presmodel=derived[1] if derived else None,
+        derived_viz_spec=derived[0] if derived else None,
     )
+
+
 
 
 @router.post(
@@ -469,6 +605,7 @@ async def apply_artifact_edit(
             sql_text=body.draft.sql_text,
             artifact_type=body.draft.artifact_type,
             chart_spec=body.draft.chart_spec,
+            viz_spec=body.draft.viz_spec,
             title=artifact["title"],
         )
     except ValueError as exc:
@@ -504,6 +641,71 @@ async def delete_artifact(
     await _artifact_or_404(artifact_id, user["username"])
     await artifact_repository.delete(artifact_id, owner_name=user["username"])
     return None
+
+
+@router.patch(
+    "/studio/artifacts/{artifact_id}/spec",
+    response_model=ArtifactView,
+    response_class=SanitizingJSONResponse,
+)
+async def update_artifact_spec(
+    artifact_id: str,
+    body: ArtifactSpecUpdateRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Save an edited worksheet or dashboard layout.
+
+    The SQL provenance of a chart is preserved: an edit changes how the data
+    is drawn, not where it comes from.
+    """
+    from app.modules.viz.service import VizError, viz_service
+
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    try:
+        if artifact["artifact_type"] == "dashboard":
+            updated = await viz_service.update_dashboard(
+                artifact_id,
+                user=user,
+                title=(body.title or artifact["title"]).strip(),
+                spec=_dashboard_spec(body.viz_spec),
+                expected_updated_at=body.expected_updated_at,
+            )
+        else:
+            from app.modules.viz.spec import WorksheetSpec
+
+            WorksheetSpec.model_validate(body.viz_spec)
+            updated = await artifact_repository.update(
+                artifact_id,
+                owner_name=user["username"],
+                expected_updated_at=body.expected_updated_at,
+                sql_text=artifact["sql_text"],
+                artifact_type="chart",
+                chart_spec=None,
+                viz_spec=body.viz_spec,
+                title=(body.title or artifact["title"]).strip(),
+            )
+    except (ValueError, VizError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(
+            status_code=409, detail="This artifact changed. Refresh it before saving."
+        )
+    await write_audit_log(
+        event_type="ARTIFACT",
+        user_name=user["username"],
+        action="update",
+        object_type="ARTIFACT",
+        object_name=artifact_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+    )
+    return ArtifactView(**updated)
+
+
+def _dashboard_spec(raw: dict) -> Any:
+    from app.modules.viz.spec import DashboardSpec
+
+    return DashboardSpec.model_validate(raw)
 
 
 # ── Tools Registry ─────────────────────────────────────────────
@@ -1013,7 +1215,9 @@ async def _owned_share_object(object_type: str, object_id: str, owner: str) -> d
     from app.modules.assistant.repository import assistant_repository
 
     if object_type == "dashboard":
-        found = await dashboard_repository.get(object_id, owner_name=owner)
+        found = await artifact_repository.get(object_id, owner_name=owner)
+        if found is not None and found.get("artifact_type") != "dashboard":
+            found = None
     else:
         found = await assistant_repository.get_thread(object_id, user_name=owner)
     if not found:
@@ -1165,48 +1369,57 @@ async def refresh_shared_result(
 @router.get("/studio/shared/dashboards/{dashboard_id}")
 async def open_shared_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)) -> dict:
     share = await _shared_grant(user, "dashboard", dashboard_id)
-    dashboard = await dashboard_repository.get(dashboard_id, owner_name=share["owner_name"])
-    if dashboard is None:
+    artifact = await artifact_repository.get(dashboard_id, owner_name=share["owner_name"])
+    if artifact is None or artifact.get("artifact_type") != "dashboard":
         raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
-    layout = dashboard["layout"]
     return {
         "dashboard_id": dashboard_id,
-        "title": dashboard["title"],
+        "title": artifact["title"],
         "owner_name": share["owner_name"],
-        "layout": layout.model_dump() if hasattr(layout, "model_dump") else layout,
+        "viz_spec": artifact.get("viz_spec"),
     }
 
 
 @router.post(
-    "/studio/shared/dashboards/{dashboard_id}/artifacts/{artifact_id}/refresh",
+    "/studio/shared/dashboards/{dashboard_id}/compute",
     response_class=SanitizingJSONResponse,
 )
-async def refresh_shared_dashboard_artifact(
-    dashboard_id: str, artifact_id: str, user: dict = Depends(get_current_user)
+async def compute_shared_dashboard(
+    dashboard_id: str,
+    body: DashboardComputeRequest,
+    user: dict = Depends(get_current_user),
 ) -> dict:
+    """Compute a shared dashboard's zones, executing as the viewer.
+
+    The share exposes the layout; every query still runs under the viewer's
+    own StarRocks session, exactly like a shared thread.
+    """
+    from app.modules.viz.service import viz_service
+    from app.modules.viz.spec import DashboardSpec, parse_filter
+
     share = await _shared_grant(user, "dashboard", dashboard_id)
-    owner = share["owner_name"]
-    dashboard = await dashboard_repository.get(dashboard_id, owner_name=owner)
-    tiles = dashboard["layout"].tiles if dashboard else []
-    if not any(tile.artifact_id == artifact_id for tile in tiles):
-        raise HTTPException(status_code=404, detail="That tile is not on the shared dashboard")
-    artifact = await artifact_repository.get(artifact_id, owner_name=owner)
-    if artifact is None:
-        raise HTTPException(status_code=404, detail="Artifact not found")
-    results = await query_service.execute_statements(
-        sql=artifact["sql_text"], username=user["username"],
-        encrypted_password=user["encrypted_password"], database=artifact["database_name"],
-        schema=artifact["schema_name"], role=_current_role(user), max_rows=500,
-        session_id=user.get("session_id"), confirm_destructive=False,
+    artifact = await artifact_repository.get(dashboard_id, owner_name=share["owner_name"])
+    if artifact is None or artifact.get("artifact_type") != "dashboard":
+        raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
+    try:
+        spec = DashboardSpec.model_validate(body.spec or artifact.get("viz_spec") or {})
+        filter_values = {
+            zone_id: parse_filter(item)
+            for zone_id, item in body.filter_values.items()
+        }
+        zone_filters = {
+            zone_id: [parse_filter(item) for item in items]
+            for zone_id, items in body.zone_filters.items()
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await viz_service.compute_dashboard(
+        spec,
+        user,
+        filter_values=filter_values,
+        zone_filters=zone_filters,
+        owner_name=share["owner_name"],
     )
-    result = results[0]
-    if not result.success:
-        raise HTTPException(status_code=403, detail="Your access does not cover this tile")
-    return {
-        "artifact": {key: artifact.get(key) for key in
-                     ("artifact_id", "title", "artifact_type", "chart_spec")},
-        "columns": result.columns, "rows": result.rows, "row_count": result.row_count,
-    }
 
 
 @router.get("/studio/artifacts/{artifact_id}/export")
@@ -1224,17 +1437,44 @@ async def export_artifact(
     if format not in MEDIA_TYPES:
         raise HTTPException(status_code=422, detail="Choose csv, xlsx, pdf, or pptx")
     artifact = await _artifact_or_404(artifact_id, user["username"])
-    results = await query_service.execute_statements(
-        sql=artifact["sql_text"], username=user["username"],
-        encrypted_password=user["encrypted_password"], database=artifact["database_name"],
-        schema=artifact["schema_name"], role=_current_role(user), max_rows=MAX_EXPORT_ROWS,
-        session_id=user["session_id"], confirm_destructive=False,
-    )
-    result = results[0]
-    if not result.success:
-        raise HTTPException(status_code=422, detail="The artifact query could not be exported.")
-    columns = [str(column) for column in result.columns]
-    rows = redact_rows(columns, [list(row) for row in result.rows])
+    if artifact["artifact_type"] == "dashboard":
+        raise HTTPException(
+            status_code=422,
+            detail="Export a chart from the dashboard instead of the dashboard itself.",
+        )
+    viz_spec = artifact.get("viz_spec")
+    if viz_spec:
+        from app.modules.viz.compiler import CompileError
+        from app.modules.viz.service import VizError, viz_service
+        from app.modules.viz.spec import WorksheetSpec
+
+        try:
+            spec = WorksheetSpec.model_validate(viz_spec)
+            computed = await viz_service.compute(
+                spec,
+                user,
+                database_name=artifact["database_name"],
+                schema_name=artifact["schema_name"],
+            )
+        except (ValueError, VizError, CompileError) as exc:
+            raise HTTPException(
+                status_code=422, detail=str(exc) or "The artifact query could not be exported."
+            ) from exc
+        columns = [str(column) for column in computed.columns]
+        raw_rows = [list(row) for row in computed.rows]
+    else:
+        results = await query_service.execute_statements(
+            sql=artifact["sql_text"], username=user["username"],
+            encrypted_password=user["encrypted_password"], database=artifact["database_name"],
+            schema=artifact["schema_name"], role=_current_role(user), max_rows=MAX_EXPORT_ROWS,
+            session_id=user["session_id"], confirm_destructive=False,
+        )
+        result = results[0]
+        if not result.success:
+            raise HTTPException(status_code=422, detail="The artifact query could not be exported.")
+        columns = [str(column) for column in result.columns]
+        raw_rows = [list(row) for row in result.rows]
+    rows = redact_rows(columns, raw_rows)
     body = export(format, columns, rows, title=str(artifact["title"]))
     await write_audit_log(
         event_type="STUDIO_EXPORT", user_name=user["username"], action="EXPORT",

@@ -131,8 +131,9 @@ class TestDockerServicesIsSkipFriendly:
             "run",
             lambda *a, **k: subprocess.CompletedProcess(a, returncode=0),
         )
-        # Ports free, so the fixture genuinely owns the `up` it is about to run.
+        # Ports free and no engine running, so the fixture owns the `up` it runs.
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        monkeypatch.setattr(stack_conftest, "_running_engine", lambda: None)
 
         def _boom(*args, **kwargs):
             raise subprocess.CalledProcessError(
@@ -163,8 +164,9 @@ class TestDockerServicesIsSkipFriendly:
             "run",
             lambda *a, **k: subprocess.CompletedProcess(a, returncode=0),
         )
-        # Free before `up` (preflight passes)…
+        # Free before `up` (preflight passes) and no engine running…
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        monkeypatch.setattr(stack_conftest, "_running_engine", lambda: None)
         calls: list[tuple[str, ...]] = []
 
         def _noop_compose(*args, **kwargs):
@@ -183,6 +185,7 @@ class TestDockerServicesIsSkipFriendly:
         generator = stack_conftest.docker_services.__wrapped__()
         status = next(generator)
         assert not status.unavailable, status.reason
+        assert status.owned
         generator.close()
         assert ("up", "-d", "--wait") in calls
 
@@ -218,6 +221,7 @@ class TestDockerServicesIsSkipFriendly:
         generator = stack_conftest.docker_services.__wrapped__()
         status = next(generator)
         assert not status.unavailable, status.reason
+        assert not status.owned
         generator.close()
         assert calls == [], f"must not touch compose when reusing a stack: {calls}"
 
@@ -232,6 +236,7 @@ class TestDockerServicesIsSkipFriendly:
         monkeypatch.setattr(stack_conftest.time, "sleep", lambda _: None)
         # Empty before `up` via the preflight check, then still refusing after.
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        monkeypatch.setattr(stack_conftest, "_running_engine", lambda: None)
 
         generator = stack_conftest.docker_services.__wrapped__()
         status = next(generator)
@@ -282,3 +287,63 @@ class TestPortOverrides:
         ports = stack_conftest.engine_host_ports()
         assert ports["starrocks-fe"] == 39030
         assert ports["minio"] == 39000
+
+    def test_running_engine_elsewhere_is_never_duplicated(self, monkeypatch):
+        """A StarRocks FE on other ports (the dev stack) blocks a second stack.
+
+        Two FEs on one machine exhaust the Docker disk and both stop, so the
+        fixture must name the running container and skip instead of `up`.
+        """
+        monkeypatch.setattr(stack_conftest, "_preflight_failure", lambda: None)
+        monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        monkeypatch.setattr(stack_conftest, "_running_engine", lambda: "nova-starrocks-fe")
+        calls: list[tuple[str, ...]] = []
+        monkeypatch.setattr(
+            stack_conftest,
+            "_compose",
+            lambda *args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args, 0),
+        )
+
+        generator = stack_conftest.docker_services.__wrapped__()
+        status = next(generator)
+        assert status.unavailable
+        assert "nova-starrocks-fe" in status.reason
+        assert "NOVA_TEST_ROOT_PASSWORD" in status.reason
+        generator.close()
+        assert calls == []
+
+    def test_running_engine_reads_docker_ps(self, monkeypatch):
+        listed = subprocess.CompletedProcess([], 0, stdout="nova-starrocks-fe\n")
+        monkeypatch.setattr(stack_conftest.subprocess, "run", lambda *a, **k: listed)
+        assert stack_conftest._running_engine() == "nova-starrocks-fe"
+        failed = subprocess.CompletedProcess([], 1, stdout=None)
+        monkeypatch.setattr(stack_conftest.subprocess, "run", lambda *a, **k: failed)
+        assert stack_conftest._running_engine() is None
+
+
+class TestStackCredentials:
+    """Credentials come from the environment, defaulting to the compose stack."""
+
+    def test_defaults_match_the_compose_test_stack(self, monkeypatch):
+        for name in (
+            "NOVA_TEST_ROOT_PASSWORD",
+            "NOVA_TEST_S3_ACCESS_KEY",
+            "NOVA_TEST_S3_SECRET_KEY",
+            "NOVA_TEST_REDIS_PASSWORD",
+            "NOVA_TEST_REDIS_PORT",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        assert stack_conftest.root_password() == ""
+        assert stack_conftest.s3_credentials() == ("minioadmin", "minioadmin")
+        assert stack_conftest.redis_url() == "redis://127.0.0.1:26379/0"
+
+    def test_a_reused_stack_supplies_its_own(self, monkeypatch):
+        monkeypatch.setenv("NOVA_TEST_ROOT_PASSWORD", "root-secret")
+        monkeypatch.setenv("NOVA_TEST_S3_ACCESS_KEY", "access")
+        monkeypatch.setenv("NOVA_TEST_S3_SECRET_KEY", "secret")
+        monkeypatch.setenv("NOVA_TEST_REDIS_PASSWORD", "redis-secret")
+        monkeypatch.setenv("NOVA_TEST_REDIS_PORT", "6379")
+        assert stack_conftest.root_password() == "root-secret"
+        assert stack_conftest.s3_credentials() == ("access", "secret")
+        assert stack_conftest.redis_url() == "redis://:redis-secret@127.0.0.1:6379/0"
+        assert stack_conftest.redis_url(port=7000, db=2) == "redis://:redis-secret@127.0.0.1:7000/2"

@@ -139,20 +139,70 @@ async def run_artifact_draft(
         raise ValueError(
             result.error or "The proposed query could not run with your current permissions."
         )
-    if draft.artifact_type == "chart":
+    if draft.viz_spec is not None:
+        _viz_field_check(draft.viz_spec, result.columns)
+    elif draft.artifact_type == "chart" and draft.chart_spec is not None:
         _chart_field(draft.chart_spec, result.columns)
     return result
+
+
+def _viz_field_check(viz_spec: dict[str, Any], columns: list[str]) -> None:
+    from app.modules.viz.compiler import validate_fields
+    from app.modules.viz.spec import WorksheetSpec
+
+    try:
+        validate_fields(WorksheetSpec.model_validate(viz_spec), columns)
+    except ValueError as exc:
+        raise ValueError(
+            "A chart field is absent from the proposed query. Ask Nova to choose new axes."
+        ) from exc
+
+
+def _viz_spec_from_proposal(
+    *,
+    view: str,
+    x_column: str | None,
+    y_column: str | None,
+    title: str,
+    columns: list[str],
+    rows: list[list[Any]],
+    sql: str,
+) -> dict[str, Any]:
+    """Build a worksheet for an edited chart through the ShowMe engine."""
+    from app.modules.viz.showme import from_intent
+    from app.modules.viz.spec import ChartIntent, VizSourceSql
+
+    chart_type = {"bar": "bar", "line": "line"}.get(view, "text_table")
+    chart_intent = ChartIntent(
+        chart_type=chart_type,  # type: ignore[arg-type]
+        x=x_column,
+        y=y_column,
+    )
+    spec = from_intent(
+        chart_intent,
+        columns,
+        rows,
+        source=VizSourceSql(sql=sql),
+        title=title,
+    )
+    return spec.model_dump(mode="json")
 
 
 async def propose_artifact_edit(
     artifact: dict[str, Any], body: ArtifactEditRequest, user: dict[str, Any]
 ) -> ArtifactEditResponse:
+    has_viz = artifact.get("viz_spec") is not None
     base = body.draft or ArtifactDraft(
         sql_text=artifact["sql_text"],
-        artifact_type=artifact["artifact_type"],
+        artifact_type="chart",
         chart_spec=artifact.get("chart_spec"),
+        viz_spec=artifact.get("viz_spec"),
     )
-    if base.artifact_type == "chart":
+    if (
+        base.artifact_type == "chart"
+        and not base.viz_spec
+        and base.chart_spec is not None
+    ):
         base = ArtifactDraft(
             sql_text=base.sql_text,
             artifact_type="chart",
@@ -164,8 +214,9 @@ async def propose_artifact_edit(
     context = {
         "title": artifact["title"],
         "sql_text": base_sql,
-        "view": base.artifact_type,
+        "view": "chart" if base.artifact_type == "chart" else base.artifact_type,
         "chart_spec": base.chart_spec,
+        "viz_spec": base.viz_spec,
         "output_columns": body.columns,
         "history": [item.model_dump() for item in body.history],
         "request": body.instruction,
@@ -189,16 +240,50 @@ async def propose_artifact_edit(
         raise ValueError(
             "Nova did not choose a supported artifact view. Try rephrasing your request."
         )
-    draft = ArtifactDraft(sql_text=sql_text, artifact_type="table", chart_spec=None)
+    draft = ArtifactDraft(sql_text=sql_text, artifact_type="chart")
     result = await run_artifact_draft(draft, artifact, user)
     if view == "keep":
         draft = ArtifactDraft(
             sql_text=sql_text,
-            artifact_type=base.artifact_type,
-            chart_spec=base.chart_spec if base.artifact_type == "chart" else None,
+            artifact_type="chart",
+            chart_spec=base.chart_spec if not base.viz_spec else None,
+            viz_spec=base.viz_spec,
         )
-        if draft.artifact_type == "chart":
+        if draft.viz_spec is not None:
+            try:
+                _viz_field_check(draft.viz_spec, result.columns)
+            except ValueError:
+                # The new SQL dropped a field the worksheet drew; fall back to
+                # a table over the new columns rather than shipping a broken view.
+                draft = ArtifactDraft(
+                    sql_text=sql_text,
+                    artifact_type="chart",
+                    viz_spec=_viz_spec_from_proposal(
+                        view="table",
+                        x_column=None,
+                        y_column=None,
+                        title=artifact["title"],
+                        columns=result.columns,
+                        rows=result.rows,
+                        sql=sql_text,
+                    ),
+                )
+        elif draft.artifact_type == "chart":
             _chart_field(draft.chart_spec, result.columns)
+    elif has_viz or base.viz_spec is not None:
+        draft = ArtifactDraft(
+            sql_text=sql_text,
+            artifact_type="chart",
+            viz_spec=_viz_spec_from_proposal(
+                view=view,
+                x_column=proposal.get("x_column") if view in {"bar", "line"} else None,
+                y_column=proposal.get("y_column") if view in {"bar", "line"} else None,
+                title=artifact["title"],
+                columns=result.columns,
+                rows=result.rows,
+                sql=sql_text,
+            ),
+        )
     elif view in {"bar", "line"}:
         x_column = proposal.get("x_column")
         y_column = proposal.get("y_column")
@@ -214,6 +299,20 @@ async def propose_artifact_edit(
                 title=artifact["title"],
                 columns=result.columns,
                 rows=result.rows,
+            ),
+        )
+    else:
+        draft = ArtifactDraft(
+            sql_text=sql_text,
+            artifact_type="chart",
+            viz_spec=_viz_spec_from_proposal(
+                view="table",
+                x_column=None,
+                y_column=None,
+                title=artifact["title"],
+                columns=result.columns,
+                rows=result.rows,
+                sql=sql_text,
             ),
         )
     return ArtifactEditResponse(

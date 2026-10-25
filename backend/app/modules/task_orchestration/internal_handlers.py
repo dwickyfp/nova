@@ -23,7 +23,6 @@ HANDLERS = frozenset(
         "intelligence.outcome",
         "intelligence.newsroom",
         "agents.quality",
-        "reports.distribute",
     }
 )
 
@@ -40,7 +39,7 @@ class InternalTaskConfiguration(Contract):
 
 
 async def run_once(
-    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None, execution_id=None
+    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None
 ) -> dict:
     if handler not in HANDLERS:
         raise ValueError("Unknown internal task handler")
@@ -53,12 +52,6 @@ async def run_once(
         record_id = config.record_id or ""
         if handler != "intelligence.consolidate" and not record_id:
             raise ValueError("Internal work has no target record")
-        if handler == "reports.distribute":
-            from app.modules.smart_reports.distribution import run_subscription
-
-            if not execution_id:
-                raise ValueError("Report delivery requires a durable task run identity")
-            return await run_subscription(record_id, user, execution_id, instant=now)
         if handler == "agents.quality":
             from app.modules.agents.quality_monitoring import score_production
 
@@ -197,7 +190,7 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
             from app.modules.task_orchestration.access import verify_active_role
 
             await verify_active_role(user)
-            await run_once(handler, config, user, execution_id=job.graph_run_id)
+            await run_once(handler, config, user)
             return
         if handler == "intelligence.consolidate":
             raise CredentialUnavailable("Private learning cannot run through a service principal")
@@ -222,13 +215,7 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
                 "session_id": f"task:{job.graph_run_id}",
             }
             with delegated_connection(bound, connection):
-                if handler == "reports.distribute":
-                    from app.modules.smart_reports.security import scheduled_execution
-
-                    with scheduled_execution(user):
-                        await run_once(handler, config, user, execution_id=job.graph_run_id)
-                else:
-                    await run_once(handler, config, user)
+                await run_once(handler, config, user)
 
     async with asyncio.timeout(120):
         async with asyncio.TaskGroup() as group:

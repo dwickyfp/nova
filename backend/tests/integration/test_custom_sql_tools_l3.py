@@ -16,7 +16,7 @@ from app.modules.agents.repository import agent_repository
 from app.modules.agents.tools.custom_tool import CustomToolRunner
 from app.modules.assistant.service import LoopContext
 from app.modules.assistant.tools import ToolInvocation
-from tests.conftest import engine_host_ports
+from tests.conftest import engine_host_ports, root_password, s3_credentials
 
 pytestmark = [
     pytest.mark.engine,
@@ -62,13 +62,13 @@ async def test_custom_sql_tools_insert_select_update_delete_on_scoped_engine_use
     monkeypatch.setattr(cfg.settings, "STARROCKS_HOST", "127.0.0.1")
     monkeypatch.setattr(cfg.settings, "STARROCKS_FE_MYSQL_PORT", ports["starrocks-fe"])
     monkeypatch.setattr(cfg.settings, "STARROCKS_ROOT_USER", "root")
-    monkeypatch.setattr(cfg.settings, "STARROCKS_ROOT_PASSWORD", "")
+    monkeypatch.setattr(cfg.settings, "STARROCKS_ROOT_PASSWORD", root_password())
     monkeypatch.setattr(cfg.settings, "S3_ENDPOINT", f"http://127.0.0.1:{ports['minio']}")
-    monkeypatch.setattr(cfg.settings, "S3_ACCESS_KEY", "minioadmin")
-    monkeypatch.setattr(cfg.settings, "S3_SECRET_KEY", "minioadmin")
+    monkeypatch.setattr(cfg.settings, "S3_ACCESS_KEY", s3_credentials()[0])
+    monkeypatch.setattr(cfg.settings, "S3_SECRET_KEY", s3_credentials()[1])
     monkeypatch.setattr(cfg.settings, "RANGER_ENABLED", False)
-    monkeypatch.setenv("MINIO_ACCESS_KEY", "minioadmin")
-    monkeypatch.setenv("MINIO_SECRET_KEY", "minioadmin")
+    monkeypatch.setenv("MINIO_ACCESS_KEY", s3_credentials()[0])
+    monkeypatch.setenv("MINIO_SECRET_KEY", s3_credentials()[1])
     cfg.load_nova_app_config.cache_clear()
     await db.init_system_pool()
     await init_nova_system()
@@ -89,7 +89,7 @@ async def test_custom_sql_tools_insert_select_update_delete_on_scoped_engine_use
     agent_id = None
     custom_tool_ids: list[str] = []
     root = await asyncmy.connect(
-        host="127.0.0.1", port=ports["starrocks-fe"], user="root", password=""
+        host="127.0.0.1", port=ports["starrocks-fe"], user="root", password=root_password()
     )
 
     try:

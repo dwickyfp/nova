@@ -136,9 +136,3 @@ async def test_stream_persists_the_terminal_message_id_before_sending_done(monke
     assert any(frame.startswith("event: done") for frame in frames)
 
 
-@pytest.fixture(autouse=True)
-def conversation_without_report_binding(monkeypatch):
-    """These endpoint fixtures model conversations without an attached report."""
-    from app.modules.smart_reports import context
-
-    monkeypatch.setattr(context, "bound", AsyncMock(return_value=None))

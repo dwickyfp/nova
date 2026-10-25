@@ -35,6 +35,7 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
+from tests.conftest import root_password, s3_credentials
 from tests.integration._stack import (
     engine_port,
     require_shared_stack,
@@ -45,7 +46,7 @@ _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
-SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
+SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD") or root_password()
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 PARQUET_FIXTURE = FIXTURE_DIR / "utc_flag_false_int64_ts.parquet"
@@ -191,8 +192,8 @@ class TestParquetUtcFlagFalseIsWallClock:
         connection = replace(
             get_storage_connection("production"),
             endpoint=f"http://127.0.0.1:{minio_port}",
-            access_key="minioadmin",
-            secret_key="minioadmin",
+            access_key=s3_credentials()[0],
+            secret_key=s3_credentials()[1],
         )
         _upload_fixture(connection)
         key = f"NOVA_ANALYTICS/public/fixtures/{PARQUET_FIXTURE.name}"

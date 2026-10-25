@@ -6,11 +6,27 @@ import { StudioArtifacts } from "./studio-artifacts";
 
 const mocks = vi.hoisted(() => ({
   listArtifacts: vi.fn(),
+  getArtifact: vi.fn(),
   refreshArtifact: vi.fn(),
   editArtifact: vi.fn(),
   applyArtifactEdit: vi.fn(),
   deleteArtifact: vi.fn(),
 }));
+
+const artifactMeta = {
+  artifact_id: "artifact-1",
+  title: "Revenue by region",
+  artifact_type: "chart",
+  agent_id: "agent-1",
+  thread_id: "thread-1",
+  database_name: "sales",
+  schema_name: "analytics",
+  sql_text: "SELECT region, revenue FROM sales.analytics.summary",
+  chart_spec: null,
+  viz_spec: null,
+  created_at: "2026-09-21T08:00:00",
+  updated_at: "2026-09-21T08:00:00",
+};
 
 vi.mock("@/features/agents/api", () => ({
   studioApi: mocks,
@@ -19,17 +35,19 @@ vi.mock("@/features/agents/api", () => ({
 describe("Studio artifacts", () => {
   beforeEach(() => {
     mocks.listArtifacts.mockReset();
+    mocks.getArtifact.mockReset();
     mocks.refreshArtifact.mockReset();
     mocks.editArtifact.mockReset();
     mocks.applyArtifactEdit.mockReset();
     mocks.deleteArtifact.mockReset();
+    mocks.getArtifact.mockResolvedValue(artifactMeta);
     mocks.listArtifacts.mockResolvedValue({
       count: 1,
       artifacts: [
         {
           artifact_id: "artifact-1",
           title: "Revenue by region",
-          artifact_type: "table",
+          artifact_type: "chart",
           agent_id: "agent-1",
           thread_id: "thread-1",
           database_name: "sales",
@@ -43,7 +61,7 @@ describe("Studio artifacts", () => {
       artifact: {
         artifact_id: "artifact-1",
         title: "Revenue by region",
-        artifact_type: "table",
+        artifact_type: "chart",
         agent_id: "agent-1",
         thread_id: "thread-1",
         database_name: "sales",
@@ -74,12 +92,16 @@ describe("Studio artifacts", () => {
     await expect
       .element(screen.getByText("Revenue by region"))
       .toBeInTheDocument();
-    await expect.element(screen.getByText("West")).toBeInTheDocument();
+    // The explorer card refreshes the sheet for its thumbnail.
+    await expect
+      .element(screen.getByRole("button", { name: "Open Revenue by region" }))
+      .toBeInTheDocument();
 
     await userEvent.click(screen.getByText("Revenue by region"));
     await expect
       .element(screen.getByRole("tab", { name: "Table" }))
       .toBeInTheDocument();
+    await expect.element(screen.getByText("West").first()).toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "SQL" }));
     await expect
       .element(

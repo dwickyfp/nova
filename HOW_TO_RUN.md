@@ -60,7 +60,7 @@ tersebut. Simpan `.env` dengan izin `600` dan jangan commit isinya. Password adm
 digunakan oleh Ranger Admin, policy proxy, bootstrap, dan client Nova. Mengubah
 file environment saja tidak merotasi akun Ranger yang sudah tersimpan; rotasi akun
 dan client harus diselaraskan. Catatan perbaikan stack lokal ada di
-[LOCAL_RANGER.md](docs/smart-reports/LOCAL_RANGER.md).
+[local-ranger.md](docs/local-ranger.md).
 
 Untuk stack baru, setelah konfigurasi lengkap:
 
@@ -759,7 +759,7 @@ cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.agent_worker
 ```
 
-Scheduled Smart reports also run in this worker, as the owner of the schedule.
+Scheduled internal work also runs in this worker, as the owner of the schedule.
 Give it the same `WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD` and
 `WORKER_IMPERSONATION_ROLE` as `nova-worker`, and grant that account scoped
 impersonation of each owner whose schedules should run:
@@ -927,6 +927,28 @@ uv run pytest tests/integration -m engine -q
 
 Bila port default sedang dipakai stack lain, pytest akan melaporkan port yang
 bertabrakan di alasan skip sehingga pilihan di atas jelas.
+
+Satu mesin menjalankan satu stack StarRocks. Fixture tidak akan menyalakan
+stack test bila sudah ada kontainer StarRocks FE yang berjalan; arahkan suite
+ke stack itu. Untuk stack dev (`docker/docker-compose-engine.yml`), set port
+dan kredensialnya, bukan stack baru:
+
+```bash
+cd backend
+export NOVA_TEST_FE_MYSQL_PORT=29030 NOVA_TEST_FE_HTTP_PORT=8030
+export NOVA_TEST_FE_ARROW_PORT=9408 NOVA_TEST_MINIO_PORT=9000 NOVA_TEST_REDIS_PORT=6379
+export STARROCKS_FE_MYSQL_PORT=29030
+export NOVA_TEST_ROOT_PASSWORD=<root StarRocks> NOVA_TEST_REDIS_PASSWORD=<password Redis>
+export NOVA_TEST_S3_ACCESS_KEY=<access key MinIO> NOVA_TEST_S3_SECRET_KEY=<secret key MinIO>
+export NOVA_ADMIN_TEST_PASSWORD=<password nova_admin> NOVA_PROXY_E2E_PASSWORD=<password nova_admin>
+uv run pytest tests/integration -m engine -q
+```
+
+Pada stack yang dipakai ulang, fixture tidak mengubah password `nova_admin`
+dan tidak memberi grant tambahan padanya; user `testanalyst` dan role
+`test_analyst` hanya dibuat bila belum ada dan dihapus lagi di akhir sesi.
+Jangan jalankan `seed_engine.sh` pada stack dev: skrip itu mengganti password
+`nova_admin`.
 
 ### Frontend
 

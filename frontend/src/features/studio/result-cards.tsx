@@ -1,5 +1,8 @@
 import { memo } from "react";
+import { BookmarkPlus, Check, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { ChartBlock, CitationBlock } from "@/features/assistant/types";
+import { VizView } from "@/features/viz/viz-view";
 import { UiChart } from "./intelligent-ui/ui-chart";
 
 export const ResultChart = memo(function ResultChart({
@@ -13,8 +16,41 @@ export const ResultChart = memo(function ResultChart({
   saving?: boolean;
   saved?: boolean;
 }) {
-  // A tool chart is drawn by the same interactive components as every other
-  // Studio visual; its stored Vega-Lite spec is only the data template.
+  // A viz-core chart renders its presentation model directly; the stored
+  // Vega-Lite spec remains the template for charts the core did not build.
+  if (block.presmodel) {
+    return (
+      <div className="nova-chat-item min-w-0">
+        <div className="min-w-0 rounded-xl border bg-card p-4">
+          <div className="mb-2 flex min-h-7 items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium">
+              {block.presmodel.title || "Chart"}
+            </p>
+            {onSave ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onSave}
+                disabled={saving || saved}
+                aria-label={saved ? "Chart saved" : "Save chart"}
+              >
+                {saving ? (
+                  <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+                ) : saved ? (
+                  <Check aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <BookmarkPlus aria-hidden="true" className="size-3.5" />
+                )}
+                {saved ? "Saved" : "Save"}
+              </Button>
+            ) : null}
+          </div>
+          <VizView presmodel={block.presmodel} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="nova-chat-item min-w-0">
       <UiChart spec={block.chart_spec} onSave={onSave} saving={saving} saved={saved} />

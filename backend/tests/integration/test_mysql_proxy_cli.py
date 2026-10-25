@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from app.proxy.server import MySQLProxyServer
+from tests.conftest import s3_credentials
 
 MYSQL_IMAGE = os.getenv("NOVA_PROXY_E2E_IMAGE", "mysql:8.0")
 CLIENT_NETWORK = os.getenv("NOVA_PROXY_E2E_NETWORK", "docker_nova")
@@ -410,7 +411,7 @@ class TestAcceptanceCriteria:
         assert warm.returncode == 0, warm.output
 
         for sql in _run_async(_latest_rewritten_sql(E2E_USER)):
-            assert "minioadmin" not in sql, "a credential value reached the audit row"
+            assert s3_credentials()[1] not in sql, "a credential value reached the audit row"
 
 
     def test_ac4_wrong_password_is_rejected_with_1045(self, proxy_server, engine_reachable):

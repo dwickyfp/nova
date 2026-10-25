@@ -66,6 +66,10 @@ export type TableBlock = {
 export type ChartBlock = {
   tool_call_id: string;
   chart_spec: string;
+  /** The viz-core worksheet and its computed presentation model, when the
+   *  chart came from the viz engine; the Vega spec remains the fallback. */
+  viz_spec?: Record<string, unknown> | null;
+  presmodel?: import("../viz/types").PresModel | null;
 };
 
 /** A source reference from semantic search. */
@@ -112,7 +116,7 @@ export type AssistantEvent = (
       security_context_version: number;
     }
   | ({ type: "text_delta"; text: string } & ContentPosition)
-  | ({ type: "smart_report"; payload: import("../smart-reports/contracts").ReportBlock } & ContentPosition)
+  | ({ type: "dashboard"; payload: import("../viz/types").DashboardArtifactBlock } & ContentPosition)
   | ({ type: "ui"; payload: Omit<import('../studio/intelligent-ui/types').UiBlock, 'program'> } & ContentPosition)
   | ({ type: "ui_delta"; text: string } & ContentPosition)
   | {

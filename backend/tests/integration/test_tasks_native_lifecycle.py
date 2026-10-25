@@ -29,13 +29,14 @@ import pytest
 import pytest_asyncio
 
 from app.modules.tasks.service import task_service
+from tests.conftest import root_password
 from tests.integration._stack import engine_port, require_shared_stack
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
-SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
+SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD") or root_password()
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
 
 pytestmark = pytest.mark.engine

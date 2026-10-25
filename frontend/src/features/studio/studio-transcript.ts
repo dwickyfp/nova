@@ -27,7 +27,7 @@ export type StudioAssistantEvent = AssistantEvent;
 export type PendingCall = ToolCallView & { tool_call_id: string };
 
 export type OrderedContent =
-  | { id: string; index: number; type: "smart_report"; block: import("../smart-reports/contracts").ReportBlock; complete: true }
+  | { id: string; index: number; type: "dashboard"; block: import("../viz/types").DashboardArtifactBlock; complete: true }
   | {
       id: string;
       index: number;
@@ -121,6 +121,22 @@ export type TranscriptTurn = {
 };
 
 /**
+ * Whether a tool's recorded summary is written for the reader.
+ *
+ * `load_skill` carries the skill body, and `semantic_query` /
+ * `semantic_search` carry the bounded readback the model consumes (question,
+ * statement, rows). The rail already discloses those statements and results,
+ * so the payload would only repeat them under the step.
+ */
+function showsToolDetail(name: string | null | undefined): boolean {
+  return (
+    name !== "load_skill" &&
+    name !== "semantic_query" &&
+    name !== "semantic_search"
+  );
+}
+
+/**
  * Rebuild a transcript from a persisted thread.
  *
  * The live transcript is built from SSE frames; this rebuilds the same shape
@@ -191,8 +207,19 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
           else if (step.finish_reason && step.finish_reason !== "stop")
             open.state = "error";
           break;
-        case "smart_report":
-          open.content.push({ id: step.content_id, index: step.content_index, type: "smart_report", block: step, complete: true });
+        case "dashboard":
+          open.content.push({
+            id: step.content_id,
+            index: step.content_index,
+            type: "dashboard",
+            block: {
+              artifact_id: step.artifact_id,
+              title: step.title,
+              charts: step.charts,
+              fallback: step.fallback,
+            },
+            complete: true,
+          });
           break;
         case "ui":
           open.content.push({
@@ -244,8 +271,9 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               step.name === "load_skill"
                 ? undefined
                 : step.preview || undefined,
-            detail:
-              step.name === "load_skill" ? undefined : step.detail || undefined,
+            detail: showsToolDetail(step.name)
+              ? step.detail || undefined
+              : undefined,
           });
           break;
         }
@@ -292,6 +320,8 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
             const block = {
               tool_call_id: step.tool_call_id,
               chart_spec: step.chart_spec,
+              viz_spec: step.viz_spec ?? null,
+              presmodel: step.presmodel ?? null,
             };
             open.blocks.charts.push({ id, block });
             open.content.push({
@@ -775,9 +805,9 @@ export function applyEvent(
         };
       }
 
-      case "smart_report": {
+      case "dashboard": {
         if (turn.content.some(item => item.id === event.content_id)) return turn;
-        return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "smart_report", block: event.payload, complete: true }] };
+        return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "dashboard", block: event.payload, complete: true }] };
       }
       case "ui": {
         const id = event.content_id!;
@@ -838,7 +868,7 @@ export function applyEvent(
               }
             : {}),
           steps: turn.steps.map((step) =>
-            step.id === event.tool_call_id && step.label !== "load_skill"
+            step.id === event.tool_call_id && showsToolDetail(step.label)
               ? { ...step, detail: event.text }
               : step,
           ),

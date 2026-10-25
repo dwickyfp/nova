@@ -4,14 +4,17 @@ import asyncmy
 import pytest
 
 from app.modules.query.repository import QueryRepository
-from tests.conftest import engine_host_ports, require_stack
+from tests.conftest import engine_host_ports, require_stack, root_password
 
 
 @pytest.mark.engine
 async def test_bounded_query_leaves_starrocks_connection_reusable(docker_services):
     require_stack(docker_services)
     conn = await asyncmy.connect(
-        host="127.0.0.1", port=engine_host_ports()["starrocks-fe"], user="root", password=""
+        host="127.0.0.1",
+        port=engine_host_ports()["starrocks-fe"],
+        user="root",
+        password=root_password(),
     )
     try:
         result = await QueryRepository._execute_on(

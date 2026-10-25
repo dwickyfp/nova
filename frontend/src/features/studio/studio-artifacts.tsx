@@ -1,26 +1,25 @@
-import { AddArtifactToReport } from "@/features/smart-reports/add-artifact";
+import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
+import { ArtifactExplorer } from "./artifact-explorer";
+import { describeView } from "@/features/viz/insight";
+import { ViewAnswer, WorksheetEditor } from "@/features/viz/worksheet-editor";
+import { VizView } from "@/features/viz/viz-view";
+import type { DashboardSpec, PresModel, WorksheetSpec } from "@/features/viz/types";
 import { chartSpecWithRows } from "./artifact-chart-spec";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
-  BarChart3,
   Download,
   Loader2,
-  PackageOpen,
   RefreshCw,
-  Search,
   Send,
-  Table2,
 } from "lucide-react";
 import hljs from "highlight.js/lib/core";
 import sql from "highlight.js/lib/languages/sql";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +30,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   studioApi,
-  type StudioArtifact,
   type StudioArtifactEditMessage,
   type StudioArtifactEditResponse,
   type StudioArtifactRefresh,
@@ -65,163 +63,41 @@ export function StudioArtifacts({
   onSelectAgent: (id: string) => void;
 }) {
   void onSelectAgent;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const artifactsQuery = useQuery({
-    queryKey: ["studio", "artifacts"],
-    queryFn: () => studioApi.listArtifacts(),
-  });
+  const [selected, setSelected] = useState<{ id: string; edit: boolean } | null>(null);
 
-  const artifacts = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const rows = artifactsQuery.data?.artifacts ?? [];
-    if (!needle) return rows;
-    return rows.filter((artifact) =>
-      artifact.title.toLowerCase().includes(needle),
-    );
-  }, [artifactsQuery.data?.artifacts, search]);
-
-  if (selectedId) {
+  if (selected) {
     return (
       <ArtifactDetail
-        artifactId={selectedId}
-        onBack={() => setSelectedId(null)}
+        key={selected.id}
+        artifactId={selected.id}
+        startEditing={selected.edit}
+        onBack={() => setSelected(null)}
+        onOpenArtifact={(id, edit) => setSelected({ id, edit })}
       />
     );
   }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center gap-4 border-b px-5 py-3 sm:px-7">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold">Artifacts</h1>
-          <p className="text-xs text-muted-foreground">
-            Saved views rerun their SQL whenever they are opened.
-          </p>
-        </div>
-        <div className="relative w-full sm:w-64">
-          <Search
-            aria-hidden="true"
-            className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search artifacts"
-            aria-label="Search artifacts"
-            className="pl-8"
-          />
-        </div>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
-        {artifactsQuery.isLoading ? (
-          <LoadingState label="Loading artifacts" />
-        ) : artifactsQuery.isError ? (
-          <ErrorState
-            message={(artifactsQuery.error as Error).message}
-            onRetry={() => void artifactsQuery.refetch()}
-          />
-        ) : !artifactsQuery.data?.count ? (
-          <EmptyState
-            icon={PackageOpen}
-            title="No saved artifacts"
-            description="Save a chart or result table from a conversation. Nova keeps its SQL and rebuilds the view from current data."
-          />
-        ) : !artifacts.length ? (
-          <EmptyState
-            icon={Search}
-            title="No matching artifacts"
-            description={`Nothing matches “${search.trim()}”.`}
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {artifacts.map((artifact) => (
-              <ArtifactCard
-                key={artifact.artifact_id}
-                artifact={artifact}
-                onOpen={() => setSelectedId(artifact.artifact_id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ArtifactCard({
-  artifact,
-  onOpen,
-}: {
-  artifact: StudioArtifact;
-  onOpen: () => void;
-}) {
-  const preview = useArtifactData(artifact.artifact_id);
-  return (
-    <article
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-      className="group min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-card shadow-sm transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    >
-      <div className="flex items-start gap-3 border-b px-4 py-3">
-        <ArtifactIcon type={artifact.artifact_type} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-medium">{artifact.title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Updated {formatTimestamp(artifact.updated_at)}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          aria-label={`Refresh ${artifact.title}`}
-          disabled={preview.isFetching}
-          onClick={(event) => {
-            event.stopPropagation();
-            void preview.refetch();
-          }}
-        >
-          <RefreshCw
-            aria-hidden="true"
-            className={cn("size-3.5", preview.isFetching && "animate-spin")}
-          />
-        </Button>
-      </div>
-      <div className="min-w-0 p-4">
-        {preview.isLoading ? (
-          <LoadingState label="Refreshing preview" compact />
-        ) : preview.isError ? (
-          <p className="flex items-center gap-2 py-8 text-sm text-destructive">
-            <AlertCircle aria-hidden="true" className="size-4" />
-            The current data could not be loaded.
-          </p>
-        ) : preview.data ? (
-          <ArtifactVisual data={preview.data} compact />
-        ) : null}
-      </div>
-    </article>
-  );
+  return <ArtifactExplorer onOpen={(id, options) => setSelected({ id, edit: Boolean(options?.edit) })} />;
 }
 
 function ArtifactDetail({
   artifactId,
+  startEditing = false,
   onBack,
+  onOpenArtifact,
 }: {
   artifactId: string;
+  startEditing?: boolean;
   onBack: () => void;
+  onOpenArtifact?: (artifactId: string, edit: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const detail = useArtifactData(artifactId);
+  const meta = useQuery({
+    queryKey: ["studio", "artifact-meta", artifactId],
+    queryFn: () => studioApi.getArtifact(artifactId),
+    staleTime: 30_000,
+  });
+  const isDashboard = meta.data?.artifact_type === "dashboard";
+  const detail = useArtifactData(artifactId, meta.isSuccess && !isDashboard);
   const [filters, setFilters] = useState<ArtifactFilter[]>([]);
   const [filterMode, setFilterMode] = useState<ArtifactFilterMode>("all");
   const [draftResponse, setDraftResponse] =
@@ -231,6 +107,12 @@ function ArtifactDetail({
   );
   const [chatInput, setChatInput] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
+  const charts = useQuery({
+    queryKey: ["studio", "artifacts"],
+    queryFn: () => studioApi.listArtifacts(),
+    enabled: detail.data?.artifact.artifact_type === "dashboard",
+  });
   const [chatBusy, setChatBusy] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
   const [editNotice, setEditNotice] = useState<string | null>(null);
@@ -328,6 +210,65 @@ function ArtifactDetail({
     }
   };
 
+  if (meta.isLoading) {
+    return <LoadingState label="Opening artifact" />;
+  }
+  if (meta.isError || !meta.data) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <DetailHeader onBack={onBack} title="Artifact" />
+        <ErrorState
+          message={(meta.error as Error)?.message || "Artifact not found"}
+          onRetry={() => void meta.refetch()}
+        />
+      </div>
+    );
+  }
+
+  const artifact = meta.data;
+
+  if (artifact.artifact_type === "dashboard") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <DetailHeader
+          onBack={onBack}
+          title={artifact.title}
+          subtitle={`Dashboard · Updated ${formatTimestamp(artifact.updated_at)}`}
+          onDelete={() => setDeleteOpen(true)}
+          extraAction={
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing((value) => !value)}>
+              {editing ? "Done editing" : "Edit layout"}
+            </Button>
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+          <DashboardCanvas
+            artifactId={artifact.artifact_id}
+            spec={(artifact.viz_spec ?? { version: 1, zones: [] }) as unknown as DashboardSpec}
+            charts={charts.data?.artifacts.filter((item) => item.artifact_type === "chart") ?? []}
+            expectedUpdatedAt={artifact.updated_at}
+            editable={editing}
+            onSaved={() => void meta.refetch()}
+            onEditSheet={onOpenArtifact ? (id) => onOpenArtifact(id, true) : undefined}
+          />
+        </div>
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete dashboard?"
+          desc={`“${artifact.title}” will be deleted. Its charts stay in Artifacts.`}
+          confirmText="Delete dashboard"
+          destructive
+          isLoading={remove.isPending}
+          handleConfirm={() => {
+            setDeleteOpen(false);
+            remove.mutate();
+          }}
+        />
+      </div>
+    );
+  }
+
   if (detail.isLoading) {
     return <LoadingState label="Opening artifact" />;
   }
@@ -343,20 +284,29 @@ function ArtifactDetail({
     );
   }
 
-  const { artifact } = detail.data;
   const activeData = displayedData ?? detail.data;
   const visibleData = { ...activeData, rows: filteredRows };
+  // The refresh carries the artifact as saved now; the metadata query can lag
+  // behind an editor save.
+  const saved = detail.data.artifact;
+  const worksheet = (saved.viz_spec ?? detail.data.derived_viz_spec ?? null) as unknown as WorksheetSpec | null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DetailHeader
         onBack={onBack}
         title={artifact.title}
-        subtitle={`${draftResponse?.draft ? "Draft" : `Updated ${formatTimestamp(artifact.updated_at)}`} · ${activeData.row_count.toLocaleString()} rows · ${formatDuration(activeData.elapsed_ms)}`}
+        subtitle={`${draftResponse?.draft ? "Draft" : `Updated ${formatTimestamp(saved.updated_at)}`} · ${activeData.row_count.toLocaleString()} rows · ${formatDuration(activeData.elapsed_ms)}`}
         refreshing={detail.isFetching}
         onRefresh={() => void detail.refetch()}
         onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
-        reportAction={<AddArtifactToReport artifactId={artifact.artifact_id} />}
+        extraAction={
+          worksheet?.source && !editing && !draftResponse?.draft ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+              Edit view
+            </Button>
+          ) : null
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
@@ -370,74 +320,95 @@ function ArtifactDetail({
             </div>
           </div>
         ) : null}
-        <ArtifactFilterBar
-          columns={activeData.columns}
-          rows={activeData.rows}
-          filters={filters}
-          onFiltersChange={setFilters}
-          mode={filterMode}
-          onModeChange={setFilterMode}
-          visibleCount={filteredRows.length}
-        />
-        <section
-          aria-label="Artifact preview"
-          aria-busy={chatBusy}
-          data-ai-processing={chatBusy ? "true" : undefined}
-          className={cn(
-            "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
-            chatBusy && "artifact-ai-active",
-          )}
-        >
-          <span className="sr-only" role="status">
-            {chatBusy ? "Nova is preparing an artifact preview." : ""}
-          </span>
-          {activeData.rows.length > 0 && filteredRows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No rows match these filters.
-            </p>
-          ) : (
-            <ArtifactVisual data={visibleData} compact />
-          )}
-        </section>
+        {!editing ? (
+          <ArtifactFilterBar
+            columns={activeData.columns}
+            rows={activeData.rows}
+            filters={filters}
+            onFiltersChange={setFilters}
+            mode={filterMode}
+            onModeChange={setFilterMode}
+            visibleCount={filteredRows.length}
+          />
+        ) : null}
+        {editing && worksheet?.source ? (
+          <WorksheetEditor
+            artifactId={artifact.artifact_id}
+            spec={worksheet}
+            initialPresmodel={(activeData.presmodel as PresModel | undefined) ?? null}
+            title={artifact.title}
+            expectedUpdatedAt={saved.updated_at}
+            onCancel={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              void detail.refetch();
+              void meta.refetch();
+              void queryClient.invalidateQueries({ queryKey: ["studio", "artifacts"] });
+            }}
+          />
+        ) : (
+          <section
+            aria-label="Artifact preview"
+            aria-busy={chatBusy}
+            data-ai-processing={chatBusy ? "true" : undefined}
+            className={cn(
+              "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
+              chatBusy && "artifact-ai-active",
+            )}
+          >
+            <span className="sr-only" role="status">
+              {chatBusy ? "Nova is preparing an artifact preview." : ""}
+            </span>
+            {activeData.rows.length > 0 && filteredRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No rows match these filters.
+              </p>
+            ) : (
+              <ArtifactVisual data={visibleData} compact />
+            )}
+          </section>
+        )}
 
-        <Tabs defaultValue="table" className="mt-5 min-w-0">
-          <TabsList aria-label="Artifact data views">
-            <TabsTrigger value="table">Table</TabsTrigger>
-            <TabsTrigger value="sql">SQL</TabsTrigger>
-          </TabsList>
-          <TabsContent value="table" className="mt-2">
-            <ArtifactTable
-              title={artifact.title}
-              columns={activeData.columns}
-              rows={filteredRows}
-              emptyMessage={
-                activeData.rows.length > 0
-                  ? "No rows match these filters."
-                  : undefined
-              }
-            />
-          </TabsContent>
-          <TabsContent value="sql" className="mt-2">
-            <div className="min-w-0 overflow-x-hidden rounded-xl border bg-card">
-              <pre
-                data-testid="artifact-sql"
-                className="hljs w-full min-w-0 whitespace-pre-wrap break-words p-4 font-mono text-sm leading-6 [overflow-wrap:anywhere]"
-              >
-                <code
-                  className="font-mono"
-                  // highlight.js emits only span elements with token class
-                  // names, so the markup is inert.
-                  dangerouslySetInnerHTML={{
-                    __html:
-                      highlightArtifactSql(
-                        formatArtifactSql(activeData.artifact.sql_text),
-                      ) ?? "",
-                  }}
-                />
-              </pre>
-            </div>
-          </TabsContent>
-        </Tabs>
+        {!editing ? (
+          <Tabs defaultValue="table" className="mt-5 min-w-0">
+            <TabsList aria-label="Artifact data views">
+              <TabsTrigger value="table">Table</TabsTrigger>
+              <TabsTrigger value="sql">SQL</TabsTrigger>
+            </TabsList>
+            <TabsContent value="table" className="mt-2">
+              <ArtifactTable
+                title={artifact.title}
+                columns={activeData.columns}
+                rows={filteredRows}
+                emptyMessage={
+                  activeData.rows.length > 0
+                    ? "No rows match these filters."
+                    : undefined
+                }
+              />
+            </TabsContent>
+            <TabsContent value="sql" className="mt-2">
+              <div className="min-w-0 overflow-x-hidden rounded-xl border bg-card">
+                <pre
+                  data-testid="artifact-sql"
+                  className="hljs w-full min-w-0 whitespace-pre-wrap break-words p-4 font-mono text-sm leading-6 [overflow-wrap:anywhere]"
+                >
+                  <code
+                    className="font-mono"
+                    // highlight.js emits only span elements with token class
+                    // names, so the markup is inert.
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        highlightArtifactSql(
+                          formatArtifactSql(activeData.artifact.sql_text),
+                        ) ?? "",
+                    }}
+                  />
+                </pre>
+              </div>
+            </TabsContent>
+          </Tabs>
+        ) : null}
       </div>
 
       <form
@@ -545,7 +516,7 @@ function DetailHeader({
   onRefresh,
   onExport,
   onDelete,
-  reportAction,
+  extraAction,
 }: {
   onBack: () => void;
   title: string;
@@ -554,7 +525,7 @@ function DetailHeader({
   onRefresh?: () => void;
   onExport?: (format: ExportFormat) => Promise<void>;
   onDelete?: () => void;
-  reportAction?: React.ReactNode;
+  extraAction?: React.ReactNode;
 }) {
   const [exporting, setExporting] = useState(false);
   const exportAs = async (format: ExportFormat) => {
@@ -586,7 +557,7 @@ function DetailHeader({
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         ) : null}
       </div>
-      {reportAction}
+      {extraAction}
       {onRefresh ? (
         <Button
           type="button"
@@ -644,6 +615,9 @@ function ArtifactVisual({
   data: StudioArtifactRefresh;
   compact?: boolean;
 }) {
+  if (data.presmodel) {
+    return <SheetPreview presmodel={data.presmodel as PresModel} compact={compact} />;
+  }
   if (data.artifact.artifact_type === "chart" && data.artifact.chart_spec) {
     return (
       <div className={cn("min-w-0", compact && "text-xs")}>
@@ -657,6 +631,27 @@ function ArtifactVisual({
       columns={data.columns}
       rows={compact ? data.rows.slice(0, 6) : data.rows}
     />
+  );
+}
+
+/** A saved sheet: its answer as the headline, then the chart; selecting a
+ * mark reads it against the others. */
+function SheetPreview({ presmodel, compact }: { presmodel: PresModel; compact: boolean }) {
+  const [selected, setSelected] = useState<string | number | null>(null);
+  const insight = describeView(presmodel, selected);
+  return (
+    <div className="viz-numerals flex min-w-0 flex-col gap-5">
+      <ViewAnswer question="" insight={insight} />
+      <VizView
+        presmodel={presmodel}
+        compact={compact}
+        highlight={insight?.highlight ?? null}
+        onMarkClick={(values) => {
+          const dimension = insight?.highlight?.dimension;
+          if (dimension && dimension in values) setSelected(values[dimension]);
+        }}
+      />
+    </div>
   );
 }
 
@@ -683,22 +678,14 @@ function ArtifactTable({
   );
 }
 
-function useArtifactData(artifactId: string) {
+function useArtifactData(artifactId: string, enabled = true) {
   return useQuery({
     queryKey: ["studio", "artifact-data", artifactId],
     queryFn: () => studioApi.refreshArtifact(artifactId),
+    enabled,
     staleTime: 0,
     refetchOnMount: "always",
   });
-}
-
-function ArtifactIcon({ type }: { type: "chart" | "table" }) {
-  const Icon = type === "chart" ? BarChart3 : Table2;
-  return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-      <Icon aria-hidden="true" className="size-4" />
-    </span>
-  );
 }
 
 function LoadingState({

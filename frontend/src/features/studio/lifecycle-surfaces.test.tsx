@@ -32,10 +32,6 @@ import type { EvidenceEnvelope, EvidenceHealth } from "./evidence-health";
 import { InvestigationStart } from "./investigation-start";
 import { MissionObjects } from "./mission-objects";
 import {
-  MissionTurnControls,
-  type MissionTurnChoice,
-} from "./mission-turn-controls";
-import {
   applyEvent,
   replayThread,
   type TranscriptTurn,
@@ -248,9 +244,6 @@ function ReplayHost({
 }) {
   const [available, setAvailable] = useState(false);
   const [open, setOpen] = useState(false);
-  const [choice, setChoice] = useState<MissionTurnChoice>({
-    mode: "automatic",
-  });
   const opener = useRef<HTMLButtonElement>(null);
   return (
     <div className="flex h-dvh min-w-0 overflow-hidden">
@@ -268,12 +261,6 @@ function ReplayHost({
           )}
         </header>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
-          <MissionTurnControls
-            threadId={mission.thread_id}
-            value={choice}
-            onChange={setChoice}
-            disabled={false}
-          />
           <p className="mb-3 text-sm">{replay[0].answer}</p>
           <MissionObjects mission={mission} onFollowUp={onFollowUp} />
         </div>
@@ -390,16 +377,6 @@ describe("governed lifecycle browser surfaces", () => {
           }),
         )
         .toBeVisible();
-      const continuation = page.getByRole("button", {
-        name: "Continue mission",
-        exact: true,
-      });
-      await expect.element(continuation).toBeEnabled();
-      await keyboardActivate(continuation.element());
-      await expect.element(continuation).toHaveFocus();
-      await expect
-        .element(page.getByLabelText("Mission to continue"))
-        .toHaveValue(mission.mission_id);
       await keyboardActivate(
         page
           .getByRole("button", { name: "Continue investigation", exact: true })
@@ -941,12 +918,6 @@ describe("governed lifecycle browser surfaces", () => {
         new ApiError(403, "Investigation access revoked"),
       );
       vi.mocked(workflowApi.list).mockResolvedValue({ missions: [] });
-      vi.mocked(workflowApi.resumable).mockResolvedValue({
-        missions: [{ ...mission, resume_required: true }],
-      });
-      vi.spyOn(workflowApi, "resume").mockRejectedValue(
-        new ApiError(403, "Current Semantic View access revoked"),
-      );
       vi.spyOn(api, "post").mockRejectedValue(
         new ApiError(403, "Context access revoked"),
       );
@@ -959,16 +930,9 @@ describe("governed lifecycle browser surfaces", () => {
       vi.spyOn(qualityApi, "doctor").mockRejectedValue(
         new ApiError(403, "Release history access revoked"),
       );
-      const choice = vi.fn();
       await render(
         wrap(
           <div className="space-y-5">
-            <MissionTurnControls
-              threadId={mission.thread_id}
-              value={{ mode: "automatic" }}
-              onChange={choice}
-              disabled={false}
-            />
             <MissionObjects mission={mission} onFollowUp={vi.fn()} />
             <ContextPanel semantic={semantic} metric="revenue" />
             <ActionLifecycle
@@ -988,14 +952,6 @@ describe("governed lifecycle browser surfaces", () => {
       await keyboardActivate(
         page.getByText("Prepare a decision", { exact: true }).element(),
       );
-      await keyboardActivate(
-        page
-          .getByRole("button", { name: "Resume mission", exact: true })
-          .element(),
-      );
-      await expect
-        .element(page.getByText("Current Semantic View access revoked"))
-        .toBeVisible();
       await expect
         .element(page.getByText("Investigation access revoked"))
         .toBeVisible();
@@ -1036,14 +992,8 @@ describe("governed lifecycle browser surfaces", () => {
         )
         .not.toBeInTheDocument();
       await expect
-        .element(
-          page.getByRole("button", { name: "Continue mission", exact: true }),
-        )
-        .toBeDisabled();
-      await expect
         .element(page.getByText("Evidence has not been assessed"))
         .toBeVisible();
-      expect(choice).not.toHaveBeenCalled();
       assertContained(width);
     },
   );

@@ -76,6 +76,8 @@ def shared_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     for step in steps or []:
         if not isinstance(step, dict):
             continue
+        # Report steps come only from threads recorded before reports were
+        # removed; they stay private like UI steps.
         if step.get("kind") in {"ui", "ui_action", "smart_report", "report_context"}:
             continue
         kept = strip_rows(step)

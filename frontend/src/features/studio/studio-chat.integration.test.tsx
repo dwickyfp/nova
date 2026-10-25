@@ -861,12 +861,14 @@ describe("studio transcript click-through", () => {
       .toBeVisible();
 
     // The statement is behind the step, not behind a second control: opening
-    // the step is the reader saying "show me what this did".
+    // the step is the reader saying "show me what this did". The disclosure
+    // shows the formatted statement, so the marker is a clause fragment that
+    // formatting keeps on one line.
     await expect
-      .element(page.getByText(/SELECT sku_name/))
+      .element(page.getByText(/SUM\(total_netto\)/))
       .not.toBeInTheDocument();
     await page.getByRole("button", { name: /Ran a SQL query/ }).click();
-    await expect.element(page.getByText(/SELECT sku_name/)).toBeVisible();
+    await expect.element(page.getByText(/SUM\(total_netto\)/)).toBeVisible();
 
     // The turn has settled: the tool row and its statement are present, and no
     // step is still spinning. A leftover spinner was the visible symptom of a
@@ -994,7 +996,7 @@ describe("studio transcript click-through", () => {
       .element(page.getByText("Loading skill: revenue"))
       .toBeVisible();
     await page.getByRole("button", { name: /Ran a SQL query/ }).click();
-    await expect.element(page.getByText(/SELECT sku_name/)).toBeVisible();
+    await expect.element(page.getByText(/SUM\(total_netto\)/)).toBeVisible();
 
     await expect.element(page.getByText("Omzet per SKU").first()).toBeVisible();
     await expect

@@ -22,6 +22,7 @@ from app.modules.intelligence.contracts import (
 )
 from app.modules.intelligence.engine_repository import intelligence_repository as repository
 from app.modules.intelligence.engine_schema import ENGINE_TABLES, ensure_engine_schema
+from tests.conftest import redis_url, root_password
 from tests.integration._stack import require_shared_stack, shared_stack_host_port
 
 pytestmark = pytest.mark.engine
@@ -37,11 +38,11 @@ async def intelligence_db(request, monkeypatch, docker_services):
         shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030),
     )
     monkeypatch.setattr(settings, "STARROCKS_ROOT_USER", "root")
-    monkeypatch.setattr(settings, "STARROCKS_ROOT_PASSWORD", "")
+    monkeypatch.setattr(settings, "STARROCKS_ROOT_PASSWORD", root_password())
     monkeypatch.setattr(
         settings,
         "REDIS_URL",
-        f"redis://127.0.0.1:{shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)}/0",
+        redis_url(shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)),
     )
     await db.init_system_pool()
     await session_store.init()

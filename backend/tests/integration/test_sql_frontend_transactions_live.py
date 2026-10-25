@@ -17,6 +17,7 @@ from app.sql_frontend.parser import parse_statement
 from app.sql_frontend.planning.execution import Atomicity, CompositePlan
 from app.sql_frontend.planning.planner import SQLPlanner
 from app.sql_frontend.planning.registry import PlannerRegistry
+from tests.conftest import s3_credentials
 
 pytestmark = pytest.mark.engine
 
@@ -200,7 +201,8 @@ async def test_live_stage_rewrite_and_authorized_schema_helper(client, admin_tok
     )
     assert result.success and result.row_count == 1
     assert result.executed_sql.startswith("/* harmless longer prefix */")
-    assert result.executed_sql.endswith("LIMIT 1") and "minioadmin" not in result.executed_sql
+    assert result.executed_sql.endswith("LIMIT 1")
+    assert s3_credentials()[1] not in result.executed_sql
     context = ExecutionContext(
         "nova_admin",
         database="NOVA_ANALYTICS",

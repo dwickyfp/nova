@@ -9,8 +9,8 @@ import {
   type Share,
   type SharedThread,
 } from "@/features/agents/studio-intelligence-api";
-import { chartSpecWithRows } from "./artifact-chart-spec";
-import { UiChart } from "./intelligent-ui/ui-chart";
+import { VizView } from "@/features/viz/viz-view";
+import type { DashboardSpec } from "@/features/viz/types";
 import { ResultTable } from "./result-table";
 
 /** Conversations and dashboards others shared with you, run with your own access. */
@@ -171,7 +171,18 @@ function SharedDashboardView({ dashboardId, onBack }: { dashboardId: string; onB
     queryKey: ["studio", "shared", "dashboard", dashboardId],
     queryFn: () => sharingApi.openDashboard(dashboardId),
   });
-  const tiles = [...(query.data?.layout.tiles ?? [])].sort((a, b) => a.y - b.y || a.x - b.x);
+  const spec = query.data?.viz_spec as unknown as DashboardSpec | null;
+  const compute = useQuery({
+    queryKey: ["studio", "shared", "dashboard", dashboardId, "compute"],
+    enabled: Boolean(spec),
+    retry: false,
+    queryFn: () =>
+      sharingApi.computeDashboard(dashboardId, {
+        spec: spec as unknown as Record<string, unknown>,
+      }),
+  });
+  const zones = spec?.zones.filter((zone) => zone.kind === "sheet") ?? [];
+  const rows = Math.max(1, ...(spec?.zones ?? []).map((zone) => zone.rect.y + zone.rect.h));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b px-4 py-3 sm:px-6">
@@ -182,7 +193,7 @@ function SharedDashboardView({ dashboardId, onBack }: { dashboardId: string; onB
           <h1 className="truncate text-base font-normal">{query.data?.title ?? "Shared dashboard"}</h1>
           {query.data && (
             <p className="text-xs text-muted-foreground">
-              Shared by {query.data.owner_name}. Every tile runs with your access.
+              Shared by {query.data.owner_name}. Every chart runs with your access.
             </p>
           )}
         </div>
@@ -192,49 +203,47 @@ function SharedDashboardView({ dashboardId, onBack }: { dashboardId: string; onB
           <Skeleton className="h-40 w-full" />
         ) : query.isError ? (
           <p role="alert" className="text-sm text-destructive">This dashboard is no longer shared with you.</p>
-        ) : tiles.length === 0 ? (
-          <p className="text-sm text-muted-foreground">This dashboard has no tiles.</p>
+        ) : zones.length === 0 ? (
+          <p className="text-sm text-muted-foreground">This dashboard has no charts.</p>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {tiles.map((tile) => (
-              <SharedTileCard key={tile.tile_id} dashboardId={dashboardId} artifactId={tile.artifact_id} />
-            ))}
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: "repeat(24, minmax(0, 1fr))",
+              gridTemplateRows: `repeat(${rows}, minmax(8rem, auto))`,
+            }}
+          >
+            {zones.map((zone) => {
+              const result = compute.data?.zones.find((item) => item.zone_id === zone.zone_id);
+              return (
+                <article
+                  key={zone.zone_id}
+                  className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card p-3"
+                  style={{
+                    gridColumn: `${zone.rect.x + 1} / span ${zone.rect.w}`,
+                    gridRow: `${zone.rect.y + 1} / span ${zone.rect.h}`,
+                  }}
+                >
+                  <h2 className="mb-1 shrink-0 truncate text-xs font-medium text-muted-foreground">
+                    {result?.title ?? "Chart"}
+                  </h2>
+                  <div className="min-h-0 flex-1">
+                    {compute.isLoading ? (
+                      <Skeleton className="h-32 w-full" />
+                    ) : result?.error ? (
+                      <p role="alert" className="text-sm text-muted-foreground">{result.error}</p>
+                    ) : result?.presmodel ? (
+                      <VizView presmodel={result.presmodel} compact />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No data.</p>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function SharedTileCard({ dashboardId, artifactId }: { dashboardId: string; artifactId: string }) {
-  const tile = useQuery({
-    queryKey: ["studio", "shared", "dashboard", dashboardId, artifactId],
-    queryFn: () => sharingApi.refreshTile(dashboardId, artifactId),
-    retry: false,
-  });
-  const data = tile.data;
-  return (
-    <article className="flex min-h-64 min-w-0 flex-col overflow-hidden rounded-lg border bg-card">
-      <h2 className="shrink-0 truncate border-b px-3 py-2 text-sm font-medium">
-        {data?.artifact.title ?? "Tile"}
-      </h2>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        {tile.isLoading ? (
-          <Skeleton className="h-32 w-full" />
-        ) : tile.isError || !data ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            {tile.error instanceof Error ? tile.error.message : "This tile could not be loaded."}
-          </p>
-        ) : data.artifact.artifact_type === "chart" && data.artifact.chart_spec ? (
-          <UiChart spec={chartSpecWithRows(data)} />
-        ) : (
-          <ResultTable
-            block={{ title: data.artifact.title, columns: data.columns, rows: data.rows }}
-            heading={false}
-            note={null}
-          />
-        )}
-      </div>
-    </article>
   );
 }

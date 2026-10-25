@@ -64,7 +64,8 @@ async def test_export_re_runs_as_the_caller_and_redacts(monkeypatch):
     user = {"username": "alice", "encrypted_password": "enc", "session_id": "s",
             "roles": ["analyst"], "active_role": "analyst"}
     monkeypatch.setattr(studio_router, "_artifact_or_404", AsyncMock(return_value={
-        "title": "Users", "sql_text": "SELECT 1", "database_name": "db", "schema_name": None,
+        "title": "Users", "artifact_type": "chart", "viz_spec": None,
+        "sql_text": "SELECT 1", "database_name": "db", "schema_name": None,
     }))
     execute = AsyncMock(return_value=[SimpleNamespace(
         success=True, columns=["name", "api_key"], rows=[["a", "sk-abcdefghijklmnopqrstu"]],

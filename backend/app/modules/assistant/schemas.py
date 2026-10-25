@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_valid
 
 from app.modules.assistant.app_context import NoveAppContext
 from app.modules.assistant.attachments import validate_attachments
-from app.modules.smart_reports.schemas import ReportContextRef
 
 
 def utc_datetime(value: datetime) -> datetime:
@@ -189,7 +188,6 @@ class UiMapMetricInput(BaseModel):
 
 
 class AgentMessageRequest(MessageRequest):
-    report_context: ReportContextRef | None = None
     ui_action: UiActionInput | None = None
     work_intent: Literal["ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"] | None = (
         None

@@ -30,7 +30,7 @@ async function host() {
   await render(<QueryClientProvider client={client}><div className="flex h-dvh min-w-0 overflow-hidden">
     <StudioChat agent={agent} agents={[agent]} onSelectAgent={vi.fn()} currentRole="ANALYST" activeThreadId={mission.thread_id} onThreadChange={vi.fn()} />
   </div></QueryClientProvider>);
-  await expect.element(page.getByRole("button", { name: "Continue mission", exact: true })).toBeEnabled();
+  await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeEnabled();
 }
 beforeEach(async () => {
   await page.viewport(1280, 720);
@@ -47,7 +47,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe("one-turn Mission routing", () => {
+describe("automatic chat routing", () => {
   it("retains a typed prompt until the selected conversation has loaded", async () => {
     let release: (value: Awaited<ReturnType<typeof agentsApi.getThread>>) => void = () => {};
     vi.mocked(agentsApi.getThread).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
@@ -68,63 +68,41 @@ describe("one-turn Mission routing", () => {
     await expect.element(page.getByText("Create a city revenue report filtered to Jakarta", { exact: true })).toBeInTheDocument();
   });
 
-  for (const mode of ["continue", "new"] as const) {
-    const label = mode === "continue" ? "Continue mission" : "New mission";
-    it(`${mode} resets on acceptance and leaves the next objective automatic`, async () => {
-      let release: (value: Response) => void = () => {};
-      const fetch = vi.spyOn(globalThis, "fetch").mockImplementationOnce(() => new Promise((resolve) => { release = resolve; })).mockResolvedValue(accepted());
-      await host();
-      await page.getByRole("button", { name: label, exact: true }).click();
-      await page.getByRole("textbox", { name: "Message Nova" }).fill("Break that down by region");
-      await page.getByRole("button", { name: "Send", exact: true }).click();
-      await expect.poll(() => fetch.mock.calls.length).toBe(1);
-      await expect.element(page.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
-      const first = JSON.parse(String(fetch.mock.calls[0][1]?.body));
-      expect(first.continue_mission_id).toBe(mode === "continue" ? "revenue" : undefined);
-      expect(first.new_mission).toBe(mode === "new");
-      release(accepted());
-      await expect.element(page.getByRole("button", { name: "Automatic", exact: true })).toHaveAttribute("aria-pressed", "true");
-      await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeEnabled();
-      await page.getByRole("textbox", { name: "Message Nova" }).fill("Evaluate opening operations in Singapore");
-      await page.getByRole("button", { name: "Send", exact: true }).click();
-      await expect.poll(() => fetch.mock.calls.length).toBe(2);
-      const second = JSON.parse(String(fetch.mock.calls[1][1]?.body));
-      expect(second.content).toBe("Evaluate opening operations in Singapore");
-      expect(second.continue_mission_id).toBeUndefined();
-      expect(second.new_mission).toBe(false);
-    });
-    it(`${mode} retains the draft and routing on rejection, then retries unchanged`, async () => {
-      const fetch = vi.spyOn(globalThis, "fetch")
-        .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Mission access unavailable" }), { status: 409, headers: { "Content-Type": "application/json" } }))
-        .mockResolvedValueOnce(accepted());
-      await host();
-      await page.getByRole("button", { name: label, exact: true }).click();
-      await page.getByRole("textbox", { name: "Message Nova" }).fill("Inspect regional revenue");
-      await page.getByRole("button", { name: "Send", exact: true }).click();
-      await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toHaveValue("Inspect regional revenue");
-      await expect.element(page.getByRole("alert")).toHaveTextContent("Mission access unavailable");
-      await expect.element(page.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
-      await page.getByRole("button", { name: "Send", exact: true }).click();
-      await expect.element(page.getByRole("button", { name: "Automatic", exact: true })).toHaveAttribute("aria-pressed", "true");
-      expect(fetch.mock.calls[1][1]?.body).toBe(fetch.mock.calls[0][1]?.body);
-    });
-  }
-  it("resumed Mission continuation applies only to the next accepted turn", async () => {
+  it("keeps the composer free of mission controls and routes messages automatically", async () => {
     vi.mocked(workflowApi.resumable).mockResolvedValue({ missions: [{ ...mission, resume_required: true }] });
-    const resume = vi.spyOn(workflowApi, "resume").mockResolvedValue({ ...mission, revision: 4 });
     const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => accepted());
     await host();
-    await page.getByRole("button", { name: "Resume mission", exact: true }).click();
-    await expect.element(page.getByRole("button", { name: "Continue mission", exact: true })).toHaveAttribute("aria-pressed", "true");
-    expect(resume.mock.calls[0][0].revision).toBe(3);
-    await page.getByRole("textbox", { name: "Message Nova" }).fill("Continue the investigation");
+    await expect.element(page.getByRole("region", { name: "Mission turn controls" })).not.toBeInTheDocument();
+    for (const label of ["Automatic", "Continue mission", "New mission", "Resume mission"]) {
+      await expect.element(page.getByRole("button", { name: label, exact: true })).not.toBeInTheDocument();
+    }
+    expect(workflowApi.resumable).not.toHaveBeenCalled();
+    for (const content of ["Break that down by region", "Evaluate opening operations in Singapore"]) {
+      await page.getByRole("textbox", { name: "Message Nova" }).fill(content);
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await expect.element(page.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [, request] of fetch.mock.calls) {
+      const body = JSON.parse(String(request?.body));
+      expect(body.continue_mission_id).toBeUndefined();
+      expect(body.new_mission).toBeUndefined();
+    }
+  });
+
+  it("preserves the draft on rejection and retries the same request", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Mission access unavailable" }), {
+        status: 409, headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(accepted());
+    await host();
+    await page.getByRole("textbox", { name: "Message Nova" }).fill("Inspect regional revenue");
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    await expect.element(page.getByRole("button", { name: "Automatic", exact: true })).toHaveAttribute("aria-pressed", "true");
-    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body)).continue_mission_id).toBe("revenue");
-    await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeEnabled();
-    await page.getByRole("textbox", { name: "Message Nova" }).fill("Evaluate Singapore expansion");
+    await expect.element(page.getByRole("alert")).toHaveTextContent("Mission access unavailable");
+    await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toHaveValue("Inspect regional revenue");
     await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect.poll(() => fetch.mock.calls.length).toBe(2);
-    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body)).continue_mission_id).toBeUndefined();
+    expect(fetch.mock.calls[1][1]?.body).toBe(fetch.mock.calls[0][1]?.body);
   });
 });

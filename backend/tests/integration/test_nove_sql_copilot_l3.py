@@ -15,7 +15,7 @@ from app.modules.access_control.service import access_control_service
 from app.modules.assistant.tools import ToolInvocation
 from app.modules.assistant.tools.provision_user import ProvisionUserTool
 from app.modules.users.service import user_service
-from tests.conftest import engine_host_ports, require_stack
+from tests.conftest import engine_host_ports, require_stack, root_password
 
 pytestmark = pytest.mark.engine
 
@@ -112,7 +112,10 @@ async def test_sql_card_account_batch_redacts_password_and_stops_on_error(client
 async def test_native_sql_families_on_disposable_data(docker_services):
     require_stack(docker_services)
     connection = await asyncmy.connect(
-        host="127.0.0.1", port=engine_host_ports()["starrocks-fe"], user="root", password=""
+        host="127.0.0.1",
+        port=engine_host_ports()["starrocks-fe"],
+        user="root",
+        password=root_password(),
     )
     database = f"nove_sql_audit_{uuid4().hex[:12]}"
     async with connection.cursor() as cursor:

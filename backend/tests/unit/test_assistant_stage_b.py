@@ -24,7 +24,12 @@ from app.modules.assistant import events
 from app.modules.assistant.consent import ConsentBroker, ConsentConflictError
 from app.modules.assistant.provider import AssistantProviderClient, AssistantProviderError
 from app.modules.assistant.schemas import ToolCallView
-from app.modules.assistant.service import AssistantLoop, LoopContext, _latest_thread_result
+from app.modules.assistant.service import (
+    AssistantLoop,
+    LoopContext,
+    _latest_thread_result,
+    _tool_detail,
+)
 from app.modules.assistant.state import (
     AssistantMessage,
     AssistantThread,
@@ -596,6 +601,18 @@ def test_latest_thread_result_is_bounded_and_uses_newest_table():
         "rows": [["Electronics", 10], ["Audio", 5]],
         "source": "previous_turn",
     }
+
+
+def test_tool_detail_drops_readback_payloads():
+    # The semantic tools' summary is the bounded text the model reads back
+    # (question, statement, rows), not a panel note; the rail already shows
+    # their statement and result, so the payload must not ship to it.
+    outcome = ToolOutcome(ok=True, summary="question: Q\nsql:\nSELECT 1")
+
+    assert _tool_detail("semantic_query", outcome) == ""
+    assert _tool_detail("semantic_search", outcome) == ""
+    assert _tool_detail("load_skill", outcome) == ""
+    assert _tool_detail("query_execute", outcome) == "question: Q\nsql:\nSELECT 1"
 
 
 async def test_loop_stops_at_the_iteration_cap():

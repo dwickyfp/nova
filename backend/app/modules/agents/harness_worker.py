@@ -102,12 +102,12 @@ def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dic
     """
     from app.modules.agents.tools.describe_agent import business_label
 
-    if any(step.get("kind") in {"ui", "smart_report"} for step in steps):
+    if any(step.get("kind") == "ui" for step in steps):
         # The shared composer has already validated and sealed these blocks.
         # Preserve their identities for persisted state and live/replay parity.
         shown: list[dict] = [
             dict(step) for step in steps
-            if step.get("kind") in {"text", "ui", "smart_report"}
+            if step.get("kind") in {"text", "ui"}
             and type(step.get("content_index")) is int
         ]
         shown.sort(key=lambda item: item["content_index"])
@@ -1065,7 +1065,7 @@ class AgentHarnessWorker:
                 "name": "Smart",
                 "description": "Solve requests directly or collaborate with governed specialists.",
                 # Result tools read nothing: they compute and chart what specialists return.
-                "default_tools": ["load_skill", "compute_metrics", "data_to_chart", "smart_report"],
+                "default_tools": ["load_skill", "compute_metrics", "data_to_chart"],
                 "policy": "auto_read_only",
                 "budget_seconds": 600,
                 "budget_tokens": 30000,
@@ -1173,14 +1173,12 @@ class AgentHarnessWorker:
             thread.messages = await self._root_history(child)
         context = LoopContext(
             user_name=child["owner_name"],
-            report_context_ref=child.get("payload", {}).get("report_context") if is_root else None,
             intelligent_ui=is_root and smart,
             ui_action_accepted=is_root and bool(
                 child.get("payload", {}).get("ui_action_accepted")
             ),
             ui_private_context=(
-                bool(child.get("payload", {}).get("report_context"))
-                or "UI form input (user supplied):" in child["objective"] or any(
+                "UI form input (user supplied):" in child["objective"] or any(
                 "UI form input (user supplied):" in message.content
                 or message.attachments for message in thread.messages
             )),
@@ -1495,9 +1493,6 @@ class AgentHarnessWorker:
                 "child_activity",
                 {"event_type": "omitted", "reason": "activity_limit"},
             )
-        if context.report_verified_tables:
-            evidence_tables.extend(context.report_verified_tables)
-            evidence_tables = evidence_tables[-MAX_EVIDENCE_TABLES:]
         answer = "".join(parts).strip()
         if is_root and smart:
             from app.modules.agents.prompt import business_wording
