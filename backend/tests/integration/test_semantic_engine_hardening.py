@@ -9,7 +9,7 @@ import pytest_asyncio
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan, SemanticTime
-from tests.conftest import engine_host_ports, require_stack
+from tests.conftest import engine_host_ports, require_stack, root_password
 
 pytestmark = pytest.mark.engine
 
@@ -21,7 +21,7 @@ async def semantic_engine(docker_services):
         host="127.0.0.1",
         port=engine_host_ports()["starrocks-fe"],
         user="root",
-        password="",
+        password=root_password(),
         autocommit=True,
     )
     database = "nova_semantic_qa_" + uuid4().hex[:12]

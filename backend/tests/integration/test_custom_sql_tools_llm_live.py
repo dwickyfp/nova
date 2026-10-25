@@ -16,7 +16,7 @@ from app.modules.assistant.provider import AssistantProviderClient
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
-from tests.conftest import engine_host_ports
+from tests.conftest import engine_host_ports, root_password
 
 pytestmark = [
     pytest.mark.engine,
@@ -75,7 +75,7 @@ async def test_real_provider_uses_two_temporary_custom_sql_tools(app, monkeypatc
     role = f"llm_custom_role_{suffix}"
     username = f"llm_custom_user_{suffix}"
     password = secrets.token_urlsafe(20)
-    root = await asyncmy.connect(host=host, port=test_port, user="root", password="")
+    root = await asyncmy.connect(host=host, port=test_port, user="root", password=root_password())
     created_database = False
     created_role = False
     created_user = False

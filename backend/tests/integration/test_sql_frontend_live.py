@@ -14,7 +14,7 @@ from app.sql_frontend.binding.catalog import Binder
 from app.sql_frontend.binding.models import TableName
 from app.sql_frontend.binding.starrocks import StarRocksCatalogProvider
 from app.sql_frontend.context import ExecutionContext
-from tests.conftest import engine_host_ports
+from tests.conftest import engine_host_ports, s3_credentials
 
 pytestmark = pytest.mark.engine
 
@@ -91,13 +91,13 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         await execute("SHOW TABLES")
         stage = await execute("SELECT * FROM @products.products_new.csv", schema="public")
         assert stage["row_count"] > 0 and "FILES(" in stage["executed_sql"]
-        assert "minioadmin" not in stage["executed_sql"]
+        assert s3_credentials()[1] not in stage["executed_sql"]
         audits = await db.execute_system(
             "SELECT sql_text, rewritten_sql FROM NOVA_SYSTEM.AUDIT_LOG "
             "WHERE user_name='nova_admin' AND rewritten_sql LIKE '%products_new.csv%' "
             "ORDER BY event_time DESC LIMIT 1"
         )
-        assert audits["rows"] and "minioadmin" not in str(audits["rows"])
+        assert audits["rows"] and s3_credentials()[1] not in str(audits["rows"])
         await execute(f"EXPLAIN SELECT * FROM {name}")
         await execute(
             f"CREATE TASK {database}.default.{task} AS INSERT INTO {database}.{name} VALUES (3,30)"

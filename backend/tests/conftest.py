@@ -6,6 +6,10 @@ tests **skip**, not error. ``docker_services`` therefore records why a stack is
 unavailable instead of raising, and every fixture that needs it skips on that
 reason. CI is unaffected — it starts the stack itself and the L3 job refuses an
 all-skipped run, so a skip here can never pass for green there.
+
+A machine runs one StarRocks stack. Point the suite at a running one with the
+``NOVA_TEST_*`` ports and credentials below; the fixture starts the compose
+test stack only when no StarRocks FE container runs at all.
 """
 
 import asyncio
@@ -47,6 +51,26 @@ PORT_DEFAULTS = {
 }
 
 
+def root_password() -> str:
+    """StarRocks root password of the stack under test (empty on the compose stack)."""
+    return os.getenv("NOVA_TEST_ROOT_PASSWORD", "")
+
+
+def s3_credentials() -> tuple[str, str]:
+    """Access and secret key of the stack's MinIO (compose defaults otherwise)."""
+    return (
+        os.getenv("NOVA_TEST_S3_ACCESS_KEY", "minioadmin"),
+        os.getenv("NOVA_TEST_S3_SECRET_KEY", "minioadmin"),
+    )
+
+
+def redis_url(port: int | None = None, db: int = 0) -> str:
+    """Redis URL of the stack under test, with its password when it has one."""
+    password = os.getenv("NOVA_TEST_REDIS_PASSWORD")
+    auth = f":{password}@" if password else ""
+    return f"redis://{auth}127.0.0.1:{port or engine_host_ports()['redis']}/{db}"
+
+
 def engine_host_ports() -> dict[str, int]:
     """The host ports this run will publish, honouring the overrides.
 
@@ -66,6 +90,8 @@ class StackStatus:
     """Why ``docker_services`` could or could not provide the test stack."""
 
     reason: str | None = None
+    #: True only when this session started the stack (and so may reset it).
+    owned: bool = False
 
     @property
     def unavailable(self) -> bool:
@@ -144,6 +170,19 @@ def _stack_already_reachable() -> bool:
     return bool(ports) and all(_port_in_use(port) for port in ports)
 
 
+def _running_engine() -> str | None:
+    """Name of a StarRocks FE container that is already running, if any."""
+    try:
+        listed = subprocess.run(
+            ["docker", "ps", "--filter", "name=starrocks-fe", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    names = (listed.stdout or "").split() if listed.returncode == 0 else []
+    return names[0] if names else None
+
+
 def _partial_collision_failure() -> str | None:
     """Some — but not all — published ports are held, so compose cannot bind.
 
@@ -195,6 +234,20 @@ def docker_services() -> StackStatus:
         yield StackStatus(reason=foreign)
         return
 
+    running = _running_engine()
+    if running is not None:
+        # Never start a second StarRocks next to a running one: two FEs exhaust
+        # the Docker disk and both stop. Point the suite at the running stack.
+        yield StackStatus(
+            reason=(
+                f"StarRocks container {running} is already running; point "
+                f"{PORT_ENV['starrocks-fe']} / {PORT_ENV['minio']} / {PORT_ENV['redis']} "
+                "and NOVA_TEST_ROOT_PASSWORD / NOVA_TEST_S3_* / NOVA_TEST_REDIS_PASSWORD "
+                "at it instead of starting another stack"
+            )
+        )
+        return
+
     try:
         _compose("up", "-d", "--wait")
     except (OSError, subprocess.SubprocessError, subprocess.CalledProcessError) as exc:
@@ -215,7 +268,7 @@ def docker_services() -> StackStatus:
         yield StackStatus(reason=f"stack came up but test ports {ports} do not answer")
         return
 
-    yield StackStatus()
+    yield StackStatus(owned=True)
     # Only reached when this fixture ran `up`, so the teardown is symmetric.
     _compose("down", "-v", check=False)
 
@@ -243,7 +296,9 @@ async def sr_root(docker_services):
     conn = None
     for i in range(60):
         try:
-            conn = await asyncmy.connect(host="127.0.0.1", port=port, user="root", password="")
+            conn = await asyncmy.connect(
+                host="127.0.0.1", port=port, user="root", password=root_password()
+            )
         except Exception:
             if i == 59:
                 raise
@@ -251,19 +306,36 @@ async def sr_root(docker_services):
             continue
         break
 
-    admin_password = os.getenv("NOVA_ADMIN_TEST_PASSWORD", "NovaProxy2026!")
     async with conn.cursor() as cur:
-        await cur.execute(
-            "CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY %s", (admin_password,)
+        await cur.execute("SHOW USERS")
+        analyst_existed = any(
+            row[0].startswith("'testanalyst'@") for row in await cur.fetchall()
         )
-        await cur.execute("ALTER USER 'nova_admin' IDENTIFIED BY %s", (admin_password,))
-        await cur.execute("GRANT ALL ON *.* TO 'nova_admin' WITH GRANT OPTION")
+        await cur.execute("SHOW ROLES")
+        role_existed = any(row[0] == "test_analyst" for row in await cur.fetchall())
+        if docker_services.owned:
+            # Only a stack this session started is reset to the suite's admin
+            # password; a reused stack keeps its own (pass it in
+            # NOVA_ADMIN_TEST_PASSWORD).
+            admin_password = os.getenv("NOVA_ADMIN_TEST_PASSWORD", "NovaProxy2026!")
+            await cur.execute(
+                "CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY %s", (admin_password,)
+            )
+            await cur.execute("ALTER USER 'nova_admin' IDENTIFIED BY %s", (admin_password,))
+            await cur.execute("GRANT ALL ON *.* TO 'nova_admin' WITH GRANT OPTION")
         await cur.execute("CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'")
         await cur.execute("CREATE ROLE IF NOT EXISTS 'test_analyst'")
         await cur.execute("GRANT 'test_analyst' TO 'testanalyst'")
         await cur.execute("SET DEFAULT ROLE 'test_analyst' TO 'testanalyst'")
         await cur.execute("GRANT SELECT ON *.* TO ROLE 'test_analyst'")
     yield conn
+    # A reused stack keeps no test login with a known password behind.
+    with suppress(Exception):
+        async with conn.cursor() as cur:
+            if not analyst_existed:
+                await cur.execute("DROP USER IF EXISTS 'testanalyst'")
+            if not role_existed:
+                await cur.execute("DROP ROLE IF EXISTS 'test_analyst'")
     conn.close()
 
 
@@ -272,11 +344,12 @@ def minio_client(docker_services):
     """MinIO S3 client with test bucket pre-created."""
     require_stack(docker_services)
     time.sleep(5)
+    access_key, secret_key = s3_credentials()
     client = boto3.client(
         "s3",
         endpoint_url=f"http://127.0.0.1:{engine_host_ports()['minio']}",
-        aws_access_key_id="minioadmin",
-        aws_secret_access_key="minioadmin",
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
     )
     with suppress(Exception):
         client.create_bucket(Bucket="test-stage")
@@ -287,9 +360,7 @@ def minio_client(docker_services):
 async def redis_client(docker_services):
     """Async Redis client for session store tests."""
     require_stack(docker_services)
-    client = aioredis.from_url(
-        f"redis://127.0.0.1:{engine_host_ports()['redis']}/0", decode_responses=True
-    )
+    client = aioredis.from_url(redis_url(), decode_responses=True)
     yield client
     await client.aclose()
 
@@ -304,18 +375,19 @@ async def app(sr_root, minio_client, redis_client):
     cfg.settings.STARROCKS_HOST = "127.0.0.1"
     cfg.settings.STARROCKS_FE_MYSQL_PORT = ports["starrocks-fe"]
     cfg.settings.STARROCKS_ROOT_USER = "root"
-    cfg.settings.STARROCKS_ROOT_PASSWORD = ""
-    cfg.settings.REDIS_URL = f"redis://127.0.0.1:{ports['redis']}/0"
+    cfg.settings.STARROCKS_ROOT_PASSWORD = root_password()
+    cfg.settings.REDIS_URL = redis_url()
     cfg.settings.S3_ENDPOINT = f"http://127.0.0.1:{ports['minio']}"
-    # The test MinIO uses the compose defaults. ``nova.yaml`` substitutes
-    # ``${MINIO_ACCESS_KEY}`` / ``${MINIO_SECRET_KEY}``, so point those at the
-    # test credentials before the app config is first loaded — otherwise the
-    # placeholder values in a developer's shell leak into storage-backed tests
-    # (data movement, @stage FILES()) and MinIO rejects them.
-    os.environ["MINIO_ACCESS_KEY"] = "minioadmin"
-    os.environ["MINIO_SECRET_KEY"] = "minioadmin"
-    cfg.settings.S3_ACCESS_KEY = "minioadmin"
-    cfg.settings.S3_SECRET_KEY = "minioadmin"
+    # ``nova.yaml`` substitutes ``${MINIO_ACCESS_KEY}`` / ``${MINIO_SECRET_KEY}``,
+    # so point those at the stack's credentials before the app config is first
+    # loaded — otherwise the placeholder values in a developer's shell leak
+    # into storage-backed tests (data movement, @stage FILES()) and MinIO
+    # rejects them.
+    access_key, secret_key = s3_credentials()
+    os.environ["MINIO_ACCESS_KEY"] = access_key
+    os.environ["MINIO_SECRET_KEY"] = secret_key
+    cfg.settings.S3_ACCESS_KEY = access_key
+    cfg.settings.S3_SECRET_KEY = secret_key
     # ``load_nova_app_config`` is lru_cached; drop any earlier parse so the
     # substituted credentials take effect.
     cfg.load_nova_app_config.cache_clear()

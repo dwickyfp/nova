@@ -22,7 +22,13 @@ from app.modules.ml_engine.spec import (
     MLSecurityContext,
     MLTask,
 )
-from tests.conftest import engine_host_ports, require_stack
+from tests.conftest import (
+    engine_host_ports,
+    redis_url,
+    require_stack,
+    root_password,
+    s3_credentials,
+)
 
 pytestmark = pytest.mark.engine
 
@@ -33,12 +39,12 @@ async def test_concurrent_version_reservation_promotes_only_ready(docker_service
     ports = engine_host_ports()
     monkeypatch.setattr(settings, "STARROCKS_HOST", "127.0.0.1")
     monkeypatch.setattr(settings, "STARROCKS_FE_MYSQL_PORT", ports["starrocks-fe"])
-    monkeypatch.setattr(settings, "REDIS_URL", f"redis://127.0.0.1:{ports['redis']}/0")
+    monkeypatch.setattr(settings, "REDIS_URL", redis_url())
     bootstrap = await asyncmy.connect(
         host="127.0.0.1",
         port=ports["starrocks-fe"],
         user="root",
-        password="",
+        password=root_password(),
         autocommit=True,
     )
     async with bootstrap.cursor() as cursor:
@@ -167,8 +173,8 @@ async def test_real_worker_fetches_arrow_without_api_table(
         "NOVA_CONFIG_PATH": str(tmp_path / "missing-config.yaml"),
         "S3_ENDPOINT": f"http://127.0.0.1:{ports['minio']}",
         "S3_BUCKET": "test-stage",
-        "S3_ACCESS_KEY": "minioadmin",
-        "S3_SECRET_KEY": "minioadmin",
+        "S3_ACCESS_KEY": s3_credentials()[0],
+        "S3_SECRET_KEY": s3_credentials()[1],
     }
     for name, value in storage_settings.items():
         monkeypatch.setenv(name, value)
@@ -185,7 +191,7 @@ async def test_real_worker_fetches_arrow_without_api_table(
         host="127.0.0.1",
         port=ports["starrocks-fe"],
         user="root",
-        password="",
+        password=root_password(),
         autocommit=True,
     )
     database = f"nova_ml_worker_{uuid4().hex[:10]}"

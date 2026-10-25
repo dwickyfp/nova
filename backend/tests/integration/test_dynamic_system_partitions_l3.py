@@ -1,7 +1,7 @@
 import asyncmy
 import pytest
 
-from tests.conftest import engine_host_ports, require_stack
+from tests.conftest import engine_host_ports, require_stack, root_password
 
 pytestmark = pytest.mark.engine
 
@@ -9,7 +9,10 @@ pytestmark = pytest.mark.engine
 async def test_operational_tables_keep_dynamic_partitions(docker_services):
     require_stack(docker_services)
     conn = await asyncmy.connect(
-        host="127.0.0.1", port=engine_host_ports()["starrocks-fe"], user="root", password=""
+        host="127.0.0.1",
+        port=engine_host_ports()["starrocks-fe"],
+        user="root",
+        password=root_password(),
     )
     try:
         async with conn.cursor() as cur:

@@ -13,7 +13,7 @@ from app.modules.query.dialect.translator import StorageConfig, translate_stage_
 from app.modules.stages.access import StageAccessDenied, check_stage_access
 from app.sql_frontend.parser import parse_statement
 from app.sql_frontend.stages import stage_view
-from tests.conftest import engine_host_ports, require_stack
+from tests.conftest import engine_host_ports, require_stack, root_password, s3_credentials
 
 pytestmark = pytest.mark.engine
 
@@ -22,13 +22,13 @@ async def test_stage_list_load_and_export_on_engine(docker_services) -> None:
     require_stack(docker_services)
     ports = engine_host_ports()
     sr_root = await asyncmy.connect(
-        host="127.0.0.1", port=ports["starrocks-fe"], user="root", password=""
+        host="127.0.0.1", port=ports["starrocks-fe"], user="root", password=root_password()
     )
     minio_client = boto3.client(
         "s3",
         endpoint_url=f"http://127.0.0.1:{ports['minio']}",
-        aws_access_key_id="minioadmin",
-        aws_secret_access_key="minioadmin",
+        aws_access_key_id=s3_credentials()[0],
+        aws_secret_access_key=s3_credentials()[1],
     )
     with suppress(minio_client.exceptions.BucketAlreadyOwnedByYou):
         minio_client.create_bucket(Bucket="test-stage")
@@ -42,8 +42,8 @@ async def test_stage_list_load_and_export_on_engine(docker_services) -> None:
         endpoint=f"http://minio:{ports['minio']}",
         bucket=bucket,
         base_prefix=prefix,
-        access_key="minioadmin",
-        secret_key="minioadmin",
+        access_key=s3_credentials()[0],
+        secret_key=s3_credentials()[1],
     )
 
     def lower(sql: str) -> str:
@@ -95,7 +95,7 @@ async def test_stage_access_uses_real_active_role_grants(docker_services) -> Non
     database = f"nova_stage_grants_{suffix}"
     role = f"nova_stage_role_{suffix}"
     user = f"nova_stage_user_{suffix}"
-    root = await asyncmy.connect(host="127.0.0.1", port=port, user="root", password="")
+    root = await asyncmy.connect(host="127.0.0.1", port=port, user="root", password=root_password())
     member = None
     policy = None
     denied = role + "_denied"

@@ -30,6 +30,7 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
+from tests.conftest import root_password, s3_credentials
 from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
     require_shared_stack,
@@ -40,14 +41,14 @@ _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
-SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
+SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD") or root_password()
 
 MINIO_HOST = os.getenv("NOVA_ORCH_S3_HOST", "127.0.0.1")
 MINIO_PORT = int(
     os.getenv("NOVA_ORCH_S3_PORT") or shared_stack_host_port("NOVA_TEST_MINIO_PORT", 29000)
 )
-MINIO_ACCESS = "minioadmin"
-MINIO_SECRET = "minioadmin"
+MINIO_ACCESS = s3_credentials()[0]
+MINIO_SECRET = s3_credentials()[1]
 BUCKET = "test-stage"
 
 #: Placeholders — never a real credential.
@@ -422,7 +423,7 @@ class TestNoCredentialLeak:
         # are the actual resolved values for the ``production`` connection.
         assert MINIO_ACCESS not in statement
         assert MINIO_SECRET not in statement
-        assert "minioadmin" not in str(detail)
+        assert s3_credentials()[1] not in str(detail)
 
     async def test_audit_row_statement_is_redacted(self, admin_client, namespace):
         catalog = namespace["catalog"]

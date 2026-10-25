@@ -17,6 +17,7 @@ import pytest
 import pytest_asyncio
 
 from app.modules.streams.verification import TargetCommitVerifier, TargetIdentity, TargetOutcome
+from tests.conftest import root_password
 from tests.integration._stack import engine_port, require_shared_stack
 
 pytestmark = pytest.mark.engine
@@ -27,7 +28,7 @@ async def connect():
         host=os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1"),
         port=engine_port(os.getenv("NOVA_ORCH_SR_PORT"), "NOVA_TEST_FE_MYSQL_PORT", 29030),
         user=os.getenv("NOVA_ORCH_SR_USER", "root"),
-        password=os.getenv("NOVA_ORCH_SR_PASSWORD", ""),
+        password=os.getenv("NOVA_ORCH_SR_PASSWORD") or root_password(),
         autocommit=True,
         connect_timeout=10,
     )

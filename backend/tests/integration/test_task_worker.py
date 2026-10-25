@@ -51,6 +51,7 @@ from app.modules.task_orchestration.repository import (
 )
 from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
 from app.modules.task_orchestration.worker_service import WorkerService
+from tests.conftest import redis_url, root_password
 from tests.integration._stack import (
     engine_port,
     require_shared_stack,
@@ -61,12 +62,12 @@ _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
-SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
+SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD") or root_password()
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
 
 REDIS_URL = os.getenv(
     "NOVA_ORCH_REDIS_URL",
-    f"redis://127.0.0.1:{shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)}/0",
+    redis_url(shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)),
 )
 
 pytestmark = pytest.mark.engine

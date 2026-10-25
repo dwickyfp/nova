@@ -2,6 +2,7 @@
 
 import json
 import secrets
+from contextlib import suppress
 from uuid import uuid4
 
 import httpx
@@ -55,70 +56,90 @@ async def studio_engine(intelligence_db, tmp_path):
     from app.integrations.ranger.schemas import RangerPolicy, RangerRole, RangerRoleMember
 
     await ranger_client.put_user_attributes(username, {})
-    await ranger_client.put_role(RangerRole(name=role, users=[RangerRoleMember(name=username)]))
-    policy = await ranger_client.put_policy(
-        RangerPolicy.model_validate(
-            {
-                "name": f"bi-fixture/{suffix}",
-                "service": settings.RANGER_SERVICE_NAME,
-                "resources": {
-                    "catalog": {"values": ["default_catalog"]},
-                    "database": {"values": [DATABASE]},
-                    "table": {"values": ["*"]},
-                    "column": {"values": ["*"]},
-                },
-                "policyItems": [
-                    {"roles": [role], "accesses": [{"type": "select", "isAllowed": True}]}
-                ],
-            }
+    # Undo steps run newest first, each on its own: when the engine dies
+    # mid-test, a failed DROP USER must not leave the Ranger policies behind,
+    # because a leftover catalog-only policy makes Ranger reject the next
+    # run's identical one with HTTP 400.
+    cleanup: list = []
+    try:
+        await ranger_client.put_role(
+            RangerRole(name=role, users=[RangerRoleMember(name=username)])
         )
-    )
-    catalog_policy = await ranger_client.put_policy(
-        RangerPolicy.model_validate(
-            {
-                "name": f"bi-fixture/{suffix}/catalog",
-                "service": settings.RANGER_SERVICE_NAME,
-                "resources": {"catalog": {"values": ["default_catalog"]}},
-                "policyItems": [
-                    {"roles": [role], "accesses": [{"type": "usage", "isAllowed": True}]}
-                ],
-            }
+        cleanup.append(lambda: ranger_client.delete_role(role))
+        policy = await ranger_client.put_policy(
+            RangerPolicy.model_validate(
+                {
+                    "name": f"bi-fixture/{suffix}",
+                    "service": settings.RANGER_SERVICE_NAME,
+                    "resources": {
+                        "catalog": {"values": ["default_catalog"]},
+                        "database": {"values": [DATABASE]},
+                        "table": {"values": ["*"]},
+                        "column": {"values": ["*"]},
+                    },
+                    "policyItems": [
+                        {"roles": [role], "accesses": [{"type": "select", "isAllowed": True}]}
+                    ],
+                }
+            )
         )
-    )
-    await db.execute_system(f"CREATE ROLE `{role}`")
-    await db.execute_system(f"CREATE USER '{username}' IDENTIFIED BY %s", [password])
-    await db.execute_system(f"GRANT SELECT ON ALL TABLES IN DATABASE {DATABASE} TO ROLE `{role}`")
-    await db.execute_system(f"GRANT `{role}` TO USER '{username}'")
-    await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{username}'")
-    # News is off for every account until an administrator enables it.
-    await db.execute_system(
-        "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-        "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
-        [username, NEWS_ENABLED],
-    )
-    app = create_app()
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://nova.test", timeout=180
-    ) as http:
-        client = StudioClient(http)
-        try:
-            await client.login(username, password, role)
-            yield client, suffix, tmp_path / "data"
-        finally:
+        cleanup.append(lambda: ranger_client.delete_policy(policy["id"]))
+        catalog_policy = await ranger_client.put_policy(
+            RangerPolicy.model_validate(
+                {
+                    "name": f"bi-fixture/{suffix}/catalog",
+                    "service": settings.RANGER_SERVICE_NAME,
+                    "resources": {"catalog": {"values": ["default_catalog"]}},
+                    "policyItems": [
+                        {"roles": [role], "accesses": [{"type": "usage", "isAllowed": True}]}
+                    ],
+                }
+            )
+        )
+        cleanup.append(lambda: ranger_client.delete_policy(catalog_policy["id"]))
+        await db.execute_system(f"CREATE ROLE `{role}`")
+        cleanup.append(lambda: db.execute_system(f"DROP ROLE `{role}`"))
+        await db.execute_system(f"CREATE USER '{username}' IDENTIFIED BY %s", [password])
+        cleanup.append(lambda: db.execute_system(f"DROP USER '{username}'"))
+        await db.execute_system(
+            f"GRANT SELECT ON ALL TABLES IN DATABASE {DATABASE} TO ROLE `{role}`"
+        )
+        await db.execute_system(f"GRANT `{role}` TO USER '{username}'")
+        await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{username}'")
+        # News is off for every account until an administrator enables it.
+        cleanup.append(
+            lambda: db.execute_system(
+                "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
+                "WHERE user_name=%s AND pref_key=%s",
+                [username, NEWS_ENABLED],
+            )
+        )
+        await db.execute_system(
+            "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
+            "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
+            [username, NEWS_ENABLED],
+        )
+        app = create_app()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://nova.test", timeout=180
+        ) as http:
+            client = StudioClient(http)
             try:
-                if http.headers.get("Authorization"):
-                    await client.request("POST", "auth/logout")
+                await client.login(username, password, role)
+                yield client, suffix, tmp_path / "data"
             finally:
-                await db.execute_system(f"DROP USER '{username}'")
-                await db.execute_system(f"DROP ROLE `{role}`")
-                await ranger_client.delete_policy(policy["id"])
-                await ranger_client.delete_policy(catalog_policy["id"])
-                await ranger_client.delete_role(role)
-                await db.execute_system(
-                    "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                    "WHERE user_name=%s AND pref_key=%s",
-                    [username, NEWS_ENABLED],
-                )
+                if http.headers.get("Authorization"):
+                    with suppress(Exception):
+                        await client.request("POST", "auth/logout")
+    finally:
+        failures = []
+        for undo in reversed(cleanup):
+            try:
+                await undo()
+            except Exception as exc:  # noqa: BLE001 - every undo must still run
+                failures.append(exc)
+        if failures:
+            raise ExceptionGroup("studio fixture cleanup failed", failures)
 
 
 async def test_randomized_analysis_uses_complete_assignment_cohort(studio_engine, monkeypatch):

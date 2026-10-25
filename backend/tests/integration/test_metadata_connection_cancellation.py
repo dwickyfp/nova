@@ -7,6 +7,7 @@ import asyncmy
 import pytest
 
 from app.core.database import StarRocksConnectionFactory
+from tests.conftest import root_password
 from tests.integration._stack import require_shared_stack, shared_stack_host_port
 
 pytestmark = pytest.mark.engine
@@ -66,7 +67,7 @@ async def test_cancelled_metadata_response_discards_real_mysql_connection(
     try:
         # One connection makes reuse of an interrupted response observable.
         factory._system_pool = await asyncmy.create_pool(
-            host="127.0.0.1", port=proxy_port, user="root", password="",
+            host="127.0.0.1", port=proxy_port, user="root", password=root_password(),
             minsize=1, maxsize=1, autocommit=True, connect_timeout=10,
         )
         assert (await factory.execute_system("SELECT 7 AS control_value"))["rows"] == [[7]]

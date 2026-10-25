@@ -5,13 +5,16 @@ from uuid import uuid4
 import asyncmy
 import pytest
 
-from tests.conftest import engine_host_ports
+from tests.conftest import engine_host_ports, root_password
 
 
 @pytest.mark.engine
 async def test_table_and_view_ddl_routes_use_authenticated_connection(client, admin_token):
     conn = await asyncmy.connect(
-        host="127.0.0.1", port=engine_host_ports()["starrocks-fe"], user="root", password=""
+        host="127.0.0.1",
+        port=engine_host_ports()["starrocks-fe"],
+        user="root",
+        password=root_password(),
     )
     view = f"audit_view_{uuid4().hex}"
     try:

@@ -928,6 +928,28 @@ uv run pytest tests/integration -m engine -q
 Bila port default sedang dipakai stack lain, pytest akan melaporkan port yang
 bertabrakan di alasan skip sehingga pilihan di atas jelas.
 
+Satu mesin menjalankan satu stack StarRocks. Fixture tidak akan menyalakan
+stack test bila sudah ada kontainer StarRocks FE yang berjalan; arahkan suite
+ke stack itu. Untuk stack dev (`docker/docker-compose-engine.yml`), set port
+dan kredensialnya, bukan stack baru:
+
+```bash
+cd backend
+export NOVA_TEST_FE_MYSQL_PORT=29030 NOVA_TEST_FE_HTTP_PORT=8030
+export NOVA_TEST_FE_ARROW_PORT=9408 NOVA_TEST_MINIO_PORT=9000 NOVA_TEST_REDIS_PORT=6379
+export STARROCKS_FE_MYSQL_PORT=29030
+export NOVA_TEST_ROOT_PASSWORD=<root StarRocks> NOVA_TEST_REDIS_PASSWORD=<password Redis>
+export NOVA_TEST_S3_ACCESS_KEY=<access key MinIO> NOVA_TEST_S3_SECRET_KEY=<secret key MinIO>
+export NOVA_ADMIN_TEST_PASSWORD=<password nova_admin> NOVA_PROXY_E2E_PASSWORD=<password nova_admin>
+uv run pytest tests/integration -m engine -q
+```
+
+Pada stack yang dipakai ulang, fixture tidak mengubah password `nova_admin`
+dan tidak memberi grant tambahan padanya; user `testanalyst` dan role
+`test_analyst` hanya dibuat bila belum ada dan dihapus lagi di akhir sesi.
+Jangan jalankan `seed_engine.sh` pada stack dev: skrip itu mengganti password
+`nova_admin`.
+
 ### Frontend
 
 ```bash

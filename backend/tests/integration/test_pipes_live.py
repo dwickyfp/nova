@@ -8,7 +8,7 @@ import pytest
 
 from app.core.security import encrypt_password
 from app.modules.query.service import query_service
-from tests.conftest import engine_host_ports
+from tests.conftest import engine_host_ports, root_password, s3_credentials
 
 pytestmark = pytest.mark.engine
 
@@ -22,7 +22,10 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
     pq.write_table(pa.table({"id": [1, 2], "amount": [10, 20]}), sink)
     minio_client.put_object(Bucket="test-stage", Key=key, Body=sink.getvalue().to_pybytes())
     sr_root = await asyncmy.connect(
-        host="127.0.0.1", port=engine_host_ports()["starrocks-fe"], user="root", password=""
+        host="127.0.0.1",
+        port=engine_host_ports()["starrocks-fe"],
+        user="root",
+        password=root_password(),
     )
     async with sr_root.cursor() as cur:
         await cur.execute(f"CREATE DATABASE `{database}`")
@@ -34,6 +37,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         await cur.execute(f"GRANT ALL ON DATABASE `{database}` TO USER nova_admin")
         await cur.execute(f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO USER nova_admin")
     port = engine_host_ports()["minio"]
+    access_key, secret_key = s3_credentials()
     body = {
         "name": "synthetic_pipe",
         "database": database,
@@ -43,7 +47,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
             f"INSERT INTO `{database}`.target SELECT * FROM FILES("
             f"'path'='s3://test-stage/{key}', 'format'='parquet',"
             f"'aws.s3.endpoint'='http://minio:{port}', 'aws.s3.enable_path_style_access'='true',"
-            "'aws.s3.access_key'='minioadmin', 'aws.s3.secret_key'='minioadmin')"
+            f"'aws.s3.access_key'='{access_key}', 'aws.s3.secret_key'='{secret_key}')"
         ),
     }
     try:
@@ -51,7 +55,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         created = await client.post("/api/v1/pipes", json=body)
         assert created.status_code == 400, created.text
         assert "Pipe execution is unavailable with Ranger" in created.json()["detail"]
-        assert "minioadmin" not in created.text
+        assert s3_credentials()[1] not in created.text
         absent = await client.get("/api/v1/pipes", params={"database": database})
         assert absent.status_code == 200 and absent.json()["pipes"] == []
         # Provision a legacy native pipe over this fixture's synthetic file so
@@ -71,7 +75,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         assert detail.json()["properties"]
         properties = {key.casefold(): value for key, value in detail.json()["properties"].items()}
         assert properties["poll_interval"] == "3600"
-        assert "minioadmin" not in detail.text
+        assert s3_credentials()[1] not in detail.text
         files = await client.get(url + "/files", params={"database": database})
         assert files.status_code == 200, files.text
         suspended = await client.patch(url + "/suspend", params={"database": database})
@@ -85,7 +89,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         assert refused.status_code in {400, 403}, refused.text
         refused = await client.delete(url, params={"database": database})
         assert refused.status_code in {400, 403}, refused.text
-        assert "minioadmin" not in refused.text
+        assert s3_credentials()[1] not in refused.text
         client.headers["Authorization"] = "Bearer " + admin_token
         assert (await client.get(url, params={"database": database})).status_code == 200
         deleted = await client.delete(url, params={"database": database})
@@ -98,7 +102,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
                 (f"%{database}%",),
             )
             audits = await cur.fetchall()
-            assert audits and "minioadmin" not in str(audits)
+            assert audits and s3_credentials()[1] not in str(audits)
     finally:
         async with sr_root.cursor() as cur:
             with suppress(Exception):
