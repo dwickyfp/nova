@@ -86,3 +86,30 @@ async def test_failed_default_compensates_ranger_membership(provisioning):
     assign.assert_awaited_once()
     assert revoke.await_args.kwargs == {"role": "analyst", "username": "alice", "host": "%"}
     drop.assert_awaited_once_with("alice", host="%")
+
+
+async def test_user_grants_report_role_markers_not_native_privileges(monkeypatch):
+    service = UserService()
+    rows = [
+        ("'alice'@'%'", "default_catalog", "GRANT 'analyst', 'root' TO 'alice'@'%'"),
+        (
+            "'alice'@'%'",
+            "default_catalog",
+            "GRANT SELECT ON TABLE sales.orders TO USER 'alice'@'%'",
+        ),
+    ]
+    monkeypatch.setattr(
+        "app.modules.users.service.db.execute_system",
+        AsyncMock(return_value={"rows": rows, "columns": []}),
+    )
+    monkeypatch.setattr(service, "list_users", AsyncMock(return_value=[{
+        "username": "alice", "host": "%", "identity": "'alice'@'%'",
+    }]))
+
+    grants = await service.get_user_grants("alice")
+    detail = await service.get_user_detail("alice")
+
+    assert grants == ["GRANT 'analyst', 'root' TO 'alice'@'%'"]
+    assert [(item["name"], item["grant_type"]) for item in detail["grants"]] == [
+        ("analyst", "ROLE")
+    ]

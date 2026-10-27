@@ -39,6 +39,7 @@ from app.modules.task_orchestration.repository import task_orchestration_reposit
 from app.modules.task_orchestration.scheduler import SchedulerTick
 from app.modules.task_orchestration.transport import RedisGraphRunTransport
 from app.modules.task_orchestration.worker_service import WorkerService
+from scripts import _ranger_fixture as ranger_fixture
 from tests.integration._nova_system_ddl import AUDIT_LOG_DDL
 
 
@@ -82,6 +83,7 @@ class Matrix:
         self.transport: RedisGraphRunTransport
         self.sessions: dict[str, str] = {}
         self.encrypted_passwords: dict[str, str] = {}
+        self.worker_policies: list[str] = []
 
     def user(self, limited: bool = False) -> dict[str, Any]:
         name = self.limited if limited else self.owner
@@ -231,23 +233,16 @@ class Matrix:
             self.secrets.append(password)
             self.encrypted_passwords[account] = encrypt_password(password)
             await self.sql(f"CREATE USER '{account}' IDENTIFIED BY '{password}'", sample=False)
-        await self.sql(f"CREATE ROLE {self.role}", sample=False)
-        await self.sql(f"CREATE ROLE {self.limited_role}", sample=False)
-        await self.sql(f"GRANT {self.limited_role} TO USER '{self.limited}'", sample=False)
-        await self.sql(f"CREATE ROLE {self.worker_role}", sample=False)
-        await self.sql(f"GRANT {self.role} TO USER '{self.owner}'", sample=False)
-        await self.sql(f"GRANT {self.role} TO USER '{self.schedule_user}'", sample=False)
+        await ranger_fixture.create_role(self.role, [self.owner, self.schedule_user])
+        await ranger_fixture.create_role(self.limited_role, [self.limited])
+        await ranger_fixture.create_role(self.worker_role, [self.worker_user])
         await repo.bind_role_execution_user(self.role, self.schedule_user, self.owner)
-        await self.sql(f"GRANT {self.worker_role} TO USER '{self.worker_user}'", sample=False)
-        await self.sql(f"GRANT ALL ON {self.database}.* TO ROLE {self.role}", sample=False)
-        await self.sql(
-            f"GRANT CREATE TABLE ON DATABASE {self.database} TO ROLE {self.role}", sample=False
-        )
-        for account in (self.owner, self.limited, self.schedule_user):
-            await self.sql(
-                f"GRANT IMPERSONATE ON USER '{account}'@'%' TO ROLE {self.worker_role}",
-                sample=False,
+        await ranger_fixture.grant_database(self.role, self.database)
+        self.worker_policies.append(
+            await ranger_fixture.grant_impersonation(
+                self.worker_role, [self.owner, self.limited, self.schedule_user]
             )
+        )
         self.client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         await session_store.init()
         for name, role in [(self.owner, self.role), (self.limited, self.limited_role)]:
@@ -682,8 +677,7 @@ class Matrix:
             await self.client.aclose()
         for account in (self.worker_user,):
             await self.sql(f"DROP USER IF EXISTS '{account}'", sample=False)
-        for role in (self.worker_role,):
-            await self.sql(f"DROP ROLE IF EXISTS {role}", sample=False)
+        await ranger_fixture.remove(policies=self.worker_policies, roles=[self.worker_role])
         await db.close_system_pool()
 
 

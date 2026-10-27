@@ -20,11 +20,14 @@ data, and verify results. The HTTP router only enqueues that work.
 from __future__ import annotations
 
 import asyncio
+import logging
 from uuid import uuid4
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
+from app.modules.access_control.domain import AccessRequest
+from app.modules.access_control.service import access_control_service
 from app.modules.migration import verdicts
 from app.modules.migration.data_mover import (
     CopyColumn,
@@ -37,8 +40,9 @@ from app.modules.migration.planner import ApplyPlan, PlanCandidate, build_plan
 from app.modules.migration.preflight import (
     PlanShape,
     PreflightResult,
-    analyze_grants,
-    parse_grants,
+    access_requests,
+    analyze_access,
+    flatten_requests,
 )
 from app.modules.migration.repository import migration_repo
 from app.modules.migration.schemas import (
@@ -73,6 +77,8 @@ from app.modules.migration.source import (
 )
 from app.modules.query.dialect.injector import get_credential_params
 from app.modules.query.service import query_service
+
+logger = logging.getLogger(__name__)
 
 
 class MigrationExecuteGateError(RuntimeError):
@@ -463,16 +469,9 @@ class MigrationService:
         """
         shape = self._plan_shape(built, include_data=include_data)
 
-        grant_rows = await self._read_caller_grants(
-            actor=actor,
-            encrypted_password=encrypted_password,
-            session_id=session_id,
-            role=role,
-        )
-        granted = parse_grants(grant_rows)
-        result = analyze_grants(
-            granted=granted,
+        required = access_requests(
             target_database=built.target_database,
+            tables=shape.tables,
             create_database=shape.create_database,
             has_tables=shape.has_tables,
             has_views=shape.has_views,
@@ -480,6 +479,10 @@ class MigrationService:
             has_functions=shape.has_functions,
             include_data=include_data,
         )
+        allowed = await self._check_caller_access(
+            actor=actor, role=role, requests=flatten_requests(required)
+        )
+        result = analyze_access(required, allowed)
 
         storage_ok: bool | None = None
         storage_reason = ""
@@ -536,27 +539,23 @@ class MigrationService:
             tables=[s.object_name for s in built.steps if s.kind is PlanStepKind.TABLE],
         )
 
-    async def _read_caller_grants(
-        self,
-        *,
-        actor: str,
-        encrypted_password: str,
-        session_id: str | None,
-        role: str | None,
-    ) -> list[tuple]:
+    async def _check_caller_access(
+        self, *, actor: str, role: str | None, requests: list[AccessRequest]
+    ) -> list[bool]:
+        """Ask Ranger whether the caller's active role holds each access.
+
+        A missing active role or an unreachable Ranger reports every access as
+        missing: the preflight fails closed rather than guessing.
+        """
+        if not role:
+            return [False for _ in requests]
         try:
-            result = await query_service.execute(
-                sql="SHOW GRANTS",
-                username=actor,
-                encrypted_password=encrypted_password,
-                session_id=session_id,
-                role=role,
+            return await access_control_service.role_allows(
+                principal=actor, active_role=role, requests=requests
             )
-            if getattr(result, "error", None):
-                return []
-            return [tuple(row) for row in (getattr(result, "rows", None) or [])]
-        except Exception:  # noqa: BLE001 - a failed read is reported as no grants
-            return []
+        except Exception:  # noqa: BLE001 - an unreadable policy set is reported as missing
+            logger.warning("Migration preflight could not read Ranger policies", exc_info=True)
+            return [False for _ in requests]
 
     @staticmethod
     def _storage_preflight() -> tuple[bool, str]:

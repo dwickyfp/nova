@@ -1,20 +1,25 @@
-"""Unit tests for the migration preflight — grant parsing and analysis.
+"""Unit tests for the migration preflight — Ranger access analysis.
 
-Pure domain plus a small fake for the service path. No engine.
+Pure domain plus a small fake Ranger for the service path. No engine, and no
+native ``SHOW GRANTS``: strict Ranger mode decides what the active role may do.
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
+from app.modules.access_control.domain import AccessRequest
+from app.modules.access_control.service import AccessControlService
 from app.modules.migration import router as migration_router
 from app.modules.migration.preflight import (
-    GrantedPrivilege,
-    analyze_grants,
-    parse_grants,
+    access_requests,
+    analyze_access,
+    flatten_requests,
     required_privileges,
 )
 from tests.unit.migration_inline_worker import install_inline_read_worker
@@ -23,74 +28,72 @@ TABLE_DDL = "CREATE TABLE `t` (`id` int) DUPLICATE KEY(`id`) DISTRIBUTED BY HASH
 VIEW_DDL = "CREATE VIEW `v` AS SELECT 1"
 
 
-class TestParseGrants:
-    def test_parses_privileges_and_scope(self):
-        rows = [
-            (
-                "'alice'@'%'",
-                "default_catalog",
-                "GRANT SELECT, INSERT ON ALL TABLES IN ALL DATABASES TO USER 'alice'@'%'",
-            ),
-        ]
-        granted = parse_grants(rows)
-        assert {(g.privilege, g.scope) for g in granted} == {
-            ("SELECT", "all tables in all databases"),
-            ("INSERT", "all tables in all databases"),
-        }
-
-    def test_strips_with_grant_option(self):
-        rows = [
-            (
-                "'alice'@'%'",
-                "default_catalog",
-                "GRANT SELECT ON ALL TABLES IN ALL DATABASES TO USER 'alice'@'%' WITH GRANT OPTION",
-            ),
-        ]
-        granted = parse_grants(rows)
-        assert granted[0].privilege == "SELECT"
-
-    def test_ignores_unparseable_rows(self):
-        assert parse_grants([("x", "y", "not a grant statement")]) == []
-
-    def test_parses_catalog_grant(self):
-        rows = [
-            (
-                "'a'@'%'",
-                "default_catalog",
-                "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'a'@'%'",
-            ),
-        ]
-        granted = parse_grants(rows)
-        assert granted[0].privilege == "CREATE DATABASE"
-        assert granted[0].scope == "catalog default_catalog"
+def _policy(resources: dict, accesses: list[str], *, roles=("migrator",), **extra) -> dict:
+    return {
+        "service": settings.RANGER_SERVICE_NAME,
+        "isEnabled": True,
+        "policyType": 0,
+        "resources": {
+            key: {"values": list(values) if isinstance(values, (list, tuple)) else [values]}
+            for key, values in resources.items()
+        },
+        "policyItems": [
+            {
+                "roles": list(roles),
+                "accesses": [{"type": access, "isAllowed": True} for access in accesses],
+            }
+        ],
+        **extra,
+    }
 
 
-class TestAnalyzeGrants:
-    def _all_databases(self, privs: str) -> list[GrantedPrivilege]:
-        return parse_grants(
-            [
-                (
-                    "'a'@'%'",
-                    "default_catalog",
-                    f"GRANT {privs} ON ALL DATABASES TO USER 'a'@'%'",
-                ),
-                (
-                    "'a'@'%'",
-                    "default_catalog",
-                    "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'a'@'%'",
-                ),
-            ]
-        )
+CATALOG_CREATE = _policy({"catalog": "default_catalog"}, ["create database"])
+DATABASE_CREATE = _policy(
+    {"catalog": "default_catalog", "database": "*"},
+    ["create table", "create view", "create materialized view", "create function"],
+)
+TABLE_DATA = _policy(
+    {"catalog": "default_catalog", "database": "tgt", "table": "*", "column": "*"},
+    ["insert", "select"],
+)
 
-    def test_all_privileges_present_passes(self):
-        result = analyze_grants(
-            granted=self._all_databases(
-                "CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW, "
-                "CREATE FUNCTION, INSERT, SELECT"
-            ),
-            target_database="tgt",
-            create_database=True,
-            has_tables=True,
+
+class _FakeRanger:
+    def __init__(self, policies: list[dict]):
+        self.policies = policies
+
+    async def list_policies(self):
+        return self.policies
+
+
+def _service(policies: list[dict]) -> AccessControlService:
+    return AccessControlService(ranger=_FakeRanger(policies))
+
+
+async def _analyze(policies: list[dict], *, role: str = "migrator", **shape) -> object:
+    plan = {
+        "target_database": "tgt",
+        "tables": ["t"],
+        "create_database": True,
+        "has_tables": True,
+        "has_views": False,
+        "has_materialized_views": False,
+        "has_functions": False,
+        "include_data": False,
+        **shape,
+    }
+    required = access_requests(**plan)
+    allowed = await _service(policies).role_allows(
+        principal="alice", active_role=role, requests=flatten_requests(required)
+    )
+    return analyze_access(required, allowed)
+
+
+class TestRangerAccess:
+    @pytest.mark.asyncio
+    async def test_all_privileges_present_passes(self):
+        result = await _analyze(
+            [CATALOG_CREATE, DATABASE_CREATE, TABLE_DATA],
             has_views=True,
             has_materialized_views=True,
             has_functions=True,
@@ -99,87 +102,132 @@ class TestAnalyzeGrants:
         assert result.ok
         assert result.missing == ()
 
-    def test_missing_create_table_is_reported(self):
-        result = analyze_grants(
-            granted=self._all_databases(
-                "CREATE VIEW, CREATE MATERIALIZED VIEW, CREATE FUNCTION, INSERT, SELECT"
-            ),
-            target_database="tgt",
-            create_database=True,
-            has_tables=True,
-            has_views=True,
-            has_materialized_views=True,
-            has_functions=True,
-            include_data=True,
+    @pytest.mark.asyncio
+    async def test_missing_create_table_is_reported(self):
+        database = _policy(
+            {"catalog": "default_catalog", "database": "*"}, ["create view"]
         )
+        result = await _analyze([CATALOG_CREATE, database], has_views=True)
         assert not result.ok
         assert [c.privilege for c in result.missing] == ["CREATE TABLE"]
 
-    def test_missing_create_database_is_reported(self):
-        result = analyze_grants(
-            granted=parse_grants(
-                [
-                    (
-                        "'a'@'%'",
-                        "default_catalog",
-                        "GRANT CREATE TABLE ON ALL DATABASES TO USER 'a'@'%'",
-                    )
-                ]
-            ),
+    @pytest.mark.asyncio
+    async def test_missing_create_database_is_reported(self):
+        result = await _analyze([DATABASE_CREATE])
+        assert [c.privilege for c in result.missing] == ["CREATE DATABASE"]
+
+    @pytest.mark.asyncio
+    async def test_database_policy_only_covers_its_database(self):
+        other = _policy({"catalog": "default_catalog", "database": "other_db"}, ["create table"])
+        result = await _analyze([other], create_database=False)
+        assert not result.ok
+
+    @pytest.mark.asyncio
+    async def test_database_policy_matches_named_database_case_insensitively(self):
+        named = _policy({"catalog": "default_catalog", "database": "TGT"}, ["create table"])
+        result = await _analyze([named], create_database=False)
+        assert result.ok
+
+    @pytest.mark.asyncio
+    async def test_policy_for_another_role_does_not_count(self):
+        result = await _analyze(
+            [CATALOG_CREATE, DATABASE_CREATE], role="analyst"
+        )
+        assert {c.privilege for c in result.missing} == {"CREATE DATABASE", "CREATE TABLE"}
+
+    @pytest.mark.asyncio
+    async def test_deny_item_overrides_allow(self):
+        denied = _policy(
+            {"catalog": "default_catalog", "database": "tgt"},
+            [],
+            denyPolicyItems=[
+                {"roles": ["migrator"], "accesses": [{"type": "create table", "isAllowed": True}]}
+            ],
+        )
+        result = await _analyze([CATALOG_CREATE, DATABASE_CREATE, denied])
+        assert [c.privilege for c in result.missing] == ["CREATE TABLE"]
+
+    @pytest.mark.asyncio
+    async def test_conditional_allow_never_counts(self):
+        conditional = _policy(
+            {"catalog": "default_catalog", "database": "*"},
+            ["create table"],
+            conditions=[{"type": "ip-range", "values": ["10.0.0.0/8"]}],
+        )
+        result = await _analyze([CATALOG_CREATE, conditional])
+        assert [c.privilege for c in result.missing] == ["CREATE TABLE"]
+
+    @pytest.mark.asyncio
+    async def test_excluded_database_is_not_covered(self):
+        excluded = _policy({"catalog": "default_catalog", "database": "tgt"}, ["create table"])
+        excluded["resources"]["database"]["isExcludes"] = True
+        result = await _analyze([excluded], create_database=False)
+        assert not result.ok
+
+    @pytest.mark.asyncio
+    async def test_table_access_must_cover_every_target_table(self):
+        one_table = _policy(
+            {"catalog": "default_catalog", "database": "tgt", "table": "t1"},
+            ["insert", "select"],
+        )
+        result = await _analyze(
+            [CATALOG_CREATE, DATABASE_CREATE, one_table],
+            tables=["t1", "t2"],
+            include_data=True,
+        )
+        assert {c.privilege for c in result.missing} == {"INSERT", "SELECT"}
+
+    @pytest.mark.asyncio
+    async def test_column_scoped_policy_does_not_grant_table_access(self):
+        column = _policy(
+            {"catalog": "default_catalog", "database": "tgt", "table": "*", "column": "id"},
+            ["insert", "select"],
+        )
+        result = await _analyze(
+            [CATALOG_CREATE, DATABASE_CREATE, column], include_data=True
+        )
+        assert {c.privilege for c in result.missing} == {"INSERT", "SELECT"}
+
+    @pytest.mark.asyncio
+    async def test_missing_active_role_fails_closed(self):
+        result = await _analyze([CATALOG_CREATE, DATABASE_CREATE], role="")
+        assert not result.ok
+
+    def test_answers_must_align_with_requests(self):
+        required = access_requests(
             target_database="tgt",
+            tables=[],
+            create_database=True,
+            has_tables=False,
+            has_views=False,
+            has_materialized_views=False,
+            has_functions=False,
+            include_data=False,
+        )
+        with pytest.raises(ValueError):
+            analyze_access(required, [])
+
+    def test_requests_carry_ranger_resource_levels(self):
+        required = access_requests(
+            target_database="tgt",
+            tables=["t"],
             create_database=True,
             has_tables=True,
             has_views=False,
             has_materialized_views=False,
             has_functions=False,
-            include_data=False,
+            include_data=True,
         )
-        assert not result.ok
-        assert [c.privilege for c in result.missing] == ["CREATE DATABASE"]
-
-    def test_database_scoped_grant_only_covers_that_database(self):
-        granted = parse_grants(
-            [
-                (
-                    "'a'@'%'",
-                    "default_catalog",
-                    "GRANT CREATE TABLE ON DATABASE other_db TO USER 'a'@'%'",
-                )
-            ]
-        )
-        result = analyze_grants(
-            granted=granted,
-            target_database="tgt",
-            create_database=False,
-            has_tables=True,
-            has_views=False,
-            has_materialized_views=False,
-            has_functions=False,
-            include_data=False,
-        )
-        assert not result.ok
-
-    def test_database_scoped_grant_matches_named_database(self):
-        granted = parse_grants(
-            [
-                (
-                    "'a'@'%'",
-                    "default_catalog",
-                    "GRANT CREATE TABLE ON DATABASE tgt TO USER 'a'@'%'",
-                )
-            ]
-        )
-        result = analyze_grants(
-            granted=granted,
-            target_database="tgt",
-            create_database=False,
-            has_tables=True,
-            has_views=False,
-            has_materialized_views=False,
-            has_functions=False,
-            include_data=False,
-        )
-        assert result.ok
+        assert flatten_requests(required) == [
+            AccessRequest(access="create database", catalog="default_catalog"),
+            AccessRequest(access="create table", catalog="default_catalog", database="tgt"),
+            AccessRequest(
+                access="insert", catalog="default_catalog", database="tgt", table="t"
+            ),
+            AccessRequest(
+                access="select", catalog="default_catalog", database="tgt", table="t"
+            ),
+        ]
 
     def test_only_relevant_privileges_are_required(self):
         # A tables-only plan must not demand CREATE VIEW / CREATE FUNCTION.
@@ -217,9 +265,6 @@ class _FakeResult:
 
 
 class _FakeRepo:
-    def __init__(self):
-        self.grants_rows: list = []
-
     async def get_source(self, name):
         if name != "local":
             return None
@@ -275,17 +320,18 @@ class _FakeRepo:
         return 1
 
 
-def _preflight_client(monkeypatch, grants: list[tuple]):
+def _preflight_client(monkeypatch, policies: list[dict]):
     install_inline_read_worker(monkeypatch)
     from app.modules.migration import service as service_module
 
     async def _execute(**kwargs):
         if kwargs["sql"].strip().upper().startswith("SHOW GRANTS"):
-            return _FakeResult(rows=grants)
+            raise AssertionError("preflight must not read native grants")
         return _FakeResult()
 
     monkeypatch.setattr(service_module, "migration_repo", _FakeRepo())
     monkeypatch.setattr(service_module.query_service, "execute", _execute)
+    monkeypatch.setattr(service_module, "access_control_service", _service(policies))
 
     @asynccontextmanager
     async def _open(source):
@@ -310,23 +356,19 @@ def _preflight_client(monkeypatch, grants: list[tuple]):
     return TestClient(app, raise_server_exceptions=False)
 
 
-FULL_GRANTS = [
-    (
-        "'alice'@'%'",
-        "default_catalog",
-        "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'alice'@'%'",
-    ),
-    (
-        "'alice'@'%'",
-        "default_catalog",
-        "GRANT CREATE TABLE, CREATE VIEW ON ALL DATABASES TO USER 'alice'@'%'",
+FULL_POLICIES = [
+    _policy({"catalog": "default_catalog"}, ["create database"], roles=["ACCOUNTADMIN"]),
+    _policy(
+        {"catalog": "default_catalog", "database": "*"},
+        ["create table", "create view"],
+        roles=["ACCOUNTADMIN"],
     ),
 ]
 
 
 class TestPreflightEndpoint:
     def test_ok_when_all_privileges_held(self, monkeypatch):
-        client = _preflight_client(monkeypatch, FULL_GRANTS)
+        client = _preflight_client(monkeypatch, FULL_POLICIES)
         resp = client.post(
             "/api/v1/migration/preflight",
             json={"source": "local", "database": "src", "target_database": "tgt"},
@@ -338,7 +380,7 @@ class TestPreflightEndpoint:
         assert body["database_step_planned"] is True
 
     def test_reports_missing_privilege(self, monkeypatch):
-        client = _preflight_client(monkeypatch, FULL_GRANTS[:1])  # no CREATE TABLE
+        client = _preflight_client(monkeypatch, FULL_POLICIES[:1])  # no CREATE TABLE
         resp = client.post(
             "/api/v1/migration/preflight",
             json={"source": "local", "database": "src", "target_database": "tgt"},
@@ -357,7 +399,7 @@ class TestPreflightEndpoint:
 
         # No credentials configured → storage preflight fails.
         monkeypatch.setattr(service_module, "get_credential_params", lambda *a, **k: {})
-        client = _preflight_client(monkeypatch, FULL_GRANTS)
+        client = _preflight_client(monkeypatch, FULL_POLICIES)
         resp = client.post(
             "/api/v1/migration/preflight",
             json={

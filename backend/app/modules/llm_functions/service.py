@@ -399,73 +399,12 @@ class LLMFunctionService:
                 else:
                     failed_count += 1
 
-        # Grant USAGE on all registered UDFs to all roles
-        # so they behave like native built-in functions
-        await self._grant_udf_privileges()
-
         return {
             "success": failed_count == 0,
             "registered": registered_count,
             "failed": failed_count,
             "details": results,
         }
-
-    async def _grant_udf_privileges(self) -> None:
-        """Grant USAGE on all Nova built-in UDFs to all roles.
-
-        This makes AI_* and ML_* functions behave like native built-ins
-        that every user can call without explicit grants.
-        Uses both STRING and VARCHAR(65533) signatures because StarRocks
-        internally maps string→varchar for Java UDFs.
-        """
-        # All UDF signatures — grant both STRING and VARCHAR(65533)
-        # because SQL UDFs use STRING but Java UDFs register as VARCHAR
-        udf_signatures = [
-            ("AI_COMPLETE", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
-            ("AI_SENTIMENT", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
-            (
-                "AI_CLASSIFY",
-                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
-            ),
-            ("AI_SUMMARIZE", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
-            (
-                "AI_EXTRACT",
-                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
-            ),
-            (
-                "AI_TRANSLATE",
-                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
-            ),
-            (
-                "AI_FILTER",
-                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
-            ),
-            (
-                "ML_PREDICT",
-                ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"],
-            ),
-        ]
-
-        # Roles to grant to (covers all users)
-        roles = ["root", "db_admin", "cluster_admin", "user_admin", "ACCOUNTADMIN"]
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                for fn_name, sigs in udf_signatures:
-                    for sig in sigs:
-                        for role in roles:
-                            with contextlib.suppress(Exception):
-                                await cur.execute(
-                                    f"GRANT USAGE ON GLOBAL FUNCTION {fn_name}{sig} TO ROLE {role}"
-                                )
-        finally:
-            conn.close()
-        logger.info(
-            "Granted USAGE on %d UDF signatures to %d roles",
-            sum(len(s) for _, s in udf_signatures),
-            len(roles),
-        )
 
     async def register_udf_for_type(self, function_type: str) -> dict:
         """Register the UDF for a specific function type."""

@@ -427,27 +427,16 @@ def execute_client(monkeypatch):
         def __init__(self, rows=None):
             self.rows = rows or []
 
-    #: A caller with every privilege the plan needs, so the preflight passes.
-    GRANTS = [
-        (
-            "'alice'@'%'",
-            "default_catalog",
-            "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'alice'@'%'",
-        ),
-        (
-            "'alice'@'%'",
-            "default_catalog",
-            "GRANT CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW, "
-            "CREATE FUNCTION, INSERT, SELECT ON ALL DATABASES TO USER 'alice'@'%'",
-        ),
-    ]
+    #: The caller's active role holds every Ranger access the plan needs.
+    async def _allow_all(*, principal, active_role, requests):
+        return [True for _ in requests]
+
+    monkeypatch.setattr(service_module.access_control_service, "role_allows", _allow_all)
     executed: list[str] = []
 
     async def _execute(**kwargs):
         sql = kwargs["sql"]
         executed.append(sql)
-        if sql.strip().upper().startswith("SHOW GRANTS"):
-            return _Result(rows=GRANTS)
         return _Result()
 
     monkeypatch.setattr(service_module, "migration_repo", _FakeRepo())
@@ -493,10 +482,9 @@ class TestExecutePath:
         assert body["failed"] == 0
         kinds = [r["kind"] for r in body["results"]]
         assert kinds == ["database", "table", "view"]
-        # Every plan statement reached the query pipeline (the preflight's
-        # ``SHOW GRANTS`` is a check, not a plan step).
-        plan_statements = [s for s in executed if not s.strip().upper().startswith("SHOW GRANTS")]
-        assert len(plan_statements) == 3
+        # Every plan statement reached the query pipeline; the preflight asks
+        # Ranger and sends no statement of its own.
+        assert len(executed) == 3
 
     def test_object_statements_are_idempotent(self, execute_client):
         _, executed = execute_client

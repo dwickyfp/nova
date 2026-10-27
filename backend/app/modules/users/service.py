@@ -1,7 +1,6 @@
 """StarRocks-backed user and role administration service."""
 
 import logging
-import re
 import secrets
 import string
 from collections import defaultdict
@@ -12,6 +11,7 @@ import asyncmy.cursors
 from app.common.sql_guard import normalize_role_name
 from app.core.config import settings
 from app.core.database import db
+from app.modules.access_control.role_activation import parse_assigned_roles
 
 logger = logging.getLogger(__name__)
 
@@ -226,31 +226,22 @@ class UserService:
         return generated_password
 
     async def get_user_grants(self, username: str, host: str = "%") -> list[str]:
+        """Return the user's role-marker assignments as GRANT statements.
+
+        Native object privileges authorize nothing in strict Ranger mode, so
+        they are not reported as the user's grants; role access lives in Ranger.
+        """
         identity = self._user_identity(username, host)
         result = await db.execute_system(f"SHOW GRANTS FOR {identity}")
-        grants: list[str] = []
-        for row in result["rows"]:
-            if len(row) >= 3:
-                grants.append(str(row[2]))
-            elif row:
-                grants.append(str(row[-1]))
-        return grants
+        return [
+            str(row[2]) if len(row) >= 3 else str(row[-1])
+            for row in result["rows"]
+            if row and parse_assigned_roles([row])
+        ]
 
-    def _normalize_user_grant(self, grant_sql: str) -> dict | None:
-        statement = " ".join(grant_sql.strip().split())
-        if not statement:
-            return None
-
-        role_match = re.match(
-            r"^GRANT\s+(.+?)\s+TO\s+USER\s+'[^']+'@'[^']+'$",
-            statement,
-            flags=re.IGNORECASE,
-        )
-        if role_match:
-            role_name = self._normalize_role_name(role_match.group(1))
-            if role_name.lower() == "root":
-                return None
-            return {
+    def _role_assignment_grants(self, grant_rows: list[str]) -> list[dict]:
+        return [
+            {
                 "name": role_name,
                 "granted_at": None,
                 "granted_to": "USER",
@@ -258,34 +249,9 @@ class UserService:
                 "granted_by": "SYSTEM",
                 "grant_type": "ROLE",
             }
-
-        object_match = re.match(
-            r"^GRANT\s+.+?\s+ON\s+(.+?)\s+TO\s+USER\s+'[^']+'@'[^']+'(?:\s+WITH\s+GRANT\s+OPTION)?$",
-            statement,
-            flags=re.IGNORECASE,
-        )
-        if object_match:
-            object_target = object_match.group(1).strip()
-            parts = object_target.split(None, 1)
-            granted_on = parts[0].upper() if parts else "OBJECT"
-            name = parts[1].strip() if len(parts) > 1 else object_target
-            return {
-                "name": name,
-                "granted_at": None,
-                "granted_to": "USER",
-                "granted_on": granted_on,
-                "granted_by": "SYSTEM",
-                "grant_type": "PRIVILEGE",
-            }
-
-        return {
-            "name": statement,
-            "granted_at": None,
-            "granted_to": "USER",
-            "granted_on": "UNKNOWN",
-            "granted_by": "SYSTEM",
-            "grant_type": "UNKNOWN",
-        }
+            for role_name in parse_assigned_roles(grant_rows)
+            if role_name.lower() != "root"
+        ]
 
     async def get_user_detail(self, username: str, host: str = "%") -> dict:
         users = await self.list_users()
@@ -301,12 +267,7 @@ class UserService:
         if user_entry is None:
             raise ValueError(f"User '{username}@{host}' not found")
 
-        raw_grants = await self.get_user_grants(username, host=host)
-        grants = [
-            normalized
-            for normalized in (self._normalize_user_grant(grant) for grant in raw_grants)
-            if normalized is not None
-        ]
+        grants = self._role_assignment_grants(await self.get_user_grants(username, host=host))
 
         return {
             **user_entry,
