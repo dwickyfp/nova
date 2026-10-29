@@ -1,9 +1,10 @@
 # Architecture 17: Superset as Studio's BI surface
 
-> Status: **proposed, not implemented.** This document is the delivery plan for
-> replacing Studio's viz-core chart and dashboard artifacts with Apache Superset.
-> Until a phase below lands with its acceptance checks,
-> [Architecture 16](arch-16-viz-core.md) describes the running system.
+> Status: **accepted design, not implemented.** This document is the delivery
+> plan for replacing Studio's viz-core chart and dashboard artifacts with Apache
+> Superset. Its open decisions were settled on 2026-10-29 (see
+> [Decisions](#decisions)). Until a phase below lands with its acceptance
+> checks, [Architecture 16](arch-16-viz-core.md) describes the running system.
 
 Nova ships Apache Superset as a built-in component and shows it inside Studio
 as the surface for saved charts and dashboards. Superset brings its full feature
@@ -125,8 +126,9 @@ password for the Superset database "Nova". Rules:
 - TTL is minutes, not hours; a token is useless once its session is gone.
 - The proxy rejects the token if the session no longer exists, the active role
   changed, or `security_context_version` advanced (role switch, revocation).
-- Tokens are opaque, stored hashed in Redis, never logged, never returned in an
-  API response other than to the mutator over the internal network.
+- Tokens are opaque, stored encrypted in Redis (S4 explains why not hashed),
+  never logged, never returned in an API response other than to the mutator
+  over the internal network.
 - `/api/v1/internal/superset/*` is unreachable through the gateway, as all
   `/api/v1/internal/` routes already are ([routes.conf](../docker/gateway/routes.conf)).
 
@@ -134,13 +136,16 @@ password for the Superset database "Nova". Rules:
 ordinary MySQL clients and adds a token mode for Superset. The token is
 verified by the proxy itself; on success the proxy opens the engine session
 from the bound Nova session and activates its role, exactly as the HTTP query
-path does. Two verification designs are acceptable and Phase 1 picks one:
-- *Preferred:* the proxy advertises `mysql_native_password` with its own
-  scramble and verifies the client's response against the stored token, so no
-  secret crosses the wire.
-- *Fallback:* `mysql_clear_password` only on the internal network with TLS.
-Either way the token mode is limited to the Superset service network identity
-and fails closed on any mismatch. Unknown principals and `root` stay refused
+path does. Verification uses `mysql_native_password` with the proxy's own
+scramble: for a token-mode login the proxy issues a fresh 20-byte scramble,
+looks up the principal's live tokens, and checks the client's response against
+each stored token, so the token itself never crosses the wire. Because the
+response must be checked against the token value, Redis keeps the token in a
+form the proxy can verify with, encrypted under the same scheme as session
+passwords, not as a one-way hash. A principal has at most a small, bounded
+number of live tokens. `mysql_clear_password` is not supported. The token mode
+is limited to the Superset service network identity and fails closed on any
+mismatch. Unknown principals and `root` stay refused
 (`_INTERNAL_ONLY_USERS`).
 
 **S5. Background work uses explicit delegation.** Alerts, reports, thumbnails,
@@ -259,8 +264,8 @@ after the named patch passes), **Blocked** (off, with the reason).
 
 - **Superset metadata database: PostgreSQL**, owned by the Superset component.
   Superset requires PostgreSQL or MySQL for its metadata and does not support
-  StarRocks. This is an explicit exception of the same kind as Ranger's policy
-  database: it stores Superset objects only. Users, roles, passwords, policies,
+  StarRocks. This is an accepted exception (D1) of the same kind as Ranger's
+  policy database: it stores Superset objects only. Users, roles, passwords, policies,
   and Nova control-plane metadata never go there. It joins the existing compose
   project and the [backup module](../backend/app/modules/backup/)'s scope.
 - **Redis:** Superset data cache, thumbnail cache, Celery broker and results,
@@ -458,14 +463,16 @@ Phases follow the root [validation routing](../AGENTS.md#validation-routing):
 | Superset UI is not Nova's design system | Theme tokens and extensions narrow the gap; accepted for Superset-owned screens |
 | Extra services | Same compose project, health checks, metrics, backup scope |
 
-## Decisions required before Phase 1
+## Decisions
 
-1. Accept a Superset-owned PostgreSQL metadata database as an exception to the
-   `NOVA_SYSTEM`-only rule, scoped as in [Storage](#storage).
-2. Confirm the viz core is retired in Phase 6 rather than kept alongside
-   Superset.
-3. Choose the proxy token verification design in S4.
-4. Confirm background work runs under the owner's default role (S5).
+Accepted on 2026-10-29. Changing one reopens the affected rules and phases.
+
+| # | Decision | Applies to |
+| --- | --- | --- |
+| D1 | Superset keeps its own PostgreSQL metadata database as a product-owned exception to the `NOVA_SYSTEM`-only rule, like Ranger's policy database. It holds Superset objects only | [Storage](#storage) |
+| D2 | The viz core is retired in Phase 6. Superset does not run alongside it as a second authoring path | [Phase 6](#phase-6-migration-and-retirement) |
+| D3 | The proxy verifies Superset tokens with its own `mysql_native_password` scramble. Cleartext token login is not supported | S3, S4 |
+| D4 | Background work (alerts, reports, thumbnails, cache warmup) runs as the owner under the owner's current default role, revalidated every run | S5 |
 
 ## References
 
