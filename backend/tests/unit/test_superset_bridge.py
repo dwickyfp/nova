@@ -558,3 +558,37 @@ def test_bi_metadata_policy_grants_reflection_only():
     [item] = policy["policyItems"]
     assert item["roles"] == ["ACCOUNTADMIN", "finance"]
     assert [access["type"] for access in item["accesses"]] == ["select"]
+
+
+async def test_superset_actions_are_audited_for_the_handle_principal(bridge_app):
+    from app.modules.superset import router as bridge
+
+    application, _state = bridge_app
+    handle = await tokens.issue_handle(await _session())
+    service = {access.SERVICE_TOKEN_HEADER: "service-secret"}
+    async with await _client(application) as http:
+        recorded = await http.post(
+            "/api/v1/internal/superset/audit",
+            json={
+                "handle": handle,
+                "kind": "BI_EXPORT",
+                "action": "ChartRestApi.export",
+                "objects": ["chart:21"],
+            },
+            headers=service,
+        )
+        assert recorded.status_code == 200
+        entry = bridge.write_audit_log.await_args.kwargs
+        assert (entry["user_name"], entry["action"], entry["active_role"]) == (
+            "alice",
+            "BI_EXPORT",
+            "finance",
+        )
+        assert entry["object_name"] == "ChartRestApi.export:chart:21"
+
+        injected = await http.post(
+            "/api/v1/internal/superset/audit",
+            json={"handle": handle, "kind": "BI_EXPORT", "action": "x; DROP", "objects": []},
+            headers=service,
+        )
+        assert injected.status_code == 422

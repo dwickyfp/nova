@@ -13,6 +13,12 @@ Two artifact kinds exist:
   ``chart_spec`` instead and render through the legacy path until re-saved.
 * ``dashboard`` — a zone layout (``viz_spec`` is a ``DashboardSpec``) over
   chart artifacts owned by the same user; it carries no SQL of its own.
+
+An artifact saved since the Superset BI surface (docs/arch-17-superset.md) is a
+pointer instead: ``bi_kind`` and ``bi_object_id`` name its Superset chart or
+dashboard, ``bi_dataset_id`` the virtual dataset over ``sql_text``, and
+``viz_spec``/``chart_spec`` stay empty. Superset holds the definition; this row
+keeps ownership, thread and provenance.
 """
 
 from __future__ import annotations
@@ -40,6 +46,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS (
     schema_name  VARCHAR(128),
     chart_spec   JSON,
     viz_spec     JSON,
+    bi_kind      VARCHAR(16),
+    bi_object_id BIGINT,
+    bi_dataset_id BIGINT,
     created_at   DATETIME NOT NULL,
     updated_at   DATETIME NOT NULL
 ) PRIMARY KEY(artifact_id)
@@ -51,8 +60,31 @@ ArtifactKind = Literal["chart", "dashboard"]
 
 _COLUMNS = (
     "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-    "sql_text, database_name, schema_name, chart_spec, viz_spec, created_at, updated_at"
+    "sql_text, database_name, schema_name, chart_spec, viz_spec, created_at, updated_at, "
+    "bi_kind, bi_object_id, bi_dataset_id"
 )
+
+#: Pointer columns added for Superset-backed artifacts.
+BI_COLUMNS = (
+    ("bi_kind", "VARCHAR(16)"),
+    ("bi_object_id", "BIGINT"),
+    ("bi_dataset_id", "BIGINT"),
+)
+
+
+def bi_paths(kind: str | None, object_id: int | None) -> tuple[str | None, str | None]:
+    """``(view, edit)`` paths of a Superset object under ``/bi``."""
+    if kind == "chart" and object_id:
+        return (
+            f"/bi/explore/?slice_id={object_id}&standalone=1",
+            f"/bi/explore/?slice_id={object_id}",
+        )
+    if kind == "dashboard" and object_id:
+        return (
+            f"/bi/superset/dashboard/{object_id}/?standalone=2",
+            f"/bi/superset/dashboard/{object_id}/?edit=true",
+        )
+    return None, None
 
 
 def _now() -> datetime:
@@ -126,7 +158,13 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
         viz_spec,
         created_at,
         updated_at,
+        bi_kind,
+        bi_object_id,
+        bi_dataset_id,
     ) = values
+    kind = str(bi_kind) if bi_kind else None
+    object_id = int(str(bi_object_id)) if bi_object_id else None
+    view_path, edit_path = bi_paths(kind, object_id)
     return {
         "artifact_id": str(artifact_id),
         "owner_name": str(owner_name),
@@ -141,6 +179,11 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
         "viz_spec": _json_object(viz_spec),
         "created_at": _datetime(created_at),
         "updated_at": _datetime(updated_at),
+        "bi_kind": kind,
+        "bi_object_id": object_id,
+        "bi_dataset_id": int(str(bi_dataset_id)) if bi_dataset_id else None,
+        "bi_view_path": view_path,
+        "bi_edit_path": edit_path,
     }
 
 
@@ -178,6 +221,93 @@ class ArtifactRepository:
         # An old install whose ALTER failed once still serves artifacts.
         with contextlib.suppress(Exception):  # pragma: no cover - upgrade path
             await ensure_viz_columns()
+        await self.ensure_bi_columns()
+
+    async def ensure_bi_columns(self) -> list[str]:
+        """Add the Superset pointer columns an older table lacks."""
+        described = await db.execute_system("DESCRIBE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS")
+        existing = {str(row[0]) for row in described["rows"]}
+        added = []
+        for name, column_type in BI_COLUMNS:
+            if name not in existing:
+                await db.execute_system(
+                    "ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
+                    f"ADD COLUMN {name} {column_type}"
+                )
+                added.append(name)
+        return added
+
+    async def create_bi(
+        self,
+        *,
+        owner_name: str,
+        title: str,
+        artifact_type: ArtifactKind,
+        sql_text: str,
+        database_name: str | None,
+        schema_name: str | None,
+        bi_kind: str,
+        bi_object_id: int,
+        bi_dataset_id: int | None,
+        agent_id: str | None = None,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Record a Superset chart or dashboard as an owned Studio artifact."""
+        if bi_kind not in {"chart", "dashboard"} or bi_kind != artifact_type:
+            raise ValueError("A BI artifact must point at a Superset object of its own kind.")
+        artifact_id = str(uuid4())
+        now = _now()
+        stored_sql = validate_artifact_sql(sql_text) if artifact_type == "chart" else ""
+        await db.execute_system(
+            "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS ("
+            "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
+            "sql_text, database_name, schema_name, chart_spec, viz_spec, "
+            "bi_kind, bi_object_id, bi_dataset_id, created_at, updated_at"
+            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s, %s)",
+            [
+                artifact_id,
+                owner_name,
+                agent_id,
+                thread_id,
+                title,
+                artifact_type,
+                stored_sql,
+                database_name,
+                schema_name,
+                bi_kind,
+                bi_object_id,
+                bi_dataset_id,
+                now,
+                now,
+            ],
+        )
+        created = await self.get(artifact_id, owner_name=owner_name)
+        assert created is not None
+        return created
+
+    async def update_bi_source(
+        self,
+        artifact_id: str,
+        *,
+        owner_name: str,
+        expected_updated_at: datetime,
+        sql_text: str,
+    ) -> dict[str, Any] | None:
+        """Record the new SQL of a BI chart after Superset accepted it."""
+        result = await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS SET sql_text = %s, updated_at = %s "
+            "WHERE artifact_id = %s AND owner_name = %s AND updated_at = %s",
+            [
+                validate_artifact_sql(sql_text),
+                _now(),
+                artifact_id,
+                owner_name,
+                _datetime(expected_updated_at),
+            ],
+        )
+        if not result.get("affected", 0):
+            return None
+        return await self.get(artifact_id, owner_name=owner_name)
 
     async def create(
         self,

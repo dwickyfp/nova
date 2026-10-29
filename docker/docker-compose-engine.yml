@@ -74,6 +74,7 @@ services:
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-http://nova-backend:8000}
       # Shared with Superset for /api/v1/internal/superset (docs/arch-17-superset.md).
       SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
+      SUPERSET_INTERNAL_URL: http://superset:8088
     ports:
       - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
       - "${NOVA_MYSQL_PORT:-4406}:4406"

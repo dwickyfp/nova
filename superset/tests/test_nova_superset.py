@@ -13,10 +13,9 @@ from unittest import mock
 
 from flask import Flask
 from flask_login import LoginManager, UserMixin
-from sqlalchemy.engine.url import make_url
-
 from nova_superset import app as nova_app
 from nova_superset import bootstrap, client, connection, context, jinja, security
+from sqlalchemy.engine.url import make_url
 
 IDENTITY = client.Identity(
     username="alice", active_role="finance", superset_role="NovaAuthor", security_context_version=3
@@ -239,3 +238,27 @@ class JinjaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EventTests(unittest.TestCase):
+    def test_changes_and_exports_are_audited_reads_are_not(self):
+        from nova_superset import events
+
+        app = Flask(__name__)
+        with app.test_request_context("/api/v1/chart/", method="POST"):
+            self.assertEqual(events.audited_action("ChartRestApi.post"), "BI_CHANGE")
+            self.assertEqual(events.audited_action("DashboardRestApi.export"), "BI_EXPORT")
+            self.assertEqual(events.audited_action("SqlLabRestApi.export_csv"), "BI_EXPORT")
+            self.assertIsNone(events.audited_action("ChartRestApi.get"))
+            self.assertIsNone(events.audited_action("ChartRestApi.data"))
+        with app.test_request_context(
+            "/api/v1/chart/data", method="POST", json={"result_format": "csv"}
+        ):
+            self.assertEqual(events.audited_action("ChartRestApi.data"), "BI_EXPORT")
+
+
+class ImportTests(unittest.TestCase):
+    def test_bundle_imports_do_not_exist(self):
+        http = _flask().test_client()
+        for kind in ("dashboard", "chart", "dataset", "database", "assets"):
+            self.assertEqual(http.post(f"/api/v1/{kind}/import/").status_code, 404, kind)

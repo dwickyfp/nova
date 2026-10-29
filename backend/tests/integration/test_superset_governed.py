@@ -112,9 +112,7 @@ async def _chart_rows(bi: Bi, dataset_id: int) -> list[dict]:
         headers=await bi.headers(),
         json={
             "datasource": {"id": dataset_id, "type": "table"},
-            "queries": [
-                {"columns": ["id", "email"], "orderby": [["id", True]], "row_limit": 100}
-            ],
+            "queries": [{"columns": ["id", "email"], "orderby": [["id", True]], "row_limit": 100}],
             "result_type": "full",
             "result_format": "json",
         },
@@ -229,9 +227,7 @@ async def governed():
                 "name": f"bi-acceptance/{suffix}/catalog",
                 "service": service,
                 "resources": {"catalog": {"values": ["default_catalog"]}},
-                "policyItems": [
-                    {"roles": [role_a, role_b], "accesses": [{"type": "usage"}]}
-                ],
+                "policyItems": [{"roles": [role_a, role_b], "accesses": [{"type": "usage"}]}],
             }
         )
         await policy(
@@ -239,9 +235,7 @@ async def governed():
                 "name": f"bi-acceptance/{suffix}/orders",
                 "service": service,
                 "resources": table("orders"),
-                "policyItems": [
-                    {"roles": [role_a, role_b], "accesses": [{"type": "select"}]}
-                ],
+                "policyItems": [{"roles": [role_a, role_b], "accesses": [{"type": "select"}]}],
             }
         )
         await policy(
@@ -350,7 +344,6 @@ async def governed():
         await db.close_system_pool()
         if failures:
             raise ExceptionGroup("superset acceptance cleanup failed", failures)
-
 
 
 async def test_superset_phase_1_acceptance(governed):
@@ -541,10 +534,251 @@ async def test_superset_phase_1_acceptance(governed):
         # The principals are gone from StarRocks; retire their mirror rows too.
         subprocess.run(
             [
-                "docker", "exec", metadata, "psql", "-U", "superset", "-d", "superset", "-c",
+                "docker",
+                "exec",
+                metadata,
+                "psql",
+                "-U",
+                "superset",
+                "-d",
+                "superset",
+                "-c",
                 "UPDATE ab_user SET active = false WHERE username IN "
                 f"('{g.u1.username}', '{g.u2.username}')",
             ],
             capture_output=True,
             check=True,
         )
+
+
+STUDIO = "/api/v1/agents/studio/artifacts"
+BY_REGION = "SELECT region, SUM(amount) AS total FROM orders GROUP BY region"
+BAR = {
+    "mark": "bar",
+    "encoding": {
+        "x": {"field": "region", "type": "nominal"},
+        "y": {"field": "total", "type": "quantitative"},
+    },
+}
+
+
+async def _chart_regions(bi: Bi, chart_id: int) -> dict[str, float]:
+    """The chart's own stored query, run as ``bi``'s principal."""
+    response = await bi.http.get(f"/bi/api/v1/chart/{chart_id}/data/")
+    assert response.status_code == 200, response.text
+    rows = response.json()["result"][0]["data"]
+    return {row["region"]: next(v for k, v in row.items() if k != "region") for row in rows}
+
+
+async def _audited(user: str, event: str, action: str) -> None:
+    result = await db.execute_system(
+        "SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE user_name = %s AND event_type = %s "
+        "AND action = %s AND event_time > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [user, event, action],
+    )
+    assert int(result["rows"][0][0]) > 0, (user, event, action)
+
+
+async def test_superset_phases_3_and_4_acceptance(governed, monkeypatch):
+    """Studio artifacts are Superset objects, built by Nova as the user."""
+    from jose import jwt
+
+    from app.core.redis import session_store
+    from app.modules.agents.artifact_repository import artifact_repository
+    from app.modules.agents.tools.dashboard_build import dashboard_build_tool
+    from app.modules.assistant.service import LoopContext
+    from app.modules.assistant.tools import ToolInvocation
+
+    g = governed
+    created: list[str] = []
+    async with httpx.AsyncClient(base_url=API_URL, timeout=120) as api:
+        await _login(api, g.u1)
+        await _login(api, g.u2)
+        bi1, bi2 = Bi(g.u1.handle), Bi(g.u2.handle)
+        try:
+            # Wait for the fixture's policies, then save a result as a BI chart.
+            async def chart_saved():
+                response = await api.post(
+                    STUDIO,
+                    headers=_auth(g.u1),
+                    json={
+                        "title": "Revenue by region",
+                        "artifact_type": "chart",
+                        "sql_text": BY_REGION,
+                        "database_name": g.database,
+                        "chart_spec": BAR,
+                    },
+                )
+                assert response.status_code == 201, response.text
+                return response.json()
+
+            chart = await _eventually(chart_saved)
+            created.append(chart["artifact_id"])
+            assert chart["bi_kind"] == "chart" and chart["bi_object_id"]
+            assert chart["bi_view_path"] == (
+                f"/bi/explore/?slice_id={chart['bi_object_id']}&standalone=1"
+            )
+            assert chart["viz_spec"] is None and chart["chart_spec"] is None
+            described = (await bi1.http.get(f"/bi/api/v1/chart/{chart['bi_object_id']}")).json()
+            assert described["result"]["viz_type"] == "echarts_timeseries_bar"
+
+            # The same chart returns each principal's governed rows.
+            assert set(await _chart_regions(bi1, chart["bi_object_id"])) == {"EAST"}
+            assert set(await _chart_regions(bi2, chart["bi_object_id"])) == {"EAST", "WEST"}
+
+            # A dashboard artifact places BI charts the owner has.
+            dashboard = await api.post(
+                STUDIO,
+                headers=_auth(g.u1),
+                json={
+                    "title": "Regional view",
+                    "artifact_type": "dashboard",
+                    "viz_spec": {
+                        "version": 1,
+                        "zones": [
+                            {
+                                "zone_id": "z0",
+                                "kind": "sheet",
+                                "artifact_id": chart["artifact_id"],
+                                "rect": {"x": 0, "y": 0, "w": 24, "h": 2},
+                            }
+                        ],
+                    },
+                },
+            )
+            assert dashboard.status_code == 201, dashboard.text
+            created.append(dashboard.json()["artifact_id"])
+            dashboard_id = dashboard.json()["bi_object_id"]
+            placed = await bi1.http.get(f"/bi/api/v1/dashboard/{dashboard_id}/charts")
+            assert [c["id"] for c in placed.json()["result"]] == [chart["bi_object_id"]]
+
+            # The agent tool builds BI charts and a BI dashboard as the user.
+            await session_store.init()
+            monkeypatch.setattr(settings, "SUPERSET_INTERNAL_URL", BI_URL)
+            claims = jwt.get_unverified_claims(g.u1.bearer)
+            context = LoopContext(user_name=g.u1.username)
+            context.user = {
+                "username": g.u1.username,
+                "session_id": claims["sid"],
+                "roles": [g.role_a, g.role_b],
+                "active_role": g.role_a,
+            }
+            context.database = g.database
+            context.last_result = {
+                "columns": ["region", "total"],
+                "rows": [["EAST", 40]],
+                "sql": BY_REGION,
+            }
+            outcome = await dashboard_build_tool.run(
+                ToolInvocation(
+                    "call-1",
+                    "dashboard_build",
+                    {
+                        "title": "Agent dashboard",
+                        "charts": [
+                            {"title": "Bars", "chart_type": "bar", "x": "region", "y": "total"},
+                            {"title": "Share", "chart_type": "pie", "x": "region", "y": "total"},
+                        ],
+                    },
+                ),
+                context,
+            )
+            assert outcome.ok, outcome.error
+            created.append(outcome.data["artifact_id"])
+            created.extend(item["artifact_id"] for item in outcome.data["charts"])
+            built = await artifact_repository.get(
+                outcome.data["artifact_id"], owner_name=g.u1.username
+            )
+            assert built["bi_kind"] == "dashboard"
+            agent_charts = await bi1.http.get(
+                f"/bi/api/v1/dashboard/{built['bi_object_id']}/charts"
+            )
+            assert sorted(c["form_data"]["viz_type"] for c in agent_charts.json()["result"]) == [
+                "echarts_timeseries_bar",
+                "pie",
+            ]
+
+            # Applying a reviewed edit changes the dataset SQL behind the chart.
+            current = (
+                await api.get(f"{STUDIO}/{chart['artifact_id']}", headers=_auth(g.u1))
+            ).json()
+            applied = await api.patch(
+                f"{STUDIO}/{chart['artifact_id']}",
+                headers=_auth(g.u1),
+                json={
+                    "draft": {
+                        "sql_text": BY_REGION.replace("SUM(amount)", "MAX(amount)"),
+                        "artifact_type": "chart",
+                    },
+                    "expected_updated_at": current["updated_at"],
+                },
+            )
+            assert applied.status_code == 200, applied.text
+            assert (await _chart_regions(bi2, chart["bi_object_id"])) == {"EAST": 30, "WEST": 20}
+
+            # The worksheet editor is for pre-BI artifacts only.
+            legacy = await api.patch(
+                f"{STUDIO}/{chart['artifact_id']}/spec",
+                headers=_auth(g.u1),
+                json={
+                    "viz_spec": {},
+                    "expected_updated_at": applied.json()["artifact"]["updated_at"],
+                },
+            )
+            assert legacy.status_code == 409
+
+            # Exports are audited; bundle imports do not exist (S8).
+            exported = await bi1.http.get(
+                f"/bi/api/v1/chart/export/?q=!({chart['bi_object_id']})",
+                headers=await bi1.headers(),
+            )
+            assert exported.status_code == 200, exported.text
+            for kind in ("dashboard", "chart", "dataset", "database", "assets"):
+                imported = await bi1.http.post(
+                    f"/bi/api/v1/{kind}/import/", headers=await bi1.headers()
+                )
+                assert imported.status_code == 404, (kind, imported.status_code)
+
+            # Only Nova may frame BI (S14).
+            page = await bi1.http.get("/bi/superset/welcome/")
+            assert "frame-ancestors 'self'" in page.headers.get("content-security-policy", "")
+            assert page.headers.get("x-frame-options", "").upper() == "SAMEORIGIN"
+
+            async def actions_audited():
+                await _audited(g.u1.username, "bi_artifact", "CREATE_BI_CHART")
+                await _audited(g.u1.username, "bi_artifact", "CREATE_BI_DASHBOARD")
+                await _audited(g.u1.username, "bi_artifact", "UPDATE_BI_CHART")
+                await _audited(g.u1.username, "bi_action", "BI_CHANGE")
+                await _audited(g.u1.username, "bi_action", "BI_EXPORT")
+
+            await _eventually(actions_audited, seconds=60)
+
+            # A role that is not a BI author cannot save BI artifacts.
+            await g.set_authors(g.role_b, author=False)
+            await asyncio.sleep(16)
+            refused = await api.post(
+                STUDIO,
+                headers=_auth(g.u2),
+                json={
+                    "title": "x",
+                    "artifact_type": "chart",
+                    "sql_text": BY_REGION,
+                    "database_name": g.database,
+                },
+            )
+            assert refused.status_code == 403, refused.text
+
+            # Deleting an artifact removes its Superset chart.
+            removed = await api.delete(f"{STUDIO}/{chart['artifact_id']}", headers=_auth(g.u1))
+            assert removed.status_code == 204
+            created.remove(chart["artifact_id"])
+            gone = await bi1.http.get(f"/bi/api/v1/chart/{chart['bi_object_id']}")
+            assert gone.status_code == 404
+        finally:
+            for artifact_id in created:
+                with suppress(Exception):
+                    await api.delete(f"{STUDIO}/{artifact_id}", headers=_auth(g.u1))
+            await bi1.close()
+            await bi2.close()
+            with suppress(Exception):
+                await session_store.close()

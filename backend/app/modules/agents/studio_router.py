@@ -407,6 +407,26 @@ async def list_artifacts(user: dict = Depends(get_current_user)):
     return ArtifactListResponse(artifacts=artifacts, count=len(artifacts))
 
 
+def _bi_http_error(exc: Exception) -> HTTPException:
+    from app.modules.superset.client import BiError
+
+    if isinstance(exc, BiError) and exc.status in (401, 403):
+        return HTTPException(status_code=exc.status, detail=exc.message)
+    detail = exc.message if isinstance(exc, BiError) else str(exc)
+    return HTTPException(status_code=422, detail=detail)
+
+
+def _chart_plan(body_viz: dict | None, body_chart: dict | None):
+    """The Superset chart a save request describes, or None for a table."""
+    from app.modules.superset.charts import plan_from_vega, plan_from_worksheet
+
+    if body_viz:
+        return plan_from_worksheet(body_viz)
+    if body_chart:
+        return plan_from_vega(body_chart)
+    return None
+
+
 @router.post(
     "/studio/artifacts",
     response_model=ArtifactView,
@@ -417,53 +437,46 @@ async def create_artifact(
     body: ArtifactCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    from app.modules.viz.service import VizError, viz_service
+    """Save a result as a BI chart, or BI charts as a BI dashboard.
 
-    if body.artifact_type == "dashboard":
-        from app.modules.viz.spec import DashboardSpec
+    Artifacts live in Superset (docs/arch-17-superset.md): the request's
+    worksheet or Vega-Lite chart only chooses the Superset chart drawn over the
+    saved SQL, and a dashboard places BI charts the caller owns.
+    """
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
 
-        try:
+    title = body.title.strip()
+    try:
+        if body.artifact_type == "dashboard":
+            from app.modules.viz.spec import DashboardSpec
+
             spec = DashboardSpec.model_validate(body.viz_spec or {})
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        try:
-            artifact = await viz_service.save_dashboard(
-                user=user, title=body.title.strip(), spec=spec,
+            charts = await bi_artifacts.owned_bi_charts(
+                user, [zone.artifact_id for zone in spec.sheet_zones() if zone.artifact_id]
+            )
+            artifact = await bi_artifacts.publish_dashboard(
+                user, title=title, chart_artifacts=charts,
                 agent_id=body.agent_id, thread_id=body.thread_id,
             )
-        except (ValueError, VizError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        await write_audit_log(
-            event_type="ARTIFACT",
-            user_name=user["username"],
-            action="create",
-            object_type="DASHBOARD",
-            object_name=artifact["artifact_id"],
-            status="SUCCESS",
-            session_id=user.get("session_id"),
-        )
-        return ArtifactView(**artifact)
+        else:
+            sql_text = body.sql_text
+            if body.semantic_provenance_ref:
+                from app.modules.agents.artifact_provenance import read_provenance
 
-    sql_text = body.sql_text
-    if body.semantic_provenance_ref:
-        from app.modules.agents.artifact_provenance import read_provenance
-
-        sql_text = await read_provenance(body.semantic_provenance_ref, user)
-    try:
-        artifact = await artifact_repository.create(
-            owner_name=user["username"],
-            title=body.title.strip(),
-            artifact_type=body.artifact_type,
-            sql_text=sql_text,
-            database_name=body.database_name,
-            schema_name=body.schema_name,
-            chart_spec=body.chart_spec,
-            viz_spec=body.viz_spec,
-            agent_id=body.agent_id,
-            thread_id=body.thread_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+                sql_text = await read_provenance(body.semantic_provenance_ref, user)
+            artifact = await bi_artifacts.publish_chart(
+                user,
+                title=title,
+                sql_text=sql_text,
+                plan=_chart_plan(body.viz_spec, body.chart_spec),
+                database_name=body.database_name,
+                schema_name=body.schema_name,
+                agent_id=body.agent_id,
+                thread_id=body.thread_id,
+            )
+    except (ValueError, BiError) as exc:
+        raise _bi_http_error(exc) from exc
     return ArtifactView(**artifact)
 
 
@@ -596,6 +609,8 @@ async def apply_artifact_edit(
     user: dict = Depends(get_current_user),
 ):
     artifact = await _artifact_or_404(artifact_id, user["username"])
+    if artifact.get("bi_object_id") and artifact["artifact_type"] == "chart":
+        return await _apply_bi_edit(artifact, body, user)
     try:
         result = await run_artifact_draft(body.draft, artifact, user)
         updated = await artifact_repository.update(
@@ -633,13 +648,55 @@ async def apply_artifact_edit(
     )
 
 
+async def _apply_bi_edit(artifact: dict, body: ArtifactApplyRequest, user: dict):
+    """Apply a reviewed draft to a BI chart: new dataset SQL, chart redrawn."""
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
+
+    try:
+        result = await run_artifact_draft(body.draft, artifact, user)
+        updated = await bi_artifacts.update_chart_source(
+            user,
+            artifact,
+            sql_text=body.draft.sql_text,
+            plan=_chart_plan(body.draft.viz_spec, body.draft.chart_spec),
+            expected_updated_at=body.expected_updated_at,
+        )
+    except (ValueError, BiError) as exc:
+        raise _bi_http_error(exc) from exc
+    if updated is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This artifact changed. Refresh it before applying the draft.",
+        )
+    return ArtifactRefreshResponse(
+        artifact=ArtifactView(**updated),
+        columns=result.columns,
+        rows=result.rows,
+        row_count=result.row_count,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
 @router.delete("/studio/artifacts/{artifact_id}", status_code=204)
 async def delete_artifact(
     artifact_id: str,
     user: dict = Depends(get_current_user),
 ):
-    await _artifact_or_404(artifact_id, user["username"])
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    from app.modules.superset.artifacts import delete_bi_objects
+
+    await delete_bi_objects(user, artifact)
     await artifact_repository.delete(artifact_id, owner_name=user["username"])
+    await write_audit_log(
+        event_type="ARTIFACT",
+        user_name=user["username"],
+        action="delete",
+        object_type="ARTIFACT",
+        object_name=artifact_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+    )
     return None
 
 
@@ -661,6 +718,11 @@ async def update_artifact_spec(
     from app.modules.viz.service import VizError, viz_service
 
     artifact = await _artifact_or_404(artifact_id, user["username"])
+    if artifact.get("bi_object_id"):
+        raise HTTPException(
+            status_code=409,
+            detail="This artifact is edited in BI. Open it in BI to change its view or layout.",
+        )
     try:
         if artifact["artifact_type"] == "dashboard":
             updated = await viz_service.update_dashboard(

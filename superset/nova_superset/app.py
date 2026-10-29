@@ -24,6 +24,13 @@ _OPEN_PREFIXES = ("/static/", "/health", "/healthcheck", "/ping", "/logout/")
 #: Superset's own credential flows. Nova is the only sign-in, so these do not
 #: exist here: no password login (form or API), registration or reset.
 _REMOVED_PREFIXES = (
+    # Bundle imports can carry database definitions; Nova has exactly one (S8).
+    "/api/v1/dashboard/import",
+    "/api/v1/chart/import",
+    "/api/v1/dataset/import",
+    "/api/v1/database/import",
+    "/api/v1/saved_query/import",
+    "/api/v1/assets/import",
     "/register/",
     "/api/v1/security/login",
     "/api/v1/security/refresh",

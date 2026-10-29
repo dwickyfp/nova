@@ -237,6 +237,10 @@ class Settings(BaseSettings):
     SUPERSET_DATA_TOKEN_TTL_SECONDS: int = Field(default=300, ge=60, le=3600)
     #: Live data tokens kept per principal; the oldest is evicted beyond this.
     SUPERSET_MAX_TOKENS_PER_PRINCIPAL: int = Field(default=8, ge=1, le=64)
+    #: Where Nova reaches Superset's API on the internal network; Superset is
+    #: served under ``/bi`` there as for browsers.
+    SUPERSET_INTERNAL_URL: str = "http://superset:8088"
+    SUPERSET_REQUEST_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, le=600)
 
     # --- ML execution ---
     ML_MYSQL_BATCH_SIZE: int = 4096

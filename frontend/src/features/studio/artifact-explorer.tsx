@@ -437,7 +437,16 @@ function DashboardCard({
         aria-label={`Open ${artifact.title}`}
         className="relative block h-48 w-full overflow-hidden border-b bg-surface-1 text-left focus-visible:outline-none"
       >
-        <DashboardThumbnail artifactId={artifact.artifact_id} spec={spec} loading={detail.isLoading} updatedAt={detail.data?.updated_at} />
+        {artifact.bi_view_path ? (
+          // Superset thumbnails need background rendering (Phase 2 of
+          // docs/arch-17-superset.md); until then a BI dashboard shows its kind.
+          <span className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+            <LayoutDashboard aria-hidden="true" className="size-6" />
+            <span className="type-meta">Opens in BI</span>
+          </span>
+        ) : (
+          <DashboardThumbnail artifactId={artifact.artifact_id} spec={spec} loading={detail.isLoading} updatedAt={detail.data?.updated_at} />
+        )}
       </button>
       <div className="flex items-start gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -447,7 +456,11 @@ function DashboardCard({
             </button>
           </h3>
           <p className="type-meta mt-1 truncate">
-            {detail.isLoading ? "Dashboard" : `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`}
+            {artifact.bi_view_path
+              ? "BI dashboard"
+              : detail.isLoading
+                ? "Dashboard"
+                : `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`}
             <span aria-hidden="true" className="mx-1.5">·</span>
             {formatModified(artifact.updated_at)}
           </p>

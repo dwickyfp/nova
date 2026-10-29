@@ -620,6 +620,11 @@ export type StudioArtifact = {
   schema_name: string | null;
   created_at: string;
   updated_at: string;
+  /** Set when the artifact lives in BI (Superset): its view and edit paths. */
+  bi_kind?: "chart" | "dashboard" | null;
+  bi_object_id?: number | null;
+  bi_view_path?: string | null;
+  bi_edit_path?: string | null;
 };
 
 export type StudioArtifactDetail = StudioArtifact & {

@@ -102,6 +102,11 @@ class ArtifactSummary(BaseModel):
     schema_name: str | None = None
     created_at: datetime
     updated_at: datetime
+    #: Set for artifacts published to Superset: the object and its /bi paths.
+    bi_kind: Literal["chart", "dashboard"] | None = None
+    bi_object_id: int | None = None
+    bi_view_path: str | None = None
+    bi_edit_path: str | None = None
 
 
 class ArtifactView(ArtifactSummary):

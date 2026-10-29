@@ -1,11 +1,11 @@
-"""``dashboard_build`` — compose a dashboard artifact from the conversation.
+"""``dashboard_build`` — compose a BI dashboard from the conversation.
 
-A dashboard places worksheets on a canvas; this tool composes one from
-chat: each chart request resolves through the ShowMe engine
-into a worksheet over the turn's verified result, each worksheet is saved as
-a chart artifact, and a zone layout composes them into one dashboard
-artifact. Everything persists under the caller's ownership; refresh and
-dashboard filters re-execute under the viewer's own StarRocks session.
+Each chart request resolves through the ShowMe engine into a worksheet over
+the turn's verified result, is published to Superset as a dataset and chart
+(docs/arch-17-superset.md), and the charts are placed on one Superset
+dashboard. Every Superset call runs as the caller, so the caller's BI role
+decides whether they may author, and Ranger decides what each chart returns
+to whoever views it.
 
 The turn's verified result must carry its producing statement: a dashboard
 without provenance could show data that cannot be rebuilt.
@@ -19,13 +19,7 @@ from typing import Any
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.viz.showme import from_intent
-from app.modules.viz.spec import (
-    ChartIntent,
-    DashboardSpec,
-    VizSourceSql,
-    Zone,
-    ZoneRect,
-)
+from app.modules.viz.spec import ChartIntent, VizSourceSql
 
 logger = logging.getLogger(__name__)
 
@@ -81,23 +75,12 @@ _PARAMETERS = {
 }
 
 
-def _zone_grid(count: int) -> list[ZoneRect]:
-    """Two sheets per row on the 24-column tiled grid."""
-    rects: list[ZoneRect] = []
-    per_row = 2 if count > 1 else 1
-    width = 24 // per_row
-    for index in range(count):
-        row, column = divmod(index, per_row)
-        rects.append(ZoneRect(x=column * width, y=row * 2, w=width, h=2))
-    return rects
-
-
 class DashboardBuildTool:
     name = "dashboard_build"
     description = (
-        "Compose a Nova Studio dashboard from the latest verified result in "
-        "this conversation: one chart artifact per requested view, placed on a "
-        "zone canvas. Call it after the data is fetched."
+        "Compose a BI dashboard from the latest verified result in this "
+        "conversation: one BI chart per requested view, placed on one BI "
+        "dashboard. Call it after the data is fetched."
     )
     parameters = _PARAMETERS
     classification: ToolClassification = "session_change"
@@ -111,7 +94,9 @@ class DashboardBuildTool:
         return f"dashboard_build: {title} ({count} charts)" if title else "dashboard_build"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
-        from app.modules.viz.service import VizError, viz_service
+        from app.modules.superset import artifacts as bi_artifacts
+        from app.modules.superset.charts import plan_from_worksheet
+        from app.modules.superset.client import BiError
 
         user = getattr(context, "user", None)
         args = invocation.arguments
@@ -155,6 +140,7 @@ class DashboardBuildTool:
         source = VizSourceSql(sql=provenance_sql)
 
         saved: list[dict[str, Any]] = []
+        published: list[dict[str, Any]] = []
         for request in requests:
             if not isinstance(request, dict):
                 continue
@@ -169,16 +155,27 @@ class DashboardBuildTool:
                     size=_str_or_none(request.get("size")),
                 )
                 spec = from_intent(chart_intent, columns, rows, source=source, title=chart_title)
-                artifact = await viz_service.save_chart(
-                    user=user,
+                artifact = await bi_artifacts.publish_chart(
+                    user,
                     title=chart_title,
-                    spec=spec,
+                    sql_text=provenance_sql,
+                    plan=plan_from_worksheet(spec.model_dump(mode="json")),
+                    database_name=getattr(context, "database", None),
+                    schema_name=getattr(context, "schema_name", None),
                     agent_id=getattr(context, "agent_id", None),
                     thread_id=getattr(context, "thread_id", None),
                 )
-            except (ValueError, VizError) as exc:
+            except BiError as exc:
+                if exc.status in (401, 403):
+                    # The caller cannot author BI content; no other chart can
+                    # succeed either.
+                    return ToolOutcome(ok=False, summary="", error=exc.message)
+                logger.warning("dashboard_build chart failed: %s", exc.message)
+                continue
+            except ValueError as exc:
                 logger.warning("dashboard_build chart failed: %s", exc)
                 continue
+            published.append(artifact)
             saved.append(
                 {
                     "artifact_id": artifact["artifact_id"],
@@ -197,33 +194,23 @@ class DashboardBuildTool:
                 ),
             )
 
-        rects = _zone_grid(len(saved))
-        zones = [
-            Zone(
-                zone_id=f"zone_{index}",
-                kind="sheet",
-                artifact_id=chart["artifact_id"],
-                rect=rect,
-            )
-            for index, (chart, rect) in enumerate(zip(saved, rects, strict=True))
-        ]
         try:
-            dashboard_spec = DashboardSpec(title=title, zones=zones)
-            dashboard = await viz_service.save_dashboard(
-                user=user,
+            dashboard = await bi_artifacts.publish_dashboard(
+                user,
                 title=title,
-                spec=dashboard_spec,
+                chart_artifacts=published,
                 agent_id=getattr(context, "agent_id", None),
                 thread_id=getattr(context, "thread_id", None),
             )
-        except (ValueError, VizError) as exc:
-            return ToolOutcome(ok=False, summary="", error=str(exc))
+        except BiError as exc:
+            return ToolOutcome(ok=False, summary="", error=exc.message)
 
         block = {
             "artifact_id": dashboard["artifact_id"],
             "title": title,
             "charts": saved,
-            "fallback": "Open Artifacts to view the dashboard with live data.",
+            "bi_view_path": dashboard.get("bi_view_path"),
+            "fallback": "Open Artifacts to view the dashboard in BI with live data.",
         }
         return ToolOutcome(
             ok=True,

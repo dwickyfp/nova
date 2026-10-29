@@ -12,15 +12,17 @@ from copy import deepcopy
 
 import pymysql
 from flask_appbuilder.security.manager import AUTH_REMOTE_USER
+from nova_superset.app import init_app
+from nova_superset.connection import mutate_connection
+from nova_superset.events import NovaEventLogger
+from nova_superset.jinja import JINJA_CONTEXT_ADDONS as _NOVA_JINJA
+from nova_superset.security import NovaSecurityManager
 
 # Superset imports this module at the end of superset.config, so its defaults
 # already exist and can be extended rather than copied.
 from superset.config import TALISMAN_CONFIG as _DEFAULT_TALISMAN_CONFIG
-
-from nova_superset.app import init_app
-from nova_superset.connection import mutate_connection
-from nova_superset.jinja import JINJA_CONTEXT_ADDONS as _NOVA_JINJA
-from nova_superset.security import NovaSecurityManager
+from superset.config import THEME_DARK as _DEFAULT_THEME_DARK
+from superset.config import THEME_DEFAULT as _DEFAULT_THEME
 
 
 def _required(name: str) -> str:
@@ -54,6 +56,25 @@ DB_CONNECTION_MUTATOR = mutate_connection
 PREVENT_UNSAFE_DB_CONNECTIONS = True
 
 JINJA_CONTEXT_ADDONS = dict(_NOVA_JINJA)
+
+# S12: governed actions are also written to Nova's audit log.
+EVENT_LOGGER = NovaEventLogger()
+
+# Nova's look (DESIGN.md): brick-red primary, Inter, the console's radius and
+# dark surface. Nova sets the light or dark mode of a framed Superset.
+APP_NAME = "Nova BI"
+_NOVA_TOKENS = {
+    "colorPrimary": "#d04738",
+    "colorLink": "#d04738",
+    "fontFamily": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    "borderRadius": 10,
+    "brandAppName": "Nova BI",
+}
+THEME_DEFAULT = deepcopy(_DEFAULT_THEME)
+THEME_DEFAULT.setdefault("token", {}).update(_NOVA_TOKENS)
+THEME_DARK = deepcopy(_DEFAULT_THEME_DARK) if _DEFAULT_THEME_DARK else None
+if THEME_DARK is not None:
+    THEME_DARK.setdefault("token", {}).update({**_NOVA_TOKENS, "colorBgBase": "#0b0f14"})
 
 # Superset is served under /bi behind Nova's gateway or dev server.
 ENABLE_PROXY_FIX = True

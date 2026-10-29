@@ -88,6 +88,7 @@ from app.proxy.protocol import (
 from app.proxy.session import (
     SessionState,
     bind_placeholders,
+    connect_database,
     parse_prepared_statement,
     placeholder_spans,
     quote_database_target,
@@ -416,13 +417,14 @@ class ProxyConnection:
         )
         self._ctx.session.role_locked = self._ctx.bi_binding is not None
 
+        database = connect_database(response.database)
         self._ctx.user = AuthenticatedUser(
             username=response.username,
-            database=response.database,
+            database=database,
         )
 
-        if response.database:
-            self._ctx.session.set_database(response.database)
+        if database:
+            self._ctx.session.set_database(database)
 
         self._ctx.session_id = str(uuid.uuid4())
         logger.info(

@@ -9,7 +9,7 @@ handle for the caller's identity, or for a data token for the MySQL proxy.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -53,6 +53,12 @@ class AuthorRoles(BaseModel):
 
 class HandleRequest(BaseModel):
     handle: str = Field(min_length=16, max_length=256)
+
+
+class AuditRequest(HandleRequest):
+    kind: Literal["BI_CHANGE", "BI_EXPORT"]
+    action: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.]+$")
+    objects: list[str] = Field(default_factory=list, max_length=8)
 
 
 class IdentityResponse(BaseModel):
@@ -180,3 +186,26 @@ async def data_token(body: HandleRequest):
     return DataTokenResponse(
         username=issued.username, token=issued.token, expires_in=issued.expires_in
     )
+
+
+@internal_router.post("/audit", status_code=status.HTTP_200_OK)
+async def audit(body: AuditRequest):
+    """Record a governed Superset action for the handle's principal (S12).
+
+    Only the action name and object ids are stored: Superset sends no SQL,
+    rows or parameters on this path.
+    """
+    bi_session = await _session_or_401(body.handle)
+    objects = ",".join(item[:64] for item in body.objects if item)[:512]
+    await write_audit_log(
+        event_type="bi_action",
+        user_name=bi_session.username,
+        action=body.kind,
+        object_type="SUPERSET",
+        object_name=f"{body.action}{':' if objects else ''}{objects}",
+        status="SUCCESS",
+        session_id=bi_session.session_id,
+        active_role=bi_session.active_role,
+        security_context_version=bi_session.security_context_version,
+    )
+    return {"recorded": True}

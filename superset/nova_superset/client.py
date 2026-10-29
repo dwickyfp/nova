@@ -38,14 +38,14 @@ def _base_url() -> str:
     return os.environ.get("NOVA_API_URL", "http://nova-backend:8000").rstrip("/")
 
 
-def _post(path: str, handle: str) -> dict:
+def _post(path: str, handle: str, extra: dict | None = None) -> dict:
     secret = os.environ.get("NOVA_SUPERSET_SERVICE_TOKEN", "")
     if not secret:
         raise NovaUnavailable("NOVA_SUPERSET_SERVICE_TOKEN is not configured")
     try:
         response = requests.post(
             f"{_base_url()}/api/v1/internal/superset/{path}",
-            json={"handle": handle},
+            json={"handle": handle, **(extra or {})},
             headers={SERVICE_TOKEN_HEADER: secret},
             timeout=_TIMEOUT_SECONDS,
         )
@@ -73,3 +73,8 @@ def data_token(handle: str) -> DataToken:
     return DataToken(
         username=body["username"], token=body["token"], expires_in=int(body["expires_in"])
     )
+
+
+def audit(handle: str, *, kind: str, action: str, objects: list[str]) -> None:
+    """Record a governed Superset action in Nova's audit log."""
+    _post("audit", handle, {"kind": kind, "action": action[:128], "objects": objects})

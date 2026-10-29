@@ -31,6 +31,11 @@ const artifactMeta = {
 vi.mock("@/features/agents/api", () => ({
   studioApi: mocks,
 }));
+const biSession = vi.hoisted(() => ({ post: vi.fn() }));
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-client")>()),
+  api: biSession,
+}));
 
 describe("Studio artifacts", () => {
   beforeEach(() => {
@@ -264,5 +269,42 @@ describe("Studio artifacts", () => {
     await expect
       .element(screen.getByText("Which source column should I rename?"))
       .toBeInTheDocument();
+  });
+
+  it("draws a BI artifact in the panel and edits it in BI", async () => {
+    biSession.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaAuthor" });
+    const bi = {
+      bi_kind: "chart",
+      bi_object_id: 21,
+      bi_view_path: "/bi/explore/?slice_id=21&standalone=1",
+      bi_edit_path: "/bi/explore/?slice_id=21",
+    };
+    mocks.getArtifact.mockResolvedValue({ ...artifactMeta, ...bi });
+    const refreshed = await mocks.refreshArtifact();
+    mocks.refreshArtifact.mockResolvedValue({
+      ...refreshed,
+      artifact: { ...refreshed.artifact, ...bi },
+    });
+    const screen = await render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <StudioArtifacts onSelectAgent={() => undefined} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByText("Revenue by region"));
+
+    await expect
+      .element(screen.getByTitle("BI chart Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21&standalone=1");
+    await userEvent.click(screen.getByRole("button", { name: "Edit in BI" }));
+    await expect
+      .element(screen.getByTitle("Edit Revenue by region in BI"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21");
+    expect(biSession.post).toHaveBeenCalledWith(
+      "/superset/session",
+      undefined,
+      expect.any(AbortSignal),
+    );
   });
 });

@@ -1,5 +1,6 @@
 import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
 import { ArtifactExplorer } from "./artifact-explorer";
+import { BiFrame } from "@/features/bi/bi-frame";
 import { describeView } from "@/features/viz/insight";
 import { ViewAnswer, WorksheetEditor } from "@/features/viz/worksheet-editor";
 import { VizView } from "@/features/viz/viz-view";
@@ -227,6 +228,44 @@ function ArtifactDetail({
 
   const artifact = meta.data;
 
+  if (artifact.artifact_type === "dashboard" && artifact.bi_view_path) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <DetailHeader
+          onBack={onBack}
+          title={artifact.title}
+          subtitle={`BI dashboard · Updated ${formatTimestamp(artifact.updated_at)}`}
+          onDelete={() => setDeleteOpen(true)}
+          extraAction={
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing((value) => !value)}>
+              {editing ? "Done editing" : "Edit in BI"}
+            </Button>
+          }
+        />
+        <div className="flex min-h-0 flex-1 flex-col border-t">
+          <BiFrame
+            key={editing ? "edit" : "view"}
+            path={(editing ? artifact.bi_edit_path : artifact.bi_view_path) ?? ""}
+            title={`BI dashboard ${artifact.title}`}
+          />
+        </div>
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete dashboard?"
+          desc={`“${artifact.title}” will be deleted from Artifacts and BI. Its charts stay.`}
+          confirmText="Delete dashboard"
+          destructive
+          isLoading={remove.isPending}
+          handleConfirm={() => {
+            setDeleteOpen(false);
+            remove.mutate();
+          }}
+        />
+      </div>
+    );
+  }
+
   if (artifact.artifact_type === "dashboard") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -290,6 +329,10 @@ function ArtifactDetail({
   // behind an editor save.
   const saved = detail.data.artifact;
   const worksheet = (saved.viz_spec ?? detail.data.derived_viz_spec ?? null) as unknown as WorksheetSpec | null;
+  // A BI chart is drawn and edited by Superset; the worksheet editor is for
+  // artifacts saved before BI.
+  const biView = saved.bi_view_path ?? artifact.bi_view_path ?? null;
+  const biEdit = saved.bi_edit_path ?? artifact.bi_edit_path ?? null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DetailHeader
@@ -301,9 +344,21 @@ function ArtifactDetail({
         onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
         extraAction={
-          worksheet?.source && !editing && !draftResponse?.draft ? (
+          biEdit && editing ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditing(false);
+                void detail.refetch();
+              }}
+            >
+              Done editing
+            </Button>
+          ) : (biEdit || worksheet?.source) && !editing && !draftResponse?.draft ? (
             <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
-              Edit view
+              {biEdit ? "Edit in BI" : "Edit view"}
             </Button>
           ) : null
         }
@@ -331,7 +386,14 @@ function ArtifactDetail({
             visibleCount={filteredRows.length}
           />
         ) : null}
-        {editing && worksheet?.source ? (
+        {editing && biEdit ? (
+          <section
+            aria-label="Edit in BI"
+            className="flex h-full min-h-96 min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm"
+          >
+            <BiFrame path={biEdit} title={`Edit ${artifact.title} in BI`} />
+          </section>
+        ) : editing && worksheet?.source ? (
           <WorksheetEditor
             artifactId={artifact.artifact_id}
             spec={worksheet}
@@ -359,7 +421,15 @@ function ArtifactDetail({
             <span className="sr-only" role="status">
               {chatBusy ? "Nova is preparing an artifact preview." : ""}
             </span>
-            {activeData.rows.length > 0 && filteredRows.length === 0 ? (
+            {biView && !draftResponse?.draft ? (
+              <div className="flex aspect-video min-h-64 min-w-0 flex-col overflow-hidden rounded-lg">
+                <BiFrame
+                  key={saved.updated_at}
+                  path={biView}
+                  title={`BI chart ${artifact.title}`}
+                />
+              </div>
+            ) : activeData.rows.length > 0 && filteredRows.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 No rows match these filters.
               </p>

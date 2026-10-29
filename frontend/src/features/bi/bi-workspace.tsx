@@ -3,10 +3,8 @@ import { ExternalLink, RotateCw } from 'lucide-react'
 import { Logo } from '@/assets/logo'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
-import { api, ApiError } from '@/lib/api-client'
+import { BiFrame } from './bi-frame'
 import { safeBiTarget } from './bi-target'
-
-type Status = 'opening' | 'ready' | 'error'
 
 /** The Superset path a framed page shows, or null when it left Superset. */
 function framedPath(frame: HTMLIFrameElement | null): string | null {
@@ -34,25 +32,8 @@ export function BiWorkspace({
   onPathChange: (path: string) => void
 }) {
   const [source] = useState(() => safeBiTarget(path))
-  const [status, setStatus] = useState<Status>('opening')
-  const [error, setError] = useState('')
-  const [attempt, setAttempt] = useState(0)
   const [current, setCurrent] = useState(source)
   const frame = useRef<HTMLIFrameElement>(null)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    setStatus('opening')
-    api
-      .post('/superset/session', undefined, controller.signal)
-      .then(() => setStatus('ready'))
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return
-        setError(cause instanceof ApiError ? cause.message : 'BI could not be opened')
-        setStatus('error')
-      })
-    return () => controller.abort()
-  }, [attempt])
 
   const followFrame = useCallback(() => {
     const next = framedPath(frame.current)
@@ -64,10 +45,9 @@ export function BiWorkspace({
   // Superset also moves between views with client-side routing, which fires
   // no load event; check the framed location while the frame is open.
   useEffect(() => {
-    if (status !== 'ready') return
     const timer = window.setInterval(followFrame, 1000)
     return () => window.clearInterval(timer)
-  }, [status, followFrame])
+  }, [followFrame])
 
   return (
     <div data-layout='fixed' className='flex h-full min-h-0 flex-col'>
@@ -87,7 +67,6 @@ export function BiWorkspace({
             size='icon'
             className='h-8 w-8'
             aria-label='Reload BI'
-            disabled={status !== 'ready'}
             onClick={() => frame.current?.contentWindow?.location.reload()}
           >
             <RotateCw className='h-3.5 w-3.5' />
@@ -106,28 +85,7 @@ export function BiWorkspace({
       </Header>
 
       <div className='flex min-h-0 flex-1 flex-col overflow-hidden border-t'>
-        {status === 'ready' ? (
-          <iframe
-            ref={frame}
-            src={source}
-            title='BI workspace'
-            className='min-h-0 w-full flex-1 border-0 bg-background'
-            onLoad={followFrame}
-          />
-        ) : status === 'error' ? (
-          <div className='flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center'>
-            <h2 className='text-base font-semibold'>BI could not be opened</h2>
-            <p className='max-w-md text-sm text-muted-foreground'>{error}</p>
-            <Button onClick={() => setAttempt((value) => value + 1)}>Try again</Button>
-          </div>
-        ) : (
-          <p
-            className='flex flex-1 items-center justify-center text-sm text-muted-foreground'
-            role='status'
-          >
-            Opening BI…
-          </p>
-        )}
+        <BiFrame ref={frame} path={source} title='BI workspace' onLoad={followFrame} />
       </div>
     </div>
   )

@@ -882,3 +882,14 @@ class TestParameterBinding:
 
         assert unquote_literal("'a''b\\nc'") == "a'b\nc"
         assert unquote_literal("'unterminated") is None
+
+
+def test_catalog_only_handshake_database_selects_no_database():
+    from app.proxy.session import connect_database
+
+    assert connect_database("default_catalog.") is None
+    assert connect_database("`default_catalog`.") is None
+    assert connect_database(None) is None
+    assert connect_database("sales") == "sales"
+    assert connect_database("default_catalog.sales") == "default_catalog.sales"
+    assert connect_database("iceberg.") == "iceberg."

@@ -1,11 +1,12 @@
 # Architecture 17: Superset as Studio's BI surface
 
-> Status: **accepted design; Phase 1 implemented.** This document is the
-> delivery plan for replacing Studio's viz-core chart and dashboard artifacts
-> with Apache Superset. Its open decisions were settled on 2026-10-29 (see
-> [Decisions](#decisions)). Phase 1 (identity and governed data) runs; Phases
-> 2-6 are not implemented, so Studio artifacts are still described by
-> [Architecture 16](arch-16-viz-core.md).
+> Status: **accepted design; Phases 1, 3 and 4 implemented.** This document is
+> the delivery plan for replacing Studio's viz-core chart and dashboard
+> artifacts with Apache Superset. Its open decisions were settled on 2026-10-29
+> (see [Decisions](#decisions)). New Studio artifacts are Superset charts and
+> dashboards. Phase 2 (background work and caches), Phase 5 and Phase 6 are not
+> implemented: artifacts saved before BI still render through
+> [Architecture 16](arch-16-viz-core.md) until Phase 6 converts them.
 
 Nova ships Apache Superset as a built-in component and shows it inside Studio
 as the surface for saved charts and dashboards. Superset brings its full feature
@@ -282,10 +283,10 @@ after the named patch passes), **Blocked** (off, with the reason).
 | Thumbnails and screenshots | Viewer, default role, partitioned cache | `THUMBNAIL_EXECUTORS`, patch (S9) | 2 | Patch |
 | Cache warmup | Editor, default role | `CACHE_WARMUP_EXECUTORS`, delegation | 2 | Ships |
 | Export: CSV, Excel, PNG, PDF, dashboard bundles | Superset exporters, audited by S12 | `EVENT_LOGGER` | 4 | Ships |
-| Import of dashboard bundles | Allowed for authors; imported databases are rejected so S8 holds | Import guard in `nova_superset` | 4 | Ships |
+| Import of bundles | Superset 6.1.0 gates `/import/` on `write`, so authors could import database definitions. Every import endpoint answers 404 (S8) | `nova_superset` request hook | 4 | Blocked |
 | Theme, dark mode | Tokens derived from [DESIGN.md](../DESIGN.md) | `THEME_DEFAULT`, `THEME_DARK`, `THEME_DEFAULT_MODE` | 3 | Ships |
-| Languages | Nova's supported languages | `LANGUAGES` | 3 | Ships |
-| Nova UI inside Superset (for example "Ask Nova") | Superset extension | `ENABLE_EXTENSIONS`, verify in Phase 3 | 3 | Ships if the extension API covers it, else Patch |
+| Languages | Superset's default (English), as Nova's console | `LANGUAGES` | 3 | Ships |
+| Nova UI inside Superset (for example "Ask Nova") | Not built; Studio's edit chat sits beside the framed chart instead | `ENABLE_EXTENSIONS` | — | Not planned yet |
 | Dashboard RBAC, ownership, sharing | Superset objects, gated by S6 roles | Role mapping | 1 | Ships |
 | Row-level security | Removed; Ranger owns it (S7) | Role definitions | — | Blocked |
 | Database management, upload to database | Removed (S8) | Role definitions | — | Blocked |
@@ -320,16 +321,16 @@ Nova components and read the Nova record; the body renders Superset.
 
 ### Host panel
 
-`frontend/src/features/studio/` gains a Superset host that frames
-`/bi/superset/dashboard/<uuid>/?standalone=…` or the Explore URL for a chart.
-A postMessage bridge, origin-checked on both sides, carries:
-- size changes so the panel fits its content;
-- navigation requests (open in full page, open the source thread);
-- theme mode changes from Nova;
-- filter hand-off from a Studio answer into dashboard native filters.
+`frontend/src/features/bi/bi-frame.tsx` frames a Superset view in the
+artifact panel: `/bi/explore/?slice_id=<id>&standalone=1` for a chart and
+`/bi/superset/dashboard/<id>/?standalone=2` for a dashboard. **Edit in BI**
+switches the frame to Explore or the dashboard's edit mode. The frame opens the
+BI session first and sets Superset's theme mode from Nova's before it loads.
 
-Phase 3 confirms which of these 6.1.0 supports in standalone mode; gaps go
-through an extension or a patch, not a fork.
+Because Superset is same-origin, Nova reads the framed location directly (to
+keep `/analytics?path=` in step) and sets the theme through shared storage; no
+postMessage bridge is needed. The panel owns the frame's size. Filter hand-off
+from a Studio answer into dashboard native filters is not implemented.
 
 ### Agent tools
 
@@ -437,9 +438,14 @@ Acceptance:
 
 ### Phase 3: Studio host
 
-Deliver: artifact pointer columns; Superset host panel; postMessage bridge;
-theme tokens from `DESIGN.md`; languages; extension for Nova UI inside Superset
-where the extension API allows.
+Deliver: artifact pointer columns; Superset host panel; theme tokens from
+`DESIGN.md`.
+
+Status: **delivered** (`bi_kind`, `bi_object_id`, `bi_dataset_id` on
+`CONFIG_STUDIO_ARTIFACTS`; `BiFrame` in the artifact panel; Nova primary,
+font, radius and dark surface in `superset_config.py`). The postMessage bridge
+was not needed (see [Host panel](#host-panel)); languages stay Superset's
+default; no Superset extension was built.
 
 Acceptance:
 - A Superset dashboard and chart open in Studio's artifact panel without a
@@ -453,6 +459,17 @@ Acceptance:
 
 Deliver: new dataset, chart, and dashboard tools; typed `form_data` translator;
 rewritten artifact editor; Superset exports with audit; import guard.
+
+Status: **delivered.** `backend/app/modules/superset/charts.py` reduces a
+worksheet, a Vega-Lite chart or a bare result to a `ChartPlan` and builds
+`form_data` and a `query_context`; `artifacts.py` publishes the dataset, chart
+and dashboard as the user, runs the chart's query through Superset's chart data
+API before saving, and audits each step. Saving a result (the Intelligent UI
+and chat save buttons), `dashboard_build`, the artifact editor's apply step and
+artifact deletion all use it. A role that is not a BI author is refused before
+Superset is called. Imports are blocked rather than guarded (see the feature
+matrix). Acceptance is automated in
+`backend/tests/integration/test_superset_governed.py::test_superset_phases_3_and_4_acceptance`.
 
 Acceptance:
 - Studio trajectories in `tests/eval/` that previously produced chart and
