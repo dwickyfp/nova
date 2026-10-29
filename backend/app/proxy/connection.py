@@ -26,10 +26,14 @@ from dataclasses import dataclass
 
 import asyncmy
 
+from app.common.audit import write_audit_log
+from app.core.security import decrypt_password
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
+from app.modules.superset import tokens as bi_tokens
+from app.modules.superset.access import peer_allowed
 from app.observability.metrics import PROXY_QUERIES
 from app.proxy.auth import (
     AuthenticatedUser,
@@ -79,6 +83,7 @@ from app.proxy.protocol import (
     frame_payload,
     parse_handshake_response,
     parse_stmt_execute,
+    scramble_native_password,
 )
 from app.proxy.session import (
     SessionState,
@@ -91,6 +96,21 @@ from app.proxy.session import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Commands that touch the engine. On a Superset connection each one first
+#: re-checks the Nova session the connection is bound to.
+_BI_CHECKED_COMMANDS = frozenset(
+    {
+        COM_QUERY,
+        COM_INIT_DB,
+        COM_STMT_PREPARE,
+        COM_STMT_EXECUTE,
+        COM_STMT_FETCH,
+        COM_FIELD_LIST,
+        COM_CHANGE_USER,
+    }
+)
+
 
 class PreparedStatement:
     """A ``COM_STMT_PREPARE`` statement held by the proxy until it is closed."""
@@ -114,6 +134,9 @@ class ConnectionContext:
     session_id: str | None = None
     connection: asyncmy.Connection | None = None
     upstream: StarRocksLogin | None = None
+    #: Set when the client logged in with a Superset data token: the Nova
+    #: session, role and context version the connection is bound to.
+    bi_binding: bi_tokens.TokenBinding | None = None
 
 
 class ProxyConnection:
@@ -135,6 +158,7 @@ class ProxyConnection:
             peer=self._peer_name(writer),
             session=SessionState(),
         )
+        self._peer_host = self._peer_name(writer).rsplit(":", 1)[0]
         self._executor = ProxyQueryExecutor(self._ctx.session)
         self._closing = False
         #: Sequence id the next response starts at: one past the client's
@@ -306,10 +330,35 @@ class ProxyConnection:
 
             self._ctx.capabilities = response.capabilities & SERVER_CAPABILITIES
 
+            auth_response = response.auth_response
+            binding = await self._match_bi_token(
+                response.username, upstream.scramble, response.auth_response
+            )
+            if binding is not None:
+                try:
+                    bi_session = await bi_tokens.verify_binding(binding)
+                except bi_tokens.BiCredentialError as exc:
+                    await self._audit_bi_refusal(response.username, binding, str(exc))
+                    await self._write_error(
+                        ER_ACCESS_DENIED_ERROR,
+                        f"Access denied for user '{response.username}'",
+                        sequence=2,
+                    )
+                    await upstream.close()
+                    return False
+                # The token proved the client is Superset acting for this Nova
+                # session. The engine login is then completed with the
+                # session's own credential against StarRocks' scramble, so the
+                # engine authenticates the principal exactly as for a relay.
+                auth_response = scramble_native_password(
+                    decrypt_password(bi_session.encrypted_password), upstream.scramble
+                )
+                self._ctx.bi_binding = binding
+
             try:
                 await upstream.finish(
                     username=response.username,
-                    auth_response=response.auth_response,
+                    auth_response=auth_response,
                     database=response.database,
                 )
             except AuthenticationError as exc:
@@ -333,6 +382,8 @@ class ProxyConnection:
         self._ctx.upstream = upstream
 
         requested_role = response.connect_attrs.get("nova_role") or None
+        if self._ctx.bi_binding is not None:
+            requested_role = self._ctx.bi_binding.active_role
         try:
             active_role, assignments = await role_activation_service.activate(
                 self._ctx.connection,
@@ -350,12 +401,20 @@ class ProxyConnection:
             await upstream.close()
             return False
 
+        if self._ctx.bi_binding is not None and active_role != self._ctx.bi_binding.active_role:
+            await self._write_error(
+                ER_ACCESS_DENIED_ERROR, "The Nova session's active role is unavailable", sequence=2
+            )
+            await upstream.close()
+            return False
+
         self._ctx.session.establish_security(
             principal=response.username,
             assigned_roles=assignments.assigned_roles,
             default_role=assignments.default_role or "",
             active_role=active_role,
         )
+        self._ctx.session.role_locked = self._ctx.bi_binding is not None
 
         self._ctx.user = AuthenticatedUser(
             username=response.username,
@@ -383,6 +442,59 @@ class ProxyConnection:
         )
         return True
 
+    async def _match_bi_token(
+        self, username: str, scramble: bytes, auth_response: bytes
+    ) -> bi_tokens.TokenBinding | None:
+        """Return the Superset data token this response was computed from, if any.
+
+        Only clients on a Superset service network are considered; anything
+        else, or any lookup failure, falls through to the ordinary relay, where
+        StarRocks refuses a token it has never seen.
+        """
+        if not peer_allowed(self._peer_host):
+            return None
+        try:
+            return await bi_tokens.match_data_token(username, scramble, auth_response)
+        except Exception:
+            logger.warning("[%s] BI token lookup failed", self._ctx.connection_id)
+            return None
+
+    async def _audit_bi_refusal(
+        self, username: str, binding: bi_tokens.TokenBinding, reason: str
+    ) -> None:
+        logger.info("[%s] BI login refused for %r: %s", self._ctx.connection_id, username, reason)
+        with contextlib.suppress(Exception):
+            await write_audit_log(
+                event_type="bi_proxy_login",
+                user_name=username,
+                action="BI_PROXY_LOGIN",
+                object_type="SUPERSET",
+                object_name=binding.active_role or "-",
+                status="DENIED",
+                error_message=reason,
+                session_id=binding.session_id,
+                active_role=binding.active_role or None,
+                security_context_version=binding.security_context_version,
+            )
+
+    async def _bi_binding_holds(self) -> bool:
+        """For a Superset connection, re-check its Nova session before a command.
+
+        A role switch, logout or expired session ends the connection: Superset
+        reconnects with a fresh token for the session's current state.
+        """
+        binding = self._ctx.bi_binding
+        if binding is None:
+            return True
+        try:
+            await bi_tokens.verify_binding(binding)
+        except bi_tokens.BiCredentialError as exc:
+            assert self._ctx.user is not None
+            await self._audit_bi_refusal(self._ctx.user.username, binding, str(exc))
+            await self._write_error(ER_ACCESS_DENIED_ERROR, str(exc))
+            return False
+        return True
+
     # ── Command loop ──────────────────────────────────────────────────────
 
     async def _command_loop(self) -> None:
@@ -395,6 +507,9 @@ class ProxyConnection:
 
             command = payload[0]
             body = payload[1:]
+
+            if command in _BI_CHECKED_COMMANDS and not await self._bi_binding_holds():
+                return
 
             if command == COM_QUIT:
                 logger.debug("[%s] COM_QUIT", self._ctx.connection_id)

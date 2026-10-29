@@ -20,6 +20,7 @@ import signal
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.core.redis import session_store
 from app.observability.metrics import PROXY_EXPECTED, start_metrics_server
 from app.proxy.server import MySQLProxyServer
 
@@ -31,6 +32,8 @@ async def _run() -> None:
     # with SECRET_KEY, so a missing key must abort boot (NOVA-108).
     require_configured_secrets()
     await db.init_system_pool()
+    # Superset logs in with data tokens bound to Nova sessions in Redis.
+    await session_store.init()
     PROXY_EXPECTED.set(1)
     start_metrics_server("proxy")
     server = MySQLProxyServer()
@@ -67,6 +70,7 @@ async def _run() -> None:
         await server.stop()
         telemetry_stop.set()
         await telemetry_task
+        await session_store.close()
         await db.close_system_pool()
 
 

@@ -393,6 +393,45 @@ http://localhost:8000/api/*
 
 Karena itu, backend harus tetap berjalan pada port `8000`.
 
+### BI (Superset) di `/bi`
+
+Superset berjalan sebagai bagian dari profile `app` stack engine
+([arsitektur](docs/arch-17-superset.md)). Isi tiga nilai ini sekali di
+`docker/.env` (simpan, jangan diganti setelah dipakai):
+
+```text
+SUPERSET_SECRET_KEY=        # openssl rand -base64 42
+SUPERSET_DB_PASSWORD=       # openssl rand -hex 24
+NOVA_SUPERSET_SERVICE_TOKEN=  # openssl rand -hex 32, dipakai backend dan Superset
+```
+
+Jalankan atau perbarui service-nya di project compose yang sudah berjalan
+(nama project `docker` di mesin ini; sesuaikan bila berbeda):
+
+```bash
+cd docker
+docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml --profile app up -d --build --no-deps nova-backend superset-db superset-init superset
+```
+
+Vite meneruskan `/bi/*` ke Superset (`127.0.0.1:8088`), jadi buka
+[http://localhost:5173/bi-launch](http://localhost:5173/bi-launch) atau menu
+**BI** di sidebar. Login hanya lewat Nova; Superset tidak punya form login
+sendiri. Role yang boleh membuat chart/dataset diatur `ACCOUNTADMIN` lewat
+`PUT /api/v1/superset/author-roles`; role lain mendapat akses lihat saja.
+
+Acceptance Fase 1 di stack governed (membuat dan menghapus sendiri user, role,
+policy Ranger, dan data ujinya):
+
+```bash
+cd backend
+TOKEN=$(grep '^NOVA_SUPERSET_SERVICE_TOKEN=' ../docker/.env | cut -d= -f2-)
+STARROCKS_HOST=127.0.0.1 STARROCKS_FE_MYSQL_PORT=29030 \
+NOVA_SUPERSET_URL=http://127.0.0.1:8088 NOVA_SUPERSET_SERVICE_TOKEN="$TOKEN" \
+NOVA_SUPERSET_LOG_CONTAINERS=nova-superset,nova-backend,nova-superset-db \
+NOVA_SUPERSET_DB_CONTAINER=nova-superset-db \
+uv run pytest tests/integration/test_superset_governed.py -v -rs
+```
+
 ---
 
 ## 4. Jalankan nova-scheduler

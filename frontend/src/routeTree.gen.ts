@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as BiLaunchRouteImport } from './routes/bi-launch'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
@@ -59,6 +60,11 @@ import { Route as AuthenticatedAgentsSemanticBuilderRouteImport } from './routes
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BiLaunchRoute = BiLaunchRouteImport.update({
+  id: '/bi-launch',
+  path: '/bi-launch',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudioRoute = StudioRouteImport.update({
@@ -329,6 +335,7 @@ const AuthenticatedAgentsSemanticBuilderRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/sign-in': typeof authSignInRoute
@@ -376,6 +383,7 @@ export interface FileRoutesByFullPath {
   '/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesByTo {
+  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
@@ -425,6 +433,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/(auth)/sign-in': typeof authSignInRoute
@@ -476,6 +485,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/bi-launch'
     | '/studio'
     | '/monitoring'
     | '/sign-in'
@@ -523,6 +533,7 @@ export interface FileRouteTypes {
     | '/agents/semantic/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/bi-launch'
     | '/studio'
     | '/sign-in'
     | '/access-control'
@@ -571,6 +582,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
+    | '/bi-launch'
     | '/studio'
     | '/_authenticated/monitoring'
     | '/(auth)/sign-in'
@@ -621,6 +633,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  BiLaunchRoute: typeof BiLaunchRoute
   StudioRoute: typeof StudioRoute
   authSignInRoute: typeof authSignInRoute
 }
@@ -632,6 +645,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bi-launch': {
+      id: '/bi-launch'
+      path: '/bi-launch'
+      fullPath: '/bi-launch'
+      preLoaderRoute: typeof BiLaunchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/studio': {
@@ -1075,6 +1095,7 @@ const AuthenticatedRouteRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  BiLaunchRoute: BiLaunchRoute,
   StudioRoute: StudioRoute,
   authSignInRoute: authSignInRoute,
 }

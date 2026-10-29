@@ -3,6 +3,7 @@ import {
   Brain,
   BrainCircuit,
   BookOpen,
+  ChartColumn,
   Clock,
   Database,
   Network,
@@ -93,6 +94,13 @@ export const sidebarData: SidebarData = {
               // A full-page standalone surface: open it in a new tab so the
               // console keeps its current page, the way Snowflake CoWork opens
               // separately.
+              newTab: true,
+            },
+            {
+              title: "BI",
+              url: "/bi-launch",
+              icon: ChartColumn,
+              // Superset runs as its own full-page surface under /bi.
               newTab: true,
             },
             {

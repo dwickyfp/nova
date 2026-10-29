@@ -60,6 +60,8 @@ from app.modules.query.router import router as query_router
 from app.modules.query_autopilot.router import router as query_autopilot_router
 from app.modules.resource_groups.router import router as resource_groups_router
 from app.modules.stages.router import router as stages_router
+from app.modules.superset.router import internal_router as superset_internal_router
+from app.modules.superset.router import router as superset_router
 from app.modules.system.router import router as system_router
 from app.modules.tables.router import router as tables_router
 from app.modules.task_orchestration.router import router as task_orchestration_router
@@ -460,6 +462,11 @@ def create_app() -> FastAPI:
     # Called by the engine's ``ai_query()``, not by browsers. Authenticated by
     # the per-alias token in the function body; keep it off the public gateway.
     app.include_router(llm_gateway_router, prefix=f"{prefix}/internal/llm", tags=["internal"])
+    app.include_router(superset_router, prefix=f"{prefix}/superset", tags=["superset"])
+    # Called only by Superset's services; never routed through the gateway.
+    app.include_router(
+        superset_internal_router, prefix=f"{prefix}/internal/superset", tags=["internal"]
+    )
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])

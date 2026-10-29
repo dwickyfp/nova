@@ -1,10 +1,11 @@
 # Architecture 17: Superset as Studio's BI surface
 
-> Status: **accepted design, not implemented.** This document is the delivery
-> plan for replacing Studio's viz-core chart and dashboard artifacts with Apache
-> Superset. Its open decisions were settled on 2026-10-29 (see
-> [Decisions](#decisions)). Until a phase below lands with its acceptance
-> checks, [Architecture 16](arch-16-viz-core.md) describes the running system.
+> Status: **accepted design; Phase 1 implemented.** This document is the
+> delivery plan for replacing Studio's viz-core chart and dashboard artifacts
+> with Apache Superset. Its open decisions were settled on 2026-10-29 (see
+> [Decisions](#decisions)). Phase 1 (identity and governed data) runs; Phases
+> 2-6 are not implemented, so Studio artifacts are still described by
+> [Architecture 16](arch-16-viz-core.md).
 
 Nova ships Apache Superset as a built-in component and shows it inside Studio
 as the surface for saved charts and dashboards. Superset brings its full feature
@@ -59,7 +60,7 @@ checked against that tag. Features only on Superset `master` (for example the
 flowchart LR
     Browser --> Gateway[Nova gateway]
     Gateway --> NovaFE[Nova frontend: Studio]
-    Gateway -->|/bi/, auth_request| SupWeb[Superset web]
+    Gateway -->|/bi/| SupWeb[Superset web]
     NovaFE -->|same-origin iframe| SupWeb
     SupWeb --> SupMeta[(Superset metadata: Postgres)]
     SupWeb --> Redis[(Redis: cache, Celery broker)]
@@ -69,7 +70,7 @@ flowchart LR
     SupWorker -->|delegated token| Proxy
     Proxy --> QS[QueryService: guard, SQL frontend, audit]
     QS --> SR[StarRocks FE, patched, Ranger]
-    SupWeb -->|internal API| NovaAPI[Nova backend /api/v1/internal/superset]
+    SupWeb -->|identity + token per request| NovaAPI[Nova backend /api/v1/internal/superset]
     SupWorker -->|internal API| NovaAPI
     NovaAPI --> Redis
     NovaAPI --> SR
@@ -97,10 +98,11 @@ flowchart LR
 | `superset/nova_superset/` | Python package: security manager, connection mutator, event logger, Jinja addons, Nova API client |
 | `superset/extensions/` | Superset extensions for Nova-specific UI inside Superset, when `ENABLE_EXTENSIONS` covers the need |
 | `patches/superset/` | `6.1.0-*.patch`, `README.md`, `verify.sh`, mirroring `patches/starrocks/` |
-| `backend/app/modules/superset/` | Internal API: token minting, delegation, provisioning, audit intake, semantic sync |
-| `backend/app/proxy/auth.py` | Token login mode next to the existing scramble relay |
+| `backend/app/modules/superset/` | BI session and author-role API; internal identity and data-token API (Phase 1). Delegation, audit intake and semantic sync arrive in later phases |
+| `backend/app/proxy/connection.py` | Token login next to the existing scramble relay, and per-command re-checks of the bound session |
 | `frontend/src/features/studio/` | Superset host panel and postMessage bridge |
-| `docker/` | Superset web, worker, beat and metadata services in the existing compose project; gateway route `/bi/` |
+| `frontend/src/routes/bi-launch.tsx` | Opens a BI session for the signed-in user and hands the browser to `/bi/` |
+| `docker/` | Superset web, init and metadata services in the existing compose project (worker and beat join in Phase 2); gateway route `/bi/` |
 
 ## Security contract
 
@@ -108,16 +110,27 @@ Each rule below is a release blocker. A phase that touches a rule must show the
 listed check passing on the governed (patched FE + Ranger) stack.
 
 **S1. One identity source.** Superset runs a custom security manager
-(`CUSTOM_SECURITY_MANAGER`) with remote-user authentication. The gateway
-validates the Nova JWT with an `auth_request` to Nova and forwards the
-principal; Superset creates or updates a shadow user with no usable password.
-`AUTH_DB` login, self-registration, password reset, and the FAB user/role
-editing views are disabled. A Nova user that cannot authenticate cannot reach
-Superset.
+(`CUSTOM_SECURITY_MANAGER`) with remote-user authentication. Nova's
+`/bi-launch` route calls `POST /api/v1/superset/session`, which sets an
+HttpOnly, `SameSite=Strict` cookie `nova_bi` scoped to `/bi`. Its value is an
+opaque BI handle bound to the Nova session (stored hashed in Redis), not the
+Nova JWT. On every request Superset trades the handle for the identity at
+`/api/v1/internal/superset/identity` and creates or updates a mirror user with
+no password and exactly one Nova role. Superset's own sign-in does not exist:
+`/login/` redirects to Nova, and the password login API, registration, password
+reset and the FAB user/role views answer 404 or are absent from every Nova
+role. A Nova user that cannot authenticate cannot reach Superset.
 
-**S2. Session binding.** The security manager stores the Nova session id on
-the Flask request context. Superset does not cache identity beyond the
-request; every request re-validates through the gateway.
+This replaces the gateway `auth_request` of the first draft: the check lives in
+Superset's request hook, so it holds in every topology (Vite in development,
+the gateway when split, a direct port) and never trusts a forwarded header.
+
+**S2. Session binding.** The request hook keeps the handle and identity in
+context variables cleared at the start and end of every request, so they
+survive Superset's nested request contexts (synchronous SQL Lab) without
+leaking across requests on a worker thread. Superset does not cache identity
+beyond the request; every request re-validates with Nova, and a Nova outage
+answers 503 rather than reusing an old identity.
 
 **S3. Per-user data token.** `DB_CONNECTION_MUTATOR` asks Nova's internal API
 for a short-lived token bound to `{principal, session_id, active_role,
@@ -136,10 +149,15 @@ password for the Superset database "Nova". Rules:
 ordinary MySQL clients and adds a token mode for Superset. The token is
 verified by the proxy itself; on success the proxy opens the engine session
 from the bound Nova session and activates its role, exactly as the HTTP query
-path does. Verification uses `mysql_native_password` with the proxy's own
-scramble: for a token-mode login the proxy issues a fresh 20-byte scramble,
-looks up the principal's live tokens, and checks the client's response against
-each stored token, so the token itself never crosses the wire. Because the
+path does. Verification uses `mysql_native_password` against the scramble the
+proxy itself presents: the proxy relays StarRocks' fresh 20-byte scramble, so
+it knows it, looks up the principal's live tokens, and checks the client's
+response against each stored token; the token never crosses the wire. On a
+match the proxy completes the engine login on the same socket with the bound
+session's own credential, activates the bound role through the role activation
+service (assignment and Ranger projection), locks the role for the connection,
+and re-checks the binding before every command. Any other client takes the
+unchanged relay path. Because the
 response must be checked against the token value, Redis keeps the token in a
 form the proxy can verify with, encrypted under the same scheme as session
 passwords, not as a one-way hash. A principal has at most a small, bounded
@@ -171,8 +189,16 @@ three Superset roles from the *active* Nova role:
 | `NovaAuthor` | Alpha, minus database admin | Explore; create and edit charts, dashboards, datasets; SQL Lab | A role listed in Nova's BI author mapping |
 | `NovaAdmin` | Admin, minus security and database admin | Manage Superset objects across owners | `ACCOUNTADMIN` |
 
-The author mapping is Nova control-plane metadata in `NOVA_SYSTEM`, edited by
-`ACCOUNTADMIN` through Nova, never inside Superset. An unmapped or missing role
+The author mapping is Nova control-plane metadata in `NOVA_SYSTEM`
+(`CONFIG_BI_AUTHOR_ROLES`), edited by `ACCOUNTADMIN` through
+`PUT /api/v1/superset/author-roles`, never inside Superset. Superset builds
+datasets by reflecting tables as the principal, so the same request writes the
+managed Ranger policy `nova-managed/bi/metadata/default_catalog`: `select` on
+the `information_schema` reflection views (`tables`, `tables_config`,
+`columns`, `views`, `materialized_views`) for exactly the author roles plus
+`ACCOUNTADMIN`. The policy is written first; if Ranger refuses it, the author
+list is left unchanged. Rows in those views remain limited to objects the
+principal can already see. An unmapped or missing role
 gets `NovaViewer`; an ambiguous security context gets no Superset session.
 Dataset-level access is granted broadly to authors (`all_datasource_access` on
 the single Nova database) because Ranger decides what rows and columns each
@@ -202,6 +228,11 @@ user's active role with the default role, which violates S3. They stay off
 until a patch carries the Nova session reference from submission into the
 Celery task and the proxy validates it like S3. Long-running interactive SQL
 stays in Nova's Console.
+
+Revocation reaches data first: a revoked role assignment or dropped user fails
+the next query (role activation or engine login refuses it), while the Superset
+pages themselves stay reachable until the Nova session ends, as Nova's own pages
+do.
 
 **S11. ACCOUNTADMIN.** Statements from Superset pass the same guard as every
 proxy statement. Superset bootstrap never creates, alters, or grants on
@@ -337,6 +368,12 @@ patch. Planned patches:
 Each patch is offered upstream where it is generally useful, and dropped at the
 first pin that makes it unnecessary.
 
+Two 6.1.0 behaviors are handled in `nova_superset` without a patch, and are
+re-checked at every pin: Superset reads MySQL result types from the `MySQLdb`
+module, which `superset_config.py` provides through PyMySQL's
+`install_as_MySQLdb()`; and the theme logo is prefixed with the app root by
+both server and browser, which the app hook undoes on the server side.
+
 ## Delivery phases
 
 Every phase is production quality: it lands complete with tests, docs, and its
@@ -345,11 +382,17 @@ authoring path active.
 
 ### Phase 1: identity and governed data
 
-Deliver: Superset web, worker, beat, and metadata services in the existing
-compose project; `/bi/` gateway route with `auth_request`; security manager and
-role mapping; internal token API; proxy token mode; mutator; bootstrap of the
-single "Nova" database; role definitions removing RLS and database admin;
-synchronous SQL Lab; `nova_active_role()` Jinja addon.
+Deliver: Superset web, init, and metadata services in the existing compose
+project; `/bi-launch` and the `/bi/` route (Vite in development, gateway when
+split); security manager, request hook and role mapping; BI session, identity
+and data-token API; proxy token mode; mutator; bootstrap of the single "Nova"
+database; role definitions removing RLS and database admin; synchronous SQL
+Lab; `nova_active_role()` Jinja addon. Celery worker and beat serve only
+background work and join in Phase 2.
+
+Status: **delivered.** The acceptance below is automated in
+`backend/tests/integration/test_superset_governed.py` and runs against the
+governed stack; see [HOW_TO_RUN.md](../HOW_TO_RUN.md) for the command.
 
 Acceptance:
 - A Nova user opens `/bi/` and lands signed in; an unauthenticated request is
@@ -359,11 +402,12 @@ Acceptance:
   columns for the same chart and the same SQL Lab statement.
 - After a role switch, the next Superset query uses the new role; a query on a
   token minted before the switch is refused.
-- After revoking a role assignment or disabling a user, the next Superset
-  request and the next query are refused.
+- After revoking a role assignment or dropping a user, the next query is
+  refused; signing out of Nova ends the BI session for every request.
 - An assigned-but-inactive role grants nothing.
 - No Nova role can create or edit a database, open RLS, or change "Nova".
-- `DROP ROLE ACCOUNTADMIN` from SQL Lab is refused by the guard.
+- `DROP ROLE ACCOUNTADMIN` from SQL Lab is refused (SQL Lab DML is off for
+  "Nova"), and on a Superset proxy connection the guard refuses it too.
 - Every Superset query appears in `AUDIT_LOG` with the real principal and role.
 - No secret appears in Superset metadata, Superset logs, Nova logs, or API
   responses (grep-based check over a full test run).

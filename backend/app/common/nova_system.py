@@ -505,6 +505,9 @@ async def init_nova_system() -> None:
             CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL,
         ):
             await db.execute_system(ddl)
+        from app.modules.superset.access import AUTHOR_ROLES_DDL
+
+        await db.execute_system(AUTHOR_ROLES_DDL)
 
 
 async def is_setup_complete() -> bool:

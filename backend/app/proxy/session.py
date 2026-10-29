@@ -124,6 +124,9 @@ class SessionState:
     #: An explicit engine transaction (``BEGIN`` … ``COMMIT``/``ROLLBACK``) is open
     #: on this connection's engine session.
     in_transaction: bool = False
+    #: The active role follows a Nova session (Superset data-token login), so
+    #: role statements on this connection are refused rather than applied.
+    role_locked: bool = False
 
     def set_database(self, database: str) -> None:
         self.database = database or None

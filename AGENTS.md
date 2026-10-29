@@ -143,6 +143,7 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 | Shared agent loop, context, providers, consent, tools | [assistant guide](backend/app/modules/assistant/AGENTS.md) |
 | Studio, Smart, delegation, resources, memory, recovery | [agents guide](backend/app/modules/agents/AGENTS.md), [Smart architecture](docs/arch-11-smart-collaboration.md) |
 | Viz core, charts, dashboards, ShowMe, presentation models | [viz architecture](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
+| Superset BI surface, `/bi`, BI tokens, `nova_superset` | [Superset architecture](docs/arch-17-superset.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
 | Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
 | Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
 | StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |
@@ -163,6 +164,7 @@ CI suites. Changes spanning backend and frontend require both sets of checks.
 | Agent behavior | Backend checks plus affected `tests/eval/` trajectories; benchmarks when overhead changes |
 | Ranger/security or engine patch | Backend/integration checks as applicable plus patched-FE policy/role acceptance |
 | Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, CI browser setup and affected layout/state checks |
+| Superset image or `nova_superset` | CI `superset` job (image build, package tests) plus `test_superset_governed.py` on the governed stack |
 
 Full-tree Ruff is report-only in CI; changed-file Ruff and full-application mypy
 are blocking. Do not disable tests, weaken assertions, or bypass gates. No tests

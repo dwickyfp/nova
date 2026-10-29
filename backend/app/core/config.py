@@ -224,6 +224,20 @@ class Settings(BaseSettings):
     #: addition to loopback. Empty means loopback only.
     NOVA_INTERNAL_TRUSTED_PROXY: str = ""
 
+    # --- Superset BI surface (docs/arch-17-superset.md) ---
+    #: Shared secret Superset presents on /api/v1/internal/superset/*. No
+    #: default: unset means those endpoints fail closed (503).
+    SUPERSET_SERVICE_TOKEN: str = ""
+    #: Networks Superset's services connect from, for the internal endpoints
+    #: and the MySQL proxy's token login. Comma-separated CIDRs.
+    SUPERSET_SERVICE_NETWORKS: str = (
+        "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    )
+    #: Lifetime of a per-session data token Superset uses as its proxy password.
+    SUPERSET_DATA_TOKEN_TTL_SECONDS: int = Field(default=300, ge=60, le=3600)
+    #: Live data tokens kept per principal; the oldest is evicted beyond this.
+    SUPERSET_MAX_TOKENS_PER_PRINCIPAL: int = Field(default=8, ge=1, le=64)
+
     # --- ML execution ---
     ML_MYSQL_BATCH_SIZE: int = 4096
     ML_INTERACTIVE_TIMEOUT_SECONDS: float = 10.0
