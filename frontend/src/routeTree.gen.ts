@@ -17,6 +17,7 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAccessControlRouteImport } from './routes/_authenticated/access-control'
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
 import { Route as AuthenticatedAiSearchRouteImport } from './routes/_authenticated/ai-search'
+import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
 import { Route as AuthenticatedEntitiesRouteImport } from './routes/_authenticated/entities'
 import { Route as AuthenticatedFeatureStoreRouteImport } from './routes/_authenticated/feature-store'
@@ -97,6 +98,11 @@ const AuthenticatedActiveQueryRoute =
 const AuthenticatedAiSearchRoute = AuthenticatedAiSearchRouteImport.update({
   id: '/ai-search',
   path: '/ai-search',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedDatabaseExplorerRoute =
@@ -342,6 +348,7 @@ export interface FileRoutesByFullPath {
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
   '/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -389,6 +396,7 @@ export interface FileRoutesByTo {
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
   '/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -440,6 +448,7 @@ export interface FileRoutesById {
   '/_authenticated/access-control': typeof AuthenticatedAccessControlRoute
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
   '/_authenticated/ai-search': typeof AuthenticatedAiSearchRoute
+  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/_authenticated/entities': typeof AuthenticatedEntitiesRoute
   '/_authenticated/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -492,6 +501,7 @@ export interface FileRouteTypes {
     | '/access-control'
     | '/active-query'
     | '/ai-search'
+    | '/analytics'
     | '/database-explorer'
     | '/entities'
     | '/feature-store'
@@ -539,6 +549,7 @@ export interface FileRouteTypes {
     | '/access-control'
     | '/active-query'
     | '/ai-search'
+    | '/analytics'
     | '/database-explorer'
     | '/entities'
     | '/feature-store'
@@ -589,6 +600,7 @@ export interface FileRouteTypes {
     | '/_authenticated/access-control'
     | '/_authenticated/active-query'
     | '/_authenticated/ai-search'
+    | '/_authenticated/analytics'
     | '/_authenticated/database-explorer'
     | '/_authenticated/entities'
     | '/_authenticated/feature-store'
@@ -694,6 +706,13 @@ declare module '@tanstack/react-router' {
       path: '/ai-search'
       fullPath: '/ai-search'
       preLoaderRoute: typeof AuthenticatedAiSearchRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/analytics': {
+      id: '/_authenticated/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/database-explorer': {
@@ -1015,6 +1034,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccessControlRoute: typeof AuthenticatedAccessControlRoute
   AuthenticatedActiveQueryRoute: typeof AuthenticatedActiveQueryRoute
   AuthenticatedAiSearchRoute: typeof AuthenticatedAiSearchRoute
+  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
   AuthenticatedEntitiesRoute: typeof AuthenticatedEntitiesRoute
   AuthenticatedFeatureStoreRoute: typeof AuthenticatedFeatureStoreRoute
@@ -1054,6 +1074,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccessControlRoute: AuthenticatedAccessControlRoute,
   AuthenticatedActiveQueryRoute: AuthenticatedActiveQueryRoute,
   AuthenticatedAiSearchRoute: AuthenticatedAiSearchRoute,
+  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
   AuthenticatedEntitiesRoute: AuthenticatedEntitiesRoute,
   AuthenticatedFeatureStoreRoute: AuthenticatedFeatureStoreRoute,

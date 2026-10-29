@@ -101,7 +101,8 @@ flowchart LR
 | `backend/app/modules/superset/` | BI session and author-role API; internal identity and data-token API (Phase 1). Delegation, audit intake and semantic sync arrive in later phases |
 | `backend/app/proxy/connection.py` | Token login next to the existing scramble relay, and per-command re-checks of the bound session |
 | `frontend/src/features/studio/` | Superset host panel and postMessage bridge |
-| `frontend/src/routes/bi-launch.tsx` | Opens a BI session for the signed-in user and hands the browser to `/bi/` |
+| `frontend/src/routes/_authenticated/analytics.tsx` | The BI page inside Nova's console frame: opens a BI session, frames `/bi/`, and keeps the framed view in `?path=` |
+| `frontend/src/routes/bi-launch.tsx` | Opens a BI session and hands the browser to `/bi/`; Superset's sign-in redirect and "Open in new tab" use it |
 | `docker/` | Superset web, init and metadata services in the existing compose project (worker and beat join in Phase 2); gateway route `/bi/` |
 
 ## Security contract
@@ -389,6 +390,11 @@ and data-token API; proxy token mode; mutator; bootstrap of the single "Nova"
 database; role definitions removing RLS and database admin; synchronous SQL
 Lab; `nova_active_role()` Jinja addon. Celery worker and beat serve only
 background work and join in Phase 2.
+
+The sidebar's **BI** entry opens `/analytics`, which keeps Nova's sidebar and
+header around a same-origin Superset frame (S14 allows only Nova's origin to
+frame it). Superset's own navigation stays inside the frame; a full-page
+Superset remains one click away.
 
 Status: **delivered.** The acceptance below is automated in
 `backend/tests/integration/test_superset_governed.py` and runs against the

@@ -413,9 +413,10 @@ cd docker
 docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml --profile app up -d --build --no-deps nova-backend superset-db superset-init superset
 ```
 
-Vite meneruskan `/bi/*` ke Superset (`127.0.0.1:8088`), jadi buka
-[http://localhost:5173/bi-launch](http://localhost:5173/bi-launch) atau menu
-**BI** di sidebar. Login hanya lewat Nova; Superset tidak punya form login
+Vite meneruskan `/bi/*` ke Superset (`127.0.0.1:8088`). Buka menu **BI** di
+sidebar ([http://localhost:5173/analytics](http://localhost:5173/analytics)):
+Superset tampil di dalam frame Nova. Versi layar penuh ada di
+[http://localhost:5173/bi-launch](http://localhost:5173/bi-launch). Login hanya lewat Nova; Superset tidak punya form login
 sendiri. Role yang boleh membuat chart/dataset diatur `ACCOUNTADMIN` lewat
 `PUT /api/v1/superset/author-roles`; role lain mendapat akses lihat saja.
 

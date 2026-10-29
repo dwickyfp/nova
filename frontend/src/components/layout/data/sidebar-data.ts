@@ -98,10 +98,8 @@ export const sidebarData: SidebarData = {
             },
             {
               title: "BI",
-              url: "/bi-launch",
+              url: "/analytics",
               icon: ChartColumn,
-              // Superset runs as its own full-page surface under /bi.
-              newTab: true,
             },
             {
               title: "Entities",
