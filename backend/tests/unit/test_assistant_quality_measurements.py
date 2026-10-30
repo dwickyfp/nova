@@ -375,6 +375,87 @@ async def test_token_allowance_composes_near_limit_and_stops_when_exhausted(limi
     assert TurnResult(frames=frames).finish_reason == finish_reason
 
 
+async def test_planner_tokens_inside_a_tool_count_toward_composing_before_the_limit():
+    """A semantic query spends model tokens of its own. They count against the
+    allowance, so they also decide when to answer from the results in hand."""
+
+    class PlannerTool(EvalTool):
+        async def run(self, invocation, context):
+            context.quality_measurements.response(
+                {"usage": {"prompt_tokens": 600, "completion_tokens": 50, "total_tokens": 650}}
+            )
+            return await super().run(invocation, context)
+
+    tool = PlannerTool("search_knowledge")
+    registry = ToolRegistry()
+    registry.register(tool)
+    usage = {"prompt_tokens": 90, "completion_tokens": 10, "total_tokens": 100}
+
+    class Provider(ScriptedProvider):
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.calls += 1
+            if tools:
+                yield ("message", {**tool_call_frame(
+                    f"c{self.calls}", name="search_knowledge", sql=f"SELECT {self.calls}",
+                ), "usage": usage})
+            else:
+                yield ("message", {**text_frame("Here is what I found."), "usage": usage})
+
+    provider = Provider(
+        [], turn_plan={"intent": "capability_help", "tools": registry.names(),
+                       "required_tools": []},
+    )
+    context = LoopContext(user_name="alice", agent_id="agent")
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, iterative=True, spend_limit=1000,
+    ).run(
+        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        context=context, resolve_consent=AsyncMock(return_value=True),
+    )]
+    assert len(tool.runs) == 1
+    assert TurnResult(frames=frames).finish_reason == "stop"
+
+
+async def test_a_turn_answers_when_another_slow_query_would_pass_its_deadline():
+    """With results in hand, a turn whose queries take longer than its remaining
+    time answers now instead of starting one that times the whole turn out."""
+
+    class SlowQuery(EvalTool):
+        async def run(self, invocation, context):
+            context.quality_facts.setdefault("semantic_tools", []).append(
+                {"tool": "semantic_query", "duration_ms": 200_000.0}
+            )
+            return await super().run(invocation, context)
+
+    tool = SlowQuery("search_knowledge")
+    registry = ToolRegistry()
+    registry.register(tool)
+
+    class Provider(ScriptedProvider):
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.calls += 1
+            if tools:
+                yield ("message", tool_call_frame(
+                    f"c{self.calls}", name="search_knowledge", sql=f"SELECT {self.calls}",
+                ))
+            else:
+                yield ("message", text_frame("Here is what I found."))
+
+    provider = Provider(
+        [], turn_plan={"intent": "capability_help", "tools": registry.names(),
+                       "required_tools": []},
+    )
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, iterative=True, time_budget_seconds=120,
+    ).run(
+        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        context=LoopContext(user_name="alice", agent_id="agent"),
+        resolve_consent=AsyncMock(return_value=True),
+    )]
+    assert len(tool.runs) == 1
+    assert TurnResult(frames=frames).finish_reason == "stop"
+
+
 async def test_first_useful_content_and_validated_ui_action_are_observed():
     from app.observability.metrics import STUDIO_FIRST_USEFUL_RESPONSE
 

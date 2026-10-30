@@ -835,6 +835,7 @@ class AssistantLoop:
         completed_capabilities: set[str] = set()
         composing_final = False
         clarification_requested = False
+        clarification_context: dict[str, Any] = {}
         denials = 0
         denied_calls: set[str] = set()
         analysis_noted = False
@@ -1467,11 +1468,16 @@ class AssistantLoop:
                         }
                     )
                     continue
-                yield events.error(
-                    "unexpected_tool_call", "The final response cannot execute tools."
-                )
-                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
-                return
+                if clarification_requested and not evidence.business_tables:
+                    # The question back is the answer and no tool may run: the calls
+                    # are dropped and the turn ends as that clarification.
+                    tool_calls = []
+                else:
+                    yield events.error(
+                        "unexpected_tool_call", "The final response cannot execute tools."
+                    )
+                    yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                    return
             if not tool_calls and not provider_capabilities.supports_tools and not composing_final:
                 structured_call = _structured_action_call(decision.content)
                 if structured_call is not None:
@@ -1535,8 +1541,8 @@ class AssistantLoop:
                 # A turn that already holds results answers from them, verified like any
                 # other answer, even when a later step could not be expressed.
                 if clarification_requested and not evidence.business_tables:
-                    answer_text = "".join(buffered_text).strip() or say(
-                        "loop.clarify", language
+                    answer_text = "".join(buffered_text).strip() or _clarification_text(
+                        clarification_context, language
                     )
                     yield events.text_delta(answer_text)
                     _record_step(context, {"kind": "answer", "clarification": True})
@@ -2345,6 +2351,7 @@ class AssistantLoop:
                     "missing_inputs": (outcome.repair_context or {}).get("missing_inputs", []),
                 }
                 clarification_requested = True
+                clarification_context = dict(outcome.repair_context or {})
                 composing_final = True
                 messages.append(
                     _tool_message(
@@ -2651,6 +2658,22 @@ class AssistantLoop:
                             "row_count": len(table.get("rows") or []),
                         })
                         context.last_result = {**table, "title": item.summary}
+            if (
+                context.collaboration_root and invocation.tool_name == "wait_agent"
+                and isinstance(outcome.data, dict) and outcome.data.get("reason") == "timeout"
+                and outcome.data.get("agents") and not collected_results and not deferred_calls
+                and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
+            ):
+                # Nobody finished and nobody wrote: waiting again is not a decision the
+                # model has to spend a whole-context call on.
+                deferred_calls.append({
+                    "id": f"primary-{uuid4()}",
+                    "type": "function",
+                    "function": {
+                        "name": "wait_agent",
+                        "arguments": json.dumps(invocation.arguments),
+                    },
+                })
             context.quality_facts.setdefault("evidence", []).append(
                 {
                     "id": evidence_item.evidence_id,
@@ -2735,7 +2758,13 @@ class AssistantLoop:
                 and "query_mutate" not in required_available
                 and required_available <= completed_capabilities
             )
-            spent = int((context.usage or {}).get("total_tokens") or 0)
+            # The allowance is enforced on every reported model call, the semantic
+            # planner's included; measure the approach to it the same way.
+            measured = context.quality_measurements
+            spent = max(
+                int((context.usage or {}).get("total_tokens") or 0),
+                measured.reported_total_tokens if measured is not None else 0,
+            )
             if (
                 self._spend_limit
                 and not composing_final
@@ -2756,9 +2785,16 @@ class AssistantLoop:
                         _DELEGATED_ANALYSIS_PROMPT if context.collaboration_tools
                         else _ANALYSIS_PROMPT
                     )})
+                # Another query takes as long as the slowest one so far: answer now
+                # rather than start one that ends the turn past its deadline.
+                slowest_query = max(
+                    (float(item.get("duration_ms") or 0) for item in
+                     (context.quality_facts or {}).get("semantic_tools", [])),
+                    default=0.0,
+                ) / 1000
                 if completed_capabilities and (
                     remaining_steps <= _COMPOSE_RESERVE_STEPS
-                    or remaining_time < _COMPOSE_RESERVE_SECONDS
+                    or remaining_time < _COMPOSE_RESERVE_SECONDS + slowest_query
                 ):
                     composing_final = True
                     messages.append(
@@ -3189,6 +3225,19 @@ def _asked(thread: Any, user_content: str) -> str:
 _ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
+def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
+    """The question back when the model wrote none: what the governed data lacks
+    and what it has, so whoever asked (a person or Smart) can narrow the request."""
+    uncovered = [str(item) for item in repair_context.get("unresolved") or [] if item][:4]
+    available = [str(item) for item in repair_context.get("available_metrics") or [] if item][:8]
+    if not uncovered or not available:
+        return say("loop.clarify", language)
+    return say(
+        "loop.clarify_uncovered", language,
+        uncovered="; ".join(uncovered), available=", ".join(available),
+    )
+
+
 _COMPOSE_RESERVE_STEPS = 2
 _COMPOSE_RESERVE_SECONDS = 15.0
 #: Share of a turn's token allowance after which it stops calling tools and answers.

@@ -20,7 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Bump when any source text changes, so cached translations are redone.
-VERSION = 2
+VERSION = 3
 
 MESSAGES: dict[str, str] = {
     "render.lead": "Here are the figures.",
@@ -46,6 +46,10 @@ MESSAGES: dict[str, str] = {
         "verified data to answer this question."
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.clarify_uncovered": (
+        "The governed data does not cover: {uncovered}. It has these measures: {available}. "
+        "Which should I use?"
+    ),
     "loop.ui_unavailable": (
         "I could not prepare this interactive answer. Ask me to explain it in text or try again."
     ),
@@ -95,6 +99,10 @@ BUILTIN: dict[str, dict[str, str]] = {
             "terverifikasi untuk menjawab pertanyaan ini."
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.clarify_uncovered": (
+            "Data terkelola tidak mencakup: {uncovered}. Ukuran yang tersedia: {available}. "
+            "Mana yang sebaiknya saya pakai?"
+        ),
         "loop.ui_unavailable": (
             "Saya belum bisa menyiapkan jawaban interaktif ini. "
             "Minta penjelasan dalam teks atau coba lagi."

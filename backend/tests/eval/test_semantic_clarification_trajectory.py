@@ -64,6 +64,29 @@ async def test_clarification_turn_cannot_run_more_tools(monkeypatch):
     execute.assert_not_awaited()
 
 
+async def test_a_model_that_keeps_calling_tools_still_ends_as_the_clarification(monkeypatch):
+    """A compound request the catalog cannot express in one query: the model wants
+    to split it, but a clarification turn runs no more tools. It ends as the
+    clarification instead of failing, so a delegating Smart run gets an answer."""
+    tool, _planner, execute = setup_tool(monkeypatch, _plan(unresolved_concepts=[
+        {"text": "outlets per city", "type_hint": "metric", "material": True},
+    ]))
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = ScriptedProvider(script=[
+        tool_call_frame("s1", name="semantic_query", arguments={"question": QUESTION}),
+        tool_call_frame("s2", name="semantic_query", arguments={"question": "visits per rep"}),
+        tool_call_frame("s3", name="semantic_query", arguments={"question": "outlets per city"}),
+    ])
+    frames = await _run(provider, registry)
+    joined = "".join(frames).replace(" ", "")
+    assert '"finish_reason":"clarification"' in joined
+    assert "unexpected_tool_call" not in joined
+    # The question back names what is missing and what the view offers instead.
+    assert "outletspercity" in joined and "Ithasthesemeasures" in joined
+    execute.assert_not_awaited()
+
+
 async def test_studio_runs_the_governed_tool_itself_when_the_model_will_not(monkeypatch):
     tool, _planner, execute = setup_tool(monkeypatch, _plan(unresolved_concepts=[
         {"text": "profit margin", "type_hint": "metric", "material": True},

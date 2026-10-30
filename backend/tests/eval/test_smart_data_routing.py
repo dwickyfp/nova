@@ -436,6 +436,46 @@ async def test_root_discovers_and_waits_without_spending_model_calls_on_it():
 
 
 @pytest.mark.asyncio
+async def test_a_wait_that_times_out_with_nothing_new_waits_again_without_the_model():
+    """A slow specialist: every empty wait would otherwise cost a whole-context
+    model call that only decides to wait again, until the root's allowance is gone."""
+    discovery = EvalTool("discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+                         data={"agents": [OWNER]})
+    spawn = EvalTool("spawn_agent", parameters=COLLABORATION_TOOLS["spawn_agent"][1],
+                     data={**OWNER, "agent_path": "/root/data"})
+    running = {**participant(), "status": "running"}
+    wait = EvalTool("wait_agent", parameters=COLLABORATION_TOOLS["wait_agent"][1], outcomes=[
+        ToolOutcome(ok=True, summary="wait_agent completed",
+                    data={"reason": "timeout", "agents": [running]}),
+        ToolOutcome(ok=True, summary="wait_agent completed",
+                    data={"reason": "timeout", "agents": [running]}),
+        ToolOutcome(ok=True, summary="wait_agent completed",
+                    data={"reason": "completed", "agents": [participant()]}),
+    ])
+    registry = ToolRegistry()
+    for tool in (discovery, spawn, wait):
+        registry.register(tool)
+    provider = ScriptedProvider([
+        call("spawn_agent", agent=OWNER["agent_id"], task_name="data", objective=QUESTION),
+        text_frame("Mobile App recognized revenue is 3368049065451.00."),
+    ], turn_plan={
+        "intent": "semantic_analytics", "tools": ["discover_agents"],
+        "required_tools": ["discover_agents"],
+        "intent_frame": {"language": "en", "range": "2025", "compares_groups": True},
+    })
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=8, time_budget_seconds=600,
+    ).run(thread=thread(read_only_grant=True), user_content=QUESTION, context=context,
+          resolve_consent=AsyncMock(return_value=False))])
+    assert result.finish_reason == "stop", result.error_codes
+    assert len(wait.runs) == 3
+    assert all(run.arguments["targets"] == ["/root/data"] for run in wait.runs)
+    assert provider.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_smart_drafts_a_schedule_and_creates_nothing(monkeypatch):
     from app.modules.agents import automations
     from app.modules.agents.tools.propose_automation import propose_automation_tool
