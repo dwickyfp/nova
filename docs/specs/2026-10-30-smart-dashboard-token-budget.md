@@ -1,9 +1,9 @@
 # Smart dashboard token budget
 
 > **Date:** 2026-10-30
-> **Status:** Phase 1 implemented and measured. Phase 2 partly implemented (C7, C8a);
-> its measurement is blocked: the model provider returned HTTP 402 (credit
-> exhausted). Phase 3 proposed.
+> **Status:** Phase 1 implemented and measured. Phase 2 partly implemented (C7, C8a)
+> and measured on `deepseek-v4-1-flash` against a re-measured baseline
+> (2026-10-31). C8b and Phase 3 open.
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
 > `backend/app/modules/agents/tools/data_to_chart.py`)
@@ -275,7 +275,46 @@ Run 3 also showed the time budget behaving like the token budget did before
 `18444dd`: the answer was composed, and `before_final`'s wall-time check
 discarded it. That is a candidate fix alongside C8b.
 
-Phase 1 data: `docs/benchmarks/smart-tokens/2026-10-30-phase1.json`. Code:
+Phase 1 data: `docs/benchmarks/smart-tokens/2026-10-30-phase1.json`.
+
+### On `deepseek-v4-1-flash` (2026-10-31)
+
+The default model changed, so the baseline was measured again on the new
+model: baseline code (`fd69f54`, run from a detached checkout) against the
+current code (`d9de539`: Phase 1, C7 and C8a), five runs each, same request.
+
+| Measure (mean of 5 runs) | Baseline | Current | Change |
+|---|---:|---:|---:|
+| Completed runs | 2 / 5 | 3 / 5 | |
+| Wall time (s) | 185 | 169 | −9% |
+| Tokens per request | 162,983 | 136,881 | −16% |
+| Root prompt tokens | 88,199 | 81,489 | −8% |
+| Root calls | 6.0 | 7.6 | +27% |
+| Root prompt per call | 14,700 | 10,722 | −27% |
+| Specialist prompt tokens | 26,862 | 16,331 | −39% |
+| One-shot prompt tokens | 35,352 | 28,848 | −18% |
+
+Data: `docs/benchmarks/smart-tokens/2026-10-31-deepseek-baseline.json` and
+`2026-10-31-deepseek-phase1+2part.json`. All failures on both sides were token
+budgets (`BudgetExceeded`, `token_budget`), none were provider errors.
+
+This model is about three times faster than the Phase 1 measurement, so wall
+time is no longer the constraint; the root's token allowance is. Every call is
+smaller, but the final answer now takes more calls:
+
+- **Answer calls per run: 1.4 before, 2.8 now** (about 31k and 39k prompt
+  tokens). The sequence is a draft answer (about 9k), the interactive composer
+  call (about 15k), then one or two more (about 18k and 24k). Which check sends
+  the answer back (number verification, the UI program's validation, or both)
+  is not yet established; it is the first thing to find before more changes.
+- **C8b never fired** (no `needs_chart` from Smart's planner), so the draft
+  answer and the unrequested `compute_metrics` calls (in 2 of 5 runs) remain.
+- System messages are 62% of the root's prompt (about 46k per run): fewer root
+  calls is still the main lever.
+
+Next, in this order: find what makes the final answer take 2-4 calls; open
+C8b's gate (proposed: the request asks for charts or a dashboard); stop the
+wall-time check discarding a composed answer, as `18444dd` did for tokens. Code:
 C1, C2 (as built), C4 (as built) and C5; C3 deferred.
 
 Phase 1 meets the completion and wall-time targets, not the token targets.
