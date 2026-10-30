@@ -211,10 +211,16 @@ jobs:
           db_password="CiD9$(openssl rand -hex 24)"
           signing_key="$(openssl rand -hex 32)"
           encryption_key="$(openssl rand -base64 32 | tr '+/' '-_')"
+          bi_token="$(openssl rand -hex 32)"
+          bi_db_password="CiS9$(openssl rand -hex 24)"
+          bi_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$admin_password"
           echo "::add-mask::$db_password"
           echo "::add-mask::$signing_key"
           echo "::add-mask::$encryption_key"
+          echo "::add-mask::$bi_token"
+          echo "::add-mask::$bi_db_password"
+          echo "::add-mask::$bi_secret"
           {
             echo "RANGER_ADMIN_PASSWORD=$admin_password"
             echo "RANGER_PASSWORD=$admin_password"
@@ -225,6 +231,9 @@ jobs:
             # in the file from which the Ranger definitions are inherited.
             echo "NOVA_SECRET_KEY=$signing_key"
             echo "NOVA_FERNET_KEY=$encryption_key"
+            echo "NOVA_SUPERSET_SERVICE_TOKEN=$bi_token"
+            echo "SUPERSET_DB_PASSWORD=$bi_db_password"
+            echo "SUPERSET_SECRET_KEY=$bi_secret"
           } >> "$GITHUB_ENV"
 
       - name: Start the real engine and Ranger control plane
