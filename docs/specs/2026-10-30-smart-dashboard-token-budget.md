@@ -1,0 +1,212 @@
+# Smart dashboard token budget
+
+> **Date:** 2026-10-30
+> **Status:** Proposed. Baseline measured; no change implemented yet.
+> **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
+> `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
+> `backend/app/modules/agents/tools/data_to_chart.py`)
+> **Benchmark:** `backend/tests/benchmark/smart_tokens/`
+
+## Goal
+
+A Studio Smart request for a dashboard with two charts completes reliably and
+spends far fewer tokens, without changing what the user gets: the same
+governed numbers, charts that save to BI, the same authorization and evidence
+checks.
+
+Non-goals: changing the budgets' purpose (they stay hard limits), changing the
+model provider, changing specialists' semantic planning, or adding a switch to
+turn any of this off.
+
+## How it is measured
+
+`backend/tests/benchmark/smart_tokens/` runs the Smart worker with the provider
+client wrapped (`probe.py`), asks a fixed request on a new thread (`run.py`), and
+summarises each run (`report.py`). Every model call is recorded with the usage
+the provider reported and an estimate of what its prompt was made of; no
+message content is stored. See its README to repeat a measurement.
+
+- Request: "Buatkan dashboard Field Sales Overview berisi chart jumlah kunjungan
+  per sales rep dan chart jumlah outlet per kota", as `nova_admin`
+  (`ACCOUNTADMIN`), on the local dev stack.
+- Provider: kenari.id, about 40 s per model call.
+- Code: `feat/superset-studio` at `1ae5033`.
+- Five runs. Data: `docs/benchmarks/smart-tokens/2026-10-30-baseline.json`.
+
+The comparison after each change uses the same request, five runs, and
+`report.py --compare`. Means are over all runs, failed ones included, so a
+change that only makes failures cheaper does not look like a saving.
+
+## Baseline
+
+| Measure (mean of 5 runs) | Baseline |
+|---|---:|
+| Completed runs | **1 of 5** |
+| Wall time | 666 s |
+| Model calls per request | 17 |
+| Tokens per request, all calls | 182,071 |
+| Root (Smart) calls | 6.2 |
+| Root prompt tokens | 104,681 |
+| Root prompt per call (mean / max) | 16,884 / 54,271 |
+| Specialist calls / prompt tokens | 5.4 / 42,381 |
+| One-shot calls (turn planner, semantic planner, chart intent) / prompt tokens | 5.2 / 19,267 |
+| Tokens the harness stored per run tree | 135,417 |
+
+Outcomes: one completed (567 s); three stopped by `BudgetExceeded`
+(409-945 s); one stopped by `Session token budget exhausted` (474 s). In every
+failure both specialists had already returned their data.
+
+### Where the root's prompt goes
+
+Estimated by part, summed over all root calls of a run (mean of 5 runs):
+
+| Part | Tokens per run | Share |
+|---|---:|---:|
+| System messages | 46,460 | 52% |
+| `wait_agent` results | 17,109 | 19% |
+| Tool schemas | 8,471 | 10% |
+| `spawn_agent` results | 6,696 | 8% |
+| `discover_agents` result | 5,071 | 6% |
+| Everything else (assistant, task, coordination, other tools) | 5,002 | 5% |
+
+The system messages are sent again on every call. In the completed run they
+were `<NOVA_PLATFORM>` (about 3,100 tokens), the claims instruction (315),
+turn context (219), business scope (90), workspace and language (70), and,
+on the final call only, `<FINAL_COMPOSER>` at about 11,200 tokens because it
+carries every verified table as JSON.
+
+Root decisions over the five runs: 10 `wait_agent`, 8 `spawn_agent` (two of
+them in one call), 5 final answers, 3 `data_to_chart`, 2 `discover_agents`,
+2 `followup_task`, 1 `list_agents`. Each `data_to_chart` result returned the
+whole chart (about 1,100 tokens) to the model.
+
+Specialists made 12 answer calls and 6 `semantic_query` calls, but also
+4 `send_message`, 2 `data_to_chart`, 1 `dashboard_build` and 1 `compute_metrics`
+that the delegated task did not ask for.
+
+### Findings
+
+1. **Calls multiply context.** A root call carries 11-25k tokens. The model
+   spends whole calls on steps the harness can decide: whom to start (one
+   specialist task per requested result), waiting, and charting a result whose
+   shape already fixes the chart.
+2. **Results the model does not need stay in context.** Wait results carry
+   specialists' answers and evidence that the root also receives as structured
+   evidence; chart results carry the full chart; the discovery catalog stays
+   after the specialists are started.
+3. **The final call is the largest.** `<FINAL_COMPOSER>` puts every verified
+   table in the prompt, unbounded.
+4. **Specialists do work nobody asked for**: charts, dashboards and messages
+   to the root, each a call with a 3,600-token system prompt.
+5. **Two budgets disagree.** Smart's collaboration limit is 240,000 tokens
+   (`CollaborationLimits.max_total_tokens`), but `_execute_child` refuses to
+   resume any participant once the tree has stored 120,000 (`MAX_SESSION_TOKENS`).
+   The root (90,000 allowance) plus two specialists (60,000 each) can pass
+   120,000 while every participant is within its own allowance; one baseline
+   run failed this way after both specialists had finished. The stored totals
+   also lag the provider's usage (root: 77k stored against 111k reported,
+   prompt and completion), because they are written at checkpoints.
+
+## Changes
+
+Ordered by risk. Each is measured on its own before the next starts. The
+"expected" figures are estimates from the baseline shares, to be replaced by
+measurements.
+
+### Phase 1: smaller context, same decisions (low risk)
+
+**C1. Compact collaboration results for the model.** `wait_agent` and
+`list_agents` results given to the model hold, per participant, its path,
+status, a summary bounded to a few hundred characters and its collected
+evidence ids with columns and row counts. Full answers and evidence stay
+where they are now (imported as evidence, persisted in the run). Expected:
+most of the 17k `wait_agent` tokens per run.
+
+**C2. Compact `data_to_chart` results for the model.** The model gets the
+title, mark, evidence id and row count; the chart itself still goes to the
+answer as an artifact. Expected: about 1,000 tokens per chart call and per
+later call that carries it.
+
+**C3. Tools by phase.** Once every requested specialist has started, the root
+is offered only the tools that remain useful (`wait_agent`, `list_agents`,
+`send_message`, `followup_task`, `compute_metrics`, `data_to_chart`);
+discovery and spawning come back if a later step needs another specialist.
+The discovery result is folded to a one-line summary after the spawns.
+Expected: part of the 8.5k schema tokens and most of the 5k discovery tokens.
+
+**C4. Bounded final composer evidence.** `<FINAL_COMPOSER>` carries each
+verified table up to a row limit with its totals and row count, the same
+bound the loop already uses for result previews. Number verification keeps
+using the full evidence on Nova's side, never the trimmed copy. Expected:
+most of the 11k-token final prompt.
+
+**C5. One session budget for Smart.** For a Smart tree, `_execute_child`
+checks the tree against `CollaborationLimits.max_total_tokens`, the limit
+Smart already declares, instead of `MAX_SESSION_TOKENS`. Non-Smart runs keep
+`MAX_SESSION_TOKENS`. This is a correctness fix (finding 5), not a saving.
+
+### Phase 2: deterministic dashboard steps (medium risk)
+
+**C6. Start one specialist task per requested result without a model call.**
+When the turn plan lists several requested results (a measure with its
+grouping) and discovery finds their owner, the harness spawns one task per
+result itself, with that result alone as the objective, as the guidance from
+`18444dd` already asks the model to do. The model is called once results are
+in. Expected: the `spawn_agent` calls (1.6 per run, 12-14k each).
+
+**C7. Wait without the model until there is something to read.** While any
+started specialist is still running and no message has arrived, the root waits
+again on its own. `6e50cc0` already does this after a wait that timed out with
+nothing new; this extends it to the first wait after the spawns. Expected: most of the 10 model-decided waits.
+
+**C8. Chart a requested result directly.** When a requested chart's result has
+one dimension and one measure, `data_to_chart` picks the mark from the column
+types (date: line; category: bar) without its intent model call, and the
+harness charts each requested result once the results are in. Results of
+other shapes keep the model call. Expected: the root's `data_to_chart`
+decisions and their one-shot intent calls.
+
+### Phase 3: specialists (medium risk)
+
+**C9. Data-only delegated tasks get data tools.** A specialist whose delegated
+objective asks for data is not offered `data_to_chart`, `dashboard_build` or
+`send_message`; the root charts and composes. Expected: the 7 unrequested
+specialist calls and part of each specialist's schema tokens.
+
+## Acceptance
+
+Measured with the benchmark, five runs, against the baseline above:
+
+| Measure | Baseline | Target |
+|---|---:|---:|
+| Completed runs | 1 / 5 | at least 4 / 5 |
+| Root prompt tokens per request | 104,681 | at most 52,000 |
+| Tokens per request, all calls | 182,071 | at most 110,000 |
+| Wall time | 666 s | at most 450 s |
+
+And, unchanged from today:
+
+- the saved charts hold the same governed numbers (checked against the
+  specialists' SQL results) and save to BI as live charts;
+- every number in the answer is verified; refused, failed and clarification
+  turns behave as their current tests require;
+- backend unit suite, `tests.eval.report`, the affected `tests/eval`
+  trajectories, Ruff on changed files and mypy pass, with new trajectories for
+  C1-C9;
+- no new flag or setting: the new behavior is the only behavior.
+
+## Rollout and reporting
+
+Phase 1 lands first and is measured; Phase 2 and 3 only if Phase 1 does not
+reach the targets. Each phase records its run in
+`docs/benchmarks/smart-tokens/<date>-<phase>.json` and the comparison table in
+this document.
+
+## Results
+
+| Measure (mean of 5 runs) | Baseline | Phase 1 | Phase 2 | Phase 3 |
+|---|---:|---:|---:|---:|
+| Completed runs | 1 / 5 | | | |
+| Root prompt tokens | 104,681 | | | |
+| Tokens per request | 182,071 | | | |
+| Wall time (s) | 666 | | | |
