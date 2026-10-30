@@ -164,3 +164,49 @@ async def test_invalid_ui_repairs_once_then_publishes_nonempty_text(answer):
     assert any(frame.startswith("event: done\n") for frame in frames)
     assert any(step.get("ui_fallback") == "validation_failed" for step in context.steps)
     assert "Only text is available" in "".join(frames)
+
+
+async def test_composing_again_after_a_number_rewrite_sends_the_composer_once():
+    """A rewrite reopens the turn; composing again points back to the composer
+    already in the conversation instead of sending its evidence a second time."""
+    from tests.benchmark.harness import tool_call_frame
+    from tests.eval.harness import EvalTool
+
+    query = EvalTool("query_execute", table={"columns": ["region", "revenue"],
+                                             "rows": [["West", 120], ["East", 80]]})
+    registry = ToolRegistry()
+    registry.register(query)
+
+    class Recording(ScriptedProvider):
+        prompts: list[list[dict]] = []
+
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.prompts.append([dict(message) for message in messages])
+            async for frame in super().stream(messages=messages, tools=tools, provider=provider):
+                yield frame
+
+    provider = Recording(
+        script=[
+            tool_call_frame("q1", sql="SELECT region, revenue FROM sales"),
+            text_frame("Draft."),
+            text_frame("West revenue was 999."),
+            text_frame("Second draft."),
+            text_frame("West revenue was 120."),
+        ],
+        turn_plan={"intent": "semantic_analytics", "tools": ["query_execute"],
+                   "required_tools": ["query_execute"], "skills": [], "ml_task": None,
+                   "presentation": "interactive"},
+    )
+    context = LoopContext(user_name="alice", intelligent_ui=True)
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=10,
+    ).run(thread=AssistantThread(thread_id="compose-once", user_name="alice", title="UI"),
+          user_content="Revenue by region", context=context, resolve_consent=allow)]
+
+    assert any(step.get("answer_repair") == "unverified_number" for step in context.steps)
+    last = provider.prompts[-1]
+    composers = [m for m in last if str(m.get("content") or "").startswith("<FINAL_COMPOSER>")]
+    assert len(composers) == 1
+    assert any("Compose the final answer again" in str(m.get("content") or "") for m in last)
+    assert "999" not in "".join(frame for frame in frames
+                                if frame.startswith("event: text_delta\n"))

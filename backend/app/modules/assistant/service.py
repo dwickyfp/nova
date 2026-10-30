@@ -828,6 +828,19 @@ class AssistantLoop:
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
         evidence = EvidenceTracker()
+        composer_sent: dict[str, Any] = {}
+
+        def composer_message() -> dict[str, str]:
+            """The final composer's rules and evidence, once per turn.
+
+            Composing again after a repair, with no new evidence since, points back
+            to the copy already in the conversation instead of sending it twice.
+            """
+            current = (id(evidence), len(evidence.items))
+            if composer_sent.get("at") == current:
+                return {"role": "system", "content": _COMPOSE_AGAIN}
+            composer_sent["at"] = current
+            return {"role": "system", "content": _final_composer_prompt(evidence, context)}
         catalog_tool = self._registry.get("describe_agent")
         planning_scope = getattr(catalog_tool, "planning_scope", None)
         if context.agent_id and callable(planning_scope):
@@ -1529,9 +1542,7 @@ class AssistantLoop:
                     and not composing_final
                 ):
                     composing_final = True
-                    messages.append({"role": "system", "content": _final_composer_prompt(
-                        evidence, context
-                    )})
+                    messages.append(composer_message())
                     continue
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
@@ -2426,9 +2437,7 @@ class AssistantLoop:
                         )
                     )
                     composing_final = True
-                    messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                    )
+                    messages.append(composer_message())
                     continue
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
                 _transition(context, TurnState.FAILED)
@@ -2705,15 +2714,14 @@ class AssistantLoop:
                     len(table.get("rows") or []) >= 2 for table in evidence.business_tables.values()
                 )
                 if (
-                    route.needs_chart and team_settled and chartable
+                    (route.needs_chart or _asks_for_charts(context.user_question))
+                    and team_settled and chartable
                     and charts_made >= chartable and not deferred_calls and not composing_final
                 ):
                     # Every teammate is done and every result asked for is charted:
                     # what is left is the answer, not more steps.
                     composing_final = True
-                    messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                    )
+                    messages.append(composer_message())
             if (
                 context.collaboration_root and invocation.tool_name == "wait_agent"
                 and isinstance(outcome.data, dict) and outcome.data.get("reason") == "timeout"
@@ -2831,9 +2839,7 @@ class AssistantLoop:
                 # Close to the turn's token allowance: answer from what is known
                 # now, rather than spend the rest on a call that ends the turn empty.
                 composing_final = True
-                messages.append(
-                    {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                )
+                messages.append(composer_message())
             elif self._iterative and not context.collaboration_root:
                 remaining_steps = self._max_iterations - _iteration - 1
                 remaining_time = deadline - _budget_time()
@@ -2855,17 +2861,10 @@ class AssistantLoop:
                     or remaining_time < _COMPOSE_RESERVE_SECONDS + slowest_query
                 ):
                     composing_final = True
-                    messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                    )
+                    messages.append(composer_message())
             elif required_done:
                 composing_final = True
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": _final_composer_prompt(evidence, context),
-                    }
-                )
+                messages.append(composer_message())
 
         # Cap reached without a final text answer. Preserve completed artifacts
         # as an artifact-first partial response instead of silently dropping
@@ -3283,6 +3282,17 @@ def _asked(thread: Any, user_content: str) -> str:
 _ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
+#: A request that asks for charts or a dashboard, in English or Indonesian.
+_CHART_REQUEST = re.compile(
+    r"\b(?:charts?|grafik|diagram|dashboards?|dasbor|plots?|visuali[sz]\w*)\b", re.I
+)
+
+
+def _asks_for_charts(question: str | None) -> bool:
+    """The request itself asks for charts: charting its results is the deliverable."""
+    return bool(question and _CHART_REQUEST.search(question))
+
+
 #: Teammate statuses that mean its turn is over.
 _SETTLED = frozenset({"idle", "completed", "failed", "cancelled", "interrupted"})
 
@@ -3471,6 +3481,12 @@ def _studio_fallback_plan(
         route=TurnRoute(TurnIntent.CLARIFICATION, clarification_required=True),
         selected_tools=(),
     )
+
+
+_COMPOSE_AGAIN = (
+    "Compose the final answer again under the <FINAL_COMPOSER> rules and evidence "
+    "given above. Tools are disabled."
+)
 
 
 def _final_composer_prompt(evidence: EvidenceTracker, context: LoopContext | None = None) -> str:

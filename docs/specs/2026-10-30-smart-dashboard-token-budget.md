@@ -1,9 +1,9 @@
 # Smart dashboard token budget
 
 > **Date:** 2026-10-30
-> **Status:** Phase 1 implemented and measured. Phase 2 partly implemented (C7, C8a)
-> and measured on `deepseek-v4-1-flash` against a re-measured baseline
-> (2026-10-31). C8b and Phase 3 open.
+> **Status:** Phase 1 and Phase 2 (C7, C8a, C8b with F1, F2) implemented and measured
+> on `deepseek-v4-1-flash` against a re-measured baseline (2026-10-31).
+> Phase 3 open.
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
 > `backend/app/modules/agents/tools/data_to_chart.py`)
@@ -352,7 +352,44 @@ Fixes, proposed:
 - **F2:** send `<FINAL_COMPOSER>` once per turn; when composition starts
   again after a repair, a short system line points back to it. Saves about
   8k tokens in every run that repairs (3 of 5).
-- Number rewrites themselves stay: they are the answer contract working. Code:
+- Number rewrites themselves stay: they are the answer contract working.
+
+*As built:* F1 opens C8b when the request names charts, a dashboard, a
+diagram, a plot or visualisation (`_asks_for_charts`, English and
+Indonesian), in addition to a plan that requires charts. F2 routes every
+composer message through `composer_message()`: the full composer is sent
+once per turn and again only when new evidence arrived since; otherwise a
+one-line pointer.
+
+### Phase 2 result on `deepseek-v4-1-flash` (2026-10-31)
+
+Five runs, same request; data in
+`docs/benchmarks/smart-tokens/2026-10-31-deepseek-phase2.json`.
+
+| Measure (mean of 5 runs) | Baseline | Phase 1 + C7 + C8a | Phase 2 (F1, F2) | Target |
+|---|---:|---:|---:|---:|
+| Completed runs | 2 / 5 | 3 / 5 | **4 / 5** | ≥ 4 / 5 ✅ |
+| Root prompt tokens | 88,199 | 81,489 | **55,665 (−37%)** | ≤ 52,000 |
+| Tokens per request | 162,983 | 136,881 | **123,993 (−24%)** | ≤ 110,000 |
+| Root calls | 6.0 | 7.6 | 5.6 | |
+| Specialist prompt tokens | 26,862 | 16,331 | 20,567 | |
+| Wall time (s) | 185 | 169 | 200 | ≤ 450 ✅ |
+
+The four completed runs used 44,432 root prompt tokens and 96,114 tokens per
+request on average, both within the targets; the means above include the one
+failed run (`BudgetExceeded`), in which the root traded `followup_task` and
+`list_agents` with a specialist six times before answering.
+
+A completed run is now spawn, wait, chart, answer: one model call each, with
+a single 15k-token answer call (it was a draft plus one to three
+compositions). What is left, for Phase 3:
+
+- The root still makes one model-decided `wait_agent` call (about 8k) after
+  the automatic wait, when a specialist's message wakes it (C9 removes
+  specialists' `send_message`).
+- The failed run's follow-up loop between root and specialist.
+- One-shot calls (turn planner, semantic planner) are unchanged at about 36k
+  per request; the turn planner runs again for each specialist turn. Code:
 C1, C2 (as built), C4 (as built) and C5; C3 deferred.
 
 Phase 1 meets the completion and wall-time targets, not the token targets.

@@ -476,9 +476,16 @@ async def test_a_wait_that_times_out_with_nothing_new_waits_again_without_the_mo
 
 
 @pytest.mark.asyncio
-async def test_a_dashboard_waits_for_every_task_and_answers_once_its_charts_are_made():
+@pytest.mark.parametrize("request_text, composes", [
+    ("Dashboard of visits per rep and outlets per city", True),
+    ("Visits per rep and outlets per city?", False),
+])
+async def test_a_dashboard_waits_for_every_task_and_answers_once_its_charts_are_made(
+    request_text, composes,
+):
     """Two tasks to one specialist: the harness waits for both (discovery named no
-    owner), and once both results are charted the next call is the answer."""
+    owner). When the request asks for charts or a dashboard, once both results are
+    charted the next call is the answer, even though the plan never required charts."""
     def result(task: str, columns: list[str], rows: list[list]) -> dict:
         evidence = EvidenceTracker()
         evidence.add("semantic_query", task, table={"columns": columns, "rows": rows},
@@ -525,7 +532,7 @@ async def test_a_dashboard_waits_for_every_task_and_answers_once_its_charts_are_
     )["tool_calls"]
     charts["tool_calls"][1]["id"] = "chart-outlets"
     class Recording(ScriptedProvider):
-        offered: list[bool] = []
+        offered: list[bool]
 
         async def stream(self, *, messages, tools=None, provider=None):
             self.offered.append(bool(tools))
@@ -536,21 +543,23 @@ async def test_a_dashboard_waits_for_every_task_and_answers_once_its_charts_are_
         spawns, charts, text_frame("The dashboard shows visits per rep and outlets per city."),
     ], turn_plan={
         "intent": "semantic_analytics", "tools": registry.names(),
-        "required_tools": ["discover_agents", "data_to_chart"],
+        "required_tools": ["discover_agents"],
         "intent_frame": {"language": "en", "range": None, "compares_groups": True},
     })
+    provider.offered = []
     context = LoopContext(user_name="alice", collaboration_root=True,
                           collaboration_tools=tuple(COLLABORATION_TOOLS))
     result_frames = TurnResult(frames=[frame async for frame in AssistantLoop(
         provider=provider, registry=registry, max_iterations=12, time_budget_seconds=600,
-    ).run(thread=thread(read_only_grant=True), user_content="Dashboard of visits and outlets",
+    ).run(thread=thread(read_only_grant=True), user_content=request_text,
           context=context, resolve_consent=AsyncMock(return_value=False))])
 
     assert result_frames.finish_reason == "stop", result_frames.error_codes
     assert [run.arguments["targets"] for run in wait.runs] == [["/root/visits", "/root/outlets"]]
     assert len(chart.runs) == 2 and not extra.runs
-    # Start the tasks, chart the results, answer: the answer is offered no tools.
-    assert provider.offered == [True, True, False]
+    # Start the tasks, chart the results, answer: a dashboard's answer is offered no
+    # tools; any other request leaves the next step to the model.
+    assert provider.offered == [True, True, not composes]
 
 
 @pytest.mark.asyncio
