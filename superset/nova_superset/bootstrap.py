@@ -118,7 +118,8 @@ def sync_database(session) -> None:
         session.add(database)
     database.set_sqlalchemy_uri(nova_database_uri())
     database.expose_in_sqllab = True
-    database.allow_run_async = False
+    # Async SQL Lab runs in Celery as the submitting session (S10).
+    database.allow_run_async = True
     database.allow_dml = False
     database.allow_ctas = False
     database.allow_cvas = False

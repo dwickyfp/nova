@@ -77,8 +77,7 @@ def sign_in():
     user = security_manager.sync_nova_user(identity)
     if not current_user.is_authenticated or current_user.get_id() != user.get_id():
         login_user(user)
-    context.bi_handle.set(handle)
-    context.identity.set(identity)
+    context.adopt(handle, identity)
     return None
 
 

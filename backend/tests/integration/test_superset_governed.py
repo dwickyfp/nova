@@ -67,7 +67,14 @@ class Bi:
     """A Superset browser session for one Nova BI handle."""
 
     def __init__(self, handle: str) -> None:
-        self.http = httpx.AsyncClient(base_url=BI_URL, timeout=120, follow_redirects=False)
+        # Superset's gunicorn closes idle keep-alive connections after seconds;
+        # polling with gaps would reuse a closed one.
+        self.http = httpx.AsyncClient(
+            base_url=BI_URL,
+            timeout=120,
+            follow_redirects=False,
+            limits=httpx.Limits(max_keepalive_connections=0),
+        )
         self.http.cookies.set("nova_bi", handle, path="/bi")
         self._csrf = ""
         self._database_id: int | None = None
@@ -782,3 +789,254 @@ async def test_superset_phases_3_and_4_acceptance(governed, monkeypatch):
             await bi2.close()
             with suppress(Exception):
                 await session_store.close()
+
+
+SERVICE = {"X-Nova-Superset-Token": os.getenv("NOVA_SUPERSET_SERVICE_TOKEN", "")}
+WORKER_CONTAINER = os.getenv("NOVA_SUPERSET_WORKER_CONTAINER", "")
+
+
+async def _delegate(api: httpx.AsyncClient, username: str) -> httpx.Response:
+    return await api.post(
+        "/api/v1/internal/superset/delegate", json={"username": username}, headers=SERVICE
+    )
+
+
+async def _impersonation(owner: str, *, granted: bool) -> None:
+    """Grant or revoke the worker's scoped impersonation of ``owner``."""
+    from app.integrations.ranger.client import ranger_client
+    from scripts.provision_task_worker_access import provision, scoped_policy
+
+    if granted:
+        await provision(owner)
+        return
+    existing = await ranger_client.get_policy(scoped_policy(owner).name)
+    if existing:
+        await ranger_client.delete_policy(existing["id"])
+
+
+async def _chart_data(bi: Bi, chart_id: int) -> tuple[set[str], bool]:
+    response = await bi.http.get(f"/bi/api/v1/chart/{chart_id}/data/")
+    assert response.status_code == 200, response.text
+    result = response.json()["result"][0]
+    return {row["region"] for row in result["data"]}, bool(result.get("is_cached"))
+
+
+async def _async_sql(bi: Bi, sql: str, schema: str) -> dict:
+    response = await bi.http.post(
+        "/bi/api/v1/sqllab/execute/",
+        headers=await bi.headers(),
+        json={
+            "database_id": await bi.database_id(),
+            "sql": sql,
+            "schema": schema,
+            "catalog": "default_catalog",
+            "runAsync": True,
+            "client_id": secrets.token_hex(5),
+            "queryLimit": 1000,
+        },
+    )
+    assert response.status_code in (200, 202), response.text
+    return response.json()["query"]
+
+
+async def _finished_query(bi: Bi, client_id: str, seconds: float = 120) -> dict:
+    """Poll SQL Lab's own update feed until the async query leaves the queue."""
+    deadline = asyncio.get_running_loop().time() + seconds
+    while True:
+        feed = await bi.http.get(
+            "/bi/api/v1/query/updated_since", params={"q": "(last_updated_ms:0)"}
+        )
+        rows = [row for row in feed.json().get("result", []) if row["id"] == client_id]
+        if rows and rows[0]["state"] in ("success", "failed", "stopped", "timed_out"):
+            return rows[0]
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError(f"async query {client_id} did not finish: {rows}")
+        await asyncio.sleep(2)
+
+
+@pytest.mark.skipif(not WORKER_CONTAINER, reason="Set NOVA_SUPERSET_WORKER_CONTAINER")
+async def test_superset_phase_2_acceptance(governed):
+    """Background work, caches and async SQL Lab under Nova's identity."""
+    g = governed
+    owner = g.u1.username
+    created: list[str] = []
+    report_id = None
+    async with httpx.AsyncClient(base_url=API_URL, timeout=180) as api:
+        await _login(api, g.u1)
+        await _login(api, g.u2)
+        bi1, bi2 = Bi(g.u1.handle), Bi(g.u2.handle)
+        try:
+            # A BI chart the alert, the cache and thumbnail checks use (once the
+            # fixture's policies have reached the engine).
+            async def chart_saved():
+                response = await api.post(
+                    STUDIO,
+                    headers=_auth(g.u1),
+                    json={
+                        "title": "Cached regions",
+                        "artifact_type": "chart",
+                        "sql_text": BY_REGION,
+                        "database_name": g.database,
+                        "chart_spec": BAR,
+                    },
+                )
+                assert response.status_code == 201, response.text
+                return response.json()
+
+            chart = await _eventually(chart_saved)
+            created.append(chart["artifact_id"])
+            chart_id = chart["bi_object_id"]
+            # Delegation is refused for privileged, unknown and ungranted owners.
+            for refused in ("root", "nova_admin", "bi_nobody_" + secrets.token_hex(3), owner):
+                assert (await _delegate(api, refused)).status_code == 403, refused
+
+            # Granted per owner, it runs as the owner under their default role.
+            await _impersonation(owner, granted=True)
+            try:
+
+                async def delegated():
+                    response = await _delegate(api, owner)
+                    assert response.status_code == 200, response.text
+                    return response.json()
+
+                grant = await _eventually(delegated)
+                assert grant["active_role"] == g.role_a
+                token = (
+                    await api.post(
+                        "/api/v1/internal/superset/token",
+                        json={"handle": grant["handle"]},
+                        headers=SERVICE,
+                    )
+                ).json()["token"]
+                connection = await _proxy(owner, token, g.database)
+                try:
+                    async with connection.cursor() as cursor:
+                        await cursor.execute("SELECT region FROM orders ORDER BY id")
+                        assert {row[0] for row in await cursor.fetchall()} == {"EAST"}
+                        with pytest.raises(asyncmy.errors.MySQLError):
+                            await cursor.execute(f"SET ROLE {g.role_b}")
+                finally:
+                    connection.close()
+
+                # A scheduled alert runs in the worker as its owner.
+                me = (await bi1.http.get("/bi/api/v1/me/")).json()["result"]
+                report = await bi1.http.post(
+                    "/bi/api/v1/report/",
+                    headers=await bi1.headers(),
+                    json={
+                        "type": "Alert",
+                        "name": f"bi acceptance {secrets.token_hex(3)}",
+                        "chart": chart_id,
+                        "report_format": "TEXT",
+                        "crontab": "* * * * *",
+                        "database": await bi1.database_id(),
+                        "sql": f"SELECT COUNT(*) FROM {g.database}.orders",
+                        "validator_type": "operator",
+                        "validator_config_json": {"op": ">", "threshold": 0},
+                        "recipients": [
+                            {
+                                "type": "Email",
+                                "recipient_config_json": {"target": "nobody@example.invalid"},
+                            }
+                        ],
+                        "owners": [me["id"]],
+                        "active": True,
+                        "grace_period": 1,
+                        "working_timeout": 300,
+                        "log_retention": 1,
+                    },
+                )
+                assert report.status_code == 201, report.text
+                report_id = report.json()["id"]
+
+                async def alert_ran():
+                    logs = await bi1.http.get(f"/bi/api/v1/report/{report_id}/log/")
+                    rows = [
+                        row for row in logs.json().get("result", []) if row.get("value") is not None
+                    ]
+                    assert rows, logs.text
+                    return rows[0]
+
+                run = await _eventually(alert_ran, seconds=240)
+                # The owner's default role sees only the EAST rows.
+                assert run["value"] == 2.0, run
+            finally:
+                await _impersonation(owner, granted=False)
+
+            async def revoked():
+                assert (await _delegate(api, owner)).status_code == 403
+
+            await _eventually(revoked)
+
+            # Cached chart data never crosses principals or roles.
+            # Saving already ran the chart for this session, so it is cached for
+            # it; the other principal still gets their own rows.
+            assert await _chart_data(bi1, chart_id) == ({"EAST"}, True)
+            assert (await _chart_data(bi2, chart_id))[0] == {"EAST", "WEST"}
+            thumb_a = (await bi1.http.get(f"/bi/api/v1/chart/{chart_id}")).json()["result"]
+            switched = await api.post(
+                "/api/v1/auth/switch-role", json={"role": g.role_b}, headers=_auth(g.u1)
+            )
+            assert switched.status_code == 200, switched.text
+            assert (await _chart_data(bi1, chart_id))[0] == {"EAST", "WEST"}
+
+            # Thumbnails are drawn for, and keyed by, the requesting session.
+            listing = await bi1.http.get(
+                "/bi/api/v1/chart/",
+                params={
+                    "q": (
+                        f"(filters:!((col:id,opr:eq,value:{chart_id})),columns:!(id,thumbnail_url))"
+                    )
+                },
+            )
+            thumbnail_url = listing.json()["result"][0]["thumbnail_url"]
+            assert thumbnail_url and thumbnail_url != thumb_a.get("thumbnail_url")
+
+            async def thumbnail_drawn():
+                path = thumbnail_url if thumbnail_url.startswith("/bi/") else f"/bi{thumbnail_url}"
+                image = await bi1.http.get(path)
+                assert image.status_code == 200, image.status_code
+                assert image.headers["content-type"].startswith("image/")
+
+            await _eventually(thumbnail_drawn, seconds=180)
+            switched = await api.post(
+                "/api/v1/auth/switch-role", json={"role": g.role_a}, headers=_auth(g.u1)
+            )
+            assert switched.status_code == 200
+
+            # Async SQL Lab runs in the worker as the submitting session...
+            query = await _async_sql(bi1, "SELECT region FROM orders ORDER BY id", g.database)
+            finished = await _finished_query(bi1, query["id"])
+            assert finished["state"] == "success", finished
+            results = await bi1.http.get(
+                "/bi/api/v1/sqllab/results/",
+                params={"q": f"(key:'{finished['resultsKey']}')"},
+            )
+            assert {row["region"] for row in results.json()["data"]} == {"EAST"}
+
+            # ...and is refused once that session changed before it ran.
+            subprocess.run(["docker", "stop", WORKER_CONTAINER], check=True, capture_output=True)
+            try:
+                queued = await _async_sql(bi1, "SELECT region FROM orders", g.database)
+                switched = await api.post(
+                    "/api/v1/auth/switch-role", json={"role": g.role_b}, headers=_auth(g.u1)
+                )
+                assert switched.status_code == 200
+            finally:
+                subprocess.run(
+                    ["docker", "start", WORKER_CONTAINER], check=True, capture_output=True
+                )
+            refused = await _finished_query(bi1, queued["id"], seconds=180)
+            assert refused["state"] == "failed", refused
+            assert "session" in (refused.get("errorMessage") or "").lower(), refused
+        finally:
+            if report_id is not None:
+                with suppress(Exception):
+                    await bi1.http.delete(
+                        f"/bi/api/v1/report/{report_id}", headers=await bi1.headers()
+                    )
+            for artifact_id in created:
+                with suppress(Exception):
+                    await api.delete(f"{STUDIO}/{artifact_id}", headers=_auth(g.u1))
+            await bi1.close()
+            await bi2.close()

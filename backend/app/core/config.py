@@ -241,6 +241,9 @@ class Settings(BaseSettings):
     #: served under ``/bi`` there as for browsers.
     SUPERSET_INTERNAL_URL: str = "http://superset:8088"
     SUPERSET_REQUEST_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, le=600)
+    #: Lifetime of a delegated BI session for one background run (alerts,
+    #: reports, cache warmup); each run asks for a new one.
+    SUPERSET_DELEGATION_TTL_SECONDS: int = Field(default=900, ge=60, le=86_400)
 
     # --- ML execution ---
     ML_MYSQL_BATCH_SIZE: int = 4096

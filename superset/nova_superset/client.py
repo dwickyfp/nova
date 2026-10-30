@@ -25,6 +25,8 @@ class Identity:
     active_role: str
     superset_role: str
     security_context_version: int
+    #: A background run's session (the owner under their default role).
+    delegated: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ def identity(handle: str) -> Identity:
         active_role=body["active_role"],
         superset_role=body["superset_role"],
         security_context_version=int(body["security_context_version"]),
+        delegated=bool(body.get("delegated", False)),
     )
 
 
@@ -78,3 +81,34 @@ def data_token(handle: str) -> DataToken:
 def audit(handle: str, *, kind: str, action: str, objects: list[str]) -> None:
     """Record a governed Superset action in Nova's audit log."""
     _post("audit", handle, {"kind": kind, "action": action[:128], "objects": objects})
+
+
+def delegate(username: str) -> tuple[str, Identity]:
+    """A delegated BI handle for one background run as ``username`` (S5).
+
+    Raises ``NovaUnauthorized`` when Nova refuses the delegation.
+    """
+    secret = os.environ.get("NOVA_SUPERSET_SERVICE_TOKEN", "")
+    if not secret:
+        raise NovaUnavailable("NOVA_SUPERSET_SERVICE_TOKEN is not configured")
+    try:
+        response = requests.post(
+            f"{_base_url()}/api/v1/internal/superset/delegate",
+            json={"username": username},
+            headers={SERVICE_TOKEN_HEADER: secret},
+            timeout=_TIMEOUT_SECONDS * 6,
+        )
+    except requests.RequestException as exc:
+        raise NovaUnavailable(type(exc).__name__) from None
+    if response.status_code in (401, 403, 422):
+        raise NovaUnauthorized()
+    if response.status_code != 200:
+        raise NovaUnavailable(f"Nova answered {response.status_code}")
+    body = response.json()
+    return body["handle"], Identity(
+        username=body["username"],
+        active_role=body["active_role"],
+        superset_role=body["superset_role"],
+        security_context_version=1,
+        delegated=True,
+    )

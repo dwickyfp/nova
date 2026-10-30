@@ -53,7 +53,7 @@ class NovaEventLogger(DBEventLogger):
     ) -> None:
         super().log(user_id, action, dashboard_id, duration_ms, slice_id, referrer, *args, **kwargs)
         kind = audited_action(action)
-        handle = context.bi_handle.get()
+        handle = context.current_handle()
         if kind is None or not handle:
             return
         objects = []

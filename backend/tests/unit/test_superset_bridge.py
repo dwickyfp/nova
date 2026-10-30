@@ -482,6 +482,7 @@ async def test_bi_session_cookie_is_scoped_and_resolves_to_identity(bridge_app):
             "active_role": "finance",
             "superset_role": access.SUPERSET_AUTHOR,
             "security_context_version": 1,
+            "delegated": False,
         }
         token = await http.post(
             "/api/v1/internal/superset/token", json={"handle": handle}, headers=service
@@ -592,3 +593,195 @@ async def test_superset_actions_are_audited_for_the_handle_principal(bridge_app)
             headers=service,
         )
         assert injected.status_code == 422
+
+
+# ── Delegated background sessions (S5) ───────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "username", ["root", "nova_admin", "NOVA_ADMIN", "nova_task_worker", "a b", ""]
+)
+def test_privileged_and_malformed_principals_are_never_delegated(username, monkeypatch):
+    from app.modules.superset import delegation
+
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_USER", "nova_task_worker")
+    with pytest.raises(delegation.DelegationError):
+        delegation.check_principal(username)
+
+
+class FakeExecutor:
+    def __init__(self, *, refuse: bool = False) -> None:
+        self.refuse = refuse
+        self.owners: list[str] = []
+
+    def owner_connection(self, owner):
+        from contextlib import asynccontextmanager
+
+        from app.modules.task_orchestration.credentials import CredentialUnavailable
+
+        @asynccontextmanager
+        async def connection():
+            self.owners.append(owner)
+            if self.refuse:
+                raise CredentialUnavailable(
+                    f"Task worker is not authorized to execute as user {owner!r}"
+                )
+            yield object()
+
+        return connection()
+
+
+async def test_delegation_impersonates_the_owner_and_reads_the_default_role(monkeypatch):
+    from app.modules.superset import delegation
+
+    executor = FakeExecutor()
+    monkeypatch.setattr(delegation, "_executor", lambda: executor)
+    monkeypatch.setattr(
+        delegation.role_activation_service,
+        "assignments",
+        AsyncMock(return_value=RoleAssignments(("finance", "marketing"), "marketing")),
+    )
+    assert await delegation.authorize("alice") == "marketing"
+    assert executor.owners == ["alice"]
+
+
+async def test_delegation_fails_closed_without_impersonation_or_default_role(monkeypatch):
+    from app.modules.superset import delegation
+
+    monkeypatch.setattr(delegation, "_executor", lambda: FakeExecutor(refuse=True))
+    with pytest.raises(delegation.DelegationError, match="not authorized"):
+        await delegation.authorize("alice")
+
+    monkeypatch.setattr(delegation, "_executor", lambda: FakeExecutor())
+    monkeypatch.setattr(
+        delegation.role_activation_service,
+        "assignments",
+        AsyncMock(return_value=RoleAssignments(("finance",), None)),
+    )
+    with pytest.raises(delegation.DelegationError, match="default role"):
+        await delegation.authorize("alice")
+
+
+def test_delegation_needs_a_configured_worker_account(monkeypatch):
+    from app.modules.superset import delegation
+
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_USER", "")
+    with pytest.raises(delegation.DelegationError, match="worker account"):
+        delegation._executor()
+
+
+async def test_delegated_handles_resolve_to_bounded_password_free_sessions(redis):
+    handle = await tokens.issue_delegated_handle("alice", "marketing")
+    bi_session = await tokens.session_for_handle(handle)
+    assert (bi_session.username, bi_session.active_role, bi_session.delegated) == (
+        "alice",
+        "marketing",
+        True,
+    )
+    assert bi_session.encrypted_password == ""
+    assert redis.expiry[f"nova:bi:delegated:{bi_session.session_id.split(':', 1)[1]}"] <= (
+        time.time() + settings.SUPERSET_DELEGATION_TTL_SECONDS
+    )
+    issued = await tokens.mint_data_token(bi_session)
+    scramble = bytes(20)
+    binding = await tokens.match_data_token(
+        "alice", scramble, scramble_native_password(issued.token, scramble)
+    )
+    assert (await tokens.verify_binding(binding)).delegated
+    await redis.delete(f"nova:bi:delegated:{bi_session.session_id.split(':', 1)[1]}")
+    with pytest.raises(tokens.BiCredentialError):
+        await tokens.verify_binding(binding)
+
+
+async def test_delegate_endpoint_grants_and_audits_refusals(bridge_app, monkeypatch):
+    from app.modules.superset import delegation
+    from app.modules.superset import router as bridge
+
+    application, _state = bridge_app
+    service = {access.SERVICE_TOKEN_HEADER: "service-secret"}
+    monkeypatch.setattr(delegation, "authorize", AsyncMock(return_value="marketing"))
+    async with await _client(application) as http:
+        granted = await http.post(
+            "/api/v1/internal/superset/delegate", json={"username": "alice"}, headers=service
+        )
+        assert granted.status_code == 200
+        body = granted.json()
+        assert (body["username"], body["active_role"]) == ("alice", "marketing")
+        identity = await http.post(
+            "/api/v1/internal/superset/identity", json={"handle": body["handle"]}, headers=service
+        )
+        assert identity.json()["delegated"] is True
+
+        delegation.authorize.side_effect = delegation.DelegationError("not authorized")
+        refused = await http.post(
+            "/api/v1/internal/superset/delegate", json={"username": "bob"}, headers=service
+        )
+        assert refused.status_code == 403
+        assert bridge.write_audit_log.await_args.kwargs["status"] == "DENIED"
+
+        anonymous = await http.post("/api/v1/internal/superset/delegate", json={"username": "a"})
+        assert anonymous.status_code == 401
+
+
+async def test_delegated_token_logs_in_through_owner_impersonation(redis, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from app.modules.superset import delegation
+
+    opened: list[tuple[str, str]] = []
+
+    @asynccontextmanager
+    async def owner_session(username, role):
+        opened.append((username, role))
+        yield object()
+
+    monkeypatch.setattr(delegation, "owner_session", owner_session)
+    handle = await tokens.issue_delegated_handle("alice", "marketing")
+    issued = await tokens.mint_data_token(await tokens.session_for_handle(handle))
+    upstream, activation = FakeUpstream(), FakeActivation()
+    server = await _proxy(monkeypatch, upstream, activation)
+    try:
+        conn = await asyncmy.connect(
+            host="127.0.0.1",
+            port=server.bound_port,
+            user="alice",
+            password=issued.token,
+            autocommit=True,
+            connect_timeout=2,
+        )
+        conn.close()
+    finally:
+        await server.stop()
+
+    assert opened == [("alice", "marketing")]
+    assert upstream.finished == []
+    assert activation.requested == ["marketing"]
+
+
+async def test_a_refused_delegated_login_is_denied(redis, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from app.modules.superset import delegation
+
+    @asynccontextmanager
+    async def owner_session(username, role):
+        raise delegation.DelegationError("not authorized")
+        yield
+
+    monkeypatch.setattr(delegation, "owner_session", owner_session)
+    handle = await tokens.issue_delegated_handle("alice", "marketing")
+    issued = await tokens.mint_data_token(await tokens.session_for_handle(handle))
+    server = await _proxy(monkeypatch, FakeUpstream(), FakeActivation())
+    try:
+        with pytest.raises(asyncmy.errors.OperationalError) as error:
+            await asyncmy.connect(
+                host="127.0.0.1",
+                port=server.bound_port,
+                user="alice",
+                password=issued.token,
+                autocommit=True,
+                connect_timeout=2,
+            )
+    finally:
+        await server.stop()
+    assert error.value.args[0] == 1045

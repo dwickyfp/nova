@@ -160,6 +160,7 @@ class ProxyConnection:
             session=SessionState(),
         )
         self._peer_host = self._peer_name(writer).rsplit(":", 1)[0]
+        self._sessions = contextlib.AsyncExitStack()
         self._executor = ProxyQueryExecutor(self._ctx.session)
         self._closing = False
         #: Sequence id the next response starts at: one past the client's
@@ -268,6 +269,9 @@ class ProxyConnection:
         if self._ctx.upstream is not None:
             with contextlib.suppress(Exception):
                 await self._ctx.upstream.close()
+        # A delegated (impersonated) engine session is owned by this stack.
+        with contextlib.suppress(Exception):
+            await self._sessions.aclose()
         try:
             self._writer.close()
             await self._writer.wait_closed()
@@ -332,6 +336,7 @@ class ProxyConnection:
             self._ctx.capabilities = response.capabilities & SERVER_CAPABILITIES
 
             auth_response = response.auth_response
+            delegated: bi_tokens.BiSession | None = None
             binding = await self._match_bi_token(
                 response.username, upstream.scramble, response.auth_response
             )
@@ -347,21 +352,27 @@ class ProxyConnection:
                     )
                     await upstream.close()
                     return False
-                # The token proved the client is Superset acting for this Nova
-                # session. The engine login is then completed with the
-                # session's own credential against StarRocks' scramble, so the
-                # engine authenticates the principal exactly as for a relay.
-                auth_response = scramble_native_password(
-                    decrypt_password(bi_session.encrypted_password), upstream.scramble
-                )
                 self._ctx.bi_binding = binding
+                if bi_session.delegated:
+                    # A background run has no password: the engine session is
+                    # opened below through the worker account's impersonation.
+                    delegated = bi_session
+                else:
+                    # The token proved the client is Superset acting for this
+                    # Nova session. The engine login is then completed with the
+                    # session's own credential against StarRocks' scramble, so
+                    # the engine authenticates the principal as for a relay.
+                    auth_response = scramble_native_password(
+                        decrypt_password(bi_session.encrypted_password), upstream.scramble
+                    )
 
             try:
-                await upstream.finish(
-                    username=response.username,
-                    auth_response=auth_response,
-                    database=response.database,
-                )
+                if delegated is None:
+                    await upstream.finish(
+                        username=response.username,
+                        auth_response=auth_response,
+                        database=response.database,
+                    )
             except AuthenticationError as exc:
                 logger.info(
                     "[%s] authentication failed for %r from %s",
@@ -376,11 +387,16 @@ class ProxyConnection:
             await upstream.close()
             raise
 
-        # The relay leaves a live, authenticated StarRocks session. Adopting it
-        # as an asyncmy connection is what lets the query pipeline run under the
-        # client's own RBAC without a password the proxy does not have.
-        self._ctx.connection = await upstream.open_session()
-        self._ctx.upstream = upstream
+        if delegated is not None:
+            await upstream.close()
+            if not await self._open_delegated_session(delegated, sequence=2):
+                return False
+        else:
+            # The relay leaves a live, authenticated StarRocks session. Adopting
+            # it as an asyncmy connection is what lets the query pipeline run
+            # under the client's own RBAC without a password the proxy lacks.
+            self._ctx.connection = await upstream.open_session()
+            self._ctx.upstream = upstream
 
         requested_role = response.connect_attrs.get("nova_role") or None
         if self._ctx.bi_binding is not None:
@@ -460,6 +476,27 @@ class ProxyConnection:
         except Exception:
             logger.warning("[%s] BI token lookup failed", self._ctx.connection_id)
             return None
+
+    async def _open_delegated_session(
+        self, bi_session: bi_tokens.BiSession, *, sequence: int
+    ) -> bool:
+        """Open the owner's engine session for a delegated (background) login."""
+        from app.modules.superset.delegation import DelegationError, owner_session
+
+        try:
+            self._ctx.connection = await self._sessions.enter_async_context(
+                owner_session(bi_session.username, bi_session.active_role)
+            )
+        except DelegationError as exc:
+            assert self._ctx.bi_binding is not None
+            await self._audit_bi_refusal(bi_session.username, self._ctx.bi_binding, str(exc))
+            await self._write_error(
+                ER_ACCESS_DENIED_ERROR,
+                f"Access denied for user '{bi_session.username}'",
+                sequence=sequence,
+            )
+            return False
+        return True
 
     async def _audit_bi_refusal(
         self, username: str, binding: bi_tokens.TokenBinding, reason: str

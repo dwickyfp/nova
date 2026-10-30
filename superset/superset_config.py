@@ -10,13 +10,18 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 
+import nova_superset.celery_hooks  # noqa: F401 - registers the session carry
 import pymysql
+import redis
+from cachelib.redis import RedisCache
+from celery.schedules import crontab
 from flask_appbuilder.security.manager import AUTH_REMOTE_USER
 from nova_superset.app import init_app
 from nova_superset.connection import mutate_connection
 from nova_superset.events import NovaEventLogger
 from nova_superset.jinja import JINJA_CONTEXT_ADDONS as _NOVA_JINJA
 from nova_superset.security import NovaSecurityManager
+from nova_superset.thumbnails import chart_digest, dashboard_digest
 
 # Superset imports this module at the end of superset.config, so its defaults
 # already exist and can be extended rather than copied.
@@ -105,20 +110,60 @@ def _redis_cache(db: int, prefix: str) -> dict:
 CACHE_CONFIG = _redis_cache(3, "nova_bi_meta_")
 FILTER_STATE_CACHE_CONFIG = _redis_cache(3, "nova_bi_filter_")
 EXPLORE_FORM_DATA_CACHE_CONFIG = _redis_cache(3, "nova_bi_form_")
-# S9: query results are not cached until cache keys carry the active role and
-# security-context version (Phase 2 patch).
-DATA_CACHE_CONFIG = {"CACHE_TYPE": "NullCache"}
+# S9: query results are cached per Nova principal, active role and context
+# version (``NovaSecurityManager.get_rls_cache_key``).
+DATA_CACHE_CONFIG = _redis_cache(4, "nova_bi_data_")
+THUMBNAIL_CACHE_CONFIG = _redis_cache(4, "nova_bi_thumb_")
+THUMBNAIL_CHART_DIGEST_FUNC = chart_digest
+THUMBNAIL_DASHBOARD_DIGEST_FUNC = dashboard_digest
+
+# Background work (S5, S10): Celery on Redis, async SQL Lab results in Redis.
+RESULTS_BACKEND = RedisCache(
+    host=redis.Redis.from_url(f"{_REDIS}/5"), key_prefix="nova_bi_results_"
+)
+
+
+class CeleryConfig:
+    broker_url = f"{_REDIS}/6"
+    result_backend = f"{_REDIS}/6"
+    imports = (
+        "superset.sql_lab",
+        "superset.tasks.scheduler",
+        "superset.tasks.thumbnails",
+        "superset.tasks.cache",
+    )
+    worker_prefetch_multiplier = 1
+    task_acks_late = False
+    beat_schedule = {
+        "reports.scheduler": {"task": "reports.scheduler", "schedule": crontab(minute="*")},
+        "reports.prune_log": {"task": "reports.prune_log", "schedule": crontab(minute=0, hour=0)},
+    }
+
+
+CELERY_CONFIG = CeleryConfig
+
+# Scheduled work runs as the owner (S5); thumbnails as the requesting session.
+WEBDRIVER_BASEURL = os.environ.get("SUPERSET_WEBDRIVER_BASEURL", "http://superset:8088/bi/")
+WEBDRIVER_BASEURL_USER_FRIENDLY = os.environ.get("NOVA_PUBLIC_BI_URL", "http://localhost:5173/bi/")
+MACHINE_AUTH_PROVIDER_CLASS = "nova_superset.machine_auth.NovaMachineAuthProvider"
+# Without a mail server, reports and alerts run and are logged but not sent.
+SMTP_HOST = os.environ.get("SUPERSET_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SUPERSET_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SUPERSET_SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SUPERSET_SMTP_PASSWORD", "")
+SMTP_MAIL_FROM = os.environ.get("SUPERSET_SMTP_MAIL_FROM", "nova-bi@localhost")
+ALERT_REPORTS_NOTIFICATION_DRY_RUN = not SMTP_HOST
 
 FEATURE_FLAGS = {
     "ENABLE_TEMPLATE_PROCESSING": True,
-    # S10: async execution runs without the interactive Nova session.
+    "ALERT_REPORTS": True,
+    "THUMBNAILS": True,
+    "PLAYWRIGHT_REPORTS_AND_THUMBNAILS": True,
+    # Chart loads stay synchronous: each runs in the viewer's own request.
     "GLOBAL_ASYNC_QUERIES": False,
-    # S5: background executors need delegated tokens (Phase 2).
-    "ALERT_REPORTS": False,
-    "THUMBNAILS": False,
     # S14: Nova users are signed in directly; guest tokens are not used.
     "EMBEDDED_SUPERSET": False,
-    # S9: username-only partitioning is not enough; caching is off instead.
+    # The Nova partition in get_rls_cache_key already covers the principal.
     "CACHE_IMPERSONATION": False,
 }
 

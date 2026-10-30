@@ -10,6 +10,7 @@ request.
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import quote
 
 from flask import redirect, request
@@ -43,6 +44,17 @@ class NovaLoginView(AuthRemoteUserView):
 
 class NovaSecurityManager(SupersetSecurityManager):
     authremoteuserview = NovaLoginView
+
+    def get_rls_cache_key(self, datasource: Any) -> list[str]:
+        """Partition cached query results by Nova session (S9).
+
+        Superset folds this into every chart-data cache key, so a result is only
+        reused by the same principal under the same active role and context
+        version. Without a Nova session nothing can share a cache entry.
+        """
+        from nova_superset import context
+
+        return [*super().get_rls_cache_key(datasource), context.partition_key() or "nova:none"]
 
     def sync_nova_user(self, identity: Identity):
         """Return the mirror user for ``identity``, created or corrected."""

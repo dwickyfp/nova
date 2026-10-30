@@ -7,7 +7,7 @@ from nova_superset import context
 
 def nova_active_role() -> str:
     """The active Nova role the current query runs under."""
-    identity = context.identity.get()
+    identity = context.current_identity()
     return identity.active_role if identity else ""
 
 

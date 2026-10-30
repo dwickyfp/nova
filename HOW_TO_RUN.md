@@ -410,7 +410,7 @@ Jalankan atau perbarui service-nya di project compose yang sudah berjalan
 
 ```bash
 cd docker
-docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml --profile app up -d --build --no-deps nova-backend superset-db superset-init superset
+docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml --profile app up -d --build --no-deps nova-backend superset-db superset-init superset superset-worker superset-beat
 ```
 
 Vite meneruskan `/bi/*` ke Superset (`127.0.0.1:8088`). Buka menu **BI** di
@@ -420,8 +420,22 @@ Superset tampil di dalam frame Nova. Versi layar penuh ada di
 sendiri. Role yang boleh membuat chart/dataset diatur `ACCOUNTADMIN` lewat
 `PUT /api/v1/superset/author-roles`; role lain mendapat akses lihat saja.
 
-Acceptance Fase 1 di stack governed (membuat dan menghapus sendiri user, role,
-policy Ranger, dan data ujinya):
+Pekerjaan background Superset (alert, report, thumbnail, SQL Lab async)
+berjalan di `superset-worker` dan `superset-beat`. Alert dan report berjalan
+sebagai pemiliknya lewat akun worker yang sama dengan task terjadwal
+(`WORKER_IMPERSONATION_*` di `docker/.env`, juga dipakai `nova-backend`); beri
+akun itu izin impersonate per pemilik:
+
+```bash
+uv run python scripts/provision_task_worker_access.py --owner <username>
+```
+
+Tanpa `SUPERSET_SMTP_HOST` report dan alert tetap dijalankan dan dicatat, tetapi
+tidak dikirim.
+
+Acceptance di stack governed (membuat dan menghapus sendiri user, role,
+policy Ranger, dan data ujinya; tes Fase 2 menghentikan dan menyalakan lagi
+`nova-superset-worker` sesaat):
 
 ```bash
 cd backend
@@ -430,6 +444,7 @@ STARROCKS_HOST=127.0.0.1 STARROCKS_FE_MYSQL_PORT=29030 \
 NOVA_SUPERSET_URL=http://127.0.0.1:8088 NOVA_SUPERSET_SERVICE_TOKEN="$TOKEN" \
 NOVA_SUPERSET_LOG_CONTAINERS=nova-superset,nova-backend,nova-superset-db \
 NOVA_SUPERSET_DB_CONTAINER=nova-superset-db \
+NOVA_SUPERSET_WORKER_CONTAINER=nova-superset-worker \
 uv run pytest tests/integration/test_superset_governed.py -v -rs
 ```
 

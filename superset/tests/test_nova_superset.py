@@ -262,3 +262,174 @@ class ImportTests(unittest.TestCase):
         http = _flask().test_client()
         for kind in ("dashboard", "chart", "dataset", "database", "assets"):
             self.assertEqual(http.post(f"/api/v1/{kind}/import/").status_code, 404, kind)
+
+
+DELEGATED = client.Identity("alice", "marketing", "NovaAuthor", 1, delegated=True)
+
+
+class BackgroundTests(unittest.TestCase):
+    def setUp(self) -> None:
+        context.clear()
+        self.addCleanup(context.clear)
+        self.uri = make_url("starrocks://nova@nova-backend:4406/default_catalog")
+        os.environ["NOVA_PROXY_HOST"] = "nova-backend"
+
+    def test_a_web_request_without_a_session_is_never_delegated(self):
+        with (
+            mock.patch.object(client, "delegate") as delegate,
+            self.assertRaises(connection.NovaSessionRequired),
+        ):
+            connection.mutate_connection(self.uri, {}, "alice", None, None)
+        delegate.assert_not_called()
+
+    def test_scheduled_work_is_delegated_to_the_owner(self):
+        context.background.set(True)
+        token = client.DataToken(username="alice", token="tok", expires_in=300)
+        with (
+            mock.patch.object(client, "delegate", return_value=("d-handle", DELEGATED)) as delegate,
+            mock.patch.object(client, "data_token", return_value=token) as minted,
+        ):
+            uri, _ = connection.mutate_connection(self.uri, {}, "alice", None, None)
+        delegate.assert_called_once_with("alice")
+        minted.assert_called_once_with("d-handle")
+        self.assertEqual((uri.username, uri.password), ("alice", "tok"))
+        self.assertEqual(context.partition_key(), "nova:delegated:alice:marketing:1")
+
+    def test_a_refused_delegation_refuses_the_connection(self):
+        context.background.set(True)
+        with (
+            mock.patch.object(client, "delegate", side_effect=client.NovaUnauthorized),
+            self.assertRaises(connection.NovaSessionRequired),
+        ):
+            connection.mutate_connection(self.uri, {}, "alice", None, None)
+
+    def test_async_sql_lab_never_falls_back_to_delegation(self):
+        context.background.set(True)
+        context.carry_required.set(True)
+        with (
+            mock.patch.object(client, "delegate") as delegate,
+            self.assertRaises(connection.NovaSessionRequired),
+        ):
+            connection.mutate_connection(self.uri, {}, "alice", None, None)
+        delegate.assert_not_called()
+
+
+class CeleryHookTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from nova_superset import celery_hooks
+
+        self.hooks = celery_hooks
+        context.end_task()
+        self.addCleanup(context.end_task)
+
+    def test_the_submitting_session_travels_with_carried_tasks_only(self):
+        context.adopt("h-1", IDENTITY)
+        headers: dict = {}
+        self.hooks.carry_session(sender="sql_lab.get_sql_results", headers=headers)
+        self.assertEqual(headers, {"nova_bi_handle": "h-1", "nova_bi_state": "alice:finance:3"})
+        scheduled: dict = {}
+        self.hooks.carry_session(sender="reports.execute", headers=scheduled)
+        self.assertEqual(scheduled, {})
+
+    def test_a_carried_task_runs_as_its_session(self):
+        task = SimpleNamespace(
+            name="sql_lab.get_sql_results",
+            request=SimpleNamespace(nova_bi_handle="h-1", nova_bi_state="alice:finance:3"),
+        )
+        with mock.patch.object(client, "identity", return_value=IDENTITY):
+            self.hooks.adopt_session(task=task)
+        self.assertTrue(context.in_background() and context.needs_carry())
+        self.assertEqual(context.current_handle(), "h-1")
+        self.assertEqual(context.partition_key(), "nova:session:alice:finance:3")
+        # The task body runs in another context: the process keeps the session.
+        context.clear()
+        self.assertEqual(context.current_handle(), "h-1")
+        self.hooks.release_session()
+        self.assertIsNone(context.current_handle())
+
+    def test_a_session_that_changed_role_does_not_run_the_task(self):
+        task = SimpleNamespace(
+            name="sql_lab.get_sql_results",
+            request=SimpleNamespace(nova_bi_handle="h-1", nova_bi_state="alice:marketing:2"),
+        )
+        with mock.patch.object(client, "identity", return_value=IDENTITY):
+            self.hooks.adopt_session(task=task)
+        self.assertIsNone(context.current_handle())
+        self.assertTrue(context.needs_carry())
+
+    def test_an_ended_session_leaves_a_required_carry_without_identity(self):
+        task = SimpleNamespace(
+            name="sql_lab.get_sql_results", request=SimpleNamespace(nova_bi_handle="h-1")
+        )
+        with mock.patch.object(client, "identity", side_effect=client.NovaUnauthorized):
+            self.hooks.adopt_session(task=task)
+        self.assertIsNone(context.current_handle())
+        self.assertTrue(context.needs_carry())
+
+    def test_scheduled_tasks_ignore_any_handle(self):
+        task = SimpleNamespace(
+            name="reports.execute", request=SimpleNamespace(nova_bi_handle="h-1")
+        )
+        with mock.patch.object(client, "identity") as identity:
+            self.hooks.adopt_session(task=task)
+        identity.assert_not_called()
+        self.assertIsNone(context.current_handle())
+        self.assertTrue(context.in_background())
+
+
+class MachineAuthTests(unittest.TestCase):
+    def setUp(self) -> None:
+        context.clear()
+        self.addCleanup(context.clear)
+
+    def test_the_browser_signs_in_with_the_task_session_or_a_delegation(self):
+        from nova_superset.machine_auth import NovaMachineAuthProvider
+
+        provider = NovaMachineAuthProvider(None)
+        context.bi_handle.set("h-1")
+        self.assertEqual(
+            provider.get_cookies(SimpleNamespace(username="alice")), {"nova_bi": "h-1"}
+        )
+        context.clear()
+        context.background.set(True)
+        with mock.patch.object(client, "delegate", return_value=("d-1", DELEGATED)):
+            self.assertEqual(
+                provider.get_cookies(SimpleNamespace(username="alice")), {"nova_bi": "d-1"}
+            )
+
+
+class PartitionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        context.clear()
+        self.addCleanup(context.clear)
+
+    def test_thumbnail_digests_differ_by_role_and_need_a_session(self):
+        from nova_superset import thumbnails
+
+        app = Flask(__name__)
+        app.config["HASH_ALGORITHM"] = "sha256"
+        app.config["HASH_ALGORITHM_FALLBACKS"] = []
+        ctx = app.app_context()
+        ctx.push()
+        self.addCleanup(ctx.pop)
+        chart = SimpleNamespace(params='{"viz_type": "table"}')
+        self.assertIsNone(thumbnails.chart_digest(chart, "current_user", "alice"))
+        context.identity.set(IDENTITY)
+        finance = thumbnails.chart_digest(chart, "current_user", "alice")
+        context.identity.set(client.Identity("alice", "marketing", "NovaAuthor", 4))
+        marketing = thumbnails.chart_digest(chart, "current_user", "alice")
+        self.assertNotEqual(finance, marketing)
+        dashboard = SimpleNamespace(
+            id=1, charts=["a"], position_json="{}", css="", json_metadata="{}"
+        )
+        self.assertIsNotNone(thumbnails.dashboard_digest(dashboard, "current_user", "alice"))
+
+    def test_cached_results_are_keyed_by_the_nova_session(self):
+        with mock.patch(
+            "superset.security.SupersetSecurityManager.get_rls_cache_key", return_value=[]
+        ):
+            manager = security.NovaSecurityManager.__new__(security.NovaSecurityManager)
+            self.assertEqual(manager.get_rls_cache_key(None), ["nova:none"])
+            context.identity.set(IDENTITY)
+            key = manager.get_rls_cache_key(None)
+        self.assertEqual(key, ["nova:session:alice:finance:3"])

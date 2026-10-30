@@ -18,6 +18,18 @@ class NovaSessionRequired(Exception):
     """Nova data was requested outside a signed-in Nova request."""
 
 
+def background_session(username: str | None) -> str:
+    """Delegate to ``username`` for this background run and remember it."""
+    if not username:
+        raise NovaSessionRequired("Background BI work needs an owner")
+    try:
+        handle, identity = client.delegate(username)
+    except client.NovaUnauthorized:
+        raise NovaSessionRequired(f"Nova does not allow background BI work as {username}") from None
+    context.adopt(handle, identity)
+    return handle
+
+
 def _proxy_host() -> str:
     return os.environ.get("NOVA_PROXY_HOST", "nova-backend")
 
@@ -26,16 +38,18 @@ def mutate_connection(uri, params, username, security_manager, source):
     del security_manager, source
     if uri.host != _proxy_host():
         raise NovaSessionRequired("Only the Nova database is available")
-    handle = context.bi_handle.get()
+    handle = context.current_handle()
+    if not handle and context.in_background() and not context.needs_carry():
+        handle = background_session(username)
     if not handle:
         raise NovaSessionRequired("Nova data needs a signed-in Nova session")
-    token = context.data_token.get()
+    token = context.current_token()
     if token is None:
         try:
             token = client.data_token(handle)
         except client.NovaUnauthorized:
             raise NovaSessionRequired("The Nova session has ended") from None
-        context.data_token.set(token)
+        context.remember_token(token)
     if username and username != token.username:
         raise NovaSessionRequired("The Superset user does not match the Nova session")
     return uri.set(username=token.username, password=token.token), params

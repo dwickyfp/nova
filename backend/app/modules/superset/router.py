@@ -55,6 +55,18 @@ class HandleRequest(BaseModel):
     handle: str = Field(min_length=16, max_length=256)
 
 
+class DelegateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=128)
+
+
+class DelegateResponse(BaseModel):
+    handle: str
+    username: str
+    active_role: str
+    superset_role: str
+    expires_in: int
+
+
 class AuditRequest(HandleRequest):
     kind: Literal["BI_CHANGE", "BI_EXPORT"]
     action: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.]+$")
@@ -66,6 +78,7 @@ class IdentityResponse(BaseModel):
     active_role: str
     superset_role: str
     security_context_version: int
+    delegated: bool = False
 
 
 class DataTokenResponse(BaseModel):
@@ -175,6 +188,7 @@ async def identity(body: HandleRequest):
         active_role=bi_session.active_role,
         superset_role=await superset_role_for(bi_session.active_role),
         security_context_version=bi_session.security_context_version,
+        delegated=bi_session.delegated,
     )
 
 
@@ -209,3 +223,47 @@ async def audit(body: AuditRequest):
         security_context_version=bi_session.security_context_version,
     )
     return {"recorded": True}
+
+
+@internal_router.post("/delegate", response_model=DelegateResponse)
+async def delegate(body: DelegateRequest):
+    """A BI session for one background run as ``username`` (S5).
+
+    Granted only when the worker account can impersonate the owner right now;
+    the session runs under the owner's current default role. Refusals are
+    audited like grants.
+    """
+    from app.core.config import settings
+
+    from .delegation import DelegationError, authorize
+
+    try:
+        role = await authorize(body.username)
+    except DelegationError as exc:
+        await write_audit_log(
+            event_type="bi_delegation",
+            user_name=body.username[:128],
+            action="DELEGATE_BI_SESSION",
+            object_type="SUPERSET",
+            object_name=body.username[:128],
+            status="DENIED",
+            error_message=str(exc)[:500],
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    handle = await tokens.issue_delegated_handle(body.username, role)
+    await write_audit_log(
+        event_type="bi_delegation",
+        user_name=body.username,
+        action="DELEGATE_BI_SESSION",
+        object_type="SUPERSET",
+        object_name=body.username,
+        status="SUCCESS",
+        active_role=role,
+    )
+    return DelegateResponse(
+        handle=handle,
+        username=body.username,
+        active_role=role,
+        superset_role=await superset_role_for(role),
+        expires_in=settings.SUPERSET_DELEGATION_TTL_SECONDS,
+    )

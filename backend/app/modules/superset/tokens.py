@@ -18,6 +18,10 @@ Redis layout (all keys expire on their own):
 * ``nova:bi:bind:<session id>`` → the session's current token id, so a
   dashboard opening twenty connections reuses one token instead of minting
   twenty.
+* ``nova:bi:delegated:<id>`` → a delegated session for one background run
+  (:mod:`app.modules.superset.delegation`). Its session id is
+  ``delegated:<id>``; it has no password, and the proxy reaches the engine
+  through the worker account's impersonation of the owner instead.
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ _HANDLE_PREFIX = "nova:bi:handle:"
 _TOKEN_PREFIX = "nova:bi:token:"
 _INDEX_PREFIX = "nova:bi:tokens:"
 _BIND_PREFIX = "nova:bi:bind:"
+_DELEGATED_PREFIX = "nova:bi:delegated:"
+DELEGATED = "delegated:"
 
 
 class BiCredentialError(Exception):
@@ -55,6 +61,9 @@ class BiSession:
     active_role: str
     security_context_version: int
     encrypted_password: str
+    #: A background run's session: the owner under their default role, reached
+    #: through the worker account's impersonation rather than a password.
+    delegated: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,6 +107,8 @@ async def resolve_session(session_id: str) -> BiSession:
     A session without an explicit active role, or whose stored password no
     longer decrypts (key rotation), is not usable for BI.
     """
+    if session_id.startswith(DELEGATED):
+        return await _delegated_session(session_id)
     session = await session_store.get(session_id)
     if not session:
         raise BiCredentialError("Nova session has ended")
@@ -117,6 +128,39 @@ async def resolve_session(session_id: str) -> BiSession:
         security_context_version=int(session.get("security_context_version") or 1),
         encrypted_password=encrypted_password,
     )
+
+
+async def _delegated_session(session_id: str) -> BiSession:
+    stored = await _redis().hgetall(_DELEGATED_PREFIX + session_id[len(DELEGATED) :])
+    fields = {_text(k): _text(v) for k, v in stored.items()}
+    if not fields.get("username") or not fields.get("active_role"):
+        raise BiCredentialError("The delegated BI session has ended")
+    return BiSession(
+        session_id=session_id,
+        username=fields["username"],
+        active_role=fields["active_role"],
+        security_context_version=int(fields.get("version") or 1),
+        encrypted_password="",
+        delegated=True,
+    )
+
+
+async def issue_delegated_handle(username: str, active_role: str) -> str:
+    """A BI handle for one background run as ``username`` under ``active_role``.
+
+    The caller has already authorized the delegation; this only records it,
+    for ``SUPERSET_DELEGATION_TTL_SECONDS``.
+    """
+    ttl = settings.SUPERSET_DELEGATION_TTL_SECONDS
+    delegated_id = uuid.uuid4().hex
+    key = _DELEGATED_PREFIX + delegated_id
+    await _redis().hset(
+        key, mapping={"username": username, "active_role": active_role, "version": "1"}
+    )
+    await _redis().expire(key, ttl)
+    handle = secrets.token_urlsafe(32)
+    await _redis().set(_handle_key(handle), DELEGATED + delegated_id, ex=ttl)
+    return handle
 
 
 # ── BI handles (the /bi cookie) ──────────────────────────────────────────
@@ -144,8 +188,9 @@ async def session_for_handle(handle: str) -> BiSession:
     if not session_id:
         raise BiCredentialError("BI handle is unknown or expired")
     bi_session = await resolve_session(session_id)
-    await session_store.refresh(session_id)
-    await redis.expire(key, settings.SESSION_TTL_SECONDS)
+    if not bi_session.delegated:
+        await session_store.refresh(session_id)
+        await redis.expire(key, settings.SESSION_TTL_SECONDS)
     return bi_session
 
 

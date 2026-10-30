@@ -78,6 +78,14 @@ services:
       NOVA_PROXY_HOST: nova-proxy
     ports: !override []
 
+  superset-worker:
+    environment:
+      NOVA_PROXY_HOST: nova-proxy
+
+  superset-beat:
+    environment:
+      NOVA_PROXY_HOST: nova-proxy
+
   nova-gateway:
     profiles: ["app"]
     image: nginx:1.27-alpine

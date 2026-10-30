@@ -75,6 +75,11 @@ services:
       # Shared with Superset for /api/v1/internal/superset (docs/arch-17-superset.md).
       SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
       SUPERSET_INTERNAL_URL: http://superset:8088
+      # Superset's scheduled work runs as its owner through this account's
+      # per-owner impersonation (S5); never root or nova_admin.
+      WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
+      WORKER_IMPERSONATION_PASSWORD: ${WORKER_IMPERSONATION_PASSWORD:-}
+      WORKER_IMPERSONATION_ROLE: ${WORKER_IMPERSONATION_ROLE:-}
     ports:
       - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
       - "${NOVA_MYSQL_PORT:-4406}:4406"
@@ -330,6 +335,11 @@ services:
       NOVA_PROXY_HOST: nova-backend
       NOVA_PROXY_PORT: "4406"
       NOVA_SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
+      SUPERSET_SMTP_HOST: ${SUPERSET_SMTP_HOST:-}
+      SUPERSET_SMTP_PORT: ${SUPERSET_SMTP_PORT:-587}
+      SUPERSET_SMTP_USER: ${SUPERSET_SMTP_USER:-}
+      SUPERSET_SMTP_PASSWORD: ${SUPERSET_SMTP_PASSWORD:-}
+      SUPERSET_SMTP_MAIL_FROM: ${SUPERSET_SMTP_MAIL_FROM:-nova-bi@localhost}
     networks:
       - nova
 
@@ -352,6 +362,48 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+    restart: unless-stopped
+    networks:
+      - nova
+
+  # Alerts, reports, thumbnails, cache warmup and async SQL Lab.
+  superset-worker:
+    profiles: ["app"]
+    image: nova-superset:local
+    container_name: nova-superset-worker
+    command: ["celery", "--app=superset.tasks.celery_app:app", "worker", "--pool=prefork", "-O", "fair", "-c", "2", "-l", "INFO"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery --app=superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *superset-env
+    restart: unless-stopped
+    networks:
+      - nova
+
+  superset-beat:
+    profiles: ["app"]
+    image: nova-superset:local
+    container_name: nova-superset-beat
+    command: ["celery", "--app=superset.tasks.celery_app:app", "beat", "--pidfile", "/tmp/celerybeat.pid", "-s", "/tmp/celerybeat-schedule"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tmp/celerybeat.pid"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *superset-env
     restart: unless-stopped
     networks:
       - nova

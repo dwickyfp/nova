@@ -1,12 +1,12 @@
 # Architecture 17: Superset as Studio's BI surface
 
-> Status: **accepted design; Phases 1, 3 and 4 implemented.** This document is
-> the delivery plan for replacing Studio's viz-core chart and dashboard
-> artifacts with Apache Superset. Its open decisions were settled on 2026-10-29
-> (see [Decisions](#decisions)). New Studio artifacts are Superset charts and
-> dashboards. Phase 2 (background work and caches), Phase 5 and Phase 6 are not
-> implemented: artifacts saved before BI still render through
-> [Architecture 16](arch-16-viz-core.md) until Phase 6 converts them.
+> Status: **accepted design; Phases 1 to 4 implemented.** This document is the
+> delivery plan for replacing Studio's viz-core chart and dashboard artifacts
+> with Apache Superset. Its open decisions were settled on 2026-10-29 (see
+> [Decisions](#decisions)). New Studio artifacts are Superset charts and
+> dashboards, and Superset's background work runs under Nova's identity.
+> Phases 5 and 6 are not implemented: artifacts saved before BI still render
+> through [Architecture 16](arch-16-viz-core.md) until Phase 6 converts them.
 
 Nova ships Apache Superset as a built-in component and shows it inside Studio
 as the surface for saved charts and dashboards. Superset brings its full feature
@@ -180,6 +180,23 @@ scheduled tasks ([execution.py](../backend/app/modules/task_orchestration/execut
 a dedicated account with `IMPERSONATE` granted per owner, never on all users,
 never `root` or `nova_admin`. A principal without a default role fails closed.
 
+Implemented in `backend/app/modules/superset/delegation.py` and
+`/api/v1/internal/superset/delegate`. Delegation is authorized by impersonating
+the owner through `DelegateExecutor.owner_connection` and reading the default
+role from that session, so the engine decides; the worker account and the
+per-owner Ranger grant are the ones `scripts/provision_task_worker_access.py`
+manages for scheduled tasks. A delegated session lives in Redis for
+`SUPERSET_DELEGATION_TTL_SECONDS` and has no password: the proxy opens the
+owner's engine session through the same impersonation and activates exactly
+the default role. Grants and refusals are audited.
+
+Work a signed-in request starts on someone's behalf is not delegated: Superset
+thumbnails (requested by the viewer) and async SQL Lab carry the requesting
+session into Celery (S10), so they run under that session's active role. Only
+scheduled work (alerts and reports) is delegated. This narrows D4: thumbnails
+follow the viewer, not the owner, because a thumbnail drawn under the owner's
+default role would show the viewer rows they may not see.
+
 **S6. Superset roles gate features, not data.** Nova roles are StarRocks role
 names (`ACCOUNTADMIN`, `SECURITYADMIN`, and customer roles such as `finance`).
 At every login and role switch the security manager assigns exactly one of
@@ -217,19 +234,25 @@ Superset's database admin APIs are removed from all roles, including
 `NovaAdmin`. Upload-to-database is disabled until a stage-backed path exists.
 
 **S9. Cache isolation.** Superset data cache keys include principal, active
-role, and `security_context_version`. `CACHE_IMPERSONATION` adds only the
-username in 6.1.0, so `patches/superset/` extends
-`add_impersonation_cache_key_if_needed` with the role and version. Thumbnail
-cache keys get the same partition. Until the patch passes its tests, the "Nova"
-database cache timeout is `0` and thumbnails stay off.
+role, and `security_context_version`. No patch is needed: Superset folds
+`security_manager.get_rls_cache_key()` into every chart-data cache key, and
+`NovaSecurityManager` appends the Nova session's partition there
+(`nova:<session|delegated>:<principal>:<role>:<version>`). Thumbnail digests use
+the same partition through `THUMBNAIL_CHART_DIGEST_FUNC` and
+`THUMBNAIL_DASHBOARD_DIGEST_FUNC`; without a Nova session there is no
+thumbnail. Cache warmup is not scheduled: its entries would belong to a
+delegated identity and could never be served to a signed-in session.
 
-**S10. Async execution needs session binding.** Superset's async SQL Lab and
-`GLOBAL_ASYNC_QUERIES` run in Celery, where the interactive session is not on
-the request context. Treating them as background work would replace the
-user's active role with the default role, which violates S3. They stay off
-until a patch carries the Nova session reference from submission into the
-Celery task and the proxy validates it like S3. Long-running interactive SQL
-stays in Nova's Console.
+**S10. Async execution needs session binding.** Superset's async SQL Lab runs
+in Celery, where the interactive session is not on the request context.
+Treating it as background work would replace the user's active role with the
+default role, which violates S3. `nova_superset/celery_hooks.py` carries the
+submitting session's BI handle and its `principal:role:version` in task
+headers (Celery's `before_task_publish`), and the worker adopts the session
+only if it still has that role and version; otherwise the query fails rather
+than run under another role or be delegated. The handle crosses Superset's
+Redis broker on the internal network only. `GLOBAL_ASYNC_QUERIES` stays off:
+chart loads run synchronously in the viewer's own request.
 
 Revocation reaches data first: a revoked role assignment or dropped user fails
 the next query (role activation or engine login refuses it), while the Superset
@@ -274,14 +297,15 @@ after the named patch passes), **Blocked** (off, with the reason).
 | Explore and chart editing | As the real user, through the proxy | Security manager, mutator | 1 | Ships |
 | All chart types shipped in 6.1.0 | Unchanged | None | 1 | Ships |
 | SQL Lab, synchronous | Through the proxy; `@stage` and the guard apply | Mutator | 1 | Ships |
-| SQL Lab, async; `GLOBAL_ASYNC_QUERIES` | Session-bound Celery execution | `patches/superset/` session carry (S10) | 2 | Patch |
+| SQL Lab, async | Celery, as the submitting session; refused if it changed (S10) | Celery signals in `nova_superset` | 2 | Ships |
+| `GLOBAL_ASYNC_QUERIES` | Chart loads stay synchronous in the viewer's request | — | — | Off |
 | Datasets: physical and virtual, metrics, calculated columns | Virtual datasets for agent artifacts; Semantic Views synced as datasets | Semantic sync job | 1, 5 | Ships |
 | Jinja templating | Plus `nova_active_role()` | `JINJA_CONTEXT_ADDONS` | 1 | Ships |
 | Saved queries, query history, tags, annotations | Superset metadata | None | 1 | Ships |
-| Data cache | Partitioned by principal, role, context version | `CACHE_IMPERSONATION` + patch (S9) | 2 | Patch |
+| Data cache | Partitioned by principal, role, context version | `get_rls_cache_key` (S9) | 2 | Ships |
 | Alerts and reports (email, Slack) | Owner, default role, delegated token | `ALERT_REPORTS_EXECUTORS`, mutator, delegation (S5) | 2 | Ships |
-| Thumbnails and screenshots | Viewer, default role, partitioned cache | `THUMBNAIL_EXECUTORS`, patch (S9) | 2 | Patch |
-| Cache warmup | Editor, default role | `CACHE_WARMUP_EXECUTORS`, delegation | 2 | Ships |
+| Thumbnails and screenshots | Drawn for the requesting session, partitioned digests | Digest functions, machine auth (S9) | 2 | Ships |
+| Cache warmup | Not scheduled: delegated entries could not be served to signed-in sessions | — | — | Off |
 | Export: CSV, Excel, PNG, PDF, dashboard bundles | Superset exporters, audited by S12 | `EVENT_LOGGER` | 4 | Ships |
 | Import of bundles | Superset 6.1.0 gates `/import/` on `write`, so authors could import database definitions. Every import endpoint answers 404 (S8) | `nova_superset` request hook | 4 | Blocked |
 | Theme, dark mode | Tokens derived from [DESIGN.md](../DESIGN.md) | `THEME_DEFAULT`, `THEME_DARK`, `THEME_DEFAULT_MODE` | 3 | Ships |
@@ -359,16 +383,14 @@ Superset's chart data API validates it before the artifact is saved.
 `patches/superset/` follows the StarRocks patch rules: each patch is minimal,
 names its upstream file and reason, applies cleanly to the pinned tag, and is
 checked by `verify.sh` in CI. A hook that covers the need always wins over a
-patch. Planned patches:
+patch. Every need so far was met by a hook, so no patch exists yet:
 
-| Patch | Reason | Rule |
+| Need | Hook used instead of a patch | Rule |
 | --- | --- | --- |
-| Cache key partition | Add active role and context version to impersonated cache keys | S9 |
-| Async session carry | Carry the Nova session reference into Celery query execution | S10 |
-| Host bridge, if needed | Standalone-mode messages the bridge needs and 6.1.0 lacks | Studio host |
-
-Each patch is offered upstream where it is generally useful, and dropped at the
-first pin that makes it unnecessary.
+| Cache key partition | `NovaSecurityManager.get_rls_cache_key`, thumbnail digest functions | S9 |
+| Async session carry | Celery `before_task_publish` / `task_prerun` / `task_postrun` signals | S10 |
+| Headless-browser sign-in | `MACHINE_AUTH_PROVIDER_CLASS` | S5 |
+| Host bridge | Not needed: Superset is same-origin | Studio host |
 
 Two 6.1.0 behaviors are handled in `nova_superset` without a patch, and are
 re-checked at every pin: Superset reads MySQL result types from the `MySQLdb`
@@ -424,6 +446,16 @@ Acceptance:
 Deliver: delegation API and executor wiring for alerts, reports, thumbnails,
 and cache warmup; cache key patch; async session-carry patch; Celery and
 headless browser services.
+
+Status: **delivered**, with hooks instead of patches (see
+[Patch policy](#patch-policy)): delegated sessions and proxy impersonation
+(S5), cache and thumbnail partitions (S9), session carry for async SQL Lab and
+thumbnails (S10), `superset-worker` (Celery, Chromium through Playwright) and
+`superset-beat`. Cache warmup is deliberately not scheduled and
+`GLOBAL_ASYNC_QUERIES` stays off (S9, S10). Reports and alerts are sent only
+when `SUPERSET_SMTP_HOST` is configured; otherwise they run and are logged.
+Acceptance is automated in
+`backend/tests/integration/test_superset_governed.py::test_superset_phase_2_acceptance`.
 
 Acceptance:
 - A scheduled report runs as its owner with the owner's default role and shows
@@ -539,7 +571,7 @@ Accepted on 2026-10-29. Changing one reopens the affected rules and phases.
 | D1 | Superset keeps its own PostgreSQL metadata database as a product-owned exception to the `NOVA_SYSTEM`-only rule, like Ranger's policy database. It holds Superset objects only | [Storage](#storage) |
 | D2 | The viz core is retired in Phase 6. Superset does not run alongside it as a second authoring path | [Phase 6](#phase-6-migration-and-retirement) |
 | D3 | The proxy verifies Superset tokens with its own `mysql_native_password` scramble. Cleartext token login is not supported | S3, S4 |
-| D4 | Background work (alerts, reports, thumbnails, cache warmup) runs as the owner under the owner's current default role, revalidated every run | S5 |
+| D4 | Background work (alerts, reports, thumbnails, cache warmup) runs as the owner under the owner's current default role, revalidated every run. Refined in Phase 2: thumbnails follow the requesting session and cache warmup is not scheduled (see S5, S9) | S5 |
 
 ## References
 
