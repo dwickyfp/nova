@@ -282,6 +282,7 @@ async def governed():
     from app.integrations.ranger.schemas import RangerPolicy, RangerRole, RangerRoleMember
     from app.modules.access_control.security_context import SecurityContext
     from app.modules.access_control.service import access_control_service
+    from app.modules.superset.access import _AUTHOR_CACHE_SECONDS as AUTHOR_CACHE_SECONDS
     from app.modules.superset.access import author_roles, replace_author_roles
 
     await db.init_system_pool()
@@ -425,6 +426,9 @@ async def governed():
             authors.add(role) if author else authors.discard(role)
             await access_control_service.put_bi_metadata_access(admin, sorted(authors))
             await replace_author_roles(sorted(authors), changed_by="acceptance")
+            # The backend and Superset cache the author set per process: wait until
+            # every process reads the change, or the next test races it.
+            await asyncio.sleep(AUTHOR_CACHE_SECONDS + 1)
 
         await set_authors(role_a, author=True)
         yield SimpleNamespace(
@@ -582,13 +586,11 @@ async def test_superset_phase_1_acceptance(governed):
 
             # The Superset role follows the active role on every request.
             await g.set_authors(g.role_b, author=False)
-            await asyncio.sleep(16)  # author mapping is cached per process for 15 s
             viewer = await bi2.sql(orders, g.database)
             assert viewer.status_code in (401, 403), viewer.text
 
             # Revoking the role assignment refuses the next query.
             await g.set_authors(g.role_b, author=True)
-            await asyncio.sleep(16)
             assert [r["id"] for r in _rows(await bi2.sql(orders, g.database))] == [1, 2, 3]
             await db.execute_system(f"REVOKE `{g.role_b}` FROM USER '{g.u2.username}'")
             await g.ranger.put_role(
@@ -838,7 +840,6 @@ async def test_superset_phases_3_and_4_acceptance(governed, monkeypatch):
 
             # A role that is not a BI author cannot save BI artifacts.
             await g.set_authors(g.role_b, author=False)
-            await asyncio.sleep(16)
             refused = await api.post(
                 STUDIO,
                 headers=_auth(g.u2),
