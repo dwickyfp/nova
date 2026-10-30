@@ -18,7 +18,8 @@ Required environment:
 * Optional ``NOVA_SUPERSET_LOG_CONTAINERS`` — comma-separated container names
   whose logs must not contain any issued secret.
 * Optional ``NOVA_SUPERSET_DB_CONTAINER`` — the Superset metadata database
-  container, to check that no credential is stored there.
+  container, to check that no credential is stored there and to remove the
+  BI users each test's sign-ins create, with the objects only they own.
 """
 
 from __future__ import annotations
@@ -176,6 +177,92 @@ async def _proxy(username: str, password: str, database: str):
     )
 
 
+# Superset objects owned only by the run's users go first (their own children
+# cascade), then every other reference to those users is cleared (nullable
+# audit columns) or removed (per-user rows), then the users themselves.
+_DROP_BI_USERS = """
+BEGIN;
+CREATE TEMP TABLE gone ON COMMIT DROP AS
+  SELECT id FROM ab_user WHERE username = ANY(string_to_array(:'users', ','));
+CREATE TEMP TABLE gone_tables ON COMMIT DROP AS
+  SELECT t.id FROM tables t
+  WHERE EXISTS (SELECT 1 FROM sqlatable_user o WHERE o.table_id = t.id)
+    AND NOT EXISTS (SELECT 1 FROM sqlatable_user o WHERE o.table_id = t.id
+                    AND o.user_id NOT IN (SELECT id FROM gone))
+     OR NOT EXISTS (SELECT 1 FROM sqlatable_user o WHERE o.table_id = t.id)
+    AND t.created_by_fk IN (SELECT id FROM gone);
+CREATE TEMP TABLE gone_slices ON COMMIT DROP AS
+  SELECT s.id FROM slices s
+  WHERE s.table_id IN (SELECT id FROM gone_tables)
+     OR EXISTS (SELECT 1 FROM slice_user o WHERE o.slice_id = s.id)
+    AND NOT EXISTS (SELECT 1 FROM slice_user o WHERE o.slice_id = s.id
+                    AND o.user_id NOT IN (SELECT id FROM gone))
+     OR NOT EXISTS (SELECT 1 FROM slice_user o WHERE o.slice_id = s.id)
+    AND s.created_by_fk IN (SELECT id FROM gone);
+CREATE TEMP TABLE gone_dashboards ON COMMIT DROP AS
+  SELECT d.id FROM dashboards d
+  WHERE EXISTS (SELECT 1 FROM dashboard_user o WHERE o.dashboard_id = d.id)
+    AND NOT EXISTS (SELECT 1 FROM dashboard_user o WHERE o.dashboard_id = d.id
+                    AND o.user_id NOT IN (SELECT id FROM gone))
+     OR NOT EXISTS (SELECT 1 FROM dashboard_user o WHERE o.dashboard_id = d.id)
+    AND d.created_by_fk IN (SELECT id FROM gone);
+DELETE FROM report_schedule WHERE dashboard_id IN (SELECT id FROM gone_dashboards)
+  OR chart_id IN (SELECT id FROM gone_slices);
+UPDATE user_attribute SET welcome_dashboard_id = NULL
+  WHERE welcome_dashboard_id IN (SELECT id FROM gone_dashboards);
+DELETE FROM dashboards WHERE id IN (SELECT id FROM gone_dashboards);
+DELETE FROM slices WHERE id IN (SELECT id FROM gone_slices);
+DELETE FROM rls_filter_tables WHERE table_id IN (SELECT id FROM gone_tables);
+DELETE FROM tables WHERE id IN (SELECT id FROM gone_tables);
+DO $$
+DECLARE ref record;
+BEGIN
+  FOR ref IN
+    SELECT c.conrelid::regclass AS tab, a.attname AS col, a.attnotnull AS required
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+    WHERE c.contype = 'f' AND c.confrelid = 'ab_user'::regclass AND c.confdeltype <> 'c'
+  LOOP
+    IF ref.required THEN
+      EXECUTE format('DELETE FROM %s WHERE %I IN (SELECT id FROM gone)', ref.tab, ref.col);
+    ELSE
+      EXECUTE format('UPDATE %s SET %I = NULL WHERE %I IN (SELECT id FROM gone)',
+                     ref.tab, ref.col, ref.col);
+    END IF;
+  END LOOP;
+END $$;
+DELETE FROM ab_user WHERE id IN (SELECT id FROM gone);
+COMMIT;
+"""
+
+
+def _drop_bi_users(container: str, *usernames: str) -> None:
+    """Remove the BI users a run's sign-ins created, with the objects only they own."""
+    done = subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-i",
+            container,
+            "psql",
+            "-U",
+            "superset",
+            "-d",
+            "superset",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-v",
+            f"users={','.join(usernames)}",
+        ],
+        input=_DROP_BI_USERS,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+
+
 async def _eventually(check, *, seconds: float = PROPAGATION_SECONDS):
     """Retry ``check`` until it stops raising AssertionError (policy propagation)."""
     deadline = asyncio.get_running_loop().time() + seconds
@@ -219,6 +306,13 @@ async def governed():
         }
 
     try:
+        metadata = os.getenv("NOVA_SUPERSET_DB_CONTAINER")
+        if metadata:
+
+            async def drop_bi_users():
+                await asyncio.to_thread(_drop_bi_users, metadata, u1.username, u2.username)
+
+            cleanup.append(drop_bi_users)
         for principal in (u1, u2):
             await ranger_client.put_user_attributes(principal.username, {})
         await ranger_client.put_role(
@@ -541,24 +635,6 @@ async def test_superset_phase_1_acceptance(governed):
             check=True,
         )
         assert result.stdout.split() == ["0", "0"], result.stdout
-        # The principals are gone from StarRocks; retire their mirror rows too.
-        subprocess.run(
-            [
-                "docker",
-                "exec",
-                metadata,
-                "psql",
-                "-U",
-                "superset",
-                "-d",
-                "superset",
-                "-c",
-                "UPDATE ab_user SET active = false WHERE username IN "
-                f"('{g.u1.username}', '{g.u2.username}')",
-            ],
-            capture_output=True,
-            check=True,
-        )
 
 
 STUDIO = "/api/v1/agents/studio/artifacts"
