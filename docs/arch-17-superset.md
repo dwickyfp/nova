@@ -229,10 +229,15 @@ APIs are removed from every Nova role. Dataset SQL, Jinja, and filters cannot
 widen access because every statement runs as the principal through Ranger.
 
 **S8. One database connection.** Bootstrap provisions exactly one Superset
-database, "Nova", pointing at the proxy. No Nova role can create, edit, test,
+database, "Nova", pointing at the proxy. It allows multiple catalogs, so BI
+shows every catalog Nova exposes (`SHOW CATALOGS` through the proxy) and each
+user sees only what Ranger allows. No Nova role can create, edit, test,
 or delete databases, or change "Nova"'s URI, impersonation, or extras.
 Superset's database admin APIs are removed from all roles, including
 `NovaAdmin`. Upload-to-database is disabled until a stage-backed path exists.
+The connection mutator accepts only the StarRocks dialect on the proxy's host
+and port, and bootstrap disables any other database it finds, so nothing but
+Nova is ever a data source.
 
 **S9. Cache isolation.** Superset data cache keys include principal, active
 role, and `security_context_version`. No patch is needed: Superset folds

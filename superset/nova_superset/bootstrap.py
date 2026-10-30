@@ -6,11 +6,13 @@
   and guest tokens. Data access is granted broadly because Ranger decides
   what each principal sees.
 * Provisions the single "Nova" database, pointing at Nova's MySQL proxy with
-  no stored credential.
+  no stored credential and every catalog Nova exposes. Any other database is
+  disabled: it is never a data source.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -126,14 +128,23 @@ def sync_database(session) -> None:
     database.allow_file_upload = False
     database.impersonate_user = False
     database.encrypted_extra = None
-    session.commit()
+    # One connection, every catalog Nova exposes (SHOW CATALOGS through the proxy).
+    database.extra = json.dumps({**database.get_extra(), "allow_multi_catalog": True})
     others = [
-        db.database_name
-        for db in session.query(Database).all()
-        if db.database_name != NOVA_DATABASE
+        db for db in session.query(Database).all() if db.database_name != NOVA_DATABASE
     ]
+    for other in others:
+        # Never a data source (the connection mutator refuses it); hidden so no
+        # one picks it. Its charts and datasets are kept for an administrator.
+        other.expose_in_sqllab = False
+        other.allow_run_async = False
+        other.allow_file_upload = False
+    session.commit()
     if others:
-        logger.warning("Databases other than Nova exist and should be removed: %s", others)
+        logger.warning(
+            "Databases other than Nova are disabled and should be removed: %s",
+            [db.database_name for db in others],
+        )
 
 
 def main() -> None:

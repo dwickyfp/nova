@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import unittest
 from types import SimpleNamespace
@@ -143,6 +144,25 @@ class ConnectionMutatorTests(unittest.TestCase):
         with self.assertRaises(connection.NovaSessionRequired):
             connection.mutate_connection(other, {}, "alice", None, None)
 
+    def test_only_the_nova_proxy_itself_is_accepted(self):
+        context.bi_handle.set("handle-1")
+        for other in (
+            "starrocks://nova@nova-backend:8000/default_catalog",
+            "mysql://nova@nova-backend:4406/default_catalog",
+            "starrocks://nova@starrocks-fe:9030/default_catalog",
+        ):
+            with self.subTest(other), self.assertRaises(connection.NovaSessionRequired):
+                connection.mutate_connection(make_url(other), {}, "alice", None, None)
+
+    def test_every_catalog_nova_exposes_goes_through_the_proxy(self):
+        token = client.DataToken(username="alice", token="tok", expires_in=300)
+        context.bi_handle.set("handle-1")
+        # Superset selects ``catalog.schema`` in the database part before the mutator.
+        external = make_url("starrocks://nova@nova-backend:4406/iceberg.sales")
+        with mock.patch.object(client, "data_token", return_value=token):
+            uri, _ = connection.mutate_connection(external, {}, "alice", None, None)
+        self.assertEqual((uri.database, uri.username), ("iceberg.sales", "alice"))
+
     def test_user_mismatch_is_refused(self):
         token = client.DataToken(username="bob", token="tok", expires_in=300)
         context.bi_handle.set("handle-1")
@@ -220,6 +240,36 @@ class BootstrapTests(unittest.TestCase):
             ("can_execute_sql_query", "SQLLab"),
         ]:
             self.assertTrue(bootstrap.allowed(*pair), pair)
+
+    def test_the_nova_database_shows_every_catalog_and_other_databases_are_disabled(self):
+        nova = SimpleNamespace(database_name="Nova", extra="{}", get_extra=lambda: {})
+        other = SimpleNamespace(database_name="Elsewhere", expose_in_sqllab=True,
+                                allow_run_async=True, allow_file_upload=True)
+
+        class Query:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def filter_by(self, **_):
+                return self
+
+            def one_or_none(self):
+                return nova
+
+            def all(self):
+                return self.rows
+
+        session = mock.Mock()
+        session.query.return_value = Query([nova, other])
+        nova.set_sqlalchemy_uri = mock.Mock()
+        # The model needs an initialised app; the query above stands in for it.
+        models = SimpleNamespace(Database=object)
+        with mock.patch.dict("sys.modules", {"superset.models.core": models}):
+            bootstrap.sync_database(session)
+        self.assertEqual(json.loads(nova.extra), {"allow_multi_catalog": True})
+        self.assertFalse(other.expose_in_sqllab or other.allow_run_async
+                         or other.allow_file_upload)
+        session.commit.assert_called_once()
 
     def test_database_uri_holds_no_credential(self):
         uri = make_url(bootstrap.nova_database_uri())

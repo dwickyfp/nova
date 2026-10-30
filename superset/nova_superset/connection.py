@@ -34,9 +34,26 @@ def _proxy_host() -> str:
     return os.environ.get("NOVA_PROXY_HOST", "nova-backend")
 
 
+def _proxy_port() -> int:
+    return int(os.environ.get("NOVA_PROXY_PORT", "4406"))
+
+
+def is_nova_proxy(uri) -> bool:
+    """The connection is Nova's MySQL proxy: StarRocks dialect, proxy host and port.
+
+    The database part is Superset's ``catalog.schema`` choice and is left alone:
+    every catalog Nova exposes is reached through the same proxy, as the viewer.
+    """
+    return (
+        uri.drivername.split("+", 1)[0] == "starrocks"
+        and uri.host == _proxy_host()
+        and (uri.port or 9030) == _proxy_port()
+    )
+
+
 def mutate_connection(uri, params, username, security_manager, source):
     del security_manager, source
-    if uri.host != _proxy_host():
+    if not is_nova_proxy(uri):
         raise NovaSessionRequired("Only the Nova database is available")
     handle = context.current_handle()
     if not handle and context.in_background() and not context.needs_carry():
