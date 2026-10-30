@@ -100,9 +100,14 @@ class SupersetClient:
             await tokens.revoke_handle(handle)
 
     async def request(
-        self, method: str, path: str, *, body: dict[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        headers = {}
+        headers = dict(headers or {})
         if method != "GET":
             headers["X-CSRFToken"] = await self._csrf_token()
         try:

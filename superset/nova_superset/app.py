@@ -14,7 +14,8 @@ import logging
 from flask import Flask, abort, jsonify, redirect, request
 from flask_login import current_user, login_user, logout_user
 
-from nova_superset import client, context
+from nova_superset import client, context, metrics
+from nova_superset.semantic_guard import guard as semantic_guard
 from nova_superset.security import launch_url
 
 logger = logging.getLogger(__name__)
@@ -98,5 +99,7 @@ def _undo_double_logo_prefix(app: Flask) -> None:
 
 def init_app(app: Flask) -> None:
     _undo_double_logo_prefix(app)
+    metrics.init_app(app)
     app.before_request(sign_in)
+    app.before_request(semantic_guard)
     app.teardown_request(lambda _exc: context.clear())

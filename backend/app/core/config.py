@@ -244,6 +244,13 @@ class Settings(BaseSettings):
     #: Lifetime of a delegated BI session for one background run (alerts,
     #: reports, cache warmup); each run asks for a new one.
     SUPERSET_DELEGATION_TTL_SECONDS: int = Field(default=900, ge=60, le=86_400)
+    #: Superset's PostgreSQL metadata database, dumped with NOVA_SYSTEM
+    #: snapshots (Phase 5). The password comes from the environment only.
+    SUPERSET_DB_HOST: str = "superset-db"
+    SUPERSET_DB_PORT: int = 5432
+    SUPERSET_DB_NAME: str = "superset"
+    SUPERSET_DB_USER: str = "superset"
+    SUPERSET_DB_PASSWORD: str = ""
 
     # --- ML execution ---
     ML_MYSQL_BATCH_SIZE: int = 4096

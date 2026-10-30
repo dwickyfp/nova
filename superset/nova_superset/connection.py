@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 
-from nova_superset import client, context
+from nova_superset import client, context, metrics
 
 
 class NovaSessionRequired(Exception):
@@ -52,4 +52,8 @@ def mutate_connection(uri, params, username, security_manager, source):
         context.remember_token(token)
     if username and username != token.username:
         raise NovaSessionRequired("The Superset user does not match the Nova session")
-    return uri.set(username=token.username, password=token.token), params
+    connect_args = {**(params.get("connect_args") or {}), "cursorclass": metrics.TimedCursor}
+    return uri.set(username=token.username, password=token.token), {
+        **params,
+        "connect_args": connect_args,
+    }

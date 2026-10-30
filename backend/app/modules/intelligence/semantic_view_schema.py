@@ -52,7 +52,9 @@ SEMANTIC_VIEW_COLUMNS = (
 
 
 async def ensure_semantic_view_schema() -> None:
-    for ddl in SEMANTIC_VIEW_DDL:
+    from app.modules.superset.semantic import MAPPING_DDL
+
+    for ddl in (*SEMANTIC_VIEW_DDL, MAPPING_DDL):
         await db.execute_system(ddl)
     for column in SEMANTIC_VIEW_COLUMNS:
         try:

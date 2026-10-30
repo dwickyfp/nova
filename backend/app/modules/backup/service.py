@@ -22,10 +22,12 @@ from __future__ import annotations
 import logging
 import re
 
+from app.common.audit import write_audit_log
 from app.core.config import get_storage_connection
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.service import query_service
 
+from . import bi_metadata
 from .schemas import (
     RecoverRequest,
     RepositoryCreate,
@@ -130,13 +132,18 @@ class BackupService:
             session_id=session_id,
             role=role,
         )
-        return {
+        result = {
             "success": True,
             "database": database,
             "label": label,
             "repository": repository,
             "message": f"Snapshot '{database}.{label}' created",
         }
+        if bi_metadata.pairs_with(database):
+            outcome = await bi_metadata.dump(repository, label)
+            await self._audit_bi("BACKUP_BI_METADATA", label, outcome, username, session_id)
+            result["bi_metadata"] = outcome.as_dict()
+        return result
 
     async def restore_snapshot(
         self,
@@ -171,13 +178,37 @@ class BackupService:
             session_id=session_id,
             role=role,
         )
-        return {
+        result = {
             "success": True,
             "database": database,
             "label": label,
             "repository": repository,
             "message": f"Snapshot '{database}.{label}' restored",
         }
+        if bi_metadata.pairs_with(database) and not body.tables:
+            outcome = await bi_metadata.restore(repository, label)
+            await self._audit_bi("RESTORE_BI_METADATA", label, outcome, username, session_id)
+            result["bi_metadata"] = outcome.as_dict()
+        return result
+
+    @staticmethod
+    async def _audit_bi(
+        action: str,
+        label: str,
+        outcome: bi_metadata.BiMetadataResult,
+        username: str,
+        session_id: str | None,
+    ) -> None:
+        await write_audit_log(
+            event_type="BACKUP",
+            user_name=username,
+            action=action,
+            object_type="BI_METADATA",
+            object_name=label,
+            status="FAILED" if outcome.status == "failed" else "SUCCESS",
+            error_message=outcome.message if outcome.status == "failed" else None,
+            session_id=session_id,
+        )
 
     @staticmethod
     def _on_clause(tables: list[str], *, database: str) -> str:

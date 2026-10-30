@@ -60,6 +60,13 @@
       "url": "/d/nova-dependencies/nova-7c-dependencies",
       "includeVars": false,
       "keepTime": true
+    },
+    {
+      "type": "link",
+      "title": "BI",
+      "url": "/d/nova-bi/nova-7c-bi-superset",
+      "includeVars": false,
+      "keepTime": true
     }
   ],
   "panels": [

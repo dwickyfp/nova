@@ -24,6 +24,7 @@ Required environment:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 import subprocess
@@ -1257,3 +1258,264 @@ async def test_superset_phase_6_acceptance(governed, monkeypatch):
                 await session_store.close()
             await bi1.close()
 
+
+def _semantic_definition(database: str, name: str, metrics: list[dict]) -> str:
+    import json
+
+    from app.modules.agents.semantic.serialize import to_ossie_document
+
+    def expression(sql: str) -> dict:
+        return {"dialects": [{"dialect": "ANSI_SQL", "expression": sql}]}
+
+    definition = {
+        "version": "0.1.1",
+        "name": name,
+        "datasets": [
+            {
+                "name": "orders",
+                "source": f"{database}.orders",
+                "primary_key": ["id"],
+                "fields": [
+                    {"name": "id", "expression": expression("id"), "datatype": "Integer"},
+                    {"name": "amount", "expression": expression("amount"), "datatype": "Decimal"},
+                    {
+                        "name": "region",
+                        "expression": expression("region"),
+                        "datatype": "String",
+                        "dimension": {},
+                    },
+                ],
+            }
+        ],
+        "relationships": [],
+        "metrics": [
+            {
+                "name": metric_name,
+                "base_dataset": "orders",
+                "expression": expression(sql),
+                "datatype": "Decimal",
+                "unit": "count",
+                "description": "",
+                "synonyms": [],
+                "additivity": "additive",
+            }
+            for metric_name, sql in metrics
+        ],
+    }
+    return json.dumps(to_ossie_document(definition))
+
+
+def _docker(*arguments: str) -> str:
+    done = subprocess.run(["docker", *arguments], capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr[-2000:]
+    return done.stdout
+
+
+BACKEND_CONTAINER = os.getenv("NOVA_BACKEND_CONTAINER", "")
+SUPERSET_DB_CONTAINER = os.getenv("NOVA_SUPERSET_DB_CONTAINER", "")
+
+
+@pytest.mark.skipif(
+    not (BACKEND_CONTAINER and SUPERSET_DB_CONTAINER),
+    reason="Set NOVA_BACKEND_CONTAINER and NOVA_SUPERSET_DB_CONTAINER",
+)
+async def test_superset_phase_5_semantics_and_backup_acceptance(governed):
+    """Semantic Views become locked BI datasets; BI metadata round-trips a backup."""
+    g = governed
+    name = f"bi_sales_{uuid4().hex[:6]}"
+    view_id = ""
+    async with httpx.AsyncClient(base_url=API_URL, timeout=180) as api:
+        await _login(api, g.u1)
+        bi1 = Bi(g.u1.handle)
+        try:
+            # Publishing a Semantic View creates its dataset in BI, as the publisher.
+            async def created():
+                response = await api.post(
+                    "/api/v1/semantic-views",
+                    headers=_auth(g.u1),
+                    json={
+                        "name": name,
+                        "database": g.database,
+                        "definition": _semantic_definition(
+                            g.database, name, [("revenue", "SUM(orders.amount)")]
+                        ),
+                    },
+                )
+                assert response.status_code in (200, 201), response.text
+                return response.json()
+
+            view_id = (await _eventually(created))["id"]
+
+            async def publish(version: int) -> list[dict]:
+                validated = await api.post(
+                    f"/api/v1/semantic-views/{view_id}/versions/{version}/validate",
+                    headers=_auth(g.u1),
+                )
+                assert validated.status_code == 200 and validated.json()["valid"], validated.text
+                published = await api.post(
+                    f"/api/v1/semantic-views/{view_id}/versions/{version}/publish",
+                    headers=_auth(g.u1),
+                    json={},
+                )
+                assert published.status_code == 200, published.text
+                return published.json()["bi_datasets"]
+
+            [synced] = await publish(1)
+            assert synced["status"] == "SYNCED" and synced["version"] == 1, synced
+            dataset_id = synced["bi_dataset_id"]
+            dataset = (await bi1.http.get(f"/bi/api/v1/dataset/{dataset_id}")).json()["result"]
+            assert {m["metric_name"] for m in dataset["metrics"]} == {"revenue"}
+            assert '"nova_semantic_view"' in dataset["extra"]
+            assert "region" in {c["column_name"] for c in dataset["columns"]}
+
+            # Its metric returns the viewer's governed rows (u1 sees EAST only).
+            data = await bi1.http.post(
+                "/bi/api/v1/chart/data",
+                headers=await bi1.headers(),
+                json={
+                    "datasource": {"id": dataset_id, "type": "table"},
+                    "queries": [{"columns": ["region"], "metrics": ["revenue"]}],
+                    "result_type": "full",
+                    "result_format": "json",
+                },
+            )
+            assert data.status_code == 200, data.text
+            rows = data.json()["result"][0]["data"]
+            assert rows == [{"region": "EAST", "revenue": 40}]
+
+            # It cannot be edited into a different definition in BI.
+            for method, path, body in (
+                ("PUT", f"/bi/api/v1/dataset/{dataset_id}", {"sql": "SELECT 1 AS one"}),
+                ("DELETE", f"/bi/api/v1/dataset/{dataset_id}", None),
+            ):
+                refused = await bi1.http.request(
+                    method, path, headers=await bi1.headers(), json=body
+                )
+                assert refused.status_code == 403, refused.text
+                assert "Semantic View" in refused.text
+
+            # A new version updates the same dataset.
+            added = await api.post(
+                f"/api/v1/semantic-views/{view_id}/versions",
+                headers=_auth(g.u1),
+                json={
+                    "definition": _semantic_definition(
+                        g.database,
+                        name,
+                        [("revenue", "SUM(orders.amount)"), ("order_count", "COUNT(orders.id)")],
+                    )
+                },
+            )
+            assert added.status_code in (200, 201), added.text
+            [resynced] = await publish(2)
+            assert resynced["bi_dataset_id"] == dataset_id and resynced["version"] == 2
+            dataset = (await bi1.http.get(f"/bi/api/v1/dataset/{dataset_id}")).json()["result"]
+            assert {m["metric_name"] for m in dataset["metrics"]} == {"revenue", "order_count"}
+            await _audited(g.u1.username, "bi_semantic", "SYNC_SEMANTIC_DATASETS")
+
+            # BI metadata saved with a backup restores intact (into a scratch
+            # database, so this shared stack's Superset is never replaced).
+            label = f"p5_{uuid4().hex[:8]}"
+            scratch = f"superset_restore_{uuid4().hex[:6]}"
+            run = (
+                "import asyncio, json, sys;"
+                "from app.modules.backup import bi_metadata as m;"
+                "action = getattr(m, sys.argv[1]);"
+                "print(json.dumps(asyncio.run(action('acceptance', sys.argv[2])).as_dict()))"
+            )
+            saved = json.loads(
+                _docker("exec", BACKEND_CONTAINER, "python", "-c", run, "dump", label)
+            )
+            assert saved["status"] == "saved" and saved["size_bytes"] > 0, saved
+            _docker("exec", SUPERSET_DB_CONTAINER, "createdb", "-U", "superset", scratch)
+            try:
+                restored = json.loads(
+                    _docker(
+                        "exec",
+                        "-e",
+                        f"SUPERSET_DB_NAME={scratch}",
+                        BACKEND_CONTAINER,
+                        "python",
+                        "-c",
+                        run,
+                        "restore",
+                        label,
+                    )  # fmt: skip
+                )
+                assert restored["status"] == "restored", restored
+                count = _docker(
+                    "exec", SUPERSET_DB_CONTAINER, "psql", "-U", "superset", "-d", scratch, "-tAc",
+                    f"SELECT COUNT(*) FROM tables WHERE id = {int(dataset_id)}",
+                )  # fmt: skip
+                assert count.strip() == "1"
+            finally:
+                _docker("exec", SUPERSET_DB_CONTAINER, "dropdb", "-U", "superset", scratch)
+                cleanup = (
+                    "from app.modules.backup import bi_metadata as m; import sys;"
+                    "s = m._store(); s.delete(s.uri_for_key(m._key('acceptance', sys.argv[1])))"
+                )
+                _docker("exec", BACKEND_CONTAINER, "python", "-c", cleanup, label)
+
+            # Deprecating the view removes its dataset from BI.
+            deprecated = await api.post(
+                f"/api/v1/semantic-views/{view_id}/deprecate", headers=_auth(g.u1)
+            )
+            assert deprecated.status_code == 204, deprecated.text
+            gone = await bi1.http.get(f"/bi/api/v1/dataset/{dataset_id}")
+            assert gone.status_code == 404
+        finally:
+            if view_id:
+                with suppress(Exception):
+                    await api.delete(f"/api/v1/semantic-views/{view_id}", headers=_auth(g.u1))
+            await bi1.close()
+
+
+PROMETHEUS_URL = os.getenv("NOVA_PROMETHEUS_URL", "")
+GRAFANA_URL = os.getenv("NOVA_GRAFANA_URL", "")
+
+
+@pytest.mark.skipif(
+    not (PROMETHEUS_URL and GRAFANA_URL), reason="Set NOVA_PROMETHEUS_URL and NOVA_GRAFANA_URL"
+)
+async def test_superset_phase_5_metrics_acceptance(governed):
+    """Superset request, query and Celery metrics reach Prometheus and Grafana."""
+    g = governed
+    async with httpx.AsyncClient(base_url=API_URL, timeout=120) as api:
+        await _login(api, g.u1)
+        bi1 = Bi(g.u1.handle)
+        try:
+
+            async def queried():
+                response = await bi1.sql("SELECT COUNT(*) AS n FROM orders", g.database)
+                assert response.status_code == 200, response.text
+
+            await _eventually(queried)
+            await bi1.http.get("/bi/api/v1/chart/")
+        finally:
+            await bi1.close()
+
+    async with httpx.AsyncClient(base_url=PROMETHEUS_URL, timeout=30) as prometheus:
+
+        async def series(expression: str) -> None:
+            async def present():
+                response = await prometheus.get("/api/v1/query", params={"query": expression})
+                assert response.status_code == 200, response.text
+                assert response.json()["data"]["result"], expression
+
+            await _eventually(present, seconds=90)
+
+        await series('up{job="bi-metrics"} == 1')
+        await series('nova_bi_request_duration_seconds_count{job="bi-metrics",area="sqllab"}')
+        await series('nova_bi_query_duration_seconds_count{job="bi-metrics",outcome="ok"}')
+        # The worker's beat-driven reports scheduler runs every minute.
+        await series(
+            'nova_bi_task_duration_seconds_count{job="bi-metrics",task="reports.scheduler"}'
+        )
+
+    password = os.environ.get("GRAFANA_ADMIN_PASSWORD", "")
+    async with httpx.AsyncClient(
+        base_url=GRAFANA_URL, timeout=30, auth=("admin", password)
+    ) as grafana:
+        found = await grafana.get("/api/dashboards/uid/nova-bi")
+        assert found.status_code == 200, found.text
+        assert found.json()["dashboard"]["title"] == "Nova | BI (Superset)"

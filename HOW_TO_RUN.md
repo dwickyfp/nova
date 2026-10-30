@@ -448,6 +448,19 @@ Skrip mencetak laporan per artifact. Tanpa `--force`, artifact yang memakai
 fitur yang dihitung berbeda oleh BI tetap read-only. Kolom lama `chart_spec`
 dan `viz_spec` dihapus otomatis setelah tidak ada artifact lama tersisa.
 
+Semantic View yang dipublikasikan otomatis menjadi dataset BI (dikunci: ubah
+lewat Semantic View, bukan di Superset). Metrik Superset masuk ke Prometheus dan
+Grafana (dashboard **Nova | BI (Superset)**) bila stack observability berjalan:
+
+```bash
+cd docker
+docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml -f docker-compose-observability.yml up -d --no-deps statsd-exporter prometheus grafana
+```
+
+Snapshot `NOVA_SYSTEM` lewat Nova ikut menyimpan metadata Superset (dump
+PostgreSQL) dan restore snapshot itu memulihkannya; `nova-backend` butuh
+`SUPERSET_DB_PASSWORD` yang sama di `docker/.env`.
+
 Acceptance di stack governed (membuat dan menghapus sendiri user, role,
 policy Ranger, dan data ujinya; tes Fase 2 menghentikan dan menyalakan lagi
 `nova-superset-worker` sesaat):

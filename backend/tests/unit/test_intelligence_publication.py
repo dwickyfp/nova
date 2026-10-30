@@ -57,6 +57,11 @@ def publication_preflight(monkeypatch):
         assert inside_lock
         return {"affected": 1, "rows": []}
 
+    async def sync_bi(_view_id, caller):
+        # BI is called after the publication lease is released.
+        assert not inside_lock and caller is USER
+        return []
+
     writes = AsyncMock(side_effect=write)
     checkpoint = AsyncMock(return_value=SimpleNamespace(error=None))
     monkeypatch.setattr(engine_repository, "metadata_lock", lock)
@@ -65,6 +70,7 @@ def publication_preflight(monkeypatch):
     monkeypatch.setattr(service, "_source_access", probe)
     monkeypatch.setattr(service, "describe", AsyncMock(return_value={"active_version": 2}))
     monkeypatch.setattr(service, "_audit", AsyncMock())
+    monkeypatch.setattr(service, "sync_bi", AsyncMock(side_effect=sync_bi))
     monkeypatch.setattr(semantic_views.query_service, "execute", checkpoint)
     monkeypatch.setattr(semantic_views.db, "execute_system", writes)
     monkeypatch.setattr(session_store, "get", AsyncMock(return_value=deepcopy(USER)))
@@ -75,8 +81,9 @@ async def test_publication_probes_sources_before_acquiring_the_short_write_lease
     publication_preflight,
 ):
     service, _, _, writes, checkpoint, _ = publication_preflight
-    assert await service.publish("view", 2, USER) == {"active_version": 2}
+    assert await service.publish("view", 2, USER) == {"active_version": 2, "bi_datasets": []}
     assert writes.await_count == 3
+    service.sync_bi.assert_awaited_once_with("view", USER)
     checkpoint.assert_awaited_once_with(
         sql="SELECT 1",
         username="owner",

@@ -1,12 +1,13 @@
 # Architecture 17: Superset as Studio's BI surface
 
-> Status: **accepted design; Phases 1 to 4 and 6 implemented.** This document
+> Status: **accepted design; all phases (1 to 6) implemented.** This document
 > is the delivery plan for replacing Studio's viz-core chart and dashboard
 > artifacts with Apache Superset. Its open decisions were settled on 2026-10-29
 > (see [Decisions](#decisions)). Studio artifacts are Superset charts and
 > dashboards, Superset's background work runs under Nova's identity, and
 > artifacts saved before BI are converted in place or stay read-only with a
-> report. Phase 5 (semantics, observability, backup) is not implemented.
+> report. Semantic Views sync into locked datasets, Superset's metrics reach
+> Prometheus and Grafana, and its metadata travels with `NOVA_SYSTEM` backups.
 
 Nova ships Apache Superset as a built-in component and shows it inside Studio
 as the surface for saved charts and dashboards. Superset brings its full feature
@@ -99,7 +100,7 @@ flowchart LR
 | `superset/nova_superset/` | Python package: security manager, connection mutator, event logger, Jinja addons, Nova API client |
 | `superset/extensions/` | Superset extensions for Nova-specific UI inside Superset, when `ENABLE_EXTENSIONS` covers the need |
 | `patches/superset/` | `6.1.0-*.patch`, `README.md`, `verify.sh`, mirroring `patches/starrocks/` |
-| `backend/app/modules/superset/` | BI session and author-role API; internal identity and data-token API (Phase 1). Delegation, audit intake and semantic sync arrive in later phases |
+| `backend/app/modules/superset/` | BI session and author-role API; internal identity and data-token API (Phase 1); artifacts, charts and conversion (Phases 3, 4, 6); delegation (Phase 2); Semantic View sync (`semantic.py`, Phase 5) |
 | `backend/app/proxy/connection.py` | Token login next to the existing scramble relay, and per-command re-checks of the bound session |
 | `frontend/src/features/studio/` | Superset host panel and postMessage bridge |
 | `frontend/src/routes/_authenticated/analytics.tsx` | The BI page inside Nova's console frame: opens a BI session, frames `/bi/`, and keeps the framed view in `?path=` |
@@ -517,6 +518,42 @@ Acceptance:
 
 Deliver: Semantic View to dataset sync; Superset metrics in the existing
 Prometheus and Grafana; Superset metadata database in backup and restore.
+
+Status: **delivered.**
+
+- **Semantic Views.** Publishing a version runs
+  `backend/app/modules/superset/semantic.py` as the publisher: each fact
+  dataset (the base of at least one metric) becomes one virtual dataset that
+  selects the fact's fields and the fields of datasets it reaches through
+  many-to-one relationships, under their semantic names, with the fact's
+  metrics rewritten over those columns, time fields as temporal columns and a
+  default time dimension as the main time column. A new version updates the
+  same dataset; a private, deprecated or dropped view has none. Derived,
+  filtered and semi-additive metrics, and metrics reaching an unjoined dataset,
+  are left out and named in the sync record (`CONFIG_SEMANTIC_BI_DATASETS`,
+  `GET /semantic-views/{id}/bi-datasets`, retry with `POST .../bi-sync`).
+  `nova_superset/semantic_guard.py` refuses edits and deletes of a marked
+  dataset, and any dataset claiming the marker, unless the request carries the
+  `X-Nova-Semantic-Sync` service token that only Nova's backend holds. Its
+  queries run as the viewer like every Nova dataset.
+- **Metrics.** `nova_superset/metrics.py` is Superset's `STATS_LOGGER` and adds
+  request (method, status class, area), query-on-Nova (outcome) and Celery task
+  (task, state) timings with no user, role, SQL or object names. They go over
+  UDP to the observability stack's `statsd-exporter`
+  (`docker/observability/statsd/mapping.yml`), scraped as job `bi-metrics`, and
+  the Grafana dashboard **Nova | BI (Superset)** (`nova-bi`) shows them. Without
+  the exporter, packets are dropped; Superset never waits on it.
+- **Backup.** A snapshot of `NOVA_SYSTEM` also stores a `pg_dump` of Superset's
+  metadata in managed object storage under the same repository and label
+  (`backend/app/modules/backup/bi_metadata.py`); restoring that whole snapshot
+  restores the dump in one transaction. The backend image carries the
+  PostgreSQL 16 client; the password reaches it through the environment only.
+  Restart the Superset services after a restore.
+
+Acceptance is automated in `test_superset_phase_5_semantics_and_backup_acceptance`
+and `test_superset_phase_5_metrics_acceptance` in
+`backend/tests/integration/test_superset_governed.py`. The backup check restores
+into a scratch database so a shared stack's Superset is never replaced.
 
 Acceptance:
 - A Semantic View change appears in its Superset dataset after sync; a dataset

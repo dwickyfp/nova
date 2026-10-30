@@ -14,7 +14,7 @@ from unittest import mock
 from flask import Flask
 from flask_login import LoginManager, UserMixin
 from nova_superset import app as nova_app
-from nova_superset import bootstrap, client, connection, context, jinja, security
+from nova_superset import bootstrap, client, connection, context, jinja, metrics, security, semantic_guard
 from sqlalchemy.engine.url import make_url
 
 IDENTITY = client.Identity(
@@ -126,7 +126,8 @@ class ConnectionMutatorTests(unittest.TestCase):
             uri, params = connection.mutate_connection(self.uri, {}, "alice", None, None)
             connection.mutate_connection(self.uri, {}, "alice", None, None)
         self.assertEqual((uri.username, uri.password), ("alice", "tok"))
-        self.assertEqual(params, {})
+        # Queries on Nova are timed for the BI metrics (Phase 5).
+        self.assertEqual(params, {"connect_args": {"cursorclass": metrics.TimedCursor}})
         minted.assert_called_once()
 
     def tearDown(self) -> None:
@@ -255,6 +256,127 @@ class EventTests(unittest.TestCase):
             "/api/v1/chart/data", method="POST", json={"result_format": "csv"}
         ):
             self.assertEqual(events.audited_action("ChartRestApi.data"), "BI_EXPORT")
+
+
+class MetricsTests(unittest.TestCase):
+    def setUp(self):
+        self.sent: list[str] = []
+        patcher = mock.patch.object(metrics._udp, "send", side_effect=self.sent.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_superset_stats_are_statsd_lines_in_milliseconds(self):
+        stats = metrics.NovaStatsLogger()
+        stats.incr("ChartRestApi.data.success")
+        stats.timing("sqllab.query.time_pending", 0.25)
+        self.assertEqual(
+            self.sent,
+            ["superset.ChartRestApi.data.success:1|c", "superset.sqllab.query.time_pending:250.000|ms"],
+        )
+
+    def test_requests_are_timed_with_bounded_tags_and_no_identity(self):
+        flask_app = Flask(__name__)
+        metrics.init_app(flask_app)
+        flask_app.add_url_rule("/api/v1/chart/<int:pk>", "chart", lambda pk: ("", 500))
+        flask_app.add_url_rule("/static/app.js", "asset", lambda: "")
+        flask_app.add_url_rule("/superset/dashboard/<pk>/", "dash", lambda pk: "")
+        client_ = flask_app.test_client()
+        client_.get("/api/v1/chart/7?user=alice")
+        client_.get("/static/app.js")
+        client_.get("/superset/dashboard/12/")
+        self.assertEqual(len(self.sent), 2)
+        self.assertRegex(self.sent[0], r"^nova_bi_request:[0-9.]+\|ms\|#method:GET,status:5xx,area:chart$")
+        self.assertTrue(self.sent[1].endswith("area:dashboard"))
+        self.assertNotIn("alice", "".join(self.sent))
+
+    def test_unknown_areas_collapse_into_other(self):
+        self.assertEqual(metrics.area("/api/v1/whatever_new_thing/1"), "other")
+        self.assertEqual(metrics.area("/sqllab/"), "sqllab")
+        self.assertIsNone(metrics.area("/health"))
+
+
+class TimedCursorTests(unittest.TestCase):
+    def test_queries_are_timed_by_outcome(self):
+        sent: list[str] = []
+        cursor = metrics.TimedCursor.__new__(metrics.TimedCursor)
+        with (
+            mock.patch.object(metrics._udp, "send", side_effect=sent.append),
+            mock.patch("pymysql.cursors.Cursor.execute", side_effect=[1, RuntimeError("denied")]),
+        ):
+            self.assertEqual(cursor.execute("SELECT 1"), 1)
+            with self.assertRaises(RuntimeError):
+                cursor.execute("SELECT secret")
+        self.assertTrue(sent[0].endswith("|ms|#outcome:ok"))
+        self.assertTrue(sent[1].endswith("|ms|#outcome:error"))
+        self.assertNotIn("SELECT", "".join(sent))
+
+
+class UdpTests(unittest.TestCase):
+    def test_an_absent_exporter_drops_packets_and_retries_later(self):
+        udp = metrics._Udp()
+        with mock.patch.object(metrics.socket, "gethostbyname", side_effect=OSError) as lookup:
+            udp.send("a:1|c")
+            udp.send("b:1|c")
+        self.assertEqual(lookup.call_count, 1)  # no lookup storm while it is down
+        self.assertIsNone(udp._address)
+
+
+class SemanticGuardTests(unittest.TestCase):
+    SEMANTIC = {5}
+
+    def setUp(self):
+        flask_app = Flask(__name__)
+        flask_app.before_request(semantic_guard.guard)
+
+        @flask_app.route("/api/v1/dataset/", methods=["POST", "DELETE"])
+        @flask_app.route("/api/v1/dataset/<int:pk>", methods=["PUT", "DELETE"])
+        @flask_app.route("/api/v1/dataset/<int:pk>/metric/<int:metric>", methods=["DELETE"])
+        @flask_app.route("/datasource/save/", methods=["POST"])
+        def changed(**_):
+            return "changed"
+
+        self.client = flask_app.test_client()
+        patcher = mock.patch.object(
+            semantic_guard, "follows_semantic_view", side_effect=lambda pk: pk in self.SEMANTIC
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        env = mock.patch.dict(os.environ, {"NOVA_SUPERSET_SERVICE_TOKEN": "service-secret"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_semantic_datasets_are_not_changed_in_superset(self):
+        for method, path in (
+            ("put", "/api/v1/dataset/5"),
+            ("delete", "/api/v1/dataset/5"),
+            ("delete", "/api/v1/dataset/5/metric/9"),
+            ("delete", "/api/v1/dataset/?q=!(4,5)"),
+        ):
+            response = getattr(self.client, method)(path, json={"sql": "SELECT 2"})
+            self.assertEqual(response.status_code, 403, path)
+            self.assertIn("Semantic View", response.get_json()["message"])
+        saved = self.client.post("/datasource/save/", data={"data": '{"id": 5}'})
+        self.assertEqual(saved.status_code, 403)
+
+    def test_other_datasets_stay_editable(self):
+        self.assertEqual(self.client.put("/api/v1/dataset/4", json={"sql": "x"}).status_code, 200)
+        self.assertEqual(self.client.delete("/api/v1/dataset/?q=!(3,4)").status_code, 200)
+
+    def test_nova_sync_may_change_them(self):
+        headers = {semantic_guard.SYNC_HEADER: "service-secret"}
+        response = self.client.put("/api/v1/dataset/5", json={"sql": "x"}, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        wrong = {semantic_guard.SYNC_HEADER: "guess"}
+        self.assertEqual(
+            self.client.put("/api/v1/dataset/5", json={}, headers=wrong).status_code, 403
+        )
+
+    def test_a_dataset_cannot_claim_the_marker(self):
+        body = {"table_name": "t", "extra": '{"nova_semantic_view": {"id": "x"}}'}
+        self.assertEqual(self.client.post("/api/v1/dataset/", json=body).status_code, 403)
+        self.assertEqual(
+            self.client.put("/api/v1/dataset/4", json={"extra": body["extra"]}).status_code, 403
+        )
 
 
 class ImportTests(unittest.TestCase):

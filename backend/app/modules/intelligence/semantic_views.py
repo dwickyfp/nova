@@ -900,7 +900,37 @@ class SemanticViewService:
                 lease,
                 preflight_signature=signature,
             )
-        return await self.describe(view_id, user)
+        bi_datasets = await self.sync_bi(view_id, user)
+        return {**await self.describe(view_id, user), "bi_datasets": bi_datasets}
+
+    async def sync_bi(self, view_id: str, user: dict) -> builtins.list[dict]:
+        """Make the view's BI datasets match its active version, as ``user``.
+
+        A private or inactive view has none. Outcomes are recorded per dataset
+        and never fail the caller (docs/arch-17-superset.md, Phase 5).
+        """
+        from app.modules.superset.semantic import sync_semantic_view
+
+        view = {**await self._owned(view_id, user), "id": view_id}
+        view.setdefault("owner_name", user["username"])
+        model = None
+        if (
+            view.get("status") == "ACTIVE"
+            and view.get("active_version")
+            and view.get("visibility") != "PRIVATE"
+        ):
+            row = await self._version(view_id, view["active_version"])
+            try:
+                model = SemanticModelIR.from_ossie(row["definition"]) if row else None
+            except (TypeError, ValueError, KeyError):
+                model = None
+        return await sync_semantic_view(user, view, model)
+
+    async def bi_datasets(self, view_id: str, user: dict) -> builtins.list[dict]:
+        from app.modules.superset.semantic import synced_datasets
+
+        await self._visible(view_id, user)
+        return await synced_datasets(view_id)
 
     @staticmethod
     def _publication_signature(row: dict) -> str:
@@ -1005,6 +1035,13 @@ class SemanticViewService:
             [view_id],
         )
         await self._audit("DEPRECATE", view["name"], user)
+        await self._remove_bi(view, user)
+
+    @staticmethod
+    async def _remove_bi(view: dict, user: dict) -> None:
+        from app.modules.superset.semantic import sync_semantic_view
+
+        await sync_semantic_view(user, view, None)
 
     async def drop(self, view_id: str, user: dict) -> None:
         view = await self._owned(view_id, user)
@@ -1016,6 +1053,7 @@ class SemanticViewService:
             "DELETE FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS WHERE id=%s", [view_id]
         )
         await self._audit("DROP", view["name"], user)
+        await self._remove_bi(view, user)
 
     async def query(
         self, view_id: str, body: SemanticViewQuery, user: dict, *, agent_id: str | None = None,
@@ -1211,6 +1249,16 @@ async def publish_semantic_view(
         user,
         acknowledge_regressions=body.acknowledge_regressions if body else False,
     )
+
+
+@router.get("/{view_id}/bi-datasets", response_class=SanitizingJSONResponse)
+async def semantic_view_bi_datasets(view_id: str, user: CurrentUser):
+    return {"datasets": await semantic_view_service.bi_datasets(view_id, user)}
+
+
+@router.post("/{view_id}/bi-sync", response_class=SanitizingJSONResponse)
+async def sync_semantic_view_bi(view_id: str, user: CurrentUser):
+    return {"datasets": await semantic_view_service.sync_bi(view_id, user)}
 
 
 @router.post("/{view_id}/query", response_class=SanitizingJSONResponse)

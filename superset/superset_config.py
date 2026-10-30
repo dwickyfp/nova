@@ -11,6 +11,7 @@ import os
 from copy import deepcopy
 
 import nova_superset.celery_hooks  # noqa: F401 - registers the session carry
+import nova_superset.metrics  # noqa: F401 - registers Celery task timings
 import pymysql
 import redis
 from cachelib.redis import RedisCache
@@ -20,6 +21,7 @@ from nova_superset.app import init_app
 from nova_superset.connection import mutate_connection
 from nova_superset.events import NovaEventLogger
 from nova_superset.jinja import JINJA_CONTEXT_ADDONS as _NOVA_JINJA
+from nova_superset.metrics import NovaStatsLogger
 from nova_superset.security import NovaSecurityManager
 from nova_superset.thumbnails import chart_digest, dashboard_digest
 
@@ -64,6 +66,10 @@ JINJA_CONTEXT_ADDONS = dict(_NOVA_JINJA)
 
 # S12: governed actions are also written to Nova's audit log.
 EVENT_LOGGER = NovaEventLogger()
+
+# Request, query and Celery metrics go to the observability stack's statsd
+# exporter (SUPERSET_STATSD_HOST); dropped when it is not running.
+STATS_LOGGER = NovaStatsLogger()
 
 # Nova's look (DESIGN.md): brick-red primary, Inter, the console's radius and
 # dark surface. Nova sets the light or dark mode of a framed Superset.

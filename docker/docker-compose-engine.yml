@@ -75,6 +75,8 @@ services:
       # Shared with Superset for /api/v1/internal/superset (docs/arch-17-superset.md).
       SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
       SUPERSET_INTERNAL_URL: http://superset:8088
+      # BI metadata travels with NOVA_SYSTEM snapshots (pg_dump of superset-db).
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:-}
       # Superset's scheduled work runs as its owner through this account's
       # per-owner impersonation (S5); never root or nova_admin.
       WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
@@ -335,6 +337,8 @@ services:
       NOVA_PROXY_HOST: nova-backend
       NOVA_PROXY_PORT: "4406"
       NOVA_SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
+      # Metrics go to the observability stack's statsd exporter when it runs.
+      SUPERSET_STATSD_HOST: ${SUPERSET_STATSD_HOST:-statsd-exporter}
       SUPERSET_SMTP_HOST: ${SUPERSET_SMTP_HOST:-}
       SUPERSET_SMTP_PORT: ${SUPERSET_SMTP_PORT:-587}
       SUPERSET_SMTP_USER: ${SUPERSET_SMTP_USER:-}

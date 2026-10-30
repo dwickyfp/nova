@@ -52,6 +52,21 @@ services:
     networks:
       - nova
 
+  # Superset (Nova BI) sends statsd here over UDP; Prometheus scrapes :9102.
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.28.0
+    container_name: nova-statsd-exporter
+    command:
+      - --statsd.mapping-config=/etc/statsd/mapping.yml
+      - --statsd.listen-udp=:9125
+      - --statsd.listen-tcp=
+      - --web.listen-address=:9102
+    volumes:
+      - ./observability/statsd/mapping.yml:/etc/statsd/mapping.yml:ro
+    restart: unless-stopped
+    networks:
+      - nova
+
   blackbox-exporter:
     image: prom/blackbox-exporter:v0.28.0
     container_name: nova-blackbox-exporter

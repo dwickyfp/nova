@@ -1,0 +1,46 @@
+# Superset (Nova BI) statsd metrics as Prometheus series. Superset sends to
+# statsd-exporter:9125/udp; Prometheus scrapes statsd-exporter:9102. Timers
+# arrive in milliseconds and are exported in seconds.
+defaults:
+  observer_type: histogram
+  histogram_options:
+    buckets: [0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300]
+  match_type: glob
+  ttl: 0s
+
+mappings:
+  # Nova's own timings carry DogStatsD tags (method, status, area, outcome, task, state).
+  - match: nova_bi_request
+    name: nova_bi_request_duration_seconds
+    help: Superset HTTP requests by method, status class and BI area.
+  - match: nova_bi_query
+    name: nova_bi_query_duration_seconds
+    help: Queries Superset ran on Nova, by outcome.
+  - match: nova_bi_task
+    name: nova_bi_task_duration_seconds
+    help: Superset Celery tasks by task name and final state.
+
+  # Superset's REST API decorators: <Api>.<method>.success|error|time
+  - match: superset.*.*.success
+    match_metric_type: counter
+    name: nova_bi_api_calls_total
+    labels: {api: "$1", method: "$2", outcome: success}
+  - match: superset.*.*.error
+    match_metric_type: counter
+    name: nova_bi_api_calls_total
+    labels: {api: "$1", method: "$2", outcome: error}
+  - match: superset.*.*.time
+    name: nova_bi_api_duration_seconds
+    labels: {api: "$1", method: "$2"}
+
+  # Everything else Superset counts or times (reports, SQL Lab, caches).
+  - match: 'superset\.(.+)'
+    match_type: regex
+    match_metric_type: counter
+    name: nova_bi_events_total
+    labels: {event: "$1"}
+  - match: 'superset\.(.+)'
+    match_type: regex
+    match_metric_type: observer
+    name: nova_bi_event_duration_seconds
+    labels: {event: "$1"}
