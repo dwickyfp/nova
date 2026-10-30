@@ -31,7 +31,10 @@ message content is stored. See its README to repeat a measurement.
 - Request: "Buatkan dashboard Field Sales Overview berisi chart jumlah kunjungan
   per sales rep dan chart jumlah outlet per kota", as `nova_admin`
   (`ACCOUNTADMIN`), on the local dev stack.
-- Provider: kenari.id, about 40 s per model call.
+- Provider: kenari.id, default model `minimax-m3-1-flash`, about 40 s per
+  model call. The default became `deepseek-v4-1-flash` on 2026-10-31, so a
+  later phase measured on it is compared with a baseline re-measured on the
+  same model, not with the numbers below.
 - Code: `feat/superset-studio` at `1ae5033`.
 - Five runs. Data: `docs/benchmarks/smart-tokens/2026-10-30-baseline.json`.
 
