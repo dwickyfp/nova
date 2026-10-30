@@ -314,7 +314,45 @@ smaller, but the final answer now takes more calls:
 
 Next, in this order: find what makes the final answer take 2-4 calls; open
 C8b's gate (proposed: the request asks for charts or a dashboard); stop the
-wall-time check discarding a composed answer, as `18444dd` did for tokens. Code:
+wall-time check discarding a composed answer, as `18444dd` did for tokens.
+
+### Why the final answer takes 2-4 calls (investigated 2026-10-31)
+
+From the five current-code runs' checkpoints (`repairs`, and the messages
+appended after the last tool result):
+
+| Run | Answer calls | What happened |
+|---|---:|---|
+| f6fda094, e18cb75f | 2 | draft, then interactive composition |
+| 9de80e1e, 15ca05fc | 3 | draft, composition, number rewrite |
+| c1b535b3 | 4 | draft, composition, number rewrite, composition again |
+
+1. **The first answer is always a throwaway draft.** When the model stops
+   calling tools in an interactive turn, the loop appends `<FINAL_COMPOSER>`
+   (about 8,300 tokens) and asks again (`service.py`, the
+   `context.ui_prompt and turn_plan.presentation == "interactive"` branch).
+   Every run pays one draft call of about 9k tokens.
+2. **A number rewrite costs two calls and a second composer copy.** The
+   `unverified_number` repair sets `composing_final = False` so the model may
+   call `compute_metrics`; when it answers again, the interactive branch
+   appends `<FINAL_COMPOSER>` a second time. Run c1b535b3 carries two copies,
+   about 16,500 tokens, in its last call.
+3. **What the rewrites flagged were real values, phrased loosely.** The
+   flagged numbers (40, 80, 1,053, 1,060) are cells of the collected tables,
+   which were present (no table was evicted). Offline, "Jakarta Selatan 80
+   outlet, kota lain masing-masing 40" fails without a claims block because 40
+   is attributed to the last named row, and passes with a claim that names the
+   column. The verifier behaves as designed; it is not loosened.
+
+Fixes, proposed:
+
+- **F1 (C8b's gate):** when every teammate is done, every result with at
+  least two rows is charted, and the request asks for charts or a dashboard,
+  go straight to composition. Removes the draft call (about 9k per run).
+- **F2:** send `<FINAL_COMPOSER>` once per turn; when composition starts
+  again after a repair, a short system line points back to it. Saves about
+  8k tokens in every run that repairs (3 of 5).
+- Number rewrites themselves stay: they are the answer contract working. Code:
 C1, C2 (as built), C4 (as built) and C5; C3 deferred.
 
 Phase 1 meets the completion and wall-time targets, not the token targets.
