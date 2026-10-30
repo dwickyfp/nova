@@ -44,6 +44,7 @@ import { UiChart } from "./intelligent-ui/ui-chart";
 import { ResultTable } from "./result-table";
 import {
   filterArtifactRows,
+  filterPresmodel,
   type ArtifactFilter,
   type ArtifactFilterMode,
 } from "./artifact-filters";
@@ -317,7 +318,15 @@ function ArtifactDetail({
   }
 
   const activeData = displayedData ?? detail.data;
-  const visibleData = { ...activeData, rows: filteredRows };
+  const narrowed = filteredRows.length !== activeData.rows.length;
+  const visibleData = {
+    ...activeData,
+    rows: filteredRows,
+    presmodel:
+      narrowed && activeData.presmodel
+        ? filterPresmodel(activeData.presmodel as PresModel, filters, filterMode)
+        : activeData.presmodel,
+  };
   // The refresh carries the artifact as saved now; the metadata query can lag
   // behind an editor save.
   const saved = detail.data.artifact;
@@ -386,12 +395,17 @@ function ArtifactDetail({
             visibleCount={filteredRows.length}
           />
         ) : null}
-        {editing && biEdit ? (
+        {editing && biEdit && !draftResponse?.draft ? (
           <section
             aria-label="Edit in BI"
             className="flex h-full min-h-96 min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm"
           >
-            <BiFrame path={biEdit} title={`Edit ${artifact.title} in BI`} />
+            {/* An applied Nova edit changes the chart in BI: reload Explore. */}
+            <BiFrame
+              key={saved.updated_at}
+              path={biEdit}
+              title={`Edit ${artifact.title} in BI`}
+            />
           </section>
         ) : (
           <section
@@ -406,7 +420,8 @@ function ArtifactDetail({
             <span className="sr-only" role="status">
               {chatBusy ? "Nova is preparing an artifact preview." : ""}
             </span>
-            {biView && !draftResponse?.draft ? (
+            {/* BI draws the saved chart; a draft or narrowing filter is drawn here. */}
+            {biView && !draftResponse?.draft && !narrowed ? (
               <div className="flex aspect-video min-h-64 min-w-0 flex-col overflow-hidden rounded-lg">
                 <BiFrame
                   key={saved.updated_at}

@@ -124,6 +124,45 @@ describe("artifact SQL provenance", () => {
       "SELECT category, SUM(revenue) FROM sales GROUP BY category",
     );
   });
+
+  it("uses the statement a Smart chart carries from a specialist's rows", () => {
+    const item: SavableContent = {
+      id: "chart-1",
+      index: 0,
+      type: "chart",
+      complete: true,
+      block: {
+        tool_call_id: "chart-tool",
+        chart_spec: "{}",
+        viz_spec: { source: { kind: "sql", sql: "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep" } },
+      },
+    };
+    const turns = [
+      turn("turn-1", [
+        {
+          id: "query-1",
+          kind: "tool",
+          label: "query_execute",
+          text: "Ran an earlier query",
+          status: "done",
+          preview: "SELECT * FROM unrelated_table",
+        },
+      ]),
+      turn("turn-2", [
+        {
+          id: "chart-tool",
+          kind: "tool",
+          label: "data_to_chart",
+          text: "Built a chart",
+          status: "done",
+          preview: "data_to_chart: bar chart of visits per rep",
+        },
+      ]),
+    ];
+    expect(findArtifactSql(turns, "turn-2", item)).toBe(
+      "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    );
+  });
 });
 
 describe("artifact SQL presentation", () => {

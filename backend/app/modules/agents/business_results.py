@@ -205,7 +205,10 @@ async def _governed_result(invocation, outcome, context, collector) -> BusinessR
         return BusinessResultHookResult()
     business = outcome.business_result
     envelope, seed = business["envelope"], business["seed"]
-    if (envelope.semantic is None or envelope.health.facts.execution_status != "success"
+    # A result without measures (the first and last visit date, say) anchors no
+    # metric to the mission.
+    if (envelope.semantic is None or not envelope.metrics
+            or envelope.health.facts.execution_status != "success"
             or envelope.health.facts.semantic_grounding != "published"):
         collector.complete("skipped")
         return BusinessResultHookResult()

@@ -221,11 +221,16 @@ class EvidenceTracker:
             ))
             and table
         ):
-            self._tables[evidence.evidence_id] = {
+            stored = {
                 "columns": list(table.get("columns") or [])[:100],
                 "rows": list(table.get("rows") or [])[:200],
                 "truncated": bool(table.get("truncated")),
             }
+            if isinstance(table.get("sql"), str) and table["sql"].strip():
+                # The statement travels with its rows: a chart another participant
+                # builds from them can still be saved as a live view.
+                stored["sql"] = table["sql"]
+            self._tables[evidence.evidence_id] = stored
             if len(self._tables) > 8:
                 self._tables.pop(next(iter(self._tables)))
         return evidence

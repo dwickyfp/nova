@@ -202,6 +202,16 @@ export type SemanticQuality = {
   } | null
 }
 
+export type SemanticBiDataset = {
+  dataset: string
+  bi_dataset_id: number | null
+  version: number | null
+  status: string
+  message: string | null
+  synced_at: string | null
+  bi_path: string | null
+}
+
 const viewPath = (id: string) => `/semantic-views/${encodeURIComponent(id)}`
 
 export const semanticViewsApi = {
@@ -217,6 +227,10 @@ export const semanticViewsApi = {
     api.post<SemanticViewDetail>(`${viewPath(id)}/versions/${version}/publish`, {
       acknowledge_regressions: acknowledgeRegressions,
     }),
+  biDatasets: (id: string) =>
+    api.get<{ datasets: SemanticBiDataset[] }>(`${viewPath(id)}/bi-datasets`),
+  syncBi: (id: string) =>
+    api.post<{ datasets: SemanticBiDataset[] }>(`${viewPath(id)}/bi-sync`, {}),
   preview: (id: string, version: number, question: string) =>
     api.post<SemanticPreview>(`${viewPath(id)}/versions/${version}/preview`, { question }),
   saveVerifiedQuery: (id: string, baseVersion: number, body: {

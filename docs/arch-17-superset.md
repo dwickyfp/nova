@@ -532,6 +532,9 @@ Status: **delivered.**
   filtered and semi-additive metrics, and metrics reaching an unjoined dataset,
   are left out and named in the sync record (`CONFIG_SEMANTIC_BI_DATASETS`,
   `GET /semantic-views/{id}/bi-datasets`, retry with `POST .../bi-sync`).
+  The view's page lists them under **BI datasets**: status, version, what was
+  left out, **Open in BI** (Explore on the dataset) and, for the owner, **Sync
+  to BI**.
   `nova_superset/semantic_guard.py` refuses edits and deletes of a marked
   dataset, and any dataset claiming the marker, unless the request carries the
   `X-Nova-Semantic-Sync` service token that only Nova's backend holds. Its

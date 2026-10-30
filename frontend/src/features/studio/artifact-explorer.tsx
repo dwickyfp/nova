@@ -666,7 +666,7 @@ function CreateDialog({
           <DialogDescription>
             {kind === "dashboard"
               ? "Start an empty dashboard, then add sheets to its layout."
-              : "A sheet is built over one read-only query. Its fields become the data pane."}
+              : "A sheet is built over one read-only query. It opens in BI, where you choose how to chart it."}
           </DialogDescription>
         </DialogHeader>
         <form

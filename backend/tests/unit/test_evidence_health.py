@@ -157,3 +157,21 @@ def test_specialist_snapshot_preserves_assessment_and_unknown_signals():
     restored.restore(parent.snapshot())
     assert restored.items[0].metadata["evidence_health"] == expected
     assert replay_evidence_health(restored.items[0].metadata["evidence_health"]) == health
+
+
+def test_a_specialists_statement_travels_with_its_rows_to_the_smart_root() -> None:
+    child = EvidenceTracker()
+    child.add("semantic_query", "visits per rep", table={
+        "columns": ["rep", "visits"], "rows": [["Budi", 3]],
+        "sql": "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    })
+    child.add("compute_metrics", "no statement", table={"columns": ["n"], "rows": [[1]]})
+    parent = EvidenceTracker()
+    imported = parent.import_results({
+        "status": "completed", "depth": 1, "current_turn_id": "child-turn",
+        "agent_id": "field-sales", "evidence": child.snapshot(),
+    })
+
+    tables = parent.tables
+    assert tables[imported[0].evidence_id]["sql"].startswith("SELECT rep")
+    assert "sql" not in tables[imported[1].evidence_id]

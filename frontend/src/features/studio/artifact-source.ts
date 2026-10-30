@@ -45,6 +45,14 @@ export function findArtifactSql(
     );
     if (exact?.preview) return exact.preview.trim();
   }
+  if (item.type === "chart") {
+    // A chart Smart built from a specialist's rows carries their statement;
+    // the query that produced them ran in the specialist's own steps.
+    const source = item.block.viz_spec?.source as { sql?: unknown } | undefined;
+    if (typeof source?.sql === "string" && isReusableSql(source.sql)) {
+      return source.sql.trim();
+    }
+  }
 
   for (let index = turnIndex; index >= 0; index -= 1) {
     const steps = turns[index].steps;

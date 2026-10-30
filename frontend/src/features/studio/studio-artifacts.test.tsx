@@ -307,4 +307,59 @@ describe("Studio artifacts", () => {
       expect.any(AbortSignal),
     );
   });
+
+  it("previews a Nova edit made while editing in BI, then reopens BI", async () => {
+    biSession.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaAuthor" });
+    const bi = {
+      bi_kind: "chart",
+      bi_object_id: 21,
+      bi_view_path: "/bi/explore/?slice_id=21&standalone=1",
+      bi_edit_path: "/bi/explore/?slice_id=21",
+    };
+    mocks.getArtifact.mockResolvedValue({ ...artifactMeta, ...bi });
+    const refreshed = await mocks.refreshArtifact();
+    mocks.refreshArtifact.mockResolvedValue({
+      ...refreshed,
+      artifact: { ...refreshed.artifact, ...bi },
+    });
+    mocks.editArtifact.mockResolvedValue({
+      message: "Made it a bar chart.",
+      draft: { sql_text: artifactMeta.sql_text, artifact_type: "chart", chart_spec: null },
+      columns: ["region", "revenue"],
+      rows: [["West", 120]],
+      row_count: 1,
+      elapsed_ms: 10,
+    });
+    mocks.applyArtifactEdit.mockResolvedValue({
+      ...refreshed,
+      artifact: { ...refreshed.artifact, ...bi, updated_at: "2026-09-21T09:00:00" },
+    });
+    const screen = await render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <StudioArtifacts onSelectAgent={() => undefined} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByText("Revenue by region"));
+    await userEvent.click(screen.getByRole("button", { name: "Edit in BI" }));
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "Edit artifact with Nova" }),
+      "Make it a bar chart",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send artifact edit" }));
+
+    await expect.element(screen.getByText("Draft preview")).toBeInTheDocument();
+    await expect
+      .element(screen.getByTitle("Edit Revenue by region in BI"))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("region", { name: "Artifact preview" }))
+      .toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await expect
+      .element(screen.getByTitle("Edit Revenue by region in BI"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21");
+  });
 });

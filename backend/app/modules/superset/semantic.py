@@ -260,7 +260,12 @@ async def synced_datasets(view_id: str) -> list[dict[str, Any]]:
             "status": row[3],
             "message": row[4],
             "synced_at": row[5],
-            "bi_path": f"/bi/tablemodelview/edit/{int(row[1])}" if row[1] else None,
+            # Explore on the dataset: where BI authors chart its measures.
+            "bi_path": (
+                f"/bi/explore/?datasource_type=table&datasource_id={int(row[1])}"
+                if row[1]
+                else None
+            ),
         }
         for row in result["rows"]
     ]

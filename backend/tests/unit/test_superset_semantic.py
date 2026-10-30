@@ -188,6 +188,9 @@ async def test_publishing_creates_marked_datasets_and_a_new_version_updates_them
     assert by_name["orders"]["status"] == "SYNCED"
     assert "growth" in by_name["orders"]["message"]
     orders_id = by_name["orders"]["bi_dataset_id"]
+    assert by_name["orders"]["bi_path"] == (
+        f"/bi/explore/?datasource_type=table&datasource_id={orders_id}"
+    )
     created = [c for c in superset["calls"] if c[0] == "POST"]
     assert (
         created[0][2]["schema"] == "sales"

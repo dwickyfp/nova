@@ -2549,11 +2549,18 @@ class AssistantLoop:
                 sql = (outcome.data or {}).get("sql") if isinstance(outcome.data, dict) else None
                 if isinstance(sql, str):
                     evidence_metadata["sql_sha256"] = hashlib.sha256(sql.encode()).hexdigest()
+            evidence_table = outcome.table
+            statement = (context.last_result or {}).get("sql")
+            if (
+                evidence_table and invocation.tool_name in {"semantic_query", "query_execute"}
+                and isinstance(statement, str)
+            ):
+                evidence_table = {**evidence_table, "sql": statement}
             evidence_item = evidence.add(
                 invocation.tool_name,
                 outcome.summary,
                 metadata=evidence_metadata,
-                table=outcome.table,
+                table=evidence_table,
             )
             if outcome.business_hook_result and outcome.business_hook_result.provider_observation:
                 observation = evidence.add_business_result(
