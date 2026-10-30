@@ -1329,11 +1329,18 @@ class AgentHarnessWorker:
                 raise RunLeaseLost("Checkpoint lease was lost")
             await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
 
-        async def checkpoint() -> list[str]:
+        over_budget = False
+
+        async def checkpoint(*, answer_composed: bool = False) -> list[str]:
+            nonlocal over_budget
             await self._assert_running(child)
             self._check_wall_budget(root)
+            # Once the answer is composed its tokens are spent: discarding it saves
+            # nothing. Every authorization and cancellation check still runs.
             if int((context.usage or {}).get("total_tokens") or 0) >= participant_token_limit:
-                raise BudgetExceeded("Participant token budget exhausted")
+                if not answer_composed:
+                    raise BudgetExceeded("Participant token budget exhausted")
+                over_budget = True
             current = await self._user_for(child)
             if context.mission_id is not None and (
                 await mission_service.cancellation_requested(context.mission_id, current)
@@ -1351,7 +1358,9 @@ class AgentHarnessWorker:
                     for row in current_tree
                 )
                 if spent >= CollaborationLimits.from_root(root).max_total_tokens:
-                    raise BudgetExceeded("Collaboration token budget exhausted")
+                    if not answer_composed:
+                        raise BudgetExceeded("Collaboration token budget exhausted")
+                    over_budget = True
                 await self.repository.reconcile_collaboration(root, current_tree)
                 await self.repository.release_followups(root["run_id"])
             if not is_root and not await has_verified_access(
@@ -1388,7 +1397,10 @@ class AgentHarnessWorker:
             return False
 
         async def before_final() -> list[str]:
-            incoming = await checkpoint()
+            incoming = await checkpoint(answer_composed=True)
+            if over_budget:
+                # No allowance left for another call: the composed answer stands.
+                return []
             if is_root:
                 participants = await control.list_agents()
                 pending = [item["agent_session_id"] for item in participants if item["depth"] > 0

@@ -37,7 +37,9 @@ export function findArtifactSql(
         && (step.label === "query_execute" || step.label === "semantic_query")
         && step.status === "done" && isReusableSql(step.preview),
     );
-    return source?.preview?.trim() ?? null;
+    if (source?.preview) return source.preview.trim();
+    // A specialist's result: the statement recorded with those exact rows.
+    return isReusableSql(item.request.sql) ? item.request.sql!.trim() : null;
   }
   if (toolCallId) {
     const exact = turns[turnIndex].steps.find(

@@ -331,6 +331,7 @@ REPAIR_LIMITS = {
     "invalid_args": 2,
     "recoverable_tool": 2,
     "unverified_number": 1,
+    "split_request": 1,
 }
 MAX_TURN_REPAIRS = 6
 
@@ -2341,6 +2342,28 @@ class AssistantLoop:
                     "Reading the result" if outcome.ok else "The step failed",
                     status="done",
                 )
+            if (
+                not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED"
+                and context.collaboration_tools and not context.collaboration_root
+                and invocation.tool_name == "semantic_query"
+                and not evidence.business_tables
+                and (outcome.repair_context or {}).get("unresolved")
+                and repairs.take("split_request")
+            ):
+                # A specialist answers Smart, not a person. A task with parts one
+                # query cannot cover together is asked again part by part, once,
+                # before it becomes a question back.
+                yield events.tool_status(invocation.tool_call_id, "done")
+                _finish_tool_step(context, "done", None)
+                messages.append(
+                    _tool_message(
+                        provider_capabilities.supports_tool_role_messages,
+                        invocation,
+                        outcome.envelope(tool_name=invocation.tool_name),
+                    )
+                )
+                messages.append({"role": "system", "content": _SPLIT_REQUEST_PROMPT})
+                continue
             if not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED":
                 # The catalog cannot express the request: the model asks one
                 # question back, and no other data path is tried.
@@ -3258,6 +3281,13 @@ _DELEGATED_ANALYSIS_PROMPT = (
     "not repeat a query that already ran."
 )
 
+_SPLIT_REQUEST_PROMPT = (
+    "One query cannot answer every part of this task together. Ask semantic_query "
+    "again once per part: one short question with that part's measure and grouping, "
+    "never the whole task. Answer from the parts that return data and name any part "
+    "that is still not covered."
+)
+
 #: Upper bound for a window-derived context budget (tokens).
 MAX_WINDOW_CONTEXT_BUDGET = 120_000
 _SUMMARY_TASKS: set[asyncio.Task] = set()
@@ -4077,6 +4107,15 @@ async def _autocompose_artifacts(
             provenance = item.payload.setdefault("provenance", {})
             provenance["tool_calls"] = {key: calls[key] for key in
                                         provenance.get("evidence_ids") or [] if key in calls}
+            # A result another participant fetched has no tool call here; the
+            # statement it carries is its source for saving it.
+            statements = {
+                key: str(evidence.tables[key]["sql"])
+                for key in provenance.get("evidence_ids") or []
+                if key not in calls and (evidence.tables.get(key) or {}).get("sql")
+            }
+            if statements:
+                provenance["statements"] = statements
     return ordered
 
 

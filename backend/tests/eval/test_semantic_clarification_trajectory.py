@@ -87,6 +87,39 @@ async def test_a_model_that_keeps_calling_tools_still_ends_as_the_clarification(
     execute.assert_not_awaited()
 
 
+async def test_a_specialist_asks_a_multi_part_task_again_part_by_part(monkeypatch):
+    """Smart handed one specialist two results. The whole task as one question is
+    not covered; the specialist gets one chance to ask each part on its own."""
+    from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
+
+    tool, _planner, execute = setup_tool(
+        monkeypatch,
+        _plan(unresolved_concepts=[
+            {"text": "outlets per city", "type_hint": "metric", "material": True},
+        ]),
+        _plan(dimensions=["city"]),
+    )
+    registry = ToolRegistry()
+    registry.register(tool)
+    task = "Return revenue by city and outlets per city as two results."
+    provider = ScriptedProvider(script=[
+        tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
+        tool_call_frame("s2", name="semantic_query", arguments={"question": "revenue by city"}),
+        text_frame("Revenue by city is ready; outlets per city is not in this data."),
+    ])
+    context = LoopContext(user_name="alice", user=USER.copy(),
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
+        thread=AssistantThread(thread_id="split", user_name="alice", title="Eval"),
+        user_content=task, context=context, resolve_consent=allow,
+    )]
+    joined = "".join(frames).replace(" ", "")
+    assert '"finish_reason":"clarification"' not in joined
+    assert "unexpected_tool_call" not in joined
+    execute.assert_awaited_once()
+    assert context.verified_evidence["tables"]
+
+
 async def test_studio_runs_the_governed_tool_itself_when_the_model_will_not(monkeypatch):
     tool, _planner, execute = setup_tool(monkeypatch, _plan(unresolved_concepts=[
         {"text": "profit margin", "type_hint": "metric", "material": True},

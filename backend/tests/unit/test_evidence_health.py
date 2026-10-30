@@ -175,3 +175,28 @@ def test_a_specialists_statement_travels_with_its_rows_to_the_smart_root() -> No
     tables = parent.tables
     assert tables[imported[0].evidence_id]["sql"].startswith("SELECT rep")
     assert "sql" not in tables[imported[1].evidence_id]
+
+
+@pytest.mark.asyncio
+async def test_an_interactive_block_names_the_statement_of_a_specialists_result() -> None:
+    from app.modules.assistant.service import LoopContext, PendingArtifact, _autocompose_artifacts
+
+    evidence = EvidenceTracker()
+    imported = evidence.add("semantic_query", "visits per rep", table={
+        "columns": ["rep", "visits"], "rows": [["Budi", 3]],
+        "sql": "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    })
+    own = evidence.add("semantic_query", "outlets per city", table={
+        "columns": ["city", "outlets"], "rows": [["Jakarta", 2]], "sql": "SELECT 2",
+    })
+    context = LoopContext(user_name="alice")
+    context.steps = [{"kind": "tool", "evidence_id": own.evidence_id, "tool_call_id": "q-2"}]
+    block = {"provenance": {"evidence_ids": [imported.evidence_id, own.evidence_id]}}
+
+    ordered = await _autocompose_artifacts([PendingArtifact("ui", block)], evidence, context)
+
+    provenance = ordered[0].payload["provenance"]
+    assert provenance["tool_calls"] == {own.evidence_id: "q-2"}
+    assert provenance["statements"] == {
+        imported.evidence_id: "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    }

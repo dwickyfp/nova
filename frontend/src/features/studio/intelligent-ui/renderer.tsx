@@ -101,6 +101,7 @@ function UiSession({
       ...target,
       columns: Object.keys(block.evidence[target.evidenceId]?.[0] ?? {}),
       toolCallId: block.provenance.tool_calls?.[target.evidenceId],
+      sql: block.provenance.statements?.[target.evidenceId],
     });
     return {
       kinds: artifactKinds,

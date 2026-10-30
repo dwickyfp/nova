@@ -18,6 +18,8 @@ export type UiBlock = {
     composer?: "model" | "deterministic";
     /** The query tool call behind each bound result, for saving it as an artifact. */
     tool_calls?: Record<string, string>;
+    /** The statement behind a result another participant fetched (no tool call here). */
+    statements?: Record<string, string>;
   };
 };
 /** What a chart, table or map node asks to save. */
@@ -32,6 +34,8 @@ export type UiArtifactRequest = UiArtifactDraft & {
   columns: string[];
   /** Tool call of the query behind the result, when Nova recorded it. */
   toolCallId?: string;
+  /** The result's own statement, when it was fetched by another participant. */
+  sql?: string;
 };
 export type UiSource = {
   agentId: string;
