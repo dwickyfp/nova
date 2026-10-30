@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 from datetime import date
 from decimal import Decimal
@@ -141,7 +142,10 @@ class DataToChartTool:
         )
 
         pills = classify_fields(columns, rows)
-        chart_intent = await self._model_intent(intent, columns, rows, context)
+        chart_intent = (
+            None if _shape_decides(intent, pills)
+            else await self._model_intent(intent, columns, rows, context)
+        )
         spec = self._resolve_spec(intent, pills, columns, rows, chart_intent, source, title)
 
         presmodel = build_presmodel(spec, columns, rows)
@@ -244,6 +248,32 @@ class DataToChartTool:
         if any(name and name not in known for name in y_names):
             return None
         return candidate
+
+
+#: Words that ask for a chart type, by the ShowMe chart they mean.
+_CHART_WORDS = {
+    "bar": "bar", "bars": "bar", "batang": "bar", "column": "bar", "kolom": "bar",
+    "line": "line", "garis": "line", "trend": "line", "tren": "line",
+    "pie": "pie", "donut": "pie", "lingkaran": "pie", "area": "area", "scatter": "scatter",
+    "map": "map", "peta": "map", "table": "text_table", "tabel": "text_table",
+    "heatmap": "heatmap", "treemap": "treemap",
+}
+
+
+def _shape_decides(intent: str, pills: list) -> bool:
+    """One dimension and one measure: their types pick the chart, no model call.
+
+    A date reads as a line and a category as bars (ShowMe's own pick). When the
+    request names a different chart type, the model still decides.
+    """
+    measures = [pill for pill in pills if pill.is_measure]
+    if len(pills) != 2 or len(measures) != 1:
+        return False
+    from app.modules.viz.showme import default_chart_id
+
+    named = {_CHART_WORDS[word] for word in re.findall(r"[a-z]+", intent.lower())
+             if word in _CHART_WORDS}
+    return named <= {default_chart_id(pills)}
 
 
 def _vega_mirror(

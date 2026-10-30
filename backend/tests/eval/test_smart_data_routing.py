@@ -476,6 +476,84 @@ async def test_a_wait_that_times_out_with_nothing_new_waits_again_without_the_mo
 
 
 @pytest.mark.asyncio
+async def test_a_dashboard_waits_for_every_task_and_answers_once_its_charts_are_made():
+    """Two tasks to one specialist: the harness waits for both (discovery named no
+    owner), and once both results are charted the next call is the answer."""
+    def result(task: str, columns: list[str], rows: list[list]) -> dict:
+        evidence = EvidenceTracker()
+        evidence.add("semantic_query", task, table={"columns": columns, "rows": rows},
+                     metadata={"metrics": [columns[1]], "dimensions": [columns[0]]})
+        return {"agent_id": "field-sales", "current_turn_id": f"turn-{task}", "depth": 1,
+                "status": "idle", "agent_path": f"/root/{task}", "evidence": evidence.snapshot()}
+
+    unowned = {**OWNER, "semantic_matches": []}
+    discovery = EvalTool("discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+                         data={"agents": [unowned]})
+    spawn = EvalTool("spawn_agent", parameters=COLLABORATION_TOOLS["spawn_agent"][1], outcomes=[
+        ToolOutcome(ok=True, summary="spawn_agent completed",
+                    data={**unowned, "agent_path": "/root/visits"}),
+        ToolOutcome(ok=True, summary="spawn_agent completed",
+                    data={**unowned, "agent_path": "/root/outlets"}),
+    ])
+    wait = EvalTool("wait_agent", parameters=COLLABORATION_TOOLS["wait_agent"][1], data={
+        "reason": "completed", "agents": [
+            result("visits", ["rep", "visits"], [["Budi", 3], ["Siti", 2]]),
+            result("outlets", ["city", "outlets"], [["Jakarta Barat", 4], ["Jakarta Timur", 5]]),
+        ]})
+    by_evidence = {"type": "object", "properties": {
+        "intent": {"type": "string"}, "evidence_id": {"type": "string"},
+        "operation": {"type": "string"},
+    }}
+    chart = EvalTool("data_to_chart", parameters=by_evidence, outcomes=[
+        ToolOutcome(ok=True, summary="chart: visits per rep (bar)", data={"title": "Visits"},
+                    chart={"chart_spec": '{"mark":"bar"}'}),
+        ToolOutcome(ok=True, summary="chart: outlets per city (bar)", data={"title": "Outlets"},
+                    chart={"chart_spec": '{"mark":"bar"}'}),
+    ])
+    extra = EvalTool("compute_metrics", parameters=by_evidence)
+    registry = ToolRegistry()
+    for tool in (discovery, spawn, wait, chart, extra):
+        registry.register(tool)
+    spawns = call("spawn_agent", agent=OWNER["agent_id"], task_name="visits", objective="visits")
+    spawns["tool_calls"] += call(
+        "spawn_agent", agent=OWNER["agent_id"], task_name="outlets", objective="outlets"
+    )["tool_calls"]
+    spawns["tool_calls"][1]["id"] = "spawn-outlets"
+    charts = call("data_to_chart", intent="visits per rep", evidence_id="evidence_4")
+    charts["tool_calls"] += call(
+        "data_to_chart", intent="outlets per city", evidence_id="evidence_5"
+    )["tool_calls"]
+    charts["tool_calls"][1]["id"] = "chart-outlets"
+    class Recording(ScriptedProvider):
+        offered: list[bool] = []
+
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.offered.append(bool(tools))
+            async for frame in super().stream(messages=messages, tools=tools, provider=provider):
+                yield frame
+
+    provider = Recording([
+        spawns, charts, text_frame("The dashboard shows visits per rep and outlets per city."),
+    ], turn_plan={
+        "intent": "semantic_analytics", "tools": registry.names(),
+        "required_tools": ["discover_agents", "data_to_chart"],
+        "intent_frame": {"language": "en", "range": None, "compares_groups": True},
+    })
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result_frames = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=12, time_budget_seconds=600,
+    ).run(thread=thread(read_only_grant=True), user_content="Dashboard of visits and outlets",
+          context=context, resolve_consent=AsyncMock(return_value=False))])
+
+    assert result_frames.finish_reason == "stop", result_frames.error_codes
+    assert [run.arguments["targets"] for run in wait.runs] == [["/root/visits", "/root/outlets"]]
+    assert len(chart.runs) == 2 and not extra.runs
+    # Start the tasks, chart the results, answer: the answer is offered no tools.
+    assert provider.offered == [True, True, False]
+
+
+@pytest.mark.asyncio
 async def test_smart_drafts_a_schedule_and_creates_nothing(monkeypatch):
     from app.modules.agents import automations
     from app.modules.agents.tools.propose_automation import propose_automation_tool

@@ -1,7 +1,9 @@
 # Smart dashboard token budget
 
 > **Date:** 2026-10-30
-> **Status:** Phase 1 implemented and measured (2026-10-30); Phase 2 and 3 proposed.
+> **Status:** Phase 1 implemented and measured. Phase 2 partly implemented (C7, C8a);
+> its measurement is blocked: the model provider returned HTTP 402 (credit
+> exhausted). Phase 3 proposed.
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
 > `backend/app/modules/agents/tools/data_to_chart.py`)
@@ -180,12 +182,34 @@ started specialist is still running and no message has arrived, the root waits
 again on its own. `6e50cc0` already does this after a wait that timed out with
 nothing new; this extends it to the first wait after the spawns. Expected: most of the 10 model-decided waits.
 
+*As built (C7):* after a batch of spawns the harness waits for every task it
+started, whether or not discovery named the measures' owners. Discovery found
+no `semantic_matches` for this Indonesian request, so the old auto-wait, which
+needed them, never ran. Spawned tasks are now tracked per path: two tasks for
+one specialist used to overwrite each other, and only the last was waited for.
+
 **C8. Chart a requested result directly.** When a requested chart's result has
 one dimension and one measure, `data_to_chart` picks the mark from the column
 types (date: line; category: bar) without its intent model call, and the
 harness charts each requested result once the results are in. Results of
 other shapes keep the model call. Expected: the root's `data_to_chart`
 decisions and their one-shot intent calls.
+
+*As built:* the harness does not chart results itself. Its only title source
+would be a specialist's summary (long, full of numbers), while the model titles
+charts well and already charts both results in one call. Instead:
+
+- **C8a** (active): `data_to_chart` skips its intent model call when the result
+  has one dimension and one measure and the request names no other chart type
+  (`_shape_decides`); ShowMe's pick is used.
+- **C8b** (inactive in practice): once every teammate is done and every result
+  with at least two rows is charted, the root is sent straight to the final
+  answer, without tools. It is gated on the turn plan requiring
+  `data_to_chart`, and Smart's planner only required `discover_agents` for
+  this request, so it never fired. Opening the gate (for example on the
+  request asking for charts or a dashboard) is the open decision for Phase 2:
+  without a gate, a request for a chart and a computation could be answered
+  before the computation.
 
 ### Phase 3: specialists (medium risk)
 
@@ -234,6 +258,19 @@ this document.
 | Root calls | 6.2 | 8.0 | | |
 | Specialist prompt tokens | 42,381 | 27,865 (−34%) | | |
 | One-shot prompt tokens | 19,267 | 32,485 (+69%) | | |
+
+Phase 2 is not in the table: its five runs are not a valid measurement.
+Runs 4 and 5 failed on the provider's HTTP 402 (credit exhausted), and the
+provider answered 3-10 times slower than during Phase 1 (single calls of
+95-157 s), so wall time and the time-budget failure of run 3 say nothing about
+the change. The two runs that completed used 47k and 76k root prompt tokens
+(5 and 8 root calls); data, with these caveats, in
+`docs/benchmarks/smart-tokens/2026-10-30-phase2-partial.json`. Phase 2 is
+measured again once the provider has credit.
+
+Run 3 also showed the time budget behaving like the token budget did before
+`18444dd`: the answer was composed, and `before_final`'s wall-time check
+discarded it. That is a candidate fix alongside C8b.
 
 Phase 1 data: `docs/benchmarks/smart-tokens/2026-10-30-phase1.json`. Code:
 C1, C2 (as built), C4 (as built) and C5; C3 deferred.

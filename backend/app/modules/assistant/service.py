@@ -860,7 +860,10 @@ class AssistantLoop:
         #: them serially, preserving the bounded single-tool-at-a-time rule
         #: without silently discarding calls after the first.
         deferred_calls: list[dict[str, Any]] = []
-        spawned: dict[str, str] = {}
+        spawned: dict[str, list[str]] = {}
+        # Smart: every started teammate has finished its turn (last wait or list).
+        team_settled = False
+        charts_made = 0
         pending_artifacts: list[PendingArtifact] = []
         context.pending_output = []
 
@@ -2646,23 +2649,27 @@ class AssistantLoop:
                 context.collaboration_root and invocation.tool_name == "spawn_agent"
                 and isinstance(outcome.data, dict) and outcome.data.get("agent_path")
             ):
-                spawned[str(outcome.data.get("agent_id") or "")] = str(outcome.data["agent_path"])
+                spawned.setdefault(str(outcome.data.get("agent_id") or ""), []).append(
+                    str(outcome.data["agent_path"])
+                )
+                team_settled = False
                 owners = {str(agent["agent_id"]) for agent in metric_owners(evidence)}
                 if (
-                    owners and owners <= set(spawned) and not deferred_calls
+                    (not owners or owners <= set(spawned)) and not deferred_calls
                     and self._registry.get("wait_agent") is not None
                     and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
                 ):
-                    # Every specialist that owns a requested measure has started. Waiting
-                    # for them is not a decision the model has to spend a call on.
+                    # The batch of specialists has started (all owners of a requested
+                    # measure, when discovery named them). Waiting for them is not a
+                    # decision the model has to spend a call on.
                     deferred_calls.append({
                         "id": f"primary-{uuid4()}",
                         "type": "function",
                         "function": {
                             "name": "wait_agent",
                             "arguments": json.dumps({
-                                "targets": list(spawned.values()), "condition": "all",
-                                "timeout": _AUTO_WAIT_SECONDS,
+                                "targets": [path for paths in spawned.values() for path in paths],
+                                "condition": "all", "timeout": _AUTO_WAIT_SECONDS,
                             }),
                         },
                     })
@@ -2681,6 +2688,32 @@ class AssistantLoop:
                             "row_count": len(table.get("rows") or []),
                         })
                         context.last_result = {**table, "title": item.summary}
+            if (
+                context.collaboration_root and invocation.tool_name in {"list_agents", "wait_agent"}
+                and isinstance(outcome.data, dict) and outcome.data.get("agents")
+            ):
+                team_settled = all(
+                    str(agent.get("status")) in _SETTLED for agent in outcome.data["agents"]
+                    if isinstance(agent, dict)
+                )
+            if (
+                context.collaboration_root and invocation.tool_name == "data_to_chart"
+                and outcome.ok
+            ):
+                charts_made += 1
+                chartable = sum(
+                    len(table.get("rows") or []) >= 2 for table in evidence.business_tables.values()
+                )
+                if (
+                    route.needs_chart and team_settled and chartable
+                    and charts_made >= chartable and not deferred_calls and not composing_final
+                ):
+                    # Every teammate is done and every result asked for is charted:
+                    # what is left is the answer, not more steps.
+                    composing_final = True
+                    messages.append(
+                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
+                    )
             if (
                 context.collaboration_root and invocation.tool_name == "wait_agent"
                 and isinstance(outcome.data, dict) and outcome.data.get("reason") == "timeout"
@@ -3250,6 +3283,9 @@ def _asked(thread: Any, user_content: str) -> str:
 _ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
+#: Teammate statuses that mean its turn is over.
+_SETTLED = frozenset({"idle", "completed", "failed", "cancelled", "interrupted"})
+
 #: Characters of a teammate's summary the model reads in a collaboration result.
 _TEAMMATE_SUMMARY_CHARS = 600
 
