@@ -218,7 +218,7 @@ Grafik yang butuh warna konkret (recharts) membacanya lewat `readToken` di
 `src/lib/read-token.ts`, bukan menyalin hex. Token dibaca ulang saat tema
 berubah, jadi chart tidak memakai palet lama setelah toggle.
 
-### 2.6 Permukaan analitik (Explore, worksheet, dashboard)
+### 2.6 Permukaan analitik (Explore, chart chat, dashboard)
 
 Layar analitik punya bahasa sendiri di atas token inti: data digambar netral,
 dan aksen hanya menunjuk temuan.

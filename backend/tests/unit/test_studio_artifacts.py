@@ -222,72 +222,47 @@ async def test_chat_edit_rejects_non_read_only_sql(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_apply_edit_checks_owner_revision_and_audits(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("artifact_type", "bi_object_id", "detail"),
+    [
+        ("chart", None, "saved before BI and is read-only"),
+        ("dashboard", None, "saved before BI and is read-only"),
+        ("dashboard", 7, "layout in BI"),
+    ],
+)
+async def test_apply_edit_refuses_legacy_artifacts_and_dashboards(
+    monkeypatch, artifact_type: str, bi_object_id: int | None, detail: str
+) -> None:
     artifact = {
         "artifact_id": "art-1",
         "owner_name": "analyst",
         "title": "Revenue",
-        "artifact_type": "chart",
+        "artifact_type": artifact_type,
         "sql_text": "SELECT region, revenue FROM sales.summary",
-        "chart_spec": None,
-        "database_name": "sales",
-        "schema_name": "analytics",
-        "created_at": "2026-09-21 08:00:00",
+        "bi_object_id": bi_object_id,
+        "legacy": bi_object_id is None,
         "updated_at": "2026-09-21 08:00:00",
     }
-    updated = {
-        **artifact,
-        "sql_text": "SELECT region FROM sales.summary",
-        "updated_at": "2026-09-21 09:00:00",
-    }
-    get = AsyncMock(return_value=artifact)
-    update = AsyncMock(return_value=updated)
-    execute = AsyncMock(
-        return_value=[
-            QueryResult(
-                columns=["region"],
-                rows=[["West"]],
-                row_count=1,
-            )
-        ]
-    )
-    audit = AsyncMock()
-    monkeypatch.setattr("app.modules.agents.studio_router.artifact_repository.get", get)
-    monkeypatch.setattr("app.modules.agents.studio_router.artifact_repository.update", update)
     monkeypatch.setattr(
-        "app.modules.agents.artifact_editor.query_service.execute_statements", execute
+        "app.modules.agents.studio_router.artifact_repository.get",
+        AsyncMock(return_value=artifact),
     )
-    monkeypatch.setattr("app.modules.agents.studio_router.write_audit_log", audit)
+    draft = AsyncMock()
+    monkeypatch.setattr("app.modules.agents.studio_router.run_artifact_draft", draft)
     body = ArtifactApplyRequest(
-        draft=ArtifactDraft(
-            sql_text=updated["sql_text"],
-            artifact_type="chart",
-            chart_spec=None,
-        ),
+        draft=ArtifactDraft(sql_text="SELECT region FROM sales.summary", artifact_type="chart"),
         expected_updated_at="2026-09-21T08:00:00",
     )
-    user = {
-        "username": "analyst",
-        "encrypted_password": "ciphertext",
-        "session_id": "session-1",
-        "roles": ["analyst"],
-        "active_role": "analyst",
-    }
 
-    response = await apply_artifact_edit("art-1", body, user=user)
-    assert response.artifact.sql_text == updated["sql_text"]
-    update.assert_awaited_once()
-    assert update.await_args.kwargs["owner_name"] == "analyst"
-    assert update.await_args.kwargs["expected_updated_at"] == body.expected_updated_at
-    audit.assert_awaited_once()
+    with pytest.raises(HTTPException, match=detail) as raised:
+        await apply_artifact_edit("art-1", body, user={"username": "analyst"})
 
-    update.return_value = None
-    with pytest.raises(HTTPException, match="This artifact changed"):
-        await apply_artifact_edit("art-1", body, user=user)
+    assert raised.value.status_code == 409
+    draft.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_repository_update_requires_matching_owner_and_revision(monkeypatch) -> None:
+async def test_repository_source_update_requires_matching_owner_and_revision(monkeypatch) -> None:
     execute = AsyncMock(return_value={"affected": 0})
     get = AsyncMock()
     monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", execute)
@@ -295,14 +270,11 @@ async def test_repository_update_requires_matching_owner_and_revision(monkeypatc
     monkeypatch.setattr(repository, "get", get)
     expected = datetime(2026, 9, 21, 8, 0, 0)
 
-    result = await repository.update(
+    result = await repository.update_bi_source(
         "art-1",
         owner_name="analyst",
         expected_updated_at=expected,
         sql_text="SELECT region FROM sales.summary",
-        artifact_type="chart",
-        chart_spec=None,
-        title="Revenue",
     )
 
     assert result is None

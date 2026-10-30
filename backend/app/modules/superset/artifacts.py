@@ -104,31 +104,10 @@ async def publish_chart(
 ) -> dict[str, Any]:
     """Create the dataset and chart in Superset, then the Studio artifact."""
     sql = validate_artifact_sql(sql_text)
-    schema = schema_name or database_name
     async with SupersetClient.for_user(user) as bi:
-        dataset_id = await _create_dataset(
-            bi, title=title, sql=sql, schema=schema, suffix=uuid4().hex[:8]
+        dataset_id, chart_id = await create_chart_objects(
+            bi, title=title, sql=sql, plan=plan, schema=schema_name or database_name
         )
-        try:
-            columns, _temporal = await _dataset_columns(bi, dataset_id)
-            viz_type, form, query_context = await _chart_payload(
-                bi, plan or table_plan(columns), dataset_id
-            )
-            chart = await bi.request(
-                "POST",
-                "/api/v1/chart/",
-                body={
-                    "slice_name": title,
-                    "viz_type": viz_type,
-                    "datasource_id": dataset_id,
-                    "datasource_type": "table",
-                    "params": json.dumps(form),
-                    "query_context": json.dumps(query_context),
-                },
-            )
-        except BiError:
-            await _delete_quietly(bi, f"/api/v1/dataset/{dataset_id}")
-            raise
     artifact = await artifact_repository.create_bi(
         owner_name=user["username"],
         title=title,
@@ -137,17 +116,49 @@ async def publish_chart(
         database_name=database_name,
         schema_name=schema_name,
         bi_kind="chart",
-        bi_object_id=int(chart["id"]),
+        bi_object_id=chart_id,
         bi_dataset_id=dataset_id,
         agent_id=agent_id,
         thread_id=thread_id,
     )
-    await _audit(user, "CREATE_BI_CHART", "SUPERSET_CHART", str(chart["id"]))
+    await _audit(user, "CREATE_BI_CHART", "SUPERSET_CHART", str(chart_id))
     return artifact
 
 
-def _position(title: str, charts: list[tuple[int, str]]) -> dict[str, Any]:
-    """A Superset grid layout: two charts per row, in the given order."""
+async def create_chart_objects(
+    bi: SupersetClient, *, title: str, sql: str, plan: ChartPlan | None, schema: str | None
+) -> tuple[int, int]:
+    """Create a dataset over ``sql`` and a validated chart on it; ``(dataset, chart)``."""
+    dataset_id = await _create_dataset(
+        bi, title=title, sql=sql, schema=schema, suffix=uuid4().hex[:8]
+    )
+    try:
+        columns, _temporal = await _dataset_columns(bi, dataset_id)
+        viz_type, form, query_context = await _chart_payload(
+            bi, plan or table_plan(columns), dataset_id
+        )
+        chart = await bi.request(
+            "POST",
+            "/api/v1/chart/",
+            body={
+                "slice_name": title,
+                "viz_type": viz_type,
+                "datasource_id": dataset_id,
+                "datasource_type": "table",
+                "params": json.dumps(form),
+                "query_context": json.dumps(query_context),
+            },
+        )
+    except BiError:
+        await _delete_quietly(bi, f"/api/v1/dataset/{dataset_id}")
+        raise
+    return dataset_id, int(chart["id"])
+
+
+def _position(
+    title: str, charts: list[tuple[int, str]], texts: list[str] | None = None
+) -> dict[str, Any]:
+    """A Superset grid layout: two charts per row, then text blocks, in order."""
     width = _GRID_WIDTH // _PER_ROW if len(charts) > 1 else _GRID_WIDTH
     layout: dict[str, Any] = {
         "DASHBOARD_VERSION_KEY": "v2",
@@ -181,6 +192,23 @@ def _position(title: str, charts: list[tuple[int, str]]) -> dict[str, Any]:
                 },
             }
         layout[row_id] = row
+    for index, text in enumerate(texts or []):
+        row_id, node_id = f"ROW-TEXT-{index}", f"MARKDOWN-{index}"
+        layout["GRID_ID"]["children"].append(row_id)
+        layout[row_id] = {
+            "type": "ROW",
+            "id": row_id,
+            "children": [node_id],
+            "parents": ["ROOT_ID", "GRID_ID"],
+            "meta": {"background": "BACKGROUND_TRANSPARENT"},
+        }
+        layout[node_id] = {
+            "type": "MARKDOWN",
+            "id": node_id,
+            "children": [],
+            "parents": ["ROOT_ID", "GRID_ID", row_id],
+            "meta": {"width": _GRID_WIDTH, "height": 20, "code": text},
+        }
     return layout
 
 
@@ -208,22 +236,10 @@ async def publish_dashboard(
     thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a Superset dashboard placing ``chart_artifacts``, then the artifact."""
-    placed = [(int(chart["bi_object_id"]), str(chart["title"])) for chart in chart_artifacts]
     async with SupersetClient.for_user(user) as bi:
-        dashboard = await bi.request(
-            "POST",
-            "/api/v1/dashboard/",
-            body={
-                "dashboard_title": title,
-                "position_json": json.dumps(_position(title, placed)),
-                "published": False,
-            },
+        dashboard_id = await create_dashboard_object(
+            bi, title=title, chart_artifacts=chart_artifacts
         )
-        dashboard_id = int(dashboard["id"])
-        for chart_id, _name in placed:
-            await bi.request(
-                "PUT", f"/api/v1/chart/{chart_id}", body={"dashboards": [dashboard_id]}
-            )
     artifact = await artifact_repository.create_bi(
         owner_name=user["username"],
         title=title,
@@ -239,6 +255,30 @@ async def publish_dashboard(
     )
     await _audit(user, "CREATE_BI_DASHBOARD", "SUPERSET_DASHBOARD", str(dashboard_id))
     return artifact
+
+
+async def create_dashboard_object(
+    bi: SupersetClient,
+    *,
+    title: str,
+    chart_artifacts: list[dict[str, Any]],
+    texts: list[str] | None = None,
+) -> int:
+    """Create a dashboard placing the BI charts (and text blocks); its id."""
+    placed = [(int(chart["bi_object_id"]), str(chart["title"])) for chart in chart_artifacts]
+    dashboard = await bi.request(
+        "POST",
+        "/api/v1/dashboard/",
+        body={
+            "dashboard_title": title,
+            "position_json": json.dumps(_position(title, placed, texts)),
+            "published": False,
+        },
+    )
+    dashboard_id = int(dashboard["id"])
+    for chart_id, _name in placed:
+        await bi.request("PUT", f"/api/v1/chart/{chart_id}", body={"dashboards": [dashboard_id]})
+    return dashboard_id
 
 
 async def update_chart_source(

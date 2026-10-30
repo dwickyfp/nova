@@ -1,15 +1,13 @@
-"""The unified artifact model: chart|dashboard artifacts backed by viz specs."""
+"""The unified artifact model: Studio artifacts that point at BI objects."""
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
-from app.modules.agents.artifact_repository import ArtifactRepository
 from app.modules.agents.studio_router import create_artifact, refresh_artifact
 from app.modules.agents.studio_schemas import ArtifactCreateRequest
 from app.modules.viz.service import (
@@ -61,76 +59,6 @@ DASHBOARD_SPEC = {
         },
     ],
 }
-
-
-@pytest.mark.asyncio
-async def test_chart_artifact_stores_its_worksheet(monkeypatch) -> None:
-    repository = ArtifactRepository()
-    insert = AsyncMock(return_value={"affected": 1})
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", insert)
-    monkeypatch.setattr(
-        repository,
-        "get",
-        AsyncMock(
-            return_value={"artifact_id": "a1", "artifact_type": "chart", "viz_spec": WORKSHEET}
-        ),
-    )
-
-    await repository.create(
-        owner_name="nova_admin",
-        title="Revenue by region",
-        artifact_type="chart",
-        sql_text=WORKSHEET["source"]["sql"],
-        database_name=None,
-        schema_name=None,
-        viz_spec=WORKSHEET,
-    )
-
-    stored = insert.call_args.args[1]
-    assert stored[5] == "chart"
-    assert json.loads(stored[10])["marks"]["type"] == "bar"
-
-
-@pytest.mark.asyncio
-async def test_dashboard_artifact_requires_a_valid_zone_layout(monkeypatch) -> None:
-    repository = ArtifactRepository()
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", AsyncMock())
-    with pytest.raises(ValueError, match="zone layout"):
-        await repository.create(
-            owner_name="nova_admin",
-            title="Dashboard",
-            artifact_type="dashboard",
-            sql_text="",
-            database_name=None,
-            schema_name=None,
-            viz_spec=None,
-        )
-    with pytest.raises(ValueError, match="(?i)worksheet"):
-        await repository.create(
-            owner_name="nova_admin",
-            title="Chart",
-            artifact_type="chart",
-            sql_text="SELECT 1",
-            database_name=None,
-            schema_name=None,
-            viz_spec={"version": 1, "source": None},
-        )
-
-
-@pytest.mark.asyncio
-async def test_dashboard_artifact_zones_must_reference_owned_charts(monkeypatch) -> None:
-    owned = [
-        {"artifact_id": "chart-1", "artifact_type": "chart"},
-        {"artifact_id": "other", "artifact_type": "dashboard"},
-    ]
-    monkeypatch.setattr(
-        "app.modules.viz.service.artifact_repository.list",
-        AsyncMock(return_value=owned),
-    )
-    with pytest.raises(ValueError, match="unavailable chart"):
-        await viz_service.save_dashboard(
-            user=OWNER, title="Sales overview", spec=DashboardSpec.model_validate(DASHBOARD_SPEC)
-        )
 
 
 @pytest.mark.asyncio

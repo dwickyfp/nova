@@ -1,12 +1,12 @@
 # Architecture 17: Superset as Studio's BI surface
 
-> Status: **accepted design; Phases 1 to 4 implemented.** This document is the
-> delivery plan for replacing Studio's viz-core chart and dashboard artifacts
-> with Apache Superset. Its open decisions were settled on 2026-10-29 (see
-> [Decisions](#decisions)). New Studio artifacts are Superset charts and
-> dashboards, and Superset's background work runs under Nova's identity.
-> Phases 5 and 6 are not implemented: artifacts saved before BI still render
-> through [Architecture 16](arch-16-viz-core.md) until Phase 6 converts them.
+> Status: **accepted design; Phases 1 to 4 and 6 implemented.** This document
+> is the delivery plan for replacing Studio's viz-core chart and dashboard
+> artifacts with Apache Superset. Its open decisions were settled on 2026-10-29
+> (see [Decisions](#decisions)). Studio artifacts are Superset charts and
+> dashboards, Superset's background work runs under Nova's identity, and
+> artifacts saved before BI are converted in place or stay read-only with a
+> report. Phase 5 (semantics, observability, backup) is not implemented.
 
 Nova ships Apache Superset as a built-in component and shows it inside Studio
 as the surface for saved charts and dashboards. Superset brings its full feature
@@ -329,8 +329,9 @@ after the named patch passes), **Blocked** (off, with the reason).
   each on its own logical database. Runtime only, consistent with Redis's role.
 - **`NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS`:** gains a Superset object reference
   (kind and UUID). `owner_name`, `thread_id`, `agent_id`, `title`, and the
-  read-only provenance SQL remain; `viz_spec` and `chart_spec` become legacy and
-  are dropped in Phase 6. Schema changes follow the owning initialization in
+  read-only provenance SQL remain. `viz_spec` and `chart_spec` are legacy: no
+  code writes them, conversion clears them, and the repository drops both
+  columns once no legacy artifact remains (Phase 6). Schema changes follow the owning initialization in
   [artifact_repository.py](../backend/app/modules/agents/artifact_repository.py).
 - **Report and screenshot payloads** that must persist go through Nova's
   managed storage abstraction, not a new bucket configured inside Superset.
@@ -529,6 +530,39 @@ Deliver: converter from `viz_spec` charts and dashboards to Superset objects
 with a per-artifact report; retirement of the viz core authoring path, legacy
 renderer, `data_to_chart` persistence, and `dashboard_build`; updates to
 [Architecture 16](arch-16-viz-core.md), `AGENTS.md` task routing, and user docs.
+
+Status: **delivered.** `backend/app/modules/superset/conversion.py` converts
+an owner's artifacts as that owner: charts first (a worksheet through
+`worksheet_conversion`, a Vega-Lite chart through `plan_from_vega`, a bare
+query as a table), then dashboards saved as zone layouts or as tiles from
+before the viz core. Each artifact keeps its id. *Blockers* are features BI
+computes differently: calculated and level-of-detail fields, table
+calculations, aggregations Superset has no equivalent for, context, aggregate
+and relative-date filters, and, for a dashboard, the blockers of the charts it
+places. An artifact with blockers stays read-only unless its owner converts it
+anyway. *Notes* change only presentation (sort, size or label encodings,
+dashboard filter zones and actions, zone sizes). Every outcome is returned and
+audited as `CONVERT_ARTIFACT`.
+
+- Studio: `POST /studio/artifacts/convert` (all of the caller's legacy
+  artifacts, or a list; `force` converts kept ones). A legacy artifact's view
+  carries `legacy_blockers` and `legacy_notes`; editing it returns 409. Explore
+  shows a notice with **Convert all** and a per-artifact report; a legacy view
+  shows a banner with **Convert to BI** or, with blockers, **Convert anyway**
+  after confirmation. Converting a dashboard brings the legacy charts it places.
+- Operators: `backend/scripts/convert_studio_artifacts.py --all-owners` (or
+  `--owner`) converts through a delegated session (S5) for owners the task
+  worker may impersonate and prints the report. `root` and `nova_admin` are
+  never delegated; they convert their own artifacts in Studio.
+- Retired: the worksheet editor, formula editor, filter dialog and dashboard
+  layout editor; the viz authoring endpoints and `PATCH
+  /studio/artifacts/{id}/spec`; the repository's spec writes and the viz
+  service's save paths. `data_to_chart` and `dashboard_build` already publish
+  to BI (Phase 4). The viz core keeps the inline chat chart and read-only
+  legacy views ([Architecture 16](arch-16-viz-core.md)).
+
+Acceptance is automated in
+`backend/tests/integration/test_superset_governed.py::test_superset_phase_6_acceptance`.
 
 Acceptance:
 - Every existing artifact is converted or listed with the exact feature that

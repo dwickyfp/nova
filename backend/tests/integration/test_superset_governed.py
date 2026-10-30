@@ -94,6 +94,8 @@ class Bi:
             response = await self.http.get("/bi/api/v1/database/")
             response.raise_for_status()
             names = {row["database_name"]: row["id"] for row in response.json()["result"]}
+            # An AssertionError, so callers retrying policy propagation retry this too.
+            assert "Nova" in names, f"BI shows no Nova database yet: {sorted(names)}"
             self._database_id = names["Nova"]
         return self._database_id
 
@@ -723,16 +725,13 @@ async def test_superset_phases_3_and_4_acceptance(governed, monkeypatch):
             assert applied.status_code == 200, applied.text
             assert (await _chart_regions(bi2, chart["bi_object_id"])) == {"EAST": 30, "WEST": 20}
 
-            # The worksheet editor is for pre-BI artifacts only.
+            # The worksheet editor is retired: Studio has no spec write path.
             legacy = await api.patch(
                 f"{STUDIO}/{chart['artifact_id']}/spec",
                 headers=_auth(g.u1),
-                json={
-                    "viz_spec": {},
-                    "expected_updated_at": applied.json()["artifact"]["updated_at"],
-                },
+                json={"viz_spec": {}},
             )
-            assert legacy.status_code == 409
+            assert legacy.status_code in (404, 405)
 
             # Exports are audited; bundle imports do not exist (S8).
             exported = await bi1.http.get(
@@ -1040,3 +1039,221 @@ async def test_superset_phase_2_acceptance(governed):
                     await api.delete(f"{STUDIO}/{artifact_id}", headers=_auth(g.u1))
             await bi1.close()
             await bi2.close()
+
+
+def _worksheet(**extra) -> dict:
+    return {
+        "version": 1,
+        "source": {"kind": "sql", "sql": BY_REGION},
+        "columns": [{"field": "region"}],
+        "rows": [{"field": "total", "field_type": "quantitative", "aggregation": "sum"}],
+        "marks": {"type": "bar"},
+        **extra,
+    }
+
+
+async def _legacy_columns() -> set[str]:
+    described = await db.execute_system("DESCRIBE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS")
+    return {str(row[0]) for row in described["rows"]} & {"chart_spec", "viz_spec"}
+
+
+async def _insert_legacy(owner: str, artifact_id: str, artifact_type: str, title: str, **spec):
+    """A Studio artifact as it was saved before BI."""
+    import json
+
+    from app.modules.agents.artifact_repository import _now
+
+    now = _now()
+    await db.execute_system(
+        "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS (artifact_id, owner_name, title, "
+        "artifact_type, sql_text, database_name, chart_spec, viz_spec, created_at, updated_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        [
+            artifact_id,
+            owner,
+            title,
+            artifact_type,
+            BY_REGION if artifact_type == "chart" else "",
+            spec.get("database"),
+            json.dumps(spec["chart_spec"]) if spec.get("chart_spec") else None,
+            json.dumps(spec["viz_spec"]) if spec.get("viz_spec") else None,
+            now,
+            now,
+        ],
+    )
+
+
+async def test_superset_phase_6_acceptance(governed, monkeypatch):
+    """Artifacts saved before BI convert in place, as their owner, with a report."""
+    from app.core.redis import session_store
+    from app.modules.agents.artifact_repository import artifact_repository
+    from scripts.convert_studio_artifacts import convert as convert_delegated
+
+    g = governed
+    prefix = f"p6-{uuid4().hex[:8]}"
+    ids = {name: f"{prefix}-{name}" for name in ("sheet", "vega", "grid", "lossy", "board", "u2")}
+    owners = {g.u1.username, g.u2.username}
+    if not await _legacy_columns():
+        # A fresh table never had them; put them back the way an upgrade finds them.
+        for column in ("chart_spec", "viz_spec"):
+            await db.execute_system(
+                f"ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS ADD COLUMN {column} JSON"
+            )
+
+        async def columns_ready():
+            # Adding a column is an asynchronous schema change.
+            try:
+                await db.execute_system(
+                    "SELECT chart_spec, viz_spec FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS LIMIT 0"
+                )
+            except Exception as exc:  # noqa: BLE001 - retried until the change lands
+                raise AssertionError(str(exc)) from exc
+
+        await _eventually(columns_ready, seconds=60)
+    async with httpx.AsyncClient(base_url=API_URL, timeout=180) as api:
+        await _login(api, g.u1)
+        await _login(api, g.u2)
+        bi1 = Bi(g.u1.handle)
+        try:
+            await _insert_legacy(
+                g.u1.username,
+                ids["sheet"],
+                "chart",
+                "Sheet",
+                database=g.database,
+                viz_spec=_worksheet(
+                    filters=[{"kind": "categorical", "field": "region", "values": ["EAST", "WEST"]}]
+                ),
+            )
+            await _insert_legacy(
+                g.u1.username, ids["vega"], "chart", "Vega", database=g.database, chart_spec=BAR
+            )
+            # Another owner's artifact, converted later through delegation; while
+            # it is pending the legacy columns stay.
+            await _insert_legacy(
+                g.u2.username, ids["u2"], "chart", "Delegated", database=g.database, chart_spec=BAR
+            )
+            await _insert_legacy(g.u1.username, ids["grid"], "chart", "Grid", database=g.database)
+            await _insert_legacy(
+                g.u1.username,
+                ids["lossy"],
+                "chart",
+                "Lossy",
+                database=g.database,
+                viz_spec=_worksheet(table_calcs=[{"kind": "running_total", "field": "total"}]),
+            )
+            zones = [
+                {"zone_id": "z1", "kind": "sheet", "artifact_id": ids["sheet"],
+                 "rect": {"x": 0, "y": 0, "w": 12, "h": 2}},
+                {"zone_id": "z2", "kind": "sheet", "artifact_id": ids["lossy"],
+                 "rect": {"x": 12, "y": 0, "w": 12, "h": 2}},
+                {"zone_id": "z3", "kind": "text", "text": {"content": "Regional totals"},
+                 "rect": {"x": 0, "y": 2, "w": 24, "h": 1}},
+            ]  # fmt: skip
+            await _insert_legacy(
+                g.u1.username, ids["board"], "dashboard", "Board", viz_spec={"zones": zones}
+            )
+
+            # Converting as the owner: clean views move, a lossy one stays read-only.
+            async def converted_once():
+                response = await api.post(f"{STUDIO}/convert", headers=_auth(g.u1), json={})
+                assert response.status_code == 200, response.text
+                outcomes = {o["artifact_id"]: o for o in response.json()["outcomes"]}
+                assert outcomes[ids["sheet"]]["status"] == "converted", outcomes
+                return outcomes
+
+            outcomes = await _eventually(converted_once)
+            assert set(outcomes) == {ids[n] for n in ("sheet", "vega", "grid", "lossy", "board")}
+            assert outcomes[ids["vega"]]["status"] == "converted"
+            assert outcomes[ids["grid"]]["status"] == "converted"
+            assert outcomes[ids["lossy"]]["status"] == "kept"
+            assert "table calculations" in outcomes[ids["lossy"]]["blockers"][0]
+            assert outcomes[ids["board"]]["status"] == "kept"
+            assert "Lossy" in outcomes[ids["board"]]["blockers"][0]
+            await _audited(g.u1.username, "bi_artifact", "CONVERT_ARTIFACT")
+
+            # Converted views keep their ids and return the owner's governed rows.
+            sheet = (await api.get(f"{STUDIO}/{ids['sheet']}", headers=_auth(g.u1))).json()
+            assert sheet["legacy"] is False and sheet["bi_kind"] == "chart"
+            assert sheet["viz_spec"] is None
+            assert (
+                sheet["bi_view_path"]
+                == f"/bi/explore/?slice_id={sheet['bi_object_id']}&standalone=1"
+            )
+            assert set(await _chart_regions(bi1, sheet["bi_object_id"])) == {"EAST"}
+            form = (await bi1.http.get(f"/bi/api/v1/chart/{sheet['bi_object_id']}")).json()
+            assert '"adhoc_filters"' in form["result"]["params"]
+            assert "EAST" in form["result"]["params"]
+            grid = (await api.get(f"{STUDIO}/{ids['grid']}", headers=_auth(g.u1))).json()
+            described = (await bi1.http.get(f"/bi/api/v1/chart/{grid['bi_object_id']}")).json()
+            assert described["result"]["viz_type"] == "table"
+
+            # The kept view explains itself and refuses edits until converted.
+            lossy = (await api.get(f"{STUDIO}/{ids['lossy']}", headers=_auth(g.u1))).json()
+            assert lossy["legacy"] is True and lossy["legacy_blockers"]
+            edit = await api.post(
+                f"{STUDIO}/{ids['lossy']}/edit",
+                headers=_auth(g.u1),
+                json={"instruction": "make it a line chart", "columns": []},
+            )
+            assert edit.status_code == 409 and "read-only" in edit.text
+            # Nobody converts someone else's artifacts.
+            other = await api.post(
+                f"{STUDIO}/convert", headers=_auth(g.u2), json={"artifact_ids": [ids["lossy"]]}
+            )
+            assert other.status_code == 200 and other.json()["outcomes"] == []
+
+            # Converting the dashboard anyway brings its lossy chart with it.
+            forced = await api.post(
+                f"{STUDIO}/convert",
+                headers=_auth(g.u1),
+                json={"artifact_ids": [ids["board"]], "force": True},
+            )
+            assert forced.status_code == 200, forced.text
+            statuses = {o["artifact_id"]: o["status"] for o in forced.json()["outcomes"]}
+            assert statuses == {ids["lossy"]: "converted", ids["board"]: "converted"}
+            board = (await api.get(f"{STUDIO}/{ids['board']}", headers=_auth(g.u1))).json()
+            placed = await bi1.http.get(f"/bi/api/v1/dashboard/{board['bi_object_id']}/charts")
+            lossy = (await api.get(f"{STUDIO}/{ids['lossy']}", headers=_auth(g.u1))).json()
+            assert {c["id"] for c in placed.json()["result"]} == {
+                sheet["bi_object_id"],
+                lossy["bi_object_id"],
+            }
+
+            # An owner who is not signed in converts through a delegated session.
+            await g.set_authors(g.role_b, author=True)
+            await session_store.init()
+            monkeypatch.setattr(settings, "SUPERSET_INTERNAL_URL", BI_URL)
+            await _impersonation(g.u2.username, granted=True)
+            try:
+
+                async def delegated():
+                    report = await convert_delegated(g.u2.username, force=False)
+                    assert "error" not in report, report
+                    return report
+
+                report = await _eventually(delegated)
+                assert report["role"] == g.role_b
+                assert [(o["artifact_id"], o["status"]) for o in report["outcomes"]] == [
+                    (ids["u2"], "converted")
+                ]
+            finally:
+                await _impersonation(g.u2.username, granted=False)
+
+            # Once no legacy artifact remains anywhere, the legacy columns go.
+            if not await artifact_repository.legacy_remaining():
+                assert await _legacy_columns() == set()
+        finally:
+            for name, artifact_id in ids.items():
+                owner = g.u2 if name == "u2" else g.u1
+                with suppress(Exception):
+                    await api.delete(f"{STUDIO}/{artifact_id}", headers=_auth(owner))
+            with suppress(Exception):
+                await db.execute_system(
+                    "DELETE FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS WHERE owner_name IN (%s, %s)",
+                    sorted(owners),
+                )
+            with suppress(Exception):
+                await session_store.close()
+            await bi1.close()
+

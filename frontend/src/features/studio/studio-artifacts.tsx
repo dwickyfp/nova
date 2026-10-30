@@ -2,9 +2,9 @@ import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
 import { ArtifactExplorer } from "./artifact-explorer";
 import { BiFrame } from "@/features/bi/bi-frame";
 import { describeView } from "@/features/viz/insight";
-import { ViewAnswer, WorksheetEditor } from "@/features/viz/worksheet-editor";
+import { ViewAnswer } from "@/features/viz/view-answer";
 import { VizView } from "@/features/viz/viz-view";
-import type { DashboardSpec, PresModel, WorksheetSpec } from "@/features/viz/types";
+import type { DashboardSpec, PresModel } from "@/features/viz/types";
 import { chartSpecWithRows } from "./artifact-chart-spec";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -39,6 +39,7 @@ import { downloadArtifact, type ExportFormat } from "@/features/agents/studio-in
 import { cn } from "@/lib/utils";
 import { formatArtifactSql } from "./artifact-source";
 import { ArtifactFilterBar } from "./artifact-filter-bar";
+import { LegacyBanner } from "./legacy-conversion";
 import { UiChart } from "./intelligent-ui/ui-chart";
 import { ResultTable } from "./result-table";
 import {
@@ -73,7 +74,6 @@ export function StudioArtifacts({
         artifactId={selected.id}
         startEditing={selected.edit}
         onBack={() => setSelected(null)}
-        onOpenArtifact={(id, edit) => setSelected({ id, edit })}
       />
     );
   }
@@ -84,12 +84,10 @@ function ArtifactDetail({
   artifactId,
   startEditing = false,
   onBack,
-  onOpenArtifact,
 }: {
   artifactId: string;
   startEditing?: boolean;
   onBack: () => void;
-  onOpenArtifact?: (artifactId: string, edit: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const meta = useQuery({
@@ -112,7 +110,7 @@ function ArtifactDetail({
   const charts = useQuery({
     queryKey: ["studio", "artifacts"],
     queryFn: () => studioApi.listArtifacts(),
-    enabled: detail.data?.artifact.artifact_type === "dashboard",
+    enabled: isDashboard && Boolean(meta.data?.legacy),
   });
   const [chatBusy, setChatBusy] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
@@ -274,21 +272,16 @@ function ArtifactDetail({
           title={artifact.title}
           subtitle={`Dashboard · Updated ${formatTimestamp(artifact.updated_at)}`}
           onDelete={() => setDeleteOpen(true)}
-          extraAction={
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditing((value) => !value)}>
-              {editing ? "Done editing" : "Edit layout"}
-            </Button>
-          }
         />
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
-          <DashboardCanvas
+          <LegacyBanner
             artifactId={artifact.artifact_id}
+            blockers={artifact.legacy_blockers ?? []}
+            notes={artifact.legacy_notes ?? []}
+          />
+          <DashboardCanvas
             spec={(artifact.viz_spec ?? { version: 1, zones: [] }) as unknown as DashboardSpec}
             charts={charts.data?.artifacts.filter((item) => item.artifact_type === "chart") ?? []}
-            expectedUpdatedAt={artifact.updated_at}
-            editable={editing}
-            onSaved={() => void meta.refetch()}
-            onEditSheet={onOpenArtifact ? (id) => onOpenArtifact(id, true) : undefined}
           />
         </div>
         <ConfirmDialog
@@ -328,9 +321,9 @@ function ArtifactDetail({
   // The refresh carries the artifact as saved now; the metadata query can lag
   // behind an editor save.
   const saved = detail.data.artifact;
-  const worksheet = (saved.viz_spec ?? detail.data.derived_viz_spec ?? null) as unknown as WorksheetSpec | null;
-  // A BI chart is drawn and edited by Superset; the worksheet editor is for
-  // artifacts saved before BI.
+  // A BI chart is drawn and edited by Superset. A chart saved before BI is
+  // read-only until it is converted.
+  const legacy = Boolean(artifact.legacy);
   const biView = saved.bi_view_path ?? artifact.bi_view_path ?? null;
   const biEdit = saved.bi_edit_path ?? artifact.bi_edit_path ?? null;
   return (
@@ -356,15 +349,22 @@ function ArtifactDetail({
             >
               Done editing
             </Button>
-          ) : (biEdit || worksheet?.source) && !editing && !draftResponse?.draft ? (
+          ) : biEdit && !editing && !draftResponse?.draft ? (
             <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
-              {biEdit ? "Edit in BI" : "Edit view"}
+              Edit in BI
             </Button>
           ) : null
         }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+        {legacy ? (
+          <LegacyBanner
+            artifactId={artifact.artifact_id}
+            blockers={artifact.legacy_blockers ?? []}
+            notes={artifact.legacy_notes ?? []}
+          />
+        ) : null}
         {draftResponse?.draft ? (
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-3">
             <div className="min-w-0 flex-1 text-sm">
@@ -393,21 +393,6 @@ function ArtifactDetail({
           >
             <BiFrame path={biEdit} title={`Edit ${artifact.title} in BI`} />
           </section>
-        ) : editing && worksheet?.source ? (
-          <WorksheetEditor
-            artifactId={artifact.artifact_id}
-            spec={worksheet}
-            initialPresmodel={(activeData.presmodel as PresModel | undefined) ?? null}
-            title={artifact.title}
-            expectedUpdatedAt={saved.updated_at}
-            onCancel={() => setEditing(false)}
-            onSaved={() => {
-              setEditing(false);
-              void detail.refetch();
-              void meta.refetch();
-              void queryClient.invalidateQueries({ queryKey: ["studio", "artifacts"] });
-            }}
-          />
         ) : (
           <section
             aria-label="Artifact preview"
@@ -481,6 +466,7 @@ function ArtifactDetail({
         ) : null}
       </div>
 
+      {legacy ? null : (
       <form
         className="shrink-0 bg-background px-4 py-3 sm:px-7"
         onSubmit={(event) => {
@@ -561,6 +547,7 @@ function ArtifactDetail({
           </Button>
         </div>
       </form>
+      )}
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}

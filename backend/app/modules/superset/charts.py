@@ -75,6 +75,34 @@ class Measure(BaseModel):
         }
 
 
+class RowFilter(BaseModel):
+    """A filter on result rows, applied before aggregation (``WHERE``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(min_length=1, max_length=256)
+    operator: Literal["IN", "NOT IN", ">=", "<="]
+    values: list[str | float] = Field(min_length=1, max_length=1000)
+
+    def adhoc(self) -> dict[str, Any]:
+        many = self.operator in ("IN", "NOT IN")
+        return {
+            "expressionType": "SIMPLE",
+            "clause": "WHERE",
+            "subject": self.column,
+            "operator": self.operator,
+            "comparator": self.values if many else self.values[0],
+        }
+
+    def query(self) -> dict[str, Any]:
+        many = self.operator in ("IN", "NOT IN")
+        return {
+            "col": self.column,
+            "op": self.operator,
+            "val": self.values if many else self.values[0],
+        }
+
+
 class ChartPlan(BaseModel):
     """One Superset chart, in terms of the dataset's result columns."""
 
@@ -88,9 +116,11 @@ class ChartPlan(BaseModel):
     #: Raw table columns, when the chart lists rows rather than aggregating.
     columns: list[str] = Field(default_factory=list, max_length=64)
     limit: int = Field(default=DEFAULT_ROW_LIMIT, ge=1, le=100_000)
+    filters: list[RowFilter] = Field(default_factory=list, max_length=32)
 
     def referenced(self) -> set[str]:
         names = {measure.column for measure in self.measures} | set(self.columns)
+        names |= {item.column for item in self.filters}
         names |= {name for name in (self.x, self.series) if name}
         return names
 
@@ -190,13 +220,17 @@ def to_superset(
     viz_type = _VIZ_TYPES[plan.kind]
     datasource = f"{dataset_id}__table"
     metrics = [measure.metric() for measure in plan.measures]
-    form: dict[str, Any] = {"viz_type": viz_type, "datasource": datasource}
+    form: dict[str, Any] = {
+        "viz_type": viz_type,
+        "datasource": datasource,
+        "adhoc_filters": [item.adhoc() for item in plan.filters],
+    }
     query: dict[str, Any] = {
         "columns": [],
         "metrics": metrics,
         "orderby": [],
         "row_limit": plan.limit,
-        "filters": [],
+        "filters": [item.query() for item in plan.filters],
         "extras": {},
     }
 
@@ -256,3 +290,71 @@ def to_superset(
         "result_type": "full",
     }
     return viz_type, form, query_context
+
+
+# ── Charts saved before BI (Phase 6) ─────────────────────────────────────
+
+
+def worksheet_conversion(spec: dict[str, Any]) -> tuple[ChartPlan, list[str], list[str]]:
+    """``(plan, blockers, notes)`` for converting a viz-core worksheet.
+
+    Blockers change what the chart computes, so a chart with any is not
+    converted unless the owner accepts the loss. Notes only change how it looks.
+    """
+    from app.modules.viz.spec import WorksheetSpec
+
+    sheet = WorksheetSpec.model_validate(spec)
+    blockers: list[str] = []
+    notes: list[str] = []
+    if sheet.calculations:
+        names = ", ".join(calc.name for calc in sheet.calculations[:5])
+        blockers.append(f"calculated fields, including level-of-detail expressions ({names})")
+    if sheet.table_calcs:
+        kinds = ", ".join(sorted({calc.kind for calc in sheet.table_calcs}))
+        blockers.append(f"table calculations ({kinds})")
+    pills = [*sheet.columns, *sheet.rows]
+    unsupported = sorted(
+        {
+            pill.aggregation
+            for pill in pills
+            if pill.aggregation and pill.aggregation not in _AGGREGATES
+        }
+    )
+    if unsupported:
+        blockers.append(f"aggregations BI does not compute the same way ({', '.join(unsupported)})")
+
+    filters: list[RowFilter] = []
+    for item in sheet.filters:
+        if getattr(item, "context", False):
+            blockers.append(f"context filter on {item.field}")
+        elif item.kind == "categorical":
+            if item.values:
+                filters.append(
+                    RowFilter(
+                        column=item.field,
+                        operator="NOT IN" if item.exclude else "IN",
+                        values=list(item.values),
+                    )
+                )
+            if item.null_included is not None:
+                notes.append(f"null handling of the {item.field} filter")
+        elif item.kind == "quantitative" and item.aggregation is None:
+            if item.min is not None:
+                filters.append(RowFilter(column=item.field, operator=">=", values=[item.min]))
+            if item.max is not None:
+                filters.append(RowFilter(column=item.field, operator="<=", values=[item.max]))
+        elif item.kind == "quantitative":
+            blockers.append(f"filter on the aggregated value of {item.field}")
+        else:
+            blockers.append(f"relative date filter on {item.field}")
+
+    if sheet.sort:
+        notes.append("sort order")
+    marks = sheet.marks
+    for channel in ("size", "text", "detail", "angle"):
+        if getattr(marks, channel) is not None:
+            notes.append(f"the {channel} mark encoding")
+    if any(pill.date_part and pill.discrete for pill in pills):
+        notes.append("discrete date parts are drawn as a time axis")
+    plan = plan_from_worksheet(spec)
+    return plan.model_copy(update={"filters": filters}), blockers, notes

@@ -433,6 +433,21 @@ uv run python scripts/provision_task_worker_access.py --owner <username>
 Tanpa `SUPERSET_SMTP_HOST` report dan alert tetap dijalankan dan dicatat, tetapi
 tidak dikirim.
 
+Artifact Studio yang disimpan sebelum BI tampil read-only sampai dikonversi.
+Pemiliknya mengonversi sendiri di Studio (**Convert all** di Explore). Untuk
+pemilik yang tidak sedang login, konversi lewat sesi terdelegasi (izin
+impersonate per pemilik seperti di atas; `root` dan `nova_admin` tidak pernah
+didelegasikan, jadi mereka mengonversi sendiri di Studio):
+
+```bash
+uv run python scripts/convert_studio_artifacts.py --all-owners
+uv run python scripts/convert_studio_artifacts.py --owner <username> --force
+```
+
+Skrip mencetak laporan per artifact. Tanpa `--force`, artifact yang memakai
+fitur yang dihitung berbeda oleh BI tetap read-only. Kolom lama `chart_spec`
+dan `viz_spec` dihapus otomatis setelah tidak ada artifact lama tersisa.
+
 Acceptance di stack governed (membuat dan menghapus sendiri user, role,
 policy Ranger, dan data ujinya; tes Fase 2 menghentikan dan menyalakan lagi
 `nova-superset-worker` sesaat):

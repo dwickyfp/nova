@@ -5,24 +5,22 @@ rebuild it. Query rows are deliberately absent from the table: opening an
 artifact re-executes under the caller's current StarRocks session, so both
 data and RBAC remain current.
 
-Two artifact kinds exist:
+Every artifact is a pointer into BI (docs/arch-17-superset.md): ``bi_kind``
+and ``bi_object_id`` name its Superset chart or dashboard, and
+``bi_dataset_id`` the virtual dataset over ``sql_text``. Superset holds the
+definition; this row keeps ownership, thread and provenance.
 
-* ``chart`` — a worksheet (``viz_spec``, the worksheet model in
-  :mod:`app.modules.viz.spec`) plus the read-only source statement that
-  rebuilds it. Charts saved before the viz core carry a sanitized Vega-Lite
-  ``chart_spec`` instead and render through the legacy path until re-saved.
-* ``dashboard`` — a zone layout (``viz_spec`` is a ``DashboardSpec``) over
-  chart artifacts owned by the same user; it carries no SQL of its own.
-
-An artifact saved since the Superset BI surface (docs/arch-17-superset.md) is a
-pointer instead: ``bi_kind`` and ``bi_object_id`` name its Superset chart or
-dashboard, ``bi_dataset_id`` the virtual dataset over ``sql_text``, and
-``viz_spec``/``chart_spec`` stay empty. Superset holds the definition; this row
-keeps ownership, thread and provenance.
+Artifacts saved before BI are *legacy*: ``bi_object_id`` is empty and the
+row's ``viz_spec`` (a viz-core worksheet or ``DashboardSpec``) or Vega-Lite
+``chart_spec`` describes it. Nothing writes those columns any more. A legacy
+artifact is read-only until :mod:`app.modules.superset.conversion` converts it
+in place; once none remain, :meth:`ArtifactRepository.retire_legacy_columns`
+drops the two columns.
 """
 
 from __future__ import annotations
 
+import builtins
 import json
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -44,8 +42,6 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS (
     sql_text     TEXT NOT NULL,
     database_name VARCHAR(128),
     schema_name  VARCHAR(128),
-    chart_spec   JSON,
-    viz_spec     JSON,
     bi_kind      VARCHAR(16),
     bi_object_id BIGINT,
     bi_dataset_id BIGINT,
@@ -58,11 +54,13 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 
 ArtifactKind = Literal["chart", "dashboard"]
 
-_COLUMNS = (
+_BASE_COLUMNS = (
     "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-    "sql_text, database_name, schema_name, chart_spec, viz_spec, created_at, updated_at, "
+    "sql_text, database_name, schema_name, created_at, updated_at, "
     "bi_kind, bi_object_id, bi_dataset_id"
 )
+#: Columns of artifacts saved before BI; present until every one is converted.
+LEGACY_COLUMNS = ("chart_spec", "viz_spec")
 
 #: Pointer columns added for Superset-backed artifacts.
 BI_COLUMNS = (
@@ -154,14 +152,14 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
         sql_text,
         database_name,
         schema_name,
-        chart_spec,
-        viz_spec,
         created_at,
         updated_at,
         bi_kind,
         bi_object_id,
         bi_dataset_id,
+        *legacy,
     ) = values
+    chart_spec, viz_spec = ([*legacy, None, None])[:2]
     kind = str(bi_kind) if bi_kind else None
     object_id = int(str(bi_object_id)) if bi_object_id else None
     view_path, edit_path = bi_paths(kind, object_id)
@@ -184,49 +182,29 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
         "bi_dataset_id": int(str(bi_dataset_id)) if bi_dataset_id else None,
         "bi_view_path": view_path,
         "bi_edit_path": edit_path,
+        "legacy": object_id is None,
     }
 
 
-def _stored_viz_spec(
-    artifact_type: str, viz_spec: object | None
-) -> dict[str, Any] | None:
-    """Validate and store a worksheet/dashboard spec as plain JSON."""
-    if artifact_type != "chart" and artifact_type != "dashboard":
-        raise ValueError("Artifact type must be 'chart' or 'dashboard'.")
-    if viz_spec is None:
-        if artifact_type == "dashboard":
-            raise ValueError("A dashboard artifact needs its zone layout.")
-        return None
-    parsed = _json_object(viz_spec)
-    if parsed is None:
-        raise ValueError("The viz specification must be a JSON object.")
-    if artifact_type == "dashboard":
-        from app.modules.viz.spec import DashboardSpec
-
-        DashboardSpec.model_validate(parsed)
-    else:
-        from app.modules.viz.spec import WorksheetSpec
-
-        WorksheetSpec.model_validate(parsed)
-    return parsed
-
-
 class ArtifactRepository:
+    def __init__(self) -> None:
+        #: Whether the legacy columns still exist; read at schema check.
+        self._legacy_columns = True
+
+    def _columns(self) -> str:
+        if self._legacy_columns:
+            return f"{_BASE_COLUMNS}, {', '.join(LEGACY_COLUMNS)}"
+        return _BASE_COLUMNS
+
     async def ensure_schema(self) -> None:
         await db.execute_system(ARTIFACTS_DDL)
-        import contextlib
-
-        from app.modules.viz.migration import ensure_viz_columns
-
-        # An old install whose ALTER failed once still serves artifacts.
-        with contextlib.suppress(Exception):  # pragma: no cover - upgrade path
-            await ensure_viz_columns()
         await self.ensure_bi_columns()
 
     async def ensure_bi_columns(self) -> list[str]:
         """Add the Superset pointer columns an older table lacks."""
         described = await db.execute_system("DESCRIBE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS")
         existing = {str(row[0]) for row in described["rows"]}
+        self._legacy_columns = all(name in existing for name in LEGACY_COLUMNS)
         added = []
         for name, column_type in BI_COLUMNS:
             if name not in existing:
@@ -251,19 +229,20 @@ class ArtifactRepository:
         bi_dataset_id: int | None,
         agent_id: str | None = None,
         thread_id: str | None = None,
+        artifact_id: str | None = None,
     ) -> dict[str, Any]:
         """Record a Superset chart or dashboard as an owned Studio artifact."""
         if bi_kind not in {"chart", "dashboard"} or bi_kind != artifact_type:
             raise ValueError("A BI artifact must point at a Superset object of its own kind.")
-        artifact_id = str(uuid4())
+        artifact_id = artifact_id or str(uuid4())
         now = _now()
         stored_sql = validate_artifact_sql(sql_text) if artifact_type == "chart" else ""
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS ("
             "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-            "sql_text, database_name, schema_name, chart_spec, viz_spec, "
+            "sql_text, database_name, schema_name, "
             "bi_kind, bi_object_id, bi_dataset_id, created_at, updated_at"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s, %s)",
+            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 artifact_id,
                 owner_name,
@@ -309,72 +288,26 @@ class ArtifactRepository:
             return None
         return await self.get(artifact_id, owner_name=owner_name)
 
-    async def create(
-        self,
-        *,
-        owner_name: str,
-        title: str,
-        artifact_type: ArtifactKind,
-        sql_text: str,
-        database_name: str | None,
-        schema_name: str | None,
-        chart_spec: object | None = None,
-        viz_spec: object | None = None,
-        agent_id: str | None = None,
-        thread_id: str | None = None,
-    ) -> dict[str, Any]:
-        artifact_id = str(uuid4())
-        now = _now()
-        stored_viz = _stored_viz_spec(artifact_type, viz_spec)
-        if artifact_type == "dashboard":
-            stored_sql = ""
-            stored_chart = None
-        else:
-            stored_sql = validate_artifact_sql(sql_text)
-            stored_chart = (
-                chart_template(chart_spec, title=title)
-                if artifact_type == "chart" and chart_spec is not None and stored_viz is None
-                else None
-            )
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS ("
-            "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-            "sql_text, database_name, schema_name, chart_spec, viz_spec, "
-            "created_at, updated_at"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            [
-                artifact_id,
-                owner_name,
-                agent_id,
-                thread_id,
-                title,
-                artifact_type,
-                stored_sql,
-                database_name,
-                schema_name,
-                json.dumps(stored_chart, separators=(",", ":")) if stored_chart else None,
-                json.dumps(stored_viz, separators=(",", ":")) if stored_viz else None,
-                now,
-                now,
-            ],
-        )
-        created = await self.get(artifact_id, owner_name=owner_name)
-        assert created is not None
-        return created
+    async def _select(self, where: str, params: builtins.list[object]) -> dict[str, Any]:
+        """Select artifact rows; re-detect the columns once if another process
+        dropped the legacy ones since this one checked the schema."""
+        query = "SELECT {} FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS " + where
+        try:
+            return await db.execute_system(query.format(self._columns()), params)
+        except Exception as exc:
+            # StarRocks reports "Unknown column" or "Column ... cannot be resolved".
+            if not self._legacy_columns or not any(name in str(exc) for name in LEGACY_COLUMNS):
+                raise
+            await self.ensure_bi_columns()
+            return await db.execute_system(query.format(self._columns()), params)
 
     async def list(self, *, owner_name: str) -> list[dict[str, Any]]:
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-            "WHERE owner_name = %s ORDER BY updated_at DESC",
-            [owner_name],
-        )
+        result = await self._select("WHERE owner_name = %s ORDER BY updated_at DESC", [owner_name])
         return [_row(row) for row in result["rows"]]
 
     async def get(self, artifact_id: str, *, owner_name: str) -> dict[str, Any] | None:
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-            "WHERE artifact_id = %s AND owner_name = %s",
-            [artifact_id, owner_name],
+        result = await self._select(
+            "WHERE artifact_id = %s AND owner_name = %s", [artifact_id, owner_name]
         )
         if not result["rows"]:
             return None
@@ -388,49 +321,55 @@ class ArtifactRepository:
         )
         return bool(result.get("affected", 0))
 
-    async def update(
+    async def list_legacy(self, *, owner_name: str) -> builtins.list[dict[str, Any]]:
+        """The owner's artifacts saved before BI (not yet converted)."""
+        return [row for row in await self.list(owner_name=owner_name) if row["legacy"]]
+
+    async def attach_bi(
         self,
         artifact_id: str,
         *,
         owner_name: str,
-        expected_updated_at: datetime,
-        sql_text: str,
-        artifact_type: ArtifactKind,
-        chart_spec: object | None,
-        viz_spec: object | None = None,
-        title: str,
+        bi_kind: str,
+        bi_object_id: int,
+        bi_dataset_id: int | None,
     ) -> dict[str, Any] | None:
-        stored_viz = _stored_viz_spec(artifact_type, viz_spec)
-        if artifact_type == "dashboard":
-            stored_sql = ""
-            stored_chart = None
-        else:
-            stored_sql = validate_artifact_sql(sql_text)
-            stored_chart = (
-                chart_template(chart_spec, title=title)
-                if artifact_type == "chart" and chart_spec is not None and stored_viz is None
-                else None
-            )
+        """Point a legacy artifact at the Superset object converted from it.
+
+        The artifact keeps its id, so threads, favorites and dashboards that
+        name it still resolve. Its legacy description is cleared.
+        """
+        clear = ", chart_spec = NULL, viz_spec = NULL" if self._legacy_columns else ""
         result = await db.execute_system(
             "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-            "SET sql_text = %s, artifact_type = %s, chart_spec = %s, viz_spec = %s, "
-            "title = %s, updated_at = %s "
-            "WHERE artifact_id = %s AND owner_name = %s AND updated_at = %s",
-            [
-                stored_sql,
-                artifact_type,
-                json.dumps(stored_chart, separators=(",", ":")) if stored_chart else None,
-                json.dumps(stored_viz, separators=(",", ":")) if stored_viz else None,
-                title,
-                _now(),
-                artifact_id,
-                owner_name,
-                _datetime(expected_updated_at),
-            ],
+            f"SET bi_kind = %s, bi_object_id = %s, bi_dataset_id = %s, updated_at = %s{clear} "
+            "WHERE artifact_id = %s AND owner_name = %s AND bi_object_id IS NULL",
+            [bi_kind, bi_object_id, bi_dataset_id, _now(), artifact_id, owner_name],
         )
         if not result.get("affected", 0):
             return None
         return await self.get(artifact_id, owner_name=owner_name)
+
+    async def legacy_remaining(self) -> int:
+        """Artifacts of every owner still waiting for conversion."""
+        result = await db.execute_system(
+            "SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS WHERE bi_object_id IS NULL"
+        )
+        return int(result["rows"][0][0])
+
+    async def retire_legacy_columns(self) -> bool:
+        """Drop ``chart_spec`` and ``viz_spec`` once no legacy artifact remains."""
+        if not self._legacy_columns or await self.legacy_remaining():
+            return False
+        described = await db.execute_system("DESCRIBE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS")
+        existing = {str(row[0]) for row in described["rows"]}
+        for name in LEGACY_COLUMNS:
+            if name in existing:
+                await db.execute_system(
+                    f"ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS DROP COLUMN {name}"
+                )
+        self._legacy_columns = False
+        return True
 
 
 artifact_repository = ArtifactRepository()

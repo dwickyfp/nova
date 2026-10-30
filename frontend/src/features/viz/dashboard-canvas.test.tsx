@@ -6,7 +6,6 @@ import type { DashboardComputeResponse, DashboardSpec } from "./types";
 
 const mocks = vi.hoisted(() => ({
   computeVizDashboard: vi.fn(),
-  updateArtifactSpec: vi.fn(),
 }));
 
 vi.mock("@/features/agents/api", () => ({
@@ -84,12 +83,7 @@ async function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <DashboardCanvas
-        artifactId="dash-1"
-        spec={spec}
-        charts={charts}
-        expectedUpdatedAt="2026-10-24T08:00:00"
-      />
+      <DashboardCanvas spec={spec} charts={charts} />
     </QueryClientProvider>,
   );
 }
@@ -97,7 +91,6 @@ async function mount() {
 describe("DashboardCanvas", () => {
   beforeEach(() => {
     mocks.computeVizDashboard.mockReset().mockResolvedValue(computeResponse());
-    mocks.updateArtifactSpec.mockReset().mockResolvedValue({});
   });
 
   it("places sheet zones on the grid and reports a broken sheet without blanking the canvas", async () => {
@@ -109,5 +102,12 @@ describe("DashboardCanvas", () => {
     expect(mocks.computeVizDashboard).toHaveBeenCalled();
     const call = mocks.computeVizDashboard.mock.calls[0][0] as { spec: { zones: unknown[] } };
     expect(call.spec.zones).toHaveLength(2);
+  });
+
+  it("is read-only: no layout or sheet editing", async () => {
+    const screen = await mount();
+    await expect.element(screen.getByText("Revenue")).toBeVisible();
+    expect(screen.getByRole("button", { name: /save dashboard|edit sheet|remove zone/i }).elements()).toHaveLength(0);
+    expect(screen.getByRole("combobox", { name: /add a chart/i }).elements()).toHaveLength(0);
   });
 });

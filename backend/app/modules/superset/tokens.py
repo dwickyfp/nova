@@ -145,21 +145,28 @@ async def _delegated_session(session_id: str) -> BiSession:
     )
 
 
-async def issue_delegated_handle(username: str, active_role: str) -> str:
-    """A BI handle for one background run as ``username`` under ``active_role``.
+async def create_delegated_session(username: str, active_role: str) -> str:
+    """Record an authorized delegation for ``SUPERSET_DELEGATION_TTL_SECONDS``.
 
-    The caller has already authorized the delegation; this only records it,
-    for ``SUPERSET_DELEGATION_TTL_SECONDS``.
+    Returns its session id (``delegated:<id>``). The caller has already
+    authorized the delegation (:func:`app.modules.superset.delegation.authorize`).
     """
-    ttl = settings.SUPERSET_DELEGATION_TTL_SECONDS
     delegated_id = uuid.uuid4().hex
     key = _DELEGATED_PREFIX + delegated_id
     await _redis().hset(
         key, mapping={"username": username, "active_role": active_role, "version": "1"}
     )
-    await _redis().expire(key, ttl)
+    await _redis().expire(key, settings.SUPERSET_DELEGATION_TTL_SECONDS)
+    return DELEGATED + delegated_id
+
+
+async def issue_delegated_handle(username: str, active_role: str) -> str:
+    """A BI handle for one background run as ``username`` under ``active_role``."""
+    session_id = await create_delegated_session(username, active_role)
     handle = secrets.token_urlsafe(32)
-    await _redis().set(_handle_key(handle), DELEGATED + delegated_id, ex=ttl)
+    await _redis().set(
+        _handle_key(handle), session_id, ex=settings.SUPERSET_DELEGATION_TTL_SECONDS
+    )
     return handle
 
 

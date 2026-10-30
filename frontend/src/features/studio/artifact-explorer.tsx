@@ -35,6 +35,7 @@ import { describeView, sourceOf } from "@/features/viz/insight";
 import type { DashboardSpec, PresModel } from "@/features/viz/types";
 import { VizView } from "@/features/viz/viz-view";
 import { cn } from "@/lib/utils";
+import { LegacyNotice } from "./legacy-conversion";
 
 /**
  * ArtifactExplorer is the Studio content browser. Dashboards show as cards
@@ -122,6 +123,7 @@ export function ArtifactExplorer({
     chart: all.filter((item) => item.artifact_type === "chart").length,
     favorites: all.filter((item) => favorites.includes(item.artifact_id)).length,
   };
+  const legacyCount = all.filter((item) => item.legacy).length;
   const latest = all.reduce<string | null>((max, item) => (!max || item.updated_at > max ? item.updated_at : max), null);
 
   const visible = useMemo(() => {
@@ -268,6 +270,7 @@ export function ArtifactExplorer({
           />
         ) : (
           <div className="flex flex-col gap-10">
+            {legacyCount ? <LegacyNotice count={legacyCount} /> : null}
             {dashboards.length ? (
               <section aria-labelledby="explore-dashboards">
                 <h2 id="explore-dashboards" className="type-title mb-3">
@@ -396,9 +399,7 @@ function ItemMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
         <DropdownMenuItem onSelect={() => onOpen(false)}>Open</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onOpen(true)}>
-          {artifact.artifact_type === "dashboard" ? "Edit layout" : "Edit sheet"}
-        </DropdownMenuItem>
+        {artifact.legacy ? null : <DropdownMenuItem onSelect={() => onOpen(true)}>Edit in BI</DropdownMenuItem>}
         {onRefresh ? <DropdownMenuItem onSelect={onRefresh}>Recompute</DropdownMenuItem> : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onDelete}>

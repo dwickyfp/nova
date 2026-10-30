@@ -1,110 +1,56 @@
-# Module 23: Dashboards
+# Module 23: Charts and dashboards
 
-> Save query results as interactive charts and pin to dashboards.
+> Save answers as charts, lay them out on dashboards, and keep both live under
+> each viewer's own access.
 
----
-
-## Chart Types
-
-| Type | Best For | Example |
-|------|----------|---------|
-| **Table** | Raw data, detailed results | Query output |
-| **Bar** | Comparing categories | Sales by region |
-| **Line** | Trends over time | Daily revenue |
-| **Pie** | Proportions | Traffic sources |
-| **Area** | Volume over time | Load volume daily |
-| **Scatter** | Correlation | Price vs. demand |
-| **Heatmap** | Density/distribution | Query latency by hour |
-| **KPI** | Single metric | Total revenue |
+Saved charts and dashboards live in BI, Nova's built-in Apache Superset,
+shown inside Studio. The design is in
+[Architecture 17](arch-17-superset.md).
 
 ---
 
-## Dashboard Operations
+## Saving a chart
 
-### Create Dashboard
+- **From a conversation:** a chart in a Studio answer has a save button. Nova
+  saves the query that produced it and creates a BI chart from it, as you.
+- **From a query:** in Studio **Artifacts**, choose **New view → Sheet from a
+  query**.
+- **From an agent:** asking for a dashboard ("build a sales overview") creates
+  its charts and the dashboard in BI.
 
-```
-┌─ Dashboard: ETL Overview ───────────────────────────────┐
-│                                                          │
-│  [+ Add Widget]  [Edit Layout] [Share] [Refresh]         │
-│                                                          │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │
-│  │ 📊 KPI      │ │ 📊 KPI      │ │ 📊 KPI      │       │
-│  │ Total Rows  │ │ Load Jobs   │ │ Error Rate  │       │
-│  │ 12.4M       │ │ 247 today   │ │ 0.2%        │       │
-│  └─────────────┘ └─────────────┘ └─────────────┘       │
-│                                                          │
-│  ┌────────────────────────────────────────────────┐     │
-│  │ 📈 Line Chart: Daily Load Volume               │     │
-│  │                                                │     │
-│  │     ╱╲    ╱╲                                   │     │
-│  │    ╱  ╲╱╱  ╲   ╱╲                             │     │
-│  │   ╱         ╲╱╱  ╲                            │     │
-│  │  ╱               ╲                            │     │
-│  │ Mon  Tue  Wed  Thu  Fri  Sat  Sun             │     │
-│  └────────────────────────────────────────────────┘     │
-│                                                          │
-│  ┌──────────────────┐ ┌──────────────────┐              │
-│  │ 📊 Bar: Loads    │ │ 📊 Pie: Sources  │              │
-│  │ by Stage         │ │                  │              │
-│  │                  │ │   Stage1 45%     │              │
-│  │ ████████ 120     │ │   Stage2 30%     │              │
-│  │ ██████ 89        │ │   Stage3 25%     │              │
-│  │ ████ 56          │ │                  │              │
-│  └──────────────────┘ └──────────────────┘              │
-└──────────────────────────────────────────────────────────┘
-```
+Every saved view keeps its read-only query. Opening it runs the query again
+with your current role, so the chart shows current data and only the rows and
+columns your policies allow. Two people opening the same chart can see
+different rows.
 
-### Widget Configuration
+## Explore
 
-```
-┌─ Add Widget ────────────────────────────────────────────┐
-│                                                          │
-│  Query:                                                  │
-│  SELECT DATE(timestamp) AS dt, COUNT(*) AS loads         │
-│  FROM NOVA_SYSTEM.AUDIT_LOG                              │
-│  WHERE action = 'LOAD'                                  │
-│  GROUP BY dt ORDER BY dt                                 │
-│                                                          │
-│  Chart Type: [Line ▼]                                    │
-│  X-axis: [dt ▼]                                          │
-│  Y-axis: [loads ▼]                                       │
-│  Title: [Daily Load Volume                    ]          │
-│  Auto-refresh: [Every 5 minutes ▼]                       │
-│                                                          │
-│  [Preview] [Add to Dashboard]                            │
-└──────────────────────────────────────────────────────────┘
-```
+**Artifacts** opens Explore: dashboards as cards and charts in a table, with
+search, sort, favorites and a tab per kind. Open a view to read it; **Edit in
+BI** opens the chart in Superset's Explore or the dashboard in its edit mode,
+inside Nova. The full BI workspace is under **BI** in the sidebar.
 
----
+Only roles an administrator marks as BI authors can create or edit charts and
+datasets; other roles can view.
 
-## Data Model
+## Views saved before BI
 
-```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG_DASHBOARDS (
-    id              VARCHAR(64) PRIMARY KEY,
-    name            VARCHAR(256) NOT NULL,
-    description     TEXT,
-    is_shared       BOOLEAN DEFAULT FALSE,
-    created_by      VARCHAR(128),
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-) PRIMARY KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+Charts and dashboards saved before BI was added are read-only. Explore shows
+how many there are with **Convert all**; each one shows a banner with
+**Convert to BI**.
 
-CREATE TABLE NOVA_SYSTEM.CONFIG_DASHBOARD_WIDGETS (
-    id              VARCHAR(64) PRIMARY KEY,
-    dashboard_id    VARCHAR(64),
-    title           VARCHAR(256),
-    sql_text        TEXT,
-    chart_type      VARCHAR(32),
-    x_axis          VARCHAR(64),
-    y_axis          VARCHAR(64),
-    position_x      INT,
-    position_y      INT,
-    width           INT DEFAULT 4,
-    height          INT DEFAULT 3,
-    refresh_seconds INT DEFAULT 300,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-) PRIMARY KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
-```
+Converting keeps the view's place in Explore and in conversations and runs as
+you. The report lists, per view:
+
+| Result | Meaning |
+|--------|---------|
+| In BI | Converted. Edit it in BI from now on. |
+| Kept read-only | It uses something BI computes differently: calculated or level-of-detail fields, table calculations, some aggregations (median, variance, standard deviation), context, aggregate or relative-date filters. **Convert anyway** converts it without them; recreate them in BI if you need them. |
+| Not converted | BI refused the chart (for example its query no longer runs). The view stays read-only. |
+
+"Looks different" notes (sort order, size or label encodings, dashboard
+filters and layout) never stop a conversion. Converting a dashboard also
+converts the charts placed on it.
+
+Administrators can convert views for people who are not signed in with
+`backend/scripts/convert_studio_artifacts.py` (see [HOW_TO_RUN.md](../HOW_TO_RUN.md)).
