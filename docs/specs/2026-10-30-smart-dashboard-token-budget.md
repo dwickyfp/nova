@@ -1,7 +1,7 @@
 # Smart dashboard token budget
 
 > **Date:** 2026-10-30
-> **Status:** Proposed. Baseline measured; no change implemented yet.
+> **Status:** Phase 1 implemented and measured (2026-10-30); Phase 2 and 3 proposed.
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
 > `backend/app/modules/agents/tools/data_to_chart.py`)
@@ -127,6 +127,13 @@ title, mark, evidence id and row count; the chart itself still goes to the
 answer as an artifact. Expected: about 1,000 tokens per chart call and per
 later call that carries it.
 
+*As built:* the chart was never in the result; its size was Evidence Health,
+sent to the model four times per result (`data`, `metadata`, `evidence.health`
+and `evidence.evidence_health`). Every tool result now carries it once, as
+`evidence.health` (`_one_health_copy` in `tools/_boundary.py`); Nova keeps all
+copies in the outcome, trace and evidence. This applies to every tool, not only
+`data_to_chart`.
+
 **C3. Tools by phase.** Once every requested specialist has started, the root
 is offered only the tools that remain useful (`wait_agent`, `list_agents`,
 `send_message`, `followup_task`, `compute_metrics`, `data_to_chart`);
@@ -134,11 +141,25 @@ discovery and spawning come back if a later step needs another specialist.
 The discovery result is folded to a one-line summary after the spawns.
 Expected: part of the 8.5k schema tokens and most of the 5k discovery tokens.
 
+*Deferred:* measured, the three tools that would drop out (`discover_agents`,
+`spawn_agent`, `propose_automation`) are about 400 of the root's 1,600 schema
+tokens per call, and the context manager already clears the discovery result
+after use. The saving does not justify changing which tools the model sees
+mid-turn.
+
 **C4. Bounded final composer evidence.** `<FINAL_COMPOSER>` carries each
 verified table up to a row limit with its totals and row count, the same
 bound the loop already uses for result previews. Number verification keeps
 using the full evidence on Nova's side, never the trimmed copy. Expected:
 most of the 11k-token final prompt.
+
+*As built:* measured, the composer evidence held no tables: it listed every
+evidence item, seven of eleven being coordination steps (discover, spawn,
+wait) with their Evidence Health, about 2,400 tokens. `composer_context()` now
+leaves coordination steps out once a result is collected; discovery stays
+while none is, since it is what says nobody covers a request. The other 6,000
+tokens of the final prompt are the interactive UI instructions, left to
+Phase 2.
 
 **C5. One session budget for Smart.** For a Smart tree, `_execute_child`
 checks the tree against `CollaborationLimits.max_total_tokens`, the limit
@@ -206,7 +227,34 @@ this document.
 
 | Measure (mean of 5 runs) | Baseline | Phase 1 | Phase 2 | Phase 3 |
 |---|---:|---:|---:|---:|
-| Completed runs | 1 / 5 | | | |
-| Root prompt tokens | 104,681 | | | |
-| Tokens per request | 182,071 | | | |
-| Wall time (s) | 666 | | | |
+| Completed runs | 1 / 5 | **4 / 5** | | |
+| Root prompt tokens | 104,681 | 73,750 (−30%) | | |
+| Tokens per request | 182,071 | 153,998 (−15%) | | |
+| Wall time (s) | 666 | **288 (−57%)** | | |
+| Root calls | 6.2 | 8.0 | | |
+| Specialist prompt tokens | 42,381 | 27,865 (−34%) | | |
+| One-shot prompt tokens | 19,267 | 32,485 (+69%) | | |
+
+Phase 1 data: `docs/benchmarks/smart-tokens/2026-10-30-phase1.json`. Code:
+C1, C2 (as built), C4 (as built) and C5; C3 deferred.
+
+Phase 1 meets the completion and wall-time targets, not the token targets.
+Read with care: baseline runs mostly failed early, so they skipped work that
+completed runs do (charts, the final answer, more specialist turns). That is
+why root calls and one-shot tokens rose while each call got smaller: root
+prompt per call fell from 16,884 to 9,219.
+
+The one failed run stopped at the root's own token allowance
+(`token_budget`): the root's tools' nested model calls (chart intent) count
+toward it.
+
+What Phase 2 has to address, from the Phase 1 measurement:
+
+- System messages are 56% of the root's prompt (38,946 tokens per run), sent
+  on each of its 8 calls: fewer root calls is the largest remaining lever
+  (C6-C8).
+- Tool schemas are 16% (11,403 per run) because there are more calls.
+- The turn planner (`nova_turn_plan`) ran 22 times in 5 runs, about 5,700
+  prompt tokens each: every participant's turn plans again, including
+  specialists whose objective Smart already wrote.
+- The interactive UI instructions are about 6,000 tokens of the final call.

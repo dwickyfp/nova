@@ -2739,6 +2739,8 @@ class AssistantLoop:
             )
             if collected_results:
                 envelope["collected_results"] = collected_results
+            if invocation.tool_name in {"wait_agent", "list_agents"}:
+                envelope["data"] = _collaboration_view(envelope.get("data"))
             shown = evidence.tables.get(evidence_item.evidence_id)
             if shown and shown.get("rows") and not isinstance(
                 (envelope.get("data") or {}).get("rows"), list
@@ -3248,6 +3250,33 @@ def _asked(thread: Any, user_content: str) -> str:
 _ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
+#: Characters of a teammate's summary the model reads in a collaboration result.
+_TEAMMATE_SUMMARY_CHARS = 600
+
+
+def _collaboration_view(data: Any) -> Any:
+    """What the model reads of a wait or list: who is doing what, and how far.
+
+    A teammate's results reach this turn as evidence (``collected_results``) and
+    its full answer stays in the run; repeating both in every later prompt is
+    what filled Smart's context.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("agents"), list):
+        return data
+    agents = []
+    for agent in data["agents"]:
+        if not isinstance(agent, dict):
+            continue
+        summary = str(agent.get("summary") or "")
+        agents.append({
+            key: agent[key]
+            for key in ("agent_session_id", "agent_path", "agent_name", "status", "turn_count")
+            if key in agent
+        } | ({"summary": summary[:_TEAMMATE_SUMMARY_CHARS]
+              + ("…" if len(summary) > _TEAMMATE_SUMMARY_CHARS else "")} if summary else {}))
+    return {**{key: value for key, value in data.items() if key != "agents"}, "agents": agents}
+
+
 def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
     """The question back when the model wrote none: what the governed data lacks
     and what it has, so whoever asked (a person or Smart) can narrow the request."""

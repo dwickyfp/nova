@@ -173,6 +173,13 @@ class Evidence:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+#: Smart's collaboration tools: they move work between participants, not facts.
+COORDINATION_TOOLS = frozenset({
+    "discover_agents", "spawn_agent", "send_message", "followup_task", "wait_agent",
+    "list_agents", "interrupt_agent",
+})
+
+
 class EvidenceTracker:
     def __init__(self) -> None:
         self._items: list[Evidence] = []
@@ -330,7 +337,16 @@ class EvidenceTracker:
         return list(imported.values())
 
     def composer_context(self) -> str:
-        payload = [asdict(item) for item in self._items]
+        """The evidence the final answer may draw on, as JSON for the composer prompt.
+
+        Coordination steps (starting, waiting for, messaging a teammate) state no
+        fact; a teammate's results are their own items once collected. Discovery
+        stays while no result is in: it is what says nobody covers the request.
+        """
+        skipped = COORDINATION_TOOLS if self.business_tables else (
+            COORDINATION_TOOLS - {"discover_agents"}
+        )
+        payload = [asdict(item) for item in self._items if item.tool not in skipped]
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 

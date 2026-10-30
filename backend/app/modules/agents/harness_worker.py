@@ -1090,7 +1090,13 @@ class AgentHarnessWorker:
             int(item.get("prompt_tokens") or 0) + int(item.get("completion_tokens") or 0)
             for item in tree
         )
-        if spent >= MAX_SESSION_TOKENS:
+        # A Smart tree is bounded by its collaboration limit, the one its checkpoints
+        # enforce; the fixed session ceiling sat below a root plus two specialists.
+        session_limit = (
+            CollaborationLimits.from_root(root).max_total_tokens
+            if root["agent_id"] == SMART_AGENT_ID else MAX_SESSION_TOKENS
+        )
+        if spent >= session_limit:
             raise ValueError("Session token budget exhausted")
         registry, system_prompt, seconds, token_budget = await agent_service.build_loop_inputs(
             agent

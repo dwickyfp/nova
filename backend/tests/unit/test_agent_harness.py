@@ -1280,6 +1280,67 @@ async def test_a_composed_smart_answer_survives_an_exhausted_token_budget(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("smart", [True, False])
+async def test_a_smart_tree_is_bounded_by_its_collaboration_limit(monkeypatch, smart) -> None:
+    """130k stored tokens: within a Smart tree's 240k collaboration limit, past the
+    120k session ceiling every other run keeps."""
+    from app.modules.agents import harness_worker as module
+
+    monkeypatch.setattr(
+        "app.modules.agents.mission.mission_service.project_run", AsyncMock(return_value=None),
+    )
+    root = {**_run("root", status="waiting_for_agent"), "prompt_tokens": 80_000,
+            "completion_tokens": 0}
+    if smart:
+        root["agent_id"] = module.SMART_AGENT_ID
+    child = _run("sales", depth=1, status="running")
+    child.update(prompt_tokens=50_000, completion_tokens=0, result_summary=None)
+    saved: dict = {}
+
+    class Repository:
+        async def get(self, run_id):
+            return {"root": root, "sales": child}.get(run_id)
+
+        async def tree(self, *args, **kwargs):
+            return [root, child]
+
+        async def transition(self, run_id, **kwargs):
+            saved.update(kwargs)
+            return True
+
+        def __getattr__(self, name):
+            return AsyncMock(return_value=[] if name == "pending_messages" else None)
+
+    class FakeLoop:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run(self, **kwargs):
+            yield 'event: text_delta\ndata: {"text":"Visits per rep."}\n\n'
+            yield 'event: done\ndata: {"finish_reason":"stop"}\n\n'
+
+    agent = {"agent_id": "sales", "owner_name": "alice", "policy": "auto_read_only"}
+    user = {"username": "alice", "active_role": "analyst", "assigned_roles": ["analyst"]}
+    monkeypatch.setattr(module.agent_repository, "get_agent", AsyncMock(return_value=agent))
+    monkeypatch.setattr(module.agent_service, "build_loop_inputs", AsyncMock(
+        return_value=(ToolRegistry(), "system", 30, 1000)
+    ))
+    monkeypatch.setattr(module.memory_repository, "list", AsyncMock(return_value=[]))
+    monkeypatch.setattr(module, "has_verified_access", AsyncMock(return_value=True))
+    monkeypatch.setattr(module, "AssistantLoop", FakeLoop)
+    monkeypatch.setattr(module.resource_delegation, "load", AsyncMock(return_value=([], [])))
+    worker = AgentHarnessWorker(Repository())
+    monkeypatch.setattr(worker, "_user_for", AsyncMock(return_value=user))
+
+    if smart:
+        await worker._execute_child(child, user, asyncio.Event())
+        assert saved["to_status"] == "completed"
+    else:
+        with pytest.raises(ValueError, match="Session token budget"):
+            await worker._execute_child(child, user, asyncio.Event())
+
+
+@pytest.mark.asyncio
 async def test_session_events_get_unique_sequences_under_concurrent_writers(monkeypatch) -> None:
     from app.modules.agents import harness_repository as module
 

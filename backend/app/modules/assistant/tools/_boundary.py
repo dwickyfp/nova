@@ -91,7 +91,7 @@ class ToolOutcome:
                 payload["canonical_business_result"] = (
                     self.business_hook_result.provider_observation
                 )
-            return provider_safe_payload(payload, tool_name=tool_name)
+            return provider_safe_payload(_one_health_copy(payload), tool_name=tool_name)
         return {
             "ok": False,
             "tool": self.tool or tool_name,
@@ -100,6 +100,29 @@ class ToolOutcome:
             "safe_detail": self.safe_detail or self.error or "The tool failed.",
             "repair_context": self.repair_context or {},
         }
+
+
+def _one_health_copy(payload: dict[str, Any]) -> dict[str, Any]:
+    """Send the model one Evidence Health assessment per result, as ``evidence.health``.
+
+    The same assessment is kept in the outcome's data, metadata, evidence and
+    trace for Nova's own use; repeated in the prompt it cost every later call.
+    """
+    health = (payload.get("evidence") or {}).get("health")
+    if health is None:
+        return payload
+
+    def without(value: Any) -> Any:
+        if isinstance(value, dict) and value.get("evidence_health") == health:
+            return {key: item for key, item in value.items() if key != "evidence_health"}
+        return value
+
+    return {
+        **payload,
+        "data": without(payload.get("data")),
+        "metadata": without(payload.get("metadata")),
+        "evidence": without(payload.get("evidence")),
+    }
 
 
 def report_tool_progress(
