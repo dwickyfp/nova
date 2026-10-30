@@ -212,15 +212,21 @@ claim, execution fails closed.
 
 ### Preflight (fail fast)
 
-`POST /api/v1/migration/preflight` reads the caller's own grants (``SHOW GRANTS``
-on the target, as the caller) and, for data movement, reports whether a transfer
-stage is configured. It is **pure analysis over a read** — nothing is created.
+`POST /api/v1/migration/preflight` asks the access-control service whether
+Ranger policies allow the caller's **active role** each access the plan needs
+and, for data movement, reports whether a transfer stage is configured. Native
+StarRocks grants (`SHOW GRANTS`) are never consulted: they authorize nothing in
+strict Ranger mode. It is **pure analysis over a read** — nothing is created.
 
 - Only privileges relevant to the plan are required (a tables-only plan does not
   demand `CREATE VIEW`/`CREATE FUNCTION`).
-- Scope is respected: `ALL DATABASES` / `ALL TABLES IN ALL DATABASES` cover any
-  database; `DATABASE <name>` covers only that one; `CREATE DATABASE` needs a
-  catalog-scope grant.
+- Each privilege is checked at its Ranger resource level: `create database` on
+  the catalog, `create table`/`create view`/`create materialized view`/
+  `create function` on the target database, and `insert`/`select` on every
+  target table. Wildcards and exclusions follow Ranger's matching.
+- The check fails closed: a deny item, a conditional or time-bounded policy, a
+  column-scoped item, a missing active role, or an unreachable Ranger reports
+  the access as missing.
 - **Execute runs the preflight first** (``MIGRATION_EXECUTE_PREFLIGHT``, default
   on) against the exact plan it is about to run, and refuses with **409** rather
   than half-applying. The response names the missing privilege and why it is
@@ -257,12 +263,12 @@ per-table (not chunked) in this version.
 
 Behaviour:
 
-- **Runs as the caller**, through the shared `query_service` pipeline. StarRocks
-  RBAC is the real authority: a caller without `CREATE DATABASE` / `CREATE TABLE`
-  / … on the target is refused by preflight, not given a privileged bypass. Note that
-  `GRANT ALL ON *.*` does **not** include `CREATE DATABASE`; a migration operator
-  needs the explicit grants (`GRANT CREATE DATABASE ON CATALOG default_catalog`,
-  `GRANT CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW ON ALL DATABASES`).
+- **Runs as the caller**, through the shared `query_service` pipeline. Ranger is
+  the real authority: a caller whose active role lacks `create database` /
+  `create table` / … on the target is refused by preflight, not given a
+  privileged bypass. A migration operator's role needs Ranger policies for
+  `create database` on `default_catalog` and `create table`, `create view`,
+  `create materialized view` on the target database.
 - **Per-object results** — each step reports `ok` / `failed` with the engine
   error message. A failing step does not abort the rest, so a partial run is
   fully visible.
@@ -283,7 +289,7 @@ backend/app/modules/migration/
 ├── verdicts.py     # Pure classification rules + function reconstruction (no I/O)
 ├── retarget.py     # Pure DDL retargeting for the target (no I/O)
 ├── planner.py      # Pure dependency-ordered apply planning (no I/O)
-├── preflight.py    # Pure grant parsing/analysis (no I/O)
+├── preflight.py    # Pure Ranger access requests/analysis (no I/O)
 ├── data_mover.py   # Pure data-copy SQL builders + copy plan (no I/O)
 ├── source.py       # Resolve a registered source into a real connection
 ├── engine.py       # starrocks-cluster-sync adapter (status only)

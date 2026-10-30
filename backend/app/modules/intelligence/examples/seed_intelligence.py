@@ -106,12 +106,6 @@ async def seed(embedding_alias: str | None = None) -> dict[str, str]:
     await db.init_system_pool()
     user = _user()
     try:
-        for database in ("NOVA_DEMO", "NOVA_CATALOG"):
-            await db.execute_system(
-                f"GRANT SELECT ON ALL TABLES IN DATABASE {database} TO ROLE ACCOUNTADMIN"
-            )
-        await db.execute_system("GRANT ACCOUNTADMIN TO USER 'nova_admin'@'%'")
-
         entities = {item.name: item for item in await entity_registry.list(user)}
         if "nova_demo_customer" not in entities:
             entities["nova_demo_customer"] = await entity_registry.create(

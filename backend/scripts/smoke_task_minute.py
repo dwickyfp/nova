@@ -1,7 +1,8 @@
 """Live one-minute CREATE TASK smoke test against an isolated fixture.
 
-Run only against a disposable StarRocks/Redis stack. The script creates uniquely
-named users, a database, and a stream, then waits for a real scheduled execution.
+Run only against a disposable StarRocks/Redis/Ranger stack. The script creates
+uniquely named users, Ranger-governed roles, a database, and a stream, then waits
+for a real scheduled execution.
 It prints the observed task/run/result states without printing credentials.
 """
 
@@ -32,6 +33,7 @@ from app.modules.task_orchestration.repository import task_orchestration_reposit
 from app.modules.task_orchestration.scheduler import SchedulerTick
 from app.modules.task_orchestration.transport import RedisGraphRunTransport
 from app.modules.task_orchestration.worker_service import WorkerService
+from scripts import _ranger_fixture as ranger_fixture
 from tests.integration._nova_system_ddl import AUDIT_LOG_DDL
 
 
@@ -116,6 +118,7 @@ async def main() -> None:
     )
     task_id: str | None = None
     completed = False
+    fixture_policies: list[str] = []
     try:
         await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
         await db.execute_system(AUDIT_LOG_DDL)
@@ -141,20 +144,10 @@ async def main() -> None:
         await db.execute_system(
             f"CREATE USER '{worker_user}' IDENTIFIED BY '{worker_password}'"
         )
-        await db.execute_system(f"CREATE ROLE {owner_role}")
-        await db.execute_system(f"CREATE ROLE {worker_role}")
-        await db.execute_system(f"GRANT {owner_role} TO USER '{owner}'")
-        await db.execute_system(f"GRANT {worker_role} TO USER '{worker_user}'")
-        await db.execute_system(f"GRANT INSERT ON {database}.sink TO '{owner}'")
-        await db.execute_system(f"GRANT INSERT ON {database}.sink TO ROLE {owner_role}")
-        await db.execute_system(f"GRANT ALL ON {database}.* TO ROLE {owner_role}")
-        await db.execute_system(f"GRANT CREATE TABLE ON DATABASE {database} TO ROLE {owner_role}")
-        await db.execute_system(
-            f"GRANT IMPERSONATE ON USER '{owner}'@'%' TO ROLE {worker_role}"
-        )
-        await db.execute_system(
-            f"GRANT IMPERSONATE ON USER '{owner}'@'%' TO '{worker_user}'"
-        )
+        await ranger_fixture.create_role(owner_role, [owner])
+        await ranger_fixture.create_role(worker_role, [worker_user])
+        fixture_policies += await ranger_fixture.grant_database(owner_role, database)
+        fixture_policies.append(await ranger_fixture.grant_impersonation(worker_role, [owner]))
         print(json.dumps({"phase": "fixture_ready"}), flush=True)
         async with db.user_conn(worker_user, worker_password) as conn, conn.cursor() as cur:
                 await cur.execute(f"SET ROLE {worker_role}")
@@ -306,8 +299,9 @@ async def main() -> None:
             await db.execute_system(f"DROP DATABASE {database}")
             await db.execute_system(f"DROP USER '{worker_user}'")
             await db.execute_system(f"DROP USER '{owner}'")
-            await db.execute_system(f"DROP ROLE {worker_role}")
-            await db.execute_system(f"DROP ROLE {owner_role}")
+            await ranger_fixture.remove(
+                policies=fixture_policies, roles=[worker_role, owner_role]
+            )
             await client.delete(stream_key)
         await client.aclose()
         await db.close_system_pool()

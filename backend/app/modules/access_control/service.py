@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import re
@@ -21,7 +22,7 @@ from app.integrations.ranger.compiler import (
 )
 from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
 
-from .domain import ProjectionState, RoleProjection
+from .domain import AccessRequest, ProjectionState, RoleProjection
 from .security_context import SecurityContext
 
 
@@ -654,6 +655,89 @@ class AccessControlService:
                 policies, catalog, database, table,
             ),
         }
+
+    async def role_allows(
+        self, *, principal: str, active_role: str, requests: list[AccessRequest]
+    ) -> list[bool]:
+        """Whether Ranger policies allow each request for the caller's active role.
+
+        Every Ranger policy counts, including bootstrap policies, because they
+        authorize roles such as ACCOUNTADMIN. Anything this preview cannot
+        evaluate (conditions, schedules, column-scoped items) never becomes an
+        allow, and any matching deny item refuses the request.
+        """
+        if not principal or not active_role:
+            return [False for _ in requests]
+        policies = [
+            policy
+            for policy in await self._ranger.list_policies()
+            if policy.get("service", settings.RANGER_SERVICE_NAME) == settings.RANGER_SERVICE_NAME
+            and policy.get("isEnabled", True)
+            and int(policy.get("policyType", 0)) == 0
+        ]
+        return [
+            self._policies_allow(policies, principal, active_role, request)
+            for request in requests
+        ]
+
+    @classmethod
+    def _policies_allow(
+        cls, policies: list[dict], principal: str, active_role: str, request: AccessRequest
+    ) -> bool:
+        wanted = request.access.lower()
+        allowed = False
+        for policy in policies:
+            if not cls._request_matches(policy, request):
+                continue
+            for item in policy.get("denyPolicyItems", []):
+                if cls._item_grants(item, principal, active_role, wanted, deny=True):
+                    return False
+            if policy.get("conditions") or policy.get("validitySchedules"):
+                continue
+            allowed = allowed or any(
+                cls._item_grants(item, principal, active_role, wanted, deny=False)
+                for item in policy.get("policyItems", [])
+            )
+        return allowed
+
+    @staticmethod
+    def _item_grants(
+        item: dict, principal: str, active_role: str, wanted: str, *, deny: bool
+    ) -> bool:
+        if item.get("conditions") and not deny:
+            return False
+        grantee = (
+            active_role in item.get("roles", [])
+            or principal in item.get("users", [])
+            or "public" in item.get("groups", [])
+        )
+        return grantee and any(
+            str(access.get("type", "")).lower() in {wanted, "all"}
+            and access.get("isAllowed", True)
+            for access in item.get("accesses", [])
+        )
+
+    @staticmethod
+    def _request_matches(policy: dict, request: AccessRequest) -> bool:
+        expected = {"catalog": request.catalog}
+        if request.database is not None:
+            expected["database"] = request.database
+        if request.table is not None:
+            expected["table"] = request.table
+        resources = dict(policy.get("resources", {}))
+        if request.table is not None and resources.get("column", {}).get("values") == ["*"]:
+            resources.pop("column")
+        if set(resources) != set(expected):
+            return False
+        for key, value in expected.items():
+            resource = resources[key]
+            matched = any(
+                fnmatch.fnmatchcase(value.lower(), str(pattern).lower())
+                for pattern in resource.get("values", [])
+            )
+            if matched == bool(resource.get("isExcludes")):
+                return False
+        return True
 
     @classmethod
     def _security_effects_fingerprint(

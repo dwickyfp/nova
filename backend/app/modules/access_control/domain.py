@@ -38,6 +38,16 @@ class RoleProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class AccessRequest:
+    """One Ranger access check at catalog, database, or table level."""
+
+    access: str
+    catalog: str
+    database: str | None = None
+    table: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DataScopeBinding:
     dimension_key: str
     column: str

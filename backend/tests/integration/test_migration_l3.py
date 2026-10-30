@@ -194,11 +194,61 @@ async def l3_admin_user(request):
         "GRANT CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW ON ALL DATABASES TO '{u}'",
     ):
         await _admin_execute(grant.format(u=L3_ADMIN_USER))
+    # The unpatched engine enforces the native grants above; the migration
+    # preflight asks Ranger. Mirror the same accesses as Ranger policies.
+    policies = _l3_admin_ranger_policies()
+    for policy in policies:
+        await ranger_client.put_policy(policy)
     yield L3_ADMIN_USER
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    for policy in policies:
+        existing = await ranger_client.get_policy(policy.name)
+        if existing and existing.get("id") is not None:
+            await ranger_client.delete_policy(int(existing["id"]))
     await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
     await ranger_client.delete_role(L3_ADMIN_ROLE)
+
+
+def _l3_admin_ranger_policies() -> list:
+    from app.core.config import settings
+    from app.integrations.ranger.compiler import compile_access_policy, managed_name
+    from app.integrations.ranger.schemas import (
+        RangerPolicy,
+        RangerPolicyItem,
+        RangerPolicyItemAccess,
+        RangerPolicyResource,
+    )
+
+    return [
+        RangerPolicy(
+            service=settings.RANGER_SERVICE_NAME,
+            name=managed_name("l3-migration", L3_ADMIN_ROLE, "catalog"),
+            resources={"catalog": RangerPolicyResource(values=["default_catalog"])},
+            policyItems=[
+                RangerPolicyItem(
+                    roles=[L3_ADMIN_ROLE],
+                    accesses=[RangerPolicyItemAccess(type="create database")],
+                )
+            ],
+        ),
+        compile_access_policy(
+            role=L3_ADMIN_ROLE,
+            catalog="default_catalog",
+            database="*",
+            table="*",
+            accesses=["create table", "create view", "create materialized view",
+                      "create function"],
+            resource_type="database",
+        ),
+        compile_access_policy(
+            role=L3_ADMIN_ROLE,
+            catalog="default_catalog",
+            database="*",
+            table="*",
+            accesses=["select", "insert"],
+        ),
+    ]
 
 
 @pytest_asyncio.fixture
@@ -622,25 +672,18 @@ class TestExecuteGateOnRealEngine:
     ):
         """A caller without table-creation rights is told before execute.
 
-        The L3 admin holds the grants; here the caller's own ``SHOW GRANTS`` is
-        stubbed to a table-less set so the analyzer's refusal is exercised
-        against a real engine connection.
+        The L3 admin holds the Ranger policies; here the active role's Ranger
+        answer is stubbed to allow only CREATE DATABASE so the analyzer's
+        refusal is exercised against a real engine connection.
         """
         from app.modules.migration import service as service_module
 
-        limited = [
-            (
-                "'x'@'%'",
-                "default_catalog",
-                "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'x'@'%'",
-            ),
-        ]
-        original = service_module.MigrationService._read_caller_grants
+        original = service_module.MigrationService._check_caller_access
 
-        async def _limited(self, **kwargs):
-            return limited
+        async def _limited(self, *, requests, **kwargs):
+            return [request.access == "create database" for request in requests]
 
-        monkeypatch.setattr(service_module.MigrationService, "_read_caller_grants", _limited)
+        monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", _limited)
         try:
             resp = await admin_client.post(
                 "/api/v1/migration/preflight",
@@ -655,7 +698,7 @@ class TestExecuteGateOnRealEngine:
             assert body["ok"] is False
             assert "CREATE TABLE" in body["missing"]
         finally:
-            monkeypatch.setattr(service_module.MigrationService, "_read_caller_grants", original)
+            monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", original)
 
     async def test_execute_blocked_by_preflight(self, admin_client, source, namespace, monkeypatch):
         """Execute fails fast (409) when the preflight finds a missing privilege."""
@@ -668,10 +711,10 @@ class TestExecuteGateOnRealEngine:
         )
         monkeypatch.setattr(settings, "MIGRATION_EXECUTE_PREFLIGHT", True, raising=False)
 
-        async def _no_grants(self, **kwargs):
-            return []
+        async def _no_access(self, *, requests, **kwargs):
+            return [False for _ in requests]
 
-        monkeypatch.setattr(service_module.MigrationService, "_read_caller_grants", _no_grants)
+        monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", _no_access)
         resp = await admin_client.post(
             "/api/v1/migration/execute",
             json={

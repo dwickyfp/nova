@@ -265,25 +265,9 @@ def data_client(monkeypatch):
     # scalars return the source count/digest.
     target_calls: list[str] = []
 
-    GRANTS = [
-        (
-            "'alice'@'%'",
-            "default_catalog",
-            "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'alice'@'%'",
-        ),
-        (
-            "'alice'@'%'",
-            "default_catalog",
-            "GRANT CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW, "
-            "CREATE FUNCTION, INSERT, SELECT ON ALL DATABASES TO USER 'alice'@'%'",
-        ),
-    ]
-
     async def _query_execute(**kwargs):
         sql = kwargs["sql"]
         target_calls.append(sql)
-        if sql.strip().upper().startswith("SHOW GRANTS"):
-            return _FakeResult(rows=GRANTS)
         if sql.startswith("SELECT COUNT(*)"):
             return _FakeResult(rows=[[3]])
         if sql.startswith("SELECT COALESCE"):
@@ -295,6 +279,11 @@ def data_client(monkeypatch):
     from app.modules.migration import service as sm
 
     monkeypatch.setattr(sm.query_service, "execute", _query_execute)
+
+    async def _allow_all(*, principal, active_role, requests):
+        return [True for _ in requests]
+
+    monkeypatch.setattr(sm.access_control_service, "role_allows", _allow_all)
 
     async def _audit(**kwargs):
         return "audit-id"
@@ -369,23 +358,8 @@ class TestDataMovementExecute:
     def test_count_mismatch_is_reported_not_hidden(self, data_client, monkeypatch):
         from app.modules.migration import service as sm
 
-        GRANTS = [
-            (
-                "'alice'@'%'",
-                "default_catalog",
-                "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'alice'@'%'",
-            ),
-            (
-                "'alice'@'%'",
-                "default_catalog",
-                "GRANT CREATE TABLE, INSERT, SELECT ON ALL DATABASES TO USER 'alice'@'%'",
-            ),
-        ]
-
         async def _bad(**kwargs):
             sql = kwargs["sql"]
-            if sql.strip().upper().startswith("SHOW GRANTS"):
-                return _FakeResult(rows=GRANTS)
             if sql.startswith("SELECT COUNT(*)"):
                 return _FakeResult(rows=[[2]])  # mismatch vs source 3
             if sql.startswith("SELECT COALESCE"):
