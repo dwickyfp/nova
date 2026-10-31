@@ -3,8 +3,9 @@
 > **Date:** 2026-10-30
 > **Status:** Phase 1 and Phase 2 (C7, C8a, C8b with F1, F2) implemented and measured
 > on `deepseek-v4-1-flash` against a re-measured baseline (2026-10-31).
-> Phase 3 (C9a-C9c) implemented and measured (2026-10-31). Targets not yet met:
-> the root's follow-ups to its specialists are the open item.
+> Phase 3 (C9a-C9c, then C9d-C9f against the root's follow-ups) implemented and
+> measured (2026-10-31): completion, time and tokens per request meet their
+> targets; root prompt tokens are 2% above theirs.
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
 > `backend/app/modules/agents/tools/data_to_chart.py`,
@@ -479,3 +480,38 @@ Next, if continued: tell the root that a teammate's collected tables are its
 evidence and are never requested again as text; count chartable results once
 per teammate task so C8b fires after a restated result; keep spawned
 objectives to the user's own constraints.
+
+### Follow-up fixes (C9d-C9f, 2026-10-31)
+
+- **C9d.** The root's guidance says a collected table is the result itself,
+  whatever the specialist's summary says: it never asks a specialist to repeat,
+  restate or reformat a result, and follows up only for data that is missing
+  or wrong.
+- **C9e.** Objectives are written from the user's own words, with no team,
+  region, period, filter or output format the user did not state.
+- **C9f.** C8b counts results to chart from each teammate's latest turn
+  (`EvidenceTracker.latest_results`), so a restated result does not hold back
+  the answer after its charts.
+
+Measured with five runs; data in
+`docs/benchmarks/smart-tokens/2026-10-31-deepseek-phase3-followups.json`.
+Run 1 overlapped an orphaned root run left by a failed driver start (the dev
+FE fault above came back once and was cleared by another restart), so its
+calls cannot be separated; the means below are over the four clean runs.
+Run 1 completed too, with 76k root tokens stored for it.
+
+| Measure | Baseline (mean of 5) | Phase 3 + C9d-C9f (mean of 4 clean) | Target |
+|---|---:|---:|---:|
+| Completed runs | 2 / 5 | **5 / 5** | ≥ 4 / 5 ✅ |
+| Root prompt tokens | 88,199 | 53,134 (−40%) | ≤ 52,000 (2% over) |
+| Tokens per request | 162,983 | **104,108 (−36%)** | ≤ 110,000 ✅ |
+| Root calls | 6.0 | 4.5 | |
+| Specialist prompt tokens | 26,862 | 16,405 (−39%) | |
+| One-shot prompt tokens | 35,352 | 27,158 (−23%) | |
+| Wall time (s) | 185 | **103 (−45%)** | ≤ 450 ✅ |
+
+No run followed up with a specialist: every run used exactly two specialist
+turns. Two clean runs answered in one call; the other two added a number
+rewrite (`unverified_number`), the answer contract working, which is what
+keeps the root mean just above its target. Root calls per clean run: spawn,
+chart (one or two calls), answer.
