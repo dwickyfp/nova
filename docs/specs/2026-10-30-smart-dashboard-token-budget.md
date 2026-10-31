@@ -3,8 +3,8 @@
 > **Date:** 2026-10-30
 > **Status:** Phase 1 and Phase 2 (C7, C8a, C8b with F1, F2) implemented and measured
 > on `deepseek-v4-1-flash` against a re-measured baseline (2026-10-31).
-> Phase 3 (C9a-C9c) implemented; its measurement is pending (the dev engine
-> refused every update to `CONFIG_AGENT_RUNS` when it was due, 2026-10-31).
+> Phase 3 (C9a-C9c) implemented and measured (2026-10-31). Targets not yet met:
+> the root's follow-ups to its specialists are the open item.
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
 > `backend/app/modules/agents/tools/data_to_chart.py`,
@@ -440,3 +440,42 @@ compositions). What is left, for Phase 3:
 - The failed run's follow-up loop between root and specialist.
 - One-shot calls (turn planner, semantic planner) are unchanged at about 36k
   per request; the turn planner runs again for each specialist turn.
+
+### Phase 3 result on `deepseek-v4-1-flash` (2026-10-31)
+
+Five runs, same request, after restarting the dev FE (its in-memory plan for
+`CONFIG_AGENT_RUNS` had 27 slots for the table's 23 columns, so every update
+to it failed); data in
+`docs/benchmarks/smart-tokens/2026-10-31-deepseek-phase3.json`.
+
+| Measure (mean of 5 runs) | Baseline | Phase 2 (F1, F2) | Phase 3 (C9a-C9c) | Target |
+|---|---:|---:|---:|---:|
+| Completed runs | 2 / 5 | 4 / 5 | 4 / 5 | ≥ 4 / 5 ✅ |
+| Root prompt tokens | 88,199 | 55,665 | 57,803 (−34%) | ≤ 52,000 |
+| Tokens per request | 162,983 | 123,993 | 134,936 (−17%) | ≤ 110,000 |
+| Root calls | 6.0 | 5.6 | 5.2 | |
+| Specialist prompt tokens | 26,862 | 20,567 | 30,207 | |
+| Wall time (s) | 185 | 200 | **135 (−27%)** | ≤ 450 ✅ |
+
+C9a works: in the three runs without a follow-up the root went spawn, chart,
+answer, with no model-decided `wait_agent` call. The means did not improve
+on Phase 2 because two runs added follow-ups that the changes do not touch:
+
+- **The root re-asked a specialist for a result it already held.** In the
+  failed run (`token_budget`, the root's own allowance) the outlet specialist's
+  summary had lost its table rows to number verification; its table was
+  already the root's evidence, yet the root sent `followup_task` asking for
+  the result "as a plain text table", then waited, charted, drafted (C8b did
+  not fire: the restated result made three chartable tables for two charts),
+  composed, and rewrote numbers.
+- **The root wrote a filter nobody asked for.** One objective said "for the
+  Jakarta field sales team"; the result was empty, and the follow-up asked
+  the specialist to check data coverage, which spent 51k tokens and hit its
+  own allowance. The run still completed.
+- Number rewrites (`unverified_number`) still add an answer call in 3 of 5
+  runs; they are the answer contract working.
+
+Next, if continued: tell the root that a teammate's collected tables are its
+evidence and are never requested again as text; count chartable results once
+per teammate task so C8b fires after a restated result; keep spawned
+objectives to the user's own constraints.
