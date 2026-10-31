@@ -72,6 +72,16 @@ services:
       PROXY_ENABLED: "true"
       # Where the engine's backends reach the AI_* gateway.
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-http://nova-backend:8000}
+      # Shared with Superset for /api/v1/internal/superset (docs/arch-17-superset.md).
+      SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
+      SUPERSET_INTERNAL_URL: http://superset:8088
+      # BI metadata travels with NOVA_SYSTEM snapshots (pg_dump of superset-db).
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:-}
+      # Superset's scheduled work runs as its owner through this account's
+      # per-owner impersonation (S5); never root or nova_admin.
+      WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
+      WORKER_IMPERSONATION_PASSWORD: ${WORKER_IMPERSONATION_PASSWORD:-}
+      WORKER_IMPERSONATION_ROLE: ${WORKER_IMPERSONATION_ROLE:-}
     ports:
       - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
       - "${NOVA_MYSQL_PORT:-4406}:4406"
@@ -284,6 +294,124 @@ services:
     networks:
       - nova
 
+  # ── Superset BI surface (docs/arch-17-superset.md) ────────────────
+  # Superset's own metadata (charts, dashboards, datasets). Users, roles,
+  # passwords and data policy stay in StarRocks and Ranger.
+  superset-db:
+    profiles: ["app"]
+    image: postgres:16.10-alpine
+    container_name: nova-superset-db
+    environment:
+      POSTGRES_DB: superset
+      POSTGRES_USER: superset
+      POSTGRES_PASSWORD: ${SUPERSET_DB_PASSWORD:?set SUPERSET_DB_PASSWORD in docker/.env}
+    volumes:
+      - superset_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset -d superset"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - nova
+
+  superset-init:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: superset/Dockerfile
+    image: nova-superset:local
+    container_name: nova-superset-init
+    command: ["/app/nova/bootstrap.sh"]
+    depends_on:
+      superset-db:
+        condition: service_healthy
+    environment: &superset-env
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in docker/.env}
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:?set SUPERSET_DB_PASSWORD in docker/.env}
+      SUPERSET_DB_HOST: superset-db
+      SUPERSET_REDIS_URL: redis://:${REDIS_PASSWORD:-novaredis}@redis:6379
+      SUPERSET_APP_ROOT: /bi
+      NOVA_API_URL: http://nova-backend:8000
+      NOVA_PROXY_HOST: nova-backend
+      NOVA_PROXY_PORT: "4406"
+      NOVA_SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
+      # Metrics go to the observability stack's statsd exporter when it runs.
+      SUPERSET_STATSD_HOST: ${SUPERSET_STATSD_HOST:-statsd-exporter}
+      SUPERSET_SMTP_HOST: ${SUPERSET_SMTP_HOST:-}
+      SUPERSET_SMTP_PORT: ${SUPERSET_SMTP_PORT:-587}
+      SUPERSET_SMTP_USER: ${SUPERSET_SMTP_USER:-}
+      SUPERSET_SMTP_PASSWORD: ${SUPERSET_SMTP_PASSWORD:-}
+      SUPERSET_SMTP_MAIL_FROM: ${SUPERSET_SMTP_MAIL_FROM:-nova-bi@localhost}
+    networks:
+      - nova
+
+  superset:
+    profiles: ["app"]
+    image: nova-superset:local
+    container_name: nova-superset
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *superset-env
+    # Loopback only: browsers reach it through Nova at /bi.
+    ports:
+      - "127.0.0.1:${SUPERSET_PORT:-8088}:8088"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/bi/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - nova
+
+  # Alerts, reports, thumbnails, cache warmup and async SQL Lab.
+  superset-worker:
+    profiles: ["app"]
+    image: nova-superset:local
+    container_name: nova-superset-worker
+    command: ["celery", "--app=superset.tasks.celery_app:app", "worker", "--pool=prefork", "-O", "fair", "-c", "2", "-l", "INFO"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery --app=superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *superset-env
+    restart: unless-stopped
+    networks:
+      - nova
+
+  superset-beat:
+    profiles: ["app"]
+    image: nova-superset:local
+    container_name: nova-superset-beat
+    command: ["celery", "--app=superset.tasks.celery_app:app", "beat", "--pidfile", "/tmp/celerybeat.pid", "-s", "/tmp/celerybeat-schedule"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tmp/celerybeat.pid"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *superset-env
+    restart: unless-stopped
+    networks:
+      - nova
+
   # ── Redis (session store + cache) ─────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -432,3 +560,5 @@ volumes:
     name: docker_minio_data
   redis_data:
     name: docker_redis_data
+  superset_db_data:
+    name: docker_superset_db_data

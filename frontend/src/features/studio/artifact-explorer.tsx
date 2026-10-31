@@ -35,6 +35,7 @@ import { describeView, sourceOf } from "@/features/viz/insight";
 import type { DashboardSpec, PresModel } from "@/features/viz/types";
 import { VizView } from "@/features/viz/viz-view";
 import { cn } from "@/lib/utils";
+import { LegacyNotice } from "./legacy-conversion";
 
 /**
  * ArtifactExplorer is the Studio content browser. Dashboards show as cards
@@ -122,6 +123,7 @@ export function ArtifactExplorer({
     chart: all.filter((item) => item.artifact_type === "chart").length,
     favorites: all.filter((item) => favorites.includes(item.artifact_id)).length,
   };
+  const legacyCount = all.filter((item) => item.legacy).length;
   const latest = all.reduce<string | null>((max, item) => (!max || item.updated_at > max ? item.updated_at : max), null);
 
   const visible = useMemo(() => {
@@ -268,6 +270,7 @@ export function ArtifactExplorer({
           />
         ) : (
           <div className="flex flex-col gap-10">
+            {legacyCount ? <LegacyNotice count={legacyCount} /> : null}
             {dashboards.length ? (
               <section aria-labelledby="explore-dashboards">
                 <h2 id="explore-dashboards" className="type-title mb-3">
@@ -396,9 +399,7 @@ function ItemMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
         <DropdownMenuItem onSelect={() => onOpen(false)}>Open</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onOpen(true)}>
-          {artifact.artifact_type === "dashboard" ? "Edit layout" : "Edit sheet"}
-        </DropdownMenuItem>
+        {artifact.legacy ? null : <DropdownMenuItem onSelect={() => onOpen(true)}>Edit in BI</DropdownMenuItem>}
         {onRefresh ? <DropdownMenuItem onSelect={onRefresh}>Recompute</DropdownMenuItem> : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onDelete}>
@@ -437,7 +438,16 @@ function DashboardCard({
         aria-label={`Open ${artifact.title}`}
         className="relative block h-48 w-full overflow-hidden border-b bg-surface-1 text-left focus-visible:outline-none"
       >
-        <DashboardThumbnail artifactId={artifact.artifact_id} spec={spec} loading={detail.isLoading} updatedAt={detail.data?.updated_at} />
+        {artifact.bi_view_path ? (
+          // Superset thumbnails need background rendering (Phase 2 of
+          // docs/arch-17-superset.md); until then a BI dashboard shows its kind.
+          <span className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+            <LayoutDashboard aria-hidden="true" className="size-6" />
+            <span className="type-meta">Opens in BI</span>
+          </span>
+        ) : (
+          <DashboardThumbnail artifactId={artifact.artifact_id} spec={spec} loading={detail.isLoading} updatedAt={detail.data?.updated_at} />
+        )}
       </button>
       <div className="flex items-start gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -447,7 +457,11 @@ function DashboardCard({
             </button>
           </h3>
           <p className="type-meta mt-1 truncate">
-            {detail.isLoading ? "Dashboard" : `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`}
+            {artifact.bi_view_path
+              ? "BI dashboard"
+              : detail.isLoading
+                ? "Dashboard"
+                : `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`}
             <span aria-hidden="true" className="mx-1.5">·</span>
             {formatModified(artifact.updated_at)}
           </p>
@@ -652,7 +666,7 @@ function CreateDialog({
           <DialogDescription>
             {kind === "dashboard"
               ? "Start an empty dashboard, then add sheets to its layout."
-              : "A sheet is built over one read-only query. Its fields become the data pane."}
+              : "A sheet is built over one read-only query. It opens in BI, where you choose how to chart it."}
           </DialogDescription>
         </DialogHeader>
         <form

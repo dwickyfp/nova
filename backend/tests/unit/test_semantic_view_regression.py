@@ -138,7 +138,12 @@ async def test_semantic_publish_requires_acknowledgement_for_regression(
     monkeypatch.setattr(module.db, "execute_system", execute)
     result = await service.publish("view-id", 2, user, acknowledge_regressions=True)
     assert result["active_version"] == 2
-    assert execute.await_count == 3
+    statements = [call.args[0] for call in execute.await_args_list]
+    # Three publication writes, then the BI sync reads the view's datasets
+    # (there are none, so BI is not called).
+    assert len(statements) == 4
+    assert "CONFIG_SEMANTIC_BI_DATASETS" in statements[3]
+    assert result["bi_datasets"] == []
     identity_check.assert_awaited_once_with(
         sql="SELECT 1",
         username="nova_admin",

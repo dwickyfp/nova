@@ -1,3 +1,5 @@
+import type { PresModel } from "@/features/viz/types";
+
 export type ArtifactCell = string | number | null;
 export type ArtifactColumnType = "text" | "number" | "date";
 export type ArtifactFilterOperator =
@@ -165,4 +167,40 @@ export function filterArtifactRows(
     );
     return mode === "all" ? results.every(Boolean) : results.some(Boolean);
   });
+}
+
+const ADDITIVE = new Set(["sum", "count"]);
+
+/**
+ * A chart's own rows narrowed by the page filters, so the chart matches the
+ * table. `null` when a filter reads a column the chart aggregates away: those
+ * rows cannot be recovered from the chart.
+ */
+export function filterPresmodel(
+  presmodel: PresModel,
+  filters: ArtifactFilter[],
+  mode: ArtifactFilterMode,
+): PresModel | null {
+  const fields = presmodel.columns.map((column) =>
+    column.role === "dimension" ? column.field : column.name,
+  );
+  const dimensions = new Set(
+    presmodel.columns.filter((column) => column.role === "dimension").map((column) => column.field),
+  );
+  const active = filters.filter(isArtifactFilterReady);
+  if (active.some((filter) => !dimensions.has(filter.column))) return null;
+  const rows = filterArtifactRows(fields, presmodel.rows, active, mode);
+  const totals = Object.fromEntries(
+    presmodel.columns
+      .map((column, index) => [column, index] as const)
+      .filter(([column]) => column.role === "measure")
+      .map(([column, index]) => [
+        column.name,
+        // Only an additive measure's total survives dropping rows.
+        ADDITIVE.has(column.aggregation ?? "")
+          ? rows.reduce<number>((sum, row) => sum + (Number(row[index]) || 0), 0)
+          : null,
+      ]),
+  );
+  return { ...presmodel, rows, row_count: rows.length, totals };
 }

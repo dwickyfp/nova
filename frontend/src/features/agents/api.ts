@@ -6,25 +6,7 @@ import {
 } from "@/features/assistant/events";
 import type { AssistantEvent, AutomationProposal, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
-import type {
-  CalcCheckResult,
-  CalcFunction,
-  CalculatedField,
-  DashboardComputeResponse,
-  FieldDomain,
-  Filter,
-  ShowMeSuggestion,
-  VizComputeResponse,
-  VizSource,
-  VizSourceDescription,
-} from "@/features/viz/types";
-
-/** A worksheet's source and calculations, for the authoring endpoints. */
-export type VizSourceBody = {
-  source: VizSource;
-  calculations?: CalculatedField[];
-  filters?: Filter[];
-};
+import type { DashboardComputeResponse } from "@/features/viz/types";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
@@ -620,12 +602,33 @@ export type StudioArtifact = {
   schema_name: string | null;
   created_at: string;
   updated_at: string;
+  /** Set when the artifact lives in BI (Superset): its view and edit paths. */
+  bi_kind?: "chart" | "dashboard" | null;
+  bi_object_id?: number | null;
+  bi_view_path?: string | null;
+  bi_edit_path?: string | null;
+  /** Saved before BI: read-only until it is converted. */
+  legacy?: boolean;
 };
 
 export type StudioArtifactDetail = StudioArtifact & {
   sql_text: string;
   chart_spec: Record<string, unknown> | null;
   viz_spec: Record<string, unknown> | null;
+  /** For a legacy artifact: what BI cannot carry over, and what changes look. */
+  legacy_blockers?: string[];
+  legacy_notes?: string[];
+};
+
+export type StudioArtifactConversion = {
+  artifact_id: string;
+  title: string;
+  artifact_type: "chart" | "dashboard";
+  status: "converted" | "kept" | "failed";
+  blockers: string[];
+  notes: string[];
+  error: string | null;
+  bi_view_path: string | null;
 };
 
 export type StudioArtifactCreate = {
@@ -757,33 +760,11 @@ export const studioApi = {
     ),
   deleteArtifact: (id: string) =>
     api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}`),
-  updateArtifactSpec: (
-    id: string,
-    body: {
-      title?: string;
-      viz_spec: Record<string, unknown>;
-      expected_updated_at: string;
-    },
-  ) =>
-    api.patch<StudioArtifactDetail>(
-      `/agents/studio/artifacts/${encodeURIComponent(id)}/spec`,
+  convertArtifacts: (body: { artifact_ids?: string[]; force?: boolean }) =>
+    api.post<{ outcomes: StudioArtifactConversion[] }>(
+      "/agents/studio/artifacts/convert",
       body,
     ),
-  computeViz: (body: {
-    spec: Record<string, unknown>;
-    extra_filters?: Record<string, unknown>[];
-  }) =>
-    api.post<VizComputeResponse>("/agents/studio/viz/compute", body),
-  describeVizSource: (body: VizSourceBody) =>
-    api.post<VizSourceDescription>("/agents/studio/viz/describe", body),
-  checkVizCalculation: (body: VizSourceBody & { formula: string; name?: string | null }) =>
-    api.post<CalcCheckResult>("/agents/studio/viz/calc/check", body),
-  vizFunctions: () =>
-    api.get<{ functions: CalcFunction[] }>("/agents/studio/viz/calc/functions"),
-  vizFieldDomain: (body: VizSourceBody & { field: string; date_part?: string | null }) =>
-    api.post<FieldDomain>("/agents/studio/viz/field-domain", body),
-  suggestViz: (body: { columns: string[]; rows: (string | number | null)[][] }) =>
-    api.post<{ suggestions: ShowMeSuggestion[] }>("/agents/studio/viz/suggest", body),
   computeVizDashboard: (body: {
     spec: Record<string, unknown>;
     filter_values?: Record<string, Record<string, unknown>>;

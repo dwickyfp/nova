@@ -173,6 +173,13 @@ class Evidence:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+#: Smart's collaboration tools: they move work between participants, not facts.
+COORDINATION_TOOLS = frozenset({
+    "discover_agents", "spawn_agent", "send_message", "followup_task", "wait_agent",
+    "list_agents", "interrupt_agent",
+})
+
+
 class EvidenceTracker:
     def __init__(self) -> None:
         self._items: list[Evidence] = []
@@ -221,11 +228,16 @@ class EvidenceTracker:
             ))
             and table
         ):
-            self._tables[evidence.evidence_id] = {
+            stored = {
                 "columns": list(table.get("columns") or [])[:100],
                 "rows": list(table.get("rows") or [])[:200],
                 "truncated": bool(table.get("truncated")),
             }
+            if isinstance(table.get("sql"), str) and table["sql"].strip():
+                # The statement travels with its rows: a chart another participant
+                # builds from them can still be saved as a live view.
+                stored["sql"] = table["sql"]
+            self._tables[evidence.evidence_id] = stored
             if len(self._tables) > 8:
                 self._tables.pop(next(iter(self._tables)))
         return evidence
@@ -310,7 +322,9 @@ class EvidenceTracker:
                 item["tool"], item["summary"], table=table,
                 metadata={**item.get("metadata", {}), "source_key": source_key,
                           "source_turn_id": participant["current_turn_id"],
-                          "source_agent_id": participant["agent_id"]},
+                          "source_agent_id": participant["agent_id"],
+                          "source_participant": participant.get("agent_session_id")
+                          or participant["current_turn_id"]},
             )
         for item in imported.values():
             canonical = item.metadata.get("canonical_business_result")
@@ -324,8 +338,37 @@ class EvidenceTracker:
             }
         return list(imported.values())
 
+    def latest_results(self) -> dict[str, dict[str, Any]]:
+        """Business tables, keeping only a teammate's latest turn.
+
+        A follow-up turn of the same teammate restates or replaces its earlier
+        result; counting both would ask for a chart the answer does not need.
+        """
+        tables = self.business_tables
+        latest: dict[str, str] = {}
+        for item in self._items:
+            participant = item.metadata.get("source_participant")
+            if participant and item.evidence_id in tables:
+                latest[participant] = str(item.metadata.get("source_turn_id"))
+        return {
+            item.evidence_id: tables[item.evidence_id]
+            for item in self._items
+            if item.evidence_id in tables
+            and latest.get(str(item.metadata.get("source_participant") or ""))
+            in (None, str(item.metadata.get("source_turn_id")))
+        }
+
     def composer_context(self) -> str:
-        payload = [asdict(item) for item in self._items]
+        """The evidence the final answer may draw on, as JSON for the composer prompt.
+
+        Coordination steps (starting, waiting for, messaging a teammate) state no
+        fact; a teammate's results are their own items once collected. Discovery
+        stays while no result is in: it is what says nobody covers the request.
+        """
+        skipped = COORDINATION_TOOLS if self.business_tables else (
+            COORDINATION_TOOLS - {"discover_agents"}
+        )
+        payload = [asdict(item) for item in self._items if item.tool not in skipped]
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 

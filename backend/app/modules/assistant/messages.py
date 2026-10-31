@@ -20,7 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Bump when any source text changes, so cached translations are redone.
-VERSION = 2
+VERSION = 4
 
 MESSAGES: dict[str, str] = {
     "render.lead": "Here are the figures.",
@@ -46,6 +46,10 @@ MESSAGES: dict[str, str] = {
         "verified data to answer this question."
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.clarify_uncovered": (
+        "The governed data does not cover: {uncovered}. It has these measures: {available}. "
+        "Which should I use?"
+    ),
     "loop.ui_unavailable": (
         "I could not prepare this interactive answer. Ask me to explain it in text or try again."
     ),
@@ -53,6 +57,7 @@ MESSAGES: dict[str, str] = {
         "The interactive view could not be prepared. Only text is available."
     ),
     "loop.simulation_values": "Calculated from the simulation assumptions:",
+    "loop.results_attached": "The results are in the attached verified tables.",
     "suggest.by": "{metric} by {dimension}{period}",
     "suggest.previous": "{metric}{period} compared with the previous period",
     "suggest.trend": "monthly {metric} trend this year",
@@ -95,6 +100,10 @@ BUILTIN: dict[str, dict[str, str]] = {
             "terverifikasi untuk menjawab pertanyaan ini."
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.clarify_uncovered": (
+            "Data terkelola tidak mencakup: {uncovered}. Ukuran yang tersedia: {available}. "
+            "Mana yang sebaiknya saya pakai?"
+        ),
         "loop.ui_unavailable": (
             "Saya belum bisa menyiapkan jawaban interaktif ini. "
             "Minta penjelasan dalam teks atau coba lagi."
@@ -103,6 +112,7 @@ BUILTIN: dict[str, dict[str, str]] = {
             "Tampilan interaktif belum dapat disiapkan. Hanya jawaban teks yang tersedia."
         ),
         "loop.simulation_values": "Dihitung dari asumsi simulasi:",
+        "loop.results_attached": "Hasilnya ada di tabel terverifikasi terlampir.",
         "suggest.by": "{metric} per {dimension}{period}",
         "suggest.previous": "{metric}{period} dibanding periode sebelumnya",
         "suggest.trend": "tren {metric} per bulan tahun ini",

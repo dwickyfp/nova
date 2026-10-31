@@ -78,6 +78,12 @@ export default defineConfig(({ command }) => ({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // Superset, served under /bi so its cookie and pages stay same-origin.
+      // Anchored on the path boundary so Nova's own /bi-launch stays here.
+      "^/bi(/|$)": {
+        target: process.env.NOVA_BI_URL ?? "http://localhost:8088",
+        xfwd: true,
+      },
     },
   },
   test: {

@@ -1,15 +1,13 @@
-"""The unified artifact model: chart|dashboard artifacts backed by viz specs."""
+"""The unified artifact model: Studio artifacts that point at BI objects."""
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
-from app.modules.agents.artifact_repository import ArtifactRepository
 from app.modules.agents.studio_router import create_artifact, refresh_artifact
 from app.modules.agents.studio_schemas import ArtifactCreateRequest
 from app.modules.viz.service import (
@@ -64,77 +62,10 @@ DASHBOARD_SPEC = {
 
 
 @pytest.mark.asyncio
-async def test_chart_artifact_stores_its_worksheet(monkeypatch) -> None:
-    repository = ArtifactRepository()
-    insert = AsyncMock(return_value={"affected": 1})
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", insert)
-    monkeypatch.setattr(
-        repository,
-        "get",
-        AsyncMock(
-            return_value={"artifact_id": "a1", "artifact_type": "chart", "viz_spec": WORKSHEET}
-        ),
-    )
-
-    await repository.create(
-        owner_name="nova_admin",
-        title="Revenue by region",
-        artifact_type="chart",
-        sql_text=WORKSHEET["source"]["sql"],
-        database_name=None,
-        schema_name=None,
-        viz_spec=WORKSHEET,
-    )
-
-    stored = insert.call_args.args[1]
-    assert stored[5] == "chart"
-    assert json.loads(stored[10])["marks"]["type"] == "bar"
-
-
-@pytest.mark.asyncio
-async def test_dashboard_artifact_requires_a_valid_zone_layout(monkeypatch) -> None:
-    repository = ArtifactRepository()
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", AsyncMock())
-    with pytest.raises(ValueError, match="zone layout"):
-        await repository.create(
-            owner_name="nova_admin",
-            title="Dashboard",
-            artifact_type="dashboard",
-            sql_text="",
-            database_name=None,
-            schema_name=None,
-            viz_spec=None,
-        )
-    with pytest.raises(ValueError, match="(?i)worksheet"):
-        await repository.create(
-            owner_name="nova_admin",
-            title="Chart",
-            artifact_type="chart",
-            sql_text="SELECT 1",
-            database_name=None,
-            schema_name=None,
-            viz_spec={"version": 1, "source": None},
-        )
-
-
-@pytest.mark.asyncio
-async def test_dashboard_artifact_zones_must_reference_owned_charts(monkeypatch) -> None:
-    owned = [
-        {"artifact_id": "chart-1", "artifact_type": "chart"},
-        {"artifact_id": "other", "artifact_type": "dashboard"},
-    ]
-    monkeypatch.setattr(
-        "app.modules.viz.service.artifact_repository.list",
-        AsyncMock(return_value=owned),
-    )
-    with pytest.raises(ValueError, match="unavailable chart"):
-        await viz_service.save_dashboard(
-            user=OWNER, title="Sales overview", spec=DashboardSpec.model_validate(DASHBOARD_SPEC)
-        )
-
-
-@pytest.mark.asyncio
 async def test_dashboard_route_creates_an_artifact(monkeypatch) -> None:
+    """A dashboard save places the owner's BI charts on a BI dashboard."""
+    from app.modules.superset import artifacts as bi_artifacts
+
     saved = {
         "artifact_id": "d1",
         "owner_name": "nova_admin",
@@ -146,12 +77,17 @@ async def test_dashboard_route_creates_an_artifact(monkeypatch) -> None:
         "database_name": None,
         "schema_name": None,
         "chart_spec": None,
-        "viz_spec": DASHBOARD_SPEC,
+        "viz_spec": None,
+        "bi_kind": "dashboard",
+        "bi_object_id": 7,
+        "bi_view_path": "/bi/superset/dashboard/7/?standalone=2",
         "created_at": "2026-10-24 08:00:00",
         "updated_at": "2026-10-24 08:00:00",
     }
-    monkeypatch.setattr(viz_service, "save_dashboard", AsyncMock(return_value=saved))
-    monkeypatch.setattr("app.modules.agents.studio_router.write_audit_log", AsyncMock())
+    owned = AsyncMock(return_value=[{"artifact_id": "c1", "bi_object_id": 3, "title": "C"}])
+    publish = AsyncMock(return_value=saved)
+    monkeypatch.setattr(bi_artifacts, "owned_bi_charts", owned)
+    monkeypatch.setattr(bi_artifacts, "publish_dashboard", publish)
 
     created = await create_artifact(
         ArtifactCreateRequest(
@@ -162,6 +98,10 @@ async def test_dashboard_route_creates_an_artifact(monkeypatch) -> None:
 
     assert created.artifact_id == "d1"
     assert created.artifact_type == "dashboard"
+    assert created.bi_view_path == "/bi/superset/dashboard/7/?standalone=2"
+    zone_ids = [zone["artifact_id"] for zone in DASHBOARD_SPEC["zones"] if zone["kind"] == "sheet"]
+    assert owned.await_args.args[1] == zone_ids
+    assert publish.await_args.kwargs["chart_artifacts"] == owned.return_value
 
 
 @pytest.mark.asyncio
@@ -259,25 +199,22 @@ def test_legacy_dashboard_artifact_ids_are_deterministic() -> None:
 
 @pytest.mark.asyncio
 async def test_dashboard_build_creates_charts_and_a_zone_layout(monkeypatch) -> None:
+    """Each requested view becomes a BI chart, placed in order on a BI dashboard."""
     from app.modules.agents.tools.dashboard_build import dashboard_build_tool
     from app.modules.assistant.tools import ToolInvocation
+    from app.modules.superset import artifacts as bi_artifacts
 
     saved_charts = [{"artifact_id": f"c{i}", "title": f"Chart {i}"} for i in range(3)]
-    monkeypatch.setattr(
-        viz_service,
-        "save_chart",
-        AsyncMock(side_effect=saved_charts),
-    )
-    monkeypatch.setattr(
-        viz_service,
-        "save_dashboard",
-        AsyncMock(return_value={"artifact_id": "d1", "title": "Overview"}),
-    )
+    publish_chart = AsyncMock(side_effect=saved_charts)
+    publish_dashboard = AsyncMock(return_value={"artifact_id": "d1", "title": "Overview"})
+    monkeypatch.setattr(bi_artifacts, "publish_chart", publish_chart)
+    monkeypatch.setattr(bi_artifacts, "publish_dashboard", publish_dashboard)
 
     context = SimpleNamespace(
         user=OWNER,
         agent_id=None,
         thread_id="t1",
+        database="sales",
         last_result={
             "title": "Sales",
             "columns": ["region", "month", "revenue"],
@@ -305,12 +242,38 @@ async def test_dashboard_build_creates_charts_and_a_zone_layout(monkeypatch) -> 
     block = outcome.metadata["dashboard_artifact"]
     assert block["artifact_id"] == "d1"
     assert len(block["charts"]) == 3
-    saved_spec = viz_service.save_dashboard.call_args.kwargs["spec"]
-    assert [zone.artifact_id for zone in saved_spec.sheet_zones()] == [
-        "c0",
-        "c1",
-        "c2",
-    ]
+    first = publish_chart.await_args_list[0].kwargs
+    assert first["sql_text"] == "SELECT region, month, revenue FROM sales.summary"
+    assert first["database_name"] == "sales"
+    assert (first["plan"].kind, first["plan"].x) == ("bar", "region")
+    placed = publish_dashboard.await_args.kwargs["chart_artifacts"]
+    assert [chart["artifact_id"] for chart in placed] == ["c0", "c1", "c2"]
+
+
+async def test_dashboard_build_stops_when_the_role_cannot_author(monkeypatch) -> None:
+    from app.modules.agents.tools.dashboard_build import dashboard_build_tool
+    from app.modules.assistant.tools import ToolInvocation
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
+
+    publish_chart = AsyncMock(side_effect=BiError("Your active role cannot", status=403))
+    monkeypatch.setattr(bi_artifacts, "publish_chart", publish_chart)
+    context = SimpleNamespace(
+        user=OWNER,
+        agent_id=None,
+        thread_id="t1",
+        last_result={"columns": ["region", "revenue"], "rows": [], "sql": "SELECT 1"},
+    )
+    outcome = await dashboard_build_tool.run(
+        ToolInvocation(
+            "call-1",
+            "dashboard_build",
+            {"title": "D", "charts": [{"title": "A"}, {"title": "B"}]},
+        ),
+        context,
+    )
+    assert not outcome.ok and "cannot" in outcome.error
+    assert publish_chart.await_count == 1
 
 
 @pytest.mark.asyncio

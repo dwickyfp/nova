@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -74,12 +73,14 @@ from app.modules.agents.sharing import ShareCreate
 from app.modules.agents.studio_schemas import (
     AccessCheckRequest,
     ArtifactApplyRequest,
+    ArtifactConversionOutcome,
+    ArtifactConvertRequest,
+    ArtifactConvertResponse,
     ArtifactCreateRequest,
     ArtifactEditRequest,
     ArtifactEditResponse,
     ArtifactListResponse,
     ArtifactRefreshResponse,
-    ArtifactSpecUpdateRequest,
     ArtifactSummary,
     ArtifactView,
     DashboardComputeRequest,
@@ -92,13 +93,6 @@ from app.modules.agents.studio_schemas import (
     StudioSettingsResponse,
     ThreadTraceResponse,
     UsageSummary,
-    VizCalcCheckRequest,
-    VizComputeRequest,
-    VizComputeResponse,
-    VizFieldDomainRequest,
-    VizSourceRequest,
-    VizSuggestRequest,
-    VizSuggestResponse,
 )
 from app.modules.agents.studio_service import studio_service
 from app.modules.agents.tools.custom_tool import validate_custom_tool_definition
@@ -226,127 +220,7 @@ async def update_personal_skill(
     return SkillView(**await save_skill(fields, user=user, skill_id=skill_id))
 
 
-# ── Viz compute ────────────────────────────────────────────────
-
-
-@router.post(
-    "/studio/viz/compute",
-    response_model=VizComputeResponse,
-    response_class=SanitizingJSONResponse,
-)
-async def compute_viz(body: VizComputeRequest, user: dict = Depends(get_current_user)):
-    """Compile a worksheet and execute it under the caller's own StarRocks session."""
-    from app.modules.viz.compiler import CompileError
-    from app.modules.viz.service import VizError, viz_service
-    from app.modules.viz.spec import WorksheetSpec, parse_filter
-
-    try:
-        spec = WorksheetSpec.model_validate(body.spec)
-        extra = [parse_filter(item) for item in body.extra_filters]
-        computed = await viz_service.compute(spec, user, extra_filters=extra)
-    except (ValueError, VizError, CompileError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return VizComputeResponse(
-        presmodel=computed.presmodel,
-        sql=computed.sql,
-        columns=computed.columns,
-        rows=computed.rows,
-        row_count=computed.row_count,
-        elapsed_ms=computed.elapsed_ms,
-        fields=computed.fields,
-        spec=computed.spec,
-    )
-
-
-def _source_spec(body: VizSourceRequest):
-    """A worksheet holding only a source, calculations and filters.
-
-    The authoring endpoints below need no shelves, so the shelf rule is not
-    applied; every part that is present is still validated.
-    """
-    from pydantic import TypeAdapter
-
-    from app.modules.viz.spec import (
-        CalculatedField,
-        VizSource,
-        VizSourceSql,
-        VizSourceTable,
-        WorksheetSpec,
-        parse_filter,
-    )
-
-    source: VizSourceSql | VizSourceTable = TypeAdapter(VizSource).validate_python(body.source)
-    calculations = [CalculatedField.model_validate(item) for item in body.calculations]
-    names = [calc.name for calc in calculations]
-    if len(set(names)) != len(names):
-        raise ValueError("Calculated field names must be unique.")
-    filters = [parse_filter(item) for item in body.filters]
-    return WorksheetSpec.model_construct(
-        source=source, calculations=calculations, filters=filters, columns=[], rows=[]
-    )
-
-
-@router.post("/studio/viz/describe", response_class=SanitizingJSONResponse)
-async def describe_viz_source(
-    body: VizSourceRequest, user: dict = Depends(get_current_user)
-) -> dict:
-    """The data pane for a worksheet source: fields, types and a sample."""
-    from app.modules.viz.compiler import CompileError
-    from app.modules.viz.service import VizError, viz_service
-
-    try:
-        return await viz_service.describe(_source_spec(body), user)
-    except (ValueError, VizError, CompileError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.post("/studio/viz/calc/check", response_class=SanitizingJSONResponse)
-async def check_viz_calculation(
-    body: VizCalcCheckRequest, user: dict = Depends(get_current_user)
-) -> dict:
-    """Type-check one formula against the worksheet's fields."""
-    from app.modules.viz.compiler import CompileError
-    from app.modules.viz.service import VizError, viz_service
-
-    try:
-        return await viz_service.check_calculation(
-            _source_spec(body), user, formula=body.formula, name=body.name
-        )
-    except (ValueError, VizError, CompileError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.get("/studio/viz/calc/functions")
-async def list_viz_functions(user: dict = Depends(get_current_user)) -> dict:
-    """The formula editor's function reference."""
-    from app.modules.viz.calc import catalog
-
-    return {"functions": catalog()}
-
-
-@router.post("/studio/viz/field-domain", response_class=SanitizingJSONResponse)
-async def viz_field_domain(
-    body: VizFieldDomainRequest, user: dict = Depends(get_current_user)
-) -> dict:
-    """Members or bounds of one field, for a filter card."""
-    from app.modules.viz.compiler import CompileError
-    from app.modules.viz.service import VizError, viz_service
-
-    try:
-        return await viz_service.field_domain(
-            _source_spec(body), user, field_name=body.field, date_part=body.date_part
-        )
-    except (ValueError, VizError, CompileError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.post("/studio/viz/suggest", response_model=VizSuggestResponse)
-async def suggest_viz(body: VizSuggestRequest, user: dict = Depends(get_current_user)):
-    """Ranked ShowMe suggestions for a result the caller already holds."""
-    from app.modules.viz.service import viz_service
-
-    suggestions = viz_service.suggest(body.columns, body.rows)
-    return VizSuggestResponse(suggestions=suggestions)
+# ── Viz compute (legacy dashboard views) ──────────────────────
 
 
 @router.post(
@@ -363,8 +237,7 @@ async def compute_viz_dashboard(
     try:
         spec = DashboardSpec.model_validate(body.spec)
         filter_values = {
-            zone_id: parse_filter(item)
-            for zone_id, item in body.filter_values.items()
+            zone_id: parse_filter(item) for zone_id, item in body.filter_values.items()
         }
         zone_filters = {
             zone_id: [parse_filter(item) for item in items]
@@ -407,6 +280,26 @@ async def list_artifacts(user: dict = Depends(get_current_user)):
     return ArtifactListResponse(artifacts=artifacts, count=len(artifacts))
 
 
+def _bi_http_error(exc: Exception) -> HTTPException:
+    from app.modules.superset.client import BiError
+
+    if isinstance(exc, BiError) and exc.status in (401, 403):
+        return HTTPException(status_code=exc.status, detail=exc.message)
+    detail = exc.message if isinstance(exc, BiError) else str(exc)
+    return HTTPException(status_code=422, detail=detail)
+
+
+def _chart_plan(body_viz: dict | None, body_chart: dict | None):
+    """The Superset chart a save request describes, or None for a table."""
+    from app.modules.superset.charts import plan_from_vega, plan_from_worksheet
+
+    if body_viz:
+        return plan_from_worksheet(body_viz)
+    if body_chart:
+        return plan_from_vega(body_chart)
+    return None
+
+
 @router.post(
     "/studio/artifacts",
     response_model=ArtifactView,
@@ -417,53 +310,49 @@ async def create_artifact(
     body: ArtifactCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    from app.modules.viz.service import VizError, viz_service
+    """Save a result as a BI chart, or BI charts as a BI dashboard.
 
-    if body.artifact_type == "dashboard":
-        from app.modules.viz.spec import DashboardSpec
+    Artifacts live in Superset (docs/arch-17-superset.md): the request's
+    worksheet or Vega-Lite chart only chooses the Superset chart drawn over the
+    saved SQL, and a dashboard places BI charts the caller owns.
+    """
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
 
-        try:
-            spec = DashboardSpec.model_validate(body.viz_spec or {})
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        try:
-            artifact = await viz_service.save_dashboard(
-                user=user, title=body.title.strip(), spec=spec,
-                agent_id=body.agent_id, thread_id=body.thread_id,
-            )
-        except (ValueError, VizError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        await write_audit_log(
-            event_type="ARTIFACT",
-            user_name=user["username"],
-            action="create",
-            object_type="DASHBOARD",
-            object_name=artifact["artifact_id"],
-            status="SUCCESS",
-            session_id=user.get("session_id"),
-        )
-        return ArtifactView(**artifact)
-
-    sql_text = body.sql_text
-    if body.semantic_provenance_ref:
-        from app.modules.agents.artifact_provenance import read_provenance
-
-        sql_text = await read_provenance(body.semantic_provenance_ref, user)
+    title = body.title.strip()
     try:
-        artifact = await artifact_repository.create(
-            owner_name=user["username"],
-            title=body.title.strip(),
-            artifact_type=body.artifact_type,
-            sql_text=sql_text,
-            database_name=body.database_name,
-            schema_name=body.schema_name,
-            chart_spec=body.chart_spec,
-            viz_spec=body.viz_spec,
-            agent_id=body.agent_id,
-            thread_id=body.thread_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if body.artifact_type == "dashboard":
+            from app.modules.viz.spec import DashboardSpec
+
+            spec = DashboardSpec.model_validate(body.viz_spec or {})
+            charts = await bi_artifacts.owned_bi_charts(
+                user, [zone.artifact_id for zone in spec.sheet_zones() if zone.artifact_id]
+            )
+            artifact = await bi_artifacts.publish_dashboard(
+                user,
+                title=title,
+                chart_artifacts=charts,
+                agent_id=body.agent_id,
+                thread_id=body.thread_id,
+            )
+        else:
+            sql_text = body.sql_text
+            if body.semantic_provenance_ref:
+                from app.modules.agents.artifact_provenance import read_provenance
+
+                sql_text = await read_provenance(body.semantic_provenance_ref, user)
+            artifact = await bi_artifacts.publish_chart(
+                user,
+                title=title,
+                sql_text=sql_text,
+                plan=_chart_plan(body.viz_spec, body.chart_spec),
+                database_name=body.database_name,
+                schema_name=body.schema_name,
+                agent_id=body.agent_id,
+                thread_id=body.thread_id,
+            )
+    except (ValueError, BiError) as exc:
+        raise _bi_http_error(exc) from exc
     return ArtifactView(**artifact)
 
 
@@ -473,8 +362,47 @@ async def create_artifact(
     response_class=SanitizingJSONResponse,
 )
 async def get_artifact(artifact_id: str, user: dict = Depends(get_current_user)):
+    from app.modules.superset.conversion import legacy_report
+
     artifact = await _artifact_or_404(artifact_id, user["username"])
-    return ArtifactView(**artifact)
+    blockers, notes = await legacy_report(artifact)
+    return ArtifactView(**artifact, legacy_blockers=blockers, legacy_notes=notes)
+
+
+@router.post(
+    "/studio/artifacts/convert",
+    response_model=ArtifactConvertResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def convert_artifacts(
+    body: ArtifactConvertRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Convert the caller's artifacts saved before BI, in place, as the caller.
+
+    Returns one outcome per artifact: converted, kept (with the features BI
+    cannot carry) or failed. ``force`` converts kept artifacts anyway.
+    """
+    from app.modules.superset.client import BiError
+    from app.modules.superset.conversion import convert_owner
+
+    try:
+        outcomes = await convert_owner(user, artifact_ids=body.artifact_ids, force=body.force)
+    except BiError as exc:
+        raise _bi_http_error(exc) from exc
+    return ArtifactConvertResponse(
+        outcomes=[ArtifactConversionOutcome(**outcome.as_dict()) for outcome in outcomes]
+    )
+
+
+def _read_only_legacy(artifact: dict) -> None:
+    if artifact.get("legacy"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This artifact was saved before BI and is read-only. Convert it to BI to edit it."
+            ),
+        )
 
 
 @router.post(
@@ -556,8 +484,6 @@ async def refresh_artifact(
     )
 
 
-
-
 @router.post(
     "/studio/artifacts/{artifact_id}/edit",
     response_model=ArtifactEditResponse,
@@ -569,6 +495,7 @@ async def edit_artifact(
     user: dict = Depends(get_current_user),
 ):
     artifact = await _artifact_or_404(artifact_id, user["username"])
+    _read_only_legacy(artifact)
     try:
         proposal = await propose_artifact_edit(artifact, body, user)
     except ValueError as exc:
@@ -596,34 +523,33 @@ async def apply_artifact_edit(
     user: dict = Depends(get_current_user),
 ):
     artifact = await _artifact_or_404(artifact_id, user["username"])
+    _read_only_legacy(artifact)
+    if artifact["artifact_type"] != "chart":
+        raise HTTPException(status_code=409, detail="Edit a dashboard's layout in BI.")
+    return await _apply_bi_edit(artifact, body, user)
+
+
+async def _apply_bi_edit(artifact: dict, body: ArtifactApplyRequest, user: dict):
+    """Apply a reviewed draft to a BI chart: new dataset SQL, chart redrawn."""
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
+
     try:
         result = await run_artifact_draft(body.draft, artifact, user)
-        updated = await artifact_repository.update(
-            artifact_id,
-            owner_name=user["username"],
-            expected_updated_at=body.expected_updated_at,
+        updated = await bi_artifacts.update_chart_source(
+            user,
+            artifact,
             sql_text=body.draft.sql_text,
-            artifact_type=body.draft.artifact_type,
-            chart_spec=body.draft.chart_spec,
-            viz_spec=body.draft.viz_spec,
-            title=artifact["title"],
+            plan=_chart_plan(body.draft.viz_spec, body.draft.chart_spec),
+            expected_updated_at=body.expected_updated_at,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, BiError) as exc:
+        raise _bi_http_error(exc) from exc
     if updated is None:
         raise HTTPException(
             status_code=409,
             detail="This artifact changed. Refresh it before applying the draft.",
         )
-    await write_audit_log(
-        event_type="ARTIFACT",
-        user_name=user["username"],
-        action="update",
-        object_type="ARTIFACT",
-        object_name=artifact_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-    )
     return ArtifactRefreshResponse(
         artifact=ArtifactView(**updated),
         columns=result.columns,
@@ -638,74 +564,26 @@ async def delete_artifact(
     artifact_id: str,
     user: dict = Depends(get_current_user),
 ):
-    await _artifact_or_404(artifact_id, user["username"])
-    await artifact_repository.delete(artifact_id, owner_name=user["username"])
-    return None
-
-
-@router.patch(
-    "/studio/artifacts/{artifact_id}/spec",
-    response_model=ArtifactView,
-    response_class=SanitizingJSONResponse,
-)
-async def update_artifact_spec(
-    artifact_id: str,
-    body: ArtifactSpecUpdateRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Save an edited worksheet or dashboard layout.
-
-    The SQL provenance of a chart is preserved: an edit changes how the data
-    is drawn, not where it comes from.
-    """
-    from app.modules.viz.service import VizError, viz_service
-
     artifact = await _artifact_or_404(artifact_id, user["username"])
-    try:
-        if artifact["artifact_type"] == "dashboard":
-            updated = await viz_service.update_dashboard(
-                artifact_id,
-                user=user,
-                title=(body.title or artifact["title"]).strip(),
-                spec=_dashboard_spec(body.viz_spec),
-                expected_updated_at=body.expected_updated_at,
-            )
-        else:
-            from app.modules.viz.spec import WorksheetSpec
+    from app.modules.superset.artifacts import delete_bi_objects
 
-            WorksheetSpec.model_validate(body.viz_spec)
-            updated = await artifact_repository.update(
-                artifact_id,
-                owner_name=user["username"],
-                expected_updated_at=body.expected_updated_at,
-                sql_text=artifact["sql_text"],
-                artifact_type="chart",
-                chart_spec=None,
-                viz_spec=body.viz_spec,
-                title=(body.title or artifact["title"]).strip(),
-            )
-    except (ValueError, VizError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if updated is None:
-        raise HTTPException(
-            status_code=409, detail="This artifact changed. Refresh it before saving."
-        )
+    await delete_bi_objects(user, artifact)
+    await artifact_repository.delete(artifact_id, owner_name=user["username"])
+    if artifact.get("legacy"):
+        from app.modules.viz.migration import forget_tile_dashboard
+
+        await forget_tile_dashboard(user["username"], artifact_id)
+        await artifact_repository.retire_legacy_columns()
     await write_audit_log(
         event_type="ARTIFACT",
         user_name=user["username"],
-        action="update",
+        action="delete",
         object_type="ARTIFACT",
         object_name=artifact_id,
         status="SUCCESS",
         session_id=user.get("session_id"),
     )
-    return ArtifactView(**updated)
-
-
-def _dashboard_spec(raw: dict) -> Any:
-    from app.modules.viz.spec import DashboardSpec
-
-    return DashboardSpec.model_validate(raw)
+    return None
 
 
 # ── Tools Registry ─────────────────────────────────────────────
@@ -923,13 +801,15 @@ async def list_agent_access(agent_id: str, user: dict = Depends(get_current_user
     for grant in roles:
         valid = grant.get("verified_fingerprint") == fingerprint
         if valid:
-            valid = await has_verified_access(
-                agent, role_name=grant["role_name"], user=user
+            valid = await has_verified_access(agent, role_name=grant["role_name"], user=user)
+        views.append(
+            AgentRoleView(
+                role_name=grant["role_name"],
+                grant_type=grant["grant_type"],
+                verified=valid,
+                verified_at=grant.get("verified_at") if valid else None,
             )
-        views.append(AgentRoleView(
-            role_name=grant["role_name"], grant_type=grant["grant_type"],
-            verified=valid, verified_at=grant.get("verified_at") if valid else None,
-        ))
+        )
     return AgentRoleListResponse(roles=views, count=len(views))
 
 
@@ -1235,9 +1115,14 @@ async def create_share(body: ShareCreate, user: dict = Depends(get_current_user)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await write_audit_log(
-        event_type="STUDIO_SHARE", user_name=user["username"], action="GRANT",
-        object_type=body.object_type.upper(), object_name=body.object_id, status="SUCCESS",
-        decision=f"{body.target_type}:{body.target_name}", session_id=user.get("session_id"),
+        event_type="STUDIO_SHARE",
+        user_name=user["username"],
+        action="GRANT",
+        object_type=body.object_type.upper(),
+        object_name=body.object_id,
+        status="SUCCESS",
+        decision=f"{body.target_type}:{body.target_name}",
+        session_id=user.get("session_id"),
         active_role=user.get("active_role"),
     )
     return share
@@ -1259,9 +1144,14 @@ async def revoke_share(share_id: str, user: dict = Depends(get_current_user)) ->
 
     await share_repository.delete(share_id, owner_name=user["username"])
     await write_audit_log(
-        event_type="STUDIO_SHARE", user_name=user["username"], action="REVOKE",
-        object_type="STUDIO_SHARE", object_name=share_id, status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
+        event_type="STUDIO_SHARE",
+        user_name=user["username"],
+        action="REVOKE",
+        object_type="STUDIO_SHARE",
+        object_name=share_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
     )
 
 
@@ -1270,7 +1160,8 @@ async def list_shared_with_me(user: dict = Depends(get_current_user)) -> dict:
     from app.modules.agents.sharing import share_repository
 
     shares = [
-        share for share in await share_repository.visible(user)
+        share
+        for share in await share_repository.visible(user)
         if share["owner_name"] != user["username"]
         and share["object_type"] in {"thread", "dashboard"}
     ]
@@ -1299,9 +1190,14 @@ async def open_shared_thread(thread_id: str, user: dict = Depends(get_current_us
         raise HTTPException(status_code=404, detail="The shared conversation no longer exists")
     messages = await assistant_repository.list_messages(thread_id, user_name=owner)
     await write_audit_log(
-        event_type="STUDIO_SHARE", user_name=user["username"], action="READ",
-        object_type="THREAD", object_name=thread_id, status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
+        event_type="STUDIO_SHARE",
+        user_name=user["username"],
+        action="READ",
+        object_type="THREAD",
+        object_name=thread_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
     )
     return {
         "thread_id": thread_id,
@@ -1341,9 +1237,14 @@ async def refresh_shared_result(
     thread = await assistant_repository.get_thread(thread_id, user_name=owner) or {}
     messages = await assistant_repository.list_messages(thread_id, user_name=owner)
     step = next(
-        (item for message in shared_messages(messages) for item in (message.get("steps") or [])
-         if isinstance(item, dict) and item.get("tool_call_id") == tool_call_id
-         and item.get("name") == "semantic_query"),
+        (
+            item
+            for message in shared_messages(messages)
+            for item in (message.get("steps") or [])
+            if isinstance(item, dict)
+            and item.get("tool_call_id") == tool_call_id
+            and item.get("name") == "semantic_query"
+        ),
         None,
     )
     trace = (step or {}).get("trace_detail") or {}
@@ -1358,8 +1259,12 @@ async def refresh_shared_result(
     plan = SemanticPlan.from_dict(trace["semantic_plan"])
     sql = SemanticCompiler().compile(SemanticModelIR.from_ossie(record["definition"]), plan).sql
     result = await query_service.execute(
-        sql=sql, username=user["username"], encrypted_password=user["encrypted_password"],
-        role=_current_role(user), session_id=user.get("session_id"), max_rows=500,
+        sql=sql,
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+        role=_current_role(user),
+        session_id=user.get("session_id"),
+        max_rows=500,
     )
     if result.error:
         raise HTTPException(status_code=403, detail="Your access does not cover this result")
@@ -1404,8 +1309,7 @@ async def compute_shared_dashboard(
     try:
         spec = DashboardSpec.model_validate(body.spec or artifact.get("viz_spec") or {})
         filter_values = {
-            zone_id: parse_filter(item)
-            for zone_id, item in body.filter_values.items()
+            zone_id: parse_filter(item) for zone_id, item in body.filter_values.items()
         }
         zone_filters = {
             zone_id: [parse_filter(item) for item in items]
@@ -1464,10 +1368,15 @@ async def export_artifact(
         raw_rows = [list(row) for row in computed.rows]
     else:
         results = await query_service.execute_statements(
-            sql=artifact["sql_text"], username=user["username"],
-            encrypted_password=user["encrypted_password"], database=artifact["database_name"],
-            schema=artifact["schema_name"], role=_current_role(user), max_rows=MAX_EXPORT_ROWS,
-            session_id=user["session_id"], confirm_destructive=False,
+            sql=artifact["sql_text"],
+            username=user["username"],
+            encrypted_password=user["encrypted_password"],
+            database=artifact["database_name"],
+            schema=artifact["schema_name"],
+            role=_current_role(user),
+            max_rows=MAX_EXPORT_ROWS,
+            session_id=user["session_id"],
+            confirm_destructive=False,
         )
         result = results[0]
         if not result.success:
@@ -1477,13 +1386,19 @@ async def export_artifact(
     rows = redact_rows(columns, raw_rows)
     body = export(format, columns, rows, title=str(artifact["title"]))
     await write_audit_log(
-        event_type="STUDIO_EXPORT", user_name=user["username"], action="EXPORT",
-        object_type="ARTIFACT", object_name=artifact_id, status="SUCCESS",
-        decision=f"{format}:{len(rows)} rows", session_id=user.get("session_id"),
+        event_type="STUDIO_EXPORT",
+        user_name=user["username"],
+        action="EXPORT",
+        object_type="ARTIFACT",
+        object_name=artifact_id,
+        status="SUCCESS",
+        decision=f"{format}:{len(rows)} rows",
+        session_id=user.get("session_id"),
         active_role=user.get("active_role"),
     )
-    filename = (re.sub(r"[^A-Za-z0-9._-]+", "_", str(artifact["title"]))[:60] or "result")
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "_", str(artifact["title"]))[:60] or "result"
     return Response(
-        content=body, media_type=MEDIA_TYPES[format],
+        content=body,
+        media_type=MEDIA_TYPES[format],
         headers={"Content-Disposition": f'attachment; filename="{filename}.{format}"'},
     )

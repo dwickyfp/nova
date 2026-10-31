@@ -128,3 +128,21 @@ async def test_canonical_observation_truncates_utf8_and_preserves_causal_labels(
     assert [item["causal_status"] for item in observation["hypotheses"]][:3] == [
         "arithmetic", "association", "supported_effect",
     ]
+
+
+async def test_a_result_without_measures_anchors_nothing_and_never_fails_the_run(monkeypatch):
+    anchor = AsyncMock()
+    monkeypatch.setattr(business_results.mission_service, "record_anchor", anchor)
+    outcome = governed_outcome()
+    envelope = outcome.business_result["envelope"].model_copy(update={"metrics": []})
+    outcome = replace(outcome, business_result={**outcome.business_result, "envelope": envelope})
+    context = LoopContext(user_name="alice", user=USER, mission_id="mission", run_id="run",
+                          effective_work_intent="ANSWER")
+
+    result = await business_results.governed_result(
+        ToolInvocation("call", "semantic_query", {}), outcome, context,
+    )
+
+    anchor.assert_not_awaited()
+    assert result.trace_metadata["business_canonicalization"][
+        "business_canonicalization_status"] == "skipped"

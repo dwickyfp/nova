@@ -9,10 +9,8 @@ the order of operations, and that user text never reaches SQL unquoted.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import HTTPException
 
 from app.modules.viz.calc import CalcError, analyze_calculations, catalog, check_formula, parse
 from app.modules.viz.calc.lower import Lowerer, infer_types, window_sql
@@ -691,98 +689,6 @@ async def test_compute_returns_the_data_pane_and_resolved_spec(monkeypatch) -> N
     assert ("Margin", "calculation", "measure") in names
     assert computed.spec["rows"][0]["aggregation"] == "agg"
     assert len(calls) == 2
-
-
-@pytest.mark.asyncio
-async def test_calculation_check_reports_types_or_positions(monkeypatch) -> None:
-    monkeypatch.setattr(
-        viz_service,
-        "_execute",
-        AsyncMock(return_value=_result(["region", "sales"], [["East", 1]])),
-    )
-    spec = sheet(columns=[pill("region")])
-    ok = await viz_service.check_calculation(spec, USER, formula="SUM([sales]) * 2")
-    assert ok == {
-        "valid": True,
-        "data_type": "number",
-        "level": "aggregate",
-        "role": "measure",
-        "references": ["sales"],
-    }
-    bad = await viz_service.check_calculation(spec, USER, formula="SUM([region])")
-    assert bad["valid"] is False and bad["error"]["start"] == 4
-
-
-@pytest.mark.asyncio
-async def test_field_domain_lists_members_or_bounds(monkeypatch) -> None:
-    calls: list[str] = []
-
-    async def execute(sql, user, *, max_rows=500):
-        calls.append(sql)
-        if "LIMIT 100" in sql:
-            return _result(["region", "sales"], [["East", 1]])
-        if "MIN(`sales`)" in sql:
-            return _result(["min(sales)", "max(sales)"], [[1, 99]])
-        return _result(["region"], [["East"], ["West"]])
-
-    monkeypatch.setattr(viz_service, "_execute", execute)
-    spec = sheet(
-        columns=[pill("region")],
-        filters=[
-            {"kind": "categorical", "field": "region", "values": ["East"], "context": True},
-            {"kind": "categorical", "field": "region", "values": ["West"]},
-        ],
-    )
-    members = await viz_service.field_domain(spec, USER, field_name="region")
-    assert members["values"] == ["East", "West"] and members["truncated"] is False
-    # Only context filters narrow the member list.
-    assert "WHERE (`region` IN ('East'))" in calls[1] and "'West'" not in calls[1]
-    bounds = await viz_service.field_domain(spec, USER, field_name="sales")
-    assert (bounds["min"], bounds["max"]) == (1, 99)
-
-
-@pytest.mark.asyncio
-async def test_authoring_routes_validate_their_input(monkeypatch) -> None:
-    from app.modules.agents.studio_router import (
-        check_viz_calculation,
-        describe_viz_source,
-        list_viz_functions,
-        viz_field_domain,
-    )
-    from app.modules.agents.studio_schemas import (
-        VizCalcCheckRequest,
-        VizFieldDomainRequest,
-        VizSourceRequest,
-    )
-
-    monkeypatch.setattr(
-        viz_service,
-        "_execute",
-        AsyncMock(return_value=_result(["region", "sales"], [["East", 1]])),
-    )
-    source = {"kind": "sql", "sql": "SELECT * FROM sales"}
-    described = await describe_viz_source(VizSourceRequest(source=source), user=USER)
-    assert [field["name"] for field in described["fields"]] == ["region", "sales"]
-    checked = await check_viz_calculation(
-        VizCalcCheckRequest(source=source, formula="[sales] + 1"), user=USER
-    )
-    assert checked["level"] == "row"
-    with pytest.raises(HTTPException) as info:
-        await describe_viz_source(
-            VizSourceRequest(
-                source=source,
-                calculations=[{"name": "a", "formula": "1"}, {"name": "a", "formula": "2"}],
-            ),
-            user=USER,
-        )
-    assert info.value.status_code == 422
-    with pytest.raises(HTTPException):
-        await viz_field_domain(
-            VizFieldDomainRequest(source={"kind": "sql", "sql": "SELECT 1; SELECT 2"}, field="a"),
-            user=USER,
-        )
-    functions = await list_viz_functions(user=USER)
-    assert any(entry["name"] == "LOOKUP" for entry in functions["functions"])
 
 
 def test_data_pane_lists_calculations_with_their_role() -> None:

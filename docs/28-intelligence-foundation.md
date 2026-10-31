@@ -14,6 +14,8 @@ Semantic Views store versioned Ossie definitions. Validation compiles and execut
 
 Semantic Views are also the single semantic object selected in Agent Studio. An agent stores `semantic_view_ids`; an unmanifested agent's natural-language `semantic_query` resolves active View versions under the caller's current role and source privileges. A manifested release resolves pinned published versions/fingerprints and keeps authorization live. See [governed Studio releases](arch-15-governed-studio.md#release-manifests-and-promotion). Nove can query an active View without an Agent Studio binding. The older Agent Studio semantic-model tables are retained as migration input and for saved-binding compatibility, not for authoring a second semantic catalog.
 
+Publishing a non-private Semantic View also syncs it into BI (Superset): each fact dataset becomes one dataset with the view's metrics, created as the publisher and locked against edits in Superset, so BI charts use the published business meaning. A new version updates it; deprecating or dropping the view removes it. Metrics BI cannot express faithfully are left out and listed in the sync record (`GET /semantic-views/{id}/bi-datasets`; retry with `POST /semantic-views/{id}/bi-sync`). The view's page shows these under **BI datasets**, with **Open in BI** and, for the owner, **Sync to BI** for views published before BI or after a failed sync. See [Architecture 17](arch-17-superset.md#phase-5-semantics-observability-backup).
+
 Publishing a new View version changes the agent access fingerprint. Bound agents must verify access again before their next run, so a new source or formula is checked against the roles allowed to use that agent.
 
 ## Intelligence lifecycle

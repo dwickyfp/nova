@@ -21,7 +21,6 @@ from uuid import NAMESPACE_URL, uuid5
 
 from app.modules.agents.artifact_repository import artifact_repository
 from app.modules.query.service import query_service
-from app.modules.viz.calc import CalcError, check_formula
 from app.modules.viz.calc.analyzer import DataType
 from app.modules.viz.compiler import (
     PROBE_ROWS,
@@ -32,11 +31,9 @@ from app.modules.viz.compiler import (
 )
 from app.modules.viz.presmodel import build as build_presmodel
 from app.modules.viz.showme import from_intent
-from app.modules.viz.showme import suggest as showme_suggest
 from app.modules.viz.spec import (
     ChartIntent,
     DashboardSpec,
-    FieldRef,
     Filter,
     VizSourceSql,
     WorksheetSpec,
@@ -109,6 +106,7 @@ def data_pane(
         )
     return fields
 
+
 def canonical_source_sql(spec: WorksheetSpec) -> str:
     """The single read-only statement that rebuilds this worksheet's data."""
     if spec.source.kind == "sql":
@@ -164,208 +162,11 @@ class VizService:
             spec=resolved.model_dump(mode="json"),
         )
 
-    async def describe(self, spec: WorksheetSpec, user: dict[str, Any]) -> dict[str, Any]:
-        """The data pane for a worksheet's source, without computing the view."""
-        schema = await self.probe_schema(spec, user)
-        try:
-            compiled = compile_worksheet(
-                spec, known_columns=schema.columns, column_types=schema.types
-            )
-            calcs: dict[str, Any] = compiled.calculations
-        except CompileError:
-            calcs = {}
-        return {
-            "fields": data_pane(schema, spec, calcs),
-            "sample_columns": schema.columns,
-            "sample_rows": schema.sample[:50],
-        }
-
-    async def check_calculation(
-        self,
-        spec: WorksheetSpec,
-        user: dict[str, Any],
-        *,
-        formula: str,
-        name: str | None = None,
-    ) -> dict[str, Any]:
-        """Check one formula against the worksheet's fields (the formula
-        editor). Only the probe touches data, under the caller's access."""
-        schema = await self.probe_schema(spec, user)
-        try:
-            info = check_formula(
-                formula,
-                dict(schema.types),
-                spec.calculation_formulas(),
-                name=name,
-            )
-        except CalcError as exc:
-            return {
-                "valid": False,
-                "error": {"message": exc.message, "start": exc.start, "end": exc.end},
-            }
-        return {
-            "valid": True,
-            "data_type": info.data_type,
-            "level": info.level,
-            "role": info.role,
-            "references": info.references,
-        }
-
-    async def field_domain(
-        self,
-        spec: WorksheetSpec,
-        user: dict[str, Any],
-        *,
-        field_name: str,
-        date_part: str | None = None,
-    ) -> dict[str, Any]:
-        """Members (or the range) of one field, for a filter card.
-
-        It compiles a one-field view of the same source — with the
-        worksheet's context filters — so calculated fields work and every
-        value comes from the caller's own session.
-        """
-        schema = await self.probe_schema(spec, user)
-        probe = WorksheetSpec(
-            source=spec.source,
-            calculations=spec.calculations,
-            filters=[item for item in spec.filters if item.context],
-            columns=[FieldRef(field=field_name, date_part=date_part)],  # type: ignore[arg-type]
-            marks={"type": "text"},  # type: ignore[arg-type]
-            sort=[{"field": field_name, "direction": "asc"}],  # type: ignore[list-item]
-            limit=MAX_DOMAIN_VALUES + 1,
-        )
-        compiled = compile_worksheet(probe, known_columns=schema.columns, column_types=schema.types)
-        field_type = compiled.output_fields[0].field_type if compiled.output_fields else "nominal"
-        domain: dict[str, Any] = {"field": field_name, "field_type": field_type}
-        if field_type == "quantitative" and date_part is None:
-            # A range filter needs the bounds, not every member.
-            bounds = probe.model_copy(
-                update={
-                    "columns": [],
-                    "rows": [
-                        FieldRef(field=field_name, aggregation="min", discrete=False),
-                        FieldRef(field=field_name, aggregation="max", discrete=False),
-                    ],
-                    "sort": [],
-                    "limit": None,
-                }
-            )
-            ranged = compile_worksheet(
-                bounds, known_columns=schema.columns, column_types=schema.types
-            )
-            result = await self._execute(ranged.sql, user, max_rows=1)
-            low, high = (list(result.rows[0]) + [None, None])[:2] if result.rows else (None, None)
-            domain.update({"min": low, "max": high, "values": [], "truncated": False})
-            return domain
-        result = await self._execute(compiled.sql, user, max_rows=MAX_DOMAIN_VALUES + 1)
-        values = [row[0] for row in result.rows]
-        domain.update(
-            {
-                "values": values[:MAX_DOMAIN_VALUES],
-                "truncated": len(values) > MAX_DOMAIN_VALUES,
-            }
-        )
-        return domain
-
     def compute_in_memory(
         self, spec: WorksheetSpec, columns: list[str], rows: list[list[Any]]
     ) -> dict[str, Any]:
         """Compute the presentation model over rows the turn already holds."""
         return build_presmodel(spec, columns, rows)
-
-    def suggest(self, columns: list[str], rows: list[list[Any]]) -> list[dict[str, Any]]:
-        """Ranked ShowMe suggestions for a result's columns."""
-        from app.modules.viz.showme import classify_fields
-
-        return showme_suggest(classify_fields(columns, rows))
-
-    async def save_chart(
-        self,
-        *,
-        user: dict[str, Any],
-        title: str,
-        spec: WorksheetSpec,
-        agent_id: str | None = None,
-        thread_id: str | None = None,
-        database_name: str | None = None,
-        schema_name: str | None = None,
-    ) -> dict[str, Any]:
-        """Persist a worksheet as a chart artifact (its source SQL is stored
-        unchanged; refresh re-compiles and re-executes it)."""
-        sql = canonical_source_sql(spec)
-        return await artifact_repository.create(
-            owner_name=user["username"],
-            title=title,
-            artifact_type="chart",
-            sql_text=sql,
-            database_name=database_name,
-            schema_name=schema_name,
-            viz_spec=spec.model_dump(mode="json"),
-            agent_id=agent_id,
-            thread_id=thread_id,
-        )
-
-    async def save_dashboard(
-        self,
-        *,
-        user: dict[str, Any],
-        title: str,
-        spec: DashboardSpec,
-        agent_id: str | None = None,
-        thread_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Persist a zone layout as a dashboard artifact.
-
-        Every sheet zone must reference a chart artifact the caller owns; a
-        dashboard never widens access to another owner's data.
-        """
-        owned = await artifact_repository.list(owner_name=user["username"])
-        owned_charts = {
-            artifact["artifact_id"] for artifact in owned if artifact["artifact_type"] == "chart"
-        }
-        missing = [
-            zone.artifact_id for zone in spec.sheet_zones() if zone.artifact_id not in owned_charts
-        ]
-        if missing:
-            raise VizError("A dashboard zone references an unavailable chart artifact.")
-        return await artifact_repository.create(
-            owner_name=user["username"],
-            title=title,
-            artifact_type="dashboard",
-            sql_text="",
-            database_name=None,
-            schema_name=None,
-            viz_spec=spec.model_dump(mode="json"),
-            agent_id=agent_id,
-            thread_id=thread_id,
-        )
-
-    async def update_dashboard(
-        self,
-        artifact_id: str,
-        *,
-        user: dict[str, Any],
-        title: str,
-        spec: DashboardSpec,
-        expected_updated_at: Any,
-    ) -> dict[str, Any] | None:
-        owned = await artifact_repository.list(owner_name=user["username"])
-        owned_charts = {
-            artifact["artifact_id"] for artifact in owned if artifact["artifact_type"] == "chart"
-        }
-        if any(zone.artifact_id not in owned_charts for zone in spec.sheet_zones()):
-            raise VizError("A dashboard zone references an unavailable chart artifact.")
-        return await artifact_repository.update(
-            artifact_id,
-            owner_name=user["username"],
-            expected_updated_at=expected_updated_at,
-            sql_text="",
-            artifact_type="dashboard",
-            viz_spec=spec.model_dump(mode="json"),
-            chart_spec=None,
-            title=title,
-        )
 
     async def compute_dashboard(
         self,

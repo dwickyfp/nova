@@ -224,6 +224,34 @@ class Settings(BaseSettings):
     #: addition to loopback. Empty means loopback only.
     NOVA_INTERNAL_TRUSTED_PROXY: str = ""
 
+    # --- Superset BI surface (docs/arch-17-superset.md) ---
+    #: Shared secret Superset presents on /api/v1/internal/superset/*. No
+    #: default: unset means those endpoints fail closed (503).
+    SUPERSET_SERVICE_TOKEN: str = ""
+    #: Networks Superset's services connect from, for the internal endpoints
+    #: and the MySQL proxy's token login. Comma-separated CIDRs.
+    SUPERSET_SERVICE_NETWORKS: str = (
+        "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    )
+    #: Lifetime of a per-session data token Superset uses as its proxy password.
+    SUPERSET_DATA_TOKEN_TTL_SECONDS: int = Field(default=300, ge=60, le=3600)
+    #: Live data tokens kept per principal; the oldest is evicted beyond this.
+    SUPERSET_MAX_TOKENS_PER_PRINCIPAL: int = Field(default=8, ge=1, le=64)
+    #: Where Nova reaches Superset's API on the internal network; Superset is
+    #: served under ``/bi`` there as for browsers.
+    SUPERSET_INTERNAL_URL: str = "http://superset:8088"
+    SUPERSET_REQUEST_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, le=600)
+    #: Lifetime of a delegated BI session for one background run (alerts,
+    #: reports, cache warmup); each run asks for a new one.
+    SUPERSET_DELEGATION_TTL_SECONDS: int = Field(default=900, ge=60, le=86_400)
+    #: Superset's PostgreSQL metadata database, dumped with NOVA_SYSTEM
+    #: snapshots (Phase 5). The password comes from the environment only.
+    SUPERSET_DB_HOST: str = "superset-db"
+    SUPERSET_DB_PORT: int = 5432
+    SUPERSET_DB_NAME: str = "superset"
+    SUPERSET_DB_USER: str = "superset"
+    SUPERSET_DB_PASSWORD: str = ""
+
     # --- ML execution ---
     ML_MYSQL_BATCH_SIZE: int = 4096
     ML_INTERACTIVE_TIMEOUT_SECONDS: float = 10.0

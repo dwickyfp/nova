@@ -102,12 +102,45 @@ class ArtifactSummary(BaseModel):
     schema_name: str | None = None
     created_at: datetime
     updated_at: datetime
+    #: Set for artifacts published to Superset: the object and its /bi paths.
+    bi_kind: Literal["chart", "dashboard"] | None = None
+    bi_object_id: int | None = None
+    bi_view_path: str | None = None
+    bi_edit_path: str | None = None
+    #: Saved before BI: read-only until converted.
+    legacy: bool = False
 
 
 class ArtifactView(ArtifactSummary):
     sql_text: str
     chart_spec: dict[str, Any] | None = None
     viz_spec: dict[str, Any] | None = None
+    #: For a legacy artifact: what conversion to BI could not carry (blockers)
+    #: and what it would only draw differently (notes).
+    legacy_blockers: list[str] = Field(default_factory=list)
+    legacy_notes: list[str] = Field(default_factory=list)
+
+
+class ArtifactConvertRequest(BaseModel):
+    #: The legacy artifacts to convert; all of the caller's when omitted.
+    artifact_ids: list[str] | None = Field(default=None, max_length=500)
+    #: Convert even artifacts with blockers, accepting what BI cannot carry.
+    force: bool = False
+
+
+class ArtifactConversionOutcome(BaseModel):
+    artifact_id: str
+    title: str
+    artifact_type: str
+    status: Literal["converted", "kept", "failed"]
+    blockers: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    error: str | None = None
+    bi_view_path: str | None = None
+
+
+class ArtifactConvertResponse(BaseModel):
+    outcomes: list[ArtifactConversionOutcome] = Field(default_factory=list)
 
 
 class ArtifactListResponse(BaseModel):
@@ -164,67 +197,6 @@ class ArtifactEditResponse(BaseModel):
 class ArtifactApplyRequest(BaseModel):
     draft: ArtifactDraft
     expected_updated_at: datetime
-
-
-class ArtifactSpecUpdateRequest(BaseModel):
-    """Save an edited worksheet or dashboard layout (the Studio editor path)."""
-
-    title: str | None = Field(default=None, min_length=1, max_length=256)
-    viz_spec: dict[str, Any]
-    expected_updated_at: datetime
-
-
-# ── Viz compute ────────────────────────────────────────────────
-
-
-class VizComputeRequest(BaseModel):
-    """Compile and execute one worksheet under the caller's own access."""
-
-    spec: dict[str, Any]
-    extra_filters: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
-
-
-class VizComputeResponse(BaseModel):
-    presmodel: dict[str, Any]
-    sql: str
-    columns: list[str] = Field(default_factory=list)
-    rows: list[list[Any]] = Field(default_factory=list)
-    row_count: int = 0
-    elapsed_ms: float = 0.0
-    #: The data pane: source columns and calculated fields with types.
-    fields: list[dict[str, Any]] = Field(default_factory=list)
-    #: The worksheet as resolved (pill types, aggregate calculations).
-    spec: dict[str, Any] | None = None
-
-
-class VizSourceRequest(BaseModel):
-    """A worksheet's data source and calculations, without its shelves."""
-
-    source: dict[str, Any]
-    calculations: list[dict[str, Any]] = Field(default_factory=list, max_length=64)
-    filters: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
-
-
-class VizCalcCheckRequest(VizSourceRequest):
-    formula: str = Field(min_length=1, max_length=8000)
-    #: The calculated field being edited, so its saved formula is replaced.
-    name: str | None = Field(default=None, max_length=128)
-
-
-class VizFieldDomainRequest(VizSourceRequest):
-    field: str = Field(min_length=1, max_length=128)
-    date_part: Literal["year", "quarter", "month", "week", "day"] | None = None
-
-
-class VizSuggestRequest(BaseModel):
-    columns: list[Annotated[str, Field(max_length=128)]] = Field(
-        default_factory=list, max_length=200
-    )
-    rows: list[list[Any]] = Field(default_factory=list, max_length=50)
-
-
-class VizSuggestResponse(BaseModel):
-    suggestions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DashboardComputeRequest(BaseModel):

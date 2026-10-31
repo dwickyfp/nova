@@ -10,12 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as BiLaunchRouteImport } from './routes/bi-launch'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedAccessControlRouteImport } from './routes/_authenticated/access-control'
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
 import { Route as AuthenticatedAiSearchRouteImport } from './routes/_authenticated/ai-search'
+import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
 import { Route as AuthenticatedEntitiesRouteImport } from './routes/_authenticated/entities'
 import { Route as AuthenticatedFeatureStoreRouteImport } from './routes/_authenticated/feature-store'
@@ -61,6 +63,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BiLaunchRoute = BiLaunchRouteImport.update({
+  id: '/bi-launch',
+  path: '/bi-launch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudioRoute = StudioRouteImport.update({
   id: '/studio',
   path: '/studio',
@@ -91,6 +98,11 @@ const AuthenticatedActiveQueryRoute =
 const AuthenticatedAiSearchRoute = AuthenticatedAiSearchRouteImport.update({
   id: '/ai-search',
   path: '/ai-search',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedDatabaseExplorerRoute =
@@ -329,12 +341,14 @@ const AuthenticatedAgentsSemanticBuilderRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
   '/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -376,11 +390,13 @@ export interface FileRoutesByFullPath {
   '/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesByTo {
+  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
   '/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -425,12 +441,14 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/(auth)/sign-in': typeof authSignInRoute
   '/_authenticated/access-control': typeof AuthenticatedAccessControlRoute
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
   '/_authenticated/ai-search': typeof AuthenticatedAiSearchRoute
+  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/_authenticated/entities': typeof AuthenticatedEntitiesRoute
   '/_authenticated/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -476,12 +494,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/bi-launch'
     | '/studio'
     | '/monitoring'
     | '/sign-in'
     | '/access-control'
     | '/active-query'
     | '/ai-search'
+    | '/analytics'
     | '/database-explorer'
     | '/entities'
     | '/feature-store'
@@ -523,11 +543,13 @@ export interface FileRouteTypes {
     | '/agents/semantic/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/bi-launch'
     | '/studio'
     | '/sign-in'
     | '/access-control'
     | '/active-query'
     | '/ai-search'
+    | '/analytics'
     | '/database-explorer'
     | '/entities'
     | '/feature-store'
@@ -571,12 +593,14 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
+    | '/bi-launch'
     | '/studio'
     | '/_authenticated/monitoring'
     | '/(auth)/sign-in'
     | '/_authenticated/access-control'
     | '/_authenticated/active-query'
     | '/_authenticated/ai-search'
+    | '/_authenticated/analytics'
     | '/_authenticated/database-explorer'
     | '/_authenticated/entities'
     | '/_authenticated/feature-store'
@@ -621,6 +645,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  BiLaunchRoute: typeof BiLaunchRoute
   StudioRoute: typeof StudioRoute
   authSignInRoute: typeof authSignInRoute
 }
@@ -632,6 +657,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bi-launch': {
+      id: '/bi-launch'
+      path: '/bi-launch'
+      fullPath: '/bi-launch'
+      preLoaderRoute: typeof BiLaunchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/studio': {
@@ -674,6 +706,13 @@ declare module '@tanstack/react-router' {
       path: '/ai-search'
       fullPath: '/ai-search'
       preLoaderRoute: typeof AuthenticatedAiSearchRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/analytics': {
+      id: '/_authenticated/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/database-explorer': {
@@ -995,6 +1034,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccessControlRoute: typeof AuthenticatedAccessControlRoute
   AuthenticatedActiveQueryRoute: typeof AuthenticatedActiveQueryRoute
   AuthenticatedAiSearchRoute: typeof AuthenticatedAiSearchRoute
+  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
   AuthenticatedEntitiesRoute: typeof AuthenticatedEntitiesRoute
   AuthenticatedFeatureStoreRoute: typeof AuthenticatedFeatureStoreRoute
@@ -1034,6 +1074,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccessControlRoute: AuthenticatedAccessControlRoute,
   AuthenticatedActiveQueryRoute: AuthenticatedActiveQueryRoute,
   AuthenticatedAiSearchRoute: AuthenticatedAiSearchRoute,
+  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
   AuthenticatedEntitiesRoute: AuthenticatedEntitiesRoute,
   AuthenticatedFeatureStoreRoute: AuthenticatedFeatureStoreRoute,
@@ -1075,6 +1116,7 @@ const AuthenticatedRouteRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  BiLaunchRoute: BiLaunchRoute,
   StudioRoute: StudioRoute,
   authSignInRoute: authSignInRoute,
 }

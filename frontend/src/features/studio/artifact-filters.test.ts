@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { PresModel } from "@/features/viz/types";
 import {
   filterArtifactRows,
+  filterPresmodel,
   inferArtifactColumnType,
   type ArtifactFilter,
 } from "./artifact-filters";
@@ -83,5 +85,34 @@ describe("artifact filters", () => {
         "all",
       ),
     ).toEqual(rows);
+  });
+});
+
+describe("filterPresmodel", () => {
+  const presmodel: PresModel = {
+    version: 1,
+    title: "Outlets by type",
+    mark: "bar",
+    columns: [
+      { name: "outlet_type", field: "outlet_type", field_type: "nominal", role: "dimension", discrete: true, label: "outlet_type" },
+      { name: "sum(outlets)", field: "outlets", field_type: "quantitative", role: "measure", aggregation: "sum", discrete: false, label: "sum(outlets)" },
+      { name: "avg(score)", field: "score", field_type: "quantitative", role: "measure", aggregation: "avg", discrete: false, label: "avg(score)" },
+    ],
+    rows: [["Warung", 113, 4], ["Toko Kelontong", 62, 3], ["Toko Grosir", 23, 5]],
+    row_count: 3,
+    axes: { x: null, y: null },
+    legend: { color: null },
+    totals: { "sum(outlets)": 198, "avg(score)": 4 },
+  };
+
+  it("narrows the chart's rows by a dimension and keeps additive totals", () => {
+    const narrowed = filterPresmodel(presmodel, [filter("outlet_type", "contains", "toko")], "all");
+    expect(narrowed?.rows).toEqual([["Toko Kelontong", 62, 3], ["Toko Grosir", 23, 5]]);
+    expect(narrowed?.row_count).toBe(2);
+    expect(narrowed?.totals).toEqual({ "sum(outlets)": 85, "avg(score)": null });
+  });
+
+  it("gives up on a filter over a column the chart aggregates", () => {
+    expect(filterPresmodel(presmodel, [filter("outlets", "greater_than", "50")], "all")).toBeNull();
   });
 });

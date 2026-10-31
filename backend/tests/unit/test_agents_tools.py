@@ -140,15 +140,18 @@ async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("chart_intent", "expected_mark"),
+    ("request_text", "chart_intent", "expected_mark"),
     [
-        (ChartIntent(chart_type="bar", x="invented"), "bar"),
+        # Naming a type other than the shape's own pick sends the request to the model.
+        ("line chart of sales by region", ChartIntent(chart_type="bar", x="invented"), "bar"),
         # The real tool rejects this chart_intent before it reaches the engine; the
         # engine itself still places a chart from the pills that do exist.
-        (ChartIntent(chart_type="pie", x="region", y="ghost"), "arc"),
+        ("pie chart of sales by region", ChartIntent(chart_type="pie", x="region", y="ghost"),
+         "arc"),
     ],
 )
 async def test_chart_falls_back_when_the_model_names_unknown_fields(
+    request_text: str,
     chart_intent: ChartIntent,
     expected_mark: str,
 ) -> None:
@@ -156,9 +159,12 @@ async def test_chart_falls_back_when_the_model_names_unknown_fields(
     tool._model_intent = AsyncMock(return_value=chart_intent)
     context = SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]]})
 
-    outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
+    outcome = await tool.run(
+        ToolInvocation("chart-1", "data_to_chart", {"intent": request_text}), context
+    )
 
     assert outcome.ok
+    tool._model_intent.assert_awaited_once()
     # Unknown fields never reach the worksheet; ShowMe places the real pills,
     # so the chart still builds.
     spec = json.loads(outcome.chart["chart_spec"])

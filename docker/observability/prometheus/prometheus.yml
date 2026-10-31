@@ -32,6 +32,12 @@ scrape_configs:
         labels:
           service: cache-queue
 
+  - job_name: bi-metrics
+    static_configs:
+      - targets: ["statsd-exporter:9102"]
+        labels:
+          service: bi
+
   - job_name: node-exporter
     static_configs:
       - targets: ["host.docker.internal:9100"]

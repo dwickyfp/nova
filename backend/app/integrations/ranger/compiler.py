@@ -167,3 +167,36 @@ def compile_mask_policy(
             )
         ],
     )
+
+
+#: ``information_schema`` views SQL clients reflect table structure from. Rows
+#: in them are filtered to objects the principal may already see.
+BI_METADATA_TABLES = ("tables", "tables_config", "columns", "views", "materialized_views")
+
+
+def compile_bi_metadata_policy(
+    *, roles: list[str], catalog: str = "default_catalog"
+) -> RangerPolicy:
+    """Let BI authors reflect tables they can query (docs/arch-17-superset.md).
+
+    Superset builds datasets from ``information_schema``. The policy grants
+    ``select`` on the reflection views only; which objects appear in them is
+    still decided by each principal's own object policies.
+    """
+    return RangerPolicy(
+        service=settings.RANGER_SERVICE_NAME,
+        name=managed_name("bi", "metadata", catalog),
+        description="Managed by Nova. Table reflection for BI author roles.",
+        resources={
+            "catalog": RangerPolicyResource(values=[catalog]),
+            "database": RangerPolicyResource(values=["information_schema"]),
+            "table": RangerPolicyResource(values=list(BI_METADATA_TABLES)),
+            "column": RangerPolicyResource(values=["*"]),
+        },
+        policyItems=[
+            RangerPolicyItem(
+                roles=sorted(set(roles)),
+                accesses=[RangerPolicyItemAccess(type="select")],
+            )
+        ],
+    )

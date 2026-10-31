@@ -34,7 +34,7 @@ SPLIT_TARGETS = {
     "nova-query": "query",
     "nova-proxy": "proxy",
 }
-CORE_JOBS = ("prometheus", "starrocks-fe", "starrocks-be", "redis", "node-exporter")
+CORE_JOBS = ("prometheus", "starrocks-fe", "starrocks-be", "redis", "node-exporter", "bi-metrics")
 PROBES = ("stage-storage", "policy-service")
 DASHBOARDS = {
     "nova-overview": "nova-7c-operations-overview",
@@ -43,6 +43,7 @@ DASHBOARDS = {
     "nova-starrocks": "nova-7c-starrocks-engine",
     "nova-host-system": "nova-7c-host-system",
     "nova-dependencies": "nova-7c-dependencies",
+    "nova-bi": "nova-7c-bi-superset",
 }
 
 

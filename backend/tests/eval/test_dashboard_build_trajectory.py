@@ -1,4 +1,4 @@
-"""A dashboard build turn persists owned artifacts and a replayable block."""
+"""A dashboard build turn publishes BI artifacts and a replayable block."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from app.modules.agents.tools.dashboard_build import dashboard_build_tool
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
-from app.modules.viz.service import viz_service
+from app.modules.superset import artifacts as bi_artifacts
 from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
 
 
@@ -20,11 +20,11 @@ async def test_dashboard_build_creates_artifacts_and_a_dashboard_frame(monkeypat
     ]
 
     monkeypatch.setattr(
-        viz_service, "save_chart", AsyncMock(side_effect=lambda **kwargs: saved.pop(0))
+        bi_artifacts, "publish_chart", AsyncMock(side_effect=lambda *a, **k: saved.pop(0))
     )
     monkeypatch.setattr(
-        viz_service,
-        "save_dashboard",
+        bi_artifacts,
+        "publish_dashboard",
         AsyncMock(return_value={"artifact_id": "dash-1", "title": "Overview"}),
     )
 

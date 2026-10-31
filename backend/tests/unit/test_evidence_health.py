@@ -157,3 +157,102 @@ def test_specialist_snapshot_preserves_assessment_and_unknown_signals():
     restored.restore(parent.snapshot())
     assert restored.items[0].metadata["evidence_health"] == expected
     assert replay_evidence_health(restored.items[0].metadata["evidence_health"]) == health
+
+
+def test_a_specialists_statement_travels_with_its_rows_to_the_smart_root() -> None:
+    child = EvidenceTracker()
+    child.add("semantic_query", "visits per rep", table={
+        "columns": ["rep", "visits"], "rows": [["Budi", 3]],
+        "sql": "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    })
+    child.add("compute_metrics", "no statement", table={"columns": ["n"], "rows": [[1]]})
+    parent = EvidenceTracker()
+    imported = parent.import_results({
+        "status": "completed", "depth": 1, "current_turn_id": "child-turn",
+        "agent_id": "field-sales", "evidence": child.snapshot(),
+    })
+
+    tables = parent.tables
+    assert tables[imported[0].evidence_id]["sql"].startswith("SELECT rep")
+    assert "sql" not in tables[imported[1].evidence_id]
+
+
+@pytest.mark.asyncio
+async def test_an_interactive_block_names_the_statement_of_a_specialists_result() -> None:
+    from app.modules.assistant.service import LoopContext, PendingArtifact, _autocompose_artifacts
+
+    evidence = EvidenceTracker()
+    imported = evidence.add("semantic_query", "visits per rep", table={
+        "columns": ["rep", "visits"], "rows": [["Budi", 3]],
+        "sql": "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    })
+    own = evidence.add("semantic_query", "outlets per city", table={
+        "columns": ["city", "outlets"], "rows": [["Jakarta", 2]], "sql": "SELECT 2",
+    })
+    context = LoopContext(user_name="alice")
+    context.steps = [{"kind": "tool", "evidence_id": own.evidence_id, "tool_call_id": "q-2"}]
+    block = {"provenance": {"evidence_ids": [imported.evidence_id, own.evidence_id]}}
+
+    ordered = await _autocompose_artifacts([PendingArtifact("ui", block)], evidence, context)
+
+    provenance = ordered[0].payload["provenance"]
+    assert provenance["tool_calls"] == {own.evidence_id: "q-2"}
+    assert provenance["statements"] == {
+        imported.evidence_id: "SELECT rep, COUNT(*) AS visits FROM visits GROUP BY rep",
+    }
+
+
+def test_the_final_composer_reads_results_not_coordination_steps() -> None:
+    import json
+
+    from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
+    from app.modules.assistant.intelligence import COORDINATION_TOOLS
+
+    assert set(COLLABORATION_TOOLS) == COORDINATION_TOOLS
+    evidence = EvidenceTracker()
+    evidence.add("discover_agents", "owners found", metadata={"agents": ["sales"]})
+    evidence.add("spawn_agent", "started /root/visits")
+    evidence.add("wait_agent", "visits finished")
+    assert [item["tool"] for item in json.loads(evidence.composer_context())] == [
+        "discover_agents"
+    ]  # nothing collected yet: discovery is what says who covers the request
+
+    evidence.add("semantic_query", "visits per rep",
+                 table={"columns": ["rep", "visits"], "rows": [["Budi", 3]]})
+    evidence.add("data_to_chart", "chart of visits per rep")
+    assert [item["tool"] for item in json.loads(evidence.composer_context())] == [
+        "semantic_query", "data_to_chart"
+    ]
+
+
+def test_the_model_reads_one_evidence_health_copy_per_result() -> None:
+    from app.modules.assistant.evidence_health import attach_evidence_health
+
+    outcome = attach_evidence_health(
+        ToolOutcome(ok=True, summary="chart", data={"title": "Visits"},
+                    metadata={"columns": ["a"]}),
+        assess_evidence(strong_facts(), assessed_at=NOW),
+    )
+    envelope = outcome.envelope(tool_name="data_to_chart")
+    assert envelope["evidence"]["health"] == outcome.metadata["evidence_health"]
+    assert "evidence_health" not in envelope["evidence"]
+    assert envelope["data"] == {"title": "Visits"}
+    assert envelope["metadata"] == {"columns": ["a"]}
+    # Nova keeps every copy for its own use.
+    assert outcome.data["evidence_health"] and outcome.evidence["evidence_health"]
+
+
+def test_a_collaboration_result_shows_the_model_who_is_where_not_their_evidence() -> None:
+    from app.modules.assistant.service import _TEAMMATE_SUMMARY_CHARS, _collaboration_view
+
+    view = _collaboration_view({"reason": "completed", "agents": [{
+        "agent_session_id": "s1", "agent_path": "/root/visits", "agent_name": "Field Sales",
+        "status": "idle", "turn_count": 1, "summary": "x" * (_TEAMMATE_SUMMARY_CHARS + 50),
+        "evidence": {"items": [1] * 50}, "evidence_tables": [[1]], "objective": "visits per rep",
+    }]})
+    [agent] = view["agents"]
+    assert view["reason"] == "completed"
+    assert set(agent) == {"agent_session_id", "agent_path", "agent_name", "status",
+                          "turn_count", "summary"}
+    assert len(agent["summary"]) == _TEAMMATE_SUMMARY_CHARS + 1
+    assert _collaboration_view(["not", "a", "wait"]) == ["not", "a", "wait"]

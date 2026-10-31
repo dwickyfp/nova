@@ -1,4 +1,5 @@
 import { NewsSettings } from "./news-settings";
+import { SemanticBiDatasets } from "./semantic-bi-datasets";
 import { useAuthStore } from '@/stores/auth-store';
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -545,6 +546,11 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
               {selectedSemanticView?.status !== "DEPRECATED" ? <NewsSettings
                 view={{ ...semanticDetail.data, id: selectedSemantic }}
                 onChanged={() => void semanticDetail.refetch()} /> : null}
+              {selectedSemanticView?.status !== "DEPRECATED" ? <SemanticBiDatasets
+                viewId={selectedSemantic}
+                published={Boolean(selectedSemanticView?.active_version)}
+                isPrivate={selectedSemanticView?.visibility === "PRIVATE"}
+                canSync={"news_config" in semanticDetail.data} /> : null}
               {semanticDetail.data && currentSemanticVersion ? <section className="min-w-0 space-y-4 rounded-lg border bg-background p-4 sm:p-5" aria-label="Inspect a version">
                 <label className="block max-w-xs space-y-1 text-sm">Inspect version
                   <select aria-label="Semantic query version" value={semanticVersion}

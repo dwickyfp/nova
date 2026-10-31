@@ -541,7 +541,13 @@ class AgentControl:
                     len(finished) == len(sessions) if condition == "all" else bool(finished)
                 ):
                     return {"reason": "completed", "agents": finished}
-                if await self.repository.pending_messages(participant_id(self.caller)):
+                # A waited teammate's own completion notice is not news: its status
+                # already says so, and under "all" the others are still to come.
+                waited_turns = {row["run_id"] for row in tree if participant_id(row) in ids}
+                if any(
+                    not (item["message_type"] == "final" and item["sender_run_id"] in waited_turns)
+                    for item in await self.repository.pending_messages(participant_id(self.caller))
+                ):
                     return {"reason": "message", "agents": sessions}
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:

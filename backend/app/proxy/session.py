@@ -124,6 +124,9 @@ class SessionState:
     #: An explicit engine transaction (``BEGIN`` … ``COMMIT``/``ROLLBACK``) is open
     #: on this connection's engine session.
     in_transaction: bool = False
+    #: The active role follows a Nova session (Superset data-token login), so
+    #: role statements on this connection are refused rather than applied.
+    role_locked: bool = False
 
     def set_database(self, database: str) -> None:
         self.database = database or None
@@ -496,6 +499,21 @@ _CATALOG_SWITCH = re.compile(
     r"^\s*(?:USE\s+(?:'[^']*'|\"[^\"]*\")|SET\s+CATALOG\s+\S+)\s*;?\s*$",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+def connect_database(name: str | None) -> str | None:
+    """The database a handshake's database field selects, or ``None``.
+
+    StarRocks clients send ``catalog.`` to select a catalog without a
+    database (Superset's StarRocks engine does so to browse schemas). For the
+    default catalog that is the same as no database; re-selecting it as a
+    database name would fail every later statement.
+    """
+    if not name:
+        return None
+    if name.endswith(".") and name[:-1].strip("`").lower() == "default_catalog":
+        return None
+    return name
 
 
 def parse_use_statement(statement: str) -> str | None:

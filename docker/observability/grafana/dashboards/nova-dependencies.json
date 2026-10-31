@@ -60,6 +60,13 @@
       "url": "/d/nova-host-system/nova-7c-host-system",
       "includeVars": false,
       "keepTime": true
+    },
+    {
+      "type": "link",
+      "title": "BI",
+      "url": "/d/nova-bi/nova-7c-bi-superset",
+      "includeVars": false,
+      "keepTime": true
     }
   ],
   "panels": [

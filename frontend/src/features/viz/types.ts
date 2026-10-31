@@ -30,14 +30,6 @@ export type MarkType =
   | "pie"
   | "text";
 
-export type FieldRef = {
-  field: string;
-  field_type: FieldType;
-  aggregation?: Aggregation | null;
-  discrete: boolean;
-  date_part?: DatePart | null;
-};
-
 export type RelativeDateRange =
   | "last_n_days"
   | "last_n_months"
@@ -71,97 +63,8 @@ export type Filter =
       context?: boolean;
     };
 
-export type CalculatedField = {
-  name: string;
-  formula: string;
-  /** View dimensions table calculations run along; null means the whole table. */
-  addressing?: string[] | null;
-};
-
-export type VizSource =
-  | { kind: "sql"; sql: string }
-  | { kind: "table"; database: string; table: string };
-
-export type MarksCard = {
-  type: MarkType;
-  color?: FieldRef | null;
-  size?: FieldRef | null;
-  text?: FieldRef | null;
-  detail?: FieldRef | null;
-  angle?: FieldRef | null;
-};
-
 /** A chart artifact's worksheet. `source` is absent in chat previews until saved. */
-export type WorksheetSpec = {
-  version: 1;
-  title?: string;
-  source?: VizSource;
-  columns: FieldRef[];
-  rows: FieldRef[];
-  marks: MarksCard;
-  filters?: Filter[];
-  sort?: { field: string; direction: "asc" | "desc" }[];
-  limit?: number | null;
-  table_calcs?: { kind: string; field: string }[];
-  calculations?: CalculatedField[];
-  field_types?: Record<string, FieldType>;
-};
-
-export type CalcDataType =
-  | "number"
-  | "string"
-  | "date"
-  | "datetime"
-  | "boolean"
-  | "null"
-  | "unknown";
-
-export type CalcLevel = "row" | "aggregate" | "table";
-
 /** One entry of the authoring data pane. */
-export type DataPaneField = {
-  name: string;
-  kind: "column" | "calculation";
-  data_type: CalcDataType;
-  role: "dimension" | "measure";
-  level: CalcLevel;
-  formula?: string;
-  addressing?: string[] | null;
-};
-
-export type CalcCheckResult =
-  | {
-      valid: true;
-      data_type: CalcDataType;
-      level: CalcLevel;
-      role: "dimension" | "measure";
-      references: string[];
-    }
-  | { valid: false; error: { message: string; start: number; end: number } };
-
-export type CalcFunction = {
-  name: string;
-  kind: "row" | "aggregate" | "table" | "lod";
-  category: string;
-  syntax: string;
-  description: string;
-};
-
-export type FieldDomain = {
-  field: string;
-  field_type: FieldType;
-  values: (string | number | null)[];
-  truncated: boolean;
-  min?: number | string | null;
-  max?: number | string | null;
-};
-
-export type VizSourceDescription = {
-  fields: DataPaneField[];
-  sample_columns: string[];
-  sample_rows: (string | number | null)[][];
-};
-
 export type ZoneRect = { x: number; y: number; w: number; h: number };
 
 export type Zone = {
@@ -216,27 +119,6 @@ export type PresModel = {
   };
   totals: Record<string, number | null>;
   truncated?: boolean;
-};
-
-export type ShowMeSuggestion = {
-  id: string;
-  label: string;
-  mark: MarkType;
-  enabled: boolean;
-  /** The best fit for the fields, as Show Me ranks it. */
-  recommended?: boolean;
-  unmet: { kind: string; optional: boolean }[];
-};
-
-export type VizComputeResponse = {
-  presmodel: PresModel;
-  sql: string;
-  columns: string[];
-  rows: (string | number | null)[][];
-  row_count: number;
-  elapsed_ms: number;
-  fields?: DataPaneField[];
-  spec?: WorksheetSpec | null;
 };
 
 export type DashboardZoneResult = {

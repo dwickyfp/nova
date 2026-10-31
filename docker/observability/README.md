@@ -1,6 +1,6 @@
 # Nova observability
 
-Grafana and Prometheus are provisioned from files in this directory. The six
+Grafana and Prometheus are provisioned from files in this directory. The seven
 dashboards open in Grafana's **Nova** folder:
 
 | Dashboard | What to inspect |
@@ -11,6 +11,7 @@ dashboards open in Grafana's **Nova** folder:
 | StarRocks engine | FE query traffic and queues, BE CPU, memory, disk, compaction |
 | Host system | Docker Linux runtime CPU, memory, swap, filesystems, disk I/O, network, load |
 | Dependencies | Cache and queue, stage storage, policy service, monitoring pipeline |
+| BI (Superset) | Superset requests by area, queries it runs on Nova, Celery tasks, reports and SQL Lab waits |
 
 Each panel shows **No data** when its metric has not been emitted yet. An
 absent availability target appears as **No data** or **Not configured**, never
@@ -180,3 +181,13 @@ The node exporter host namespace and read-only root mount follow its
 [official container deployment guide](https://github.com/prometheus/node_exporter/blob/master/README.md#docker).
 Grafana dashboard and data source files follow
 [Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/).
+
+## BI (Superset) metrics
+
+Superset sends statsd over UDP to `statsd-exporter` (`statsd/mapping.yml`
+turns the names into `nova_bi_*` series); Prometheus scrapes it as job
+`bi-metrics`. Superset finds the exporter through `SUPERSET_STATSD_HOST`
+(default `statsd-exporter`) and drops packets while it is not running, so the
+observability stack can start before or after the `app` profile. Tags carry
+the HTTP method, status class, BI area, query outcome and Celery task name and
+state; never a user, role, SQL text or object name.

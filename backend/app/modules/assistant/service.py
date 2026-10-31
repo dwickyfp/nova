@@ -308,6 +308,8 @@ class LoopContext:
 #: argument slip from ending the turn at a later, unrelated error.
 #: Tools that work on results already gathered and read no data themselves.
 _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
+#: Tools that present a result to the user, which in Smart only the root does.
+_ROOT_PRESENTATION_TOOLS = frozenset({"data_to_chart", "dashboard_build"})
 #: The part of a result table the model is shown with the tool result.
 _PREVIEW_ROWS = 40
 _PREVIEW_COLUMNS = 12
@@ -331,6 +333,7 @@ REPAIR_LIMITS = {
     "invalid_args": 2,
     "recoverable_tool": 2,
     "unverified_number": 1,
+    "split_request": 1,
 }
 MAX_TURN_REPAIRS = 6
 
@@ -827,6 +830,19 @@ class AssistantLoop:
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
         evidence = EvidenceTracker()
+        composer_sent: dict[str, Any] = {}
+
+        def composer_message() -> dict[str, str]:
+            """The final composer's rules and evidence, once per turn.
+
+            Composing again after a repair, with no new evidence since, points back
+            to the copy already in the conversation instead of sending it twice.
+            """
+            current = (id(evidence), len(evidence.items))
+            if composer_sent.get("at") == current:
+                return {"role": "system", "content": _COMPOSE_AGAIN}
+            composer_sent["at"] = current
+            return {"role": "system", "content": _final_composer_prompt(evidence, context)}
         catalog_tool = self._registry.get("describe_agent")
         planning_scope = getattr(catalog_tool, "planning_scope", None)
         if context.agent_id and callable(planning_scope):
@@ -835,6 +851,7 @@ class AssistantLoop:
         completed_capabilities: set[str] = set()
         composing_final = False
         clarification_requested = False
+        clarification_context: dict[str, Any] = {}
         denials = 0
         denied_calls: set[str] = set()
         analysis_noted = False
@@ -858,7 +875,10 @@ class AssistantLoop:
         #: them serially, preserving the bounded single-tool-at-a-time rule
         #: without silently discarding calls after the first.
         deferred_calls: list[dict[str, Any]] = []
-        spawned: dict[str, str] = {}
+        spawned: dict[str, list[str]] = {}
+        # Smart: every started teammate has finished its turn (last wait or list).
+        team_settled = False
+        charts_made = 0
         pending_artifacts: list[PendingArtifact] = []
         context.pending_output = []
 
@@ -1052,6 +1072,11 @@ class AssistantLoop:
                     *(name for name in (*_RESULT_TOOLS, "propose_automation")
                       if self._registry.get(name) is not None),
                 )))
+            else:
+                # Only the root's charts reach the answer; a specialist returns data.
+                selected_tools = tuple(
+                    name for name in selected_tools if name not in _ROOT_PRESENTATION_TOOLS
+                )
             context.selected_tools = list(selected_tools)
         if (
             self._iterative and context.agent_scope is not None and route.needs_data
@@ -1152,7 +1177,11 @@ class AssistantLoop:
             required_capabilities = route.required_capabilities
         if context.collaboration_root and route.intent != TurnIntent.AGENT_CATALOG:
             required_capabilities = ("discover_agents",) if route.needs_data else ()
-        unavailable = [name for name in required_capabilities if name not in selected_tools]
+        elif context.collaboration_tools:
+            required_capabilities = tuple(
+                name for name in required_capabilities if name not in _ROOT_PRESENTATION_TOOLS
+            )
+        unavailable =[name for name in required_capabilities if name not in selected_tools]
         if unavailable:
             detail = (
                 "Chart creation is not enabled for this conversation. Enable "
@@ -1450,11 +1479,14 @@ class AssistantLoop:
                         "is needed, write the answer."
                     )})
                     continue
-                yield events.error(
-                    "unexpected_tool_call", "The response contained a tool call as text."
-                )
-                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
-                return
+                if _returns_results(context, evidence):
+                    buffered_text = [say("loop.results_attached", _turn_language(context))]
+                else:
+                    yield events.error(
+                        "unexpected_tool_call", "The response contained a tool call as text."
+                    )
+                    yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                    return
             if composing_final and tool_calls:
                 if repairs.take("composer_tool_call"):
                     messages.append(
@@ -1467,11 +1499,20 @@ class AssistantLoop:
                         }
                     )
                     continue
-                yield events.error(
-                    "unexpected_tool_call", "The final response cannot execute tools."
-                )
-                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
-                return
+                if clarification_requested and not evidence.business_tables:
+                    # The question back is the answer and no tool may run: the calls
+                    # are dropped and the turn ends as that clarification.
+                    tool_calls = []
+                elif _returns_results(context, evidence):
+                    tool_calls = []
+                    if not "".join(buffered_text).strip():
+                        buffered_text = [say("loop.results_attached", _turn_language(context))]
+                else:
+                    yield events.error(
+                        "unexpected_tool_call", "The final response cannot execute tools."
+                    )
+                    yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                    return
             if not tool_calls and not provider_capabilities.supports_tools and not composing_final:
                 structured_call = _structured_action_call(decision.content)
                 if structured_call is not None:
@@ -1519,9 +1560,7 @@ class AssistantLoop:
                     and not composing_final
                 ):
                     composing_final = True
-                    messages.append({"role": "system", "content": _final_composer_prompt(
-                        evidence, context
-                    )})
+                    messages.append(composer_message())
                     continue
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
@@ -1535,8 +1574,8 @@ class AssistantLoop:
                 # A turn that already holds results answers from them, verified like any
                 # other answer, even when a later step could not be expressed.
                 if clarification_requested and not evidence.business_tables:
-                    answer_text = "".join(buffered_text).strip() or say(
-                        "loop.clarify", language
+                    answer_text = "".join(buffered_text).strip() or _clarification_text(
+                        clarification_context, language
                     )
                     yield events.text_delta(answer_text)
                     _record_step(context, {"kind": "answer", "clarification": True})
@@ -2335,6 +2374,28 @@ class AssistantLoop:
                     "Reading the result" if outcome.ok else "The step failed",
                     status="done",
                 )
+            if (
+                not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED"
+                and context.collaboration_tools and not context.collaboration_root
+                and invocation.tool_name == "semantic_query"
+                and not evidence.business_tables
+                and (outcome.repair_context or {}).get("unresolved")
+                and repairs.take("split_request")
+            ):
+                # A specialist answers Smart, not a person. A task with parts one
+                # query cannot cover together is asked again part by part, once,
+                # before it becomes a question back.
+                yield events.tool_status(invocation.tool_call_id, "done")
+                _finish_tool_step(context, "done", None)
+                messages.append(
+                    _tool_message(
+                        provider_capabilities.supports_tool_role_messages,
+                        invocation,
+                        outcome.envelope(tool_name=invocation.tool_name),
+                    )
+                )
+                messages.append({"role": "system", "content": _SPLIT_REQUEST_PROMPT})
+                continue
             if not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED":
                 # The catalog cannot express the request: the model asks one
                 # question back, and no other data path is tried.
@@ -2345,6 +2406,7 @@ class AssistantLoop:
                     "missing_inputs": (outcome.repair_context or {}).get("missing_inputs", []),
                 }
                 clarification_requested = True
+                clarification_context = dict(outcome.repair_context or {})
                 composing_final = True
                 messages.append(
                     _tool_message(
@@ -2393,9 +2455,7 @@ class AssistantLoop:
                         )
                     )
                     composing_final = True
-                    messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                    )
+                    messages.append(composer_message())
                     continue
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
                 _transition(context, TurnState.FAILED)
@@ -2549,11 +2609,18 @@ class AssistantLoop:
                 sql = (outcome.data or {}).get("sql") if isinstance(outcome.data, dict) else None
                 if isinstance(sql, str):
                     evidence_metadata["sql_sha256"] = hashlib.sha256(sql.encode()).hexdigest()
+            evidence_table = outcome.table
+            statement = (context.last_result or {}).get("sql")
+            if (
+                evidence_table and invocation.tool_name in {"semantic_query", "query_execute"}
+                and isinstance(statement, str)
+            ):
+                evidence_table = {**evidence_table, "sql": statement}
             evidence_item = evidence.add(
                 invocation.tool_name,
                 outcome.summary,
                 metadata=evidence_metadata,
-                table=outcome.table,
+                table=evidence_table,
             )
             if outcome.business_hook_result and outcome.business_hook_result.provider_observation:
                 observation = evidence.add_business_result(
@@ -2609,23 +2676,27 @@ class AssistantLoop:
                 context.collaboration_root and invocation.tool_name == "spawn_agent"
                 and isinstance(outcome.data, dict) and outcome.data.get("agent_path")
             ):
-                spawned[str(outcome.data.get("agent_id") or "")] = str(outcome.data["agent_path"])
+                spawned.setdefault(str(outcome.data.get("agent_id") or ""), []).append(
+                    str(outcome.data["agent_path"])
+                )
+                team_settled = False
                 owners = {str(agent["agent_id"]) for agent in metric_owners(evidence)}
                 if (
-                    owners and owners <= set(spawned) and not deferred_calls
+                    (not owners or owners <= set(spawned)) and not deferred_calls
                     and self._registry.get("wait_agent") is not None
                     and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
                 ):
-                    # Every specialist that owns a requested measure has started. Waiting
-                    # for them is not a decision the model has to spend a call on.
+                    # The batch of specialists has started (all owners of a requested
+                    # measure, when discovery named them). Waiting for them is not a
+                    # decision the model has to spend a call on.
                     deferred_calls.append({
                         "id": f"primary-{uuid4()}",
                         "type": "function",
                         "function": {
                             "name": "wait_agent",
                             "arguments": json.dumps({
-                                "targets": list(spawned.values()), "condition": "all",
-                                "timeout": _AUTO_WAIT_SECONDS,
+                                "targets": [path for paths in spawned.values() for path in paths],
+                                "condition": "all", "timeout": _AUTO_WAIT_SECONDS,
                             }),
                         },
                     })
@@ -2644,6 +2715,48 @@ class AssistantLoop:
                             "row_count": len(table.get("rows") or []),
                         })
                         context.last_result = {**table, "title": item.summary}
+            if (
+                context.collaboration_root and invocation.tool_name in {"list_agents", "wait_agent"}
+                and isinstance(outcome.data, dict) and outcome.data.get("agents")
+            ):
+                team_settled = all(
+                    str(agent.get("status")) in _SETTLED for agent in outcome.data["agents"]
+                    if isinstance(agent, dict)
+                )
+            if (
+                context.collaboration_root and invocation.tool_name == "data_to_chart"
+                and outcome.ok
+            ):
+                charts_made += 1
+                chartable = sum(
+                    len(table.get("rows") or []) >= 2
+                    for table in evidence.latest_results().values()
+                )
+                if (
+                    (route.needs_chart or _asks_for_charts(context.user_question))
+                    and team_settled and chartable
+                    and charts_made >= chartable and not deferred_calls and not composing_final
+                ):
+                    # Every teammate is done and every result asked for is charted:
+                    # what is left is the answer, not more steps.
+                    composing_final = True
+                    messages.append(composer_message())
+            if (
+                context.collaboration_root and invocation.tool_name == "wait_agent"
+                and isinstance(outcome.data, dict) and outcome.data.get("reason") == "timeout"
+                and outcome.data.get("agents") and not collected_results and not deferred_calls
+                and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
+            ):
+                # Nobody finished and nobody wrote: waiting again is not a decision the
+                # model has to spend a whole-context call on.
+                deferred_calls.append({
+                    "id": f"primary-{uuid4()}",
+                    "type": "function",
+                    "function": {
+                        "name": "wait_agent",
+                        "arguments": json.dumps(invocation.arguments),
+                    },
+                })
             context.quality_facts.setdefault("evidence", []).append(
                 {
                     "id": evidence_item.evidence_id,
@@ -2686,6 +2799,8 @@ class AssistantLoop:
             )
             if collected_results:
                 envelope["collected_results"] = collected_results
+            if invocation.tool_name in {"wait_agent", "list_agents"}:
+                envelope["data"] = _collaboration_view(envelope.get("data"))
             shown = evidence.tables.get(evidence_item.evidence_id)
             if shown and shown.get("rows") and not isinstance(
                 (envelope.get("data") or {}).get("rows"), list
@@ -2728,7 +2843,13 @@ class AssistantLoop:
                 and "query_mutate" not in required_available
                 and required_available <= completed_capabilities
             )
-            spent = int((context.usage or {}).get("total_tokens") or 0)
+            # The allowance is enforced on every reported model call, the semantic
+            # planner's included; measure the approach to it the same way.
+            measured = context.quality_measurements
+            spent = max(
+                int((context.usage or {}).get("total_tokens") or 0),
+                measured.reported_total_tokens if measured is not None else 0,
+            )
             if (
                 self._spend_limit
                 and not composing_final
@@ -2737,9 +2858,7 @@ class AssistantLoop:
                 # Close to the turn's token allowance: answer from what is known
                 # now, rather than spend the rest on a call that ends the turn empty.
                 composing_final = True
-                messages.append(
-                    {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                )
+                messages.append(composer_message())
             elif self._iterative and not context.collaboration_root:
                 remaining_steps = self._max_iterations - _iteration - 1
                 remaining_time = deadline - _budget_time()
@@ -2749,22 +2868,22 @@ class AssistantLoop:
                         _DELEGATED_ANALYSIS_PROMPT if context.collaboration_tools
                         else _ANALYSIS_PROMPT
                     )})
+                # Another query takes as long as the slowest one so far: answer now
+                # rather than start one that ends the turn past its deadline.
+                slowest_query = max(
+                    (float(item.get("duration_ms") or 0) for item in
+                     (context.quality_facts or {}).get("semantic_tools", [])),
+                    default=0.0,
+                ) / 1000
                 if completed_capabilities and (
                     remaining_steps <= _COMPOSE_RESERVE_STEPS
-                    or remaining_time < _COMPOSE_RESERVE_SECONDS
+                    or remaining_time < _COMPOSE_RESERVE_SECONDS + slowest_query
                 ):
                     composing_final = True
-                    messages.append(
-                        {"role": "system", "content": _final_composer_prompt(evidence, context)}
-                    )
+                    messages.append(composer_message())
             elif required_done:
                 composing_final = True
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": _final_composer_prompt(evidence, context),
-                    }
-                )
+                messages.append(composer_message())
 
         # Cap reached without a final text answer. Preserve completed artifacts
         # as an artifact-first partial response instead of silently dropping
@@ -3182,6 +3301,73 @@ def _asked(thread: Any, user_content: str) -> str:
 _ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
+#: A request that asks for charts or a dashboard, in English or Indonesian.
+_CHART_REQUEST = re.compile(
+    r"\b(?:charts?|grafik|diagram|dashboards?|dasbor|plots?|visuali[sz]\w*)\b", re.I
+)
+
+
+def _asks_for_charts(question: str | None) -> bool:
+    """The request itself asks for charts: charting its results is the deliverable."""
+    return bool(question and _CHART_REQUEST.search(question))
+
+
+#: Teammate statuses that mean its turn is over.
+_SETTLED = frozenset({"idle", "completed", "failed", "cancelled", "interrupted"})
+
+#: Characters of a teammate's summary the model reads in a collaboration result.
+_TEAMMATE_SUMMARY_CHARS = 600
+
+
+def _collaboration_view(data: Any) -> Any:
+    """What the model reads of a wait or list: who is doing what, and how far.
+
+    A teammate's results reach this turn as evidence (``collected_results``) and
+    its full answer stays in the run; repeating both in every later prompt is
+    what filled Smart's context.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("agents"), list):
+        return data
+    agents = []
+    for agent in data["agents"]:
+        if not isinstance(agent, dict):
+            continue
+        summary = str(agent.get("summary") or "")
+        agents.append({
+            key: agent[key]
+            for key in ("agent_session_id", "agent_path", "agent_name", "status", "turn_count")
+            if key in agent
+        } | ({"summary": summary[:_TEAMMATE_SUMMARY_CHARS]
+              + ("…" if len(summary) > _TEAMMATE_SUMMARY_CHARS else "")} if summary else {}))
+    return {**{key: value for key, value in data.items() if key != "agents"}, "agents": agents}
+
+
+def _returns_results(context: LoopContext, evidence: EvidenceTracker) -> bool:
+    """A Smart specialist holding verified results returns them rather than failing.
+
+    Smart reads a specialist's tables, not its prose, so a composition that keeps
+    asking for tools still has its result. The root's answer is the user's and
+    gets no such way out.
+    """
+    return bool(
+        context.collaboration_tools and not context.collaboration_root
+        and evidence.business_tables
+    )
+
+
+def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
+    """The question back when the model wrote none: what the governed data lacks
+    and what it has, so whoever asked (a person or Smart) can narrow the request."""
+    uncovered = [str(item) for item in repair_context.get("unresolved") or [] if item][:4]
+    available = [str(item) for item in repair_context.get("available_metrics") or [] if item][:8]
+    if not uncovered or not available:
+        return say("loop.clarify", language)
+    return say(
+        "loop.clarify_uncovered", language,
+        uncovered="; ".join(uncovered), available=", ".join(available),
+    )
+
+
 _COMPOSE_RESERVE_STEPS = 2
 _COMPOSE_RESERVE_SECONDS = 15.0
 #: Share of a turn's token allowance after which it stops calling tools and answers.
@@ -3200,6 +3386,13 @@ _DELEGATED_ANALYSIS_PROMPT = (
     "have a tool for (a forecast, an explanation of a change), take it now. Otherwise "
     "answer. Do not add charts, totals, or breakdowns the task did not ask for, and do "
     "not repeat a query that already ran."
+)
+
+_SPLIT_REQUEST_PROMPT = (
+    "One query cannot answer every part of this task together. Ask semantic_query "
+    "again once per part: one short question with that part's measure and grouping, "
+    "never the whole task. Answer from the parts that return data and name any part "
+    "that is still not covered."
 )
 
 #: Upper bound for a window-derived context budget (tokens).
@@ -3320,6 +3513,12 @@ def _studio_fallback_plan(
         route=TurnRoute(TurnIntent.CLARIFICATION, clarification_required=True),
         selected_tools=(),
     )
+
+
+_COMPOSE_AGAIN = (
+    "Compose the final answer again under the <FINAL_COMPOSER> rules and evidence "
+    "given above. Tools are disabled."
+)
 
 
 def _final_composer_prompt(evidence: EvidenceTracker, context: LoopContext | None = None) -> str:
@@ -4021,6 +4220,15 @@ async def _autocompose_artifacts(
             provenance = item.payload.setdefault("provenance", {})
             provenance["tool_calls"] = {key: calls[key] for key in
                                         provenance.get("evidence_ids") or [] if key in calls}
+            # A result another participant fetched has no tool call here; the
+            # statement it carries is its source for saving it.
+            statements = {
+                key: str(evidence.tables[key]["sql"])
+                for key in provenance.get("evidence_ids") or []
+                if key not in calls and (evidence.tables.get(key) or {}).get("sql")
+            }
+            if statements:
+                provenance["statements"] = statements
     return ordered
 
 

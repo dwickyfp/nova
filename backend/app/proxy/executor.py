@@ -472,7 +472,15 @@ class ProxyQueryExecutor:
             await sink.emit(WireResult(error=str(exc), error_code=1064), more=False)
             return False
         if requested_role is not None:
-            if self._session.in_transaction:
+            if self._session.role_locked:
+                part = WireResult(
+                    error=(
+                        "The active role of a Nova BI connection follows the Nova "
+                        "session; switch roles in Nova"
+                    ),
+                    error_code=1235,
+                )
+            elif self._session.in_transaction:
                 part = WireResult(
                     error="Role changes are not allowed inside a transaction", error_code=1235
                 )

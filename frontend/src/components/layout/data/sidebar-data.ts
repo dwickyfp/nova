@@ -3,6 +3,7 @@ import {
   Brain,
   BrainCircuit,
   BookOpen,
+  ChartColumn,
   Clock,
   Database,
   Network,
@@ -94,6 +95,11 @@ export const sidebarData: SidebarData = {
               // console keeps its current page, the way Snowflake CoWork opens
               // separately.
               newTab: true,
+            },
+            {
+              title: "BI",
+              url: "/analytics",
+              icon: ChartColumn,
             },
             {
               title: "Entities",

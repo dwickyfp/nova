@@ -37,13 +37,23 @@ export function findArtifactSql(
         && (step.label === "query_execute" || step.label === "semantic_query")
         && step.status === "done" && isReusableSql(step.preview),
     );
-    return source?.preview?.trim() ?? null;
+    if (source?.preview) return source.preview.trim();
+    // A specialist's result: the statement recorded with those exact rows.
+    return isReusableSql(item.request.sql) ? item.request.sql!.trim() : null;
   }
   if (toolCallId) {
     const exact = turns[turnIndex].steps.find(
       (step) => step.id === toolCallId && isReusableSql(step.preview),
     );
     if (exact?.preview) return exact.preview.trim();
+  }
+  if (item.type === "chart") {
+    // A chart Smart built from a specialist's rows carries their statement;
+    // the query that produced them ran in the specialist's own steps.
+    const source = item.block.viz_spec?.source as { sql?: unknown } | undefined;
+    if (typeof source?.sql === "string" && isReusableSql(source.sql)) {
+      return source.sql.trim();
+    }
   }
 
   for (let index = turnIndex; index >= 0; index -= 1) {

@@ -1,0 +1,1101 @@
+{
+ "runs": [
+  {
+   "request": "dashboard_two_charts",
+   "run_id": "1f8a4ed6-9e77-4ecf-ac39-6431a5c59405",
+   "status": "failed",
+   "seconds": 151.0,
+   "calls": 16,
+   "prompt_tokens": 139524,
+   "completion_tokens": 11438,
+   "total_tokens": 150962,
+   "groups": {
+    "internal": {
+     "calls": 8,
+     "prompt_tokens": 30889,
+     "completion_tokens": 5603,
+     "seconds": 82.7
+    },
+    "root": {
+     "calls": 6,
+     "prompt_tokens": 92190,
+     "completion_tokens": 3640,
+     "seconds": 32.2
+    },
+    "specialists": {
+     "calls": 2,
+     "prompt_tokens": 16445,
+     "completion_tokens": 2195,
+     "seconds": 12.3
+    }
+   },
+   "root_parts": {
+    "system": 32909,
+    "tool:wait_agent": 16109,
+    "tool:spawn_agent": 10924,
+    "tool_schemas": 8145,
+    "tool:discover_agents": 5628,
+    "tool:data_to_chart": 3342,
+    "assistant": 1228,
+    "coordination": 736,
+    "task": 168
+   },
+   "root_calls": [
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "spawn_agent",
+      "spawn_agent"
+     ],
+     "prompt_tokens": 7060,
+     "completion_tokens": 388,
+     "estimated_prompt": 6884,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ],
+      [
+       "assistant",
+       36
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 10250,
+     "completion_tokens": 93,
+     "estimated_prompt": 9466,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2425
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 14428,
+     "completion_tokens": 595,
+     "estimated_prompt": 12026,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:wait_agent",
+       2426
+      ],
+      [
+       "tool:spawn_agent",
+       2425
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "data_to_chart"
+     ],
+     "prompt_tokens": 17303,
+     "completion_tokens": 714,
+     "estimated_prompt": 14284,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4561
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2425
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "data_to_chart"
+     ],
+     "prompt_tokens": 17038,
+     "completion_tokens": 586,
+     "estimated_prompt": 14034,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4561
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2425
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "answer",
+     "offered_tools": 0,
+     "called": [],
+     "prompt_tokens": 26111,
+     "completion_tokens": 1264,
+     "estimated_prompt": 22495,
+     "largest_parts": [
+      [
+       "system",
+       13954
+      ],
+      [
+       "tool:wait_agent",
+       4561
+      ],
+      [
+       "tool:data_to_chart",
+       2226
+      ],
+      [
+       "tool:spawn_agent",
+       1224
+      ]
+     ]
+    }
+   ],
+   "stored_tokens": {
+    "root": 71762,
+    "specialists": 26526,
+    "tree": 98288,
+    "specialist_runs": 2
+   }
+  },
+  {
+   "request": "dashboard_two_charts",
+   "run_id": "e5cb9679-7824-40ac-9a87-d33d18b220b3",
+   "status": "completed",
+   "seconds": 308.1,
+   "calls": 26,
+   "prompt_tokens": 204762,
+   "completion_tokens": 17791,
+   "total_tokens": 222553,
+   "groups": {
+    "internal": {
+     "calls": 10,
+     "prompt_tokens": 47128,
+     "completion_tokens": 11557,
+     "seconds": 113.0
+    },
+    "root": {
+     "calls": 7,
+     "prompt_tokens": 90184,
+     "completion_tokens": 2318,
+     "seconds": 46.4
+    },
+    "specialists": {
+     "calls": 9,
+     "prompt_tokens": 67450,
+     "completion_tokens": 3916,
+     "seconds": 60.3
+    }
+   },
+   "root_parts": {
+    "system": 37232,
+    "tool:wait_agent": 20859,
+    "tool_schemas": 9774,
+    "tool:discover_agents": 7028,
+    "tool:list_agents": 6056,
+    "tool:spawn_agent": 5512,
+    "tool:followup_task": 3204,
+    "assistant": 2409,
+    "tool:data_to_chart": 1116,
+    "coordination": 811,
+    "task": 196
+   },
+   "root_calls": [
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "spawn_agent"
+     ],
+     "prompt_tokens": 4215,
+     "completion_tokens": 325,
+     "estimated_prompt": 6884,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ],
+      [
+       "assistant",
+       36
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 6120,
+     "completion_tokens": 79,
+     "estimated_prompt": 8486,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ],
+      [
+       "tool:spawn_agent",
+       1371
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "list_agents"
+     ],
+     "prompt_tokens": 9562,
+     "completion_tokens": 75,
+     "estimated_prompt": 11335,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:wait_agent",
+       2758
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "followup_task"
+     ],
+     "prompt_tokens": 11369,
+     "completion_tokens": 260,
+     "estimated_prompt": 12851,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:wait_agent",
+       2758
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:list_agents",
+       1514
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 12789,
+     "completion_tokens": 79,
+     "estimated_prompt": 14073,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:wait_agent",
+       2758
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:list_agents",
+       1514
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "data_to_chart",
+      "data_to_chart"
+     ],
+     "prompt_tokens": 18322,
+     "completion_tokens": 294,
+     "estimated_prompt": 15865,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       6975
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:list_agents",
+       1514
+      ]
+     ]
+    },
+    {
+     "purpose": "answer",
+     "offered_tools": 0,
+     "called": [],
+     "prompt_tokens": 27807,
+     "completion_tokens": 1206,
+     "estimated_prompt": 24703,
+     "largest_parts": [
+      [
+       "system",
+       14486
+      ],
+      [
+       "tool:wait_agent",
+       5610
+      ],
+      [
+       "tool:list_agents",
+       1514
+      ],
+      [
+       "tool:data_to_chart",
+       1116
+      ]
+     ]
+    }
+   ],
+   "stored_tokens": {
+    "root": 92945,
+    "specialists": 82439,
+    "tree": 175384,
+    "specialist_runs": 2
+   }
+  },
+  {
+   "request": "dashboard_two_charts",
+   "run_id": "897946e4-4787-46e0-a742-5e7163c19395",
+   "status": "failed",
+   "seconds": 177.7,
+   "calls": 14,
+   "prompt_tokens": 140008,
+   "completion_tokens": 19848,
+   "total_tokens": 159856,
+   "groups": {
+    "internal": {
+     "calls": 7,
+     "prompt_tokens": 43272,
+     "completion_tokens": 14282,
+     "seconds": 123.5
+    },
+    "root": {
+     "calls": 5,
+     "prompt_tokens": 81889,
+     "completion_tokens": 4539,
+     "seconds": 41.2
+    },
+    "specialists": {
+     "calls": 2,
+     "prompt_tokens": 14847,
+     "completion_tokens": 1027,
+     "seconds": 11.1
+    }
+   },
+   "root_parts": {
+    "system": 28883,
+    "tool:wait_agent": 11661,
+    "tool:spawn_agent": 8341,
+    "tool_schemas": 6516,
+    "tool:discover_agents": 5614,
+    "tool:data_to_chart": 1116,
+    "assistant": 714,
+    "coordination": 658,
+    "task": 140
+   },
+   "root_calls": [
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "spawn_agent",
+      "spawn_agent"
+     ],
+     "prompt_tokens": 11887,
+     "completion_tokens": 1200,
+     "estimated_prompt": 6884,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ],
+      [
+       "assistant",
+       36
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 16450,
+     "completion_tokens": 909,
+     "estimated_prompt": 9362,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2380
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 13484,
+     "completion_tokens": 88,
+     "estimated_prompt": 11928,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:wait_agent",
+       2423
+      ],
+      [
+       "tool:spawn_agent",
+       2380
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "data_to_chart",
+      "data_to_chart"
+     ],
+     "prompt_tokens": 16472,
+     "completion_tokens": 194,
+     "estimated_prompt": 14299,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4619
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2380
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "answer",
+     "offered_tools": 0,
+     "called": [],
+     "prompt_tokens": 23596,
+     "completion_tokens": 2148,
+     "estimated_prompt": 21170,
+     "largest_parts": [
+      [
+       "system",
+       13719
+      ],
+      [
+       "tool:wait_agent",
+       4619
+      ],
+      [
+       "tool:spawn_agent",
+       1201
+      ],
+      [
+       "tool:data_to_chart",
+       1116
+      ]
+     ]
+    }
+   ],
+   "stored_tokens": {
+    "root": 86804,
+    "specialists": 28305,
+    "tree": 115109,
+    "specialist_runs": 2
+   }
+  },
+  {
+   "request": "dashboard_two_charts",
+   "run_id": "2008b116-1ca2-4b5d-8a49-851cd8d29265",
+   "status": "failed",
+   "seconds": 152.0,
+   "calls": 18,
+   "prompt_tokens": 139920,
+   "completion_tokens": 6838,
+   "total_tokens": 146758,
+   "groups": {
+    "internal": {
+     "calls": 9,
+     "prompt_tokens": 30392,
+     "completion_tokens": 2819,
+     "seconds": 66.5
+    },
+    "root": {
+     "calls": 6,
+     "prompt_tokens": 88614,
+     "completion_tokens": 2800,
+     "seconds": 44.6
+    },
+    "specialists": {
+     "calls": 3,
+     "prompt_tokens": 20914,
+     "completion_tokens": 1219,
+     "seconds": 22.0
+    }
+   },
+   "root_parts": {
+    "system": 32917,
+    "tool:wait_agent": 16142,
+    "tool:spawn_agent": 9550,
+    "tool_schemas": 8145,
+    "tool:discover_agents": 5628,
+    "tool:data_to_chart": 4462,
+    "assistant": 972,
+    "coordination": 967,
+    "task": 168
+   },
+   "root_calls": [
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "spawn_agent",
+      "spawn_agent"
+     ],
+     "prompt_tokens": 7051,
+     "completion_tokens": 308,
+     "estimated_prompt": 6884,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ],
+      [
+       "assistant",
+       36
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 10125,
+     "completion_tokens": 89,
+     "estimated_prompt": 9368,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2382
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 13541,
+     "completion_tokens": 97,
+     "estimated_prompt": 11970,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:wait_agent",
+       2444
+      ],
+      [
+       "tool:spawn_agent",
+       2382
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "data_to_chart",
+      "data_to_chart"
+     ],
+     "prompt_tokens": 16466,
+     "completion_tokens": 188,
+     "estimated_prompt": 14255,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4566
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2382
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [],
+     "prompt_tokens": 16130,
+     "completion_tokens": 976,
+     "estimated_prompt": 13966,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4566
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:data_to_chart",
+       2231
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "answer",
+     "offered_tools": 0,
+     "called": [],
+     "prompt_tokens": 25301,
+     "completion_tokens": 1142,
+     "estimated_prompt": 22508,
+     "largest_parts": [
+      [
+       "system",
+       13962
+      ],
+      [
+       "tool:wait_agent",
+       4566
+      ],
+      [
+       "tool:data_to_chart",
+       2231
+      ],
+      [
+       "tool:spawn_agent",
+       1202
+      ]
+     ]
+    }
+   ],
+   "stored_tokens": {
+    "root": 65702,
+    "specialists": 31518,
+    "tree": 97220,
+    "specialist_runs": 2
+   }
+  },
+  {
+   "request": "dashboard_two_charts",
+   "run_id": "262c94d3-83a4-442c-8c3a-76a8e7ec50a6",
+   "status": "completed",
+   "seconds": 137.8,
+   "calls": 15,
+   "prompt_tokens": 127848,
+   "completion_tokens": 6939,
+   "total_tokens": 134787,
+   "groups": {
+    "internal": {
+     "calls": 7,
+     "prompt_tokens": 25078,
+     "completion_tokens": 3273,
+     "seconds": 49.6
+    },
+    "root": {
+     "calls": 6,
+     "prompt_tokens": 88118,
+     "completion_tokens": 2740,
+     "seconds": 37.0
+    },
+    "specialists": {
+     "calls": 2,
+     "prompt_tokens": 14652,
+     "completion_tokens": 926,
+     "seconds": 12.8
+    }
+   },
+   "root_parts": {
+    "system": 32862,
+    "tool:wait_agent": 15642,
+    "tool:spawn_agent": 9532,
+    "tool_schemas": 8145,
+    "tool:discover_agents": 5628,
+    "tool:data_to_chart": 4452,
+    "assistant": 1023,
+    "coordination": 699,
+    "task": 168
+   },
+   "root_calls": [
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "spawn_agent",
+      "spawn_agent"
+     ],
+     "prompt_tokens": 7050,
+     "completion_tokens": 301,
+     "estimated_prompt": 6884,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ],
+      [
+       "assistant",
+       36
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 10161,
+     "completion_tokens": 93,
+     "estimated_prompt": 9373,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2378
+      ],
+      [
+       "tool_schemas",
+       1629
+      ],
+      [
+       "tool:discover_agents",
+       1400
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "wait_agent"
+     ],
+     "prompt_tokens": 13515,
+     "completion_tokens": 89,
+     "estimated_prompt": 11879,
+     "largest_parts": [
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2378
+      ],
+      [
+       "tool:wait_agent",
+       2364
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [
+      "data_to_chart",
+      "data_to_chart"
+     ],
+     "prompt_tokens": 16313,
+     "completion_tokens": 182,
+     "estimated_prompt": 14042,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4426
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:spawn_agent",
+       2378
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "tools",
+     "offered_tools": 10,
+     "called": [],
+     "prompt_tokens": 15953,
+     "completion_tokens": 840,
+     "estimated_prompt": 13743,
+     "largest_parts": [
+      [
+       "tool:wait_agent",
+       4426
+      ],
+      [
+       "system",
+       3791
+      ],
+      [
+       "tool:data_to_chart",
+       2226
+      ],
+      [
+       "tool_schemas",
+       1629
+      ]
+     ]
+    },
+    {
+     "purpose": "answer",
+     "offered_tools": 0,
+     "called": [],
+     "prompt_tokens": 25126,
+     "completion_tokens": 1235,
+     "estimated_prompt": 22230,
+     "largest_parts": [
+      [
+       "system",
+       13907
+      ],
+      [
+       "tool:wait_agent",
+       4426
+      ],
+      [
+       "tool:data_to_chart",
+       2226
+      ],
+      [
+       "tool:spawn_agent",
+       1199
+      ]
+     ]
+    }
+   ],
+   "stored_tokens": {
+    "root": 91586,
+    "specialists": 21970,
+    "tree": 113556,
+    "specialist_runs": 2
+   }
+  }
+ ],
+ "completed": 2,
+ "attempted": 5,
+ "mean": {
+  "seconds": 185.3,
+  "calls": 17.8,
+  "total_tokens": 162983.2,
+  "root_prompt_tokens": 88199,
+  "root_calls": 6,
+  "specialist_prompt_tokens": 26861.6,
+  "internal_prompt_tokens": 35351.8
+ },
+ "measured_at": "2026-10-31",
+ "request": "dashboard_two_charts",
+ "model": "deepseek-v4-1-flash (kenari.id)",
+ "code": "fd69f54 (baseline code)",
+ "means": "over all runs, failed included"
+}
