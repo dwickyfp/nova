@@ -674,6 +674,23 @@ async def test_event_driven_wait_wakes_on_direct_message(collaboration):
     assert (await root.wait_agent(targets=["/root/marketing"], timeout=0))["reason"] == "timeout"
 
 
+@pytest.mark.asyncio
+async def test_wait_for_all_is_not_ended_by_a_waited_teammate_finishing(collaboration):
+    repo, root = collaboration
+    finance, marketing = await spawn(root, "finance"), await spawn(root, "marketing")
+    repo.runs[finance.caller["run_id"]]["status"] = "completed"
+    parent = repo.runs[root.root_id]
+    await repo.send(
+        sender=repo.runs[finance.caller["run_id"]],
+        recipient={**parent, "run_id": participant_id(parent)},
+        operation_id="completion", message_type="final", content="Revenue table",
+    )
+    targets = ["/root/finance", "/root/marketing"]
+    assert (await root.wait_agent(targets=targets, timeout=0.2))["reason"] == "timeout"
+    await marketing.send_message(target="/root", content="Halfway", operation_id="note")
+    assert (await root.wait_agent(targets=targets, timeout=0.2))["reason"] == "message"
+
+
 @pytest.mark.parametrize(
     "mode,expected",
     [("fresh", False), ("parent_summary", True), ("last_n_turns", True), ("full", True)],

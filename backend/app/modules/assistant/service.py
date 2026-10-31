@@ -308,6 +308,8 @@ class LoopContext:
 #: argument slip from ending the turn at a later, unrelated error.
 #: Tools that work on results already gathered and read no data themselves.
 _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
+#: Tools that present a result to the user, which in Smart only the root does.
+_ROOT_PRESENTATION_TOOLS = frozenset({"data_to_chart", "dashboard_build"})
 #: The part of a result table the model is shown with the tool result.
 _PREVIEW_ROWS = 40
 _PREVIEW_COLUMNS = 12
@@ -1070,6 +1072,11 @@ class AssistantLoop:
                     *(name for name in (*_RESULT_TOOLS, "propose_automation")
                       if self._registry.get(name) is not None),
                 )))
+            else:
+                # Only the root's charts reach the answer; a specialist returns data.
+                selected_tools = tuple(
+                    name for name in selected_tools if name not in _ROOT_PRESENTATION_TOOLS
+                )
             context.selected_tools = list(selected_tools)
         if (
             self._iterative and context.agent_scope is not None and route.needs_data
@@ -1170,7 +1177,11 @@ class AssistantLoop:
             required_capabilities = route.required_capabilities
         if context.collaboration_root and route.intent != TurnIntent.AGENT_CATALOG:
             required_capabilities = ("discover_agents",) if route.needs_data else ()
-        unavailable = [name for name in required_capabilities if name not in selected_tools]
+        elif context.collaboration_tools:
+            required_capabilities = tuple(
+                name for name in required_capabilities if name not in _ROOT_PRESENTATION_TOOLS
+            )
+        unavailable =[name for name in required_capabilities if name not in selected_tools]
         if unavailable:
             detail = (
                 "Chart creation is not enabled for this conversation. Enable "
@@ -1468,11 +1479,14 @@ class AssistantLoop:
                         "is needed, write the answer."
                     )})
                     continue
-                yield events.error(
-                    "unexpected_tool_call", "The response contained a tool call as text."
-                )
-                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
-                return
+                if _returns_results(context, evidence):
+                    buffered_text = [say("loop.results_attached", _turn_language(context))]
+                else:
+                    yield events.error(
+                        "unexpected_tool_call", "The response contained a tool call as text."
+                    )
+                    yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                    return
             if composing_final and tool_calls:
                 if repairs.take("composer_tool_call"):
                     messages.append(
@@ -1489,6 +1503,10 @@ class AssistantLoop:
                     # The question back is the answer and no tool may run: the calls
                     # are dropped and the turn ends as that clarification.
                     tool_calls = []
+                elif _returns_results(context, evidence):
+                    tool_calls = []
+                    if not "".join(buffered_text).strip():
+                        buffered_text = [say("loop.results_attached", _turn_language(context))]
                 else:
                     yield events.error(
                         "unexpected_tool_call", "The final response cannot execute tools."
@@ -3321,6 +3339,19 @@ def _collaboration_view(data: Any) -> Any:
         } | ({"summary": summary[:_TEAMMATE_SUMMARY_CHARS]
               + ("…" if len(summary) > _TEAMMATE_SUMMARY_CHARS else "")} if summary else {}))
     return {**{key: value for key, value in data.items() if key != "agents"}, "agents": agents}
+
+
+def _returns_results(context: LoopContext, evidence: EvidenceTracker) -> bool:
+    """A Smart specialist holding verified results returns them rather than failing.
+
+    Smart reads a specialist's tables, not its prose, so a composition that keeps
+    asking for tools still has its result. The root's answer is the user's and
+    gets no such way out.
+    """
+    return bool(
+        context.collaboration_tools and not context.collaboration_root
+        and evidence.business_tables
+    )
 
 
 def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:

@@ -3,10 +3,12 @@
 > **Date:** 2026-10-30
 > **Status:** Phase 1 and Phase 2 (C7, C8a, C8b with F1, F2) implemented and measured
 > on `deepseek-v4-1-flash` against a re-measured baseline (2026-10-31).
-> Phase 3 open.
+> Phase 3 (C9a-C9c) implemented; its measurement is pending (the dev engine
+> refused every update to `CONFIG_AGENT_RUNS` when it was due, 2026-10-31).
 > **Scope:** Studio Smart (`backend/app/modules/assistant/service.py`,
 > `backend/app/modules/agents/harness_worker.py`, `collaboration_tools.py`,
-> `backend/app/modules/agents/tools/data_to_chart.py`)
+> `backend/app/modules/agents/tools/data_to_chart.py`,
+> `backend/app/modules/agents/agent_control.py`)
 > **Benchmark:** `backend/tests/benchmark/smart_tokens/`
 
 ## Goal
@@ -221,6 +223,31 @@ objective asks for data is not offered `data_to_chart`, `dashboard_build` or
 `send_message`; the root charts and composes. Expected: the 7 unrequested
 specialist calls and part of each specialist's schema tokens.
 
+*As built (2026-10-31),* after reading the stored runs rather than the plan
+above. The extra root `wait_agent` call was not caused by `send_message`: no
+specialist sent one. Every finished specialist posts a `final` message to the
+root's mailbox, and `wait_agent` returned on any pending message, so the first
+specialist to finish ended the automatic "all" wait while the other was still
+running. And the failed run's follow-up loop started with a specialist
+failing: it had its result, was sent to compose, kept asking for queries
+("registered outlets", which the data does not have), and ended with
+`unexpected_tool_call`, losing the result; the root then sent the retry to
+the wrong teammate and asked again for a result it already held.
+
+- **C9a.** A waited teammate's own `final` message does not end the wait (its
+  status already says it finished); any other message still does
+  (`agent_control.py`).
+- **C9b.** A Smart specialist is neither offered nor required to make a
+  chart or dashboard: only the root's charts reach the answer. Nested
+  delegation and `send_message` stay; they are supported features, not cost.
+- **C9c.** A specialist that holds verified results and keeps calling tools
+  while composing returns them, with a fixed sentence and no numbers
+  (`loop.results_attached`), instead of failing. Smart reads its tables, not
+  its prose. The root's own answer keeps the current refusal.
+- Not changed: the specialist's turn planner call (about 8k). It carries the
+  semantic catalog because it also writes the first query's plan, which
+  saves a separate planner call.
+
 ## Acceptance
 
 Measured with the benchmark, five runs, against the baseline above:
@@ -276,6 +303,29 @@ Run 3 also showed the time budget behaving like the token budget did before
 discarded it. That is a candidate fix alongside C8b.
 
 Phase 1 data: `docs/benchmarks/smart-tokens/2026-10-30-phase1.json`.
+
+Phase 1 code: C1, C2 (as built), C4 (as built) and C5; C3 deferred.
+
+Phase 1 meets the completion and wall-time targets, not the token targets.
+Read with care: baseline runs mostly failed early, so they skipped work that
+completed runs do (charts, the final answer, more specialist turns). That is
+why root calls and one-shot tokens rose while each call got smaller: root
+prompt per call fell from 16,884 to 9,219.
+
+The one failed run stopped at the root's own token allowance
+(`token_budget`): the root's tools' nested model calls (chart intent) count
+toward it.
+
+What Phase 2 has to address, from the Phase 1 measurement:
+
+- System messages are 56% of the root's prompt (38,946 tokens per run), sent
+  on each of its 8 calls: fewer root calls is the largest remaining lever
+  (C6-C8).
+- Tool schemas are 16% (11,403 per run) because there are more calls.
+- The turn planner (`nova_turn_plan`) ran 22 times in 5 runs, about 5,700
+  prompt tokens each: every participant's turn plans again, including
+  specialists whose objective Smart already wrote.
+- The interactive UI instructions are about 6,000 tokens of the final call.
 
 ### On `deepseek-v4-1-flash` (2026-10-31)
 
@@ -389,26 +439,4 @@ compositions). What is left, for Phase 3:
   specialists' `send_message`).
 - The failed run's follow-up loop between root and specialist.
 - One-shot calls (turn planner, semantic planner) are unchanged at about 36k
-  per request; the turn planner runs again for each specialist turn. Code:
-C1, C2 (as built), C4 (as built) and C5; C3 deferred.
-
-Phase 1 meets the completion and wall-time targets, not the token targets.
-Read with care: baseline runs mostly failed early, so they skipped work that
-completed runs do (charts, the final answer, more specialist turns). That is
-why root calls and one-shot tokens rose while each call got smaller: root
-prompt per call fell from 16,884 to 9,219.
-
-The one failed run stopped at the root's own token allowance
-(`token_budget`): the root's tools' nested model calls (chart intent) count
-toward it.
-
-What Phase 2 has to address, from the Phase 1 measurement:
-
-- System messages are 56% of the root's prompt (38,946 tokens per run), sent
-  on each of its 8 calls: fewer root calls is the largest remaining lever
-  (C6-C8).
-- Tool schemas are 16% (11,403 per run) because there are more calls.
-- The turn planner (`nova_turn_plan`) ran 22 times in 5 runs, about 5,700
-  prompt tokens each: every participant's turn plans again, including
-  specialists whose objective Smart already wrote.
-- The interactive UI instructions are about 6,000 tokens of the final call.
+  per request; the turn planner runs again for each specialist turn.
