@@ -563,6 +563,99 @@ async def test_a_dashboard_waits_for_every_task_and_answers_once_its_charts_are_
 
 
 @pytest.mark.asyncio
+async def test_a_restated_result_does_not_hold_back_the_dashboard_answer():
+    """A measured run: the root asked the outlet task to restate its result, which
+    came back as a second table from the same teammate. Two charts still cover the
+    two results, so the next call is the answer, not a draft."""
+    def result(task: str, turn: str, rows: list[list]) -> dict:
+        columns = ["rep", "visits"] if task == "visits" else ["city", "outlets"]
+        evidence = EvidenceTracker()
+        evidence.add("semantic_query", task, table={"columns": columns, "rows": rows},
+                     metadata={"metrics": [columns[1]], "dimensions": [columns[0]]})
+        return {"agent_id": "field-sales", "agent_session_id": f"session-{task}",
+                "current_turn_id": turn, "depth": 1, "status": "idle",
+                "agent_path": f"/root/{task}", "evidence": evidence.snapshot()}
+
+    visits = result("visits", "turn-1", [["Budi", 3], ["Siti", 2]])
+    outlets = [["Jakarta Barat", 4], ["Jakarta Timur", 5]]
+    unowned = {**OWNER, "semantic_matches": []}
+    registry = ToolRegistry()
+    spawn = EvalTool("spawn_agent", parameters=COLLABORATION_TOOLS["spawn_agent"][1], outcomes=[
+        ToolOutcome(ok=True, summary="spawn_agent completed",
+                    data={**unowned, "agent_path": "/root/visits"}),
+        ToolOutcome(ok=True, summary="spawn_agent completed",
+                    data={**unowned, "agent_path": "/root/outlets"}),
+    ])
+    wait = EvalTool("wait_agent", parameters=COLLABORATION_TOOLS["wait_agent"][1], outcomes=[
+        ToolOutcome(ok=True, summary="wait_agent completed", data={
+            "reason": "completed",
+            "agents": [visits, result("outlets", "turn-2", outlets)]}),
+        ToolOutcome(ok=True, summary="wait_agent completed", data={
+            "reason": "completed",
+            "agents": [visits, result("outlets", "turn-3", outlets)]}),
+    ])
+    by_evidence = {"type": "object", "properties": {
+        "intent": {"type": "string"}, "evidence_id": {"type": "string"},
+    }}
+    chart = EvalTool("data_to_chart", parameters=by_evidence, outcomes=[
+        ToolOutcome(ok=True, summary="chart", data={"title": "Visits"},
+                    chart={"chart_spec": '{"mark":"bar"}'}),
+        ToolOutcome(ok=True, summary="chart", data={"title": "Outlets"},
+                    chart={"chart_spec": '{"mark":"bar"}'}),
+    ])
+    for tool in (
+        EvalTool("discover_agents", parameters=COLLABORATION_TOOLS["discover_agents"][1],
+                 data={"agents": [unowned]}),
+        spawn, wait, chart,
+        EvalTool("followup_task", parameters=COLLABORATION_TOOLS["followup_task"][1],
+                 data={"agent_path": "/root/outlets", "status": "queued"}),
+    ):
+        registry.register(tool)
+    spawns = call("spawn_agent", agent=OWNER["agent_id"], task_name="visits", objective="visits")
+    spawns["tool_calls"] += call(
+        "spawn_agent", agent=OWNER["agent_id"], task_name="outlets", objective="outlets"
+    )["tool_calls"]
+    spawns["tool_calls"][1]["id"] = "spawn-outlets"
+    charts = call("data_to_chart", intent="visits per rep", evidence_id="evidence_4")
+    charts["tool_calls"] += call(
+        "data_to_chart", intent="outlets per city", evidence_id="evidence_6"
+    )["tool_calls"]
+    charts["tool_calls"][1]["id"] = "chart-outlets"
+
+    class Recording(ScriptedProvider):
+        offered: list[bool]
+
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.offered.append(bool(tools))
+            async for frame in super().stream(messages=messages, tools=tools, provider=provider):
+                yield frame
+
+    provider = Recording([
+        spawns,
+        call("followup_task", target="/root/outlets", task="Restate the outlets table"),
+        call("wait_agent", targets=["/root/outlets"]),
+        charts,
+        text_frame("The dashboard shows visits per rep and outlets per city."),
+    ], turn_plan={
+        "intent": "semantic_analytics", "tools": registry.names(),
+        "required_tools": ["discover_agents"],
+        "intent_frame": {"language": "en", "range": None, "compares_groups": True},
+    })
+    provider.offered = []
+    context = LoopContext(user_name="alice", collaboration_root=True,
+                          collaboration_tools=tuple(COLLABORATION_TOOLS))
+    result_frames = TurnResult(frames=[frame async for frame in AssistantLoop(
+        provider=provider, registry=registry, max_iterations=12, time_budget_seconds=600,
+    ).run(thread=thread(read_only_grant=True),
+          user_content="Dashboard of visits per rep and outlets per city",
+          context=context, resolve_consent=AsyncMock(return_value=False))])
+
+    assert result_frames.finish_reason == "stop", result_frames.error_codes
+    assert len(chart.runs) == 2
+    assert provider.offered[-1] is False
+
+
+@pytest.mark.asyncio
 async def test_smart_drafts_a_schedule_and_creates_nothing(monkeypatch):
     from app.modules.agents import automations
     from app.modules.agents.tools.propose_automation import propose_automation_tool

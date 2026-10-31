@@ -2729,7 +2729,8 @@ class AssistantLoop:
             ):
                 charts_made += 1
                 chartable = sum(
-                    len(table.get("rows") or []) >= 2 for table in evidence.business_tables.values()
+                    len(table.get("rows") or []) >= 2
+                    for table in evidence.latest_results().values()
                 )
                 if (
                     (route.needs_chart or _asks_for_charts(context.user_question))

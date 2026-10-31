@@ -322,7 +322,9 @@ class EvidenceTracker:
                 item["tool"], item["summary"], table=table,
                 metadata={**item.get("metadata", {}), "source_key": source_key,
                           "source_turn_id": participant["current_turn_id"],
-                          "source_agent_id": participant["agent_id"]},
+                          "source_agent_id": participant["agent_id"],
+                          "source_participant": participant.get("agent_session_id")
+                          or participant["current_turn_id"]},
             )
         for item in imported.values():
             canonical = item.metadata.get("canonical_business_result")
@@ -335,6 +337,26 @@ class EvidenceTracker:
                 **canonical, "numeric_evidence_refs": refs,
             }
         return list(imported.values())
+
+    def latest_results(self) -> dict[str, dict[str, Any]]:
+        """Business tables, keeping only a teammate's latest turn.
+
+        A follow-up turn of the same teammate restates or replaces its earlier
+        result; counting both would ask for a chart the answer does not need.
+        """
+        tables = self.business_tables
+        latest: dict[str, str] = {}
+        for item in self._items:
+            participant = item.metadata.get("source_participant")
+            if participant and item.evidence_id in tables:
+                latest[participant] = str(item.metadata.get("source_turn_id"))
+        return {
+            item.evidence_id: tables[item.evidence_id]
+            for item in self._items
+            if item.evidence_id in tables
+            and latest.get(str(item.metadata.get("source_participant") or ""))
+            in (None, str(item.metadata.get("source_turn_id")))
+        }
 
     def composer_context(self) -> str:
         """The evidence the final answer may draw on, as JSON for the composer prompt.
