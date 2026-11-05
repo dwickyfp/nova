@@ -105,11 +105,48 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 {_PK_PROPERTIES}
 """
 
+#: External sources a foreign catalog is built from (phase 2). An endpoint is
+#: metadata; ``secret_ref`` is a reference, never a value.
+CATALOG_CONNECTIONS_DDL = f"""
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTIONS (
+    name             VARCHAR(256) NOT NULL,
+    connector_type   VARCHAR(64) NOT NULL,
+    host             VARCHAR(512) NOT NULL,
+    port             INT,
+    database_name    VARCHAR(256),
+    options_json     STRING,
+    secret_ref       VARCHAR(1024) NOT NULL,
+    owner            VARCHAR(128),
+    comment          VARCHAR(1024),
+    created_at       DATETIME,
+    updated_at       DATETIME
+) PRIMARY KEY(name)
+DISTRIBUTED BY HASH(name) BUCKETS 1
+{_PK_PROPERTIES}
+"""
+
+#: Credentials entered through Nova for a connection whose ``secret_ref`` is
+#: ``nova://<name>``. Both values are Fernet ciphertext (``enc:``), written by
+#: the entry flow only and never read back to a client.
+CATALOG_CONNECTION_CREDENTIALS_DDL = f"""
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS (
+    connection_name  VARCHAR(256) NOT NULL,
+    username_enc     STRING NOT NULL,
+    password_enc     STRING NOT NULL,
+    updated_by       VARCHAR(128),
+    updated_at       DATETIME
+) PRIMARY KEY(connection_name)
+DISTRIBUTED BY HASH(connection_name) BUCKETS 1
+{_PK_PROPERTIES}
+"""
+
 CATALOG_DDLS = (
     CATALOG_CATALOGS_DDL,
     CATALOG_OBJECTS_DDL,
     CATALOG_COLUMNS_DDL,
     CATALOG_SYNC_RUNS_DDL,
+    CATALOG_CONNECTIONS_DDL,
+    CATALOG_CONNECTION_CREDENTIALS_DDL,
 )
 
 _CATALOG_COLUMNS = (

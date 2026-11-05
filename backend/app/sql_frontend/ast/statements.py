@@ -26,6 +26,22 @@ class StreamStatement(Statement):
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogStatement(Statement):
+    """A Nova Catalog DDL statement (connections, foreign catalogs, refresh)."""
+
+    operation: str
+    name: str | None = None
+    connection: str | None = None
+    schema: str | None = None
+    relation: str | None = None
+    clauses: tuple[tuple[str, str], ...] = ()
+    properties: tuple[tuple[str, str], ...] = ()
+    comment: str | None = None
+    if_exists: bool = False
+    if_not_exists: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class StageAwareStatement(Statement):
     pass
 

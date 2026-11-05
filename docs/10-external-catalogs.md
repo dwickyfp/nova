@@ -2,14 +2,13 @@
 
 > Manage external data source connections: Hive, Iceberg, Paimon, JDBC, Hudi, Delta Lake, Elasticsearch.
 
-> **Implementation status (NOVA-62, Phase 0 #9).** Nova ships **Iceberg and Hive**
-> catalog management (both GA on the pinned engine, StarRocks 4.1.4) through
-> `POST/GET/PATCH/DELETE /api/v1/external-catalogs` and the **External Catalogs**
-> page. Delta Lake, Paimon, JDBC and Unified are **not exposed** in this release;
+> **Implementation status.** Nova ships **Iceberg and Hive** catalogs (NOVA-62)
+> and, since Nova Catalog phase 2, **PostgreSQL and MySQL** catalogs built from a
+> registered *connection* (see [Connections and foreign catalogs](#connections-and-foreign-catalogs-postgresql-mysql)).
+> Catalogs are created from Database Explorer (**Add catalog**) and connections
+> are managed on the **Connections** page (`/connections`). Delta Lake, Paimon,
+> Hudi, Elasticsearch, Unified, and the other JDBC sources are **not exposed**;
 > the tables below describe the engine's capabilities, not Nova's surface.
-> The catalog manager's list row shows the catalog type, metastore, and storage
-> connection; the detail pane shows the engine DDL with every credential value
-> redacted.
 
 ---
 
@@ -68,6 +67,18 @@ All external catalogs that access object storage need `StorageCredentialParams`:
 | Drop catalog | `DROP CATALOG <name>` |
 | Refresh metadata | `REFRESH EXTERNAL TABLE <name>` (4.1.4 has no `REFRESH CATALOG` statement) |
 
+Nova adds its own statements for catalogs built from connections. They are Nova
+grammar (`backend/app/sql_frontend/catalog_ddl.py`); the engine never sees them.
+
+| Action | Nova SQL |
+|--------|----------|
+| Register a source | `CREATE CONNECTION [IF NOT EXISTS] <name> TYPE = postgres\|mysql ENDPOINT = 'host[:port][/db]' SECRET = '<reference>' [COMMENT = '...']` |
+| Remove a source | `DROP CONNECTION [IF EXISTS] <name>` (refused while a catalog uses it) |
+| List / describe | `SHOW CONNECTIONS`, `DESC[RIBE] CONNECTION <name>` |
+| Create a catalog | `CREATE FOREIGN CATALOG [IF NOT EXISTS] <name> USING CONNECTION <conn> [COMMENT '...'] [PROPERTIES ('jdbc_...' = '...')]` |
+| Refresh metadata | `REFRESH CATALOG <name> [SCHEMA <s> [TABLE <t>]]` |
+| Grant on a foreign table | `GRANT SELECT ON TABLE <catalog>.<schema>.<table> TO ROLE <role>` |
+
 ---
 
 ## Iceberg Special Features (v4.1)
@@ -106,25 +117,28 @@ All external catalogs that access object storage need `StorageCredentialParams`:
 
 ## Catalog Manager UI
 
-The **External Catalogs** page lists the external catalogs the caller can see and offers an
-**Add Catalog** dialog. The dialog takes a name, type (Iceberg / Hive), metastore
-type (Hive Metastore or Iceberg REST), metastore URI, and a **storage connection
-name**. It has no credential field: the storage secret is resolved on the server
-from `nova.yaml` / env.
+Catalogs are listed and created in **Database Explorer**. Its **Add catalog**
+menu offers *From a connection* (PostgreSQL / MySQL), *Iceberg or Hive*, and
+*Manage connections*. The old `/external-catalogs` page redirects to
+`/connections`.
+
+The **Connections** page lists each connection by name, type, credential status
+(stored in Nova, secret store, or missing), the catalogs built from it, and its
+owner. The address and credentials are entered once, when the connection is
+added or its credentials are replaced, and are never shown again. Creating a
+catalog from a connection asks only for the catalog name and the connection's
+name.
 
 ```
-┌─ External Catalogs ─────────────────────────────────────┐
-│                                                          │
-│  [+ Add Catalog]                    [Refresh]            │
-│                                                          │
-│  Name             Type      Metastore                 ⋯  │
-│  iceberg_lake     Iceberg   thrift://hms:9083         ⋯  │
-│  hive_warehouse   Hive      thrift://hms:9083         ⋯  │
-└──────────────────────────────────────────────────────────┘
+┌─ Connections ──────────────────────────────────── [⟳] [+ Add connection] ┐
+│  Name         Type        Credentials      Catalogs   Owner          ⋯  │
+│  sales_pg     PostgreSQL  Stored in Nova   sales      nova_admin     ⋯  │
+│  crm_mysql    MySQL       Secret store     None       nova_admin     ⋯  │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Selecting a catalog shows its engine `SHOW CREATE CATALOG` statement with all
-credential values redacted to `***`.
+Selecting a catalog in Database Explorer shows its engine `SHOW CREATE CATALOG`
+statement with all credential values redacted to `***`.
 
 ### Create Catalog dialog (as implemented)
 
@@ -186,6 +200,56 @@ credential values redacted to `***`.
 
 ---
 
+## Connections and foreign catalogs (PostgreSQL, MySQL)
+
+A **connection** (`NOVA_SYSTEM.CATALOG_CONNECTIONS`) records a source's type,
+host, port, database, non-secret driver options, owner, comment, and a
+**secret reference**. A **foreign catalog** is a StarRocks JDBC catalog built
+from a connection, so every query against `catalog.schema.table` goes through
+the normal Nova SQL path and Ranger authorizes it, including row filters and
+masks.
+
+- **Who can manage them.** Every connection operation (create, list, describe,
+  enter credentials, drop) and `CREATE FOREIGN CATALOG` require an active
+  security-admin role (`ACCOUNTADMIN`, `SECURITYADMIN`). Refusals are audited
+  (`AUDIT_LOG`, `event_type = CATALOG`). The check runs before any credential is
+  resolved. `CREATE EXTERNAL CATALOG` then runs as the caller, so Ranger also
+  has to allow it.
+- **Credentials.** `SECRET` is a reference, never a value:
+  - `aws://<name>` or a Secrets Manager ARN, resolved through
+    `app/storage/secrets.py` when the catalog is created. The secret holds
+    `{"username": ..., "password": ...}`.
+  - `nova://<connection>`, for credentials entered in the console or through
+    `PUT /api/v1/catalog/connections/{name}/credentials`. They are stored
+    Fernet-encrypted in `CATALOG_CONNECTION_CREDENTIALS` and never read back.
+
+  A bare value such as `user:password` is refused as a reference, and an
+  endpoint with `user@`, a URL scheme, or a credential option is refused.
+- **Drivers.** The FE and BE images carry the drivers in
+  `/opt/starrocks/drivers` (PostgreSQL 42.7.12; MariaDB Connector/J 3.3.2 for
+  MySQL, which 4.1.4 substitutes for a MySQL driver anyway). Nova sets
+  `driver_url` to that `file://` path; nothing is downloaded at create time. A
+  caller can only add `jdbc_*` tuning properties: `driver_url`, `driver_class`,
+  `jdbc_uri`, `user`, and `password` always come from Nova.
+- **Grants.** `GRANT/REVOKE ... ON TABLE catalog.schema.table` compiles a Ranger
+  policy for that catalog; a two-part name keeps `default_catalog`. A new
+  catalog is open to nobody but `ACCOUNTADMIN` until a policy grants it: the
+  Ranger bootstrap's role policies name `default_catalog` only.
+- **Refresh.** `REFRESH CATALOG` syncs the catalog into the Nova Catalog store
+  (security admin only). With `SCHEMA ... TABLE ...` it first runs
+  `REFRESH EXTERNAL TABLE` on the engine as the caller.
+- **REST.** `GET/POST /api/v1/catalog/connections`,
+  `GET/DELETE /api/v1/catalog/connections/{name}`,
+  `PUT /api/v1/catalog/connections/{name}/credentials`,
+  `POST /api/v1/catalog/foreign-catalogs`. No response carries an endpoint, a
+  reference, or a credential.
+- **Performance.** JDBC pushdown on 4.1.4 sends simple comparison filters and
+  `LIMIT` to the source; aggregation, joins, functions on columns, and
+  `ORDER BY ... LIMIT` run in StarRocks after a scan
+  (`docs/proposals/nova-catalog-standalone.md` §6.1, S2). Masks are applied in
+  StarRocks, so the connection's account should be read-only and as narrow as
+  possible.
+
 ## Credential security
 
 The invariant (AGENTS.md §2) is that storage credentials never appear in an API
@@ -208,3 +272,7 @@ credentials flow like `@stage` credentials:
 3. **Audit** records the redacted statement (`NOVA_SYSTEM.AUDIT_LOG.rewritten_sql`)
    because catalog DDL runs through `QueryService`; the engine receives the real
    credentials, the audit row and the response never do.
+4. **JDBC catalogs** carry `user` and `password` properties. The password is
+   redacted like the other credential properties (regression test:
+   `backend/tests/unit/test_catalog_connections.py`), and the connection
+   credential is resolved only inside the request that creates the catalog.

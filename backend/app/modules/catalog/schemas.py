@@ -213,3 +213,77 @@ class SyncRun(BaseModel):
 
 class SyncRunListResponse(BaseModel):
     runs: list[SyncRun]
+
+
+# ---------------------------------------------------------------------------
+# Connections and foreign catalogs (phase 2)
+# ---------------------------------------------------------------------------
+
+_NAME_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+
+
+class ConnectionCredentials(BaseModel):
+    """Write-only credential entry. Stored Fernet-encrypted; never read back."""
+
+    username: str = Field(..., min_length=1, max_length=256)
+    password: str = Field(..., min_length=1, max_length=1024, repr=False)
+
+
+class ConnectionCreate(BaseModel):
+    """Register an external source.
+
+    ``secret_ref`` names a credential in a secret store (``aws://...`` or an
+    AWS Secrets Manager ARN). Alternatively ``credentials`` are entered here and
+    stored encrypted by Nova, and the connection's reference becomes
+    ``nova://<name>``. Exactly one of the two is given.
+    """
+
+    name: str = Field(..., min_length=1, max_length=256, pattern=_NAME_PATTERN)
+    connector_type: str = Field(..., min_length=1, max_length=64)
+    endpoint: str = Field(..., min_length=1, max_length=1024)
+    secret_ref: str | None = Field(None, max_length=1024)
+    credentials: ConnectionCredentials | None = None
+    comment: str | None = Field(None, max_length=1024)
+
+
+class ConnectionSummary(BaseModel):
+    """A connection as users see it: no endpoint, no reference, no credential.
+
+    ``credential_source`` is ``managed`` (entered through Nova) or ``external``
+    (a secret store reference); ``has_credentials`` is false only for a managed
+    connection whose credentials were not entered yet.
+    """
+
+    name: str
+    connector_type: str
+    credential_source: str
+    has_credentials: bool
+    owner: str | None = None
+    comment: str | None = None
+    catalogs: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ConnectionListResponse(BaseModel):
+    connections: list[ConnectionSummary]
+    count: int
+
+
+class ForeignCatalogCreate(BaseModel):
+    """Create a queryable catalog from a registered connection."""
+
+    name: str = Field(..., min_length=1, max_length=256, pattern=_NAME_PATTERN)
+    connection: str = Field(..., min_length=1, max_length=256, pattern=_NAME_PATTERN)
+    comment: str | None = Field(None, max_length=1024)
+    properties: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("properties")
+    @classmethod
+    def _reject_secrets(cls, value: dict[str, str]) -> dict[str, str]:
+        for key in value:
+            if is_secret_property(key):
+                raise ValueError(
+                    f"property '{key}' carries a credential; it comes from the connection"
+                )
+        return value

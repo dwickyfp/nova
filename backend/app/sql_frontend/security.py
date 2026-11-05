@@ -73,20 +73,22 @@ def decode_security(parsed: ParsedStatement) -> SecurityOperation | None:
                 if objects[0].start.start <= token.start <= objects[0].stop.stop
             ]
             if (
-                len(object_tokens) == 3
-                and object_tokens[1].text == "."
+                len(object_tokens) in {3, 5}
+                and all(token.text == "." for token in object_tokens[1::2])
                 and all(token.text != "*" for token in object_tokens)
                 and privilege in {"SELECT", "INSERT", "UPDATE", "DELETE", "ALTER"}
                 and clause.start.text.upper() == "ROLE"
                 and "OPTION" not in words
                 and ("TABLE" in words or kind.endswith("TableBriefContext"))
             ):
-                database, table = (
-                    token.text.strip("`'") for token in (object_tokens[0], object_tokens[2])
-                )
+                # ``database.table`` keeps the internal catalog; a third part
+                # names the catalog, so a policy can target a foreign catalog.
+                parts = [token.text.strip("`'\"") for token in object_tokens[0::2]]
+                catalog = parts[0] if len(parts) == 3 else "default_catalog"
+                database, table = parts[-2:]
                 return SecurityOperation(
                     "grant_access" if words[0] == "GRANT" else "revoke_access",
-                    (identifiers[-1], database, table, privilege),
+                    (identifiers[-1], database, table, privilege, catalog),
                 )
     if kind == "ShowRolesStatementContext" and len(words) == 2:
         return SecurityOperation("list_roles")
@@ -127,7 +129,7 @@ async def execute_security_operation(
         await method(
             security,
             role=identifiers[0],
-            catalog="default_catalog",
+            catalog=identifiers[4] if len(identifiers) > 4 else "default_catalog",
             database=identifiers[1],
             table=identifiers[2],
             accesses=[identifiers[3]],
