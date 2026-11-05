@@ -43,6 +43,40 @@ from the system pool, and only for objects that session listed. A database or
 object the caller cannot list answers `404`, so its stages, tasks, and pipes do
 not appear either.
 
+The caller's listings are reused for `CATALOG_VISIBILITY_CACHE_SECONDS`
+(default 60) in Redis, partitioned by principal, active role, and
+security-context version. A role switch never reads another role's answer, and
+an access change made through Nova, or a catalog create/alter/drop/refresh,
+retires every cached answer at once. A grant or Ranger policy changed outside
+Nova shows up once the short TTL passes.
+
+## Nova Catalog store
+
+Descriptions come from the Nova Catalog store (`NOVA_SYSTEM.CATALOG_CATALOGS`,
+`CATALOG_OBJECTS`, `CATALOG_COLUMNS`, `CATALOG_SYNC_RUNS`), never visibility:
+an object the caller can list but the store has not seen yet still appears,
+by name only. A control-plane loop syncs every engine catalog every
+`CATALOG_SYNC_INTERVAL_SECONDS` (default 300), records catalogs created in raw
+SQL with `source = engine`, and marks vanished objects with `dropped_at`
+instead of deleting them. External tables therefore show their columns, read
+from the store (`GET /explorer/databases/{db}/tables/{table}?catalog=<name>`).
+
+The catalog page shows when metadata was last synced. A role in
+`ACCOUNTADMIN`, `SECURITYADMIN`, or `security_admin` also gets **Refresh
+metadata**, which syncs that catalog at once; every refresh and every refusal
+is written to `AUDIT_LOG` (`action = REFRESH_METADATA`).
+
+The API lives at `/api/v1/catalog`:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /catalogs` | Catalogs the caller can list, with sync status |
+| `GET /catalogs/{name}` | Detail with the redacted `SHOW CREATE CATALOG` |
+| `POST`, `PATCH`, `DELETE /catalogs[/{name}]` | Create, alter, drop, run as the caller |
+| `POST /catalogs/refresh`, `POST /catalogs/{name}/refresh` | Sync now (security admin) |
+| `GET /catalogs/{name}/sync-runs` | Recent syncs, errors redacted |
+| `GET /catalogs/{name}/databases/{db}/objects[/{object}/columns]` | Listed objects and stored columns |
+
 ## Supported Objects per Level
 
 ### Catalog Level

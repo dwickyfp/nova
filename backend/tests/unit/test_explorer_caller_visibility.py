@@ -49,6 +49,18 @@ def install_caller(monkeypatch, caller: FakeCaller) -> list[dict]:
     return opened
 
 
+def install_store(monkeypatch, catalogs=None, objects=None, columns=None):
+    """Fake the Nova Catalog store the explorer reads descriptions from."""
+    store = {
+        "list_catalogs": AsyncMock(return_value=catalogs or []),
+        "list_objects": AsyncMock(return_value=objects or []),
+        "list_columns": AsyncMock(return_value=columns or []),
+    }
+    for name, mock in store.items():
+        monkeypatch.setattr(module.catalog_repo, name, mock)
+    return store
+
+
 def install_repo(monkeypatch, **results):
     names = (
         "list_tables", "list_views", "list_materialized_views", "list_functions",
@@ -60,6 +72,7 @@ def install_repo(monkeypatch, **results):
         default = [] if name.startswith("list") else None
         mocks[name] = AsyncMock(return_value=results.get(name, default))
         monkeypatch.setattr(module.explorer_repo, name, mocks[name])
+    install_store(monkeypatch)
     monkeypatch.setattr(module, "decrypt_password", lambda value: "pw")
     monkeypatch.setattr(module.entity_registry, "list", AsyncMock(return_value=[]))
     monkeypatch.setattr(module.semantic_view_service, "list", AsyncMock(return_value=[]))
@@ -79,6 +92,11 @@ async def test_catalog_tree_comes_from_the_callers_session(monkeypatch):
     opened = install_caller(monkeypatch, caller)
     execute_system = AsyncMock()
     monkeypatch.setattr(repo_module.db, "execute_system", execute_system)
+    install_store(monkeypatch, catalogs=[
+        {"name": "pg_sales", "managed": False, "source": "engine", "status": "ok",
+         "last_sync_at": None},
+        {"name": "hidden_lake", "managed": True, "source": "nova", "status": "ok"},
+    ])
 
     result = await module.ExplorerService().get_catalogs(USER)
 
@@ -86,6 +104,9 @@ async def test_catalog_tree_comes_from_the_callers_session(monkeypatch):
         ("default_catalog", ["analytics"]),
         ("pg_sales", ["public"]),
     ]
+    # The store describes catalogs; it never adds one the caller cannot list.
+    assert result.catalogs[1].source == "engine"
+    assert result.catalogs[1].sync_status == "ok"
     assert opened == [USER]
     execute_system.assert_not_awaited()
 
@@ -272,3 +293,54 @@ async def test_caller_session_requires_an_active_role(monkeypatch):
         async with repo_module.caller_metadata({**USER, "active_role": None}):
             pass
     user_conn.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_external_tables_are_described_by_the_store(monkeypatch):
+    install_caller(monkeypatch, FakeCaller(
+        databases={"lake": ["sales"]},
+        relations={("lake", "sales"): {"orders": "BASE TABLE", "stale": "BASE TABLE"}},
+    ))
+    install_repo(monkeypatch)
+    install_store(monkeypatch, objects=[
+        {"object_name": "orders", "object_type": "table", "comment": "Orders",
+         "row_count": 12},
+        {"object_name": "secret", "object_type": "table", "comment": "Not listed"},
+    ])
+
+    result = await module.ExplorerService().get_database_objects(
+        "sales", catalog="lake", user=USER
+    )
+
+    assert [(t.name, t.comment, t.row_count) for t in result.tables] == [
+        ("orders", "Orders", 12),
+        ("stale", None, None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_external_table_detail_uses_stored_columns_after_the_gate(monkeypatch):
+    install_caller(monkeypatch, FakeCaller(
+        databases={"lake": ["sales"]},
+        relations={("lake", "sales"): {"orders": "BASE TABLE"}},
+    ))
+    mocks = install_repo(monkeypatch)
+    store = install_store(monkeypatch, columns=[
+        {"ordinal": 1, "column_name": "id", "data_type": "bigint", "is_nullable": False,
+         "column_comment": None},
+    ])
+
+    detail = await module.ExplorerService().get_table_detail(
+        "sales", "orders", user=USER, catalog="lake"
+    )
+    hidden = await module.ExplorerService().get_table_detail(
+        "sales", "salaries", user=USER, catalog="lake"
+    )
+
+    assert detail.catalog == "lake"
+    assert [(c.name, c.data_type, c.is_nullable) for c in detail.columns] == [
+        ("id", "bigint", "NO"),
+    ]
+    assert hidden is None
+    store["list_columns"].assert_awaited_once_with("lake", "sales", "orders")
+    mocks["get_table_detail"].assert_not_awaited()

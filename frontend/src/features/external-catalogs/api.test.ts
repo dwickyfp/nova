@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  alterExternalCatalog,
-  createExternalCatalog,
-  deleteExternalCatalog,
-  fetchCatalogTables,
-  fetchExternalCatalogs,
+  alterCatalog,
+  createCatalog,
+  deleteCatalog,
+  fetchCatalogObjects,
+  fetchCatalogs,
+  fetchSyncRuns,
+  refreshCatalogMetadata,
 } from './api'
 
 const fetchMock = vi.fn()
@@ -37,16 +39,16 @@ function requestedBody(index = 0) {
   return body ? JSON.parse(body as string) : undefined
 }
 
-describe('external catalogs API calls', () => {
+describe('Nova Catalog API calls', () => {
   it('lists catalogs', async () => {
-    await fetchExternalCatalogs()
+    await fetchCatalogs()
 
-    expect(requestedUrl()).toBe('/api/v1/external-catalogs')
+    expect(requestedUrl()).toBe('/api/v1/catalog/catalogs')
     expect(requestedMethod()).toBe('GET')
   })
 
   it('creates a catalog', async () => {
-    await createExternalCatalog({
+    await createCatalog({
       name: 'lake',
       type: 'iceberg',
       metastore_type: 'hms',
@@ -54,7 +56,7 @@ describe('external catalogs API calls', () => {
       storage_connection: 'production',
     })
 
-    expect(requestedUrl()).toBe('/api/v1/external-catalogs')
+    expect(requestedUrl()).toBe('/api/v1/catalog/catalogs')
     expect(requestedMethod()).toBe('POST')
     expect(requestedBody().name).toBe('lake')
     // No credential field may ever be sent from the client.
@@ -63,24 +65,39 @@ describe('external catalogs API calls', () => {
   })
 
   it('alters a catalog', async () => {
-    await alterExternalCatalog('lake', { comment: 'updated' })
+    await alterCatalog('lake', { comment: 'updated' })
 
-    expect(requestedUrl()).toBe('/api/v1/external-catalogs/lake')
+    expect(requestedUrl()).toBe('/api/v1/catalog/catalogs/lake')
     expect(requestedMethod()).toBe('PATCH')
   })
 
   it('drops a catalog', async () => {
-    await deleteExternalCatalog('lake')
+    await deleteCatalog('lake')
 
-    expect(requestedUrl()).toBe('/api/v1/external-catalogs/lake')
+    expect(requestedUrl()).toBe('/api/v1/catalog/catalogs/lake')
     expect(requestedMethod()).toBe('DELETE')
   })
 
-  it('lists tables in a catalog database', async () => {
-    await fetchCatalogTables('lake', 'sales')
+  it('lists objects in a catalog database', async () => {
+    await fetchCatalogObjects('lake', 'sales')
 
     expect(requestedUrl()).toBe(
-      '/api/v1/external-catalogs/lake/databases/sales/tables'
+      '/api/v1/catalog/catalogs/lake/databases/sales/objects'
     )
+  })
+
+  it('refreshes one catalog or every catalog', async () => {
+    await refreshCatalogMetadata('lake')
+    await refreshCatalogMetadata()
+
+    expect(requestedUrl(0)).toBe('/api/v1/catalog/catalogs/lake/refresh')
+    expect(requestedMethod(0)).toBe('POST')
+    expect(requestedUrl(1)).toBe('/api/v1/catalog/catalogs/refresh')
+  })
+
+  it('lists sync runs', async () => {
+    await fetchSyncRuns('lake')
+
+    expect(requestedUrl()).toBe('/api/v1/catalog/catalogs/lake/sync-runs')
   })
 })

@@ -3,25 +3,51 @@ import { api } from '@/lib/api-client'
 export type CatalogType = 'hive' | 'iceberg'
 export type MetastoreType = 'hms' | 'rest'
 
-export type ExternalCatalog = {
+/** A catalog the caller can see, described by the Nova Catalog store. */
+export type CatalogSummary = {
   name: string
-  type: string
+  /** `native` for the engine's internal catalog, `external` otherwise. */
+  kind: string
+  catalog_type: string
+  /** Created through Nova (only these can be dropped from the UI). */
+  managed: boolean
+  /** Who first recorded it: `nova`, or `engine` for one made in SQL. */
+  source: string
+  comment: string | null
+  status: string | null
+  last_sync_at: string | null
+  last_sync_error: string | null
+  databases: string[]
+}
+
+/** Catalog detail. Deliberately has no credential-bearing field. */
+export type CatalogDetail = CatalogSummary & {
   metastore_type: string | null
   metastore_uri: string | null
   storage_connection: string | null
-  comment: string | null
   properties: Record<string, string>
   create_statement: string | null
   created_at: string | null
   created_by: string | null
 }
 
-export type ExternalCatalogList = {
-  catalogs: ExternalCatalog[]
+export type CatalogList = {
+  catalogs: CatalogSummary[]
   count: number
 }
 
-export type CreateExternalCatalogInput = {
+export type SyncRun = {
+  id: string
+  catalog_name: string
+  trigger: string
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  counts: Record<string, number>
+  error: string | null
+}
+
+export type CreateCatalogInput = {
   name: string
   type: CatalogType
   metastore_type: MetastoreType
@@ -31,39 +57,51 @@ export type CreateExternalCatalogInput = {
   properties?: Record<string, string>
 }
 
-export type AlterExternalCatalogInput = {
+export type AlterCatalogInput = {
   metastore_uri?: string
   comment?: string
   properties?: Record<string, string>
 }
 
-const BASE = '/external-catalogs'
+const BASE = '/catalog/catalogs'
 
-export function fetchExternalCatalogs() {
-  return api.get<ExternalCatalogList>(BASE)
+export function fetchCatalogs() {
+  return api.get<CatalogList>(BASE)
 }
 
-export function fetchExternalCatalog(name: string) {
-  return api.get<ExternalCatalog>(`${BASE}/${name}`)
+export function fetchCatalog(name: string) {
+  return api.get<CatalogDetail>(`${BASE}/${encodeURIComponent(name)}`)
 }
 
-export function createExternalCatalog(input: CreateExternalCatalogInput) {
-  return api.post<ExternalCatalog>(BASE, input)
+export function createCatalog(input: CreateCatalogInput) {
+  return api.post<CatalogDetail>(BASE, input)
 }
 
-export function alterExternalCatalog(
-  name: string,
-  input: AlterExternalCatalogInput
-) {
-  return api.patch<ExternalCatalog>(`${BASE}/${name}`, input)
+export function alterCatalog(name: string, input: AlterCatalogInput) {
+  return api.patch<CatalogDetail>(`${BASE}/${encodeURIComponent(name)}`, input)
 }
 
-export function deleteExternalCatalog(name: string) {
-  return api.delete<{ success: boolean; message: string }>(`${BASE}/${name}`)
-}
-
-export function fetchCatalogTables(name: string, database: string) {
-  return api.get<{ name: string; database: string }[]>(
-    `${BASE}/${name}/databases/${database}/tables`
+export function deleteCatalog(name: string) {
+  return api.delete<{ success: boolean; message: string }>(
+    `${BASE}/${encodeURIComponent(name)}`
   )
 }
+
+/** Re-sync one catalog's metadata, or every catalog when `name` is omitted. */
+export function refreshCatalogMetadata(name?: string) {
+  const path = name ? `${BASE}/${encodeURIComponent(name)}/refresh` : `${BASE}/refresh`
+  return api.post<{ runs: SyncRun[] }>(path)
+}
+
+export function fetchSyncRuns(name: string) {
+  return api.get<{ runs: SyncRun[] }>(`${BASE}/${encodeURIComponent(name)}/sync-runs`)
+}
+
+export function fetchCatalogObjects(name: string, database: string) {
+  return api.get<{ object_name: string; object_type: string; comment: string | null }[]>(
+    `${BASE}/${encodeURIComponent(name)}/databases/${encodeURIComponent(database)}/objects`
+  )
+}
+
+/** Roles that may refresh catalog metadata (mirrors the backend gate). */
+export const SECURITY_ADMIN_ROLES = new Set(['ACCOUNTADMIN', 'SECURITYADMIN', 'security_admin'])

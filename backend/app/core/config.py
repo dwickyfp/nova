@@ -202,6 +202,10 @@ class Settings(BaseSettings):
     NEWS_PROOF_REFRESH_INTERVAL_SECONDS: int = 30
     # A session that has not read News for this long is no longer kept warm.
     NEWS_PROOF_READER_IDLE_SECONDS: int = 900
+    # Nova Catalog: how often the control plane syncs engine metadata into the
+    # catalog store, and how long one caller's visible catalog tree is reused.
+    CATALOG_SYNC_INTERVAL_SECONDS: int = 300
+    CATALOG_VISIBILITY_CACHE_SECONDS: int = 60
 
     # --- Centralized authorization (Apache Ranger) ---
     # Ranger is always on: every session activates exactly one named role and

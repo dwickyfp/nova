@@ -21,10 +21,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  createExternalCatalog,
-  deleteExternalCatalog,
+  createCatalog,
+  deleteCatalog,
   type CatalogType,
-  type ExternalCatalog,
+  type CatalogDetail,
   type MetastoreType,
 } from './api'
 
@@ -54,7 +54,7 @@ export function CreateCatalogDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreated?: (catalog: ExternalCatalog) => void
+  onCreated?: (catalog: CatalogDetail) => void
 }) {
   const [form, setForm] = useState({ ...emptyForm })
   const [submitting, setSubmitting] = useState(false)
@@ -75,7 +75,7 @@ export function CreateCatalogDialog({
     }
     setSubmitting(true)
     try {
-      const created = await createExternalCatalog({
+      const created = await createCatalog({
         name: form.name.trim(),
         type: form.type,
         metastore_type: form.metastore_type,
@@ -226,7 +226,7 @@ export function DropCatalogDialog({
   onOpenChange,
   onDropped,
 }: {
-  catalog: ExternalCatalog | { name: string } | null
+  catalog: CatalogDetail | { name: string } | null
   onOpenChange: (open: boolean) => void
   onDropped?: (name: string) => void
 }) {
@@ -236,7 +236,7 @@ export function DropCatalogDialog({
     if (!catalog) return
     setDropping(true)
     try {
-      await deleteExternalCatalog(catalog.name)
+      await deleteCatalog(catalog.name)
       toast.success(`Catalog "${catalog.name}" dropped`)
       onDropped?.(catalog.name)
       onOpenChange(false)

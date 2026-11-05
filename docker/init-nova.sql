@@ -194,6 +194,75 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ENTITIES (
 DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- Nova Catalog store: catalogs, synced objects and columns, and sync runs.
+-- Mirrors backend/app/modules/catalog/repository.py. No credential column.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CATALOGS (
+    name               VARCHAR(256) NOT NULL,
+    kind               VARCHAR(32) NOT NULL,
+    catalog_type       VARCHAR(64) NOT NULL,
+    managed            BOOLEAN NOT NULL,
+    source             VARCHAR(32) NOT NULL,
+    metastore_type     VARCHAR(32),
+    metastore_uri      VARCHAR(1024),
+    storage_connection VARCHAR(256),
+    comment            VARCHAR(1024),
+    properties_json    STRING,
+    status             VARCHAR(32),
+    last_sync_at       DATETIME,
+    last_sync_error    VARCHAR(2048),
+    created_by         VARCHAR(128),
+    created_at         DATETIME,
+    updated_at         DATETIME,
+    dropped_at         DATETIME
+) PRIMARY KEY(name)
+DISTRIBUTED BY HASH(name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_OBJECTS (
+    id            VARCHAR(64) NOT NULL,
+    catalog_name  VARCHAR(256) NOT NULL,
+    database_name VARCHAR(256) NOT NULL,
+    object_name   VARCHAR(256) NOT NULL,
+    object_type   VARCHAR(32) NOT NULL,
+    engine        VARCHAR(64),
+    comment       VARCHAR(2048),
+    row_count     BIGINT,
+    data_size     BIGINT,
+    fingerprint   VARCHAR(64),
+    first_seen_at DATETIME,
+    last_seen_at  DATETIME,
+    dropped_at    DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_COLUMNS (
+    id             VARCHAR(64) NOT NULL,
+    catalog_name   VARCHAR(256) NOT NULL,
+    database_name  VARCHAR(256) NOT NULL,
+    object_name    VARCHAR(256) NOT NULL,
+    ordinal        INT NOT NULL,
+    column_name    VARCHAR(256) NOT NULL,
+    data_type      VARCHAR(1024),
+    is_nullable    BOOLEAN,
+    column_comment VARCHAR(2048)
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SYNC_RUNS (
+    id           VARCHAR(64) NOT NULL,
+    catalog_name VARCHAR(256) NOT NULL,
+    `trigger`    VARCHAR(32) NOT NULL,
+    status       VARCHAR(32) NOT NULL,
+    started_at   DATETIME,
+    finished_at  DATETIME,
+    counts_json  STRING,
+    error        VARCHAR(2048)
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 -- Assistant conversations. Persisted per user so history survives a reload;
 -- every read/write is filtered by user_name. No credential column exists here.
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (

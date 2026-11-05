@@ -10,21 +10,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { fetchExternalCatalogs, type ExternalCatalog } from './api'
+import { fetchCatalog, fetchCatalogs, type CatalogDetail } from './api'
 import { CreateCatalogDialog, DropCatalogDialog } from './catalog-dialogs'
 
 export function ExternalCatalogsPage() {
-  const [catalogs, setCatalogs] = useState<ExternalCatalog[]>([])
+  const [catalogs, setCatalogs] = useState<CatalogDetail[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
-  const [dropTarget, setDropTarget] = useState<ExternalCatalog | null>(null)
-  const [selected, setSelected] = useState<ExternalCatalog | null>(null)
+  const [dropTarget, setDropTarget] = useState<CatalogDetail | null>(null)
+  const [selected, setSelected] = useState<CatalogDetail | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetchExternalCatalogs()
-      setCatalogs(res.catalogs)
+      const res = await fetchCatalogs()
+      const external = res.catalogs.filter((catalog) => catalog.kind === 'external')
+      setCatalogs(await Promise.all(external.map((catalog) => fetchCatalog(catalog.name))))
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to load external catalogs'
@@ -105,7 +106,7 @@ export function ExternalCatalogsPage() {
                     <td className='px-4 py-2 font-medium'>{catalog.name}</td>
                     <td className='px-4 py-2'>
                       <Badge variant='secondary' className='capitalize'>
-                        {catalog.type || 'unknown'}
+                        {catalog.catalog_type || 'unknown'}
                       </Badge>
                     </td>
                     <td className='px-4 py-2 text-muted-foreground'>
