@@ -41,6 +41,7 @@ def build_registry() -> ToolRegistry:
         semantic_view_query_tool,
     )
     from app.modules.agents.tools.ml_execute import ml_execute_tool
+    from app.modules.assistant.tools.catalog_search import catalog_search_tool
     from app.modules.assistant.tools.client_capability import invoke_client_capability_tool
     from app.modules.assistant.tools.create_semantic_view import create_semantic_view_tool
     from app.modules.assistant.tools.inspect_agent_configuration import (
@@ -64,6 +65,7 @@ def build_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(load_skill_tool)
     registry.register(search_knowledge_tool)
+    registry.register(catalog_search_tool)
     registry.register(query_execute_tool)
     from app.modules.agents.tools.compute_metrics import compute_metrics_tool
 

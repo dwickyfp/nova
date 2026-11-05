@@ -33,6 +33,7 @@ from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
 from app.modules.backup.router import router as backup_router
 from app.modules.catalog.connections_router import router as catalog_connections_router
+from app.modules.catalog.metadata_router import router as catalog_metadata_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
@@ -532,6 +533,8 @@ def create_app() -> FastAPI:
     app.include_router(
         catalog_connections_router, prefix=f"{prefix}/catalog", tags=["catalog"]
     )
+    # Nova Catalog business metadata, search, and lineage on securable ids.
+    app.include_router(catalog_metadata_router, prefix=f"{prefix}/catalog", tags=["catalog"])
     # External catalogs (Iceberg + Hive, GA-only), an alias of Nova Catalog.
     app.include_router(
         external_catalogs_router,
