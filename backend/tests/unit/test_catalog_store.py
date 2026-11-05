@@ -606,6 +606,9 @@ def lake_visible(monkeypatch):
         service.visibility, "visible_relations",
         AsyncMock(return_value={"orders": "BASE TABLE", "orders_v": "VIEW"}),
     )
+    monkeypatch.setattr(
+        service.visibility, "visible_databases", AsyncMock(return_value=["sales"])
+    )
 
 
 async def test_listing_merges_store_rows_into_visible_catalogs(lake_visible):
@@ -637,6 +640,56 @@ async def test_objects_and_columns_come_only_for_listed_relations(lake_visible):
     assert await svc.list_objects("lake", "finance", ANALYST) is None
     assert [c.name for c in await svc.columns("lake", "sales", "orders", ANALYST)] == ["id"]
     assert await svc.columns("lake", "sales", "salaries", ANALYST) is None
+
+
+async def test_a_database_made_after_the_cached_listing_is_rechecked(
+    lake_visible, monkeypatch
+):
+    """A database created in raw SQL after the cached listing is found by asking
+    the engine again as the caller, not refused until the cache expires."""
+    fresh = AsyncMock(return_value=["sales", "events"])
+    monkeypatch.setattr(service.visibility, "visible_databases", fresh)
+
+    objects = await service.CatalogService(MemoryRepo()).list_objects("lake", "events", ANALYST)
+
+    assert objects is not None
+    fresh.assert_awaited_once_with(ANALYST, "lake", fresh=True)
+    fresh.return_value = ["sales"]
+    assert await service.CatalogService(MemoryRepo()).list_objects(
+        "lake", "missing", ANALYST
+    ) is None
+
+
+async def test_fresh_visibility_skips_the_cached_answer(monkeypatch):
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+
+        async def get(self, key):
+            return self.store.get(key)
+
+        async def set(self, key, value, ex=None):
+            self.store[key] = value
+
+    redis = FakeRedis()
+    monkeypatch.setattr(visibility.session_store, "_redis", redis)
+    monkeypatch.setattr(visibility.settings, "CATALOG_VISIBILITY_CACHE_SECONDS", 60)
+    answers = [["sales"], ["sales", "events"]]
+
+    @contextlib.asynccontextmanager
+    async def opener(user):
+        class Caller:
+            async def databases(self, catalog):
+                return answers.pop(0)
+
+        yield Caller()
+
+    assert await visibility.visible_databases(ADMIN, "lake", opener) == ["sales"]
+    assert await visibility.visible_databases(ADMIN, "lake", opener, fresh=True) == [
+        "sales", "events"
+    ]
+    # The fresh answer replaces the cached one for later readers.
+    assert await visibility.visible_databases(ADMIN, "lake", opener) == ["sales", "events"]
 
 
 async def test_sync_runs_need_a_visible_catalog(lake_visible):

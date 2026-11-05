@@ -56,13 +56,14 @@ async def bump() -> None:
         log.warning("Could not retire cached catalog visibility", exc_info=True)
 
 
-async def _cached(user: dict, scope: str, load):  # type: ignore[no-untyped-def]
+async def _cached(user: dict, scope: str, load, *, fresh: bool = False):  # type: ignore[no-untyped-def]
+    """``load()``'s answer, reused for the TTL unless ``fresh`` asks the engine now."""
     try:
         key = await _key(user, scope)
     except Exception:  # noqa: BLE001 - a cache fault never blocks the answer
         log.debug("Catalog visibility cache unavailable", exc_info=True)
         key = None
-    if key is not None:
+    if key is not None and not fresh:
         try:
             raw = await session_store._redis.get(key)  # type: ignore[union-attr]
             if raw:
@@ -103,16 +104,16 @@ async def visible_catalogs(user: dict, opener: Opener | None = None) -> list[dic
 
 
 async def visible_databases(
-    user: dict, catalog: str, opener: Opener | None = None
+    user: dict, catalog: str, opener: Opener | None = None, *, fresh: bool = False
 ) -> list[str]:
-    """Databases the caller can list in one catalog."""
+    """Databases the caller can list in one catalog (``fresh`` skips the cache)."""
     open_caller = _opener(opener)
 
     async def load() -> list[str]:
         async with open_caller(user) as caller:
             return await caller.databases(catalog)
 
-    return await _cached(user, f"databases:{catalog}", load)
+    return await _cached(user, f"databases:{catalog}", load, fresh=fresh)
 
 
 async def visible_relations(

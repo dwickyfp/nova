@@ -103,7 +103,13 @@ class CatalogService:
     ) -> list[CatalogObject] | None:
         """Relations of one database the caller can list, described by the store."""
         visible = await self._visible(name, user)
-        if visible is None or database not in visible["databases"]:
+        if visible is None:
+            return None
+        if database not in visible["databases"] and database not in (
+            # A database made outside Nova (raw SQL) after the cached listing
+            # was taken: ask the engine again, as the caller, before a 404.
+            await visibility.visible_databases(user, visible["name"], fresh=True)
+        ):
             return None
         relations = await visibility.visible_relations(user, visible["name"], database)
         stored = {
