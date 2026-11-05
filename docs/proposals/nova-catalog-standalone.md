@@ -424,16 +424,25 @@ mengunduh driver dari Maven Central saat `CREATE CATALOG`).
 
 ---
 
-## 7. Keputusan yang perlu diambil
+## 7. Keputusan
 
-1. **Bentuk "mandiri".** Modul di backend Nova dengan API sendiri (rekomendasi
-   untuk Fase 1–4), atau proses `nova-catalog` terpisah sejak awal? Proses
-   terpisah menambah deployment dan jalur auth, tanpa mengubah model.
-2. **Snowflake.** Cukup metadata-only + Iceberg via Horizon, atau perlu query ke
-   tabel Snowflake-native? Yang kedua berarti jalur eksekusi remote baru di luar
-   StarRocks, yang menurut `AGENTS.md` hanya boleh lewat keputusan eksplisit
-   mengganti arsitektur. Juga menimbulkan soal identitas: kredensial servis
-   Snowflake tidak boleh menggantikan akses caller.
+Diputuskan pemilik produk pada 2026-11-05:
+
+1. **Bentuk "mandiri": modul backend.** Nova Catalog dibangun sebagai
+   `backend/app/modules/catalog/` dengan API, connector SPI, dan tabel
+   `NOVA_SYSTEM` sendiri. Pemisahan menjadi proses `nova-catalog` tetap terbuka
+   tanpa mengubah model.
+2. **Snowflake: tabel Snowflake-native harus bisa di-query dan bisa dipakai di
+   semantic view untuk agen.** Metadata-only tidak cukup. Jalur yang
+   diutamakan adalah tetap lewat StarRocks (JDBC catalog atau Iceberg), supaya
+   Ranger tetap satu-satunya penegak dan semantic view memakai jalur SQL yang
+   sama. Kalau StarRocks tidak bisa, keputusan ini menjadi izin eksplisit untuk
+   merancang jalur eksekusi remote baru, dengan syarat yang tidak berubah:
+   kredensial servis Snowflake tidak boleh menggantikan akses caller, dan
+   Ranger tetap memutuskan akses. Hasil uji jalur StarRocks ada di §6.2.
+
+Masih terbuka:
+
 3. **Federasi query vs ingest.** Untuk sumber yang sering diagregasi, apakah
    cukup JDBC catalog (pushdown lemah), atau disediakan jalur ingest ke tabel
    native / Iceberg?
