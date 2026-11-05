@@ -146,16 +146,21 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 ### OBJECT_TAGS
 
+Keyed by Nova Catalog securable id (`CATALOG_SECURABLES.id`); see
+`docker/init-nova.sql` and `backend/app/modules/catalog/metadata.py`.
+
 ```sql
 CREATE TABLE NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
-    object_type     VARCHAR(32),
-    object_name     VARCHAR(512),
-    tag_key         VARCHAR(128),
-    tag_value       VARCHAR(512),
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by      VARCHAR(128),
-    PRIMARY KEY (object_type, object_name, tag_key)
-) DISTRIBUTED BY HASH(object_type) BUCKETS 1
+    securable_id   VARCHAR(64) NOT NULL,
+    tag_key        VARCHAR(128) NOT NULL,
+    tag_value      VARCHAR(512),
+    securable_type VARCHAR(32) NOT NULL,
+    created_at     DATETIME,
+    created_by     VARCHAR(128),
+    updated_at     DATETIME,
+    updated_by     VARCHAR(128)
+) PRIMARY KEY(securable_id, tag_key)
+DISTRIBUTED BY HASH(securable_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ```
 

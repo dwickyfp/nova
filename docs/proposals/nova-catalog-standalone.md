@@ -1,7 +1,8 @@
 # Proposal: Nova Catalog sebagai catalog mandiri (federated)
 
-> **Status:** Fase 1 diimplementasikan (lihat "Status Fase 1" di §6). Fase 2 ke
-> atas masih proposal dan non-normatif sampai diimplementasikan dan lolos tes.
+> **Status:** Fase 1 dan Fase 3 diimplementasikan (lihat "Status Fase 1" dan
+> "Status Fase 3" di §6). Fase 2, 4, dan 5 masih proposal dan non-normatif
+> sampai diimplementasikan dan lolos tes.
 > **Tanggal riset:** 2026-11-05. Engine pin: StarRocks `4.1.4` (`4a9848ed`).
 > **Tujuan:** Nova Catalog berdiri sendiri seperti Unity Catalog, sehingga
 > database lain (PostgreSQL, MySQL, Snowflake, dan seterusnya) bisa didaftarkan,
@@ -461,6 +462,55 @@ catalog Iceberg via SQL mentah ada di `tests/integration/test_catalog_l3.py`.
 - Semantic view dan entity menunjuk securable id.
 - Keluar: tag pada kolom Postgres bisa dicari dan muncul di Studio; objek yang
   di-drop di sumber tetap menyimpan tag dengan status dropped.
+
+**Status Fase 3 (2026-11-05): diimplementasikan.** Rincian dan API ada di
+`docs/03-catalog-explorer.md` ("Business metadata, search, and lineage").
+
+- **Securable id.** `NOVA_SYSTEM.CATALOG_SECURABLES` memberi id stabil untuk
+  catalog, database, relasi, dan kolom. Id objek baru diturunkan dari kunci
+  alaminya, jadi dua proses yang menyinkronkan bersamaan sepakat, dan nama yang
+  belum pernah disinkronkan (baris audit lama, tag lama) tetap jatuh ke id yang
+  nanti didaftarkan sync. Id database dan relasi sama dengan id
+  `CATALOG_OBJECTS` Fase 1. Objek yang hilang diberi `dropped_at` dan tetap
+  menyimpan id, tag, dan lineage-nya; kolom hanya ditandai hilang kalau sync
+  benar-benar membaca kolom relasinya.
+- **Tag, komentar, owner, klasifikasi.** `CONFIG_OBJECT_TAGS` sekarang dikunci
+  ke securable id. Tabel lama berkunci nama diganti saat startup (yang kosong
+  di-drop, yang berisi disimpan sebagai `CONFIG_OBJECT_TAGS_LEGACY` lalu
+  disalin). Komentar bisnis, owner, dan klasifikasi kolom ada di
+  `CATALOG_ANNOTATIONS`. Klasifikasi bersifat advisory; masking tetap Ranger.
+- **Siapa boleh mengubah.** Role security admin, atau role yang oleh Ranger
+  diberi `ALTER`/`ALL` atas relasi itu (dibaca lewat
+  `AccessControlService.effective_access`, jalur yang sama dengan Verify
+  Access). Owner hanya oleh security admin. Tidak ada tabel izin baru. Setiap
+  perubahan dan penolakan masuk `AUDIT_LOG` tanpa nilai tag atau teks komentar.
+- **Pencarian** atas nama, kolom, tag, komentar, owner, dan klasifikasi, lalu
+  dipotong dengan apa yang bisa di-list sesi caller di engine. Objek dropped
+  tidak punya pasangan di engine, jadi hanya terlihat oleh security admin
+  (fail-closed, sesuai S3).
+- **Lineage** tabel-ke-tabel dari `AUDIT_LOG` (`INSERT ... SELECT`, CTAS,
+  `CREATE VIEW`, `CREATE MATERIALIZED VIEW`), diurai dengan parser
+  `sql_frontend` (`sql_frontend/analysis/lineage.py`), disimpan di
+  `CATALOG_LINEAGE` per pasangan securable id. Lineage kolom dan
+  `LINEAGE_LOAD_HISTORY` belum dikerjakan (roadmap #6 sisanya).
+- **Semantic view dan entity.** Baris pemiliknya tidak diubah;
+  `CATALOG_SECURABLE_LINKS` mencatat securable yang dipakai (versi aktif, atau
+  versi terbaru bila belum ada yang aktif). Link dibangun ulang setiap pass dan
+  segera setelah create, versi baru, publish, deprecate, atau drop.
+- **Studio dan agen** memakai tool read-only `catalog_search` di engine
+  assistant bersama (Nove, agen yang memilihnya, dan root Smart). Hasilnya
+  difilter per caller dan ditandai sebagai metadata, bukan instruksi atau bukti
+  data.
+- **UI**: kotak pencarian catalog di header Database Explorer (`tag:pii`
+  didukung) dan bagian "Business metadata" pada tabel, view, dan MV.
+
+Perbedaan dari rencana: kriteria keluar diuji dengan tabel native dan Iceberg,
+bukan Postgres, karena konektor Postgres ada di Fase 2 yang dikerjakan paralel.
+Konektor itu memakai sync dan securable id yang sama, jadi tidak butuh jalur
+baru. Uji: `tests/unit/test_catalog_metadata.py`,
+`tests/unit/test_catalog_lineage_and_tool.py`,
+`tests/eval/test_catalog_metadata_trajectory.py`, dan
+`tests/integration/test_catalog_metadata_l3.py` di stack `docker`.
 
 ### Fase 4: Snowflake
 

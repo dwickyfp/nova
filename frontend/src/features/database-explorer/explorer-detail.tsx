@@ -29,6 +29,7 @@ import {
   getNodeTypeLabel,
   stripBackticks,
 } from './helpers'
+import { CatalogMetadataSection } from './catalog-metadata-section'
 import { StageFilesPanel } from './stage-files-panel'
 import { SqlCodeBlock } from './sql-code-block'
 import type {
@@ -152,6 +153,12 @@ export function ExplorerDetail({
           </TabsList>
 
           <TabsContent value='information' className='mt-4 space-y-5'>
+            <CatalogMetadataSection
+              catalog={node.catalog ?? 'default_catalog'}
+              database={tableDetail.database}
+              object={tableDetail.name}
+            />
+
             {/* Properties */}
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
@@ -790,6 +797,14 @@ export function ExplorerDetail({
             </div>
           </div>
 
+          {node.database && (
+            <CatalogMetadataSection
+              catalog={node.catalog ?? 'default_catalog'}
+              database={node.database}
+              object={viewDetail.name}
+            />
+          )}
+
           {/* Properties */}
           <section className='rounded-2xl border border-border bg-surface-2 p-6'>
             <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
@@ -877,6 +892,14 @@ export function ExplorerDetail({
               <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
             </div>
           </div>
+
+          {node.database && (
+            <CatalogMetadataSection
+              catalog={node.catalog ?? 'default_catalog'}
+              database={node.database}
+              object={mvDetail.name}
+            />
+          )}
 
           {/* Properties */}
           <section className='rounded-2xl border border-border bg-surface-2 p-6'>

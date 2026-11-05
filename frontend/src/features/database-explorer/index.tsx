@@ -48,6 +48,8 @@ import {
   filterTree,
   findNodeById,
 } from './helpers'
+import { CatalogSearch } from './catalog-search'
+import type { SearchHit } from './catalog-metadata-api'
 import { ExplorerDetail } from './explorer-detail'
 import { TreeNodeRow } from './tree-node-row'
 import type {
@@ -562,6 +564,48 @@ export function DatabaseExplorerPage() {
     })
   }, [tree, normalizedQuery])
 
+  // Open a catalog search hit in the tree. A relation (or a column's relation)
+  // is selected once its database's objects have loaded.
+  const [pendingTarget, setPendingTarget] = useState<
+    { catalog: string; database: string; object: string } | null
+  >(null)
+  const handleSearchSelect = useCallback((hit: SearchHit) => {
+    const catalogId = `catalog-${hit.catalog_name}`
+    if (!hit.database_name) {
+      setExpandedIds((current) => new Set([...current, catalogId]))
+      setSelectedId(catalogId)
+      return
+    }
+    const databaseId = `db-${hit.catalog_name}-${hit.database_name}`
+    setExpandedIds((current) => new Set([...current, catalogId, databaseId]))
+    if (!hit.object_name) {
+      setSelectedId(databaseId)
+      return
+    }
+    setPendingTarget({
+      catalog: hit.catalog_name,
+      database: hit.database_name,
+      object: hit.object_name,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!pendingTarget) return
+    const idBase = `${pendingTarget.catalog}-${pendingTarget.database}`
+    if (!dbCache.has(`${pendingTarget.catalog}/${pendingTarget.database}`)) return
+    const match = (['table', 'view', 'mv'] as const)
+      .map((kind) => ({ kind, id: `${idBase}-${kind}-${pendingTarget.object}` }))
+      .find(({ id }) => findNodeById(tree, id))
+    setPendingTarget(null)
+    if (!match) {
+      toast.error(`${pendingTarget.object} is not listed for your role in ${pendingTarget.database}`)
+      return
+    }
+    const group = `${idBase}-${match.kind === 'mv' ? 'mvs' : `${match.kind}s`}`
+    setExpandedIds((current) => new Set([...current, group]))
+    setSelectedId(match.id)
+  }, [pendingTarget, dbCache, tree])
+
   const selectedPath = selectedNode?.path ?? []
 
   return (
@@ -575,6 +619,9 @@ export function DatabaseExplorerPage() {
             <h1 className='truncate text-lg font-semibold'>Database Explorer</h1>
             <p className='text-sm text-muted-foreground'>Nova Catalog</p>
           </div>
+        </div>
+        <div className='hidden min-w-0 flex-1 justify-center md:flex'>
+          <CatalogSearch onSelect={handleSearchSelect} />
         </div>
         <div className='ml-auto flex items-center gap-2'>
           <Button
@@ -599,6 +646,10 @@ export function DatabaseExplorerPage() {
           </DropdownMenu>
         </div>
       </Header>
+
+      <div className='border-t px-3 py-2 md:hidden'>
+        <CatalogSearch onSelect={handleSearchSelect} />
+      </div>
 
       <div className='relative flex min-h-0 flex-1 overflow-hidden border-t'>
         {/* Resizable sidebar state */}

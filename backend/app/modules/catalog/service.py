@@ -42,6 +42,19 @@ from .schemas import (
 )
 from .sync import nova_now, reconcile_catalogs, sync_catalog
 
+
+async def ensure_metadata_schema() -> None:
+    """Create the securable registry, business metadata, lineage, and link tables."""
+    from .lineage import lineage_repo
+    from .links import link_repo
+    from .metadata import metadata_repo
+    from .securables import securable_repo
+
+    await securable_repo.ensure_schema()
+    await metadata_repo.ensure_schema()
+    await lineage_repo.ensure_schema()
+    await link_repo.ensure_schema()
+
 log = logging.getLogger(__name__)
 
 
@@ -60,6 +73,7 @@ class CatalogService:
     async def ensure_schema(self) -> None:
         """Create the store tables and copy legacy catalog rows once."""
         await self.repo.ensure_schema()
+        await ensure_metadata_schema()
         copied = await self.repo.migrate_legacy_catalogs(nova_now())
         if copied:
             log.info("Copied %d legacy external catalog rows into the catalog store", copied)
@@ -242,7 +256,11 @@ class CatalogService:
     # ── Refresh (security admin) ────────────────────────────────
 
     async def refresh(self, name: str | None, user: dict) -> list[SyncRun]:
-        """Sync one catalog, or reconcile every catalog when ``name`` is ``None``."""
+        """Sync one catalog, or reconcile every catalog when ``name`` is ``None``.
+
+        A full refresh also harvests lineage and re-links Semantic Views and
+        entities, as a scheduled pass does.
+        """
         target = safe_catalog_name(name) if name else "*"
         try:
             security = SecurityContext.from_session(user)
@@ -265,6 +283,9 @@ class CatalogService:
                     runs = [await sync_catalog(target, trigger="manual", repo=self.repo)]
             else:
                 runs = await reconcile_catalogs(trigger="manual", repo=self.repo)
+                from .refresher import metadata_pass
+
+                await metadata_pass()
         except Exception as exc:
             await _audit(user, target, "ERROR", str(exc))
             raise

@@ -66,6 +66,12 @@ from app.observability.metrics import (
     heartbeat,
 )
 
+#: Tools the Smart root holds itself. Result tools read nothing: they compute and
+#: chart what specialists return. ``catalog_search`` reads only catalog metadata
+#: the caller's active role can list, so the root can find tables and tags
+#: before it delegates.
+SMART_ROOT_TOOLS = ("load_skill", "catalog_search", "compute_metrics", "data_to_chart")
+
 logger = logging.getLogger(__name__)
 MAX_PARALLEL_RUNS = 32
 MAX_SESSION_TOKENS = 120_000
@@ -1064,8 +1070,7 @@ class AgentHarnessWorker:
                 "owner_name": child["owner_name"],
                 "name": "Smart",
                 "description": "Solve requests directly or collaborate with governed specialists.",
-                # Result tools read nothing: they compute and chart what specialists return.
-                "default_tools": ["load_skill", "compute_metrics", "data_to_chart"],
+                "default_tools": list(SMART_ROOT_TOOLS),
                 "policy": "auto_read_only",
                 "budget_seconds": 600,
                 "budget_tokens": 30000,

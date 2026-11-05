@@ -201,6 +201,7 @@ class EntityRegistry:
             database_name=body.database,
             schema_name=body.schema_name,
         )
+        await _relink(entity_id)
         result = await self.get(entity_id, user)
         assert result is not None
         return result
@@ -224,7 +225,15 @@ class EntityRegistry:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
+        await _relink(entity_id)
         return True
+
+
+async def _relink(entity_id: str) -> None:
+    """Point the catalog's securable link at this entity's current relation."""
+    from app.modules.catalog.links import ENTITY, refresh_owner_links
+
+    await refresh_owner_links(ENTITY, entity_id)
 
 
 entity_registry = EntityRegistry()

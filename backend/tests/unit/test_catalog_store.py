@@ -32,6 +32,14 @@ ADMIN = {
 ANALYST = {**ADMIN, "username": "alice", "active_role": "marketing"}
 
 
+@pytest.fixture(autouse=True)
+def no_securable_registry(monkeypatch):
+    """The securable registry has its own tests (``test_catalog_metadata``)."""
+    monkeypatch.setattr(sync.securables, "record_harvest", AsyncMock(return_value={}))
+    monkeypatch.setattr(sync.securables, "record_catalogs", AsyncMock())
+    monkeypatch.setattr(refresher, "metadata_pass", AsyncMock())
+
+
 # ── Repository: SQL sent to the system pool ───────────────────────────────
 
 

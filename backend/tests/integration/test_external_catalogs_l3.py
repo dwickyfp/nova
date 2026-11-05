@@ -413,15 +413,14 @@ class TestExternalTableQuery:
             "PROPERTIES ('write.format.default'='parquet')"
         )
 
+        # The explorer and the alias list metadata on the caller's own session,
+        # so the engine decides what appears. With USAGE on the catalog but no
+        # privilege in the database, the catalog shows and the database does
+        # not, and asking for its tables answers 404.
         resp = await admin_client.get(
             f"/api/v1/external-catalogs/{catalog}/databases/{database}/tables"
         )
-        assert resp.status_code == 200, resp.text
-        assert table in [t["name"] for t in resp.json()]
-
-        # The explorer lists metadata on the caller's own session, so the engine
-        # decides what appears. With USAGE on the catalog but no privilege in
-        # the database, the catalog shows and the database does not.
+        assert resp.status_code == 404, resp.text
         resp = await admin_client.get("/api/v1/explorer/catalogs")
         assert resp.status_code == 200
         catalogs = resp.json()["catalogs"]
@@ -448,6 +447,11 @@ class TestExternalTableQuery:
         resp = await admin_client.get(f"/api/v1/explorer/databases/{database}?catalog={catalog}")
         assert resp.status_code == 200, resp.text
         assert table in [t["name"] for t in resp.json()["tables"]]
+        resp = await admin_client.get(
+            f"/api/v1/external-catalogs/{catalog}/databases/{database}/tables"
+        )
+        assert resp.status_code == 200, resp.text
+        assert table in [t["name"] for t in resp.json()]
 
 
 class TestNoCredentialLeak:
