@@ -159,8 +159,12 @@ async def l3_admin_user(request):
     require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
+    # Idempotent: ``test_catalog_l3`` registers this fixture too, so a run of
+    # both modules sets the account up twice under the same names.
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
     await _admin_execute(f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'")
     await _admin_execute(f"GRANT ALL ON *.* TO '{L3_ADMIN_USER}' WITH GRANT OPTION")
     from app.integrations.ranger.client import ranger_client
@@ -190,8 +194,11 @@ async def l3_admin_user(request):
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
-    await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
-    await ranger_client.delete_role(L3_ADMIN_ROLE)
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
+    # The other registration may already have removed the Ranger role.
+    with contextlib.suppress(Exception):
+        await ranger_client.delete_role(L3_ADMIN_ROLE)
 
 
 @pytest_asyncio.fixture
