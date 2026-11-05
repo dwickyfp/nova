@@ -495,8 +495,12 @@ sungguhan.**
   - **PAT**: token dikirim lewat properti `password`, karena properti itu disembunyikan
     oleh `SHOW CREATE CATALOG` sedangkan `jdbc_uri` tidak. Tokennya tidak boleh masuk
     URI. PAT punya masa berlaku, jadi konektor perlu mendukung rotasi token dan
-    menampilkan tanggal kedaluwarsanya. Apakah engine pin bisa mengganti `password`
-    lewat `ALTER CATALOG` atau catalog harus dibuat ulang belum dicek.
+    menampilkan tanggal kedaluwarsanya. Sudah terbukti dengan akun sungguhan: catalog
+    dengan PAT di `password` bisa `SHOW DATABASES` dan `SELECT`, dan
+    `SHOW CREATE CATALOG` tidak menampilkan token. Rotasi cukup dengan
+    `ALTER CATALOG ... SET ("password" = ...)`, tanpa membuat ulang catalog. Query
+    berikutnya langsung memakai kredensial baru. Catatan: Snowflake mewajibkan network
+    policy pada service user sebelum PAT bisa dipakai.
     Jalur ini belum diuji dengan akun sungguhan.
 
 - Patch FE `SnowflakeSchemaResolver` (§6.2) dengan prosedur di

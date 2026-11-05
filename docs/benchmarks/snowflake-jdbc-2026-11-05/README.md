@@ -111,6 +111,20 @@ All StarRocks and Ranger acceptance objects were removed afterwards. The Snowfla
 (`NOVA_CATALOG_TEST`, `NOVA_TEST_WH`, `NOVA_READER`, `NOVA_SVC`) was left in the account for the
 Nova connector work.
 
+### Programmatic Access Token
+
+The product owner requires both key pair and PAT. The PAT test used a 1-day PAT for `NOVA_SVC`,
+restricted to role `NOVA_READER`. Snowflake requires a network policy on a service user before
+it accepts a PAT, so a temporary policy allowed only the stack's egress range.
+
+| Check | Result |
+| --- | --- |
+| Catalog with the PAT in `password`, without `authenticator` | `SHOW DATABASES` and `SELECT` work. `TIMEZONE=Asia/Jakarta` gives the correct `TIMESTAMP_LTZ`. |
+| `SHOW CREATE CATALOG` | No token: `password` is omitted |
+| `ALTER CATALOG sf_phase4_pat SET ("password" = "<invalid>")` | Accepted. The next query fails with `Incorrect username or password`, so the new credential applies immediately. Rotation needs no catalog rebuild. |
+
+The PAT, the network policy and the catalog were removed after the test.
+
 ## Not covered here
 
 - The Nova `snowflake` connector: creating the catalog from a `CATALOG_CONNECTIONS` row,

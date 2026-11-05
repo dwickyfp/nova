@@ -90,9 +90,15 @@ Catalog URIs need these parameters:
 - `TIMEZONE=<the engine time_zone>`. Without it, `TIMESTAMP_LTZ` is returned in the Snowflake
   session time zone (`America/Los_Angeles` by default). `TIMESTAMP_TZ` keeps its stored
   wall-clock time and drops the offset.
-- No secrets. `SHOW CREATE CATALOG` omits `password`, but it prints `jdbc_uri` in full. Use the
-  `password` property, or key-pair auth (`authenticator=SNOWFLAKE_JWT&private_key_file=<path>`
-  with the key file present on the FE and every BE).
+- No secrets. `SHOW CREATE CATALOG` omits `password`, but it prints `jdbc_uri` in full. Both
+  supported credentials stay out of the URI:
+  - A Programmatic Access Token goes in the `password` property, with no `authenticator`.
+    Rotate it with `ALTER CATALOG ... SET ("password" = ...)`, which takes effect on the next
+    query.
+  - Key pair: `authenticator=SNOWFLAKE_JWT&private_key_file=<path>`, with the key file present
+    on the FE and every BE.
+
+  Both were verified live.
 
 Pushdown matches other JDBC catalogs: projections, simple filters and `LIMIT` are pushed, while
 aggregations and joins run in StarRocks. Live acceptance results are in
