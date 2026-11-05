@@ -49,6 +49,9 @@ ROLE = "marketing"
 #: Fixture passwords of the local acceptance principals (scripts/verify_ranger_e2e.py).
 ALICE = ("alice", "NovaAlice2026!")
 BOB = ("bob", "NovaBob2026!")
+#: The seeded addresses (docker/catalog-test/postgres-init.sh); none may come back.
+SOURCE_EMAILS = {"ani@example.com", "budi@example.com", "citra@example.com",
+                 "dodi@example.com", "eka@example.com"}
 #: How long FE policy propagation may take before a check fails.
 PROPAGATION_SECONDS = 120
 
@@ -75,6 +78,8 @@ async def _sql(user: str, password: str, role: str, sql: str) -> Any:
 
 async def _until(description: str, check) -> Any:
     """Retry ``check`` until it passes: Ranger policy downloads are periodic."""
+    from app.core.exceptions import StarRocksError
+
     deadline = time.monotonic() + PROPAGATION_SECONDS
     last: BaseException | None = None
     while time.monotonic() < deadline:
@@ -82,7 +87,8 @@ async def _until(description: str, check) -> Any:
             result = await check()
             print(f"OK   {description}")
             return result
-        except AssertionError as exc:
+        except (AssertionError, StarRocksError) as exc:
+            # Before a policy reaches the FE the engine refuses; keep waiting.
             last = exc
             await asyncio.sleep(5)
     raise AssertionError(f"{description}: {last}")
@@ -164,7 +170,10 @@ async def main() -> None:
             assert result.error is None, result.error
             cities = {row[1] for row in result.rows}
             assert cities == {"Jakarta"}, cities
-            assert all("@" not in str(row[2]) for row in result.rows), result.rows
+            # MASK keeps punctuation and turns letters into x: no address survives.
+            emails = {str(row[2]) for row in result.rows}
+            assert not emails & SOURCE_EMAILS, result.rows
+            assert all(set(email) <= set("x@.") for email in emails), result.rows
             return result
 
         await _until("alice/marketing: only Jakarta rows, email masked", alice_sees_jakarta_masked)
@@ -177,7 +186,14 @@ async def main() -> None:
         await _until("bob/marketing: only Bandung rows", bob_sees_bandung)
 
         async def refused(user, role, sql):
-            result = await _sql(*user, role, sql)
+            from app.core.exceptions import StarRocksError
+
+            try:
+                result = await _sql(*user, role, sql)
+            except StarRocksError as exc:
+                # Ranger's denial surfaces as an engine error.
+                assert "Access denied" in str(exc), str(exc)
+                return
             assert result.error, f"expected a refusal, got {len(result.rows or [])} rows"
 
         await _until(

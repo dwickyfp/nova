@@ -494,7 +494,22 @@ desain di atas:
 
 Kriteria keluar diuji di stack `docker` (FE yang di-patch, Ranger) dengan
 Postgres uji `catalog-test-postgres` (profil compose `catalog-test`) lewat
-`backend/scripts/verify_catalog_jdbc_e2e.py`: PHASE2_RESULTS
+`backend/scripts/verify_catalog_jdbc_e2e.py`, lolos pada 2026-11-05:
+
+| Cek | Hasil |
+|---|---|
+| `CREATE CONNECTION`, kredensial lewat alur entri, `CREATE FOREIGN CATALOG`, `REFRESH CATALOG` sebagai `nova_admin` | Berhasil lewat jalur SQL Nova |
+| `GRANT SELECT ON TABLE pg_catalog_x.public.orders TO ROLE marketing` | Policy Ranger untuk catalog `pg_catalog_x` saja |
+| `alice` / `marketing` | Hanya baris Jakarta; `customer_email` termask (`xxx@xxxxxxx.xxx`) |
+| `bob` / `marketing` | Hanya baris Bandung |
+| `alice` / `finance` (tanpa grant) | Ditolak (`Access denied`) |
+| `alice` / `marketing` ke `public.customers` (tanpa grant) | Ditolak |
+| Setelah `REVOKE` | Ditolak |
+| Kredensial di detail catalog (`SHOW CREATE CATALOG`), baris `CATALOG_*`, `AUDIT_LOG` | Tidak ditemukan |
+
+`scripts/verify_ranger_e2e.py` (acceptance Ranger yang sudah ada) juga lolos
+di FE yang sama. FE yang berjalan saat uji dibangun dari branch Fase 4, yang
+memuat blok driver Fase 2 tanpa perubahan.
 
 ### Fase 3: Metadata bisnis dan pencarian
 
