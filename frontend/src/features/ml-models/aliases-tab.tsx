@@ -160,7 +160,7 @@ export function AliasesTab() {
     <div className='space-y-4'>
       <SimpleTableToolbar resultLabel={`${filtered.length} alias${filtered.length !== 1 ? 'es' : ''}`}>
         <Input
-          placeholder='Search aliases...'
+          placeholder='Search aliases'
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className='h-8 max-w-xs'
@@ -178,8 +178,8 @@ export function AliasesTab() {
           <Tags className='mx-auto mb-3 size-8 text-muted-foreground' />
           <p className='text-sm text-muted-foreground'>
             {search
-              ? 'No aliases match your search.'
-              : 'No model aliases yet. Create one to use for predictions.'}
+              ? 'No aliases match your search'
+              : 'No model aliases yet. Create one to use for predictions'}
           </p>
         </div>
       ) : (
@@ -187,7 +187,7 @@ export function AliasesTab() {
           <table>
             <thead>
               <tr>
-                <th className='text-left'>Alias Name</th>
+                <th className='text-left'>Alias</th>
                 <th className='text-left'>Model</th>
                 <th className='text-left'>Version</th>
                 <th className='text-left'>Created</th>
@@ -236,7 +236,7 @@ export function AliasesTab() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className='max-w-md'>
           <DialogHeader>
-            <DialogTitle>Create Model Alias</DialogTitle>
+            <DialogTitle>Create model alias</DialogTitle>
             <DialogDescription>
               Create an alias to reference a specific model version for
               predictions.
@@ -244,7 +244,7 @@ export function AliasesTab() {
           </DialogHeader>
           <div className='space-y-4 py-2'>
             <div>
-              <Label className='mb-1.5 block text-xs'>Alias Name</Label>
+              <Label className='mb-1.5 block text-xs'>Alias name</Label>
               <Input
                 placeholder='e.g. status_predictor'
                 value={form.alias_name}
@@ -315,7 +315,7 @@ export function AliasesTab() {
       >
         <DialogContent className='max-w-md'>
           <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogTitle>Delete alias</DialogTitle>
             <DialogDescription>
               Delete alias &ldquo;{deleteDialog?.alias_name}&rdquo;? The model
               itself will not be affected.

@@ -54,7 +54,7 @@ export function AgentBuilderPage() {
   };
 
   if (agentQuery.isError) {
-    return <><Header fixed /><Main scroll><h1 className="text-xl">Agent</h1><p role="alert">Could not load this agent.</p>
+    return <><Header fixed /><Main scroll><h1 className="text-lg font-semibold tracking-tight">Agent</h1><p role="alert" className="mt-1 mb-4 text-sm text-muted-foreground">Could not load this agent.</p>
       <Button onClick={() => agentQuery.refetch()}>Retry</Button></Main></>;
   }
   if (agentQuery.isLoading || !agentQuery.data) {
@@ -77,7 +77,7 @@ export function AgentBuilderPage() {
         <div className="mb-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="truncate text-2xl leading-8 font-normal">
+              <h1 className="truncate text-lg font-semibold tracking-tight">
                 {agent.name}
               </h1>
               <Badge variant="outline">Active</Badge>

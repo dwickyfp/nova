@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Brain, Play, Tags } from 'lucide-react'
+import { ChartScatter, Play, Tags } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
+import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ModelsTab } from './models-tab'
 import { PredictTab } from './predict-tab'
@@ -18,20 +19,16 @@ export function MLModels() {
       </Header>
 
       <Main scroll>
-        <div className='mb-2'>
-          <h1 className='text-2xl leading-8 font-normal'>
-            ML Models
-          </h1>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            Train classical ML models from SQL queries, run predictions, and
-            manage model aliases for production deployments.
-          </p>
-        </div>
+        <PageHeader
+          className='mb-6'
+          title='ML Models'
+          description='Train classification and regression models from a SQL query, score new rows, and point aliases at the version in production'
+        />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value='models' className='gap-1.5'>
-              <Brain className='size-3.5' />
+              <ChartScatter className='size-3.5' />
               Models
             </TabsTrigger>
             <TabsTrigger value='predict' className='gap-1.5'>

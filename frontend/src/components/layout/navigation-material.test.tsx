@@ -27,7 +27,7 @@ import { AppSidebar } from "./app-sidebar";
 import { AuthenticatedLayout } from "./authenticated-layout";
 import "@/styles/index.css";
 
-function consoleRouter() {
+function consoleRouter(initialPath = "/workspaces") {
   const root = createRootRoute({
     component: () => (
       <ThemeProvider defaultTheme="light">
@@ -54,13 +54,20 @@ function consoleRouter() {
       </ThemeProvider>
     ),
   });
-  const paths = ["/", "/workspaces", "/agents", "/settings/profile"] as const;
+  const paths = [
+    "/",
+    "/workspaces",
+    "/agents",
+    "/agents/tools",
+    "/agents/$agentId",
+    "/settings/profile",
+  ] as const;
   const routeTree = root.addChildren(
     paths.map((path) => createRoute({ getParentRoute: () => root, path })),
   );
   return createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: ["/workspaces"] }),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
 }
 
@@ -373,6 +380,32 @@ describe("Nova navigation material", () => {
       expect(header.getBoundingClientRect().top).toBe(headerTop);
     });
   }
+
+  it("selects only the most specific AI & ML item for nested paths", async () => {
+    const tools = await render(
+      <RouterProvider router={consoleRouter("/agents/tools")} />,
+    );
+    await expect
+      .element(tools.getByRole("link", { name: "Tools", exact: true }))
+      .toHaveAttribute("data-active", "true");
+    await expect
+      .element(tools.getByRole("link", { name: "Agent", exact: true }))
+      .toHaveAttribute("data-active", "false");
+    expect(
+      tools
+        .getByRole("link", { name: "Agent", exact: true })
+        .element()
+        .hasAttribute("aria-current"),
+    ).toBe(false);
+    await tools.unmount();
+
+    const detail = await render(
+      <RouterProvider router={consoleRouter("/agents/revenue-analyst")} />,
+    );
+    await expect
+      .element(detail.getByRole("link", { name: "Agent", exact: true }))
+      .toHaveAttribute("data-active", "true");
+  });
 
   it("restores persisted icon mode and keeps collapsed menus solid", async () => {
     setCookie("sidebar_state", "false");
