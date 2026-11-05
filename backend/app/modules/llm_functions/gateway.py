@@ -236,7 +236,9 @@ class LLMGateway:
         try:
             timeout = settings.LLM_GATEWAY_TIMEOUT_SECONDS
             async with self._slots, guarded_async_client(
-                timeout=timeout, allow_private_network=True
+                timeout=timeout,
+                allow_private_network=True,
+                loopback_host=settings.AI_PROVIDER_LOOPBACK_HOST,
             ) as client:
                 response = await client.post(
                     resolved.endpoint,

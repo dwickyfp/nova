@@ -65,9 +65,10 @@ class _Provider:
         self.calls: list[dict] = []
         self.response: httpx.Response | Exception = httpx.Response(200, json=REPLY)
 
-    def client(self, *, timeout, allow_private_network=False):
+    def client(self, *, timeout, allow_private_network=False, loopback_host=None):
         self.timeout = timeout
         self.allow_private_network = allow_private_network
+        self.loopback_host = loopback_host
         return self
 
     async def __aenter__(self):

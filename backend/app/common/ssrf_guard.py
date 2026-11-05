@@ -29,6 +29,12 @@ private (RFC1918 / ``fc00::/7``) addresses. Link-local addresses, including the
 cloud metadata service, and multicast, reserved, unspecified and CGNAT ranges
 stay blocked in that mode.
 
+When Nova runs in a container, ``localhost`` names the container rather than
+the machine the administrator typed it on. Provider clients therefore pass
+``loopback_host`` (``AI_PROVIDER_LOOPBACK_HOST``, e.g. ``host.docker.internal``)
+and the transport sends loopback requests to that host instead. The rewritten
+target is validated like any other.
+
 Scope note — this module intentionally does **not** import anything from
 ``app.modules.*``; it is a leaf common utility (AGENTS.md: dependency
 direction points inward).
@@ -237,29 +243,53 @@ class _GuardedTransport(httpx.AsyncHTTPTransport):
     ``169.254.169.254`` is rejected rather than followed.
     """
 
-    def __init__(self, *, allow_private_network: bool = False) -> None:
+    def __init__(
+        self, *, allow_private_network: bool = False, loopback_host: str | None = None
+    ) -> None:
         super().__init__()
         self._allow_private_network = allow_private_network
+        self._loopback_host = loopback_host or None
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if self._loopback_host and _is_loopback_host(request.url.host):
+            # The Host header keeps the name the caller used.
+            request.url = request.url.copy_with(host=self._loopback_host)
         resolve_and_validate_url(
             str(request.url), allow_private_network=self._allow_private_network
         )
         return await super().handle_async_request(request)
 
 
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() in _LOCAL_HOSTNAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def guarded_async_client(
-    *, timeout: float = 15.0, allow_private_network: bool = False
+    *,
+    timeout: float = 15.0,
+    allow_private_network: bool = False,
+    loopback_host: str | None = None,
 ) -> httpx.AsyncClient:
     """Build an ``httpx.AsyncClient`` that enforces this guard.
 
     ``follow_redirects`` is enabled because providers legitimately redirect
     (e.g. ``/v1`` → ``/v1/``); each hop is checked by ``_GuardedTransport``.
     ``allow_private_network`` has the meaning described on
-    :func:`resolve_and_validate_url` and applies to every hop.
+    :func:`resolve_and_validate_url` and applies to every hop. A non-empty
+    ``loopback_host`` sends requests for ``localhost``/``127.0.0.1``/``::1`` to
+    that host; it takes effect only together with ``allow_private_network``.
     """
+    if not allow_private_network:
+        loopback_host = None
     return httpx.AsyncClient(
         timeout=timeout,
-        transport=_GuardedTransport(allow_private_network=allow_private_network),
+        transport=_GuardedTransport(
+            allow_private_network=allow_private_network, loopback_host=loopback_host
+        ),
         follow_redirects=True,
     )

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.common.ssrf_guard import BlockedEndpointError, guarded_async_client
+from app.core.config import settings
 from app.core.exceptions import NovaException
 from app.modules.ai_ml.service import ai_service
 
@@ -95,7 +96,11 @@ class EmbeddingService:
         if not key:
             raise EmbeddingError("Embedding provider credential is unavailable", status_code=503)
         try:
-            async with guarded_async_client(timeout=30.0, allow_private_network=True) as client:
+            async with guarded_async_client(
+                timeout=30.0,
+                allow_private_network=True,
+                loopback_host=settings.AI_PROVIDER_LOOPBACK_HOST,
+            ) as client:
                 response = await client.post(
                     model.endpoint,
                     headers={"Authorization": f"Bearer {key}"},
