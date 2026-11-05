@@ -106,7 +106,7 @@ describe("Workspaces first file", () => {
     fakeBackend();
     const errors = vi.spyOn(console, "error");
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    await render(
+    const screen = await render(
       <QueryClientProvider client={client}>
         <SidebarProvider>
           <AssistantProvider>
@@ -126,5 +126,10 @@ describe("Workspaces first file", () => {
     );
     expect(loops).toHaveLength(0);
     expect(page.getByText("Something went wrong").elements()).toHaveLength(0);
+
+    // Unmount while the fake backend still answers: the page's debounced
+    // state save would otherwise fire after afterEach restores the real fetch.
+    await screen.unmount();
+    client.clear();
   });
 });
