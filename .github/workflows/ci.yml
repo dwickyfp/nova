@@ -173,7 +173,10 @@ jobs:
 
   backend-integration:
     name: Backend integration (L3, real engine)
-    runs-on: ubuntu-latest
+    # Pinned: on the ubuntu-latest 26.04 image the compose engine stopped
+    # accepting connections on 127.0.0.1:29030 within a minute of the suite
+    # starting (run 41998251723), while the same stack completes on 24.04.
+    runs-on: ubuntu-24.04
     needs: [backend-unit]
     env:
       NOVA_TEST_FE_HEAP_MB: "2048"
