@@ -357,6 +357,19 @@ di AI Monitoring sebagai "Measured AI function tokens").
   per fungsi dan alias, bukan per user.
 - Saat start, fungsi yang sudah sesuai tidak di-drop dan dibuat ulang.
 
+### Provider LLM lokal
+
+Admin bisa mendaftarkan provider di mesin sendiri atau jaringan lokal lewat
+`http://`, misalnya `http://localhost:11434/v1` untuk Ollama. Alamat metadata
+cloud dan link-local tetap ditolak.
+
+Di dalam container, `localhost` berarti container itu sendiri. Karena itu
+backend dan worker di compose memakai `AI_PROVIDER_LOOPBACK_HOST`
+(default `host.docker.internal`): panggilan provider ke `localhost`,
+`127.0.0.1`, atau `::1` diteruskan ke host tersebut. Backend yang jalan
+langsung di host membiarkan variabel ini kosong. Di Docker Linux tanpa
+`host.docker.internal`, isi dengan alamat gateway host.
+
 ---
 
 ## 3. Jalankan Frontend

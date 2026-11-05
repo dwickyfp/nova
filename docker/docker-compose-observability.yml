@@ -123,6 +123,8 @@ services:
       NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
       MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
       NOVA_METRICS_HOST: 0.0.0.0
+      # A provider endpoint on localhost means the host machine, not this container.
+      AI_PROVIDER_LOOPBACK_HOST: ${AI_PROVIDER_LOOPBACK_HOST:-host.docker.internal}
     volumes:
       - ./nova.yaml:/opt/nova/config/nova.yaml:ro
     restart: unless-stopped

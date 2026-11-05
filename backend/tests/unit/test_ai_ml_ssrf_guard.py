@@ -396,3 +396,114 @@ def test_test_connection_route_allows_local_network_only_for_admins(
 
     assert resp.status_code == 200, resp.text
     assert probe.await_args.kwargs["allow_private_network"] is expected
+
+
+# ── localhost inside a container means the host machine ─────────────────────
+
+
+def _capture_sent(monkeypatch) -> list[httpx.Request]:
+    sent: list[httpx.Request] = []
+
+    async def fake_send(self, request):
+        sent.append(request)
+        return httpx.Response(200, json={"data": [{"id": "local-model"}]})
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_send)
+    real_getaddrinfo = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        if host == "host.docker.internal":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.65.254", port))]
+        return real_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    return sent
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:20128/v1/models",
+        "http://127.0.0.1:20128/v1/models",
+        "http://[::1]:20128/v1/models",
+    ],
+)
+async def test_loopback_host_sends_localhost_to_the_host_machine(monkeypatch, url):
+    sent = _capture_sent(monkeypatch)
+
+    async with guarded_async_client(
+        allow_private_network=True, loopback_host="host.docker.internal"
+    ) as client:
+        response = await client.get(url)
+
+    assert response.status_code == 200
+    assert str(sent[0].url) == "http://host.docker.internal:20128/v1/models"
+    assert sent[0].headers["host"] == httpx.URL(url).netloc.decode()
+
+
+async def test_loopback_host_leaves_other_hosts_alone(monkeypatch):
+    sent = _capture_sent(monkeypatch)
+
+    async with guarded_async_client(
+        allow_private_network=True, loopback_host="host.docker.internal"
+    ) as client:
+        await client.get("http://192.168.1.10:8000/v1/models")
+
+    assert str(sent[0].url) == "http://192.168.1.10:8000/v1/models"
+
+
+async def test_loopback_host_needs_the_private_network_mode(monkeypatch):
+    sent = _capture_sent(monkeypatch)
+
+    async with guarded_async_client(loopback_host="host.docker.internal") as client:
+        with pytest.raises(BlockedEndpointError):
+            await client.get("http://localhost:20128/v1/models")
+
+    assert sent == []
+
+
+async def test_loopback_host_target_is_still_validated(monkeypatch):
+    sent = _capture_sent(monkeypatch)
+
+    async with guarded_async_client(
+        allow_private_network=True, loopback_host="169.254.169.254"
+    ) as client:
+        with pytest.raises(BlockedEndpointError):
+            await client.get("http://localhost:20128/v1/models")
+
+    assert sent == []
+
+
+async def test_test_connection_uses_the_configured_loopback_host(monkeypatch):
+    from app.core.config import settings
+    from app.modules.ai_ml.service import AIService
+
+    sent = _capture_sent(monkeypatch)
+    monkeypatch.setattr(settings, "AI_PROVIDER_LOOPBACK_HOST", "host.docker.internal")
+
+    result = await AIService().test_connection(
+        provider_type="openai_compatible",
+        endpoint="http://localhost:20128/v1",
+        api_key=None,
+        allow_private_network=True,
+    )
+
+    assert result["success"] is True
+    assert str(sent[0].url) == "http://host.docker.internal:20128/v1/models"
+
+
+async def test_without_a_loopback_host_localhost_stays_local(monkeypatch):
+    from app.core.config import settings
+    from app.modules.ai_ml.service import AIService
+
+    sent = _capture_sent(monkeypatch)
+    monkeypatch.setattr(settings, "AI_PROVIDER_LOOPBACK_HOST", "")
+
+    await AIService().test_connection(
+        provider_type="openai_compatible",
+        endpoint="http://localhost:20128/v1",
+        api_key=None,
+        allow_private_network=True,
+    )
+
+    assert str(sent[0].url) == "http://localhost:20128/v1/models"

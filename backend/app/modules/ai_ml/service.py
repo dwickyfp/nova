@@ -500,7 +500,9 @@ class AIService:
 
         try:
             async with guarded_async_client(
-                timeout=15.0, allow_private_network=allow_private_network
+                timeout=15.0,
+                allow_private_network=allow_private_network,
+                loopback_host=settings.AI_PROVIDER_LOOPBACK_HOST,
             ) as client:
                 resp = await client.get(url, headers=headers)
 
