@@ -772,8 +772,10 @@ describe("studio transcript click-through", () => {
     await page.getByRole("button", { name: "Send" }).click();
 
     await expect.element(textbox).toHaveValue("");
-    await expect.element(page.getByTestId("process-rail-toggle")).toBeVisible();
-    expect(page.getByTestId("process-rail-toggle").element().textContent).toContain("Starting the agent…");
+    // A live run opens onto its steps, so the placeholder row is visible
+    // before the conversation exists.
+    await expect.element(page.getByTestId("process-rail-toggle")).toHaveAttribute("data-state", "open");
+    await expect.element(page.getByText("Starting the agent…")).toBeVisible();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/messages"))).toBe(false);
 
     releaseCreate();
@@ -933,6 +935,8 @@ describe("studio transcript click-through", () => {
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
     await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
+    // The live rail folds once the turn settles; open it from there.
+    await expect.element(page.getByTestId("process-rail-toggle")).toHaveAttribute("data-state", "closed");
     await page.getByTestId("process-rail-toggle").click();
 
     // The tool step's detail is what the tool returned, and it is only shown
@@ -986,6 +990,8 @@ describe("studio transcript click-through", () => {
 
     // So does the process that produced it: the reasoning rows, the tool row
     // with its SQL, the grid, and the chart.
+    // The live rail folds once the turn settles; open it from there.
+    await expect.element(page.getByTestId("process-rail-toggle")).toHaveAttribute("data-state", "closed");
     await page.getByTestId("process-rail-toggle").click();
     await expect
       .element(
