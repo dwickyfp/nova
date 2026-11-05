@@ -4,15 +4,18 @@ import {
   BrainCircuit,
   BookOpen,
   ChartColumn,
+  ChartScatter,
   Clock,
   Database,
   Network,
+  Plug,
   House,
   KeyRound,
   ListTodo,
   Shield,
   Sparkles,
   SquareChartGantt,
+  TextSearch,
   TrendingUp,
   Upload,
   Users,
@@ -75,7 +78,7 @@ export const sidebarData: SidebarData = {
             {
               title: "AI Search",
               url: "/ai-search",
-              icon: Sparkles,
+              icon: TextSearch,
             },
             {
               title: "Skills",
@@ -115,7 +118,7 @@ export const sidebarData: SidebarData = {
             {
               title: "ML Models",
               url: "/ml-models",
-              icon: Brain,
+              icon: ChartScatter,
             },
           ],
         },
@@ -152,7 +155,7 @@ export const sidebarData: SidebarData = {
         {
           title: "AI Providers",
           url: "/ai-providers",
-          icon: Bot,
+          icon: Plug,
         },
         {
           title: "Admin Settings",

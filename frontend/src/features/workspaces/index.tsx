@@ -41,6 +41,7 @@ import {
   Type,
   UserRoundCog,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -2079,7 +2080,7 @@ export function WorkspacesPage() {
           <div className="min-w-0">
             <h1 className="truncate text-lg font-heading">Workspaces</h1>
             <p className="text-sm text-muted-foreground">
-              SQL workspace with per-tab context, object browsing, and results.
+              Write SQL against governed data, with each tab keeping its own role, database, and schema
             </p>
           </div>
         </div>
@@ -2088,7 +2089,7 @@ export function WorkspacesPage() {
       <div className="flex min-h-0 flex-1 overflow-hidden border-t">
         <aside
           className={cn(
-            "border-r bg-muted/20 transition-all duration-200",
+            "border-r bg-muted/20 transition-[width] duration-200",
             secondaryCollapsed ? "w-14" : "w-80",
           )}
         >
@@ -2472,7 +2473,7 @@ export function WorkspacesPage() {
                       >
                         Results
                         {activeExplainPlan !== null && (
-                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
                             Explain
                           </span>
                         )}
@@ -2621,7 +2622,13 @@ export function WorkspacesPage() {
                                   : "text-muted-foreground hover:bg-muted/50"
                               }`}
                             >
-                              {!queryResults[idx].success ? "⚠ " : ""}Result{" "}
+                              {!queryResults[idx].success ? (
+                                <AlertTriangle
+                                  className="mr-1 inline size-3 align-[-2px] text-destructive"
+                                  aria-label="Failed"
+                                />
+                              ) : null}
+                              Result{" "}
                               {idx + 1}
                             </button>
                           ))}
@@ -3107,7 +3114,7 @@ function ObjectGroup({
   const isTables = title === "Tables";
   return (
     <div>
-      <div className="px-2 py-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <div className="px-2 py-0.5 text-xs font-medium text-muted-foreground">
         {title}
       </div>
       <div className="space-y-0.5">
@@ -3309,7 +3316,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
                     }
                   >
                     {cell === null ? (
-                      <span className="text-muted-foreground italic">NULL</span>
+                      <span className="font-mono text-xs text-muted-foreground">NULL</span>
                     ) : (
                       String(cell)
                     )}
@@ -3377,7 +3384,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
               style={{ left: x, top: y }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mb-1 truncate border-b border-border px-2 py-1 text-[11px] text-muted-foreground">
+              <div className="mb-1 truncate border-b border-border px-2 py-1 text-xs text-muted-foreground">
                 {colName} — Row {rowIdx + 1}
               </div>
               <button
@@ -4051,10 +4058,10 @@ function ChartVisualization({
         {builderCollapsed ? (
           <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 px-2 py-12">
             <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted/20">
-              <BarChart3 className="size-4 text-primary" />
+              <BarChart3 className="size-4 text-muted-foreground" />
             </div>
-            <div className="-rotate-180 text-[11px] font-medium tracking-[0.2em] text-muted-foreground [writing-mode:vertical-rl]">
-              CHART
+            <div className="-rotate-180 text-xs font-medium text-muted-foreground [writing-mode:vertical-rl]">
+              Chart
             </div>
           </div>
         ) : (
@@ -4213,7 +4220,7 @@ function ChartVisualization({
                   </div>
 
                   {groupBy ? (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
+                    <p className="mt-2 text-xs text-muted-foreground">
                       Grouped charts use the first Y-axis metric as the measure
                       for each split series.
                     </p>
@@ -4359,7 +4366,7 @@ function ChartVisualization({
               {chartModel.series.map((series) => (
                 <div
                   key={series.key}
-                  className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/25 px-2.5 py-1 text-[11px] text-muted-foreground"
+                  className="inline-flex items-center gap-2 text-xs text-muted-foreground"
                 >
                   <span
                     className="size-2 rounded-full"
@@ -5222,7 +5229,7 @@ function MonacoSqlEditor({
                   className="grid grid-cols-2 gap-1.5"
                 >
                   <div className="min-w-0 rounded border border-destructive/30 bg-destructive/10 p-1.5">
-                    <p className="mb-0.5 text-[0.65rem] font-medium uppercase text-destructive">
+                    <p className="mb-0.5 text-xs font-medium text-destructive">
                       Before
                     </p>
                     <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem] text-muted-foreground">
@@ -5235,7 +5242,7 @@ function MonacoSqlEditor({
                     </pre>
                   </div>
                   <div className="min-w-0 rounded border border-info/40 bg-info/10 p-1.5">
-                    <p className="mb-0.5 text-[0.65rem] font-medium uppercase text-info-strong">
+                    <p className="mb-0.5 text-xs font-medium text-info-strong">
                       After
                     </p>
                     <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem]">

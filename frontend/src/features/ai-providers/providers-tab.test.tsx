@@ -42,7 +42,7 @@ it.each([1280, 320])('registers and edits an LLM provider at %ipx', async (width
   expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth)
   await page.screenshot()
   await expect
-    .element(screen.getByRole('button', { name: 'Test Connection' }))
+    .element(screen.getByRole('button', { name: 'Test connection' }))
     .toBeInTheDocument()
   await screen.getByRole('button', { name: 'Create Provider' }).click()
   expect(post).toHaveBeenCalledWith(

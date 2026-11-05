@@ -4,6 +4,7 @@ import { BookOpen, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
+import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -81,19 +82,17 @@ export function SkillsRegistryPage() {
     <>
       <Header fixed />
       <Main scroll>
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl leading-8 font-normal">Skill Registry</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Playbooks an agent loads before answering a task it covers. Add one as a SKILL.md
-              document and any agent can pick it up.
-            </p>
-          </div>
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="size-4" />
-            Add skill
-          </Button>
-        </div>
+        <PageHeader
+          className="mb-6"
+          title="Skill Registry"
+          description="Playbooks an agent loads before answering a task it covers. Add one as a SKILL.md document and any agent can pick it up."
+          actions={
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="size-4" />
+              Add skill
+            </Button>
+          }
+        />
 
         <ScrollArea className="min-h-0 flex-1 pe-3">
           <section>

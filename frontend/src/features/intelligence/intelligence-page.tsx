@@ -282,12 +282,12 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
   });
 
   const pageDescription = {
-    entities: "Define how a record is identified so search and features can use the same key.",
-    search: "Find records by their text, then create an index when you need to search another table.",
+    entities: "Define how a record is identified so search and features can use the same key",
+    search: "Find records by their text, then create an index when you need to search another table",
     semantic: semanticViewId
-      ? "Inspect the definition, check a question, and manage published versions."
+      ? "Inspect the definition, check a question, and manage published versions"
       : "Give business questions a shared meaning. Build a view, check it, then publish it for agents.",
-    features: "Turn time-based table columns into reusable inputs for lookups and models.",
+    features: "Turn time-based table columns into reusable inputs for lookups and models",
   }[tab];
 
   return (
@@ -298,12 +298,12 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
           <ArrowLeft className="size-4" aria-hidden="true" /> All Semantic Views
         </Link> : null}
       </Header>
-      <Main scroll fluid className="px-5 py-6 md:px-10 md:py-8">
-      <div className="mx-auto w-full max-w-5xl space-y-7">
+      <Main scroll>
+      <div className="w-full space-y-6">
          <div className="flex flex-wrap items-start justify-between gap-3">
            <div>
-            <h1 className="text-2xl font-heading">{pageTitle}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{pageDescription}</p>
+            <h1 className="text-lg font-semibold tracking-tight">{pageTitle}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
            </div>
            <Button variant="outline" size="sm" onClick={() => void askNove(
              tab === "semantic" && selectedSemantic
@@ -338,7 +338,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
               empty="No entities yet. Choose a source table and its unique key above." retry={() => void entities.refetch()}>
               {(entities.data ?? []).map((item) => (
                 <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-                  <div><b>{item.name}</b><p className="text-sm text-muted-foreground">
+                  <div><span className="font-medium">{item.name}</span><p className="text-sm text-muted-foreground">
                     {item.relation} · {item.key_columns.join(", ")}</p></div>
                   <Button variant="ghost" disabled={busy} onClick={() => void run(
                     () => api.delete(`/entities/${encodeURIComponent(item.id)}`),
@@ -367,7 +367,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                   <button className="rounded-md p-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     aria-current={selectedSearch === item.name ? "true" : undefined}
                     onClick={() => { setSelectedSearch(item.name); setSearchResult(null); setMode("HYBRID"); }}>
-                    <b>{item.name}</b><p className="text-sm text-muted-foreground">
+                    <span className="font-medium">{item.name}</span><p className="text-sm text-muted-foreground">
                       {item.source_relation} · {item.status} · v{item.active_version ?? "—"}</p>
                   </button>
                   <div className="flex gap-2">
@@ -480,9 +480,9 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
               <Button asChild><Link to="/semantic-views/builder">Build visually</Link></Button>
             </div>
             <ol className="grid gap-3 text-sm sm:grid-cols-3">
-              <li><b>1. Build</b><p className="text-muted-foreground">Choose tables, fields, and measures.</p></li>
-              <li><b>2. Check</b><p className="text-muted-foreground">Validate a draft and preview a question.</p></li>
-              <li><b>3. Publish</b><p className="text-muted-foreground">Make the checked version available to agents.</p></li>
+              <li><span className="font-medium">1. Build</span><p className="text-muted-foreground">Choose tables, fields, and measures</p></li>
+              <li><span className="font-medium">2. Check</span><p className="text-muted-foreground">Validate a draft and preview a question</p></li>
+              <li><span className="font-medium">3. Publish</span><p className="text-muted-foreground">Make the checked version available to agents</p></li>
             </ol>
           </div>
           <div>
@@ -692,9 +692,9 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
             <h2 className="text-lg font-medium">Prepare data for models</h2>
             <p className="text-sm text-muted-foreground">A Feature View saves values from a table at a point in time. A Feature Group combines active views so you can look up values or train a model.</p>
             <ol className="grid gap-3 text-sm sm:grid-cols-3">
-              <li><b>1. Identify records</b><p className="text-muted-foreground">Create an entity with a unique key. <Link className="underline underline-offset-2" to="/entities">Manage entities</Link></p></li>
-              <li><b>2. Create a view</b><p className="text-muted-foreground">Choose a time column and the values to save.</p></li>
-              <li><b>3. Use a group</b><p className="text-muted-foreground">Activate the view, group it, then look up values or train.</p></li>
+              <li><span className="font-medium">1. Identify records</span><p className="text-muted-foreground">Create an entity with a unique key. <Link className="underline underline-offset-2" to="/entities">Manage entities</Link></p></li>
+              <li><span className="font-medium">2. Create a view</span><p className="text-muted-foreground">Choose a time column and the values to save</p></li>
+              <li><span className="font-medium">3. Use a group</span><p className="text-muted-foreground">Activate the view, group it, then look up values or train</p></li>
             </ol>
           </div>
           <div>
@@ -729,7 +729,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
             empty="No Feature Views yet. Create one above to save time-based values." retry={() => void views.refetch()}>
             {(views.data ?? []).map((item) => <li key={item.name}
               className="flex flex-wrap items-center justify-between gap-2 py-3">
-              <span><b>{item.name}</b><p className="text-sm text-muted-foreground">
+              <span><span className="font-medium">{item.name}</span><p className="text-sm text-muted-foreground">
                 {item.status} · v{item.active_version ?? "—"}</p></span>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" disabled={busy} onClick={() => void run(async () => {
@@ -786,7 +786,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
             empty="No Feature Groups yet. Activate a Feature View, then create a group above." retry={() => void groups.refetch()}>
             {(groups.data ?? []).map((item) => <li key={item.name} className="py-3">
                <button onClick={() => { setSelectedGroup(item.name); setLookupValues({}); }} className="text-left">
-                <b>{item.name}</b><p className="text-sm text-muted-foreground">
+                <span className="font-medium">{item.name}</span><p className="text-sm text-muted-foreground">
                   {item.status} · v{item.active_version ?? "—"}</p>
               </button>
             </li>)}

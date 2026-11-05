@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Bot,
+  ChevronRight,
   CheckCircle2,
   Cpu,
   Loader2,
@@ -459,7 +459,7 @@ export function ProvidersTab() {
           setSearch(value)
           setPage(1)
         }}
-        searchPlaceholder='Search providers or models...'
+        searchPlaceholder='Search providers or models'
         resultLabel={`${filtered.length} provider${filtered.length !== 1 ? 's' : ''}`}
         filters={[
           {
@@ -525,7 +525,7 @@ export function ProvidersTab() {
             {!loading && paginated.length === 0 && (
               <tr>
                 <td colSpan={7} className='px-4 py-12 text-center'>
-                  <Bot className='mx-auto mb-3 size-8 text-muted-foreground' />
+                  <Plug className='mx-auto mb-3 size-8 text-muted-foreground' />
                   <p className='text-sm text-muted-foreground'>
                     No AI providers registered yet.
                   </p>
@@ -555,7 +555,8 @@ export function ProvidersTab() {
                   >
                     <td className='px-4 py-3'>
                       <div className='flex items-center gap-2'>
-                        <Bot
+                        <ChevronRight
+                          aria-hidden='true'
                           className={cn(
                             'size-4 text-muted-foreground transition-transform',
                             expandedProvider === provider.id && 'rotate-90'
@@ -650,7 +651,7 @@ export function ProvidersTab() {
                         <div className='ml-6'>
                           <div className='mb-2 flex items-center gap-2'>
                             <Cpu className='size-3.5 text-muted-foreground' />
-                            <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+                            <span className='text-xs font-medium text-muted-foreground'>
                               Models ({provider.models.length})
                             </span>
                           </div>
@@ -695,7 +696,7 @@ export function ProvidersTab() {
                                       <div>{model.display_name ?? '—'}</div>
                                       {model.type === 'embedding' &&
                                         model.logical_alias && (
-                                          <div className='font-mono text-[11px]'>
+                                          <div className='font-mono text-xs'>
                                             {model.logical_alias} ·{' '}
                                             {model.revision}
                                           </div>
@@ -913,7 +914,7 @@ export function ProvidersTab() {
               ) : (
                 <Plug className='size-3.5' />
               )}
-              {testing ? 'Testing...' : 'Test Connection'}
+              {testing ? 'Testing…' : 'Test connection'}
             </Button>
 
             {testResult && (
@@ -947,7 +948,7 @@ export function ProvidersTab() {
                         <Badge
                           key={m}
                           variant='secondary'
-                          className='font-mono text-[10px] font-normal'
+                          className='font-mono text-xs font-normal'
                         >
                           {m}
                         </Badge>
@@ -1168,7 +1169,9 @@ export function ProvidersTab() {
       >
         <DialogContent className='max-w-md'>
           <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogTitle>
+              {deleteDialog?.kind === 'provider' ? 'Delete provider' : 'Delete model'}
+            </DialogTitle>
             <DialogDescription>
               {deleteDialog?.kind === 'provider'
                 ? `Delete provider "${deleteDialog.provider.name}"? This will also delete all ${deleteDialog.provider.model_count} model(s) under it.`

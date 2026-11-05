@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
+import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,12 +37,11 @@ export function ToolsRegistryPage() {
     <>
       <Header fixed />
       <Main scroll>
-        <div className='mb-6'>
-          <h1 className='text-2xl leading-8 font-normal'>Tools Registry</h1>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            Tools and the internal MCP connector catalog.
-          </p>
-        </div>
+        <PageHeader
+          className='mb-6'
+          title='Tools Registry'
+          description='Tools agents get from connected MCP servers, and the servers that provide them'
+        />
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -87,7 +87,7 @@ function ToolsList() {
       <EmptyState
         icon={Wrench}
         title='No tools registered'
-        description='Connect an MCP server and discover its tools to add them here.'
+        description='Connect an MCP server and discover its tools to add them here'
       />
     )
   }
