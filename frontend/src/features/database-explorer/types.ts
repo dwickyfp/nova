@@ -32,6 +32,13 @@ export type CatalogInfo = {
   type: string
   comment: string | null
   databases: string[]
+  /** Created through Nova; only these can be dropped from the UI. */
+  managed?: boolean
+  /** Who first recorded it in the Nova Catalog: `nova` or `engine`. */
+  source?: string | null
+  /** Outcome of the last metadata sync: `ok` or `error`. */
+  sync_status?: string | null
+  last_sync_at?: string | null
 }
 
 export type CatalogsResponse = {
@@ -235,6 +242,7 @@ export type PartitionInfo = {
 export type TableDetailResponse = {
   name: string
   database: string
+  catalog?: string
   columns: ColumnInfo[]
   properties: TableProperties
   partitions: PartitionInfo[]

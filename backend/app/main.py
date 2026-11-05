@@ -32,6 +32,7 @@ from app.modules.ai_ml.router import router as ai_router
 from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
 from app.modules.backup.router import router as backup_router
+from app.modules.catalog.router import router as catalog_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
@@ -167,15 +168,15 @@ async def _bootstrap_control_plane() -> None:
     except Exception as e:
         logger.warning("Could not ensure workspace storage bucket: %s", e)
 
-    # Nova-managed external catalog metadata (NOVA-62). Best-effort: the engine
-    # catalog is the source of truth, and a missing mirror table only degrades
-    # the list endpoint, not the service.
+    # Nova Catalog store (CATALOG_*), plus a one-time copy of the legacy
+    # CONFIG_EXTERNAL_CATALOGS rows. Best-effort: visibility always comes from
+    # the engine, so a missing store only loses descriptions and sync history.
     try:
-        from app.modules.external_catalogs.repository import external_catalog_repo
+        from app.modules.catalog.service import catalog_service
 
-        await external_catalog_repo.ensure_schema()
+        await catalog_service.ensure_schema()
     except Exception as e:
-        logger.warning("Could not ensure external catalog schema: %s", e)
+        logger.warning("Could not ensure catalog store schema: %s", e)
 
     # Migration Connector source registry (Phase 11 v1). Best-effort, same
     # reasoning: a missing mirror table only degrades the source list, not the
@@ -355,10 +356,12 @@ async def lifespan(app: FastAPI):
         background.append(asyncio.create_task(ml_engine_service.sweep_ephemeral()))
     news_stop = asyncio.Event()
     if control:
+        from app.modules.catalog import refresher as catalog_refresher
         from app.modules.intelligence import newsroom_refresher
 
         await search_service.start()
         background.append(asyncio.create_task(newsroom_refresher.run(news_stop)))
+        background.append(asyncio.create_task(catalog_refresher.run(news_stop)))
     # Telemetry is buffered per process, so every role flushes its own.
     from app.modules.query_autopilot.repository import repository as autopilot_repository
     from app.modules.query_autopilot.telemetry import collector as autopilot_collector
@@ -523,7 +526,9 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix=f"{prefix}/agents", tags=["agent-knowledge"])
     app.include_router(intelligence_engine_router, prefix=f"{prefix}/intelligence",
                        tags=["intelligence"])
-    # External catalogs (Iceberg + Hive, GA-only) — NOVA-62 / Phase 0 #9.
+    # Nova Catalog: catalog store, sync, and catalog management.
+    app.include_router(catalog_router, prefix=f"{prefix}/catalog", tags=["catalog"])
+    # External catalogs (Iceberg + Hive, GA-only), an alias of Nova Catalog.
     app.include_router(
         external_catalogs_router,
         prefix=f"{prefix}/external-catalogs",

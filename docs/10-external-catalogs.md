@@ -106,7 +106,7 @@ All external catalogs that access object storage need `StorageCredentialParams`:
 
 ## Catalog Manager UI
 
-The **External Catalogs** page lists Nova-managed catalogs and offers an
+The **External Catalogs** page lists the external catalogs the caller can see and offers an
 **Add Catalog** dialog. The dialog takes a name, type (Iceberg / Hive), metastore
 type (Hive Metastore or Iceberg REST), metastore URI, and a **storage connection
 name**. It has no credential field: the storage secret is resolved on the server
@@ -151,9 +151,12 @@ credential values redacted to `***`.
 
 ## Implementation Notes
 
-- **Modules:** `backend/app/modules/external_catalogs/` — `router.py`, `schemas.py`,
-  `service.py`, `repository.py`. The router is registered at
-  `/api/v1/external-catalogs`.
+- **Modules:** catalogs are owned by Nova Catalog, `backend/app/modules/catalog/`
+  (`/api/v1/catalog`, see `docs/03-catalog-explorer.md`). Per-type DDL lives in
+  `connectors.py` (`IcebergConnector`, `HiveConnector`, `connector_for`).
+  `backend/app/modules/external_catalogs/` keeps `/api/v1/external-catalogs` as
+  an alias with the same response shape; it lists only external catalogs the
+  caller can see.
 - **Ranger authorizes catalogs.** Every `CREATE / ALTER / DROP` statement is
   issued on the caller's connection through the shared `QueryService` pipeline,
   so the patched FE asks Ranger (`create external catalog` on `system`, and
@@ -166,13 +169,18 @@ credential values redacted to `***`.
   `iceberg.catalog.type`; the accepted values are `hive` (Hive Metastore),
   `hadoop` (filesystem warehouse) and `rest`. The docs' `hms` alias is **not**
   accepted by the engine — Nova maps the UI's "Hive Metastore" to `hive`.
-- **Metadata mirror:** `NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS` stores only the
-  catalog name, type, metastore URI, **storage connection name**, comment, and
-  non-secret properties. No credential-bearing column exists; the engine catalog
-  remains the source of truth for the catalog itself.
+- **Catalog store:** `NOVA_SYSTEM.CATALOG_CATALOGS` stores the catalog name,
+  type, metastore URI, **storage connection name**, comment, non-secret
+  properties, origin (`nova` or `engine`), and last sync. No credential-bearing
+  column exists, and a credential-named property is dropped on write and on
+  read. On startup, rows from the earlier `CONFIG_EXTERNAL_CATALOGS` table are
+  copied once; that table is no longer written. The engine catalog remains the
+  source of truth for the catalog itself.
 - **Catalog tree:** `GET /api/v1/explorer/catalogs` lists external catalogs with
   their databases, and `GET /api/v1/explorer/databases/{db}?catalog=<name>` lists
-  the external tables so they appear in the Database Explorer tree.
+  the external tables so they appear in the Database Explorer tree. Both list
+  through the caller's session; `GET /external-catalogs/{name}/databases/{db}/tables`
+  does too (it used to read through the system pool).
 - **Querying external tables** uses the normal SQL Workspace path
   (`POST /api/v1/query/execute`); the MySQL protocol proxy is untouched.
 

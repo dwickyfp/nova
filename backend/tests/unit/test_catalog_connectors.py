@@ -1,4 +1,4 @@
-"""Unit tests for the external catalog surface (NOVA-62).
+"""Unit tests for catalog connectors and the catalog service's credential rules.
 
 The invariants under test are the credential ones:
 
@@ -16,19 +16,23 @@ from __future__ import annotations
 
 import pytest
 
-from app.modules.external_catalogs import service as service_module
-from app.modules.external_catalogs.schemas import (
+from app.modules.catalog import connectors as service_module
+from app.modules.catalog import service as catalog_service_module
+from app.modules.catalog.connectors import (
+    CatalogError,
+    HiveConnector,
+    IcebergConnector,
+    build_storage_credential_params,
+    connector_for,
+)
+from app.modules.catalog.schemas import (
     CatalogType,
     ExternalCatalogAlter,
     ExternalCatalogCreate,
     MetastoreType,
     is_secret_property,
 )
-from app.modules.external_catalogs.service import (
-    ExternalCatalogError,
-    ExternalCatalogService,
-    build_storage_credential_params,
-)
+from app.modules.catalog.service import CatalogService
 
 ACCESS_KEY = "AKIA_TESTVALUE_123"
 SECRET_KEY = "SECRET_TESTVALUE_456"
@@ -238,7 +242,7 @@ class TestCreateSql:
         return ExternalCatalogCreate(**data)
 
     def test_iceberg_hms_maps_to_hive_catalog_type(self, catalog_env):
-        sql = ExternalCatalogService().build_create_sql(self._body())
+        sql = _create_sql(self._body())
         assert sql.startswith("CREATE EXTERNAL CATALOG lake PROPERTIES (")
         assert "'type' = 'iceberg'" in sql
         # 4.1.4 rejects the doc's ``hms`` alias; ``hive`` is the accepted value.
@@ -246,32 +250,32 @@ class TestCreateSql:
         assert "'hive.metastore.uris' = 'thrift://hms:9083'" in sql
 
     def test_iceberg_rest_uses_catalog_uri(self, catalog_env):
-        sql = ExternalCatalogService().build_create_sql(
+        sql = _create_sql(
             self._body(metastore_type=MetastoreType.REST, metastore_uri="http://rest:8181")
         )
         assert "'iceberg.catalog.type' = 'rest'" in sql
         assert "'iceberg.catalog.uri' = 'http://rest:8181'" in sql
 
     def test_hive_catalog_uses_metastore_uris(self, catalog_env):
-        sql = ExternalCatalogService().build_create_sql(
+        sql = _create_sql(
             self._body(type=CatalogType.HIVE, metastore_type=MetastoreType.HMS)
         )
         assert "'type' = 'hive'" in sql
         assert "'hive.metastore.uris' = 'thrift://hms:9083'" in sql
 
     def test_create_sql_carries_resolved_credentials(self, catalog_env):
-        sql = ExternalCatalogService().build_create_sql(self._body())
+        sql = _create_sql(self._body())
         assert f"'{ACCESS_KEY}'" in sql
         assert f"'{SECRET_KEY}'" in sql
 
     def test_comment_is_quoted(self, catalog_env):
-        sql = ExternalCatalogService().build_create_sql(
+        sql = _create_sql(
             self._body(comment="Iceberg lake")
         )
         assert "COMMENT 'Iceberg lake'" in sql
 
     def test_embedded_quote_is_escaped(self, catalog_env):
-        sql = ExternalCatalogService().build_create_sql(
+        sql = _create_sql(
             self._body(properties={"iceberg.catalog.warehouse": "s3://b/it's"})
         )
         assert "'s3://b/it''s'" in sql
@@ -279,17 +283,17 @@ class TestCreateSql:
 
 class TestAlterAndDropSql:
     def test_alter_builds_set_clause(self):
-        sql = ExternalCatalogService().build_alter_sql(
+        sql = IcebergConnector().build_alter_sql(
             "lake", ExternalCatalogAlter(properties={"aws.s3.endpoint": "http://minio:29000"})
         )
         assert sql == "ALTER CATALOG lake SET ('aws.s3.endpoint' = 'http://minio:29000')"
 
     def test_alter_with_nothing_to_change_is_refused(self):
-        with pytest.raises(ExternalCatalogError):
-            ExternalCatalogService().build_alter_sql("lake", ExternalCatalogAlter())
+        with pytest.raises(CatalogError):
+            IcebergConnector().build_alter_sql("lake", ExternalCatalogAlter())
 
     def test_drop_builds_drop_statement(self):
-        assert ExternalCatalogService().build_drop_sql("lake") == "DROP CATALOG lake"
+        assert HiveConnector().build_drop_sql("lake") == "DROP CATALOG lake"
 
 
 class TestCatalogNameValidation:
@@ -304,7 +308,7 @@ class TestCatalogNameValidation:
         ],
     )
     def test_valid_identifiers_pass(self, name):
-        from app.modules.external_catalogs.service import _safe_catalog_name
+        from app.modules.catalog.connectors import safe_catalog_name as _safe_catalog_name
 
         assert _safe_catalog_name(name) == name
 
@@ -320,9 +324,9 @@ class TestCatalogNameValidation:
         ],
     )
     def test_invalid_identifiers_are_refused(self, name):
-        from app.modules.external_catalogs.service import _safe_catalog_name
+        from app.modules.catalog.connectors import safe_catalog_name as _safe_catalog_name
 
-        with pytest.raises(ExternalCatalogError):
+        with pytest.raises(CatalogError):
             _safe_catalog_name(name)
 
 
@@ -393,8 +397,63 @@ def _async_return(value):
 
 
 
+def _create_sql(body):
+    return connector_for(body.type.value).build_create_sql(body)
+
+
+class FakeRepo:
+    """In-memory catalog store recording every row written."""
+
+    def __init__(self, catalogs=None):
+        self.catalogs = {row["name"]: row for row in catalogs or []}
+        self.written: list[dict] = []
+
+    async def get_catalog(self, name):
+        return self.catalogs.get(name)
+
+    async def list_catalogs(self, *, include_dropped=False):
+        return list(self.catalogs.values())
+
+    async def upsert_catalog(self, row):
+        self.written.append(dict(row))
+        self.catalogs[row["name"]] = dict(row)
+
+    async def list_objects(self, *args, **kwargs):
+        return []
+
+    async def write_sync_run(self, run):
+        return None
+
+
+USER = {
+    "username": "analyst",
+    "encrypted_password": "enc",
+    "session_id": "s1",
+    "active_role": "ACCOUNTADMIN",
+    "assigned_roles": ["ACCOUNTADMIN"],
+}
+
+
+@pytest.fixture
+def quiet_service(monkeypatch):
+    """A catalog service whose visibility and post-change sync are stubbed."""
+
+    async def visible(user):
+        return [{"name": "lake", "type": "Iceberg", "comment": None, "databases": []}]
+
+    async def no_sync(*args, **kwargs):
+        return {}
+
+    async def no_bump():
+        return None
+
+    monkeypatch.setattr(catalog_service_module.visibility, "visible_catalogs", visible)
+    monkeypatch.setattr(catalog_service_module.visibility, "bump", no_bump)
+    monkeypatch.setattr(catalog_service_module, "sync_catalog", no_sync)
+
+
 class TestServiceReadPathRedacts:
-    async def test_show_create_is_redacted(self, catalog_env, monkeypatch):
+    async def test_show_create_is_redacted(self, catalog_env, quiet_service, monkeypatch):
         async def fake_execute_system(sql, *args, **kwargs):
             return {
                 "rows": [
@@ -407,35 +466,21 @@ class TestServiceReadPathRedacts:
                 ]
             }
 
-        monkeypatch.setattr(
-            "app.core.database.db.execute_system", fake_execute_system
-        )
-        monkeypatch.setattr(
-            service_module.external_catalog_repo,
-            "get_by_name",
-            _async_return(None),
-        )
+        monkeypatch.setattr(catalog_service_module.db, "execute_system", fake_execute_system)
 
-        response = await ExternalCatalogService().get("lake")
-        assert response.create_statement is not None
+        response = await CatalogService(FakeRepo()).get_catalog("lake", USER)
+        assert response is not None and response.create_statement is not None
         assert "SESSION_SENTINEL" not in response.create_statement
         assert "PW_SENTINEL" not in response.create_statement
 
     async def test_persisted_credential_property_is_dropped_on_read(
-        self, catalog_env, monkeypatch
+        self, catalog_env, quiet_service, monkeypatch
     ):
-        """A dotted credential already in the metadata row must not be echoed.
-
-        The validator closes the write path; this pins the read path as the
-        defense-in-depth sink, since a row can predate the check and a bare
-        property value is not the ``key = value`` shape the response sanitizer
-        redacts.
-        """
-        monkeypatch.setattr(
-            service_module.external_catalog_repo,
-            "get_by_name",
-            _async_return(
+        """A dotted credential already in a store row must not be echoed."""
+        repo = FakeRepo(
+            [
                 {
+                    "name": "lake",
                     "catalog_type": "iceberg",
                     "properties": {
                         "azure.account.key": "CLIENT_SECRET_LEAK_ABC",
@@ -443,88 +488,66 @@ class TestServiceReadPathRedacts:
                         "iceberg.catalog.warehouse": "s3://bucket/wh",
                     },
                 }
-            ),
+            ]
         )
         monkeypatch.setattr(
-            "app.core.database.db.execute_system",
-            _async_return({"rows": []}),
+            catalog_service_module.db, "execute_system", _async_return({"rows": []})
         )
 
-        response = await ExternalCatalogService().get("lake")
+        response = await CatalogService(repo).get_catalog("lake", USER)
+        assert response is not None
         assert "azure.account.key" not in response.properties
         assert "aws.s3.session.token" not in response.properties
         assert response.properties["iceberg.catalog.warehouse"] == "s3://bucket/wh"
         assert "CLIENT_SECRET_LEAK_ABC" not in str(response.model_dump())
 
-    async def test_metadata_row_never_stores_a_secret(self, catalog_env, monkeypatch):
-        recorded: dict = {}
+    async def test_invisible_catalog_has_no_detail(self, quiet_service, monkeypatch):
+        executed: list[str] = []
 
-        async def fake_upsert(**kwargs):
-            recorded.update(kwargs)
+        async def fake_execute_system(sql, *args, **kwargs):
+            executed.append(sql)
+            return {"rows": []}
 
-        monkeypatch.setattr(
-            service_module.external_catalog_repo, "get_by_name", _async_return(None)
-        )
-        monkeypatch.setattr(service_module.external_catalog_repo, "upsert", fake_upsert)
-        monkeypatch.setattr(
-            service_module.external_catalog_repo,
-            "list_all",
-            _async_return([]),
-        )
+        monkeypatch.setattr(catalog_service_module.db, "execute_system", fake_execute_system)
+        assert await CatalogService(FakeRepo()).get_catalog("hidden", USER) is None
+        assert executed == []
 
-        service = ExternalCatalogService()
+
+def _body():
+    return ExternalCatalogCreate(
+        name="lake",
+        type=CatalogType.ICEBERG,
+        metastore_uri="thrift://hms:9083",
+        storage_connection="production",
+    )
+
+
+class TestServiceCreate:
+    async def test_store_row_never_holds_a_secret(self, catalog_env, quiet_service, monkeypatch):
+        repo = FakeRepo()
         recording = RecordingQueryService()
-        monkeypatch.setattr(service_module, "query_service", recording)
-        monkeypatch.setattr(service, "get", _async_return(None))
-
-        body = ExternalCatalogCreate(
-            name="lake",
-            type=CatalogType.ICEBERG,
-            metastore_uri="thrift://hms:9083",
-            storage_connection="production",
-        )
-        await service.create(
-            body,
-            username="analyst",
-            encrypted_password="enc",
-            session_id="s1",
+        monkeypatch.setattr(catalog_service_module, "query_service", recording)
+        monkeypatch.setattr(
+            catalog_service_module.db, "execute_system", _async_return({"rows": []})
         )
 
-        flat = str(recorded)
+        await CatalogService(repo).create(_body(), USER)
+
+        flat = str(repo.written)
         assert ACCESS_KEY not in flat
         assert SECRET_KEY not in flat
-        assert recorded["storage_connection"] == "production"
+        row = repo.written[-1]
+        assert row["storage_connection"] == "production"
+        assert row["managed"] is True and row["source"] == "nova"
 
-    async def test_audit_form_has_no_credentials(self, catalog_env, monkeypatch):
-        monkeypatch.setattr(
-            service_module.external_catalog_repo, "get_by_name", _async_return(None)
-        )
-        monkeypatch.setattr(
-            service_module.external_catalog_repo, "list_all", _async_return([])
-        )
-
-        async def fake_upsert(**kwargs):
-            return None
-
-        monkeypatch.setattr(service_module.external_catalog_repo, "upsert", fake_upsert)
-
-        service = ExternalCatalogService()
+    async def test_audit_form_has_no_credentials(self, catalog_env, quiet_service, monkeypatch):
         recording = RecordingQueryService()
-        monkeypatch.setattr(service_module, "query_service", recording)
-        monkeypatch.setattr(service, "get", _async_return(None))
+        monkeypatch.setattr(catalog_service_module, "query_service", recording)
+        monkeypatch.setattr(
+            catalog_service_module.db, "execute_system", _async_return({"rows": []})
+        )
 
-        body = ExternalCatalogCreate(
-            name="lake",
-            type=CatalogType.ICEBERG,
-            metastore_uri="thrift://hms:9083",
-            storage_connection="production",
-        )
-        await service.create(
-            body,
-            username="analyst",
-            encrypted_password="enc",
-            session_id="s1",
-        )
+        await CatalogService(FakeRepo()).create(_body(), USER)
 
         # The engine gets the real credentials...
         engine_sql = recording.calls[-1]
@@ -534,26 +557,39 @@ class TestServiceReadPathRedacts:
         assert ACCESS_KEY not in audit_sql
         assert SECRET_KEY not in audit_sql
 
-    async def test_engine_error_is_surfaced(self, catalog_env, monkeypatch):
+    async def test_engine_error_is_surfaced_and_nothing_is_stored(
+        self, catalog_env, quiet_service, monkeypatch
+    ):
+        repo = FakeRepo()
         monkeypatch.setattr(
-            service_module.external_catalog_repo, "get_by_name", _async_return(None)
+            catalog_service_module, "query_service", RecordingQueryService(error="denied")
         )
-        service = ExternalCatalogService()
-        monkeypatch.setattr(
-            service_module, "query_service", RecordingQueryService(error="denied")
-        )
+        with pytest.raises(CatalogError):
+            await CatalogService(repo).create(_body(), USER)
+        assert repo.written == []
 
-        body = ExternalCatalogCreate(
-            name="lake",
-            type=CatalogType.HIVE,
-            metastore_uri="thrift://hms:9083",
-        )
-        with pytest.raises(ExternalCatalogError):
-            await service.create(
-                body,
-                username="analyst",
-                encrypted_password="enc",
-                session_id="s1",
-            )
+    async def test_existing_catalog_is_refused(self, catalog_env, quiet_service, monkeypatch):
+        recording = RecordingQueryService()
+        monkeypatch.setattr(catalog_service_module, "query_service", recording)
+        repo = FakeRepo([{"name": "lake", "catalog_type": "iceberg", "dropped_at": None}])
+        with pytest.raises(CatalogError):
+            await CatalogService(repo).create(_body(), USER)
+        assert recording.calls == []
+
+    async def test_drop_marks_the_row_dropped(self, catalog_env, quiet_service, monkeypatch):
+        recording = RecordingQueryService()
+        monkeypatch.setattr(catalog_service_module, "query_service", recording)
+        repo = FakeRepo([{"name": "lake", "catalog_type": "iceberg", "dropped_at": None}])
+        await CatalogService(repo).drop("lake", USER)
+        assert recording.calls == ["DROP CATALOG lake"]
+        assert repo.catalogs["lake"]["dropped_at"] is not None
 
 
+def test_unknown_catalog_type_is_refused():
+    with pytest.raises(CatalogError):
+        connector_for("snowflake")
+
+
+def test_internal_catalog_cannot_be_created():
+    with pytest.raises(CatalogError):
+        connector_for("internal").build_create_sql(_body())

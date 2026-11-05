@@ -12,6 +12,7 @@ import {
   Layers3,
   Loader2,
   Plus,
+  RefreshCw,
   Sigma,
   Table2,
   Trash2,
@@ -19,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { formatDateTime } from '@/lib/datetime'
 import { PreviewDataTab } from './preview-data-tab'
 import {
   formatBytes,
@@ -64,6 +66,8 @@ export function ExplorerDetail({
   managedCatalogNames,
   onCreateCatalog,
   onDropCatalog,
+  onRefreshMetadata,
+  refreshingCatalog,
 }: {
   node: ExplorerNode | null
   tableDetail?: TableDetailResponse | null
@@ -86,6 +90,9 @@ export function ExplorerDetail({
   managedCatalogNames?: Set<string>
   onCreateCatalog?: () => void
   onDropCatalog?: (name: string) => void
+  /** Present only for a security-admin role: re-sync one catalog's metadata. */
+  onRefreshMetadata?: (name: string) => void
+  refreshingCatalog?: string | null
 }) {
   const [tableTab, setTableTab] = useState<'information' | 'preview'>('information')
 
@@ -314,8 +321,31 @@ export function ExplorerDetail({
             {catalog?.comment && (
               <p className='max-w-2xl text-sm text-muted-foreground'>{catalog.comment}</p>
             )}
+            <p className='text-xs text-muted-foreground' data-testid='catalog-sync-status'>
+              {catalog?.last_sync_at
+                ? `Metadata synced ${formatDateTime(catalog.last_sync_at)}`
+                : 'Metadata not synced yet'}
+              {catalog?.sync_status === 'error' && ' · last sync failed'}
+              {catalog?.source === 'engine' && catalog.type.toLowerCase() !== 'internal' &&
+                ' · created outside Nova'}
+            </p>
           </div>
           <div className='ms-auto flex items-center gap-2'>
+            {onRefreshMetadata && (
+              <Button
+                variant='outline'
+                size='sm'
+                disabled={refreshingCatalog === catalogName}
+                onClick={() => onRefreshMetadata(catalogName)}
+              >
+                {refreshingCatalog === catalogName ? (
+                  <Loader2 className='me-1.5 h-3.5 w-3.5 animate-spin' />
+                ) : (
+                  <RefreshCw className='me-1.5 h-3.5 w-3.5' />
+                )}
+                Refresh metadata
+              </Button>
+            )}
             {onCreateCatalog && (
               <Button variant='outline' size='sm' onClick={onCreateCatalog}>
                 <Plus className='me-1.5 h-3.5 w-3.5' />

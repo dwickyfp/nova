@@ -32,9 +32,10 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { SidebarMenu } from '@/components/ui/sidebar'
 import { api } from '@/lib/api-client'
+import { useAuthStore } from '@/stores/auth-store'
 import {
-  fetchExternalCatalogs,
-  type ExternalCatalog,
+  refreshCatalogMetadata,
+  SECURITY_ADMIN_ROLES,
 } from '@/features/external-catalogs/api'
 import {
   CreateCatalogDialog,
@@ -282,6 +283,11 @@ function ResizableExplorerSidebar({
 
 export function DatabaseExplorerPage() {
   const queryClient = useQueryClient()
+  // Bumped on every sign-in, token, or role change: no cached listing from one
+  // security context is ever shown under another.
+  const securityEpoch = useAuthStore((state) => state.securityEpoch)
+  const activeRole = useAuthStore((state) => state.auth.user?.activeRole ?? null)
+  const canRefreshMetadata = !!activeRole && SECURITY_ADMIN_ROLES.has(activeRole)
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const [selectedId, setSelectedId] = useState('')
@@ -312,12 +318,13 @@ export function DatabaseExplorerPage() {
       })
       toast.success(`Stage "${createStageName}" created`)
       setCreateStageOpen(false)
-      // Invalidate React Query cache for this database so it refetches
-      queryClient.invalidateQueries({ queryKey: ['explorer-db', createStageDb] })
-      // Remove from dbCache so the tree rebuilds and triggers re-fetch
+      // Stages live in the internal catalog; drop that database's cached
+      // objects (same `catalog/database` key as the tree) so it refetches.
+      const key = `default_catalog/${createStageDb}`
+      void queryClient.invalidateQueries({ queryKey: ['explorer-db', securityEpoch, key] })
       setDbCache((prev) => {
         const next = new Map(prev)
-        next.delete(createStageDb)
+        next.delete(key)
         return next
       })
     } catch (err) {
@@ -325,32 +332,51 @@ export function DatabaseExplorerPage() {
     } finally {
       setCreateStageLoading(false)
     }
-  }, [createStageName, createStageDb])
+  }, [createStageName, createStageDb, queryClient, securityEpoch])
 
   // Fetch catalogs on mount
   const { data: catalogsData, isLoading: catalogsLoading, error: catalogsError, refetch: refetchCatalogs } = useQuery<CatalogsResponse>({
-    queryKey: ['explorer-catalogs'],
+    queryKey: ['explorer-catalogs', securityEpoch],
     queryFn: () => api.get('/explorer/catalogs'),
   })
 
-  // Nova-managed external catalogs. Only these carry a metadata row and can be
-  // dropped from the UI; engine-only catalogs stay read-only.
-  const { data: managedCatalogs, refetch: refetchManagedCatalogs } = useQuery({
-    queryKey: ['external-catalogs'],
-    queryFn: fetchExternalCatalogs,
-  })
+  // Catalogs created through Nova. Only these can be dropped from the UI;
+  // catalogs made in SQL stay read-only here.
   const managedCatalogNames = useMemo(
-    () => new Set((managedCatalogs?.catalogs ?? []).map((c) => c.name)),
-    [managedCatalogs],
+    () => new Set((catalogsData?.catalogs ?? []).filter((c) => c.managed).map((c) => c.name)),
+    [catalogsData],
   )
 
   const [createCatalogOpen, setCreateCatalogOpen] = useState(false)
-  const [dropCatalogTarget, setDropCatalogTarget] = useState<ExternalCatalog | { name: string } | null>(null)
+  const [dropCatalogTarget, setDropCatalogTarget] = useState<{ name: string } | null>(null)
 
   const handleCatalogChanged = useCallback(() => {
-    void refetchManagedCatalogs()
     void refetchCatalogs()
-  }, [refetchManagedCatalogs, refetchCatalogs])
+  }, [refetchCatalogs])
+
+  const [refreshingCatalog, setRefreshingCatalog] = useState<string | null>(null)
+  const handleRefreshMetadata = useCallback(
+    async (catalog: string) => {
+      setRefreshingCatalog(catalog)
+      try {
+        const { runs } = await refreshCatalogMetadata(catalog)
+        const failed = runs.find((run) => run.status !== 'ok')
+        if (failed) toast.error(`Metadata refresh failed: ${failed.error ?? 'unknown error'}`)
+        else toast.success(`Metadata for "${catalog}" refreshed`)
+        setDbCache((prev) => {
+          const next = new Map(prev)
+          for (const key of prev.keys()) if (key.startsWith(`${catalog}/`)) next.delete(key)
+          return next
+        })
+        void refetchCatalogs()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Metadata refresh failed')
+      } finally {
+        setRefreshingCatalog(null)
+      }
+    },
+    [refetchCatalogs],
+  )
 
   // Build tree from catalog data
   const catalogTree = useMemo(() => {
@@ -368,34 +394,42 @@ export function DatabaseExplorerPage() {
     setInitialExpandDone(true)
   }
 
-  // Lazy-load database objects when a database node is expanded. The id is
-  // `db-<catalog>-<db>`; the catalog is part of the key so an external database
-  // and a self-managed one with the same name do not collide.
+  // Lazy-load database objects when a database node is expanded. Catalog and
+  // database come from the node itself, never from splitting its id: either
+  // name may contain the id's separator. The key is `catalog/database`, so an
+  // external database and a self-managed one with the same name do not collide.
   const expandedDbs = useMemo(() => {
     const dbs: Array<{ key: string; catalog: string; database: string }> = []
     for (const id of expandedIds) {
       if (!id.startsWith('db-')) continue
-      const rest = id.replace(/^db-/, '')
-      const separator = rest.indexOf('-')
-      if (separator === -1) continue
-      const catalog = rest.slice(0, separator)
-      const database = rest.slice(separator + 1)
-      dbs.push({ key: `${catalog}/${database}`, catalog, database })
+      const node = findNodeById(catalogTree, id)
+      if (node?.type !== 'database' || !node.catalog || !node.database) continue
+      dbs.push({
+        key: `${node.catalog}/${node.database}`,
+        catalog: node.catalog,
+        database: node.database,
+      })
     }
     return dbs
-  }, [expandedIds])
+  }, [expandedIds, catalogTree])
 
-  // Track which databases have been loaded
+  // Track which databases have been loaded, per security context.
   const [dbCache, setDbCache] = useState<Map<string, DatabaseObjectsResponse>>(() => new Map())
+  const [dbCacheEpoch, setDbCacheEpoch] = useState(securityEpoch)
+  if (dbCacheEpoch !== securityEpoch) {
+    setDbCacheEpoch(securityEpoch)
+    setDbCache(new Map())
+  }
 
   // Fetch each expanded database (one query at a time via React Query)
   const activeDb = expandedDbs.find((entry) => !dbCache.has(entry.key)) || null
 
   const { data: dbObjects, isLoading: dbLoading } = useQuery<DatabaseObjectsResponse>({
-    queryKey: ['explorer-db', activeDb?.key],
+    queryKey: ['explorer-db', securityEpoch, activeDb?.key],
     queryFn: () =>
       api.get(
-        `/explorer/databases/${activeDb!.database}?catalog=${activeDb!.catalog}`
+        `/explorer/databases/${encodeURIComponent(activeDb!.database)}` +
+          `?catalog=${encodeURIComponent(activeDb!.catalog)}`
       ),
     enabled: !!activeDb,
   })
@@ -435,10 +469,16 @@ export function DatabaseExplorerPage() {
   const selectedNode = useMemo(() => findNodeById(tree, selectedId), [tree, selectedId])
   const tableQueryDb = selectedNode?.database
   const tableQueryName = selectedNode?.type === 'table' ? selectedNode.label : null
+  const tableQueryCatalog = selectedNode?.catalog ?? 'default_catalog'
 
   const { data: tableDetail, isLoading: tableLoading, error: tableError } = useQuery<TableDetailResponse>({
-    queryKey: ['explorer-table', tableQueryDb, tableQueryName],
-    queryFn: () => api.get(`/explorer/databases/${tableQueryDb}/tables/${tableQueryName}`),
+    queryKey: ['explorer-table', securityEpoch, tableQueryCatalog, tableQueryDb, tableQueryName],
+    queryFn: () =>
+      api.get(
+        `/explorer/databases/${encodeURIComponent(tableQueryDb!)}` +
+          `/tables/${encodeURIComponent(tableQueryName!)}` +
+          `?catalog=${encodeURIComponent(tableQueryCatalog)}`
+      ),
     enabled: !!tableQueryDb && !!tableQueryName,
   })
 
@@ -447,7 +487,7 @@ export function DatabaseExplorerPage() {
   const pipeQueryName = selectedNode?.type === 'pipe' ? selectedNode.label : null
 
   const { data: pipeDetail, isLoading: pipeLoading, error: pipeError } = useQuery<PipeDetailResponse>({
-    queryKey: ['explorer-pipe', pipeQueryDb, pipeQueryName],
+    queryKey: ['explorer-pipe', securityEpoch, pipeQueryDb, pipeQueryName],
     queryFn: () => api.get(`/explorer/databases/${pipeQueryDb}/pipes/${pipeQueryName}`),
     enabled: !!pipeQueryDb && !!pipeQueryName,
   })
@@ -457,7 +497,7 @@ export function DatabaseExplorerPage() {
   const viewQueryName = selectedNode?.type === 'view' ? selectedNode.label : null
 
   const { data: viewDetail, isLoading: viewLoading, error: viewError } = useQuery<ViewDetailResponse>({
-    queryKey: ['explorer-view', viewQueryDb, viewQueryName],
+    queryKey: ['explorer-view', securityEpoch, viewQueryDb, viewQueryName],
     queryFn: () => api.get(`/explorer/databases/${viewQueryDb}/views/${viewQueryName}`),
     enabled: !!viewQueryDb && !!viewQueryName,
   })
@@ -467,7 +507,7 @@ export function DatabaseExplorerPage() {
   const mvQueryName = selectedNode?.type === 'materialized_view' ? selectedNode.label : null
 
   const { data: mvDetail, isLoading: mvLoading, error: mvError } = useQuery<MVDetailResponse>({
-    queryKey: ['explorer-mv', mvQueryDb, mvQueryName],
+    queryKey: ['explorer-mv', securityEpoch, mvQueryDb, mvQueryName],
     queryFn: () => api.get(`/explorer/databases/${mvQueryDb}/mvs/${mvQueryName}`),
     enabled: !!mvQueryDb && !!mvQueryName,
   })
@@ -477,7 +517,7 @@ export function DatabaseExplorerPage() {
   const fnQueryName = selectedNode?.type === 'function' ? selectedNode.label : null
 
   const { data: fnDetail, isLoading: fnLoading, error: fnError } = useQuery<FunctionDetailResponse>({
-    queryKey: ['explorer-fn', fnQueryDb, fnQueryName],
+    queryKey: ['explorer-fn', securityEpoch, fnQueryDb, fnQueryName],
     queryFn: () => api.get(`/explorer/databases/${fnQueryDb}/functions/${fnQueryName}`),
     enabled: !!fnQueryDb && !!fnQueryName,
   })
@@ -634,6 +674,8 @@ export function DatabaseExplorerPage() {
             managedCatalogNames={managedCatalogNames}
             onCreateCatalog={() => setCreateCatalogOpen(true)}
             onDropCatalog={(name) => setDropCatalogTarget({ name })}
+            onRefreshMetadata={canRefreshMetadata ? handleRefreshMetadata : undefined}
+            refreshingCatalog={refreshingCatalog}
           />
         </section>
       </div>

@@ -151,10 +151,17 @@ async def get_table_detail(
     database: str,
     table: str,
     user: CurrentUser,
+    catalog: str | None = None,
 ):
-    """Get table detail with columns, partitions, and properties."""
+    """Get table detail with columns, partitions, and properties.
+
+    ``catalog`` selects an external catalog; its columns come from the Nova
+    Catalog store. It defaults to ``default_catalog``.
+    """
     try:
-        result = await explorer_service.get_table_detail(database, table, user=user)
+        result = await explorer_service.get_table_detail(
+            database, table, user=user, catalog=catalog
+        )
     except Exception as e:
         log.error("Table detail error for %s.%s: %s", database, table, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) from e

@@ -1,7 +1,7 @@
 # Proposal: Nova Catalog sebagai catalog mandiri (federated)
 
-> **Status:** proposal, belum diputuskan. Non-normatif sampai ada keputusan dan
-> implementasi yang lolos tes.
+> **Status:** Fase 1 diimplementasikan (lihat "Status Fase 1" di §6). Fase 2 ke
+> atas masih proposal dan non-normatif sampai diimplementasikan dan lolos tes.
 > **Tanggal riset:** 2026-11-05. Engine pin: StarRocks `4.1.4` (`4a9848ed`).
 > **Tujuan:** Nova Catalog berdiri sendiri seperti Unity Catalog, sehingga
 > database lain (PostgreSQL, MySQL, Snowflake, dan seterusnya) bisa didaftarkan,
@@ -415,6 +415,30 @@ menampilkan objek kepada pengguna.
 - Keluar: Explorer menampilkan objek yang sama dengan `SHOW` sebagai caller untuk
   role uji non-root; catalog SQL-mentah muncul di Connections; tidak ada
   kredensial di respons, log, maupun baris `NOVA_SYSTEM`.
+
+**Status Fase 1 (2026-11-05): diimplementasikan.** Perbedaan dari rencana di atas:
+
+- Sinkronisasi berjalan di **loop control-plane backend**
+  (`catalog/refresher.py`, interval `CATALOG_SYNC_INTERVAL_SECONDS`, default
+  300 detik, satu instance per pass lewat Redis leader lock), bukan di
+  `nova-worker`, karena worker tidak berjalan di dev maupun CI.
+- `CATALOG_CONNECTIONS` ditunda ke Fase 2 bersama JDBC dan `secret_ref`.
+- Konektor yang ada: Iceberg (Hive Metastore, REST; hadoop lewat properti),
+  Hive, dan internal (`default_catalog`, hanya disinkronkan).
+- Catalog yang dibuat lewat SQL mentah tercatat dengan `source='engine'` dan
+  terlihat di Explorer dan `GET /api/v1/catalog/catalogs`. Halaman Connections
+  baru masuk di Fase 2.
+- Visibilitas tetap dari sesi caller (Ranger), di-cache 60 detik per
+  principal, role aktif, dan versi security context. Perubahan akses lewat Nova
+  dan perubahan catalog langsung mengosongkan cache; grant di luar Nova terlihat
+  paling lambat setelah TTL.
+
+Kriteria keluar diuji di stack `docker` dev: untuk `nova_admin`/ACCOUNTADMIN,
+`alice` (marketing, finance, regional_manager), dan `bob` (marketing),
+`/catalog`, `/explorer`, dan `SHOW` sebagai caller menghasilkan database dan
+tabel yang sama. Refresh hanya diizinkan untuk role security admin dan setiap
+penolakan diaudit. Pemindaian `CATALOG_*` tidak menemukan kredensial. Pengujian
+catalog Iceberg via SQL mentah ada di `tests/integration/test_catalog_l3.py`.
 
 ### Fase 2: Postgres dan MySQL (queryable)
 

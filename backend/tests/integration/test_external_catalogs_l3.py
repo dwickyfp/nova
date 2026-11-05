@@ -126,25 +126,23 @@ def _minio_client():
 
 
 async def _ensure_catalog_schema() -> None:
+    from app.modules.catalog.repository import CATALOG_DDLS
+
     await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
-    await _admin_execute(
-        """
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS (
-            id                 VARCHAR(64) NOT NULL,
-            name               VARCHAR(256) NOT NULL,
-            catalog_type       VARCHAR(32) NOT NULL,
-            metastore_type     VARCHAR(32),
-            metastore_uri      VARCHAR(1024),
-            storage_connection VARCHAR(256),
-            comment            VARCHAR(1024),
-            properties_json    TEXT,
-            created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by         VARCHAR(128)
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-        """
-    )
+    for ddl in CATALOG_DDLS:
+        await _admin_execute(ddl)
+
+
+async def _forget_catalog(name: str) -> None:
+    """Remove one test catalog's rows from the Nova Catalog store."""
+    for table, column in (
+        ("CATALOG_CATALOGS", "name"),
+        ("CATALOG_OBJECTS", "catalog_name"),
+        ("CATALOG_COLUMNS", "catalog_name"),
+        ("CATALOG_SYNC_RUNS", "catalog_name"),
+    ):
+        with contextlib.suppress(Exception):
+            await _admin_execute(f"DELETE FROM NOVA_SYSTEM.{table} WHERE {column} = '{name}'")
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -161,8 +159,12 @@ async def l3_admin_user(request):
     require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
+    # Idempotent: ``test_catalog_l3`` registers this fixture too, so a run of
+    # both modules sets the account up twice under the same names.
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
     await _admin_execute(f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'")
     await _admin_execute(f"GRANT ALL ON *.* TO '{L3_ADMIN_USER}' WITH GRANT OPTION")
     from app.integrations.ranger.client import ranger_client
@@ -192,8 +194,11 @@ async def l3_admin_user(request):
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
-    await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
-    await ranger_client.delete_role(L3_ADMIN_ROLE)
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
+    # The other registration may already have removed the Ranger role.
+    with contextlib.suppress(Exception):
+        await ranger_client.delete_role(L3_ADMIN_ROLE)
 
 
 @pytest_asyncio.fixture
@@ -245,10 +250,7 @@ async def namespace(engine):
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP CATALOG IF EXISTS {name}")
-    with contextlib.suppress(Exception):
-        await _admin_execute(
-            f"DELETE FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS WHERE name = '{name}'"
-        )
+    await _forget_catalog(name)
     # Remove the warehouse objects so the namespace cannot shadow a later run.
     with contextlib.suppress(Exception):
         paginator = client.get_paginator("list_objects_v2")
@@ -354,7 +356,7 @@ class TestCatalogCrudThroughApi:
         assert SECRET_SENTINEL not in resp.text
         assert key not in resp.text
         rows = await _admin_execute(
-            "SELECT properties_json FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS "
+            "SELECT properties_json FROM NOVA_SYSTEM.CATALOG_CATALOGS "
             f"WHERE name = '{catalog}'"
         )
         assert not rows, rows
@@ -432,6 +434,11 @@ class TestExternalTableQuery:
             f"GRANT ALL ON DATABASE `{database}` TO '{L3_ADMIN_USER}'",
             f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO '{L3_ADMIN_USER}'",
         )
+        # A grant made outside Nova reaches cached visibility within its short
+        # TTL; Nova's own access changes retire the cache at once, as here.
+        from app.modules.catalog import visibility
+
+        await visibility.bump()
 
         resp = await admin_client.get("/api/v1/explorer/catalogs")
         assert resp.status_code == 200
@@ -484,7 +491,7 @@ class TestNoCredentialLeak:
 
         rows = await _admin_execute(
             "SELECT properties_json, metastore_uri, storage_connection "
-            "FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS "
+            "FROM NOVA_SYSTEM.CATALOG_CATALOGS "
             f"WHERE name = '{catalog}'"
         )
         assert rows

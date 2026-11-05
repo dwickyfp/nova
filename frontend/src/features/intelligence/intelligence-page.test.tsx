@@ -137,8 +137,12 @@ describe("Nova Intelligence", () => {
     await userEvent.fill(screen.getByRole("textbox", { name: "Index name" }), "catalog");
     await userEvent.click(screen.getByRole("button", { name: "Source relation database" }));
     await userEvent.click(screen.getByRole("button", { name: "NOVA_SYSTEM", exact: true }));
+    // A closing popover returns focus to its trigger and would dismiss the next
+    // one, so let it unmount before opening another.
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Source relation relation" }));
     await userEvent.click(screen.getByRole("button", { name: "catalog", exact: true }));
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Key columns" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "id", exact: true }));
     await userEvent.keyboard("{Escape}");
@@ -171,8 +175,12 @@ describe("Nova Intelligence", () => {
     await userEvent.click(screen.getByRole("button", { name: /customer_features/ }));
     await userEvent.click(screen.getByRole("button", { name: "Label relation database" }));
     await userEvent.click(screen.getByRole("button", { name: "NOVA_SYSTEM" }));
+    // A closing popover returns focus to its trigger and would dismiss the next
+    // one, so let it unmount before opening another.
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Label relation relation" }));
     await userEvent.click(screen.getByRole("button", { name: "labels" }));
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Label timestamp column" }));
     await userEvent.click(screen.getByRole("button", { name: "label_ts" }));
     await userEvent.keyboard("{Escape}");
