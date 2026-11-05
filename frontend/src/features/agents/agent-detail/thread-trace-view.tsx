@@ -563,7 +563,7 @@ function TimelineRow({
         <span className="min-w-0">
           <span className="block truncate font-medium">{node.label}</span>
           {node.description ? (
-            <span className="block truncate text-[11px] text-muted-foreground">
+            <span className="block truncate text-xs text-muted-foreground">
               {node.description}
             </span>
           ) : null}

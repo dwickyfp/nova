@@ -271,13 +271,13 @@ describe("Studio artifacts", () => {
       .toBeInTheDocument();
   });
 
-  it("draws a BI artifact in the panel and edits it in BI", async () => {
+  it("draws a BI artifact in the panel and edits it edge to edge", async () => {
     biSession.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaAuthor" });
     const bi = {
       bi_kind: "chart",
       bi_object_id: 21,
       bi_view_path: "/bi/explore/?slice_id=21&standalone=1",
-      bi_edit_path: "/bi/explore/?slice_id=21",
+      bi_edit_path: "/bi/explore/?slice_id=21&uiConfig=4",
     };
     mocks.getArtifact.mockResolvedValue({ ...artifactMeta, ...bi });
     const refreshed = await mocks.refreshArtifact();
@@ -295,12 +295,29 @@ describe("Studio artifacts", () => {
     await userEvent.click(screen.getByText("Revenue by region"));
 
     await expect
-      .element(screen.getByTitle("BI chart Revenue by region"))
+      .element(screen.getByTitle("Chart Revenue by region"))
       .toHaveAttribute("src", "/bi/explore/?slice_id=21&standalone=1");
-    await userEvent.click(screen.getByRole("button", { name: "Edit in BI" }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit chart" }));
     await expect
-      .element(screen.getByTitle("Edit Revenue by region in BI"))
-      .toHaveAttribute("src", "/bi/explore/?slice_id=21");
+      .element(screen.getByTitle("Edit Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21&uiConfig=4");
+    const editor = screen.getByRole("region", { name: "Chart editor" });
+    await expect.element(editor).not.toHaveClass("rounded-xl");
+    expect(editor.element().parentElement?.className).not.toContain("overflow-y-auto");
+    // The editor shows the title and owns Save; Nova's bar only leaves it.
+    await expect
+      .element(screen.getByRole("heading", { name: "Revenue by region" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("textbox", { name: "Edit artifact with Nova" }))
+      .toHaveAttribute("rows", "1");
+    await userEvent.click(screen.getByRole("button", { name: "Done editing" }));
+    await expect
+      .element(screen.getByTitle("Chart Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21&standalone=1");
+    await expect
+      .element(screen.getByRole("heading", { name: "Revenue by region" }))
+      .toBeInTheDocument();
     expect(biSession.post).toHaveBeenCalledWith(
       "/superset/session",
       undefined,
@@ -314,7 +331,7 @@ describe("Studio artifacts", () => {
       bi_kind: "chart",
       bi_object_id: 21,
       bi_view_path: "/bi/explore/?slice_id=21&standalone=1",
-      bi_edit_path: "/bi/explore/?slice_id=21",
+      bi_edit_path: "/bi/explore/?slice_id=21&uiConfig=4",
     };
     mocks.getArtifact.mockResolvedValue({ ...artifactMeta, ...bi });
     const refreshed = await mocks.refreshArtifact();
@@ -342,7 +359,7 @@ describe("Studio artifacts", () => {
       </QueryClientProvider>,
     );
     await userEvent.click(screen.getByText("Revenue by region"));
-    await userEvent.click(screen.getByRole("button", { name: "Edit in BI" }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit chart" }));
     await userEvent.fill(
       screen.getByRole("textbox", { name: "Edit artifact with Nova" }),
       "Make it a bar chart",
@@ -351,7 +368,7 @@ describe("Studio artifacts", () => {
 
     await expect.element(screen.getByText("Draft preview")).toBeInTheDocument();
     await expect
-      .element(screen.getByTitle("Edit Revenue by region in BI"))
+      .element(screen.getByTitle("Edit Revenue by region"))
       .not.toBeInTheDocument();
     await expect
       .element(screen.getByRole("region", { name: "Artifact preview" }))
@@ -359,7 +376,54 @@ describe("Studio artifacts", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     await expect
-      .element(screen.getByTitle("Edit Revenue by region in BI"))
-      .toHaveAttribute("src", "/bi/explore/?slice_id=21");
+      .element(screen.getByTitle("Edit Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21&uiConfig=4");
+  });
+
+  it("views a dashboard without an empty filter bar and edits it under one header", async () => {
+    biSession.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaAuthor" });
+    const dashboard = {
+      ...artifactMeta,
+      artifact_id: "dash-1",
+      title: "Sales overview",
+      artifact_type: "dashboard",
+      sql_text: "",
+      bi_kind: "dashboard",
+      bi_object_id: 7,
+      bi_view_path: "/bi/superset/dashboard/7/?standalone=2",
+      bi_edit_path: "/bi/superset/dashboard/7/?edit=true&standalone=1",
+    };
+    mocks.listArtifacts.mockResolvedValue({ count: 1, artifacts: [dashboard] });
+    mocks.getArtifact.mockResolvedValue(dashboard);
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) =>
+      String(input) === "/bi/api/v1/dashboard/7"
+        ? new Response(JSON.stringify({ result: { json_metadata: "{}" } }), { status: 200 })
+        : new Response(null, { status: 404 }),
+    );
+    try {
+      const screen = await render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <StudioArtifacts onSelectAgent={() => undefined} />
+        </QueryClientProvider>,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Open Sales overview" }));
+      await expect
+        .element(screen.getByTitle("Dashboard Sales overview"))
+        .toHaveAttribute("src", "/bi/superset/dashboard/7/?standalone=2&show_filters=0");
+
+      // The editor keeps the filter bar, where filters are added, and shows
+      // the title itself: Nova's bar only leaves it.
+      await userEvent.click(screen.getByRole("button", { name: "Edit dashboard" }));
+      await expect
+        .element(screen.getByTitle("Edit Sales overview"))
+        .toHaveAttribute("src", "/bi/superset/dashboard/7/?edit=true&standalone=1");
+      await expect
+        .element(screen.getByRole("heading", { name: "Sales overview" }))
+        .not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Done editing" }));
+      await expect.element(screen.getByTitle("Dashboard Sales overview")).toBeInTheDocument();
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Play, Sparkles } from 'lucide-react'
+import { Loader2, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -180,9 +180,9 @@ export function PredictTab() {
   if (aliases.length === 0) {
     return (
       <div className='rounded-lg bg-card p-8 text-center'>
-        <Sparkles className='mx-auto mb-3 size-8 text-muted-foreground' />
+        <Play className='mx-auto mb-3 size-8 text-muted-foreground' />
         <p className='text-sm text-muted-foreground'>
-          No model aliases found. Train a model and create an alias first.
+          No model aliases yet. Train a model, then point an alias at it to predict
         </p>
       </div>
     )
@@ -192,10 +192,10 @@ export function PredictTab() {
     <div className='space-y-6'>
       {/* Single Prediction */}
       <div className='rounded-lg bg-card p-6'>
-        <h3 className='mb-4 text-sm font-semibold'>Single Prediction</h3>
+        <h3 className='mb-4 text-sm font-medium'>Single prediction</h3>
         <div className='space-y-4'>
           <div>
-            <Label className='mb-1.5 block text-xs'>Model Alias</Label>
+            <Label className='mb-1.5 block text-xs'>Model alias</Label>
             <Select value={selectedAlias} onValueChange={setSelectedAlias}>
               <SelectTrigger>
                 <SelectValue placeholder='Select alias' />
@@ -245,10 +245,10 @@ export function PredictTab() {
 
       {/* Batch Prediction */}
       <div className='rounded-lg bg-card p-6'>
-        <h3 className='mb-4 text-sm font-semibold'>Batch Prediction</h3>
+        <h3 className='mb-4 text-sm font-medium'>Batch prediction</h3>
         <div className='space-y-4'>
           <div>
-            <Label className='mb-1.5 block text-xs'>Model Alias</Label>
+            <Label className='mb-1.5 block text-xs'>Model alias</Label>
             <Select value={batchAlias} onValueChange={setBatchAlias}>
               <SelectTrigger>
                 <SelectValue placeholder='Select alias' />
@@ -310,7 +310,7 @@ export function PredictTab() {
       <Dialog open={resultOpen} onOpenChange={setResultOpen}>
         <DialogContent className='max-w-md'>
           <DialogHeader>
-            <DialogTitle>Prediction Result</DialogTitle>
+            <DialogTitle>Prediction result</DialogTitle>
             <DialogDescription>
               Model: {result?.model_name} (v{result?.model_version})
             </DialogDescription>

@@ -9,7 +9,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
-  Wand2,
+  SquareFunction,
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,6 +19,7 @@ import {
 } from '@/components/data-table/simple-table-controls'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   Dialog,
   DialogContent,
@@ -413,7 +414,7 @@ export function FunctionsTab() {
       {/* UDF Status Summary Bar */}
       <div className='flex items-center gap-3 rounded-lg border bg-card p-3'>
         <div className='flex items-center gap-2'>
-          <Wand2 className='size-4 text-muted-foreground' />
+          <SquareFunction className='size-4 text-muted-foreground' />
           <span className='text-sm font-medium'>UDF Registration</span>
         </div>
         <div className='flex items-center gap-2'>
@@ -461,8 +462,8 @@ export function FunctionsTab() {
       {showUdfStatus && udfStatuses.length > 0 && (
         <div className='rounded-lg border bg-card'>
           <div className='border-b px-4 py-2'>
-            <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
-              UDF Status
+            <span className='text-xs font-medium text-muted-foreground'>
+              UDF status
             </span>
           </div>
           <div className='divide-y'>
@@ -479,12 +480,9 @@ export function FunctionsTab() {
                 <span className='font-mono text-xs font-medium'>
                   {status.function_name}
                 </span>
-                <Badge
-                  variant='outline'
-                  className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
-                >
+                <span className='text-xs text-muted-foreground'>
                   {getFunctionTypeLabel(status.function_type)}
-                </Badge>
+                </span>
                 {status.provider_name && (
                   <span className='text-xs text-muted-foreground'>
                     {status.provider_name}
@@ -508,7 +506,7 @@ export function FunctionsTab() {
         onSearchChange={(value) => {
           setSearch(value)
         }}
-        searchPlaceholder='Search functions, aliases, providers...'
+        searchPlaceholder='Search functions'
         resultLabel={`${filtered.length} alias${filtered.length !== 1 ? 'es' : ''}`}
         filters={[
           {
@@ -523,7 +521,6 @@ export function FunctionsTab() {
               const ft = FUNCTION_TYPES.find((f) => f.label === label)
               setTypeFilter(ft?.value ?? '')
             },
-            icon: <Wand2 size={14} />,
           },
         ]}
       />
@@ -579,7 +576,7 @@ export function FunctionsTab() {
             {!loading && filtered.length === 0 && (
               <tr>
                 <td colSpan={8} className='px-4 py-12 text-center'>
-                  <Wand2 className='mx-auto mb-3 size-8 text-muted-foreground' />
+                  <SquareFunction className='mx-auto mb-3 size-8 text-muted-foreground' />
                   <p className='text-sm text-muted-foreground'>
                     No function aliases configured yet.
                   </p>
@@ -618,12 +615,9 @@ export function FunctionsTab() {
                       </span>
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='outline'
-                        className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
-                      >
+                      <span className='text-muted-foreground'>
                         {getFunctionTypeLabel(alias.function_type)}
-                      </Badge>
+                      </span>
                     </td>
                     <td className='px-4 py-3'>
                       <span className='font-medium'>{alias.alias_name}</span>
@@ -640,9 +634,7 @@ export function FunctionsTab() {
                     </td>
                     <td className='px-4 py-3 text-center'>
                       {alias.is_default ? (
-                        <Badge variant='default' className='text-[10px]'>
-                          Default
-                        </Badge>
+                        <StatusBadge tone='primary'>Default</StatusBadge>
                       ) : (
                         <span className='text-xs text-muted-foreground'>—</span>
                       )}
@@ -824,7 +816,7 @@ export function FunctionsTab() {
               <Label htmlFor='alias-prompt'>System Prompt (optional)</Label>
               <Textarea
                 id='alias-prompt'
-                placeholder='Custom system prompt to override the default...'
+                placeholder='Replaces the default system prompt'
                 value={aliasForm.system_prompt}
                 onChange={(e) =>
                   setAliasForm((f) => ({
@@ -893,7 +885,7 @@ export function FunctionsTab() {
       >
         <DialogContent className='max-w-md'>
           <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogTitle>Delete function alias</DialogTitle>
             <DialogDescription>
               Delete function alias "{deleteDialog?.alias_name}"? This will
               remove the alias mapping. If it was the default alias for{' '}

@@ -22,6 +22,13 @@ The guard is split into two responsibilities so each is testable on its own:
 Fail-closed: a hostname that cannot be resolved, a URL with no host, and a
 non-``http(s)`` scheme are all rejected.
 
+AI provider endpoints are written by administrators and commonly point at a
+model served on the same machine or network (Ollama, LM Studio, vLLM). Those
+callers pass ``allow_private_network=True``, which also accepts loopback and
+private (RFC1918 / ``fc00::/7``) addresses. Link-local addresses, including the
+cloud metadata service, and multicast, reserved, unspecified and CGNAT ranges
+stay blocked in that mode.
+
 Scope note — this module intentionally does **not** import anything from
 ``app.modules.*``; it is a leaf common utility (AGENTS.md: dependency
 direction points inward).
@@ -109,6 +116,29 @@ def _is_public_address(
     return address.is_global
 
 
+def _is_private_network_address(address: IPAddress) -> bool:
+    """Return True for a loopback or private address on the local network.
+
+    Link-local (``169.254.0.0/16`` and ``fe80::/10``, which hold the cloud
+    metadata service), multicast, unspecified and reserved addresses never
+    qualify. ``::1`` is checked as loopback first because ``ipaddress`` also
+    files it under the reserved ``::/8`` block. An IPv4-mapped IPv6 address is
+    judged by the IPv4 address it carries.
+    """
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    if address.is_loopback:
+        return True
+    if (
+        address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    ):
+        return False
+    return address.is_private
+
+
 def _resolve_host(host: str, port: int) -> tuple[IPAddress, ...]:
     """Resolve ``host`` to every address the system resolver returns.
 
@@ -133,13 +163,19 @@ def _resolve_host(host: str, port: int) -> tuple[IPAddress, ...]:
     return tuple(addresses)
 
 
-def resolve_and_validate_url(url: str) -> ResolvedEndpoint:
+def resolve_and_validate_url(
+    url: str, *, allow_private_network: bool = False
+) -> ResolvedEndpoint:
     """Validate ``url`` for outbound use and return its pinned resolution.
 
     Raises :class:`BlockedEndpointError` when the URL is malformed, uses a
     disallowed scheme, or resolves to any non-public address. When it returns,
-    every address in ``ResolvedEndpoint.addresses`` is public, and callers
+    every address in ``ResolvedEndpoint.addresses`` is allowed, and callers
     should connect only to those addresses.
+
+    With ``allow_private_network`` the URL may also name a loopback or private
+    address (``localhost``, ``127.0.0.1``, ``192.168.x.x``,
+    ``host.docker.internal``); every other non-public address is still refused.
     """
     if not url or not url.strip():
         raise BlockedEndpointError("Endpoint must not be empty")
@@ -158,7 +194,7 @@ def resolve_and_validate_url(url: str) -> ResolvedEndpoint:
     if not host:
         raise BlockedEndpointError("Endpoint must include a host")
 
-    if host in _LOCAL_HOSTNAMES:
+    if host in _LOCAL_HOSTNAMES and not allow_private_network:
         raise BlockedEndpointError("Endpoint host is not allowed")
 
     try:
@@ -174,6 +210,8 @@ def resolve_and_validate_url(url: str) -> ResolvedEndpoint:
         addresses = (literal,)
 
     for address in addresses:
+        if allow_private_network and _is_private_network_address(address):
+            continue
         if not _is_public_address(address):
             logger.warning(
                 "Blocked outbound test-connection attempt to non-public address %s",
@@ -199,19 +237,29 @@ class _GuardedTransport(httpx.AsyncHTTPTransport):
     ``169.254.169.254`` is rejected rather than followed.
     """
 
+    def __init__(self, *, allow_private_network: bool = False) -> None:
+        super().__init__()
+        self._allow_private_network = allow_private_network
+
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        resolve_and_validate_url(str(request.url))
+        resolve_and_validate_url(
+            str(request.url), allow_private_network=self._allow_private_network
+        )
         return await super().handle_async_request(request)
 
 
-def guarded_async_client(*, timeout: float = 15.0) -> httpx.AsyncClient:
+def guarded_async_client(
+    *, timeout: float = 15.0, allow_private_network: bool = False
+) -> httpx.AsyncClient:
     """Build an ``httpx.AsyncClient`` that enforces this guard.
 
     ``follow_redirects`` is enabled because providers legitimately redirect
     (e.g. ``/v1`` → ``/v1/``); each hop is checked by ``_GuardedTransport``.
+    ``allow_private_network`` has the meaning described on
+    :func:`resolve_and_validate_url` and applies to every hop.
     """
     return httpx.AsyncClient(
         timeout=timeout,
-        transport=_GuardedTransport(),
+        transport=_GuardedTransport(allow_private_network=allow_private_network),
         follow_redirects=True,
     )

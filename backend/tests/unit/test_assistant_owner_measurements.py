@@ -52,7 +52,7 @@ def native_provider(monkeypatch, handler, *, max_attempts=1):
             yield value
 
     monkeypatch.setattr(provider_module, "guarded_async_client", client)
-    monkeypatch.setattr(provider_module, "resolve_and_validate_url", lambda endpoint: None)
+    monkeypatch.setattr(provider_module, "resolve_and_validate_url", lambda endpoint, **_: None)
     return AssistantProviderClient(max_attempts=max_attempts, retry_base_seconds=0)
 
 

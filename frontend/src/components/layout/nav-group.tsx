@@ -106,10 +106,11 @@ function SidebarMenuCollapsible({
   href: string
 }) {
   const { setOpenMobile } = useSidebar()
+  const activeUrl = activeSubUrl(href, item.items)
   return (
     <Collapsible
       asChild
-      defaultOpen={checkIsActive(href, item, true)}
+      defaultOpen={activeUrl !== null || checkIsActive(href, item, true)}
       className='group/collapsible'
     >
       <SidebarMenuItem>
@@ -138,7 +139,7 @@ function SidebarMenuCollapsible({
                 <SidebarMenuSubItem>
                   <SidebarMenuSubButton
                     asChild
-                    isActive={checkIsActive(href, subItem)}
+                    isActive={subItem.url === activeUrl}
                   >
                     {subItem.newTab ? (
                       <a
@@ -153,7 +154,11 @@ function SidebarMenuCollapsible({
                         <ExternalLink className='ms-auto size-3.5 text-sidebar-foreground/60' />
                       </a>
                     ) : (
-                      <Link to={subItem.url} onClick={() => setOpenMobile(false)}>
+                      <Link
+                        to={subItem.url}
+                        activeOptions={{ exact: true }}
+                        onClick={() => setOpenMobile(false)}
+                      >
                         {subItem.icon && <subItem.icon />}
                         <span>{subItem.title}</span>
                         {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
@@ -222,6 +227,24 @@ function SidebarMenuCollapsedDropdown({
       </DropdownMenu>
     </SidebarMenuItem>
   )
+}
+
+/**
+ * The one sub-item a path belongs to: an exact match, else the longest item
+ * URL that prefixes the path. `/agents/tools` selects Tools, not Agent, and an
+ * agent's detail page keeps Agent selected.
+ */
+function activeSubUrl(href: string, items: NavCollapsible['items']): string | null {
+  const path = href.split('?')[0]
+  let best: string | null = null
+  for (const item of items) {
+    const url = typeof item.url === 'string' ? item.url : null
+    if (!url || url === '/') continue
+    if ((path === url || path.startsWith(`${url}/`)) && (!best || url.length > best.length)) {
+      best = url
+    }
+  }
+  return best
 }
 
 function checkIsActive(href: string, item: NavItem, mainNav = false) {

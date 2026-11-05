@@ -10,7 +10,7 @@ import {
   type SetStateAction,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, FileCode, Hash, Table2, Type } from "lucide-react";
+import { Clock, FileCode, Hash, Table2, ToggleLeft, Type } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -46,16 +46,12 @@ function quoteIdentifier(identifier: string) {
 
 function ColumnTypeIcon({ type }: { type: string }) {
   if (/INT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/i.test(type))
-    return <Hash className="size-3 shrink-0 text-info-strong" />;
+    return <Hash className="size-3 shrink-0 text-muted-foreground" />;
   if (/DATE|TIME/i.test(type))
-    return <Clock className="size-3 shrink-0 text-success-strong" />;
+    return <Clock className="size-3 shrink-0 text-muted-foreground" />;
   if (/BOOL/i.test(type))
-    return (
-      <span className="flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-warning-strong">
-        B
-      </span>
-    );
-  return <Type className="size-3 shrink-0 text-primary" />;
+    return <ToggleLeft className="size-3 shrink-0 text-muted-foreground" />;
+  return <Type className="size-3 shrink-0 text-muted-foreground" />;
 }
 
 export function TableItemWithPopover({
@@ -304,7 +300,7 @@ export function TableItemWithPopover({
                           className="px-3 py-1.5 align-top whitespace-nowrap"
                         >
                           {cell == null ? (
-                            <span className="text-muted-foreground italic">
+                            <span className="font-mono text-xs text-muted-foreground">
                               NULL
                             </span>
                           ) : (

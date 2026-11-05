@@ -379,9 +379,8 @@ jobs:
 
   frontend:
     name: Frontend (lint, build, vitest)
-    # Pinned: ubuntu-latest moved to 26.04, where `playwright install
-    # --with-deps chromium` refuses to run ("does not support chromium on
-    # ubuntu26.04-x64"). Return to ubuntu-latest once Playwright supports it.
+    # Playwright 1.59.1 ships no Chromium for Ubuntu 26.04, which ubuntu-latest
+    # now resolves to. Move off 24.04 together with a Playwright upgrade.
     runs-on: ubuntu-24.04
     defaults:
       run:

@@ -16,7 +16,9 @@ Credential handling, stated because it is the whole risk surface:
 * The stored ``endpoint`` is run through ``app.common.ssrf_guard`` before every
   call (and at write time in ``ai_ml.router``), and the request itself uses the
   guard's transport so each redirect hop is re-checked (NOVA-119). The guard is
-  the single home for URL validation — this module does not fork it.
+  the single home for URL validation — this module does not fork it. Provider
+  endpoints may name a local or private-network model server; link-local and
+  metadata addresses stay blocked.
 """
 
 from __future__ import annotations
@@ -319,7 +321,8 @@ class AssistantProviderClient:
                 "AI provider hostname could not be resolved. Check DNS and retry."
             )
         return AssistantProviderError(
-            "AI provider endpoint is not allowed: it must be a public http(s) URL"
+            "AI provider endpoint is not allowed: use an http(s) URL on the internet "
+            "or your local network"
         )
 
     async def _validate_endpoint(self, config: ProviderConfig) -> None:
@@ -330,7 +333,7 @@ class AssistantProviderClient:
         # as ``ai_ml.service.test_connection`` (NOVA-107/NOVA-119).
         for attempt in range(self._max_attempts):
             try:
-                resolve_and_validate_url(config.endpoint)
+                resolve_and_validate_url(config.endpoint, allow_private_network=True)
                 return
             except BlockedEndpointError as exc:
                 if exc.retryable and attempt + 1 < self._max_attempts:
@@ -408,7 +411,9 @@ class AssistantProviderClient:
         for attempt in range(self._max_attempts):
             try:
                 async with (
-                    guarded_async_client(timeout=self._timeout) as client,
+                    guarded_async_client(
+                        timeout=self._timeout, allow_private_network=True
+                    ) as client,
                     observe_http_dispatches(client),
                 ):
                     response = await client.post(
@@ -508,7 +513,9 @@ class AssistantProviderClient:
             response: httpx.Response | None = None
             try:
                 async with (
-                    guarded_async_client(timeout=self._timeout) as client,
+                    guarded_async_client(
+                        timeout=self._timeout, allow_private_network=True
+                    ) as client,
                     observe_http_dispatches(client),
                     client.stream(
                         "POST",

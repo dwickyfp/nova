@@ -1321,7 +1321,8 @@ function Greeting({ displayName }: { displayName?: string | null }) {
         {greeting}
         {name ? `, ${name}` : ""}
       </h1>
-      <p className="mt-2 text-2xl leading-tight font-medium tracking-tight text-primary sm:text-4xl">
+      {/* Brick red stays for actions; the question reads as the greeting's quiet second line. */}
+      <p className="mt-2 text-2xl leading-tight font-normal text-muted-foreground sm:text-4xl">
         What would you like to work on?
       </p>
     </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowDown, ArrowUp, BarChart3, LayoutDashboard, Loader2, MoreHorizontal, PackageOpen, Plus, Search, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -35,12 +35,15 @@ import { describeView, sourceOf } from "@/features/viz/insight";
 import type { DashboardSpec, PresModel } from "@/features/viz/types";
 import { VizView } from "@/features/viz/viz-view";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
+import { useBiSession } from "@/features/bi/use-bi-session";
 import { LegacyNotice } from "./legacy-conversion";
 
 /**
  * ArtifactExplorer is the Studio content browser. Dashboards show as cards
- * whose thumbnails draw every zone with its sheet's marks; sheets show as a
- * table that reads each view's current answer from its own data, with its
+ * with a thumbnail: Superset's for a BI dashboard, every zone's marks for one
+ * saved before BI. Charts show as a table that reads each chart's current
+ * answer from its own data, with its
  * shape, source and last change. Filtered by kind, searchable, sortable, with
  * favorites, and actions to open, edit, refresh, delete, or create.
  */
@@ -147,7 +150,7 @@ export function ArtifactExplorer({
   const tabs: { value: Kind; label: string }[] = [
     { value: "all", label: "All" },
     { value: "dashboard", label: "Dashboards" },
-    { value: "chart", label: "Sheets" },
+    { value: "chart", label: "Charts" },
     { value: "favorites", label: "Favorites" },
   ];
 
@@ -156,9 +159,11 @@ export function ArtifactExplorer({
       <header className="shrink-0 border-b px-5 pt-6 sm:px-8">
         <div className="flex flex-wrap items-end gap-4">
           <div className="min-w-0 flex-1 basis-80">
-            <h1 className="type-display">Explore</h1>
+            <h1 className="type-display">Artifacts</h1>
             <p className="type-ui mt-2 text-ink-secondary">
-              {counts.all} {counts.all === 1 ? "view" : "views"}
+              {counts.dashboard} {counts.dashboard === 1 ? "dashboard" : "dashboards"}
+              <span aria-hidden="true" className="mx-1.5 text-muted-foreground">·</span>
+              {counts.chart} {counts.chart === 1 ? "chart" : "charts"}
               {latest ? (
                 <>
                   <span aria-hidden="true" className="mx-1.5 text-muted-foreground">·</span>
@@ -167,34 +172,39 @@ export function ArtifactExplorer({
               ) : null}
             </p>
           </div>
-          <label className="relative flex w-full items-center sm:w-72">
-            <span className="sr-only">Search views</span>
+          {/* Search and New share a row at every width. */}
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+          <label className="relative flex min-w-0 flex-1 items-center sm:w-72 sm:flex-none">
+            <span className="sr-only">Search artifacts</span>
             <Search aria-hidden="true" className="absolute left-2.5 size-4 text-muted-foreground" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search views"
+              placeholder="Search"
               className="type-ui h-9 pl-8"
             />
           </label>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" className="h-9 gap-1.5">
-                <Plus aria-hidden="true" className="size-4" /> New view
+                <Plus aria-hidden="true" className="size-4" /> New
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => setCreating("chart")}>
-                <BarChart3 aria-hidden="true" className="size-4" /> Sheet from a query
+                <BarChart3 aria-hidden="true" className="size-4" /> Chart from a query
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setCreating("dashboard")}>
                 <LayoutDashboard aria-hidden="true" className="size-4" /> Dashboard
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
-        <div className="-mb-px mt-5 flex flex-wrap items-end gap-3">
-          <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]" aria-label="Content type">
+        {/* On a narrow screen the tabs take the full row on the header's edge,
+            scrolling sideways when they overflow, and sorting sits above them. */}
+        <div className="-mb-px mt-5 flex flex-wrap items-end gap-x-3 gap-y-2">
+          <nav className="flex min-w-0 flex-1 basis-full gap-1 overflow-x-auto [scrollbar-width:none] sm:basis-0" aria-label="Content type">
             {tabs.map((tab) => (
               <button
                 key={tab.value}
@@ -213,7 +223,7 @@ export function ArtifactExplorer({
               </button>
             ))}
           </nav>
-          <div className="flex items-center gap-1.5 pb-1.5">
+          <div className="order-first ml-auto flex items-center gap-1.5 sm:order-none sm:ml-0 sm:pb-1.5">
             <Select value={sort.key} onValueChange={(value) => setSort((current) => ({ ...current, key: value as SortKey }))}>
               <SelectTrigger aria-label="Sort by" className="type-ui h-8 w-36">
                 <SelectValue />
@@ -241,13 +251,13 @@ export function ArtifactExplorer({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-7 sm:px-8">
         {artifactsQuery.isLoading ? (
           <p className="type-ui flex items-center gap-2 py-10 text-ink-secondary" role="status">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Loading views
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Loading artifacts
           </p>
         ) : artifactsQuery.isError ? (
           <EmptyState
             variant="error"
             icon={AlertCircle}
-            title="Views could not be loaded"
+            title="Artifacts could not be loaded"
             description={(artifactsQuery.error as Error).message}
             action={<Button variant="outline" size="sm" onClick={() => void artifactsQuery.refetch()}>Try again</Button>}
           />
@@ -255,8 +265,8 @@ export function ArtifactExplorer({
           <EmptyState
             icon={PackageOpen}
             title="Nothing saved yet"
-            description="Save a chart from a conversation, or create a sheet from a query. Nova keeps the query and recomputes the view from current data."
-            action={<Button size="sm" onClick={() => setCreating("chart")}>New sheet</Button>}
+            description="Save a chart from a conversation, or create one from a query. Nova keeps the query and recomputes the chart from current data."
+            action={<Button size="sm" onClick={() => setCreating("chart")}>New chart</Button>}
           />
         ) : !visible.length ? (
           <EmptyState
@@ -264,8 +274,8 @@ export function ArtifactExplorer({
             title={kind === "favorites" && !search.trim() ? "No favorites yet" : "Nothing matches"}
             description={
               kind === "favorites" && !search.trim()
-                ? "Star a dashboard or sheet to keep it here."
-                : `No ${kind === "all" ? "view" : tabs.find((tab) => tab.value === kind)?.label.toLowerCase()} matches “${search.trim()}”.`
+                ? "Star a dashboard or chart to keep it here."
+                : `No ${kind === "all" ? "artifact" : tabs.find((tab) => tab.value === kind)?.label.toLowerCase()} matches “${search.trim()}”.`
             }
           />
         ) : (
@@ -294,14 +304,14 @@ export function ArtifactExplorer({
             {sheets.length ? (
               <section aria-labelledby="explore-sheets">
                 <h2 id="explore-sheets" className="type-title mb-3">
-                  Sheets<span className="type-meta ml-2 font-normal">{sheets.length}</span>
+                  Charts<span className="type-meta ml-2 font-normal">{sheets.length}</span>
                 </h2>
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full min-w-[56rem] border-collapse">
                     <thead className="bg-surface-1">
                       <tr className="text-left">
                         <th scope="col" className="type-label w-10 border-b px-3 py-2.5"><span className="sr-only">Favorite</span></th>
-                        <th scope="col" className="type-label border-b px-3 py-2.5 text-ink-secondary">View</th>
+                        <th scope="col" className="type-label border-b px-3 py-2.5 text-ink-secondary">Chart</th>
                         <th scope="col" className="type-label w-36 border-b px-3 py-2.5 text-ink-secondary">Shape</th>
                         <th scope="col" className="type-label border-b px-3 py-2.5 text-ink-secondary">Current answer</th>
                         <th scope="col" className="type-label w-52 border-b px-3 py-2.5 text-ink-secondary">Source</th>
@@ -340,11 +350,11 @@ export function ArtifactExplorer({
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Delete ${deleting?.title ?? "this view"}?`}
+        title={`Delete ${deleting?.title ?? "this artifact"}?`}
         desc={
           deleting?.artifact_type === "chart"
-            ? "The sheet and its saved query are removed. Dashboards that show it lose that zone."
-            : "The dashboard layout is removed. Its sheets stay in Explore."
+            ? "The chart and its saved query are removed. Dashboards that show it lose that chart."
+            : "The dashboard layout is removed. Its charts stay in Artifacts."
         }
         confirmText="Delete"
         destructive
@@ -399,7 +409,7 @@ function ItemMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
         <DropdownMenuItem onSelect={() => onOpen(false)}>Open</DropdownMenuItem>
-        {artifact.legacy ? null : <DropdownMenuItem onSelect={() => onOpen(true)}>Edit in BI</DropdownMenuItem>}
+        {artifact.legacy ? null : <DropdownMenuItem onSelect={() => onOpen(true)}>Edit</DropdownMenuItem>}
         {onRefresh ? <DropdownMenuItem onSelect={onRefresh}>Recompute</DropdownMenuItem> : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onDelete}>
@@ -438,13 +448,8 @@ function DashboardCard({
         aria-label={`Open ${artifact.title}`}
         className="relative block h-48 w-full overflow-hidden border-b bg-surface-1 text-left focus-visible:outline-none"
       >
-        {artifact.bi_view_path ? (
-          // Superset thumbnails need background rendering (Phase 2 of
-          // docs/arch-17-superset.md); until then a BI dashboard shows its kind.
-          <span className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <LayoutDashboard aria-hidden="true" className="size-6" />
-            <span className="type-meta">Opens in BI</span>
-          </span>
+        {artifact.bi_kind === "dashboard" && artifact.bi_object_id ? (
+          <BiDashboardThumbnail dashboardId={artifact.bi_object_id} updatedAt={artifact.updated_at} />
         ) : (
           <DashboardThumbnail artifactId={artifact.artifact_id} spec={spec} loading={detail.isLoading} updatedAt={detail.data?.updated_at} />
         )}
@@ -458,10 +463,10 @@ function DashboardCard({
           </h3>
           <p className="type-meta mt-1 truncate">
             {artifact.bi_view_path
-              ? "BI dashboard"
+              ? "Dashboard"
               : detail.isLoading
                 ? "Dashboard"
-                : `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`}
+                : `${sheetCount} ${sheetCount === 1 ? "chart" : "charts"}`}
             <span aria-hidden="true" className="mx-1.5">·</span>
             {formatModified(artifact.updated_at)}
           </p>
@@ -588,7 +593,8 @@ function SheetRow({
           aria-label={`Open ${artifact.title}`}
           className="block h-8 w-28 overflow-hidden rounded focus-visible:outline-2 focus-visible:outline-ring"
         >
-          {presmodel ? (
+          {/* A single value has no shape; its answer already states it. */}
+          {presmodel && presmodel.rows.length > 1 ? (
             <span className="pointer-events-none block h-full">
               <VizView presmodel={presmodel} thumbnail />
             </span>
@@ -662,11 +668,11 @@ function CreateDialog({
     <Dialog open={kind !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{kind === "dashboard" ? "New dashboard" : "New sheet"}</DialogTitle>
+          <DialogTitle>{kind === "dashboard" ? "New dashboard" : "New chart"}</DialogTitle>
           <DialogDescription>
             {kind === "dashboard"
-              ? "Start an empty dashboard, then add sheets to its layout."
-              : "A sheet is built over one read-only query. It opens in BI, where you choose how to chart it."}
+              ? "Start an empty dashboard, then add charts to its layout."
+              : "A chart is built over one read-only query. It opens in the chart editor, where you choose how to draw it."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -707,3 +713,72 @@ function CreateDialog({
   );
 }
 
+
+type BiThumbnail = { state: "pending" } | { state: "ready"; image: Blob };
+
+/** How often, and how many times, to ask again while Superset draws one. */
+const THUMBNAIL_POLL_MS = 5_000;
+const THUMBNAIL_POLLS = 12;
+
+/**
+ * Superset's thumbnail of a BI dashboard, drawn for the viewer's own session
+ * and role (docs/arch-17-superset.md, S9). Superset answers 202 while its
+ * worker draws the image and redirects a stale digest to the current one, so
+ * any digest asks for the latest. Superset lives under `/bi`, outside Nova's
+ * API, and its session cookie signs the request in.
+ */
+function BiDashboardThumbnail({ dashboardId, updatedAt }: { dashboardId: number; updatedAt: string }) {
+  const session = useBiSession();
+  const securityEpoch = useAuthStore((state) => state.securityEpoch);
+  const queryClient = useQueryClient();
+  const thumbnailKey = ["bi", "dashboard-thumbnail", dashboardId, updatedAt, securityEpoch];
+  const thumbnail = useQuery({
+    queryKey: thumbnailKey,
+    enabled: session.status === "ready",
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
+    queryFn: async ({ signal }): Promise<BiThumbnail> => {
+      const response = await fetch(`/bi/api/v1/dashboard/${dashboardId}/thumbnail/latest/`, { signal });
+      if (response.status === 202) return { state: "pending" };
+      if (!response.ok || !response.headers.get("content-type")?.startsWith("image/")) {
+        throw new Error(`Thumbnail unavailable (${response.status})`);
+      }
+      return { state: "ready", image: await response.blob() };
+    },
+    refetchInterval: (query) =>
+      query.state.data?.state === "pending" && query.state.dataUpdateCount < THUMBNAIL_POLLS
+        ? THUMBNAIL_POLL_MS
+        : false,
+  });
+  const image = thumbnail.data?.state === "ready" ? thumbnail.data.image : null;
+  const [source, setSource] = useState<string | null>(null);
+  useEffect(() => {
+    if (!image) return;
+    const url = URL.createObjectURL(image);
+    setSource(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setSource(null);
+    };
+  }, [image]);
+
+  if (source) {
+    return <img src={source} alt="" className="h-full w-full object-cover object-top" />;
+  }
+  // While Superset draws it the card says so; with none for this session it
+  // shows its kind.
+  const preparing =
+    session.status === "opening" ||
+    thumbnail.isPending ||
+    (thumbnail.data?.state === "pending" &&
+      (queryClient.getQueryState(thumbnailKey)?.dataUpdateCount ?? 0) < THUMBNAIL_POLLS);
+  return (
+    <span className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+      <LayoutDashboard aria-hidden="true" className="size-6" />
+      {preparing && session.status !== "error" ? (
+        <span className="type-meta">Preparing preview</span>
+      ) : null}
+    </span>
+  );
+}
