@@ -81,6 +81,29 @@ _NOVA_TOKENS = {
     "borderRadius": 10,
     "brandAppName": "Nova BI",
 }
+# Charts draw series in Nova's categorical palette (frontend/src/styles/theme.css
+# --chart-1 to --chart-9), so a chart reads the same in Studio's answers, News
+# and BI. It is Superset's default; a chart that names another scheme keeps it.
+NOVA_CATEGORICAL_COLORS = [
+    "#f05a47",
+    "#14a89a",
+    "#e89b17",
+    "#4f7ee8",
+    "#d94f86",
+    "#a78bfa",
+    "#f472b6",
+    "#38bdf8",
+    "#34d399",
+]
+EXTRA_CATEGORICAL_COLOR_SCHEMES = [
+    {
+        "id": "novaCategorical",
+        "label": "Nova",
+        "description": "Nova's chart palette",
+        "isDefault": True,
+        "colors": NOVA_CATEGORICAL_COLORS,
+    }
+]
 THEME_DEFAULT = deepcopy(_DEFAULT_THEME)
 THEME_DEFAULT.setdefault("token", {}).update(_NOVA_TOKENS)
 THEME_DARK = deepcopy(_DEFAULT_THEME_DARK) if _DEFAULT_THEME_DARK else None

@@ -61,6 +61,29 @@ export function measureCaption(label: string): string {
   return `${prefix[match[1]] ?? match[1].toUpperCase()}(${match[2]})`;
 }
 
+/**
+ * The measure as a sentence names it: "sum(recognized_revenue)" reads as
+ * "Recognized revenue", "avg(price)" as "Average price". An answer is read by
+ * the business, so it never shows the aggregate expression.
+ */
+export function measurePhrase(label: string): string {
+  const match = /^([a-z_]+)\((.*)\)$/i.exec(label.trim());
+  const words = (text: string) => text.replace(/[`"]/g, "").replace(/_+/g, " ").trim().toLowerCase();
+  const capital = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : text);
+  if (!match) return label;
+  const aggregate = match[1].toLowerCase();
+  const field = words(match[2]);
+  if (field === "*" || field === "") return aggregate === "count" ? "Count" : capital(aggregate);
+  const lead: Record<string, string> = {
+    avg: "average",
+    min: "lowest",
+    max: "highest",
+    count: "count of",
+    distinct_count: "distinct",
+  };
+  return capital(lead[aggregate] ? `${lead[aggregate]} ${field}` : field);
+}
+
 function numeric(value: Cell): number | null {
   if (value === null || value === "") return null;
   const parsed = typeof value === "number" ? value : Number(value);
@@ -87,7 +110,7 @@ export function describeView(presmodel: PresModel, selected?: Cell): ViewInsight
   const measures = columns.map((column, index) => ({ column, index })).filter((item) => item.column.role === "measure");
   if (!measures.length || !presmodel.rows.length) return null;
   const measure = measures[0];
-  const caption = measureCaption(measure.column.label);
+  const caption = measurePhrase(measure.column.label);
 
   if (!dims.length) {
     const value = numeric(presmodel.rows[0][measure.index]);

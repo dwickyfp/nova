@@ -85,7 +85,8 @@ export function BiWorkspace({
       </Header>
 
       <div className='flex min-h-0 flex-1 flex-col overflow-hidden border-t'>
-        <BiFrame ref={frame} path={source} title='BI workspace' onLoad={followFrame} />
+        {/* The whole of Superset, editors included: a theme change never reloads it. */}
+        <BiFrame ref={frame} path={source} title='BI workspace' onLoad={followFrame} holdsEdits />
       </div>
     </div>
   )

@@ -100,7 +100,7 @@ export function SemanticBuilderPage() {
       <Main scroll>
         <div className='mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
           <div className='min-w-0'>
-            <h1 className='text-2xl font-semibold tracking-tight'>Build Semantic View</h1>
+            <h1 className='text-lg font-semibold tracking-tight'>Build Semantic View</h1>
             <p className='mt-1 max-w-2xl text-sm text-muted-foreground'>
               Choose a source table and name the values people will ask about. Save a draft, then check and publish it from Semantic Views.
             </p>

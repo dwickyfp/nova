@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/features/agents/api", () => ({ studioApi: mocks }));
+const biSession = vi.hoisted(() => ({ post: vi.fn() }));
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-client")>()),
+  api: biSession,
+}));
 
 const base = {
   agent_id: null,
@@ -108,7 +113,7 @@ describe("ArtifactExplorer", () => {
     mocks.createArtifact.mockResolvedValue({ ...ARTIFACTS[0], artifact_id: "new-1" });
     const { screen, onOpen } = await mount();
     await screen.getByRole("button", { name: "New" }).click();
-    await screen.getByRole("menuitem", { name: "Sheet from a query" }).click();
+    await screen.getByRole("menuitem", { name: "Chart from a query" }).click();
     await screen.getByRole("textbox", { name: "Name" }).fill("Orders");
     await screen.getByRole("textbox", { name: "Query" }).fill("SELECT * FROM sales.orders");
     await screen.getByRole("button", { name: "Create" }).click();
@@ -118,5 +123,35 @@ describe("ArtifactExplorer", () => {
       artifact_type: "chart",
       sql_text: "SELECT * FROM sales.orders",
     });
+  });
+  it("shows Superset's thumbnail on a BI dashboard card once it is drawn", async () => {
+    biSession.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaViewer" });
+    mocks.listArtifacts.mockResolvedValue({
+      artifacts: [{ ...ARTIFACTS[1], bi_kind: "dashboard", bi_object_id: 7, bi_view_path: "/bi/superset/dashboard/7/?standalone=2" }],
+      count: 1,
+    });
+    const image = await new Promise<Blob>((resolve) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 4;
+      canvas.height = 3;
+      canvas.toBlob((blob) => resolve(blob as Blob), "image/png");
+    });
+    const fetchMock = vi
+      .spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "OK Async" }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(image, { status: 200, headers: { "content-type": "image/png" } }));
+    try {
+      const { screen } = await mount();
+      const card = screen.getByRole("button", { name: "Open Sales overview" });
+      await expect.element(card).toBeVisible();
+      // While Superset draws it, the card says so, never a caption about BI.
+      await expect.element(card).toHaveTextContent("Preparing preview");
+      await expect.element(card).not.toHaveTextContent("BI");
+      await expect.poll(() => card.element().querySelector("img")?.getAttribute("src") ?? "", { timeout: 9_000 }).toMatch(/^blob:/);
+      expect(fetchMock).toHaveBeenCalledWith("/bi/api/v1/dashboard/7/thumbnail/latest/", expect.anything());
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 });

@@ -56,6 +56,7 @@ async def test_explorer_hides_denied_stage_metadata(monkeypatch):
             raise StageAccessDenied("Stage access denied")
 
     monkeypatch.setattr(module, "check_stage_access", authorize)
+    _allow_all_caller(module, monkeypatch)
     result = await module.ExplorerService().get_database_objects(
         "db", user={"username": "analyst", "encrypted_password": "encrypted",
                     "active_role": "analyst"},
@@ -91,3 +92,24 @@ async def test_stage_list_checks_each_schema_once(monkeypatch):
 
     assert [stage.name for stage in result.stages] == ["stage_0", "stage_1"]
     assert checked == ["bronze", "silver"]
+
+
+class _AllowAllCaller:
+    async def databases(self, catalog):
+        return ["sales", "db"]
+
+    async def relations(self, catalog, database):
+        return {}
+
+    async def function_names(self, database):
+        return set()
+
+
+def _allow_all_caller(module, monkeypatch):
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def fake(user):
+        yield _AllowAllCaller()
+
+    monkeypatch.setattr(module, "caller_metadata", fake)

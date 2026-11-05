@@ -474,3 +474,19 @@ async def test_saving_a_chart_publishes_it_with_the_described_plan(monkeypatch):
             user=OWNER,
         )
     assert refused.value.status_code == 403
+
+
+def test_framed_paths_never_show_supersets_navigation_bar():
+    from app.modules.agents.artifact_repository import bi_paths
+
+    chart_view, chart_edit = bi_paths("chart", 21)
+    assert chart_view == "/bi/explore/?slice_id=21&standalone=1"
+    # Explore keeps its control panel; only the navigation bar is hidden.
+    assert chart_edit == "/bi/explore/?slice_id=21&uiConfig=4"
+
+    dashboard_view, dashboard_edit = bi_paths("dashboard", 7)
+    assert dashboard_view == "/bi/superset/dashboard/7/?standalone=2"
+    assert dashboard_edit == "/bi/superset/dashboard/7/?edit=true&standalone=1"
+
+    assert bi_paths("chart", None) == (None, None)
+    assert bi_paths(None, 3) == (None, None)

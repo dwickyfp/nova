@@ -89,13 +89,7 @@ type EffectiveAccess = {
 };
 
 const PERMISSION_OPTIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"];
-const MASK_OPTIONS = [
-  "MASK",
-  "MASK_SHOW_LAST_4",
-  "MASK_SHOW_FIRST_4",
-  "MASK_HASH",
-  "MASK_NULL",
-];
+const MASK_OPTIONS = ["MASK", "MASK_HASH", "MASK_NULL"];
 
 function policyKind(policy: Policy) {
   if (policy.policyType === 1) return "Masking";

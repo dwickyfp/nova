@@ -605,3 +605,26 @@ class PartitionTests(unittest.TestCase):
             context.identity.set(IDENTITY)
             key = manager.get_rls_cache_key(None)
         self.assertEqual(key, ["nova:session:alice:finance:3"])
+
+
+class NovaChartPaletteTest(unittest.TestCase):
+    def test_charts_default_to_novas_categorical_palette(self):
+        # Superset loads superset_config at the end of its own config.
+        from superset import config
+
+        defaults = [s for s in config.EXTRA_CATEGORICAL_COLOR_SCHEMES if s.get("isDefault")]
+        self.assertEqual([s["id"] for s in defaults], ["novaCategorical"])
+        self.assertEqual(
+            defaults[0]["colors"],
+            [
+                "#f05a47",
+                "#14a89a",
+                "#e89b17",
+                "#4f7ee8",
+                "#d94f86",
+                "#a78bfa",
+                "#f472b6",
+                "#38bdf8",
+                "#34d399",
+            ],
+        )

@@ -43,6 +43,7 @@ async def test_explorer_scopes_intelligence_objects_to_database_and_catalog(monk
     ]))
 
     user = {"username": "analyst", "encrypted_password": "encrypted", "active_role": "analyst"}
+    _allow_all_caller(module, monkeypatch)
     result = await module.ExplorerService().get_database_objects("sales", user=user)
 
     assert [item.name for item in result.entities] == ["entity_local"]
@@ -52,3 +53,24 @@ async def test_explorer_scopes_intelligence_objects_to_database_and_catalog(monk
     module.entity_registry.list.assert_awaited_once_with(user)
     module.semantic_view_service.list.assert_awaited_once_with(user)
     module.feature_store.list_views.assert_awaited_once_with(user)
+
+
+class _AllowAllCaller:
+    async def databases(self, catalog):
+        return ["sales", "db"]
+
+    async def relations(self, catalog, database):
+        return {}
+
+    async def function_names(self, database):
+        return set()
+
+
+def _allow_all_caller(module, monkeypatch):
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def fake(user):
+        yield _AllowAllCaller()
+
+    monkeypatch.setattr(module, "caller_metadata", fake)

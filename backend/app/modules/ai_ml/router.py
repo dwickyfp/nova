@@ -57,17 +57,22 @@ require_user = Depends(get_current_user)
 
 
 def _validate_provider_endpoint(endpoint: str) -> None:
-    """Reject a private/loopback/link-local endpoint before it is stored.
+    """Reject a link-local, metadata or malformed endpoint before it is stored.
 
-    The message is fixed and carries no resolved address, matching the wording
-    in ``ai_ml.service.test_connection`` (NOVA-107).
+    Provider writes are admin-only, so a model served on localhost or the
+    private network is accepted. The message is fixed and carries no resolved
+    address, matching the wording in ``ai_ml.service.test_connection``
+    (NOVA-107).
     """
     try:
-        resolve_and_validate_url(endpoint)
+        resolve_and_validate_url(endpoint, allow_private_network=True)
     except BlockedEndpointError:
         raise HTTPException(
             status_code=400,
-            detail="Endpoint is not allowed: it must be a public http(s) URL",
+            detail=(
+                "Endpoint is not allowed: use an http(s) URL on the internet "
+                "or your local network"
+            ),
         ) from None
 
 
@@ -185,6 +190,9 @@ async def test_connection(
         provider_type=body.type,
         endpoint=body.endpoint,
         api_key=body.api_key,
+        # Only administrators can save a provider, so only they may probe the
+        # local network; everyone else keeps the public-only check.
+        allow_private_network=any(role in user["roles"] for role in ADMIN_ROLES),
     )
     return TestConnectionResponse(**result)
 

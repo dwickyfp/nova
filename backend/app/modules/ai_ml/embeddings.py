@@ -95,7 +95,7 @@ class EmbeddingService:
         if not key:
             raise EmbeddingError("Embedding provider credential is unavailable", status_code=503)
         try:
-            async with guarded_async_client(timeout=30.0) as client:
+            async with guarded_async_client(timeout=30.0, allow_private_network=True) as client:
                 response = await client.post(
                     model.endpoint,
                     headers={"Authorization": f"Bearer {key}"},

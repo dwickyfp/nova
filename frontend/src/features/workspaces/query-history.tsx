@@ -62,7 +62,7 @@ export function QueryHistory({
             <div className='flex items-center gap-2'>
               <span
                 className={cn(
-                  'inline-flex h-4 items-center rounded px-1 text-[10px] font-medium',
+                  'inline-flex h-5 items-center rounded px-1.5 text-xs font-medium',
                   item.status === 'SUCCESS'
                     ? 'bg-success/10 text-success-strong'
                     : 'bg-destructive/10 text-destructive'

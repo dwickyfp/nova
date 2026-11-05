@@ -376,7 +376,9 @@ jobs:
 
   frontend:
     name: Frontend (lint, build, vitest)
-    runs-on: ubuntu-latest
+    # Playwright 1.59.1 ships no Chromium for Ubuntu 26.04, which ubuntu-latest
+    # now resolves to. Move off 24.04 together with a Playwright upgrade.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend

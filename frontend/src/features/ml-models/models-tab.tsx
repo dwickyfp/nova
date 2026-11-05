@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Brain,
-  CheckCircle2,
+  ChartScatter,
   Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
-  Sparkles,
+  RefreshCw,
   Trash2,
-  XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -17,6 +15,7 @@ import {
 } from '@/components/data-table/simple-table-controls'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   Dialog,
   DialogContent,
@@ -158,6 +157,14 @@ function getPrimaryMetric(metrics: Record<string, unknown> | null): { key: strin
     return { key: firstKey, value: formatMetricValue(firstKey, metrics[firstKey]) }
   }
   return null
+}
+
+function ModelStatus({ status }: { status: string | null }) {
+  if (status === 'ready') return <StatusBadge tone='success'>Ready</StatusBadge>
+  if (status === 'failed') return <StatusBadge tone='danger'>Failed</StatusBadge>
+  if (status === 'training') return <StatusBadge tone='info' dot>Training</StatusBadge>
+  const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'
+  return <StatusBadge>{label}</StatusBadge>
 }
 
 // ── Component ───────────────────────────────────────────────────
@@ -336,37 +343,21 @@ export function ModelsTab() {
 
   return (
     <div className='space-y-4'>
-      {/* Model Summary Bar */}
-      <div className='flex items-center gap-3 rounded-lg border bg-card p-3'>
-        <div className='flex items-center gap-2'>
-          <Brain className='size-4 text-muted-foreground' />
-          <span className='text-sm font-medium'>Trained Models</span>
-        </div>
-        <div className='flex items-center gap-2'>
-          <Badge variant='secondary' className='gap-1 font-mono text-xs'>
-            <CheckCircle2 className='size-3 text-success-strong' />
-            {readyCount}/{models.length} ready
-          </Badge>
-          <Badge variant='outline' className='text-[10px] font-normal' style={{}}>
-            <span className='rounded border-border bg-muted px-1 text-muted-foreground'>
-              {classificationCount} classification
-            </span>
-          </Badge>
-          <Badge variant='outline' className='text-[10px] font-normal'>
-            <span className='rounded border-border bg-muted px-1 text-muted-foreground'>
-              {regressionCount} regression
-            </span>
-          </Badge>
-        </div>
+      {/* Summary and actions */}
+      <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
+        <p className='text-sm text-muted-foreground tabular-nums'>
+          <span className='text-foreground'>{readyCount} of {models.length}</span>{' '}
+          ready · {classificationCount} classification · {regressionCount}{' '}
+          regression
+        </p>
         <div className='ml-auto flex items-center gap-2'>
-          <Button
-            variant='outline'
-            size='sm'
-            className='h-7 gap-1.5 text-xs'
-            onClick={fetchAll}
-          >
-            <Sparkles className='size-3' />
+          <Button variant='outline' size='sm' className='gap-1.5' onClick={fetchAll}>
+            <RefreshCw className='size-4' />
             Refresh
+          </Button>
+          <Button size='sm' className='gap-1.5' onClick={openTrainDialog}>
+            <Plus className='size-4' />
+            Train model
           </Button>
         </div>
       </div>
@@ -377,7 +368,7 @@ export function ModelsTab() {
         onSearchChange={(value) => {
           setSearch(value)
         }}
-        searchPlaceholder='Search models, algorithms, columns...'
+        searchPlaceholder='Search models'
         resultLabel={`${filtered.length} model${filtered.length !== 1 ? 's' : ''}`}
         filters={[
           {
@@ -392,7 +383,6 @@ export function ModelsTab() {
               const mt = MODEL_TYPES.find((m) => m.label === label)
               setTypeFilter(mt?.value ?? '')
             },
-            icon: <Brain size={14} />,
           },
           {
             label: 'Algorithm',
@@ -401,18 +391,9 @@ export function ModelsTab() {
             onChange: (label) => {
               setAlgoFilter(label)
             },
-            icon: <Sparkles size={14} />,
           },
         ]}
       />
-
-      {/* Toolbar action */}
-      <div className='flex justify-end'>
-        <Button size='sm' className='gap-1.5' onClick={openTrainDialog}>
-          <Plus className='size-3.5' />
-          Train New Model
-        </Button>
-      </div>
 
       {/* Table */}
       <SimpleTableViewport>
@@ -420,7 +401,7 @@ export function ModelsTab() {
           <thead>
             <tr>
               <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Model Name
+                Model
               </th>
               <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
                 Type
@@ -460,14 +441,12 @@ export function ModelsTab() {
             {!loading && filtered.length === 0 && (
               <tr>
                 <td colSpan={9} className='px-4 py-12 text-center'>
-                  <Brain className='mx-auto mb-3 size-8 text-muted-foreground' />
+                  <ChartScatter className='mx-auto mb-3 size-8 text-muted-foreground' />
                   <p className='text-sm text-muted-foreground'>
-                    No ML models trained yet.
+                    {models.length === 0 ? 'No models trained yet' : 'No models match these filters'}
                   </p>
                   <p className='mt-1 text-xs text-muted-foreground'>
-                    Train classification or regression models using data from
-                    SQL queries. Supports linear models, trees, ensembles, KNN,
-                    and SVM.
+                    Train a classification or regression model from a SQL query
                   </p>
                   <Button
                     variant='outline'
@@ -475,8 +454,8 @@ export function ModelsTab() {
                     className='mt-3 gap-1.5'
                     onClick={openTrainDialog}
                   >
-                    <Plus className='size-3.5' />
-                    Train your first model
+                    <Plus className='size-4' />
+                    Train a model
                   </Button>
                 </td>
               </tr>
@@ -494,32 +473,23 @@ export function ModelsTab() {
                       <div>
                         <span className='font-medium'>{model.model_name}</span>
                         {model.latest_version && model.latest_version > 1 && (
-                          <Badge
-                            variant='outline'
-                            className='ml-2 text-[10px] font-normal'
-                          >
+                          <span className='ml-2 font-mono text-xs text-muted-foreground'>
                             v{model.latest_version}
-                          </Badge>
+                          </span>
                         )}
                       </div>
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='outline'
-                        className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
-                      >
+                      <span className='text-muted-foreground'>
                         {model.model_type === 'classification'
                           ? 'Classification'
                           : 'Regression'}
-                      </Badge>
+                      </span>
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='outline'
-                        className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
-                      >
+                      <span className='text-muted-foreground'>
                         {getAlgorithmLabel(model.algorithm ?? 'auto')}
-                      </Badge>
+                      </span>
                     </td>
                     <td className='px-4 py-3'>
                       <span className='font-mono text-xs text-muted-foreground'>
@@ -527,27 +497,7 @@ export function ModelsTab() {
                       </span>
                     </td>
                     <td className='px-4 py-3 text-center'>
-                      {model.latest_status === 'ready' ? (
-                        <Badge
-                          variant='secondary'
-                          className='gap-1 border-success/25 bg-success/10 text-success-strong'
-                        >
-                          <CheckCircle2 className='size-3' />
-                          Ready
-                        </Badge>
-                      ) : model.latest_status === 'failed' ? (
-                        <Badge
-                          variant='secondary'
-                          className='gap-1 bg-destructive/10 text-destructive'
-                        >
-                          <XCircle className='size-3' />
-                          Failed
-                        </Badge>
-                      ) : (
-                        <Badge variant='outline' className='text-[10px]'>
-                          {model.latest_status ?? 'unknown'}
-                        </Badge>
-                      )}
+                      <ModelStatus status={model.latest_status} />
                     </td>
                     <td className='px-4 py-3'>
                       {primaryMetric ? (
@@ -555,7 +505,7 @@ export function ModelsTab() {
                           <span className='font-mono text-muted-foreground'>
                             {primaryMetric.key}
                           </span>
-                          <span className='ml-1 font-semibold'>
+                          <span className='ml-1 font-medium tabular-nums'>
                             {primaryMetric.value}
                           </span>
                         </div>
@@ -564,7 +514,7 @@ export function ModelsTab() {
                       )}
                     </td>
                     <td className='px-4 py-3 text-right'>
-                      <span className='font-mono text-xs text-muted-foreground'>
+                      <span className='font-mono text-xs text-muted-foreground tabular-nums'>
                         {model.training_rows != null
                           ? model.training_rows.toLocaleString()
                           : '—'}
@@ -594,14 +544,14 @@ export function ModelsTab() {
                               onClick={() => setDetailDialog(model)}
                             >
                               <Pencil className='mr-2 size-3.5' />
-                              View Details
+                              View details
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className='text-destructive focus:text-destructive'
                               onClick={() => setDeleteDialog(model)}
                             >
                               <Trash2 className='mr-2 size-3.5' />
-                              Delete Model
+                              Delete model
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -618,7 +568,7 @@ export function ModelsTab() {
       <Dialog open={trainDialogOpen} onOpenChange={setTrainDialogOpen}>
         <DialogContent className='grid max-h-[88vh] grid-rows-[auto_auto_minmax(0,1fr)_auto_auto] overflow-hidden p-0 sm:max-w-[760px]'>
           <DialogHeader className='px-6 pt-6 pb-4'>
-            <DialogTitle>Train New ML Model</DialogTitle>
+            <DialogTitle>Train model</DialogTitle>
             <DialogDescription className='max-w-[620px]'>
               Train a classification or regression model using data from a SQL
               query. The model is stored as a managed resource and can be used
@@ -630,14 +580,14 @@ export function ModelsTab() {
             <div className='flex flex-col gap-6'>
               <section className='flex flex-col gap-3'>
                 <div>
-                  <h3 className='text-sm font-medium'>Model Setup</h3>
+                  <h3 className='text-sm font-medium'>Model setup</h3>
                   <p className='text-xs text-muted-foreground'>
                     Name the model and choose the training strategy.
                   </p>
                 </div>
                 <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'>
                   <div className='flex min-w-0 flex-col gap-2'>
-                    <Label htmlFor='model-name'>Model Name</Label>
+                    <Label htmlFor='model-name'>Model name</Label>
                     <Input
                       id='model-name'
                       placeholder='e.g. churn_predictor'
@@ -651,7 +601,7 @@ export function ModelsTab() {
                     />
                   </div>
                   <div className='flex min-w-0 flex-col gap-2'>
-                    <Label htmlFor='model-type'>Model Type</Label>
+                    <Label htmlFor='model-type'>Model type</Label>
                     <Select
                       value={trainForm.model_type}
                       onValueChange={(v) =>
@@ -710,7 +660,7 @@ export function ModelsTab() {
 
               <section className='flex flex-col gap-3'>
                 <div>
-                  <h3 className='text-sm font-medium'>Training Data</h3>
+                  <h3 className='text-sm font-medium'>Training data</h3>
                   <p className='text-xs text-muted-foreground'>
                     Define the query, target, and predictors used for training.
                   </p>
@@ -738,7 +688,7 @@ export function ModelsTab() {
 
                   <div className='grid gap-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(8rem,0.7fr)]'>
                     <div className='flex min-w-0 flex-col gap-2'>
-                      <Label htmlFor='target-column'>Target Column</Label>
+                      <Label htmlFor='target-column'>Target column</Label>
                       <Input
                         id='target-column'
                         placeholder='e.g. churned'
@@ -774,7 +724,7 @@ export function ModelsTab() {
                       </p>
                     </div>
                     <div className='flex min-w-0 flex-col gap-2'>
-                      <Label htmlFor='test-size'>Test Size</Label>
+                      <Label htmlFor='test-size'>Test size</Label>
                       <Input
                         id='test-size'
                         type='number'
@@ -799,7 +749,7 @@ export function ModelsTab() {
 
               <section className='flex flex-col gap-3'>
                 <div>
-                  <h3 className='text-sm font-medium'>Scale Planning</h3>
+                  <h3 className='text-sm font-medium'>Scale planning</h3>
                   <p className='text-xs text-muted-foreground'>
                     Scope the training database and optional tuning parameters.
                   </p>
@@ -866,9 +816,9 @@ export function ModelsTab() {
       >
         <DialogContent className='max-w-lg'>
           <DialogHeader>
-            <DialogTitle>Model Details</DialogTitle>
+            <DialogTitle>{detailDialog?.model_name ?? 'Model'}</DialogTitle>
             <DialogDescription>
-              Detailed information about &ldquo;{detailDialog?.model_name}&rdquo;
+              Latest version, training data, and metrics
             </DialogDescription>
           </DialogHeader>
           {detailDialog && (
@@ -887,43 +837,35 @@ export function ModelsTab() {
                 <div>
                   <span className='text-muted-foreground'>Type</span>
                   <p>
-                    <Badge
-                      variant='outline'
-                      className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
-                    >
-                      {detailDialog.model_type}
-                    </Badge>
+                    {detailDialog.model_type === 'classification'
+                      ? 'Classification'
+                      : 'Regression'}
                   </p>
                 </div>
                 <div>
                   <span className='text-muted-foreground'>Algorithm</span>
                   <p>
-                    <Badge
-                      variant='outline'
-                      className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
-                    >
-                      {getAlgorithmLabel(detailDialog.algorithm ?? 'auto')}
-                    </Badge>
+                    {getAlgorithmLabel(detailDialog.algorithm ?? 'auto')}
                   </p>
                 </div>
                 <div>
-                  <span className='text-muted-foreground'>Target Column</span>
+                  <span className='text-muted-foreground'>Target column</span>
                   <p className='font-mono text-xs'>
                     {detailDialog.target_column ?? '—'}
                   </p>
                 </div>
                 <div>
-                  <span className='text-muted-foreground'>Training Rows</span>
+                  <span className='text-muted-foreground'>Training rows</span>
                   <p className='font-mono text-xs'>
                     {detailDialog.training_rows?.toLocaleString() ?? '—'}
                   </p>
                 </div>
                 <div>
-                  <span className='text-muted-foreground'>Created By</span>
+                  <span className='text-muted-foreground'>Created by</span>
                   <p className='text-xs'>{detailDialog.created_by ?? '—'}</p>
                 </div>
                 <div>
-                  <span className='text-muted-foreground'>Created At</span>
+                  <span className='text-muted-foreground'>Created</span>
                   <p className='text-xs'>
                     {detailDialog.created_at
                       ? new Date(detailDialog.created_at).toLocaleString()
@@ -935,15 +877,15 @@ export function ModelsTab() {
               {detailDialog.feature_columns &&
                 detailDialog.feature_columns.length > 0 && (
                   <div>
-                    <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
-                      Feature Columns ({detailDialog.feature_columns.length})
+                    <span className='text-xs font-medium text-muted-foreground'>
+                      Feature columns ({detailDialog.feature_columns.length})
                     </span>
                     <div className='mt-1 flex flex-wrap gap-1'>
                       {detailDialog.feature_columns.map((col) => (
                         <Badge
                           key={col}
                           variant='outline'
-                          className='font-mono text-[10px]'
+                          className='font-mono text-xs font-normal'
                         >
                           {col}
                         </Badge>
@@ -955,7 +897,7 @@ export function ModelsTab() {
               {detailDialog.latest_metrics &&
                 Object.keys(detailDialog.latest_metrics).length > 0 && (
                   <div>
-                    <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+                    <span className='text-xs font-medium text-muted-foreground'>
                       Metrics
                     </span>
                     <div className='mt-1 grid grid-cols-2 gap-2 rounded-md border p-2'>
@@ -965,7 +907,7 @@ export function ModelsTab() {
                             <span className='font-mono text-muted-foreground'>
                               {key}
                             </span>
-                            <span className='font-medium'>
+                            <span className='font-medium tabular-nums'>
                               {formatMetricValue(key, value)}
                             </span>
                           </div>
@@ -977,7 +919,7 @@ export function ModelsTab() {
 
               {detailDialog.training_sql && (
                 <div>
-                  <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+                  <span className='text-xs font-medium text-muted-foreground'>
                     Training SQL
                   </span>
                   <pre className='mt-1 max-h-32 overflow-auto rounded-md border bg-muted p-2 font-mono text-xs'>
@@ -989,7 +931,7 @@ export function ModelsTab() {
               {detailDialog.hyperparameters &&
                 Object.keys(detailDialog.hyperparameters).length > 0 && (
                   <div>
-                    <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+                    <span className='text-xs font-medium text-muted-foreground'>
                       Hyperparameters
                     </span>
                     <pre className='mt-1 rounded-md border bg-muted p-2 font-mono text-xs'>
@@ -1014,7 +956,7 @@ export function ModelsTab() {
       >
         <DialogContent className='max-w-md'>
           <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogTitle>Delete model</DialogTitle>
             <DialogDescription>
               Delete ML model &ldquo;{deleteDialog?.model_name}&rdquo;? This
               will permanently remove the model and all its versions. Any

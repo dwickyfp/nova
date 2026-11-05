@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Bot, Wand2 } from 'lucide-react'
+import { Plug, SquareFunction } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
+import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProvidersTab } from './providers-tab'
 import { FunctionsTab } from './functions-tab'
@@ -17,21 +18,20 @@ export function AIProviders() {
       </Header>
 
       <Main scroll>
-        <div className="mb-2">
-          <h1 className="text-2xl leading-8 font-normal">AI Providers</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage AI providers, register models, and configure SQL functions.
-          </p>
-        </div>
+        <PageHeader
+          className="mb-6"
+          title="AI Providers"
+          description="Connect model providers, register their models, and map them to SQL functions"
+        />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="providers" className="gap-1.5">
-              <Bot className="size-3.5" />
+              <Plug className="size-3.5" />
               Providers
             </TabsTrigger>
             <TabsTrigger value="functions" className="gap-1.5">
-              <Wand2 className="size-3.5" />
+              <SquareFunction className="size-3.5" />
               Functions
             </TabsTrigger>
           </TabsList>

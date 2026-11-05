@@ -10,7 +10,7 @@ from app.modules.intelligence.feature_store import feature_store
 from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.stages.access import StageAccessDenied, check_stage_access
 
-from .repository import explorer_repo
+from .repository import INTERNAL_CATALOG, caller_metadata, explorer_repo
 from .schemas import (
     CatalogInfo,
     CatalogsResponse,
@@ -39,40 +39,62 @@ log = logging.getLogger(__name__)
 
 
 class ExplorerService:
-    """Orchestrate repository calls and build response models."""
+    """Orchestrate repository calls and build response models.
 
-    async def get_catalogs(self) -> CatalogsResponse:
-        catalogs_raw = await explorer_repo.list_catalogs()
-        databases = await explorer_repo.list_databases_for_catalog()
+    Visibility comes from the caller's engine session; the system pool only
+    describes objects that session listed.
+    """
 
-        catalogs = []
-        for cat in catalogs_raw:
-            # External catalogs expose their own databases (and therefore their
-            # external tables); only default_catalog falls back to the shared
-            # list, which is where every Nova self-managed database lives.
-            if cat["name"] == "default_catalog":
-                cat_databases = databases
-            else:
-                cat_databases = await explorer_repo.list_databases_for_catalog_name(
-                    cat["name"]
+    async def get_catalogs(self, user: dict) -> CatalogsResponse:
+        async with caller_metadata(user) as caller:
+            catalogs = [
+                CatalogInfo(
+                    name=cat["name"],
+                    type=cat["type"],
+                    comment=cat["comment"],
+                    databases=await caller.databases(cat["name"]),
                 )
-            catalogs.append(CatalogInfo(
-                name=cat["name"],
-                type=cat["type"],
-                comment=cat["comment"],
-                databases=cat_databases,
-            ))
+                for cat in await caller.catalogs()
+            ]
         return CatalogsResponse(catalogs=catalogs)
 
     async def get_database_objects(
         self, database: str, catalog: str | None = None, *, user: dict
-    ) -> DatabaseObjectsResponse:
-        tables_raw = await explorer_repo.list_tables(database, catalog=catalog)
-        views_raw = await explorer_repo.list_views(database)
-        mvs_raw = await explorer_repo.list_materialized_views(database)
-        funcs_raw = await explorer_repo.list_functions(database)
-        pipes_raw = await explorer_repo.list_pipes(database)
-        stages_raw = await explorer_repo.list_stages(database)
+    ) -> DatabaseObjectsResponse | None:
+        """Objects in one database, or ``None`` when the caller cannot see it."""
+        scoped_catalog = catalog or INTERNAL_CATALOG
+        internal = scoped_catalog == INTERNAL_CATALOG
+        async with caller_metadata(user) as caller:
+            if database not in await caller.databases(scoped_catalog):
+                return None
+            relations = await caller.relations(scoped_catalog, database)
+            function_names = await caller.function_names(database) if internal else set()
+        base_tables = {name for name, kind in relations.items() if kind == "BASE TABLE"}
+        views = {name for name, kind in relations.items() if kind == "VIEW"}
+
+        if internal:
+            tables_raw = [
+                t for t in await explorer_repo.list_tables(database) if t["name"] in base_tables
+            ]
+            views_raw = [v for v in await explorer_repo.list_views(database) if v["name"] in views]
+            mvs_raw = [
+                m for m in await explorer_repo.list_materialized_views(database)
+                if m["name"] in views
+            ]
+            funcs_raw = [
+                f for f in await explorer_repo.list_functions(database)
+                if f["name"] in function_names
+            ]
+            pipes_raw = [
+                p for p in await explorer_repo.list_pipes(database)
+                if _relation_name(p.get("target_table")) in base_tables
+            ]
+            stages_raw = await explorer_repo.list_stages(database)
+            tasks_raw = await explorer_repo.list_tasks(database)
+        else:
+            tables_raw = [{"name": name} for name in sorted(base_tables)]
+            views_raw, mvs_raw, funcs_raw, pipes_raw = [], [], [], []
+            stages_raw, tasks_raw = [], []
         password = decrypt_password(user["encrypted_password"])
         authorized_stages = []
         for stage in stages_raw:
@@ -86,8 +108,6 @@ class ExplorerService:
                 continue
             authorized_stages.append(stage)
         stages_raw = authorized_stages
-        tasks_raw = await explorer_repo.list_tasks(database)
-        scoped_catalog = catalog or "default_catalog"
         entities = [
             entity for entity in await entity_registry.list(user)
             if entity.catalog == scoped_catalog and entity.database == database
@@ -205,7 +225,15 @@ class ExplorerService:
             },
         )
 
-    async def get_table_detail(self, database: str, table: str) -> TableDetailResponse | None:
+    async def _visible_relations(self, user: dict, database: str) -> dict[str, str]:
+        async with caller_metadata(user) as caller:
+            return await caller.relations(INTERNAL_CATALOG, database)
+
+    async def get_table_detail(
+        self, database: str, table: str, *, user: dict
+    ) -> TableDetailResponse | None:
+        if (await self._visible_relations(user, database)).get(table) != "BASE TABLE":
+            return None
         raw = await explorer_repo.get_table_detail(database, table)
         if not raw:
             return None
@@ -261,27 +289,45 @@ class ExplorerService:
             data_size=raw.get("data_size"),
         )
 
-    async def get_view_detail(self, database: str, view: str) -> ViewDetailResponse | None:
+    async def get_view_detail(
+        self, database: str, view: str, *, user: dict
+    ) -> ViewDetailResponse | None:
+        if (await self._visible_relations(user, database)).get(view) != "VIEW":
+            return None
         raw = await explorer_repo.get_view_detail(database, view)
         if not raw:
             return None
         return ViewDetailResponse(**raw)
 
-    async def get_mv_detail(self, database: str, mv: str) -> MaterializedViewDetailResponse | None:
+    async def get_mv_detail(
+        self, database: str, mv: str, *, user: dict
+    ) -> MaterializedViewDetailResponse | None:
+        if (await self._visible_relations(user, database)).get(mv) != "VIEW":
+            return None
         raw = await explorer_repo.get_mv_detail(database, mv)
         if not raw:
             return None
         return MaterializedViewDetailResponse(**raw)
 
-    async def get_function_detail(self, database: str, fn: str) -> FunctionDetailResponse | None:
+    async def get_function_detail(
+        self, database: str, fn: str, *, user: dict
+    ) -> FunctionDetailResponse | None:
+        async with caller_metadata(user) as caller:
+            if fn not in await caller.function_names(database):
+                return None
         raw = await explorer_repo.get_function_detail(database, fn)
         if not raw:
             return None
         return FunctionDetailResponse(**raw)
 
-    async def get_pipe_detail(self, database: str, pipe: str) -> PipeDetailResponse | None:
+    async def get_pipe_detail(
+        self, database: str, pipe: str, *, user: dict
+    ) -> PipeDetailResponse | None:
         raw = await explorer_repo.get_pipe_detail(database, pipe)
         if not raw:
+            return None
+        relations = await self._visible_relations(user, database)
+        if relations.get(_relation_name(raw.get("target_table"))) != "BASE TABLE":
             return None
         return PipeDetailResponse(**raw)
 
@@ -295,6 +341,11 @@ class ExplorerService:
         )
         rows = result.get("rows", [])
         return rows[0][0] if len(rows) == 1 else None
+
+
+def _relation_name(value: object) -> str:
+    """Last part of a possibly qualified relation name (``db.table`` → ``table``)."""
+    return str(value or "").rsplit(".", 1)[-1].strip("`")
 
 
 explorer_service = ExplorerService()

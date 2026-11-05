@@ -59,7 +59,7 @@ def http_provider(monkeypatch, responses, *, max_attempts=1):
             yield value
 
     monkeypatch.setattr(provider_module, "guarded_async_client", client)
-    monkeypatch.setattr(provider_module, "resolve_and_validate_url", lambda value: None)
+    monkeypatch.setattr(provider_module, "resolve_and_validate_url", lambda value, **_: None)
     value = AssistantProviderClient(max_attempts=max_attempts, retry_base_seconds=0)
     value.resolve = AsyncMock(return_value=ProviderConfig(
         provider_id="quality", model="fixture", endpoint="https://fixture.invalid/chat",

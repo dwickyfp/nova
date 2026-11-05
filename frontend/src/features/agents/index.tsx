@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Bot, Plus, Save, Sparkles } from 'lucide-react'
+import { Bot, BrainCircuit, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PageHeader } from '@/components/ui/page-header'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -66,25 +67,23 @@ export function AgentsPage() {
     <>
       <Header fixed />
       <Main scroll>
-        <div className='mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-          <div className='min-w-0'>
-            <h1 className='text-2xl leading-8 font-normal'>Agent Studio</h1>
-            <p className='mt-1 text-sm text-muted-foreground'>
-              Build agents with instructions, tools, and published Semantic Views, then
-              chat with them in Nova Studio.
-            </p>
-          </div>
-          <div className='flex shrink-0 items-center gap-2'>
-            <Button variant='outline' onClick={() => navigate({ to: '/semantic-views' })}>
-              <Sparkles className='size-4' />
-              Semantic Views
-            </Button>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className='size-4' />
-              Create agent
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          className='mb-6'
+          title='Agent Studio'
+          description='Build agents with instructions, tools, and published Semantic Views, then chat with them in Nova Studio'
+          actions={
+            <>
+              <Button variant='outline' onClick={() => navigate({ to: '/semantic-views' })}>
+                <BrainCircuit className='size-4' />
+                Semantic Views
+              </Button>
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className='size-4' />
+                Create agent
+              </Button>
+            </>
+          }
+        />
 
         <div className='mb-4 flex items-center gap-2'>
           <Input

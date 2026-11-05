@@ -17,6 +17,23 @@ USERNAME = os.environ.get("RANGER_USERNAME", "admin")
 PASSWORD = os.environ["RANGER_PASSWORD"]
 SERVICE_NAME = os.environ.get("RANGER_SERVICE_NAME", "nova_starrocks")
 SERVICE_DEF = json.loads(Path("/starrocks-service-def.json").read_text())
+
+
+def correct_mask_transformers(definition: dict[str, Any]) -> dict[str, Any]:
+    """Use the lowercase ``{col}`` placeholder in every mask transformer.
+
+    The pinned upstream definition writes ``MASK_HASH`` with ``{COL}``. Ranger
+    substitutes only ``{col}``, so the FE receives the literal placeholder and
+    every query on a hash-masked column fails to parse.
+    """
+    for mask_type in definition.get("dataMaskDef", {}).get("maskTypes", []):
+        transformer = mask_type.get("transformer")
+        if transformer:
+            mask_type["transformer"] = transformer.replace("{COL}", "{col}")
+    return definition
+
+
+SERVICE_DEF = correct_mask_transformers(SERVICE_DEF)
 AUTH = base64.b64encode(f"{USERNAME}:{PASSWORD}".encode()).decode()
 
 

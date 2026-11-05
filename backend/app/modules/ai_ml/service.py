@@ -439,7 +439,12 @@ class AIService:
     # ── Test Connection ─────────────────────────────────────────
 
     async def test_connection(
-        self, provider_type: str, endpoint: str, api_key: str | None
+        self,
+        provider_type: str,
+        endpoint: str,
+        api_key: str | None,
+        *,
+        allow_private_network: bool = False,
     ) -> dict:
         """Test connectivity to an LLM provider by hitting its /models endpoint.
 
@@ -472,10 +477,13 @@ class AIService:
                 "models": [],
             }
 
-        # Reject private/loopback/link-local targets before the request is
-        # built. The message is fixed and carries no resolved address.
+        # Reject blocked targets before the request is built. Loopback and
+        # private addresses pass only when the caller may store a provider.
+        # The message is fixed and carries no resolved address.
         try:
-            resolve_and_validate_url(url)
+            resolve_and_validate_url(
+                url, allow_private_network=allow_private_network
+            )
         except BlockedEndpointError:
             logger.warning(
                 "Blocked test-connection to a non-public endpoint (provider=%s)",
@@ -483,12 +491,17 @@ class AIService:
             )
             return {
                 "success": False,
-                "message": "Endpoint is not allowed: it must be a public http(s) URL",
+                "message": (
+                    "Endpoint is not allowed: use an http(s) URL on the internet "
+                    "or your local network"
+                ),
                 "models": [],
             }
 
         try:
-            async with guarded_async_client(timeout=15.0) as client:
+            async with guarded_async_client(
+                timeout=15.0, allow_private_network=allow_private_network
+            ) as client:
                 resp = await client.get(url, headers=headers)
 
             if resp.status_code == 200:
@@ -548,7 +561,10 @@ class AIService:
             )
             return {
                 "success": False,
-                "message": "Endpoint is not allowed: it must be a public http(s) URL",
+                "message": (
+                    "Endpoint is not allowed: use an http(s) URL on the internet "
+                    "or your local network"
+                ),
                 "models": [],
             }
         except httpx.TimeoutException:
