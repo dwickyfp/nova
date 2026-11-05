@@ -6,9 +6,13 @@ instead of leaking untyped Ranger JSON into the application domain.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+#: Mask types defined by the StarRocks Ranger service definition. Ranger
+#: rejects any other ``dataMaskType`` for this service.
+MaskType = Literal["MASK", "MASK_HASH", "MASK_NULL", "MASK_NONE", "MASK_DATE_SHOW_YEAR", "CUSTOM"]
 
 
 class RangerRoleMember(BaseModel):

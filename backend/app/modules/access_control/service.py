@@ -21,7 +21,7 @@ from app.integrations.ranger.compiler import (
     compile_row_filter_policy,
     role_scope_attribute,
 )
-from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
+from app.integrations.ranger.schemas import MaskType, RangerRole, RangerRoleMember
 
 from .domain import AccessRequest, ProjectionState, RoleProjection
 from .security_context import SecurityContext
@@ -485,7 +485,7 @@ class AccessControlService:
         database: str,
         table: str,
         column: str,
-        mask_type: str,
+        mask_type: MaskType,
         value_expression: str | None = None,
     ) -> dict:
         self.require_security_admin(security)

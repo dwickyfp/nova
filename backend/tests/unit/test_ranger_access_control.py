@@ -207,6 +207,81 @@ def test_ranger_policy_compiler_separates_access_scope_and_mask(monkeypatch) -> 
     assert mask["dataMaskPolicyItems"][0]["roles"] == ["marketing"]
 
 
+@pytest.mark.parametrize(
+    ("mask_type", "value_expression"),
+    [
+        ("MASK_SHOW_LAST_4", None),
+        ("MASK_SHOW_FIRST_4", None),
+        ("CUSTOM", None),
+        ("CUSTOM", "  "),
+        ("MASK", "upper({col})"),
+    ],
+)
+def test_mask_policy_rejects_types_ranger_does_not_define(mask_type, value_expression) -> None:
+    from pydantic import ValidationError
+
+    from app.modules.access_control.schemas import MaskPolicyRequest
+
+    fields = {"role": "marketing", "database": "analytics", "table": "customers", "column": "phone"}
+    with pytest.raises(ValidationError):
+        MaskPolicyRequest(**fields, mask_type=mask_type, value_expression=value_expression)
+    with pytest.raises(ValueError):
+        compile_mask_policy(
+            **fields,
+            catalog="default_catalog",
+            mask_type=mask_type,
+            value_expression=value_expression,
+        )
+
+
+def test_mask_policy_accepts_custom_expression(monkeypatch) -> None:
+    monkeypatch.setattr("app.core.config.settings.RANGER_SERVICE_NAME", "nova_starrocks")
+    mask = compile_mask_policy(
+        role="marketing",
+        catalog="default_catalog",
+        database="analytics",
+        table="customers",
+        column="phone",
+        mask_type="CUSTOM",
+        value_expression="concat('***', right({col}, 2))",
+    ).to_api()
+    info = mask["dataMaskPolicyItems"][0]["dataMaskInfo"]
+    assert info == {"dataMaskType": "CUSTOM", "valueExpr": "concat('***', right({col}, 2))"}
+
+
+def test_ranger_bootstrap_corrects_uppercase_mask_placeholder(monkeypatch, tmp_path) -> None:
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    bootstrap_path = Path(__file__).resolve().parents[3] / "docker" / "ranger" / "bootstrap.py"
+    definition = {
+        "name": "starrocks",
+        "dataMaskDef": {
+            "maskTypes": [
+                {"name": "MASK_HASH", "transformer": "cast(hex(sha2({COL}, 256)) AS {type})"},
+                {"name": "MASK_NULL"},
+            ]
+        },
+    }
+    service_def = tmp_path / "starrocks-service-def.json"
+    service_def.write_text(json.dumps(definition))
+    monkeypatch.setenv("RANGER_PASSWORD", "unused")
+    real_path = Path
+
+    def fake_path(value, *args):
+        return service_def if value == "/starrocks-service-def.json" else real_path(value, *args)
+
+    monkeypatch.setattr("pathlib.Path", fake_path)
+    spec = importlib.util.spec_from_file_location("nova_ranger_bootstrap", bootstrap_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    mask_types = module.SERVICE_DEF["dataMaskDef"]["maskTypes"]
+    assert mask_types[0]["transformer"] == "cast(hex(sha2({col}, 256)) AS {type})"
+    assert "transformer" not in mask_types[1]
+
+
 @pytest.mark.asyncio
 async def test_ranger_client_role_upsert_is_service_scoped(monkeypatch) -> None:
     monkeypatch.setattr("app.core.config.settings.RANGER_SERVICE_NAME", "nova_starrocks")

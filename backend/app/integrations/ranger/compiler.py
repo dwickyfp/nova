@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Literal
+from typing import Literal, get_args
 
 from app.core.config import settings
 
 from .schemas import (
+    MaskType,
     RangerDataMaskInfo,
     RangerDataMaskPolicyItem,
     RangerPolicy,
@@ -147,9 +148,13 @@ def compile_mask_policy(
     database: str,
     table: str,
     column: str,
-    mask_type: str,
+    mask_type: MaskType,
     value_expression: str | None = None,
 ) -> RangerPolicy:
+    if mask_type not in get_args(MaskType):
+        raise ValueError(f"Unsupported Ranger mask type: {mask_type}")
+    if (mask_type == "CUSTOM") != bool(value_expression and value_expression.strip()):
+        raise ValueError("A value expression is required for CUSTOM masks and only for them")
     return RangerPolicy(
         service=settings.RANGER_SERVICE_NAME,
         name=managed_name("mask", role, catalog, database, table, column),

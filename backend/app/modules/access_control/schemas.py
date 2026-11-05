@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.integrations.ranger.schemas import MaskType
 
 
 class RoleCreateRequest(BaseModel):
@@ -44,8 +46,15 @@ class MaskPolicyRequest(BaseModel):
     database: str
     table: str
     column: str
-    mask_type: str
+    mask_type: MaskType
     value_expression: str | None = None
+
+    @model_validator(mode="after")
+    def _value_expression_matches_type(self) -> MaskPolicyRequest:
+        has_expression = bool(self.value_expression and self.value_expression.strip())
+        if (self.mask_type == "CUSTOM") != has_expression:
+            raise ValueError("value_expression is required for CUSTOM masks and only for them")
+        return self
 
 
 class EffectiveAccessRequest(BaseModel):
