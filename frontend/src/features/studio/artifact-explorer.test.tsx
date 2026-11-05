@@ -144,7 +144,8 @@ describe("ArtifactExplorer", () => {
       const { screen } = await mount();
       const card = screen.getByRole("button", { name: "Open Sales overview" });
       await expect.element(card).toBeVisible();
-      // While Superset draws it, the card shows its kind, never a caption about BI.
+      // While Superset draws it, the card says so, never a caption about BI.
+      await expect.element(card).toHaveTextContent("Preparing preview");
       await expect.element(card).not.toHaveTextContent("BI");
       await expect.poll(() => card.element().querySelector("img")?.getAttribute("src") ?? "", { timeout: 9_000 }).toMatch(/^blob:/);
       expect(fetchMock).toHaveBeenCalledWith("/bi/api/v1/dashboard/7/thumbnail/latest/", expect.anything());

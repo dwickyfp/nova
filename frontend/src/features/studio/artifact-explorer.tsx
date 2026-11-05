@@ -172,7 +172,9 @@ export function ArtifactExplorer({
               ) : null}
             </p>
           </div>
-          <label className="relative flex w-full items-center sm:w-72">
+          {/* Search and New share a row at every width. */}
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+          <label className="relative flex min-w-0 flex-1 items-center sm:w-72 sm:flex-none">
             <span className="sr-only">Search artifacts</span>
             <Search aria-hidden="true" className="absolute left-2.5 size-4 text-muted-foreground" />
             <Input
@@ -197,9 +199,12 @@ export function ArtifactExplorer({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
-        <div className="-mb-px mt-5 flex flex-wrap items-end gap-3">
-          <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]" aria-label="Content type">
+        {/* On a narrow screen the tabs take the full row on the header's edge,
+            scrolling sideways when they overflow, and sorting sits above them. */}
+        <div className="-mb-px mt-5 flex flex-wrap items-end gap-x-3 gap-y-2">
+          <nav className="flex min-w-0 flex-1 basis-full gap-1 overflow-x-auto [scrollbar-width:none] sm:basis-0" aria-label="Content type">
             {tabs.map((tab) => (
               <button
                 key={tab.value}
@@ -218,7 +223,7 @@ export function ArtifactExplorer({
               </button>
             ))}
           </nav>
-          <div className="flex items-center gap-1.5 pb-1.5">
+          <div className="order-first ml-auto flex items-center gap-1.5 sm:order-none sm:ml-0 sm:pb-1.5">
             <Select value={sort.key} onValueChange={(value) => setSort((current) => ({ ...current, key: value as SortKey }))}>
               <SelectTrigger aria-label="Sort by" className="type-ui h-8 w-36">
                 <SelectValue />
@@ -725,8 +730,10 @@ const THUMBNAIL_POLLS = 12;
 function BiDashboardThumbnail({ dashboardId, updatedAt }: { dashboardId: number; updatedAt: string }) {
   const session = useBiSession();
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
+  const queryClient = useQueryClient();
+  const thumbnailKey = ["bi", "dashboard-thumbnail", dashboardId, updatedAt, securityEpoch];
   const thumbnail = useQuery({
-    queryKey: ["bi", "dashboard-thumbnail", dashboardId, updatedAt, securityEpoch],
+    queryKey: thumbnailKey,
     enabled: session.status === "ready",
     retry: false,
     refetchOnWindowFocus: false,
@@ -759,10 +766,19 @@ function BiDashboardThumbnail({ dashboardId, updatedAt }: { dashboardId: number;
   if (source) {
     return <img src={source} alt="" className="h-full w-full object-cover object-top" />;
   }
-  // Still being drawn, or none for this session: the card shows its kind.
+  // While Superset draws it the card says so; with none for this session it
+  // shows its kind.
+  const preparing =
+    session.status === "opening" ||
+    thumbnail.isPending ||
+    (thumbnail.data?.state === "pending" &&
+      (queryClient.getQueryState(thumbnailKey)?.dataUpdateCount ?? 0) < THUMBNAIL_POLLS);
   return (
-    <span className="flex h-full items-center justify-center text-muted-foreground">
+    <span className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
       <LayoutDashboard aria-hidden="true" className="size-6" />
+      {preparing && session.status !== "error" ? (
+        <span className="type-meta">Preparing preview</span>
+      ) : null}
     </span>
   );
 }

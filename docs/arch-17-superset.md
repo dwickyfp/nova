@@ -370,8 +370,13 @@ theme change reloads a view frame but never an editor, which may hold unsaved
 Superset changes; Nova's system mode maps to Superset's, so both follow the OS
 without a reload.
 
+A dashboard without native filters is viewed with `&show_filters=0`, so
+Superset's empty filter bar does not frame it; its editor keeps the bar, where
+filters are added. Nova reads the filters from the dashboard's metadata in the
+viewer's own BI session and leaves the bar when it cannot tell.
+
 Dashboard cards in the artifact list show Superset's thumbnail, drawn for the
-viewer's session (S9), and a neutral placeholder while Superset computes it.
+viewer's session (S9), and say "Preparing preview" while Superset computes it.
 
 Because Superset is same-origin, Nova reads the framed location directly (to
 keep `/analytics?path=` in step) and sets the theme through shared storage; no

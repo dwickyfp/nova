@@ -1,6 +1,7 @@
 import { DashboardCanvas } from "@/features/viz/dashboard-canvas";
 import { ArtifactExplorer } from "./artifact-explorer";
-import { BiFrame } from "@/features/bi/bi-frame";
+import { BiFrame, FrameLoading } from "@/features/bi/bi-frame";
+import { useDashboardHasFilters, withoutFilterBar } from "@/features/bi/dashboard-filters";
 import { describeView } from "@/features/viz/insight";
 import { ViewAnswer } from "@/features/viz/view-answer";
 import { VizView } from "@/features/viz/viz-view";
@@ -108,6 +109,13 @@ function ArtifactDetail({
   const [chatInput, setChatInput] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState(startEditing);
+  // A dashboard without filters is viewed without Superset's empty filter bar;
+  // the editor keeps it, since that is where filters are added.
+  const dashboardId =
+    meta.data?.artifact_type === "dashboard" && meta.data.bi_kind === "dashboard"
+      ? (meta.data.bi_object_id ?? null)
+      : null;
+  const dashboardHasFilters = useDashboardHasFilters(dashboardId, !editing);
   const charts = useQuery({
     queryKey: ["studio", "artifacts"],
     queryFn: () => studioApi.listArtifacts(),
@@ -246,12 +254,26 @@ function ArtifactDetail({
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col border-t">
-          <BiFrame
-            key={editing ? "edit" : "view"}
-            path={(editing ? artifact.bi_edit_path : artifact.bi_view_path) ?? ""}
-            title={editing ? `Edit ${artifact.title}` : `Dashboard ${artifact.title}`}
-            holdsEdits={editing}
-          />
+          {editing ? (
+            <BiFrame
+              key="edit"
+              path={artifact.bi_edit_path ?? ""}
+              title={`Edit ${artifact.title}`}
+              holdsEdits
+            />
+          ) : dashboardHasFilters === null ? (
+            <FrameLoading />
+          ) : (
+            <BiFrame
+              key="view"
+              path={
+                dashboardHasFilters
+                  ? artifact.bi_view_path
+                  : withoutFilterBar(artifact.bi_view_path)
+              }
+              title={`Dashboard ${artifact.title}`}
+            />
+          )}
         </div>
         <ConfirmDialog
           open={deleteOpen}

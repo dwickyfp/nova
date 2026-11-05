@@ -96,7 +96,7 @@ const LoadingFrame = forwardRef<
   )
 })
 
-function FrameLoading({ overlay = false }: { overlay?: boolean }) {
+export function FrameLoading({ overlay = false }: { overlay?: boolean }) {
   return (
     <p
       className={cn(
