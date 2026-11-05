@@ -221,7 +221,7 @@ dengan jaringan host. Semua tes hanya memakai locator, tanpa model. Tes 5
 | Explorer marketing hanya melihat `analytics` | 5/5 | 5/5 |
 | Explorer finance (tanpa policy) melihat 0 database, role diganti lewat API | 5/5 | 5/5 |
 | API Explorer: 404 untuk `NOVA_SYSTEM`, 200 JSON untuk `analytics` | 5/5 | 5/5 |
-| Worksheet Monaco sebagai marketing: hanya Jakarta, telepon tersamar | Lolos saat workspace sudah berisi file; terhalang bug di bawah saat workspace kosong | Tidak bisa: Monaco tidak membuat area input tanpa layout. Tag `layout` |
+| Worksheet Monaco sebagai marketing: hanya Jakarta, telepon tersamar | Lolos setelah bug di bawah diperbaiki (3/3) | Tidak bisa: Monaco tidak membuat area input tanpa layout. Tag `layout` |
 
 Durasi per run: Lightpanda ±5 detik untuk 4 tes (±1–1,4 detik per tes).
 Chromium ±7–8 detik untuk 6 tes di luar tes worksheet.
@@ -232,8 +232,10 @@ membuat React masuk loop render (`Maximum update depth exceeded`, dilempar di
 layout effect `TabsList`, `frontend/src/components/ui/tabs.tsx`), lalu
 halaman jatuh ke error 500. Bug ini terulang setiap kali di Chromium dan juga
 di browser biasa. Tes komponen Vitest tidak menangkapnya karena API-nya
-tiruan. Tes `New File in the Workspaces sidebar opens an editor` sengaja
-dibiarkan merah sampai bug diperbaiki.
+tiruan. Pemicunya adalah `open_tabs` tersimpan yang masih menunjuk file
+yang sudah dihapus. Bug ini diperbaiki di PR #205, yang juga menambahkan
+tes komponen untuk kondisi tersebut. Setelah perbaikan itu masuk `main`,
+seluruh suite Chromium (7 tes) lolos 3/3 dan Lightpanda (4 tes) lolos 3/3.
 
 **Temuan tentang `e2e` dan Lightpanda:**
 
