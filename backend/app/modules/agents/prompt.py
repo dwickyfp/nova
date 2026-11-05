@@ -204,6 +204,10 @@ _TOOL_DESCRIPTIONS = {
     "describe_agent": "describe_agent() — read your authorized business catalog and capabilities.",
     "load_skill": "load_skill(name) — load a playbook for a task before answering it.",
     "query_execute": "query_execute(sql) — run one read-only SQL statement and read the rows.",
+    "catalog_search": (
+        "catalog_search(query, tag, object) — find tables and columns by name, tag, "
+        "comment, or owner, or describe one table's columns, tags, and lineage."
+    ),
     "semantic_query": (
         "semantic_query(question) — answer a business question from a bound "
         "published Semantic View using its metrics and dimensions."

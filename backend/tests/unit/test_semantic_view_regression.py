@@ -15,7 +15,10 @@ from app.modules.intelligence.semantic_regression import MAX_RESULT_ROWS, compar
 
 @pytest.fixture
 def publication_lease(monkeypatch):
-    from app.modules.intelligence import engine_repository
+    from app.modules.intelligence import engine_repository, semantic_views
+
+    # Catalog re-linking after a publish has its own tests (test_catalog_metadata).
+    monkeypatch.setattr(semantic_views, "_relink", AsyncMock())
 
     @asynccontextmanager
     async def lease(_key):
