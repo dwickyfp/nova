@@ -39,6 +39,9 @@ namespace = external_l3.namespace
 NATIVE = "default_catalog"
 
 
+#: Login answers that carry a usable session token.
+_SIGNED_IN = {"AUTHENTICATED", "SETUP_REQUIRED", "PASSWORD_CHANGE_REQUIRED"}
+
 #: A fixture user ``docker/init-nova.sql`` creates with the ``marketing`` role.
 BOB = ("bob", "NovaBob2026!")
 
@@ -55,8 +58,9 @@ async def _nova_admin_headers(client) -> dict[str, str]:
     body = await _login(
         client, "nova_admin", os.getenv("NOVA_ADMIN_TEST_PASSWORD", "NovaProxy2026!")
     )
-    if body.get("status") != "AUTHENTICATED":
-        pytest.skip("nova_admin needs first-login setup on this stack")
+    # A fresh stack answers SETUP_REQUIRED with a usable session token, as the
+    # shared ``admin_token`` fixture relies on; no token is a failure, not a skip.
+    assert body.get("status") in _SIGNED_IN and body.get("access_token"), body
     headers = {"Authorization": f"Bearer {body['access_token']}"}
     if body.get("active_role") != "ACCOUNTADMIN":
         switched = await client.post(
@@ -192,8 +196,7 @@ class TestIcebergColumnMetadata:
             await visibility.bump()
             headers = await _nova_admin_headers(client)
             bob = await _login(client, *BOB)
-            if bob.get("status") != "AUTHENTICATED":
-                pytest.skip("the bob fixture user needs first-login setup on this stack")
+            assert bob.get("status") in _SIGNED_IN and bob.get("access_token"), bob
 
             # bob's role is neither a security admin nor granted ALTER in Ranger:
             # the change is refused and the refusal audited.
