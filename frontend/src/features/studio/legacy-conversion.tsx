@@ -61,7 +61,7 @@ export function LegacyBanner({
       <div className="min-w-0 flex-1 basis-64">
         <p className="type-ui font-medium">Saved before BI, read-only</p>
         <p className="type-meta mt-0.5">
-          Convert it to edit, share and schedule it in BI. It keeps its place in Explore and in conversations.
+          Convert it to edit, share and schedule it in BI. It keeps its place in Artifacts and in conversations.
         </p>
         <ChangeList blockers={blockers} notes={notes} />
       </div>
@@ -109,7 +109,7 @@ export function LegacyBanner({
   );
 }
 
-/** The notice in Explore while any view is still read-only. */
+/** The notice in Artifacts while any view is still read-only. */
 export function LegacyNotice({ count }: { count: number }) {
   const [report, setReport] = useState<StudioArtifactConversion[] | null>(null);
   const convert = useConvertArtifacts(setReport);

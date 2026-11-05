@@ -71,16 +71,22 @@ BI_COLUMNS = (
 
 
 def bi_paths(kind: str | None, object_id: int | None) -> tuple[str | None, str | None]:
-    """``(view, edit)`` paths of a Superset object under ``/bi``."""
+    """``(view, edit)`` paths of a Superset object under ``/bi``.
+
+    Studio frames these under its own header, so none of them shows Superset's
+    navigation bar. Explore's ``standalone`` mode also drops the control panel,
+    so the chart editor hides only the bar with ``uiConfig=4``; a dashboard
+    keeps its title and edit controls with ``standalone=1``.
+    """
     if kind == "chart" and object_id:
         return (
             f"/bi/explore/?slice_id={object_id}&standalone=1",
-            f"/bi/explore/?slice_id={object_id}",
+            f"/bi/explore/?slice_id={object_id}&uiConfig=4",
         )
     if kind == "dashboard" and object_id:
         return (
             f"/bi/superset/dashboard/{object_id}/?standalone=2",
-            f"/bi/superset/dashboard/{object_id}/?edit=true",
+            f"/bi/superset/dashboard/{object_id}/?edit=true&standalone=1",
         )
     return None, None
 

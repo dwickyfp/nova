@@ -354,9 +354,24 @@ Nova components and read the Nova record; the body renders Superset.
 
 `frontend/src/features/bi/bi-frame.tsx` frames a Superset view in the
 artifact panel: `/bi/explore/?slice_id=<id>&standalone=1` for a chart and
-`/bi/superset/dashboard/<id>/?standalone=2` for a dashboard. **Edit in BI**
-switches the frame to Explore or the dashboard's edit mode. The frame opens the
-BI session first and sets Superset's theme mode from Nova's before it loads.
+`/bi/superset/dashboard/<id>/?standalone=2` for a dashboard. **Edit** switches
+the frame to Explore (`&uiConfig=4`) or the dashboard's edit mode
+(`?edit=true&standalone=1`). Both hide Superset's navigation bar; Explore's
+`standalone` would also drop its control panel. While an editor is open, the
+editor shows the title and owns Save, and Studio's header shrinks to a
+**Done editing** bar, so the page has one title and one save action. The chart
+editor fills the panel edge to edge and Nova's edit prompt below it takes one
+line; a saved chart is framed inside a single border. The frame shares one BI
+session per security context, keeps Nova's loading state until the page has
+loaded and Superset's own spinner is gone (at most 10 seconds), so the two
+loaders never follow each other, and sets Superset's theme mode from Nova's
+before it loads. A
+theme change reloads a view frame but never an editor, which may hold unsaved
+Superset changes; Nova's system mode maps to Superset's, so both follow the OS
+without a reload.
+
+Dashboard cards in the artifact list show Superset's thumbnail, drawn for the
+viewer's session (S9), and a neutral placeholder while Superset computes it.
 
 Because Superset is same-origin, Nova reads the framed location directly (to
 keep `/analytics?path=` in step) and sets the theme through shared storage; no

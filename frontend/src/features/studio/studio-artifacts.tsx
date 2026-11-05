@@ -230,29 +230,34 @@ function ArtifactDetail({
   if (artifact.artifact_type === "dashboard" && artifact.bi_view_path) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <DetailHeader
-          onBack={onBack}
-          title={artifact.title}
-          subtitle={`BI dashboard · Updated ${formatTimestamp(artifact.updated_at)}`}
-          onDelete={() => setDeleteOpen(true)}
-          extraAction={
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditing((value) => !value)}>
-              {editing ? "Done editing" : "Edit in BI"}
-            </Button>
-          }
-        />
+        {editing ? (
+          <EditorHeader onDone={() => setEditing(false)} />
+        ) : (
+          <DetailHeader
+            onBack={onBack}
+            title={artifact.title}
+            subtitle={`Dashboard · Updated ${formatTimestamp(artifact.updated_at)}`}
+            onDelete={() => setDeleteOpen(true)}
+            extraAction={
+              <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+                Edit dashboard
+              </Button>
+            }
+          />
+        )}
         <div className="flex min-h-0 flex-1 flex-col border-t">
           <BiFrame
             key={editing ? "edit" : "view"}
             path={(editing ? artifact.bi_edit_path : artifact.bi_view_path) ?? ""}
-            title={`BI dashboard ${artifact.title}`}
+            title={editing ? `Edit ${artifact.title}` : `Dashboard ${artifact.title}`}
+            holdsEdits={editing}
           />
         </div>
         <ConfirmDialog
           open={deleteOpen}
           onOpenChange={setDeleteOpen}
           title="Delete dashboard?"
-          desc={`“${artifact.title}” will be deleted from Artifacts and BI. Its charts stay.`}
+          desc={`“${artifact.title}” will be deleted everywhere it is shown. Its charts stay.`}
           confirmText="Delete dashboard"
           destructive
           isLoading={remove.isPending}
@@ -335,8 +340,20 @@ function ArtifactDetail({
   const legacy = Boolean(artifact.legacy);
   const biView = saved.bi_view_path ?? artifact.bi_view_path ?? null;
   const biEdit = saved.bi_edit_path ?? artifact.bi_edit_path ?? null;
+  // The chart editor takes the whole body, edge to edge, under Nova's header.
+  const editorOpen = Boolean(editing && biEdit && !draftResponse?.draft);
+  // Superset draws the saved chart edge to edge, inside one border.
+  const biFramed = Boolean(biView && !draftResponse?.draft && !narrowed);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {editorOpen ? (
+        <EditorHeader
+          onDone={() => {
+            setEditing(false);
+            void detail.refetch();
+          }}
+        />
+      ) : (
       <DetailHeader
         onBack={onBack}
         title={artifact.title}
@@ -360,13 +377,20 @@ function ArtifactDetail({
             </Button>
           ) : biEdit && !editing && !draftResponse?.draft ? (
             <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
-              Edit in BI
+              Edit chart
             </Button>
           ) : null
         }
       />
+      )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+      <div
+        className={
+          editorOpen
+            ? "flex min-h-0 flex-1 flex-col"
+            : "min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7"
+        }
+      >
         {legacy ? (
           <LegacyBanner
             artifactId={artifact.artifact_id}
@@ -395,16 +419,17 @@ function ArtifactDetail({
             visibleCount={filteredRows.length}
           />
         ) : null}
-        {editing && biEdit && !draftResponse?.draft ? (
+        {editorOpen && biEdit ? (
           <section
-            aria-label="Edit in BI"
-            className="flex h-full min-h-96 min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm"
+            aria-label="Chart editor"
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
           >
-            {/* An applied Nova edit changes the chart in BI: reload Explore. */}
+            {/* An applied Nova edit changes the saved chart: reload Explore. */}
             <BiFrame
               key={saved.updated_at}
               path={biEdit}
-              title={`Edit ${artifact.title} in BI`}
+              title={`Edit ${artifact.title}`}
+              holdsEdits
             />
           </section>
         ) : (
@@ -413,7 +438,9 @@ function ArtifactDetail({
             aria-busy={chatBusy}
             data-ai-processing={chatBusy ? "true" : undefined}
             className={cn(
-              "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
+              biFramed
+                ? "min-w-0 overflow-hidden rounded-xl border"
+                : "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
               chatBusy && "artifact-ai-active",
             )}
           >
@@ -421,12 +448,12 @@ function ArtifactDetail({
               {chatBusy ? "Nova is preparing an artifact preview." : ""}
             </span>
             {/* BI draws the saved chart; a draft or narrowing filter is drawn here. */}
-            {biView && !draftResponse?.draft && !narrowed ? (
-              <div className="flex aspect-video min-h-64 min-w-0 flex-col overflow-hidden rounded-lg">
+            {biFramed && biView ? (
+              <div className="flex aspect-video min-h-64 min-w-0 flex-col">
                 <BiFrame
                   key={saved.updated_at}
                   path={biView}
-                  title={`BI chart ${artifact.title}`}
+                  title={`Chart ${artifact.title}`}
                 />
               </div>
             ) : activeData.rows.length > 0 && filteredRows.length === 0 ? (
@@ -483,7 +510,8 @@ function ArtifactDetail({
 
       {legacy ? null : (
       <form
-        className="shrink-0 bg-background px-4 py-3 sm:px-7"
+        // Beside the editor the prompt takes one line, so Explore keeps the height.
+        className={cn("shrink-0 bg-background px-4 sm:px-7", editorOpen ? "border-t py-2" : "py-3")}
         onSubmit={(event) => {
           event.preventDefault();
           void sendEdit();
@@ -544,9 +572,12 @@ function ArtifactDetail({
             }}
             aria-label="Edit artifact with Nova"
             placeholder="Ask Nova to add a column or change this to a bar or line chart"
-            rows={2}
+            rows={editorOpen ? 1 : 2}
             disabled={chatBusy || applyBusy}
-            className="max-h-32 min-h-12 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+            className={cn(
+              "max-h-32 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground",
+              editorOpen ? "min-h-8" : "min-h-12",
+            )}
           />
           <Button
             type="submit"
@@ -577,6 +608,24 @@ function ArtifactDetail({
         }}
       />
     </div>
+  );
+}
+
+/**
+ * The header while Superset's editor is open. The editor shows the title and
+ * owns Save, so this bar only leaves the editor: one title, one save action.
+ */
+function EditorHeader({ onDone }: { onDone: () => void }) {
+  return (
+    <header className="flex shrink-0 items-center gap-3 border-b px-4 py-2 sm:px-6">
+      <Button type="button" variant="ghost" size="sm" onClick={onDone}>
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        Done editing
+      </Button>
+      <p className="truncate text-xs text-muted-foreground">
+        Changes are kept when you save them in the editor.
+      </p>
+    </header>
   );
 }
 

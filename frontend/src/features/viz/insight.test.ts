@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeView, measureCaption, splitMeasure } from "./insight";
+import { describeView, measureCaption, measurePhrase, splitMeasure } from "./insight";
 import type { PresModel } from "./types";
 
 function model(columns: PresModel["columns"], rows: PresModel["rows"]): PresModel {
@@ -51,7 +51,7 @@ describe("describeView", () => {
 
   it("describes a flat series by its range and low point", () => {
     const insight = describeView(model([day, visits], [["2026-06-22", 46], ["2026-06-23", 40], ["2026-06-24", 47]]));
-    expect(insight?.lead).toEqual({ subject: "SUM(visits)", verb: "holds near", num: "44.33", unit: "", marked: false });
+    expect(insight?.lead).toEqual({ subject: "Visits", verb: "holds near", num: "44.33", unit: "", marked: false });
     expect(insight?.detail).toBe("Every point lands between 40 and 47. The low, 40 on 23 Jun 2026, sits 4.33 under the average.");
     expect(insight?.highlight?.value).toBe("2026-06-23");
   });
@@ -75,6 +75,15 @@ describe("number parts", () => {
     expect(splitMeasure(0.153)).toEqual({ num: "0.15", unit: "" });
     expect(measureCaption("distinct_count(customer)")).toBe("CNTD(customer)");
     expect(measureCaption("Share of revenue")).toBe("Share of revenue");
+  });
+
+  it("name a measure in business words in a sentence", () => {
+    expect(measurePhrase("SUM(revenue)")).toBe("Revenue");
+    expect(measurePhrase("sum(recognized_revenue)")).toBe("Recognized revenue");
+    expect(measurePhrase("avg(unit_price)")).toBe("Average unit price");
+    expect(measurePhrase("distinct_count(customer)")).toBe("Distinct customer");
+    expect(measurePhrase("COUNT(*)")).toBe("Count");
+    expect(measurePhrase("Share of revenue")).toBe("Share of revenue");
   });
 });
 
