@@ -2,7 +2,8 @@
 
 Runs in every control-plane process; a Redis leader lock lets one instance do
 each pass. A pass reconciles the catalog list and syncs every live catalog
-(:func:`app.modules.catalog.sync.reconcile_catalogs`).
+(:func:`app.modules.catalog.sync.reconcile_catalogs`), then harvests lineage
+from ``AUDIT_LOG`` and re-links Semantic Views and entities to securable ids.
 """
 
 from __future__ import annotations
@@ -25,6 +26,18 @@ def _interval() -> int:
     return max(30, settings.CATALOG_SYNC_INTERVAL_SECONDS)
 
 
+async def metadata_pass() -> None:
+    """Harvest lineage and re-link Semantic Views and entities to securables."""
+    from .lineage import harvest_lineage
+    from .links import reconcile_links
+
+    for step in (harvest_lineage, reconcile_links):
+        try:
+            await step()
+        except Exception:  # noqa: BLE001 - one step never stops the other
+            logger.warning("Catalog %s pass failed", step.__name__, exc_info=True)
+
+
 async def refresh_once() -> bool:
     """One pass if this instance wins the lock; returns whether it ran."""
     client = session_store._redis
@@ -35,6 +48,7 @@ async def refresh_once() -> bool:
         return False
     try:
         await reconcile_catalogs(trigger="schedule")
+        await metadata_pass()
     finally:
         await lock.release()
     return True

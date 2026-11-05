@@ -31,6 +31,7 @@ from app.common.identifiers import check_identifier
 from app.common.sql_guard import redact_sql_credentials
 from app.core.database import configured_timezone, db
 
+from . import securables
 from .connectors import INTERNAL_CATALOG
 from .repository import CatalogRepository, catalog_repo, row_id
 
@@ -262,6 +263,7 @@ async def sync_catalog(
     try:
         harvest = await harvester.harvest(name)
         counts = await _apply(repo, name, harvest, nova_now())
+        counts.update(await securables.record_harvest(name, harvest, nova_now()))
     except Exception as exc:  # noqa: BLE001 - recorded on the run and the catalog
         error = redact_error(exc)
         log.warning("Catalog sync of %s failed: %s", name, error)
@@ -408,6 +410,7 @@ async def reconcile_catalogs(
     for name, row in stored.items():
         if name not in engine and row.get("dropped_at") is None:
             await repo.upsert_catalog({**row, "dropped_at": now, "updated_at": now})
+    await securables.record_catalogs(engine, now)
 
     runs = []
     for name in engine:

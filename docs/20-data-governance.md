@@ -148,77 +148,47 @@ DROP ROW ACCESS POLICY region_policy;
 
 ## Object Tagging
 
-Tag databases, tables, columns with key-value metadata.
-
-### Implementation (NOVA_SYSTEM)
+Tags are key-value metadata on catalogs, databases, tables, views,
+materialized views, and columns. They are stored in
+`NOVA_SYSTEM.CONFIG_OBJECT_TAGS` keyed by the object's securable id, so a tag
+survives a rename-free drop and shows the object as dropped. Business
+descriptions, owners, and column classifications sit beside them in
+`CATALOG_ANNOTATIONS`. The current behaviour, permissions, audit, and API are
+in [Catalog Explorer: Business metadata, search, and lineage](03-catalog-explorer.md#business-metadata-search-and-lineage).
 
 ```sql
 CREATE TABLE NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
-    object_type     VARCHAR(32),    -- DATABASE, TABLE, COLUMN
-    object_name     VARCHAR(512),   -- db.table.column
-    tag_key         VARCHAR(128),   -- pii, owner, team, cost_center
-    tag_value       VARCHAR(512),
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by      VARCHAR(128),
-    PRIMARY KEY (object_type, object_name, tag_key)
-) DISTRIBUTED BY HASH(object_type) BUCKETS 1
+    securable_id   VARCHAR(64) NOT NULL,   -- CATALOG_SECURABLES.id
+    tag_key        VARCHAR(128) NOT NULL,  -- pii, team, cost_center
+    tag_value      VARCHAR(512),
+    securable_type VARCHAR(32) NOT NULL,   -- catalog, database, table, view, materialized_view, column
+    created_at     DATETIME,
+    created_by     VARCHAR(128),
+    updated_at     DATETIME,
+    updated_by     VARCHAR(128)
+) PRIMARY KEY(securable_id, tag_key)
+DISTRIBUTED BY HASH(securable_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ```
 
-### Tag Operations (via UI)
-
-```
-┌─ Tags ──────────────────────────────────────────────────┐
-│                                                          │
-│  [+ Add Tag]                                             │
-│                                                          │
-│  ── Tags on customers table ──                           │
-│  Object        Key          Value        Applied By     │
-│  customers     pii          true         admin          │
-│  customers     team         data-eng     admin          │
-│  customers.email pii        email        admin          │
-│  customers.phone pii        phone        admin          │
-│                                                          │
-│  ── Search by Tag ──                                     │
-│  Key: [pii ▼]  Value: [true ▼]                          │
-│  Results: customers.email, customers.phone, hr.ssn       │
-└──────────────────────────────────────────────────────────┘
-```
+Tags are descriptive. A `pii` tag or a `CONFIDENTIAL` classification does not
+mask anything by itself: Ranger masks and row filters remain the only
+enforcement.
 
 ---
 
 ## Data Lineage
 
-Visualize data flow: which tables feed into which.
+Table-to-table lineage is harvested from `NOVA_SYSTEM.AUDIT_LOG`: successful
+`INSERT ... SELECT`, `CREATE TABLE ... AS SELECT`, `CREATE VIEW`, and
+`CREATE MATERIALIZED VIEW` statements run through Nova are parsed with the SQL
+frontend parser (`backend/app/sql_frontend/analysis/lineage.py`) and stored
+per pair of securable ids in `NOVA_SYSTEM.CATALOG_LINEAGE`. A caller sees an
+edge only when both relations are visible to their active role. Column-level
+lineage, stage loads (`LINEAGE_LOAD_HISTORY`), and the graph view below are not
+built yet.
 
-### Implementation
-
-Parse `NOVA_SYSTEM.AUDIT_LOG` to build dependency graph:
-
-```python
-# services/lineage_service.py
-def build_lineage(target_table: str) -> dict:
-    """Parse INSERT INTO ... SELECT FROM to build lineage."""
-    result = sr_execute(f"""
-        SELECT sql_text, timestamp
-        FROM NOVA_SYSTEM.AUDIT_LOG
-        WHERE action IN ('INSERT', 'CREATE_TABLE', 'CTAS')
-        AND target LIKE '%{target_table}%'
-        AND status = 'SUCCESS'
-        ORDER BY timestamp DESC
-    """)
-    
-    sources = set()
-    for row in result["rows"]:
-        sql = row[0]
-        # Parse: INSERT INTO target SELECT ... FROM source
-        parsed = parse_sql_lineage(sql)
-        sources.update(parsed["sources"])
-    
-    return {"target": target_table, "sources": list(sources)}
-```
-
-### Lineage UI
+### Lineage UI (proposed)
 
 ```
 ┌─ Data Lineage: DATALAKE.bronze.orders ──────────────────┐

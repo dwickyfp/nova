@@ -30,6 +30,7 @@ from app.modules.agents.tools.propose_automation import (
 from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 from app.modules.assistant.analysis_workspace import analysis_workspace_tool
+from app.modules.assistant.tools.catalog_search import catalog_search_tool
 from app.modules.intelligence.action_contracts import (
     BUSINESS_ACTION_TOOL_DESCRIPTION,
     BUSINESS_ACTION_TOOL_NAME,
@@ -85,6 +86,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "additionalProperties": False,
         },
     ),
+    "catalog_search": (catalog_search_tool.description, catalog_search_tool.parameters),
     "query_execute": (
         "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
         "connection for explicit SQL, schema inspection, or data outside a semantic "
@@ -389,6 +391,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
 #: authoring tools (create_*) are Nove-only and are not offered to a user agent.
 AGENT_BUNDLEABLE_TOOLS = (
     "load_skill",
+    "catalog_search",
     "semantic_query",
     "semantic_search",
     "ai_search",

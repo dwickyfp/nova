@@ -328,6 +328,14 @@ class SemanticViewService:
             raise HTTPException(status_code=404, detail="Semantic View not found")
         return view
 
+    async def is_visible(self, view_id: str, user: dict) -> bool:
+        """Whether :meth:`list` would show this view to ``user``."""
+        try:
+            await self._visible(view_id, user)
+        except HTTPException:
+            return False
+        return True
+
     async def list(self, user: dict) -> builtins.list[dict]:
         result = await db.execute_system(
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
@@ -716,6 +724,7 @@ class SemanticViewService:
         )
         await self._insert_version(view_id, 1, definition, ir.fingerprint)
         await self._audit("CREATE", body.name, user)
+        await _relink(view_id)
         return await self.describe(view_id, user)
 
     @staticmethod
@@ -741,6 +750,7 @@ class SemanticViewService:
         number = int(result["rows"][0][0] or 0) + 1
         await self._insert_version(view_id, number, definition, ir.fingerprint)
         await self._audit("ALTER", view["name"], user)
+        await _relink(view_id)
         return await self._version(view_id, number)
 
     async def _owned(self, view_id: str, user: dict) -> dict:
@@ -1025,6 +1035,7 @@ class SemanticViewService:
             [view_id, version],
         )
         await self._audit("PUBLISH", view["name"], user)
+        await _relink(view_id)
         return {**view, "active_version": version, "status": "ACTIVE"}
 
     async def deprecate(self, view_id: str, user: dict) -> None:
@@ -1035,6 +1046,7 @@ class SemanticViewService:
             [view_id],
         )
         await self._audit("DEPRECATE", view["name"], user)
+        await _relink(view_id)
         await self._remove_bi(view, user)
 
     @staticmethod
@@ -1053,6 +1065,7 @@ class SemanticViewService:
             "DELETE FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS WHERE id=%s", [view_id]
         )
         await self._audit("DROP", view["name"], user)
+        await _relink(view_id)
         await self._remove_bi(view, user)
 
     async def query(
@@ -1183,6 +1196,13 @@ class SemanticViewService:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
+
+
+async def _relink(view_id: str) -> None:
+    """Point the catalog's securable links at this view's current datasets."""
+    from app.modules.catalog.links import SEMANTIC_VIEW, refresh_owner_links
+
+    await refresh_owner_links(SEMANTIC_VIEW, view_id)
 
 
 semantic_view_service = SemanticViewService()
