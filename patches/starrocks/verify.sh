@@ -15,6 +15,11 @@ git -C "${work_dir}/starrocks" sparse-checkout set \
     /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java \
     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java \
     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java \
+    /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java \
+    /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java \
+    /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java \
+    /fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java \
+    /fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java \
     /fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java \
     /fe/fe-core/src/test/resources/ranger-starrocks-security.xml
 git -C "${work_dir}/starrocks" fetch -q --filter=blob:none --depth 1 \
@@ -24,4 +29,5 @@ git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1
 git -C "${work_dir}/starrocks" apply "${repo_root}/patches/starrocks/4.1.4-ranger-active-role.patch"
 git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-ranger-rpc-context.patch"
 git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-task-active-role.patch"
+git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-jdbc-snowflake.patch"
 echo "Patch applies cleanly to StarRocks 4.1.4 (4a9848edf03f5c936dac664b2d52527f48e72eb0)."

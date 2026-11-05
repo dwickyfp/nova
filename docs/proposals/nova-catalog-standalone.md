@@ -524,6 +524,45 @@ memuat blok driver Fase 2 tanpa perubahan.
 
 ### Fase 4: Snowflake
 
+**Status sisi engine (2026-11-05): selesai dan terbukti dengan akun Snowflake
+sungguhan.**
+
+- Patch `patches/starrocks/4.1.4-jdbc-snowflake.patch` menambahkan:
+  - `SnowflakeSchemaResolver` beserta pemetaan tipe Snowflake;
+  - quoting `"` di `JDBCScanNode`;
+  - pemuatan driver yang terisolasi. Driver hanya diambil dari JAR lokal `file://`
+    yang checksum-nya cocok, dan tidak pernah diletakkan di `fe/lib`, karena driver
+    Snowflake membawa `zstd-jni` sendiri.
+- Driver `snowflake-jdbc` 3.28.0 dibundel di image FE dan BE pada
+  `/opt/starrocks/drivers/`, dengan pin SHA-256.
+- Lulus: `CREATE EXTERNAL CATALOG`, `SHOW DATABASES`/`TABLES`, `DESC`, `SELECT`,
+  filter dan `LIMIT` yang didorong ke Snowflake (dicek lewat `EXPLAIN`), serta row
+  filter dan mask Ranger untuk role non-root. Row filter juga ikut didorong ke
+  Snowflake. `SHOW CREATE CATALOG` tidak menampilkan password.
+- Detail ada di `docs/benchmarks/snowflake-jdbc-2026-11-05/`.
+- URI wajib memuat `db=`, `JDBC_QUERY_RESULT_FORMAT=JSON`, dan `TIMEZONE=` yang sama
+  dengan zona waktu engine. URI tidak boleh berisi rahasia, karena `jdbc_uri` tampil
+  utuh di `SHOW CREATE CATALOG`.
+- Belum: konektor Nova `snowflake`, panen `ACCOUNT_USAGE`, dan semantic view atau agen
+  di atas tabel Snowflake. Ketiganya menunggu fase 2.
+- **Keputusan pemilik produk (2026-11-05): koneksi Snowflake harus bisa memakai key
+  pair maupun Programmatic Access Token (PAT).** Konektor menyimpan keduanya sebagai
+  kredensial terenkripsi, bukan di URI, dan tidak pernah membacanya kembali ke klien.
+  - **Key pair** (sudah terbukti di acceptance): `authenticator=SNOWFLAKE_JWT` dengan
+    private key PKCS#8, opsional terenkripsi passphrase. Driver hanya bisa membaca key
+    dari file (`private_key_file`), dan file itu harus ada di FE dan semua BE. Cara
+    mengirim file key ke sana masih harus dirancang.
+  - **PAT**: token dikirim lewat properti `password`, karena properti itu disembunyikan
+    oleh `SHOW CREATE CATALOG` sedangkan `jdbc_uri` tidak. Tokennya tidak boleh masuk
+    URI. PAT punya masa berlaku, jadi konektor perlu mendukung rotasi token dan
+    menampilkan tanggal kedaluwarsanya. Sudah terbukti dengan akun sungguhan: catalog
+    dengan PAT di `password` bisa `SHOW DATABASES` dan `SELECT`, dan
+    `SHOW CREATE CATALOG` tidak menampilkan token. Rotasi cukup dengan
+    `ALTER CATALOG ... SET ("password" = ...)`, tanpa membuat ulang catalog. Query
+    berikutnya langsung memakai kredensial baru. Catatan: Snowflake mewajibkan network
+    policy pada service user sebelum PAT bisa dipakai.
+    Jalur ini belum diuji dengan akun sungguhan.
+
 - Patch FE `SnowflakeSchemaResolver` (§6.2) dengan prosedur di
   `patches/starrocks/AGENTS.md`, plus JAR driver Snowflake di image FE.
 - Konektor `snowflake` di Nova Catalog membuat JDBC catalog StarRocks dan
