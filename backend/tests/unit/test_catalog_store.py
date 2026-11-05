@@ -184,6 +184,16 @@ class MemoryRepo:
         for key in ids:
             self.objects[key]["dropped_at"] = at
 
+    async def catalogs_with_live_objects(self):
+        return {row["catalog_name"] for row in self.objects.values()
+                if row.get("dropped_at") is None}
+
+    async def retire_catalog_objects(self, catalog, at):
+        for row in self.objects.values():
+            if row["catalog_name"] == catalog and row.get("dropped_at") is None:
+                row["dropped_at"] = at
+        self.columns = {key: cols for key, cols in self.columns.items() if key[0] != catalog}
+
     async def replace_columns(self, catalog, database, obj, columns):
         self.column_writes += 1
         self.columns[(catalog, database, obj)] = list(columns)
@@ -318,6 +328,58 @@ async def test_reconcile_records_raw_sql_catalogs_and_marks_missing_ones():
     )
     assert repo.catalogs["gone"]["dropped_at"] is not None
     assert {run["catalog_name"] for run in runs} == {"default_catalog", "raw_lake"}
+
+
+async def test_reconcile_retires_the_objects_and_columns_of_a_vanished_catalog():
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "iceberg", "kind": "external"}])
+    harvester = FakeHarvester(
+        catalogs=[{"name": "lake", "type": "Iceberg", "comment": None}],
+        harvests={"lake": Harvest(["sales"], [_orders()])},
+    )
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+    assert ("lake", "sales", "orders") in repo.columns
+
+    harvester._catalogs = []
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+
+    assert repo.catalogs["lake"]["dropped_at"] is not None
+    assert repo.objects and all(o["dropped_at"] is not None for o in repo.objects.values())
+    assert not repo.columns
+
+
+async def test_reconcile_retires_objects_of_a_catalog_already_marked_dropped():
+    # A drop through Nova marks the catalog row first; the next pass must
+    # still retire the objects it left live.
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "iceberg", "kind": "external",
+                        "dropped_at": sync.nova_now()}])
+    key = row_id("lake", "sales", "orders", "relation")
+    repo.objects[key] = {"id": key, "catalog_name": "lake", "database_name": "sales",
+                         "object_name": "orders", "object_type": "table", "dropped_at": None}
+    repo.columns[("lake", "sales", "orders")] = [{"column_name": "id"}]
+    live = row_id("default_catalog", "d", "", "database")
+    repo.objects[live] = {"id": live, "catalog_name": "default_catalog", "database_name": "d",
+                          "object_name": "", "object_type": "database", "dropped_at": None}
+    harvester = FakeHarvester(
+        catalogs=[{"name": "default_catalog", "type": "Internal", "comment": None}],
+        harvests={"default_catalog": Harvest(["d"], [])},
+    )
+
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+
+    assert repo.objects[key]["dropped_at"] is not None
+    assert ("lake", "sales", "orders") not in repo.columns
+    assert repo.objects[live]["dropped_at"] is None
+
+
+async def test_retire_catalog_objects_marks_live_rows_and_deletes_columns(recording_db):
+    at = sync.nova_now()
+    await CatalogRepository().retire_catalog_objects("lake", at)
+    (update, update_params), (delete, delete_params) = recording_db.calls
+    assert update.startswith("UPDATE NOVA_SYSTEM.CATALOG_OBJECTS SET dropped_at = %s")
+    assert "catalog_name = %s AND dropped_at IS NULL" in update
+    assert update_params == [at, "lake"]
+    assert delete.startswith("DELETE FROM NOVA_SYSTEM.CATALOG_COLUMNS")
+    assert delete_params == ["lake"]
 
 
 async def test_reconcile_revives_a_recreated_catalog():

@@ -8,7 +8,8 @@ the caller's own session before showing anything the store describes.
 
 * :func:`reconcile_catalogs` adds catalogs the engine has but the store does
   not (one created in raw SQL is recorded with ``source='engine'``), marks the
-  ones that disappeared as dropped, then syncs each live catalog.
+  ones that disappeared as dropped along with their objects, then syncs each
+  live catalog.
 * :func:`sync_catalog` refreshes one catalog: objects seen now are upserted,
   objects no longer seen get ``dropped_at``, and columns are rewritten only
   when an object's column fingerprint changed. Every run is recorded in
@@ -410,6 +411,10 @@ async def reconcile_catalogs(
     for name, row in stored.items():
         if name not in engine and row.get("dropped_at") is None:
             await repo.upsert_catalog({**row, "dropped_at": now, "updated_at": now})
+    # Objects of a catalog the engine no longer has, including one dropped
+    # through Nova before this pass, are retired with it.
+    for name in sorted(await repo.catalogs_with_live_objects() - engine.keys()):
+        await repo.retire_catalog_objects(name, now)
     await securables.record_catalogs(engine, now)
 
     runs = []

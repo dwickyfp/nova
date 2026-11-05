@@ -407,6 +407,7 @@ class FakeRepo:
     def __init__(self, catalogs=None):
         self.catalogs = {row["name"]: row for row in catalogs or []}
         self.written: list[dict] = []
+        self.retired: list[str] = []
 
     async def get_catalog(self, name):
         return self.catalogs.get(name)
@@ -420,6 +421,9 @@ class FakeRepo:
 
     async def list_objects(self, *args, **kwargs):
         return []
+
+    async def retire_catalog_objects(self, catalog, at):
+        self.retired.append(catalog)
 
     async def write_sync_run(self, run):
         return None
@@ -576,13 +580,16 @@ class TestServiceCreate:
             await CatalogService(repo).create(_body(), USER)
         assert recording.calls == []
 
-    async def test_drop_marks_the_row_dropped(self, catalog_env, quiet_service, monkeypatch):
+    async def test_drop_marks_the_row_and_its_objects_dropped(
+        self, catalog_env, quiet_service, monkeypatch
+    ):
         recording = RecordingQueryService()
         monkeypatch.setattr(catalog_service_module, "query_service", recording)
         repo = FakeRepo([{"name": "lake", "catalog_type": "iceberg", "dropped_at": None}])
         await CatalogService(repo).drop("lake", USER)
         assert recording.calls == ["DROP CATALOG lake"]
         assert repo.catalogs["lake"]["dropped_at"] is not None
+        assert repo.retired == ["lake"]
 
 
 def test_unknown_catalog_type_is_refused():

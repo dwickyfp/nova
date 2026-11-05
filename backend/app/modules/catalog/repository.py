@@ -282,6 +282,25 @@ class CatalogRepository:
                 [at, *chunk],
             )
 
+    async def catalogs_with_live_objects(self) -> set[str]:
+        """Names of catalogs that still have objects without ``dropped_at``."""
+        result = await db.execute_system(
+            "SELECT DISTINCT catalog_name FROM NOVA_SYSTEM.CATALOG_OBJECTS "
+            "WHERE dropped_at IS NULL"
+        )
+        return {str(row[0]) for row in result.get("rows") or []}
+
+    async def retire_catalog_objects(self, catalog: str, at: datetime) -> None:
+        """Mark every live object of a dropped catalog dropped and remove its columns."""
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CATALOG_OBJECTS SET dropped_at = %s "
+            "WHERE catalog_name = %s AND dropped_at IS NULL",
+            [at, catalog],
+        )
+        await db.execute_system(
+            "DELETE FROM NOVA_SYSTEM.CATALOG_COLUMNS WHERE catalog_name = %s", [catalog]
+        )
+
     async def list_columns(self, catalog: str, database: str, obj: str) -> list[dict]:
         result = await db.execute_system(
             f"SELECT {_columns_sql(_COLUMN_COLUMNS)} FROM NOVA_SYSTEM.CATALOG_COLUMNS "

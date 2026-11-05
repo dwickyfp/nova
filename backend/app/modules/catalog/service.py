@@ -259,6 +259,7 @@ class CatalogService:
         if existing:
             now = nova_now()
             await self.repo.upsert_catalog({**existing, "dropped_at": now, "updated_at": now})
+            await self.repo.retire_catalog_objects(name, now)
         await visibility.bump()
 
     # ── Refresh (security admin) ────────────────────────────────
