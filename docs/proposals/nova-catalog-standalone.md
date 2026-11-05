@@ -27,18 +27,20 @@ resmi upstream, **[belum]** belum terverifikasi dan harus di-spike.
   store metadata dan engine otorisasi kedua, dua hal yang dilarang `AGENTS.md`.
   Pinjam model objeknya (Connection → Foreign Catalog → Schema → Table) dan pola
   sinkronisasinya.
-- Setiap sumber eksternal didaftarkan dengan salah satu dari dua *mode*:
-  - **Queryable**: diwujudkan sebagai StarRocks external catalog (JDBC untuk
-    Postgres/MySQL/Oracle/SQL Server, Iceberg REST untuk Polaris/UC/Snowflake
-    Horizon). Query lewat jalur SQL Nova yang sudah ada, ditegakkan oleh Ranger.
-  - **Metadata-only**: metadata dipanen (harvest) ke `NOVA_SYSTEM` untuk
-    penjelajahan, pencarian, tag, glossary, dan lineage, tanpa eksekusi query.
-    Ini mode awal Snowflake-native dan BigQuery, karena StarRocks tidak punya
-    konektor untuk keduanya.
-- Fase 0 sebagian sudah dijalankan (§6.1). Row filter dan masking Ranger
-  **berlaku** pada tabel JDBC (Postgres) dan Iceberg di FE yang di-patch, jadi
-  mode queryable layak. Spike otorisasi metadata-only (S3) dan Snowflake (S4)
-  belum dijalankan.
+- Setiap sumber eksternal diwujudkan sebagai StarRocks external catalog: JDBC
+  untuk Postgres/MySQL/Oracle/SQL Server, JDBC dengan patch FE untuk Snowflake
+  (§6.2), dan Iceberg REST untuk Polaris/UC/Snowflake Horizon. Query, semantic
+  view, dan agen memakai jalur SQL Nova yang sudah ada, dan Ranger tetap
+  satu-satunya penegak. Nova Catalog menambahkan metadata yang dipanen (tag,
+  komentar, glossary, lineage, pencarian) di `NOVA_SYSTEM`, tapi visibilitasnya
+  selalu mengikuti apa yang boleh dilihat caller di engine.
+- Fase 0 sudah dijalankan (§6.1, §6.2). Row filter dan masking Ranger
+  **berlaku** pada tabel JDBC (Postgres) dan Iceberg di FE yang di-patch.
+  Snowflake butuh patch FE kecil karena JDBC catalog 4.1.4 hanya mengenal enam
+  driver. Mode metadata-only tanpa catalog engine dihapus dari desain, karena
+  mengotorisasinya butuh evaluator policy kedua.
+- Explorer kini membaca metadata sebagai caller, sehingga Ranger menyaring apa
+  yang dilihat setiap pengguna (langkah pertama Fase 1).
 
 ---
 
@@ -122,7 +124,7 @@ pengumuman graduasi Polaris di ASF, release note Snowflake Horizon 2026-02-06.
 | **A. Tanam Gravitino** sebagai catalog of record | Nova memanggil Gravitino; StarRocks lewat Iceberg REST | Konektor JDBC sudah ada, model "catalog of catalogs" | Store metadata kedua (JVM + DB sendiri), RBAC kedua, tanpa konektor StarRocks native, tanpa Snowflake. Melanggar invariant `NOVA_SYSTEM` dan Ranger | Tolak sebagai pusat; boleh jadi *sumber* yang di-harvest |
 | **B. Tanam Unity Catalog OSS / Polaris** | Catalog Iceberg/Delta, StarRocks via REST | Standar terbuka, credential vending | Tidak menyelesaikan Postgres/Snowflake; authz kedua tanpa RLS | Tolak sebagai pusat; dukung sebagai *sumber* Iceberg REST |
 | **C. Harvest saja** (gaya DataHub) | Nova memanen metadata dari semua sumber | Mendukung semua sumber, termasuk Snowflake | Tidak bisa di-query; policy hanya advisory | Bagian dari solusi, bukan seluruhnya |
-| **D. Nova Catalog native + connector SPI** (rekomendasi) | Catalog of record di `NOVA_SYSTEM`; tiap sumber punya konektor; sumber queryable diwujudkan sebagai StarRocks external catalog; sisanya metadata-only | Satu store, satu authz (Ranger), satu jalur SQL; Snowflake masuk bertahap | Butuh kerja konektor dan sinkronisasi sendiri; kualitas pushdown bergantung StarRocks | **Rekomendasi** |
+| **D. Nova Catalog native + connector SPI** (rekomendasi) | Catalog of record di `NOVA_SYSTEM`; tiap sumber punya konektor dan diwujudkan sebagai StarRocks external catalog | Satu store, satu authz (Ranger), satu jalur SQL; Snowflake masuk bertahap | Butuh kerja konektor dan sinkronisasi sendiri; kualitas pushdown bergantung StarRocks | **Rekomendasi** |
 
 "Mandiri" di opsi D berarti: Nova Catalog punya model objek, API, dan siklus
 hidup sendiri, tidak lagi sekadar cermin `SHOW CATALOGS`. Ia tetap memakai
@@ -148,8 +150,9 @@ Connection  (endpoint + secret_ref, tanpa nilai rahasia)
 - `native`: `default_catalog` StarRocks.
 - `foreign_queryable`: punya pasangan StarRocks external catalog dengan nama
   yang sama. Query `catalog.schema.table` berjalan lewat jalur SQL Nova biasa.
-- `foreign_metadata`: hanya ada di `NOVA_SYSTEM`. Query terhadapnya ditolak
-  dengan pesan jelas oleh `sql_frontend` (fail-closed, tidak diteruskan diam-diam).
+- `foreign_metadata`: status sementara saat koneksi sudah terdaftar tapi catalog
+  engine belum dibuat. Objeknya tidak ditampilkan dan query terhadapnya ditolak
+  dengan pesan jelas oleh `sql_frontend` (fail-closed, §6.2).
 
 Setiap objek punya **securable id** stabil dan nama terkualifikasi penuh, supaya
 tag, komentar, owner, semantic view, dan lineage menempel ke id, bukan ke string
@@ -206,9 +209,10 @@ lalu `snowflake` (metadata), `sqlserver`, `oracle`. `gravitino` dan
 
 - **Native dan queryable**: sumbernya engine. Worker membaca
   `catalog.information_schema` / `SHOW` dan meng-upsert `CATALOG_OBJECTS`.
-- **Metadata-only**: konektor membaca `information_schema` sumber (Postgres,
-  MySQL) atau `INFORMATION_SCHEMA` / `ACCOUNT_USAGE` (Snowflake) dengan
-  kredensial koneksi.
+- **Metadata tambahan dari sumber**: konektor boleh membaca komentar, tag, dan
+  statistik yang tidak diekspos engine (misalnya `ACCOUNT_USAGE` Snowflake)
+  dengan kredensial koneksi. Hasilnya menempel ke objek yang sudah ada di engine
+  dan hanya tampil kepada caller yang bisa melihat objek itu di engine.
 - Pemicu: saat pertama dibuka (lazy, dengan TTL), terjadwal per catalog, dan
   manual lewat `REFRESH CATALOG` / tombol Refresh. Job berjalan di
   `nova-worker` dengan lock Redis, polanya sama dengan migration jobs.
@@ -229,12 +233,9 @@ Dua bidang, satu engine policy (Ranger):
    - Native/queryable: daftar dari `CATALOG_OBJECTS` dipotong dengan hasil
      yang dilihat caller sendiri (query `information_schema` sebagai caller,
      yang sudah ditegakkan Ranger), atau evaluasi Ranger yang setara.
-   - Metadata-only: tidak ada engine yang menegakkan. Opsinya dievaluasi di
-     Fase 0 (§6): (a) policy Ranger dengan resource catalog yang sama di service
-     `ranger-starrocks`, dievaluasi lewat evaluator Ranger yang benar (bukan
-     pembacaan daftar policy seperti `effective_access` hari ini), atau
-     (b) mendaftarkan catalog kosong di engine agar Ranger bisa dipakai lewat FE.
-     Tidak boleh ada tabel izin baru di `NOVA_SYSTEM`.
+   - Tidak ada objek tanpa pasangan di engine (§6.2, S3), jadi tidak ada
+     jalur otorisasi metadata selain engine. Tidak boleh ada tabel izin baru di
+     `NOVA_SYSTEM`.
 - `GRANT`/`REVOKE` SQL harus menerima catalog (hapus hardcode
   `default_catalog`). Bootstrap Ranger tidak boleh membuka catalog baru ke semua
   role secara default.
@@ -364,9 +365,42 @@ dengan hak sesempit mungkin.
   4 menit. Ini bukan benchmark, tapi menandakan jalur tulis Iceberg perlu
   diukur sebelum dipakai untuk ingest.
 
-**Belum dijalankan:** S3 (otorisasi untuk objek metadata-only), S4 (Snowflake,
-butuh akun Snowflake), dan JAR driver yang dibundel di image FE (spike ini
-mengunduh driver dari Maven Central saat `CREATE CATALOG`).
+**Belum dijalankan:** JAR driver yang dibundel di image FE (spike ini
+mengunduh driver dari Maven Central saat `CREATE CATALOG`). S3 dan S4 ada di
+§6.2.
+
+### 6.2 Hasil S3 dan S4 (2026-11-05)
+
+**S4, Snowflake lewat JDBC catalog StarRocks: perlu patch FE.**
+`JDBCMetadata` pada commit pin memilih schema resolver dari nama kelas driver
+(`fe/fe-core/.../connector/jdbc/JDBCMetadata.java:109-123`) dan hanya mengenal
+MySQL, PostgreSQL, MariaDB, ClickHouse, Oracle, dan SQL Server. Driver lain
+ditolak dengan `<driver_class> not support yet`, bahkan sebelum koneksi dibuat.
+Uji di FE yang berjalan: `CREATE EXTERNAL CATALOG` dengan driver Snowflake
+diterima (tanpa validasi), lalu `SHOW DATABASES` gagal saat FE mencoba memuat
+dan memilih resolver.
+
+Jalur yang dipilih untuk keputusan §7.2: patch FE yang menambahkan
+`SnowflakeSchemaResolver` (sekitar 200 baris, sebesar `PostgresSchemaResolver`)
+plus pemetaan tipe Snowflake (`NUMBER`, `VARIANT`, `TIMESTAMP_*`, dan lainnya).
+Hasilnya, tabel Snowflake menjadi tabel StarRocks biasa: di-query lewat jalur
+SQL Nova, ditegakkan Ranger (S1 sudah membuktikan row filter dan mask berlaku
+di tabel JDBC), dan bisa dipakai semantic view tanpa jalur eksekusi kedua.
+Yang masih harus dibuktikan dengan akun Snowflake sungguhan: scanner JDBC di BE
+bekerja dengan driver Snowflake, quoting identifier, dan pushdown filter.
+Pushdown akan selemah Postgres (agregasi dan join tidak didorong).
+
+**S3, otorisasi objek metadata-only: dihilangkan dari desain.** Tidak ada
+endpoint evaluasi policy di Ranger Admin, sehingga mengevaluasi akses untuk
+objek yang tidak dikenal engine berarti membangun evaluator policy di Nova,
+yang dilarang `AGENTS.md`. Karena Snowflake kini juga lewat engine, setiap
+catalog yang didaftarkan ke Nova Catalog harus punya pasangan catalog di
+StarRocks. Visibilitas metadata untuk setiap caller diambil dari engine dengan
+koneksi caller itu sendiri, yang sudah disaring Ranger (terbukti di S1:
+`SHOW CATALOGS`, `SHOW DATABASES`, `SHOW TABLES`, `information_schema.tables`).
+Mode `foreign_metadata` di §5.1 hanya boleh ada sebagai status sementara
+("koneksi terdaftar, catalog engine belum dibuat") dan tidak pernah
+menampilkan objek kepada pengguna.
 
 ### Fase 1: Catalog core (native + migrasi external catalogs)
 
@@ -406,14 +440,16 @@ mengunduh driver dari Maven Central saat `CREATE CATALOG`).
 
 ### Fase 4: Snowflake
 
-- Konektor `snowflake` metadata-only: database, schema, tabel, kolom, komentar,
-  dan (opsional) tag Snowflake dari `ACCOUNT_USAGE`.
-- Jika S4 lolos: catalog Iceberg REST ke Horizon/Open Catalog untuk tabel
-  Iceberg yang dikelola Snowflake, sehingga tabel itu queryable.
-- Query ke tabel Snowflake-native tetap ditolak kecuali ada keputusan eksplisit
-  untuk jalur eksekusi remote (§7, keputusan 3).
-- Keluar: catalog Snowflake bisa dijelajahi dan dicari oleh role yang berhak;
-  query ke tabel native gagal dengan pesan yang jelas, bukan error engine.
+- Patch FE `SnowflakeSchemaResolver` (§6.2) dengan prosedur di
+  `patches/starrocks/AGENTS.md`, plus JAR driver Snowflake di image FE.
+- Konektor `snowflake` di Nova Catalog membuat JDBC catalog StarRocks dan
+  memanen komentar serta tag Snowflake dari `ACCOUNT_USAGE`.
+- Tabel Iceberg yang dikelola Snowflake boleh juga lewat Iceberg REST ke
+  Horizon/Open Catalog bila performa scan file lebih penting.
+- Semantic view menerima `snowflake_catalog.schema.table` sebagai dataset.
+- Keluar: role non-root dengan grant Ranger bisa `SELECT` tabel Snowflake,
+  row filter dan mask berlaku, dan agen menjawab pertanyaan lewat semantic view
+  yang memakai tabel Snowflake. Diuji dengan akun Snowflake sungguhan.
 
 ### Fase 5 (opsional): Nova Catalog sebagai server untuk engine lain
 
@@ -457,7 +493,7 @@ Masih terbuka:
 | Metadata harvest basi | Agen dan user melihat skema lama | TTL lazy refresh, `REFRESH`, tampilkan `last_sync_at` |
 | Kredensial koneksi bocor lewat `SHOW CREATE CATALOG` | Insiden keamanan | Redaksi yang sudah ada + tes regresi untuk properti JDBC |
 | Beban ke database sumber | Gangguan sistem operasional pelanggan | Rate limit sinkronisasi, jalankan di worker, query metadata saja |
-| Evaluasi authz metadata-only membuat engine authz kedua | Melanggar invariant | S3; hanya pakai evaluator Ranger, tanpa tabel izin Nova |
+| Evaluasi authz di luar engine membuat engine authz kedua | Melanggar invariant | S3: setiap objek harus punya pasangan catalog engine; visibilitas selalu dari engine sebagai caller |
 
 ## 9. Hal yang sengaja tidak termasuk
 

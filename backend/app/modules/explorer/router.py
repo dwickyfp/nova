@@ -39,10 +39,10 @@ INTERNAL_CATALOG = "default_catalog"
 
 @router.get("/catalogs")
 async def list_catalogs(
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
-    """List all catalogs with their databases."""
-    return await explorer_service.get_catalogs()
+    """List the catalogs and databases the caller's active role can see."""
+    return await explorer_service.get_catalogs(user)
 
 
 @router.post("/catalogs/{catalog}/databases")
@@ -138,6 +138,8 @@ async def list_database_objects(
     tree; it defaults to ``default_catalog`` for every self-managed database.
     """
     result = await explorer_service.get_database_objects(database, catalog=catalog, user=user)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Database {database} not found")
     return result
 
 
@@ -148,11 +150,11 @@ async def list_database_objects(
 async def get_table_detail(
     database: str,
     table: str,
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
     """Get table detail with columns, partitions, and properties."""
     try:
-        result = await explorer_service.get_table_detail(database, table)
+        result = await explorer_service.get_table_detail(database, table, user=user)
     except Exception as e:
         log.error("Table detail error for %s.%s: %s", database, table, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -168,10 +170,10 @@ async def get_table_detail(
 async def get_view_detail(
     database: str,
     view: str,
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
     """Get view detail with definition."""
-    result = await explorer_service.get_view_detail(database, view)
+    result = await explorer_service.get_view_detail(database, view, user=user)
     if not result:
         raise HTTPException(status_code=404, detail=f"View {database}.{view} not found")
     return result
@@ -184,10 +186,10 @@ async def get_view_detail(
 async def get_mv_detail(
     database: str,
     mv: str,
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
     """Get materialized view detail with refresh state."""
-    result = await explorer_service.get_mv_detail(database, mv)
+    result = await explorer_service.get_mv_detail(database, mv, user=user)
     if not result:
         raise HTTPException(status_code=404, detail=f"Materialized view {database}.{mv} not found")
     return result
@@ -200,10 +202,10 @@ async def get_mv_detail(
 async def get_function_detail(
     database: str,
     fn: str,
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
     """Get function detail with definition."""
-    result = await explorer_service.get_function_detail(database, fn)
+    result = await explorer_service.get_function_detail(database, fn, user=user)
     if not result:
         raise HTTPException(status_code=404, detail=f"Function {database}.{fn} not found")
     return result
@@ -216,10 +218,10 @@ async def get_function_detail(
 async def get_pipe_detail(
     database: str,
     pipe: str,
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
     """Get pipe detail with state and load status."""
-    result = await explorer_service.get_pipe_detail(database, pipe)
+    result = await explorer_service.get_pipe_detail(database, pipe, user=user)
     if not result:
         raise HTTPException(status_code=404, detail=f"Pipe {database}.{pipe} not found")
     return result

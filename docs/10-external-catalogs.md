@@ -66,7 +66,7 @@ All external catalogs that access object storage need `StorageCredentialParams`:
 | Switch catalog | `USE <catalog>` |
 | Alter catalog | `ALTER CATALOG <name> SET (...)` |
 | Drop catalog | `DROP CATALOG <name>` |
-| Refresh metadata | `REFRESH EXTERNAL TABLE <name>` / `REFRESH CATALOG <name>` |
+| Refresh metadata | `REFRESH EXTERNAL TABLE <name>` (4.1.4 has no `REFRESH CATALOG` statement) |
 
 ---
 
@@ -154,11 +154,14 @@ credential values redacted to `***`.
 - **Modules:** `backend/app/modules/external_catalogs/` — `router.py`, `schemas.py`,
   `service.py`, `repository.py`. The router is registered at
   `/api/v1/external-catalogs`.
-- **RBAC is StarRocks-native.** Every `CREATE / ALTER / DROP` statement is issued
-  on the caller's connection through the shared `QueryService` pipeline, so the
-  engine's SYSTEM privilege (`CREATE EXTERNAL CATALOG ON SYSTEM`) and per-catalog
-  grants (`ALTER`/`DROP ON CATALOG`) decide who may manage catalogs. Nova does not
-  implement catalog permissions.
+- **Ranger authorizes catalogs.** Every `CREATE / ALTER / DROP` statement is
+  issued on the caller's connection through the shared `QueryService` pipeline,
+  so the patched FE asks Ranger (`create external catalog` on `system`, and
+  `alter`/`drop` on the `catalog` resource) whether the caller's active role may
+  manage catalogs. Ranger policies on `catalog/database/table/column` also govern
+  reads of external tables, including row filters and masks (verified for JDBC
+  and Iceberg tables; see `docs/proposals/nova-catalog-standalone.md` §6.1).
+  Nova does not implement catalog permissions.
 - **Engine values (4.1.4):** the Iceberg metastore selector is
   `iceberg.catalog.type`; the accepted values are `hive` (Hive Metastore),
   `hadoop` (filesystem warehouse) and `rest`. The docs' `hms` alias is **not**
