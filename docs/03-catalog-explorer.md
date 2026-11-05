@@ -31,6 +31,18 @@ Catalogs
     └── ...
 ```
 
+## Visibility
+
+The tree and every detail page show only what the signed-in user's active role
+can list in the engine. The backend opens the caller's StarRocks session,
+activates that role, and reads `SHOW CATALOGS`, `SHOW DATABASES`,
+`SHOW FULL TABLES`, and `SHOW FULL FUNCTIONS`; Ranger filters each of them.
+Descriptive detail that a plain role may not read from `information_schema`
+(table model, partitions, materialized-view refresh state, pipe status) comes
+from the system pool, and only for objects that session listed. A database or
+object the caller cannot list answers `404`, so its stages, tasks, and pipes do
+not appear either.
+
 ## Supported Objects per Level
 
 ### Catalog Level
