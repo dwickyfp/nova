@@ -175,8 +175,16 @@ def _parse_secret_payload(raw: str, *, provider: str, reference: str) -> SecretV
                 f"secret provider '{provider}' returned a non-object payload for "
                 f"reference '{reference}'"
             )
-        access = parsed.get("access_key") or parsed.get("access_key_id") or ""
-        secret = parsed.get("secret_key") or parsed.get("secret_key_id") or ""
+        # A database credential (Nova Catalog connections) is the same pair
+        # spelled ``username``/``password``.
+        access = (
+            parsed.get("access_key") or parsed.get("access_key_id")
+            or parsed.get("username") or ""
+        )
+        secret = (
+            parsed.get("secret_key") or parsed.get("secret_key_id")
+            or parsed.get("password") or ""
+        )
         token = parsed.get("session_token") or ""
         if not access or not secret:
             raise SecretResolutionError(

@@ -75,6 +75,7 @@ def _query(parsed: ParsedStatement) -> Statement:
 
 
 def default_builders() -> AstBuilderRegistry:
+    from app.sql_frontend.catalog_ddl import build_catalog_statement
     from app.sql_frontend.streams import build_stream_statement
 
     registry = AstBuilderRegistry()
@@ -91,6 +92,12 @@ def default_builders() -> AstBuilderRegistry:
         "NovaStageInsertStatementContext": StageAwareStatement,
         "NovaSecurityShowStatementContext": SecurityStatement,
         "NovaStreamStatementContext": build_stream_statement,
+        "NovaCreateConnectionContext": build_catalog_statement,
+        "NovaDropConnectionContext": build_catalog_statement,
+        "NovaShowConnectionsContext": build_catalog_statement,
+        "NovaDescribeConnectionContext": build_catalog_statement,
+        "NovaCreateForeignCatalogContext": build_catalog_statement,
+        "NovaRefreshCatalogContext": build_catalog_statement,
         "CreateRoleStatementContext": SecurityStatement,
         "CreateUserStatementContext": SecurityStatement,
         "AlterUserStatementContext": SecurityStatement,

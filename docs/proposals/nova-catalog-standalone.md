@@ -1,7 +1,8 @@
 # Proposal: Nova Catalog sebagai catalog mandiri (federated)
 
-> **Status:** Fase 1 diimplementasikan (lihat "Status Fase 1" di §6). Fase 2 ke
-> atas masih proposal dan non-normatif sampai diimplementasikan dan lolos tes.
+> **Status:** Fase 1 dan Fase 2 diimplementasikan (lihat "Status Fase 1" dan
+> "Status Fase 2" di §6). Fase 3 ke atas masih proposal dan non-normatif sampai
+> diimplementasikan dan lolos tes.
 > **Tanggal riset:** 2026-11-05. Engine pin: StarRocks `4.1.4` (`4a9848ed`).
 > **Tujuan:** Nova Catalog berdiri sendiri seperti Unity Catalog, sehingga
 > database lain (PostgreSQL, MySQL, Snowflake, dan seterusnya) bisa didaftarkan,
@@ -450,6 +451,50 @@ catalog Iceberg via SQL mentah ada di `tests/integration/test_catalog_l3.py`.
 - Keluar: user non-root dengan grant Ranger bisa `SELECT` dari
   `pg_catalog_x.public.orders`, tanpa grant ditolak, dan (jika S1 lolos) row
   filter/mask berlaku. Tes integrasi memakai Postgres di stack yang ada.
+
+**Status Fase 2 (2026-11-05): diimplementasikan.** Perbedaan dari rencana dan
+desain di atas:
+
+- **Sintaks.** `CREATE CONNECTION name TYPE = postgres ENDPOINT = 'host:port/db'
+  SECRET = '<ref>' [COMMENT = '...']`, `DROP CONNECTION`, `SHOW CONNECTIONS`,
+  `DESC[RIBE] CONNECTION`, `CREATE FOREIGN CATALOG name USING CONNECTION conn
+  [COMMENT '...'] [PROPERTIES (...)]`, dan `REFRESH CATALOG name [SCHEMA s
+  [TABLE t]]`. Klausa opsional memakai `PROPERTIES`, bukan `OPTIONS`, supaya
+  grammar hanya menambah satu token (`FOREIGN`). `METADATA ONLY` tidak ada,
+  sesuai S3. Klausa koneksi berbentuk `identifier = nilai`, jadi `ENDPOINT` dan
+  `SECRET` bukan kata kunci baru.
+- **`GRANT`/`REVOKE`** menerima `catalog.database.table` (blok NOVA di
+  `privObjectName`); nama dua bagian tetap `default_catalog`. Compiler Ranger
+  sudah menerima catalog sejak awal. Bootstrap tidak membuka catalog baru ke
+  role mana pun: hanya policy bawaan `all - *` milik `root` dan `ACCOUNTADMIN`
+  yang mencakup `catalog = *` (dicek di Ranger yang berjalan dan dengan tes
+  regresi).
+- **Otorisasi koneksi.** Semua operasi koneksi dan `CREATE FOREIGN CATALOG`
+  butuh role aktif security admin, diaudit termasuk penolakan, dan dicek
+  sebelum kredensial di-resolve. `CREATE EXTERNAL CATALOG` tetap dijalankan
+  sebagai caller, jadi Ranger juga harus mengizinkan.
+- **Kredensial.** `SECRET` hanya referensi: `aws://...`/ARN lewat
+  `SecretProvider`, atau `nova://<koneksi>` untuk kredensial yang dimasukkan
+  lewat UI/REST, disimpan terenkripsi Fernet di
+  `NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS` dan tidak pernah dibaca balik.
+  Nilai tanpa skema (misalnya `user:password`) ditolak sebagai referensi.
+- **Driver.** Ternyata **BE juga butuh JAR** di path `file://` yang sama, bukan
+  hanya FE. Image FE upstream sudah membawa `postgresql-42.7.12.jar` dan
+  `mariadb-java-client-3.3.2.jar`; keduanya disalin ke `/opt/starrocks/drivers`
+  di image FE, dan image BE baru (`docker/starrocks-be.Dockerfile`) menyalin
+  file yang sama dari image FE yang di-pin. MySQL memakai driver MariaDB karena
+  4.1.4 menukar driver MySQL ke MariaDB (`JDBCMetadata.getDriverName`).
+- **`REFRESH CATALOG`** menjalankan sinkronisasi Nova untuk seluruh catalog;
+  `SCHEMA ... TABLE ...` hanya menambahkan `REFRESH EXTERNAL TABLE` di engine
+  sebagai caller.
+- **UI.** Halaman Connections (`/connections`) menggantikan form External
+  Catalogs; `/external-catalogs` dialihkan ke sana. Database Explorer punya menu
+  **Add catalog** (dari koneksi, atau Iceberg/Hive). Endpoint dan kredensial
+  tidak pernah ditampilkan.
+
+Kriteria keluar diuji di stack `docker` (FE yang di-patch, Ranger) dengan
+Postgres uji `catalog-test-postgres` (profil compose `catalog-test`) lewat
+`backend/scripts/verify_catalog_jdbc_e2e.py`: PHASE2_RESULTS
 
 ### Fase 3: Metadata bisnis dan pencarian
 

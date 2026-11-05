@@ -22,6 +22,7 @@ class ActionKind(Enum):
     ML_FORECAST = "ml_forecast"
     SECURITY = "security"
     FORCE_PASSWORD_CHANGE = "force_password_change"
+    CATALOG = "catalog"
 
 
 class Atomicity(Enum):
@@ -49,6 +50,24 @@ class StreamPayload(SourcePayload):
     database: str
     name: StreamName | None = None
     source: StreamName | None = None
+    if_exists: bool = False
+    if_not_exists: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogPayload(SourcePayload):
+    """A validated Nova Catalog DDL operation. ``secret_ref`` is a reference only."""
+
+    operation: str
+    name: str
+    connection: str | None = None
+    connector_type: str | None = None
+    endpoint: str | None = None
+    secret_ref: str | None = None
+    comment: str | None = None
+    properties: tuple[tuple[str, str], ...] = ()
+    schema: str | None = None
+    relation: str | None = None
     if_exists: bool = False
     if_not_exists: bool = False
 

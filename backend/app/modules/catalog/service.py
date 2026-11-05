@@ -165,10 +165,12 @@ class CatalogService:
         result = await query_service.execute(
             sql=sql,
             username=user["username"],
-            encrypted_password=user["encrypted_password"],
+            encrypted_password=user.get("encrypted_password") or "",
             session_id=user.get("session_id"),
             role=user.get("active_role"),
             confirm_destructive=True,
+            connection=user.get("connection"),
+            security_context_version=int(user.get("security_context_version") or 1),
         )
         if result.error:
             raise CatalogError(result.error)
@@ -245,7 +247,9 @@ class CatalogService:
         """Sync one catalog, or reconcile every catalog when ``name`` is ``None``."""
         target = safe_catalog_name(name) if name else "*"
         try:
-            security = SecurityContext.from_session(user)
+            # A SQL caller arrives with its validated context; a REST caller
+            # with its session.
+            security = user.get("security") or SecurityContext.from_session(user)
             AccessControlService.require_security_admin(security)
         except (AccessControlError, SecurityContextError) as exc:
             await _audit(user, target, "DENIED", str(exc))

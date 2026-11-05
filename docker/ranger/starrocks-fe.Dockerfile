@@ -57,3 +57,10 @@ LABEL org.opencontainers.image.revision="4a9848edf03f5c936dac664b2d52527f48e72eb
 COPY --from=patcher /opt/starrocks/fe/lib/fe-core-4.1.4.jar /opt/starrocks/fe/lib/fe-core-4.1.4.jar
 COPY --from=patcher /opt/starrocks/fe/lib/nashorn-core-15.4.jar /opt/starrocks/fe/lib/nashorn-core-15.4.jar
 COPY --from=patcher /opt/starrocks/fe/lib/asm-commons-9.4.jar /opt/starrocks/fe/lib/asm-commons-9.4.jar
+# Nova Catalog JDBC drivers (phase 2). A JDBC catalog's `driver_url` must name the
+# same file:// path on the FE and every BE, and is never downloaded at create
+# time. The upstream FE image already ships these two drivers in fe/lib; the
+# BE image (docker/starrocks-be.Dockerfile) copies the same files from it.
+RUN mkdir -p /opt/starrocks/drivers \
+    && cp /opt/starrocks/fe/lib/postgresql-42.7.12.jar \
+          /opt/starrocks/fe/lib/mariadb-java-client-3.3.2.jar /opt/starrocks/drivers/

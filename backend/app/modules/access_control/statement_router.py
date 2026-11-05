@@ -21,6 +21,15 @@ def _identifier(match: re.Match[str], start: int = 1) -> str:
     raise ValueError("Missing identifier")
 
 
+def _optional_identifier(match: re.Match[str], start: int) -> str | None:
+    """An identifier whose group is optional (``catalog.`` in a grant object)."""
+    for index in range(start, start + 3):
+        value = match.group(index)
+        if value is not None:
+            return value
+    return None
+
+
 _CREATE_ROLE = re.compile(rf"^\s*CREATE\s+ROLE\s+{_IDENT}\s*;?\s*$", re.I)
 _DROP_ROLE = re.compile(rf"^\s*DROP\s+ROLE\s+{_IDENT}\s*;?\s*$", re.I)
 _ROLE_TO_USER = re.compile(rf"^\s*GRANT\s+{_IDENT}\s+TO\s+USER\s+{_IDENT}\s*;?\s*$", re.I)
@@ -29,12 +38,12 @@ _ROLE_TO_ROLE = re.compile(rf"^\s*GRANT\s+{_IDENT}\s+TO\s+ROLE\s+{_IDENT}\s*;?\s
 _ROLE_FROM_ROLE = re.compile(rf"^\s*REVOKE\s+{_IDENT}\s+FROM\s+ROLE\s+{_IDENT}\s*;?\s*$", re.I)
 _ACCESS_TO_ROLE = re.compile(
     rf"^\s*GRANT\s+(SELECT|INSERT|UPDATE|DELETE|ALTER)\s+ON\s+(?:TABLE\s+)?"
-    rf"{_IDENT}\.{_IDENT}\s+TO\s+ROLE\s+{_IDENT}\s*;?\s*$",
+    rf"(?:{_IDENT}\.)?{_IDENT}\.{_IDENT}\s+TO\s+ROLE\s+{_IDENT}\s*;?\s*$",
     re.I,
 )
 _ACCESS_FROM_ROLE = re.compile(
     rf"^\s*REVOKE\s+(SELECT|INSERT|UPDATE|DELETE|ALTER)\s+ON\s+(?:TABLE\s+)?"
-    rf"{_IDENT}\.{_IDENT}\s+FROM\s+ROLE\s+{_IDENT}\s*;?\s*$",
+    rf"(?:{_IDENT}\.)?{_IDENT}\.{_IDENT}\s+FROM\s+ROLE\s+{_IDENT}\s*;?\s*$",
     re.I,
 )
 _SHOW_ROLE_GRANTS = re.compile(rf"^\s*SHOW\s+GRANTS\s+FOR\s+ROLE\s+{_IDENT}\s*;?\s*$", re.I)
@@ -99,13 +108,14 @@ class SecurityStatementRouter:
 
         if match := _ACCESS_TO_ROLE.match(sql):
             access = match.group(1).upper()
-            database = _identifier(match, 2)
-            table = _identifier(match, 5)
-            role = _identifier(match, 8)
+            catalog = _optional_identifier(match, 2) or "default_catalog"
+            database = _identifier(match, 5)
+            table = _identifier(match, 8)
+            role = _identifier(match, 11)
             await self._service.grant_access(
                 security,
                 role=role,
-                catalog="default_catalog",
+                catalog=catalog,
                 database=database,
                 table=table,
                 accesses=[access],
@@ -114,13 +124,14 @@ class SecurityStatementRouter:
 
         if match := _ACCESS_FROM_ROLE.match(sql):
             access = match.group(1).upper()
-            database = _identifier(match, 2)
-            table = _identifier(match, 5)
-            role = _identifier(match, 8)
+            catalog = _optional_identifier(match, 2) or "default_catalog"
+            database = _identifier(match, 5)
+            table = _identifier(match, 8)
+            role = _identifier(match, 11)
             await self._service.revoke_access(
                 security,
                 role=role,
-                catalog="default_catalog",
+                catalog=catalog,
                 database=database,
                 table=table,
                 accesses=[access],

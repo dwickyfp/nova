@@ -263,6 +263,36 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SYNC_RUNS (
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- Nova Catalog connections (phase 2): external sources foreign catalogs are
+-- built from. Endpoint metadata and a secret reference only, never a secret.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTIONS (
+    name             VARCHAR(256) NOT NULL,
+    connector_type   VARCHAR(64) NOT NULL,
+    host             VARCHAR(512) NOT NULL,
+    port             INT,
+    database_name    VARCHAR(256),
+    options_json     STRING,
+    secret_ref       VARCHAR(1024) NOT NULL,
+    owner            VARCHAR(128),
+    comment          VARCHAR(1024),
+    created_at       DATETIME,
+    updated_at       DATETIME
+) PRIMARY KEY(name)
+DISTRIBUTED BY HASH(name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+-- Credentials entered through Nova for a connection whose secret_ref is
+-- nova://<name>. Fernet ciphertext only; never read back to a client.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS (
+    connection_name  VARCHAR(256) NOT NULL,
+    username_enc     STRING NOT NULL,
+    password_enc     STRING NOT NULL,
+    updated_by       VARCHAR(128),
+    updated_at       DATETIME
+) PRIMARY KEY(connection_name)
+DISTRIBUTED BY HASH(connection_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 -- Assistant conversations. Persisted per user so history survives a reload;
 -- every read/write is filtered by user_name. No credential column exists here.
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (
