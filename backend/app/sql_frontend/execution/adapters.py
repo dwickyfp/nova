@@ -1006,6 +1006,13 @@ class FeatureAdapters:
                 schema_name=task.schema_name or schema or "default",
                 timezone=task.timezone or timezone,
             )
+            if not task.database_name:
+                # A task is scoped to database.schema; without a database the
+                # graph cannot resolve its node and the run fails empty.
+                raise TaskLoweringError(
+                    "CREATE TASK needs a database: select one, or name the task "
+                    "database.schema.task"
+                )
             persisted = await persist_lowered_task(task, created_by=username, owner_role=role)
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             task_row = persisted.task

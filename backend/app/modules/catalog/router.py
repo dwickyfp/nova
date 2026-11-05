@@ -3,7 +3,6 @@
   GET    /catalogs                                    → catalogs the caller can see
   POST   /catalogs/refresh                            → reconcile every catalog (admin)
   GET    /catalogs/{name}                             → detail, redacted engine DDL
-  POST   /catalogs                                    → create (as the caller)
   PATCH  /catalogs/{name}                             → alter (as the caller)
   DELETE /catalogs/{name}                             → drop (as the caller)
   POST   /catalogs/{name}/refresh                     → sync one catalog (admin)
@@ -32,7 +31,6 @@ from .schemas import (
     CatalogListResponse,
     CatalogObject,
     ExternalCatalogAlter,
-    ExternalCatalogCreate,
     SyncRunListResponse,
 )
 from .service import CatalogAccessDenied, catalog_service
@@ -77,18 +75,6 @@ async def get_catalog(name: str, user: CurrentUser):
         raise _http(exc) from exc
     if detail is None:
         raise _not_found(name)
-    return detail
-
-
-@router.post("/catalogs", response_model=CatalogDetail, status_code=201,
-             response_class=SanitizingJSONResponse)
-async def create_catalog(body: ExternalCatalogCreate, user: CurrentUser):
-    try:
-        detail = await catalog_service.create(body, user)
-    except CatalogError as exc:
-        raise _http(exc) from exc
-    if detail is None:
-        raise _not_found(body.name)
     return detail
 
 

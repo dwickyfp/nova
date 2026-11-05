@@ -23,6 +23,10 @@ class CatalogInfo(BaseModel):
     source: str | None = None
     sync_status: str | None = None
     last_sync_at: datetime | None = None
+    # What system the catalog reads and which explorer groups it shows.
+    source_type: str = "internal"
+    source_label: str = "Nova"
+    object_groups: list[str] = Field(default_factory=list)
 
 
 class CatalogsResponse(BaseModel):
@@ -202,6 +206,10 @@ class TableDetailResponse(BaseModel):
     partitions: list[PartitionInfo]
     row_count: int | None = None
     data_size: int | None = None
+    # ``table``, ``view`` or ``materialized_view``, and the source's own name
+    # for the kind (``Dynamic table``, ``Foreign table``, ...).
+    object_type: str = "table"
+    kind: str | None = None
 
 
 class ViewDetailResponse(BaseModel):

@@ -1,9 +1,12 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import {
   AlertCircle,
   ArrowRightLeft,
   Blocks,
-  Box,
+  Check,
+  Copy,
   Database,
   Eye,
   FolderTree,
@@ -23,10 +26,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatDateTime } from '@/lib/datetime'
 import { PreviewDataTab } from './preview-data-tab'
 import {
+  catalogObjectGroups,
   formatBytes,
   formatModel,
   getNodeIcon,
   getNodeTypeLabel,
+  objectAncestorIds,
+  objectNodeId,
+  OBJECT_GROUP_DEFS,
+  qualifiedNameOf,
   stripBackticks,
 } from './helpers'
 import { CatalogMetadataSection } from './catalog-metadata-section'
@@ -69,6 +77,7 @@ export function ExplorerDetail({
   onDropCatalog,
   onRefreshMetadata,
   refreshingCatalog,
+  onOpenNode,
 }: {
   node: ExplorerNode | null
   tableDetail?: TableDetailResponse | null
@@ -94,19 +103,21 @@ export function ExplorerDetail({
   /** Present only for a security-admin role: re-sync one catalog's metadata. */
   onRefreshMetadata?: (name: string) => void
   refreshingCatalog?: string | null
+  /** Select a tree node and expand its ancestors. */
+  onOpenNode?: (id: string, expand: string[]) => void
 }) {
   const [tableTab, setTableTab] = useState<'information' | 'preview'>('information')
 
   if (!node) {
     return (
-      <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-border bg-surface-1'>
+      <div className='flex h-full min-h-[420px] items-center justify-center rounded-xl border border-dashed border-surface-border bg-surface-1'>
         <div className='space-y-2 text-center'>
-          <div className='mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted'>
+          <div className='mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted'>
             <Blocks className='h-5 w-5 text-muted-foreground' />
           </div>
           <p className='text-sm font-medium'>No object selected</p>
           <p className='text-sm text-muted-foreground'>
-            Select an item from the explorer tree to inspect its metadata.
+            Pick a catalog, database, or object in the tree to see its details
           </p>
         </div>
       </div>
@@ -114,26 +125,40 @@ export function ExplorerDetail({
   }
 
   const Icon = getNodeIcon(node.type)
+  // A relation of a source catalog (PostgreSQL, Snowflake, another StarRocks):
+  // its tables, views, and materialized views share one detail page.
+  const isSourceRelation =
+    !!node.catalog &&
+    node.catalog !== 'default_catalog' &&
+    (node.type === 'table' || node.type === 'view' || node.type === 'materialized_view')
+  const sourceCatalog = isSourceRelation
+    ? catalogsData?.catalogs.find((c) => c.name === node.catalog)
+    : undefined
 
   // Table detail view
-  if (node.type === 'table' && tableDetail) {
+  if ((node.type === 'table' || isSourceRelation) && tableDetail) {
     return (
       <div className='space-y-5'>
         <div className='flex flex-wrap items-center gap-3'>
-          <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-            <Table2 className='h-5 w-5' />
+          <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+            <Icon className='size-4' />
           </div>
           <div className='space-y-1'>
             <div className='flex flex-wrap items-center gap-2'>
-              <h1 className='text-3xl font-semibold tracking-tight'>{tableDetail.name}</h1>
-              <Badge variant='secondary'>Table</Badge>
-              {tableDetail.properties.table_model && (
+              <h1 className='text-xl font-semibold tracking-tight'>{tableDetail.name}</h1>
+              <Badge variant='secondary'>
+                {isSourceRelation
+                  ? tableDetail.kind || getNodeTypeLabel(node.type)
+                  : 'Table'}
+              </Badge>
+              {isSourceRelation && sourceCatalog?.source_label ? (
+                <Badge variant='outline'>{sourceCatalog.source_label}</Badge>
+              ) : null}
+              {!isSourceRelation && tableDetail.properties.table_model && (
                 <Badge variant='outline'>{formatModel(tableDetail.properties.table_model)}</Badge>
               )}
             </div>
-            <p className='text-sm text-muted-foreground'>
-              {node.path.join(' / ')}
-            </p>
+            <QualifiedName node={node} />
           </div>
         </div>
 
@@ -160,8 +185,28 @@ export function ExplorerDetail({
             />
 
             {/* Properties */}
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+            {isSourceRelation ? (
+              <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+                <h2 className='mb-4 text-base font-semibold'>Properties</h2>
+                <dl className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
+                  {[
+                    ['Source', sourceCatalog?.source_label ?? node.catalog ?? '—'],
+                    ['Kind', tableDetail.kind || getNodeTypeLabel(node.type)],
+                    ['Catalog', node.catalog ?? '—'],
+                    ['Schema', tableDetail.database],
+                    ['Columns', String(tableDetail.columns.length)],
+                    ['Row Count', tableDetail.row_count?.toLocaleString() ?? '—'],
+                  ].map(([label, value]) => (
+                    <div key={label} className='space-y-1'>
+                      <dt className='text-sm text-muted-foreground'>{label}</dt>
+                      <dd className='text-base font-medium'>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ) : (
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>Properties</h2>
               <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
                 <div className='space-y-1'>
                   <p className='text-sm text-muted-foreground'>Table Model</p>
@@ -211,11 +256,12 @@ export function ExplorerDetail({
                 </div>
               )}
             </section>
+            )}
 
             {/* Columns */}
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>
-                Columns <span className='text-muted-foreground'>({tableDetail.columns.length})</span>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>
+                Columns <span className='font-normal text-muted-foreground tabular-nums'>{tableDetail.columns.length}</span>
               </h2>
               <div className='overflow-x-auto'>
                 <table className='w-full text-sm'>
@@ -255,8 +301,8 @@ export function ExplorerDetail({
 
             {/* DDL */}
             {tableDetail.properties.create_ddl && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+              <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+                <h2 className='mb-4 text-base font-semibold'>DDL</h2>
                 <SqlCodeBlock
                   source={tableDetail.properties.create_ddl}
                   label='Table DDL'
@@ -266,8 +312,9 @@ export function ExplorerDetail({
           </TabsContent>
 
           <TabsContent value='preview' className='mt-4'>
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
               <PreviewDataTab
+                catalog={node.catalog ?? 'default_catalog'}
                 database={tableDetail.database}
                 table={tableDetail.name}
               />
@@ -279,13 +326,13 @@ export function ExplorerDetail({
   }
 
   // Table loading/error state
-  if (node.type === 'table') {
+  if (node.type === 'table' || isSourceRelation) {
     if (tableLoading) {
       return (
         <div className='flex h-full min-h-[420px] items-center justify-center'>
           <div className='flex items-center gap-2 text-sm text-muted-foreground'>
             <Loader2 className='h-5 w-5 animate-spin' />
-            Loading table details...
+            Loading table details
           </div>
         </div>
       )
@@ -316,14 +363,16 @@ export function ExplorerDetail({
     return (
       <div className='space-y-5'>
         <div className='flex flex-wrap items-center gap-3'>
-          <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-            <FolderTree className='h-5 w-5' />
+          <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+            <FolderTree className='size-4' />
           </div>
           <div className='space-y-1'>
             <div className='flex flex-wrap items-center gap-2'>
-              <h1 className='text-3xl font-semibold tracking-tight'>{node.label}</h1>
+              <h1 className='text-xl font-semibold tracking-tight'>{node.label}</h1>
               <Badge variant='secondary'>Catalog</Badge>
-              {catalog?.type && <Badge variant='outline'>{catalog.type}</Badge>}
+              {catalog && (
+                <Badge variant='outline'>{catalog.source_label ?? catalog.type}</Badge>
+              )}
             </div>
             {catalog?.comment && (
               <p className='max-w-2xl text-sm text-muted-foreground'>{catalog.comment}</p>
@@ -373,38 +422,42 @@ export function ExplorerDetail({
           </div>
         </div>
 
-        <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-          <h2 className='mb-4 text-xl font-semibold'>
-            Databases <span className='text-muted-foreground'>({databases.length})</span>
+        <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+          <h2 className='mb-4 text-base font-semibold'>
+            Databases <span className='font-normal text-muted-foreground tabular-nums'>{databases.length}</span>
           </h2>
           <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
             {databases.map((db) => {
               const cached = dbCache?.get(`${catalogName}/${db}`)
-              const tableCount = cached?.summary.tables ?? 0
-              const viewCount = cached?.summary.views ?? 0
-              const mvCount = cached?.summary.materialized_views ?? 0
+              const counts = cached
+                ? [
+                    [cached.summary.tables, 'table', 'tables'],
+                    [cached.summary.views, 'view', 'views'],
+                    [cached.summary.materialized_views, 'materialized view', 'materialized views'],
+                  ].filter(([count]) => Number(count) > 0)
+                : []
+              const dbId = `db-${catalogName}-${db}`
               return (
-                <div
+                <button
                   key={db}
-                  className='flex items-start gap-3 rounded-xl border border-border bg-background/60 p-4 transition-colors hover:bg-muted/30'
+                  type='button'
+                  onClick={() => onOpenNode?.(dbId, [`catalog-${catalogName}`, dbId])}
+                  className='flex items-start gap-3 rounded-lg border border-surface-border bg-surface-1 p-4 text-left transition-colors hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
                 >
-                  <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary'>
-                    <Database className='h-4 w-4' />
-                  </div>
-                  <div className='min-w-0 flex-1'>
-                    <p className='truncate text-sm font-semibold'>{db}</p>
-                    {cached ? (
-                      <div className='mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground'>
-                        {tableCount > 0 && <span>{tableCount} tables</span>}
-                        {viewCount > 0 && <span>{viewCount} views</span>}
-                        {mvCount > 0 && <span>{mvCount} MVs</span>}
-                        {tableCount === 0 && viewCount === 0 && mvCount === 0 && <span>Empty</span>}
-                      </div>
-                    ) : (
-                      <p className='mt-1 text-xs text-muted-foreground'>Expand to load</p>
-                    )}
-                  </div>
-                </div>
+                  <Database className='mt-0.5 size-4 shrink-0 text-muted-foreground' />
+                  <span className='min-w-0 flex-1'>
+                    <span className='block truncate text-sm font-medium'>{db}</span>
+                    <span className='mt-1 block text-xs text-muted-foreground tabular-nums'>
+                      {!cached
+                        ? 'Open to load its objects'
+                        : counts.length === 0
+                          ? 'No objects'
+                          : counts
+                              .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`)
+                              .join(' · ')}
+                    </span>
+                  </span>
+                </button>
               )
             })}
           </div>
@@ -425,183 +478,163 @@ export function ExplorerDetail({
     return (
       <div className='space-y-5'>
         <div className='flex flex-wrap items-center gap-3'>
-          <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-            <Database className='h-5 w-5' />
+          <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+            <Database className='size-4' />
           </div>
           <div className='space-y-1'>
             <div className='flex flex-wrap items-center gap-2'>
-              <h1 className='text-3xl font-semibold tracking-tight'>{dbName}</h1>
+              <h1 className='text-xl font-semibold tracking-tight'>{dbName}</h1>
               <Badge variant='secondary'>Database</Badge>
             </div>
-            <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+            <QualifiedName node={node} />
           </div>
         </div>
 
         {cached ? (
           <>
-            {/* Summary cards */}
-            <section className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'>
-              {Object.entries(cached.summary).map(([key, count]) => (
-                <div key={key} className='rounded-xl border border-border bg-surface-2 p-4'>
-                  <p className='text-xs text-muted-foreground'>{key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</p>
-                  <p className='mt-1 text-2xl font-semibold'>{count}</p>
-                </div>
-              ))}
-            </section>
-
-            {/* Tables list */}
-            {cached.tables.length > 0 && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>
-                  Tables <span className='text-muted-foreground'>({cached.tables.length})</span>
-                </h2>
-                <div className='overflow-x-auto'>
-                  <table className='w-full text-sm'>
-                    <thead>
-                      <tr className='border-b border-border text-left text-muted-foreground'>
-                        <th className='pb-2 pr-4 font-medium'>Name</th>
-                        <th className='pb-2 pr-4 font-medium'>Model</th>
-                        <th className='pb-2 pr-4 font-medium'>Rows</th>
-                        <th className='pb-2 pr-4 font-medium'>Size</th>
-                        <th className='pb-2 font-medium'>Created</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cached.tables.map((t) => (
-                        <tr key={t.name} className='border-b border-surface-border'>
-                          <td className='py-2 pr-4 font-medium'>{t.name}</td>
-                          <td className='py-2 pr-4'>
-                            <Badge variant='outline' className='text-xs'>{formatModel(t.table_model)}</Badge>
-                          </td>
-                          <td className='py-2 pr-4 text-muted-foreground'>{t.row_count?.toLocaleString() ?? '—'}</td>
-                          <td className='py-2 pr-4 text-muted-foreground'>{formatBytes(t.data_size)}</td>
-                          <td className='py-2 text-muted-foreground'>{t.create_time ? t.create_time.split('T')[0] : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
-
-            {/* Views list */}
-            {cached.views.length > 0 && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>
-                  Views <span className='text-muted-foreground'>({cached.views.length})</span>
-                </h2>
-                <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                  {cached.views.map((v) => (
-                    <div key={v.name} className='flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4'>
-                      <Eye className='h-4 w-4 shrink-0 text-muted-foreground' />
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-semibold'>{v.name}</p>
-                        {v.definer && <p className='text-xs text-muted-foreground'>{v.definer}</p>}
+            {(() => {
+              const catalogName = node.catalog ?? 'default_catalog'
+              const groups = catalogObjectGroups(
+                catalogsData?.catalogs.find((c) => c.name === catalogName),
+              )
+              const external = catalogName !== 'default_catalog'
+              const open = (group: string, itemId: string) =>
+                onOpenNode?.(
+                  objectNodeId(catalogName, dbName, group, itemId),
+                  objectAncestorIds(catalogName, dbName, group),
+                )
+              const listed = groups
+                .filter((group) => group !== 'tables')
+                .map((group) => ({ group, def: OBJECT_GROUP_DEFS[group] }))
+                .filter(({ def }) => !!def)
+                .map(({ group, def }) => ({ group, def, items: def.items(cached, dbName, external) }))
+                .filter(({ items }) => items.length > 0)
+              return (
+                <>
+                  {/* Counts of the groups this catalog shows */}
+                  <dl className='grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-x-6 gap-y-3 rounded-xl border border-surface-border bg-surface-2 px-5 py-4'>
+                    {groups.map((group) => (
+                      <div key={group}>
+                        <dt className='text-xs text-muted-foreground'>
+                          {OBJECT_GROUP_DEFS[group]?.label ?? group}
+                        </dt>
+                        <dd className='mt-0.5 text-lg font-semibold tabular-nums'>
+                          {cached.summary[group as keyof typeof cached.summary] ?? 0}
+                        </dd>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+                    ))}
+                  </dl>
 
-            {/* MVs list */}
-            {cached.materialized_views.length > 0 && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>
-                  Materialized Views <span className='text-muted-foreground'>({cached.materialized_views.length})</span>
-                </h2>
-                <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                  {cached.materialized_views.map((m) => (
-                    <div key={m.name} className='flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4'>
-                      <Layers3 className='h-4 w-4 shrink-0 text-muted-foreground' />
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-semibold'>{m.name}</p>
-                        <div className='mt-0.5 flex gap-2 text-xs text-muted-foreground'>
-                          {m.refresh_type && <span>{m.refresh_type}</span>}
-                          {m.is_active != null && <span>{m.is_active ? 'Active' : 'Inactive'}</span>}
+                  {cached.tables.length > 0 && (
+                    <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+                      <h2 className='mb-3 text-base font-semibold'>
+                        Tables <span className='font-normal text-muted-foreground tabular-nums'>{cached.tables.length}</span>
+                      </h2>
+                      <div className='overflow-x-auto'>
+                        <table className='w-full text-sm'>
+                          <thead>
+                            <tr className='border-b border-surface-border text-left text-xs text-muted-foreground'>
+                              <th className='pb-2 pr-4 font-medium'>Name</th>
+                              {external ? (
+                                <th className='pb-2 pr-4 font-medium'>Kind</th>
+                              ) : (
+                                <>
+                                  <th className='pb-2 pr-4 font-medium'>Model</th>
+                                  <th className='pb-2 pr-4 text-right font-medium'>Size</th>
+                                  <th className='pb-2 pr-4 font-medium'>Created</th>
+                                </>
+                              )}
+                              <th className='pb-2 text-right font-medium'>Rows</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cached.tables.map((t) => (
+                              <tr key={t.name} className='border-b border-surface-border last:border-0'>
+                                <td className='py-2 pr-4'>
+                                  <button
+                                    type='button'
+                                    onClick={() => open('tables', t.name)}
+                                    className='rounded-sm font-medium hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+                                  >
+                                    {t.name}
+                                  </button>
+                                </td>
+                                {external ? (
+                                  <td className='py-2 pr-4 text-muted-foreground'>{t.engine ?? 'Table'}</td>
+                                ) : (
+                                  <>
+                                    <td className='py-2 pr-4 text-muted-foreground'>{formatModel(t.table_model)}</td>
+                                    <td className='py-2 pr-4 text-right text-muted-foreground tabular-nums'>
+                                      {t.data_size ? formatBytes(t.data_size) : '—'}
+                                    </td>
+                                    <td className='py-2 pr-4 text-muted-foreground tabular-nums'>
+                                      {t.create_time ? t.create_time.split('T')[0] : '—'}
+                                    </td>
+                                  </>
+                                )}
+                                <td className='py-2 text-right text-muted-foreground tabular-nums'>
+                                  {t.row_count?.toLocaleString() ?? '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+
+                  {listed.map(({ group, def, items }) => {
+                    const ItemIcon = getNodeIcon(def.type)
+                    return (
+                      <section
+                        key={group}
+                        className='rounded-xl border border-surface-border bg-surface-2 p-5'
+                      >
+                        <h2 className='mb-3 text-base font-semibold'>
+                          {def.label}{' '}
+                          <span className='font-normal text-muted-foreground tabular-nums'>{items.length}</span>
+                        </h2>
+                        <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
+                          {items.map((item) => (
+                            <button
+                              key={item.id}
+                              type='button'
+                              onClick={() => open(group, item.id)}
+                              className='flex min-w-0 items-center gap-2.5 rounded-lg border border-surface-border bg-surface-1 px-3 py-2.5 text-left transition-colors hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+                            >
+                              <ItemIcon className='size-4 shrink-0 text-muted-foreground' />
+                              <span className='min-w-0'>
+                                <span className='block truncate text-sm font-medium'>
+                                  {def.type === 'stage' ? `@${item.name}` : item.name}
+                                </span>
+                                {item.metadata[0] ? (
+                                  <span className='block truncate text-xs text-muted-foreground'>
+                                    {item.metadata[0].value}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          ))}
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Functions list */}
-            {cached.functions.length > 0 && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>
-                  Functions <span className='text-muted-foreground'>({cached.functions.length})</span>
-                </h2>
-                <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                  {cached.functions.map((f) => (
-                    <div key={f.name} className='flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4'>
-                      <Sigma className='h-4 w-4 shrink-0 text-muted-foreground' />
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-semibold'>{f.name}</p>
-                        {f.routine_type && <p className='text-xs text-muted-foreground'>{f.routine_type}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Pipes list */}
-            {cached.pipes.length > 0 && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>
-                  Pipes <span className='text-muted-foreground'>({cached.pipes.length})</span>
-                </h2>
-                <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                  {cached.pipes.map((p) => (
-                    <div key={p.name} className='flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4'>
-                      <ArrowRightLeft className='h-4 w-4 shrink-0 text-muted-foreground' />
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-semibold'>{p.name}</p>
-                        <div className='mt-0.5 flex gap-2 text-xs text-muted-foreground'>
-                          {p.state && <Badge variant='outline' className='text-xs'>{p.state}</Badge>}
-                          {p.target_table && <span>→ {p.target_table}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Stages list */}
-            {cached.stages.length > 0 && (
-              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-                <h2 className='mb-4 text-xl font-semibold'>
-                  Stages <span className='text-muted-foreground'>({cached.stages.length})</span>
-                </h2>
-                <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                  {cached.stages.map((s) => (
-                    <div key={s.name} className='flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4'>
-                      <Box className='h-4 w-4 shrink-0 text-muted-foreground' />
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-semibold'>@{s.name}</p>
-                        {s.storage_connection && <p className='text-xs text-muted-foreground'>{s.storage_connection}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+                      </section>
+                    )
+                  })}
+                </>
+              )
+            })()}
 
             {/* Empty database */}
             {cached.summary.tables === 0 && cached.summary.views === 0 && cached.summary.materialized_views === 0 && (
-              <section className='rounded-2xl border border-dashed border-border bg-surface-1 p-8 text-center'>
-                <p className='text-sm text-muted-foreground'>This database has no objects yet.</p>
+              <section className='rounded-xl border border-dashed border-surface-border bg-surface-1 p-8 text-center'>
+                <p className='text-sm text-muted-foreground'>No tables, views, or materialized views yet</p>
               </section>
             )}
           </>
         ) : (
-          <section className='flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-dashed border-border bg-surface-1'>
+          <section className='flex h-full min-h-[240px] items-center justify-center rounded-xl border border-dashed border-surface-border bg-surface-1'>
             <div className='flex items-center gap-2 text-sm text-muted-foreground'>
               <Loader2 className='h-4 w-4 animate-spin' />
-              Loading database objects...
+              Loading database objects
             </div>
           </section>
         )}
@@ -621,7 +654,7 @@ export function ExplorerDetail({
         <div className='flex h-full min-h-[420px] items-center justify-center'>
           <div className='flex items-center gap-2 text-sm text-muted-foreground'>
             <Loader2 className='h-5 w-5 animate-spin' />
-            Loading pipe details...
+            Loading pipe details
           </div>
         </div>
       )
@@ -648,12 +681,12 @@ export function ExplorerDetail({
         <div className='space-y-5'>
           {/* Header */}
           <div className='flex flex-wrap items-center gap-3'>
-            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-              <ArrowRightLeft className='h-5 w-5' />
+            <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+              <ArrowRightLeft className='size-4' />
             </div>
             <div className='space-y-1'>
               <div className='flex flex-wrap items-center gap-2'>
-                <h1 className='text-3xl font-semibold tracking-tight'>{pipeDetail.name}</h1>
+                <h1 className='text-xl font-semibold tracking-tight'>{pipeDetail.name}</h1>
                 <Badge variant='secondary'>Pipe</Badge>
                 {pipeDetail.state && (
                   <Badge variant='outline' className={stateColor}>
@@ -661,13 +694,13 @@ export function ExplorerDetail({
                   </Badge>
                 )}
               </div>
-              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+              <QualifiedName node={node} />
             </div>
           </div>
 
           {/* Properties */}
-          <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+          <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+            <h2 className='mb-4 text-base font-semibold'>Properties</h2>
             <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
               {pipeDetail.pipe_id != null && (
                 <div className='space-y-1'>
@@ -715,8 +748,8 @@ export function ExplorerDetail({
 
           {/* Pipe Properties (from PROPERTIES column) */}
           {Object.keys(pipeDetail.properties).length > 0 && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>Pipe Configuration</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>Pipe Configuration</h2>
               <div className='grid gap-x-6 gap-y-4 md:grid-cols-2'>
                 {Object.entries(pipeDetail.properties).map(([k, v]) => (
                   <div key={k} className='space-y-1'>
@@ -732,7 +765,7 @@ export function ExplorerDetail({
 
           {/* Last Error */}
           {pipeDetail.last_error && (
-            <section className='rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+            <section className='rounded-xl border border-destructive/30 bg-destructive/5 p-6'>
               <h2 className='mb-3 flex items-center gap-2 text-xl font-semibold text-destructive'>
                 <AlertCircle className='h-5 w-5' />
                 Last Error
@@ -745,8 +778,8 @@ export function ExplorerDetail({
 
           {/* DDL */}
           {pipeDetail.create_ddl && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>DDL</h2>
               <SqlCodeBlock source={pipeDetail.create_ddl} label='Pipe DDL' />
             </section>
           )}
@@ -762,14 +795,14 @@ export function ExplorerDetail({
         <div className='flex h-full min-h-[420px] items-center justify-center'>
           <div className='flex items-center gap-2 text-sm text-muted-foreground'>
             <Loader2 className='h-5 w-5 animate-spin' />
-            Loading view details...
+            Loading view details
           </div>
         </div>
       )
     }
     if (viewError) {
       return (
-        <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+        <div className='flex h-full min-h-[420px] items-center justify-center rounded-xl border border-destructive/30 bg-destructive/5 p-6'>
           <div className='flex items-center gap-2 text-sm text-destructive'>
             <AlertCircle className='h-4 w-4' />
             {viewError}
@@ -782,18 +815,18 @@ export function ExplorerDetail({
         <div className='space-y-5'>
           {/* Header */}
           <div className='flex flex-wrap items-center gap-3'>
-            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-              <Eye className='h-5 w-5' />
+            <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+              <Eye className='size-4' />
             </div>
             <div className='space-y-1'>
               <div className='flex flex-wrap items-center gap-2'>
-                <h1 className='text-3xl font-semibold tracking-tight'>{viewDetail.name}</h1>
+                <h1 className='text-xl font-semibold tracking-tight'>{viewDetail.name}</h1>
                 <Badge variant='secondary'>View</Badge>
                 {viewDetail.is_updatable === 'YES' && (
                   <Badge variant='outline'>Updatable</Badge>
                 )}
               </div>
-              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+              <QualifiedName node={node} />
             </div>
           </div>
 
@@ -806,8 +839,8 @@ export function ExplorerDetail({
           )}
 
           {/* Properties */}
-          <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+          <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+            <h2 className='mb-4 text-base font-semibold'>Properties</h2>
             <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
               <div className='space-y-1'>
                 <p className='text-sm text-muted-foreground'>Definer</p>
@@ -826,16 +859,16 @@ export function ExplorerDetail({
 
           {/* DDL */}
           {viewDetail.create_ddl && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>DDL</h2>
               <SqlCodeBlock source={viewDetail.create_ddl} label='View DDL' />
             </section>
           )}
 
           {/* Definition (fallback if no DDL) */}
           {!viewDetail.create_ddl && viewDetail.definition && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>Definition</h2>
               <SqlCodeBlock source={viewDetail.definition} label='View definition' />
             </section>
           )}
@@ -851,14 +884,14 @@ export function ExplorerDetail({
         <div className='flex h-full min-h-[420px] items-center justify-center'>
           <div className='flex items-center gap-2 text-sm text-muted-foreground'>
             <Loader2 className='h-5 w-5 animate-spin' />
-            Loading materialized view details...
+            Loading materialized view details
           </div>
         </div>
       )
     }
     if (mvError) {
       return (
-        <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+        <div className='flex h-full min-h-[420px] items-center justify-center rounded-xl border border-destructive/30 bg-destructive/5 p-6'>
           <div className='flex items-center gap-2 text-sm text-destructive'>
             <AlertCircle className='h-4 w-4' />
             {mvError}
@@ -876,12 +909,12 @@ export function ExplorerDetail({
         <div className='space-y-5'>
           {/* Header */}
           <div className='flex flex-wrap items-center gap-3'>
-            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-              <Layers3 className='h-5 w-5' />
+            <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+              <Layers3 className='size-4' />
             </div>
             <div className='space-y-1'>
               <div className='flex flex-wrap items-center gap-2'>
-                <h1 className='text-3xl font-semibold tracking-tight'>{mvDetail.name}</h1>
+                <h1 className='text-xl font-semibold tracking-tight'>{mvDetail.name}</h1>
                 <Badge variant='secondary'>Materialized View</Badge>
                 {mvDetail.is_active && (
                   <Badge variant='outline' className={activeColor}>
@@ -889,7 +922,7 @@ export function ExplorerDetail({
                   </Badge>
                 )}
               </div>
-              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+              <QualifiedName node={node} />
             </div>
           </div>
 
@@ -902,8 +935,8 @@ export function ExplorerDetail({
           )}
 
           {/* Properties */}
-          <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+          <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+            <h2 className='mb-4 text-base font-semibold'>Properties</h2>
             <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
               <div className='space-y-1'>
                 <p className='text-sm text-muted-foreground'>Refresh Type</p>
@@ -940,7 +973,7 @@ export function ExplorerDetail({
 
           {/* Last Refresh Error */}
           {mvDetail.last_refresh_error_message && (
-            <section className='rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+            <section className='rounded-xl border border-destructive/30 bg-destructive/5 p-6'>
               <h2 className='mb-3 flex items-center gap-2 text-xl font-semibold text-destructive'>
                 <AlertCircle className='h-5 w-5' />
                 Last Refresh Error
@@ -953,8 +986,8 @@ export function ExplorerDetail({
 
           {/* DDL / Definition */}
           {mvDetail.definition && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>Definition</h2>
               <SqlCodeBlock source={mvDetail.definition} label='Materialized view definition' />
             </section>
           )}
@@ -970,14 +1003,14 @@ export function ExplorerDetail({
         <div className='flex h-full min-h-[420px] items-center justify-center'>
           <div className='flex items-center gap-2 text-sm text-muted-foreground'>
             <Loader2 className='h-5 w-5 animate-spin' />
-            Loading function details...
+            Loading function details
           </div>
         </div>
       )
     }
     if (fnError) {
       return (
-        <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+        <div className='flex h-full min-h-[420px] items-center justify-center rounded-xl border border-destructive/30 bg-destructive/5 p-6'>
           <div className='flex items-center gap-2 text-sm text-destructive'>
             <AlertCircle className='h-4 w-4' />
             {fnError}
@@ -990,24 +1023,24 @@ export function ExplorerDetail({
         <div className='space-y-5'>
           {/* Header */}
           <div className='flex flex-wrap items-center gap-3'>
-            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-              <Sigma className='h-5 w-5' />
+            <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+              <Sigma className='size-4' />
             </div>
             <div className='space-y-1'>
               <div className='flex flex-wrap items-center gap-2'>
-                <h1 className='text-3xl font-semibold tracking-tight'>{fnDetail.name}</h1>
+                <h1 className='text-xl font-semibold tracking-tight'>{fnDetail.name}</h1>
                 <Badge variant='secondary'>{fnDetail.function_type || 'Function'}</Badge>
                 {fnDetail.return_type && (
                   <Badge variant='outline'>→ {fnDetail.return_type}</Badge>
                 )}
               </div>
-              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+              <QualifiedName node={node} />
             </div>
           </div>
 
           {/* Properties */}
-          <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+          <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+            <h2 className='mb-4 text-base font-semibold'>Properties</h2>
             <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
               {fnDetail.signature && (
                 <div className='space-y-1'>
@@ -1038,16 +1071,16 @@ export function ExplorerDetail({
 
           {/* DDL */}
           {fnDetail.create_ddl && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>DDL</h2>
               <SqlCodeBlock source={fnDetail.create_ddl} label='Function DDL' />
             </section>
           )}
 
           {/* Definition fallback */}
           {!fnDetail.create_ddl && fnDetail.definition && (
-            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-              <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
+            <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+              <h2 className='mb-4 text-base font-semibold'>Definition</h2>
               <SqlCodeBlock
                 source={fnDetail.definition}
                 label='Function definition'
@@ -1065,15 +1098,15 @@ export function ExplorerDetail({
   return (
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center gap-3'>
-        <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-          <Icon className='h-5 w-5' />
+        <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+          <Icon className='size-4' />
         </div>
         <div className='space-y-1'>
           <div className='flex flex-wrap items-center gap-2'>
-            <h1 className='text-3xl font-semibold tracking-tight'>{node.label}</h1>
+            <h1 className='text-xl font-semibold tracking-tight'>{node.label}</h1>
             <Badge variant='secondary'>{getNodeTypeLabel(node.type)}</Badge>
           </div>
-          <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+          <QualifiedName node={node} />
         </div>
       </div>
 
@@ -1083,8 +1116,8 @@ export function ExplorerDetail({
         </div>
       </div>
 
-      <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-        <h2 className='mb-4 text-xl font-semibold'>Overview</h2>
+      <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+        <h2 className='mb-4 text-base font-semibold'>Overview</h2>
         <div className='grid gap-x-6 gap-y-4 md:grid-cols-2'>
           {node.metadata.map((item) => (
             <div key={item.label} className='space-y-1'>
@@ -1103,15 +1136,15 @@ export function ExplorerDetail({
 
       {/* Show children list for groups */}
       {node.type === 'group' && node.children && node.children.length > 0 && (
-        <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-          <h2 className='mb-4 text-xl font-semibold'>
-            Objects <span className='text-muted-foreground'>({node.children.length})</span>
+        <section className='rounded-xl border border-surface-border bg-surface-2 p-5'>
+          <h2 className='mb-4 text-base font-semibold'>
+            Objects <span className='font-normal text-muted-foreground tabular-nums'>{node.children.length}</span>
           </h2>
           <div className='grid gap-2'>
             {node.children.map((child) => {
               const ChildIcon = getNodeIcon(child.type)
               return (
-                <div key={child.id} className='flex items-center gap-3 rounded-lg border border-surface-border bg-background/60 px-4 py-2.5'>
+                <div key={child.id} className='flex items-center gap-3 rounded-lg border border-surface-border bg-surface-1 px-4 py-2.5'>
                   <ChildIcon className='h-4 w-4 shrink-0 text-muted-foreground' />
                   <div className='min-w-0 flex-1'>
                     <p className='truncate text-sm font-medium'>{child.label}</p>
@@ -1130,6 +1163,38 @@ export function ExplorerDetail({
           </div>
         </section>
       )}
+    </div>
+  )
+}
+
+/** The name a query uses for this object, set in mono, with a copy button. */
+function QualifiedName({ node }: { node: ExplorerNode }) {
+  const [copied, setCopied] = useState(false)
+  const name = qualifiedNameOf(node)
+  if (!name) return <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(name)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error('Could not copy to the clipboard')
+    }
+  }
+  return (
+    <div className='flex min-w-0 items-center gap-1'>
+      <code className='truncate font-mono text-xs text-muted-foreground'>{name}</code>
+      <button
+        type='button'
+        onClick={copy}
+        aria-label={copied ? `Copied ${name}` : `Copy ${name}`}
+        className={cn(
+          'inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-3 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+          copied && 'text-success-strong',
+        )}
+      >
+        {copied ? <Check className='size-3.5' /> : <Copy className='size-3.5' />}
+      </button>
     </div>
   )
 }

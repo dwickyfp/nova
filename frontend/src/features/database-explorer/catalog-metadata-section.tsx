@@ -281,14 +281,14 @@ export function CatalogMetadataSection({
   })
 
   const header = (
-    <h2 id={`catalog-metadata-${object}`} className='mb-4 text-xl font-semibold'>
+    <h2 id={`catalog-metadata-${object}`} className='mb-4 text-base font-semibold'>
       Business metadata
     </h2>
   )
 
   if (detail.isLoading) {
     return (
-      <section aria-labelledby={`catalog-metadata-${object}`} className='rounded-2xl border border-border bg-surface-2 p-6'>
+      <section aria-labelledby={`catalog-metadata-${object}`} className='rounded-xl border border-surface-border bg-surface-2 p-5'>
         {header}
         <LoadingLines rows={3} />
       </section>
@@ -297,7 +297,7 @@ export function CatalogMetadataSection({
   if (detail.error || !detail.data) {
     const notSynced = detail.error instanceof ApiError && detail.error.status === 404
     return (
-      <section aria-labelledby={`catalog-metadata-${object}`} className='rounded-2xl border border-border bg-surface-2 p-6'>
+      <section aria-labelledby={`catalog-metadata-${object}`} className='rounded-xl border border-surface-border bg-surface-2 p-5'>
         {header}
         <p className='text-sm text-muted-foreground'>
           {notSynced
@@ -314,7 +314,7 @@ export function CatalogMetadataSection({
   const ownerDraft = editingOwner
 
   return (
-    <section aria-labelledby={`catalog-metadata-${object}`} className='rounded-2xl border border-border bg-surface-2 p-6'>
+    <section aria-labelledby={`catalog-metadata-${object}`} className='rounded-xl border border-surface-border bg-surface-2 p-5'>
       {header}
       <div className='grid gap-x-6 gap-y-5 md:grid-cols-2'>
         <div className='space-y-1.5'>

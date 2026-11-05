@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/context-menu'
 import { SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
-import { getNodeIcon } from './helpers'
+import { EMPTY_LABEL, getNodeIcon, LOADING_LABEL } from './helpers'
 import type { ExplorerNode } from './types'
 
 export type TreeNodeRowProps = {
@@ -83,21 +83,11 @@ export function TreeNodeRow({
   const isSelected = selectedId === node.id
   const Icon = getNodeIcon(node.type)
 
-  // Empty placeholder node (e.g. "No Objects Found")
-  if (node.label === 'No Objects Found') {
+  // Placeholder rows: an empty group, or a database still loading
+  if (node.label === EMPTY_LABEL || node.label === LOADING_LABEL) {
     return (
       <SidebarMenuItem key={node.id}>
-        <div className='flex items-center gap-2 px-2 py-1.5 text-sm italic text-muted-foreground/60'>
-          <span className='ml-4'>{node.label}</span>
-        </div>
-      </SidebarMenuItem>
-    )
-  }
-
-  if (node.label === 'Loading...') {
-    return (
-      <SidebarMenuItem key={node.id}>
-        <div className='flex items-center gap-2 px-2 py-1.5 text-sm italic text-muted-foreground/60'>
+        <div className='flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground'>
           <span className='ml-4'>{node.label}</span>
         </div>
       </SidebarMenuItem>

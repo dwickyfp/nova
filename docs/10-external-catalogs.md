@@ -2,13 +2,17 @@
 
 > Manage external data source connections: Hive, Iceberg, Paimon, JDBC, Hudi, Delta Lake, Elasticsearch.
 
-> **Implementation status.** Nova ships **Iceberg and Hive** catalogs (NOVA-62)
-> and, since Nova Catalog phase 2, **PostgreSQL and MySQL** catalogs built from a
-> registered *connection* (see [Connections and foreign catalogs](#connections-and-foreign-catalogs-postgresql-mysql)).
-> Catalogs are created from Database Explorer (**Add catalog**) and connections
-> are managed on the **Connections** page (`/connections`). Delta Lake, Paimon,
-> Hudi, Elasticsearch, Unified, and the other JDBC sources are **not exposed**;
-> the tables below describe the engine's capabilities, not Nova's surface.
+> **Implementation status.** Nova creates catalogs from a registered
+> *connection* to one of three sources: **StarRocks** (another cluster),
+> **PostgreSQL**, and **Snowflake** (see [Connections and foreign catalogs](#connections-and-foreign-catalogs)).
+> The built-in engine is `default_catalog` and is registered at bootstrap.
+> Catalogs are added from Database Explorer (**Add catalog**) and connections
+> are managed on the **Connections** page (`/connections`). Iceberg, Hive, and
+> MySQL catalogs made earlier (or in raw SQL) are still synced, listed,
+> queried, altered, and dropped, but Nova no longer creates them. Delta Lake,
+> Paimon, Hudi, Elasticsearch, Unified, and the other JDBC sources are **not
+> exposed**; the tables below describe the engine's capabilities, not Nova's
+> surface.
 
 ---
 
@@ -72,7 +76,7 @@ grammar (`backend/app/sql_frontend/catalog_ddl.py`); the engine never sees them.
 
 | Action | Nova SQL |
 |--------|----------|
-| Register a source | `CREATE CONNECTION [IF NOT EXISTS] <name> TYPE = postgres\|mysql ENDPOINT = 'host[:port][/db]' SECRET = '<reference>' [COMMENT = '...']` |
+| Register a source | `CREATE CONNECTION [IF NOT EXISTS] <name> TYPE = starrocks\|postgres\|snowflake ENDPOINT = '<endpoint>' SECRET = '<reference>' [COMMENT = '...']` |
 | Remove a source | `DROP CONNECTION [IF EXISTS] <name>` (refused while a catalog uses it) |
 | List / describe | `SHOW CONNECTIONS`, `DESC[RIBE] CONNECTION <name>` |
 | Create a catalog | `CREATE FOREIGN CATALOG [IF NOT EXISTS] <name> USING CONNECTION <conn> [COMMENT '...'] [PROPERTIES ('jdbc_...' = '...')]` |
@@ -117,57 +121,43 @@ grammar (`backend/app/sql_frontend/catalog_ddl.py`); the engine never sees them.
 
 ## Catalog Manager UI
 
-Catalogs are listed and created in **Database Explorer**. Its **Add catalog**
-menu offers *From a connection* (PostgreSQL / MySQL), *Iceberg or Hive*, and
-*Manage connections*. The old `/external-catalogs` page redirects to
-`/connections`.
+Catalogs are listed and added in **Database Explorer**. **Add catalog** opens
+one dialog: pick StarRocks, PostgreSQL, or Snowflake, name the catalog, and
+either reuse a connection of that type or register a new one with its address
+and credentials (entered once, never shown again). The old
+`/external-catalogs` page redirects to `/connections`.
+
+A source catalog is a data provider: its databases show only **Tables**,
+**Views**, and **Materialized Views**. Stages, pipes, tasks, functions,
+entities, semantic views, and feature views are Nova's own objects and appear
+under Nova's catalog only. Each relation is placed by the kind its source
+reports (for Snowflake: table, transient, dynamic, Iceberg, external, hybrid,
+and event tables; views, secure views, materialized views), and its detail page
+shows its columns and a preview read through `catalog.schema.relation`.
 
 The **Connections** page lists each connection by name, type, credential status
 (stored in Nova, secret store, or missing), the catalogs built from it, and its
-owner. The address and credentials are entered once, when the connection is
-added or its credentials are replaced, and are never shown again. Creating a
-catalog from a connection asks only for the catalog name and the connection's
-name.
+owner.
 
 ```
 ┌─ Connections ──────────────────────────────────── [⟳] [+ Add connection] ┐
 │  Name         Type        Credentials      Catalogs   Owner          ⋯  │
-│  sales_pg     PostgreSQL  Stored in Nova   sales      nova_admin     ⋯  │
-│  crm_mysql    MySQL       Secret store     None       nova_admin     ⋯  │
+│  shop_pg      PostgreSQL  Stored in Nova   pg_shop    nova_admin     ⋯  │
+│  sales_sf     Snowflake   Stored in Nova   sf_sales   nova_admin     ⋯  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 Selecting a catalog in Database Explorer shows its engine `SHOW CREATE CATALOG`
 statement with all credential values redacted to `***`.
 
-### Create Catalog dialog (as implemented)
-
-```
-┌─ Create External Catalog ───────────────────────────────┐
-│                                                          │
-│  Name: [iceberg_lake                          ]         │
-│  Type: [Iceberg ▼]   Metastore: [Hive Metastore ▼]      │
-│                                                          │
-│  ── Metastore ──                                         │
-│  HMS URI / REST URI: [thrift://hms:9083       ]         │
-│                                                          │
-│  ── Storage ──                                           │
-│  Storage connection: [production              ]         │
-│  (secret lives in Nova config — never entered here)     │
-│                                                          │
-│  Comment: [Iceberg data lake                   ]         │
-│                                                          │
-│  [Cancel]  [Create]                                      │
-└──────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ## Implementation Notes
 
 - **Modules:** catalogs are owned by Nova Catalog, `backend/app/modules/catalog/`
-  (`/api/v1/catalog`, see `docs/03-catalog-explorer.md`). Per-type DDL lives in
-  `connectors.py` (`IcebergConnector`, `HiveConnector`, `connector_for`).
+  (`/api/v1/catalog`, see `docs/03-catalog-explorer.md`). Each source type is one
+  `CatalogSource` subclass in `sources/` (endpoint, JDBC catalog, metadata
+  reader); `connectors.py` builds `ALTER`/`DROP` for every catalog type.
   `backend/app/modules/external_catalogs/` keeps `/api/v1/external-catalogs` as
   an alias with the same response shape; it lists only external catalogs the
   caller can see.
@@ -200,7 +190,7 @@ statement with all credential values redacted to `***`.
 
 ---
 
-## Connections and foreign catalogs (PostgreSQL, MySQL)
+## Connections and foreign catalogs
 
 A **connection** (`NOVA_SYSTEM.CATALOG_CONNECTIONS`) records a source's type,
 host, port, database, non-secret driver options, owner, comment, and a
@@ -225,12 +215,28 @@ masks.
 
   A bare value such as `user:password` is refused as a reference, and an
   endpoint with `user@`, a URL scheme, or a credential option is refused.
-- **Drivers.** The FE and BE images carry the drivers in
-  `/opt/starrocks/drivers` (PostgreSQL 42.7.12; MariaDB Connector/J 3.3.2 for
-  MySQL, which 4.1.4 substitutes for a MySQL driver anyway). Nova sets
-  `driver_url` to that `file://` path; nothing is downloaded at create time. A
-  caller can only add `jdbc_*` tuning properties: `driver_url`, `driver_class`,
-  `jdbc_uri`, `user`, and `password` always come from Nova.
+- **Sources.** One `CatalogSource` subclass per type
+  (`backend/app/modules/catalog/sources/`), listed in `SOURCES`:
+
+  | Type | Endpoint | Credential | Driver |
+  |------|----------|------------|--------|
+  | `starrocks` | `host[:port]` (FE query port, default 9030) | user + password | MariaDB Connector/J 3.3.2 |
+  | `postgres` | `host[:port]/database[?sslmode=...]` | user + password | PostgreSQL 42.7.12 |
+  | `snowflake` | `account/DATABASE?warehouse=WH[&role=ROLE]` | user + programmatic access token | Snowflake JDBC 3.28.0 |
+
+  The FE and BE images carry the drivers in `/opt/starrocks/drivers`; Nova sets
+  `driver_url` to that `file://` path, so nothing is downloaded at create time.
+  A Snowflake catalog's URI adds `JDBC_QUERY_RESULT_FORMAT=JSON` and Nova's
+  `TIMEZONE`; its token travels as the JDBC `password`, which `SHOW CREATE
+  CATALOG` never prints. A caller can only add `jdbc_*` tuning properties:
+  `driver_url`, `driver_class`, `jdbc_uri`, `user`, and `password` always come
+  from Nova. To add a source, subclass `CatalogSource` and list it in `SOURCES`.
+- **Object kinds.** StarRocks reports every JDBC relation as a table, so each
+  catalog sync asks the source which relations are views and materialized
+  views: Postgres `pg_class.relkind`, Snowflake `SHOW TABLES/VIEWS/...` (no
+  warehouse needed), StarRocks `information_schema`. The sync resolves the
+  connection's credential for that read, keeps only kinds, and keeps the last
+  known kinds when the source cannot be reached.
 - **Grants.** `GRANT/REVOKE ... ON TABLE catalog.schema.table` compiles a Ranger
   policy for that catalog; a two-part name keeps `default_catalog`. A new
   catalog is open to nobody but `ACCOUNTADMIN` until a policy grants it: the
@@ -259,8 +265,8 @@ credentials flow like `@stage` credentials:
 1. **One resolver.** `resolve_storage_credentials()` (the same function `@stage`
    uses) resolves the access/secret keys from the named storage connection. Nova
    never invents a second credential mechanism, and a request can never supply a
-   secret — `ExternalCatalogCreate`/`Alter` reject any property whose name looks
-   like a credential.
+   secret — `ExternalCatalogAlter` and the foreign-catalog request reject any
+   property whose name looks like a credential.
 2. **Redaction is the guarantee, not the engine.** StarRocks 4.1.4 masks most
    secret keys in `SHOW CREATE CATALOG` itself, but a live probe on the pinned
    engine found it returns **`aws.s3.session_token`** and
@@ -274,5 +280,6 @@ credentials flow like `@stage` credentials:
    credentials, the audit row and the response never do.
 4. **JDBC catalogs** carry `user` and `password` properties. The password is
    redacted like the other credential properties (regression test:
-   `backend/tests/unit/test_catalog_connections.py`), and the connection
-   credential is resolved only inside the request that creates the catalog.
+   `backend/tests/unit/test_catalog_sources.py`), and the connection credential
+   is resolved only inside the request that creates the catalog and, for the
+   metadata read, inside the control-plane sync.

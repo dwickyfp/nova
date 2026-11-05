@@ -1,19 +1,21 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { page } from 'vitest/browser'
 import type { ConnectionSummary } from './api'
 import {
+  AddCatalogDialog,
   AddConnectionDialog,
-  CreateForeignCatalogDialog,
   DropConnectionDialog,
 } from './connection-dialogs'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const createConnection = vi.fn()
+const createForeignCatalog = vi.fn()
 vi.mock('./api', async (original) => ({
   ...(await original<typeof import('./api')>()),
   createConnection: (...args: unknown[]) => createConnection(...args),
+  createForeignCatalog: (...args: unknown[]) => createForeignCatalog(...args),
 }))
 
 const connection = (overrides: Partial<ConnectionSummary> = {}): ConnectionSummary => ({
@@ -29,12 +31,19 @@ const connection = (overrides: Partial<ConnectionSummary> = {}): ConnectionSumma
   ...overrides,
 })
 
-describe('connection dialogs', () => {
-  it('masks the password and submits it only with the new connection', async () => {
+beforeEach(() => {
+  createConnection.mockReset()
+  createForeignCatalog.mockReset()
+})
+
+describe('AddConnectionDialog', () => {
+  it('builds the endpoint from the address fields and masks the password', async () => {
     createConnection.mockResolvedValue(connection())
     await render(<AddConnectionDialog open onOpenChange={() => {}} />)
     await page.getByLabelText('Name', { exact: true }).fill('sales_pg')
-    await page.getByLabelText('Address').fill('db:5432/sales')
+    await page.getByLabelText('Host', { exact: true }).fill('db')
+    await page.getByLabelText('Port (optional)').fill('5433')
+    await page.getByLabelText('Database', { exact: true }).fill('sales')
     await page.getByLabelText('Username', { exact: true }).fill('reader')
     const password = page.getByLabelText('Password', { exact: true })
     await expect.element(password).toHaveAttribute('type', 'password')
@@ -43,10 +52,37 @@ describe('connection dialogs', () => {
     expect(createConnection).toHaveBeenCalledWith({
       name: 'sales_pg',
       connector_type: 'postgres',
-      endpoint: 'db:5432/sales',
+      endpoint: 'db:5433/sales',
       comment: undefined,
       credentials: { username: 'reader', password: 'pw' },
     })
+  })
+
+  it('asks Snowflake for its account, database, warehouse, and an access token', async () => {
+    createConnection.mockResolvedValue(connection({ connector_type: 'snowflake' }))
+    await render(<AddConnectionDialog open onOpenChange={() => {}} />)
+    await page.getByRole('radio', { name: 'Snowflake' }).click()
+    await page.getByLabelText('Name', { exact: true }).fill('sales_sf')
+    await page.getByLabelText('Account', { exact: true }).fill('ORG-ACCT')
+    await page.getByLabelText('Database', { exact: true }).fill('ANALYTICS')
+    await page.getByLabelText('Warehouse', { exact: true }).fill('WH')
+    await page.getByLabelText('Role (optional)').fill('READER')
+    await page.getByLabelText('User', { exact: true }).fill('NOVA_SVC')
+    await page.getByLabelText('Programmatic access token').fill('pat')
+    await page.getByRole('button', { name: 'Add connection' }).click()
+    expect(createConnection).toHaveBeenCalledWith(expect.objectContaining({
+      connector_type: 'snowflake',
+      endpoint: 'ORG-ACCT/ANALYTICS?warehouse=WH&role=READER',
+      credentials: { username: 'NOVA_SVC', password: 'pat' },
+    }))
+  })
+
+  it('offers exactly the three supported sources', async () => {
+    await render(<AddConnectionDialog open onOpenChange={() => {}} />)
+    for (const label of ['StarRocks', 'PostgreSQL', 'Snowflake']) {
+      await expect.element(page.getByRole('radio', { name: label })).toBeVisible()
+    }
+    await expect.element(page.getByRole('radio', { name: 'MySQL' })).not.toBeInTheDocument()
   })
 
   it('keeps Add disabled until the name is a valid identifier', async () => {
@@ -57,21 +93,70 @@ describe('connection dialogs', () => {
       .toBeVisible()
     await expect.element(page.getByRole('button', { name: 'Add connection' })).toBeDisabled()
   })
+})
 
-  it('offers only connections that have credentials', async () => {
+describe('AddCatalogDialog', () => {
+  it('registers a new connection, then the catalog over it', async () => {
+    createConnection.mockResolvedValue(connection({ name: 'shop_sr_conn', connector_type: 'starrocks' }))
+    createForeignCatalog.mockResolvedValue({ name: 'shop_sr' })
+    const onCreated = vi.fn()
     await render(
-      <CreateForeignCatalogDialog
+      <AddCatalogDialog open onOpenChange={() => {}} connections={[]} onCreated={onCreated} />
+    )
+    await page.getByRole('radio', { name: 'StarRocks' }).click()
+    await page.getByLabelText('Catalog name').fill('shop_sr')
+    await page.getByLabelText('FE host').fill('sr-fe')
+    await page.getByLabelText('Username', { exact: true }).fill('reader')
+    await page.getByLabelText('Password', { exact: true }).fill('pw')
+    await page.getByRole('button', { name: 'Add catalog' }).click()
+
+    expect(createConnection).toHaveBeenCalledWith({
+      name: 'shop_sr_conn',
+      connector_type: 'starrocks',
+      endpoint: 'sr-fe',
+      credentials: { username: 'reader', password: 'pw' },
+    })
+    expect(createForeignCatalog).toHaveBeenCalledWith({
+      name: 'shop_sr', connection: 'shop_sr_conn', comment: undefined,
+    })
+    expect(onCreated).toHaveBeenCalledWith('shop_sr')
+  })
+
+  it('reuses an existing connection of the chosen type without new credentials', async () => {
+    createForeignCatalog.mockResolvedValue({ name: 'pg_shop' })
+    await render(
+      <AddCatalogDialog
+        open
+        onOpenChange={() => {}}
+        connections={[connection({ name: 'shop_pg' })]}
+        initialConnection='shop_pg'
+      />
+    )
+    await page.getByLabelText('Catalog name').fill('pg_shop')
+    await expect.element(page.getByLabelText('Host', { exact: true })).not.toBeInTheDocument()
+    await page.getByRole('button', { name: 'Add catalog' }).click()
+    expect(createConnection).not.toHaveBeenCalled()
+    expect(createForeignCatalog).toHaveBeenCalledWith({
+      name: 'pg_shop', connection: 'shop_pg', comment: undefined,
+    })
+  })
+
+  it('never offers a connection without credentials', async () => {
+    await render(
+      <AddCatalogDialog
         open
         onOpenChange={() => {}}
         connections={[connection({ name: 'missing', has_credentials: false })]}
+        initialConnection='missing'
       />
     )
-    await expect
-      .element(page.getByText('No connection with credentials yet.', { exact: false }))
-      .toBeVisible()
-    await expect.element(page.getByRole('button', { name: 'Create catalog' })).toBeDisabled()
+    // Falls back to a new connection: the address fields are shown.
+    await expect.element(page.getByLabelText('Host', { exact: true })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: 'Add catalog' })).toBeDisabled()
   })
+})
 
+describe('DropConnectionDialog', () => {
   it('will not remove a connection that catalogs still use', async () => {
     await render(
       <DropConnectionDialog

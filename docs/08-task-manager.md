@@ -144,6 +144,8 @@ allows):
 | Rule | Detail |
 |---|---|
 | **Scope** | The task name is `database.schema.task`; `schema.task` uses the session database, `task` uses the session database/schema. A four-part name is rejected. |
+| **A database is required** | With no session database and no `database.schema.task` name, `CREATE TASK` is refused: an unscoped task could never run. |
+| **Unique names** | A task name is unique within its `database.schema`; creating it again is refused until `DROP TASK` removes it. |
 | **Order** | `AFTER`, `FINALIZE`, `WHEN`, `OVERLAP_POLICY`, `SCHEDULE` — any other order is rejected. |
 | **No duplicates** | Each clause appears at most once. |
 | **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE EVERY(INTERVAL …)` maps to `interval`. Invalid cron, zero interval, and unknown timezone are rejected before anything is stored. `SCHEDULE START(…) EVERY(…)` is rejected because Nova cannot honor its start time yet. |

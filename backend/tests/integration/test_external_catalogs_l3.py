@@ -1,9 +1,12 @@
 """L3 integration tests for external catalogs (NOVA-62) on StarRocks 4.1.4.
 
 These run against a **real** engine through the Nova API — not a mock — because
-the acceptance criterion is that the engine accepts the catalog DDL, lists the
-external table, and returns its rows, and that no credential leaks anywhere in
-the process.
+the acceptance criterion is that the engine lists the external table and
+returns its rows, and that no credential leaks anywhere in the process.
+
+Nova creates catalogs only from a connection now; the Iceberg catalog here is
+made in raw SQL (``tests/integration/_lakehouse.py``), as a DBA would, and the
+``/external-catalogs`` API lists, describes, alters, and drops it.
 
 The suite brings the engine up via ``docker-compose.test.yml`` by default; to
 point at an already-running stack::
@@ -31,6 +34,7 @@ import pytest
 import pytest_asyncio
 
 from tests.conftest import root_password, s3_credentials
+from tests.integration._lakehouse import iceberg_catalog_sql
 from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
     require_shared_stack,
@@ -52,7 +56,6 @@ MINIO_SECRET = s3_credentials()[1]
 BUCKET = "test-stage"
 
 #: Placeholders — never a real credential.
-ACCESS_SENTINEL = "AKIA_L3_SENTINEL_0001"
 SECRET_SENTINEL = "SECRET_L3_SENTINEL_0002"
 
 CATALOG_NAME = "nova_l3_iceberg"
@@ -260,112 +263,54 @@ async def namespace(engine):
                 client.delete_objects(Bucket=BUCKET, Delete={"Objects": keys})
 
 
-def _create_body(namespace: dict) -> dict:
-    warehouse = f"s3://{BUCKET}/{namespace['warehouse']}"
-    return {
-        "name": namespace["catalog"],
-        "type": "iceberg",
-        "metastore_type": "hms",
-        "metastore_uri": warehouse,
-        "storage_connection": "production",
-        "comment": "NOVA-62 L3 iceberg catalog",
-        # The hadoop catalog type reads its warehouse from a non-secret
-        # property; credentials come from the storage connection.
-        "properties": {
-            "iceberg.catalog.type": "hadoop",
-            "iceberg.catalog.warehouse": warehouse,
-        },
-    }
+async def _create_catalog(namespace: dict) -> None:
+    """The suite's Iceberg catalog, made in raw SQL as root."""
+    await _admin_execute(iceberg_catalog_sql(
+        namespace["catalog"], f"s3://{BUCKET}/{namespace['warehouse']}",
+        comment="NOVA-62 L3 iceberg catalog",
+    ))
 
 
-class TestCatalogCrudThroughApi:
-    async def test_create_list_get_alter_drop(self, admin_client, namespace):
+class TestCatalogApi:
+    async def test_list_get_alter_drop(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        body = _create_body(namespace)
+        await _create_catalog(namespace)
+        from app.modules.catalog import visibility
 
-        # CREATE
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 201, resp.text
-        created = resp.json()
-        assert created["name"] == catalog
-        assert created["type"] == "iceberg"
+        await visibility.bump()
 
-        # LIST
         resp = await admin_client.get("/api/v1/external-catalogs")
         assert resp.status_code == 200
-        names = [c["name"] for c in resp.json()["catalogs"]]
-        assert catalog in names
+        assert catalog in [c["name"] for c in resp.json()["catalogs"]]
 
-        # GET — create_statement is present and redacted
+        # GET: create_statement is present and redacted
         resp = await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
         assert resp.status_code == 200
         detail = resp.json()
         assert detail["create_statement"]
-        assert ACCESS_SENTINEL not in detail["create_statement"]
-        assert SECRET_SENTINEL not in detail["create_statement"]
+        assert MINIO_SECRET not in detail["create_statement"]
 
-        # ALTER — a benign, non-secret property change
+        # ALTER: a benign, non-secret property change
+        warehouse = f"s3://{BUCKET}/{namespace['warehouse']}"
         resp = await admin_client.patch(
             f"/api/v1/external-catalogs/{catalog}",
-            json={"properties": {"iceberg.catalog.warehouse": body["metastore_uri"]}},
+            json={"properties": {"iceberg.catalog.warehouse": warehouse}},
         )
         assert resp.status_code == 200, resp.text
 
-        # DROP
         resp = await admin_client.delete(f"/api/v1/external-catalogs/{catalog}")
         assert resp.status_code == 200, resp.text
 
-    async def test_duplicate_create_is_rejected(self, admin_client, namespace):
-        body = _create_body(namespace)
-        first = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert first.status_code == 201, first.text
-        second = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert second.status_code == 400
-
-    async def test_secret_property_in_request_is_rejected(self, admin_client, namespace):
-        body = _create_body(namespace)
-        body["properties"]["aws.s3.secret_key"] = SECRET_SENTINEL
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 422
-
-    @pytest.mark.parametrize(
-        "key",
-        [
-            # The dotted spellings a final-segment match accepted. None may be
-            # persisted, echoed in ``properties``, or reach the engine.
-            "aws.s3.secret.key",
-            "azure.account.key",
-            "gcp.gcs.private.key",
-            "gcp.gcs.service.account.key",
-            "aws.s3.session.token",
-            "hive.metastore.account.key",
-        ],
-    )
-    async def test_dotted_secret_property_is_rejected(self, admin_client, namespace, key):
-        catalog = namespace["catalog"]
-        body = _create_body(namespace)
-        body["properties"][key] = SECRET_SENTINEL
-
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 422, resp.text
-
-        # The credential was refused, not persisted and not echoed. The GET
-        # endpoint always synthesizes a response, so assert on the value: the
-        # sentinel must not appear anywhere in the payload.
-        resp = await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
-        assert SECRET_SENTINEL not in resp.text
-        assert key not in resp.text
-        rows = await _admin_execute(
-            "SELECT properties_json FROM NOVA_SYSTEM.CATALOG_CATALOGS "
-            f"WHERE name = '{catalog}'"
-        )
-        assert not rows, rows
-        assert SECRET_SENTINEL not in str(rows)
+    async def test_lakehouse_catalogs_are_not_created_through_nova(self, admin_client, namespace):
+        body = {"name": namespace["catalog"], "type": "iceberg", "metastore_uri": "thrift://h:1"}
+        assert (await admin_client.post("/api/v1/external-catalogs", json=body)).status_code == 405
+        assert (await admin_client.post("/api/v1/catalog/catalogs", json=body)).status_code == 405
+        rows = await _admin_execute("SHOW CATALOGS")
+        assert namespace["catalog"] not in str(rows)
 
     async def test_dotted_secret_alter_is_rejected(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
+        await _create_catalog(namespace)
 
         resp = await admin_client.patch(
             f"/api/v1/external-catalogs/{catalog}",
@@ -380,8 +325,7 @@ class TestCatalogCrudThroughApi:
 
 class TestExternalTableQuery:
     async def test_create_insert_select_through_engine(self, admin_client, namespace):
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
+        await _create_catalog(namespace)
 
         catalog, database, table = (
             namespace["catalog"],
@@ -400,9 +344,7 @@ class TestExternalTableQuery:
         assert [tuple(r) for r in (rows or [])] == [(1, "a"), (2, "b")], rows
 
     async def test_external_table_appears_in_catalog_tree(self, admin_client, namespace):
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
-
+        await _create_catalog(namespace)
         catalog, database, table = (
             namespace["catalog"],
             namespace["database"],
@@ -454,47 +396,17 @@ class TestNoCredentialLeak:
     async def test_show_create_returns_no_credential(self, admin_client, namespace):
         """The engine returns ``session_token``/``metastore.password`` in full;
         the API response must not."""
-        body = _create_body(namespace)
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 201, resp.text
+        await _create_catalog(namespace)
+        from app.modules.catalog import visibility
+
+        await visibility.bump()
 
         detail = (
             await admin_client.get(f"/api/v1/external-catalogs/{namespace['catalog']}")
         ).json()
         statement = detail.get("create_statement") or ""
 
-        # The real MinIO credentials from the test stack must not appear. They
-        # are the actual resolved values for the ``production`` connection.
+        # The real MinIO credentials from the test stack must not appear.
         assert MINIO_ACCESS not in statement
         assert MINIO_SECRET not in statement
         assert s3_credentials()[1] not in str(detail)
-
-    async def test_audit_row_statement_is_redacted(self, admin_client, namespace):
-        catalog = namespace["catalog"]
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
-
-        rows = await _admin_execute(
-            "SELECT rewritten_sql FROM NOVA_SYSTEM.AUDIT_LOG "
-            f"WHERE event_type = 'query' AND rewritten_sql LIKE '%{catalog}%' "
-            "ORDER BY event_time DESC LIMIT 5"
-        )
-        assert rows, "no audit row was written for the catalog DDL"
-        for (rewritten,) in rows:
-            assert MINIO_ACCESS not in (rewritten or "")
-            assert MINIO_SECRET not in (rewritten or "")
-
-    async def test_metadata_table_has_no_credential(self, admin_client, namespace):
-        catalog = namespace["catalog"]
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
-
-        rows = await _admin_execute(
-            "SELECT properties_json, metastore_uri, storage_connection "
-            "FROM NOVA_SYSTEM.CATALOG_CATALOGS "
-            f"WHERE name = '{catalog}'"
-        )
-        assert rows
-        flat = str(rows)
-        assert MINIO_ACCESS not in flat
-        assert MINIO_SECRET not in flat

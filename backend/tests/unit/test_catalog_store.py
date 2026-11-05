@@ -822,7 +822,6 @@ def test_catalog_routes_map_outcomes_to_status_codes(client, monkeypatch):
 
     svc = service.catalog_service
     monkeypatch.setattr(svc, "get_catalog", AsyncMock(return_value=_detail()))
-    monkeypatch.setattr(svc, "create", AsyncMock(return_value=_detail()))
     monkeypatch.setattr(svc, "alter", AsyncMock(return_value=None))
     monkeypatch.setattr(svc, "drop", AsyncMock(side_effect=service.CatalogError("denied")))
     monkeypatch.setattr(svc, "sync_runs", AsyncMock(return_value=[
@@ -837,7 +836,8 @@ def test_catalog_routes_map_outcomes_to_status_codes(client, monkeypatch):
     body = {"name": "lake", "type": "iceberg", "metastore_uri": "thrift://hms:9083"}
 
     assert client.get("/api/v1/catalog/catalogs/lake").json()["name"] == "lake"
-    assert client.post("/api/v1/catalog/catalogs", json=body).status_code == 201
+    # Catalogs are created from a connection (/catalog/foreign-catalogs) only.
+    assert client.post("/api/v1/catalog/catalogs", json=body).status_code == 405
     assert client.patch("/api/v1/catalog/catalogs/lake", json={"comment": "x"}).status_code == 404
     assert client.delete("/api/v1/catalog/catalogs/lake").status_code == 400
     assert client.get("/api/v1/catalog/catalogs/lake/sync-runs").json()["runs"][0]["id"] == "r1"
@@ -847,8 +847,8 @@ def test_catalog_routes_map_outcomes_to_status_codes(client, monkeypatch):
     assert columns.status_code == 404
     assert client.post("/api/v1/catalog/catalogs/lake/refresh").json() == {"runs": []}
     # A request can never carry a credential property.
-    bad = {**body, "properties": {"aws.s3.secret_key": "LEAK"}}
-    assert client.post("/api/v1/catalog/catalogs", json=bad).status_code == 422
+    bad = {"properties": {"aws.s3.secret_key": "LEAK"}}
+    assert client.patch("/api/v1/catalog/catalogs/lake", json=bad).status_code == 422
 
 
 def test_unlisted_objects_and_unknown_runs_are_404(client, monkeypatch):
@@ -857,3 +857,140 @@ def test_unlisted_objects_and_unknown_runs_are_404(client, monkeypatch):
     monkeypatch.setattr(svc, "list_objects", AsyncMock(return_value=None))
     assert client.get("/api/v1/catalog/catalogs/x/sync-runs").status_code == 404
     assert client.get("/api/v1/catalog/catalogs/x/databases/d/objects").status_code == 404
+
+
+# ── Source classification of foreign catalogs ───────────────────────────
+
+
+def _source_env(monkeypatch, *, kinds=None, error=None):
+    """A Postgres connection whose source reports ``kinds`` (or raises)."""
+    from app.modules.catalog import connections
+    from app.modules.catalog.sources import SOURCES, Credentials
+
+    calls: dict = {}
+
+    async def get(name):
+        calls["connection"] = name
+        return {"name": name, "connector_type": "postgres", "host": "pg", "port": 5432,
+                "database_name": "shop", "options": {}, "secret_ref": f"nova://{name}"}
+
+    async def resolve(connection):
+        return Credentials("reader", "pw")
+
+    async def read_objects(endpoint, credentials, databases):
+        calls["read"] = (endpoint.host, credentials.username, list(databases))
+        if error:
+            raise error
+        return kinds or {}
+
+    monkeypatch.setattr(connections.connection_repo, "get", get)
+    monkeypatch.setattr(connections.connection_service, "resolve_credentials", resolve)
+    monkeypatch.setattr(SOURCES["postgres"], "read_objects", read_objects)
+    return calls
+
+
+def _pg_catalog():
+    return {"name": "pg_shop", "catalog_type": "postgres", "kind": "foreign",
+            "properties": {"nova.connection": "shop_pg"}}
+
+
+def _pg_harvest():
+    return Harvest(["public"], [
+        Relation(database="public", name="orders", object_type="table", engine="JDBC"),
+        Relation(database="public", name="jakarta_orders", object_type="table", engine="JDBC"),
+    ])
+
+
+async def test_foreign_catalog_relations_get_their_kinds_from_the_source(monkeypatch):
+    from app.modules.catalog.sources import ObjectKind
+
+    calls = _source_env(monkeypatch, kinds={
+        ("public", "orders"): ObjectKind("table", "Partitioned table"),
+        ("public", "jakarta_orders"): ObjectKind("view", "View"),
+    })
+    repo = MemoryRepo([_pg_catalog()])
+    harvester = FakeHarvester(harvests={"pg_shop": _pg_harvest()})
+
+    await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    stored = {o["object_name"]: o for o in repo.objects.values() if o["object_name"]}
+    assert (stored["orders"]["object_type"], stored["orders"]["engine"]) == (
+        "table", "Partitioned table"
+    )
+    assert (stored["jakarta_orders"]["object_type"], stored["jakarta_orders"]["engine"]) == (
+        "view", "View"
+    )
+    assert calls == {"connection": "shop_pg", "read": ("pg", "reader", ["public"])}
+
+
+async def test_an_unreachable_source_keeps_the_kinds_of_the_last_sync(monkeypatch):
+    from app.modules.catalog.sources import ObjectKind
+
+    _source_env(monkeypatch, kinds={("public", "jakarta_orders"): ObjectKind("view", "View")})
+    repo = MemoryRepo([_pg_catalog()])
+    harvester = FakeHarvester(harvests={"pg_shop": _pg_harvest()})
+    await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    _source_env(monkeypatch, error=RuntimeError("password authentication failed: pw=SENTINEL"))
+    harvester.harvests["pg_shop"] = _pg_harvest()
+    run = await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    assert run["status"] == "ok"
+    view = repo.objects[row_id("pg_shop", "public", "jakarta_orders", "relation")]
+    assert (view["object_type"], view["engine"]) == ("view", "View")
+
+
+async def test_catalogs_without_a_connection_are_not_classified(monkeypatch):
+    calls = _source_env(monkeypatch)
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "iceberg"}])
+    harvester = FakeHarvester(harvests={"lake": Harvest(["sales"], [_orders()])})
+
+    await sync.sync_catalog("lake", repo=repo, harvester=harvester)
+
+    assert calls == {}
+    assert repo.objects[row_id("lake", "sales", "orders", "relation")]["object_type"] == "table"
+
+
+@pytest.mark.parametrize("stored", [
+    {},
+    # A row an earlier sync rewrote with the engine's type is healed.
+    {"catalog_type": "jdbc", "kind": "external"},
+])
+async def test_reconcile_keeps_a_foreign_catalogs_source_type(monkeypatch, stored):
+    """The engine reports every foreign catalog as ``jdbc``; the store keeps
+    ``postgres`` so the catalog is still presented and altered as its source."""
+    _source_env(monkeypatch)
+    repo = MemoryRepo([{**_pg_catalog(), **stored}])
+    harvester = FakeHarvester(
+        catalogs=[{"name": "pg_shop", "type": "Jdbc", "comment": None}],
+        harvests={"pg_shop": Harvest([], [])},
+    )
+
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+
+    stored = repo.catalogs["pg_shop"]
+    assert (stored["catalog_type"], stored["kind"]) == ("postgres", "foreign")
+
+
+async def test_reconcile_retypes_an_external_catalog_the_engine_changed():
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "hive", "kind": "external"}])
+    harvester = FakeHarvester(
+        catalogs=[{"name": "lake", "type": "Iceberg", "comment": None}],
+        harvests={"lake": Harvest([], [])},
+    )
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+    assert repo.catalogs["lake"]["catalog_type"] == "iceberg"
+
+
+async def test_a_sources_own_system_schemas_are_not_synced(monkeypatch):
+    _source_env(monkeypatch)
+    repo = MemoryRepo([_pg_catalog()])
+    harvester = FakeHarvester(harvests={"pg_shop": Harvest(
+        ["public", "pg_catalog", "information_schema"],
+        [Relation(database="public", name="orders", object_type="table"),
+         Relation(database="pg_catalog", name="pg_class", object_type="table")],
+    )})
+
+    await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    assert {o["database_name"] for o in repo.objects.values()} == {"public"}

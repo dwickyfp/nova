@@ -38,15 +38,14 @@ import {
   refreshCatalogMetadata,
   SECURITY_ADMIN_ROLES,
 } from '@/features/external-catalogs/api'
-import {
-  CreateCatalogDialog,
-  DropCatalogDialog,
-} from '@/features/external-catalogs/catalog-dialogs'
+import { DropCatalogDialog } from '@/features/external-catalogs/catalog-dialogs'
 import { fetchConnections } from '@/features/connections/api'
-import { CreateForeignCatalogDialog } from '@/features/connections/connection-dialogs'
+import { AddCatalogDialog } from '@/features/connections/connection-dialogs'
 import {
   buildCatalogTree,
   buildDatabaseChildren,
+  catalogObjectGroups,
+  qualifiedNameOf,
   collectMatchingAncestorIds,
   filterTree,
   findNodeById,
@@ -65,6 +64,12 @@ import type {
   TableDetailResponse,
   ViewDetailResponse,
 } from './types'
+
+/** An error's message for display, without the error class name. */
+function errorText(error: unknown): string | null {
+  if (!error) return null
+  return error instanceof Error ? error.message : String(error)
+}
 
 // ── Tree Node Component ───────────────────────────────────────
 
@@ -209,7 +214,7 @@ function ResizableExplorerSidebar({
             <Input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder='Search objects...'
+              placeholder='Filter tree'
               className='h-8 pl-8 text-sm'
             />
           </div>
@@ -352,14 +357,13 @@ export function DatabaseExplorerPage() {
     [catalogsData],
   )
 
-  const [createCatalogOpen, setCreateCatalogOpen] = useState(false)
-  const [foreignCatalogOpen, setForeignCatalogOpen] = useState(false)
-  // Connections are listed only for security admins; others see the
-  // dialog's own "no connection" hint.
-  const { data: connectionsData } = useQuery({
+  const [addCatalogOpen, setAddCatalogOpen] = useState(false)
+  // Connections are listed only for security admins, who manage them; anyone
+  // else adds a catalog with a new connection, and the server decides.
+  const { data: connectionsData, refetch: refetchConnections } = useQuery({
     queryKey: ['catalog-connections', securityEpoch],
     queryFn: fetchConnections,
-    enabled: foreignCatalogOpen && canRefreshMetadata,
+    enabled: addCatalogOpen && canRefreshMetadata,
     retry: false,
   })
   const [dropCatalogTarget, setDropCatalogTarget] = useState<{ name: string } | null>(null)
@@ -466,24 +470,38 @@ export function DatabaseExplorerPage() {
     const treeClone = JSON.parse(JSON.stringify(catalogTree)) as ExplorerNode[]
 
     // For each database node, if we have cached data, replace placeholder children
+    const groupsByCatalog = new Map(
+      (catalogsData?.catalogs ?? []).map((c) => [c.name, catalogObjectGroups(c)]),
+    )
     for (const cat of treeClone) {
       for (const dbNode of (cat.children ?? [])) {
         if (dbNode.database && dbNode.catalog) {
           const cached = dbCache.get(`${dbNode.catalog}/${dbNode.database}`)
           if (cached) {
-            dbNode.children = buildDatabaseChildren(cached, dbNode.catalog)
+            dbNode.children = buildDatabaseChildren(
+              cached,
+              dbNode.catalog,
+              groupsByCatalog.get(dbNode.catalog) ?? catalogObjectGroups(null),
+            )
           }
         }
       }
     }
     return treeClone
-  }, [catalogTree, dbCache])
+  }, [catalogTree, dbCache, catalogsData])
 
   // Fetch table detail when a table is selected
   const selectedNode = useMemo(() => findNodeById(tree, selectedId), [tree, selectedId])
   const tableQueryDb = selectedNode?.database
-  const tableQueryName = selectedNode?.type === 'table' ? selectedNode.label : null
   const tableQueryCatalog = selectedNode?.catalog ?? 'default_catalog'
+  // Nova's own views and materialized views have their own detail pages; a
+  // source catalog's are described like its tables (columns and a preview).
+  const selectedInNova = tableQueryCatalog === 'default_catalog'
+  const isRelation =
+    selectedNode?.type === 'table' ||
+    (!selectedInNova &&
+      (selectedNode?.type === 'view' || selectedNode?.type === 'materialized_view'))
+  const tableQueryName = isRelation ? selectedNode!.label : null
 
   const { data: tableDetail, isLoading: tableLoading, error: tableError } = useQuery<TableDetailResponse>({
     queryKey: ['explorer-table', securityEpoch, tableQueryCatalog, tableQueryDb, tableQueryName],
@@ -508,7 +526,8 @@ export function DatabaseExplorerPage() {
 
   // Fetch view detail when a view is selected
   const viewQueryDb = selectedNode?.database
-  const viewQueryName = selectedNode?.type === 'view' ? selectedNode.label : null
+  const viewQueryName =
+    selectedInNova && selectedNode?.type === 'view' ? selectedNode.label : null
 
   const { data: viewDetail, isLoading: viewLoading, error: viewError } = useQuery<ViewDetailResponse>({
     queryKey: ['explorer-view', securityEpoch, viewQueryDb, viewQueryName],
@@ -518,7 +537,8 @@ export function DatabaseExplorerPage() {
 
   // Fetch MV detail when a materialized view is selected
   const mvQueryDb = selectedNode?.database
-  const mvQueryName = selectedNode?.type === 'materialized_view' ? selectedNode.label : null
+  const mvQueryName =
+    selectedInNova && selectedNode?.type === 'materialized_view' ? selectedNode.label : null
 
   const { data: mvDetail, isLoading: mvLoading, error: mvError } = useQuery<MVDetailResponse>({
     queryKey: ['explorer-mv', securityEpoch, mvQueryDb, mvQueryName],
@@ -619,6 +639,16 @@ export function DatabaseExplorerPage() {
   }, [pendingTarget, dbCache, tree])
 
   const selectedPath = selectedNode?.path ?? []
+  const selectedQualifiedName = useMemo(() => qualifiedNameOf(selectedNode), [selectedNode])
+  const handleCopyPath = useCallback(async () => {
+    if (!selectedQualifiedName) return
+    try {
+      await navigator.clipboard.writeText(selectedQualifiedName)
+      toast.success(`Copied ${selectedQualifiedName}`)
+    } catch {
+      toast.error('Could not copy to the clipboard')
+    }
+  }, [selectedQualifiedName])
 
   return (
     <div data-layout='fixed' className='flex h-full min-h-0 flex-col'>
@@ -636,25 +666,15 @@ export function DatabaseExplorerPage() {
           <CatalogSearch onSelect={handleSearchSelect} />
         </div>
         <div className='ml-auto flex items-center gap-2'>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant='outline' size='sm' className='h-8'>
-                <Plus className='mr-1.5 h-3.5 w-3.5' />
-                Add catalog
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align='end'>
-              <DropdownMenuItem onClick={() => setForeignCatalogOpen(true)}>
-                From a connection
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setCreateCatalogOpen(true)}>
-                Iceberg or Hive
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to='/connections'>Manage connections</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-8'
+            onClick={() => setAddCatalogOpen(true)}
+          >
+            <Plus className='mr-1.5 h-3.5 w-3.5' />
+            Add catalog
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant='outline' size='icon' className='h-8 w-8' aria-label='Explorer actions'>
@@ -663,7 +683,12 @@ export function DatabaseExplorerPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end'>
               <DropdownMenuItem onClick={handleRefresh}>Refresh</DropdownMenuItem>
-              <DropdownMenuItem>Copy path</DropdownMenuItem>
+              <DropdownMenuItem disabled={!selectedQualifiedName} onClick={handleCopyPath}>
+                Copy qualified name
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to='/connections'>Manage connections</Link>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -729,41 +754,40 @@ export function DatabaseExplorerPage() {
             node={selectedNode}
             tableDetail={tableDetail}
             tableLoading={tableLoading}
-            tableError={tableError ? String(tableError) : null}
+            tableError={errorText(tableError)}
             pipeDetail={pipeDetail}
             pipeLoading={pipeLoading}
-            pipeError={pipeError ? String(pipeError) : null}
+            pipeError={errorText(pipeError)}
             viewDetail={viewDetail}
             viewLoading={viewLoading}
-            viewError={viewError ? String(viewError) : null}
+            viewError={errorText(viewError)}
             mvDetail={mvDetail}
             mvLoading={mvLoading}
-            mvError={mvError ? String(mvError) : null}
+            mvError={errorText(mvError)}
             fnDetail={fnDetail}
             fnLoading={fnLoading}
-            fnError={fnError ? String(fnError) : null}
+            fnError={errorText(fnError)}
             catalogsData={catalogsData}
             dbCache={dbCache}
             managedCatalogNames={managedCatalogNames}
-            onCreateCatalog={() => setCreateCatalogOpen(true)}
+            onCreateCatalog={() => setAddCatalogOpen(true)}
             onDropCatalog={(name) => setDropCatalogTarget({ name })}
+            onOpenNode={(id, expand) => {
+              setExpandedIds((current) => new Set([...current, ...expand]))
+              setSelectedId(id)
+            }}
             onRefreshMetadata={canRefreshMetadata ? handleRefreshMetadata : undefined}
             refreshingCatalog={refreshingCatalog}
           />
         </section>
       </div>
 
-      <CreateCatalogDialog
-        open={createCatalogOpen}
-        onOpenChange={setCreateCatalogOpen}
-        onCreated={handleCatalogChanged}
-      />
-
-      <CreateForeignCatalogDialog
-        open={foreignCatalogOpen}
-        onOpenChange={setForeignCatalogOpen}
+      <AddCatalogDialog
+        open={addCatalogOpen}
+        onOpenChange={setAddCatalogOpen}
         connections={connectionsData?.connections ?? []}
         onCreated={handleCatalogChanged}
+        onConnectionCreated={() => void refetchConnections()}
       />
 
       <DropCatalogDialog

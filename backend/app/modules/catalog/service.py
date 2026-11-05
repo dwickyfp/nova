@@ -37,7 +37,6 @@ from .schemas import (
     CatalogObject,
     CatalogSummary,
     ExternalCatalogAlter,
-    ExternalCatalogCreate,
     SyncRun,
 )
 from .sync import nova_now, reconcile_catalogs, sync_catalog
@@ -201,33 +200,6 @@ class CatalogService:
             await sync_catalog(name, trigger=trigger, repo=self.repo)
         except Exception:  # noqa: BLE001 - the next scheduled pass catches up
             log.warning("Catalog sync after %s of %s failed", trigger, name, exc_info=True)
-
-    async def create(self, body: ExternalCatalogCreate, user: dict) -> CatalogDetail | None:
-        existing = await self.repo.get_catalog(body.name)
-        if existing and existing.get("dropped_at") is None:
-            raise CatalogError(f"Catalog '{body.name}' already exists")
-        connector = connector_for(body.type.value)
-        await self._run_as_caller(connector.build_create_sql(body), user)
-        now = nova_now()
-        await self.repo.upsert_catalog(
-            {
-                "name": body.name,
-                "kind": "external",
-                "catalog_type": body.type.value,
-                "managed": True,
-                "source": "nova",
-                "metastore_type": body.metastore_type.value,
-                "metastore_uri": body.metastore_uri,
-                "storage_connection": body.storage_connection,
-                "comment": body.comment,
-                "properties": dict(body.properties),
-                "created_by": user["username"],
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-        await self._after_change(body.name, "create")
-        return await self.get_catalog(body.name, user)
 
     async def alter(
         self, name: str, body: ExternalCatalogAlter, user: dict

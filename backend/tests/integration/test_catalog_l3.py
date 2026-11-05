@@ -18,10 +18,10 @@ from __future__ import annotations
 import pytest
 
 from app.modules.catalog import visibility
-from app.modules.catalog.connectors import build_storage_credential_params, quote_literal
 from app.modules.catalog.sync import reconcile_catalogs, sync_catalog
 from tests.conftest import s3_credentials
 from tests.integration import test_external_catalogs_l3 as external_l3
+from tests.integration._lakehouse import iceberg_catalog_sql
 from tests.integration.test_external_catalogs_l3 import (
     BUCKET,
     L3_ADMIN_USER,
@@ -42,16 +42,9 @@ MINIO_ACCESS, MINIO_SECRET = s3_credentials()
 
 async def _create_raw_catalog(names: dict) -> None:
     """``CREATE EXTERNAL CATALOG`` as root, the way a DBA would outside Nova."""
-    params = {
-        "type": "iceberg",
-        "iceberg.catalog.type": "hadoop",
-        "iceberg.catalog.warehouse": f"s3://{BUCKET}/{names['warehouse']}",
-        **build_storage_credential_params("production"),
-    }
-    properties = ", ".join(
-        f"{quote_literal(key)} = {quote_literal(value)}" for key, value in params.items()
+    await _admin_execute(
+        iceberg_catalog_sql(names["catalog"], f"s3://{BUCKET}/{names['warehouse']}")
     )
-    await _admin_execute(f"CREATE EXTERNAL CATALOG {names['catalog']} PROPERTIES ({properties})")
 
 
 async def _store_rows(catalog: str) -> dict[str, list]:
