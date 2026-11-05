@@ -160,13 +160,17 @@ async def l3_admin_user(request):
     await _admin_execute(f"GRANT '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     await _admin_execute(f"SET DEFAULT ROLE '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     # Creating an external catalog is a SYSTEM-level privilege, distinct from
-    # ``ALL ON *.*`` (AGENTS.md §6), and ALTER/DROP are per-catalog grants that
-    # cannot be granted ON SYSTEM. Provisioning them on the suite's own account
-    # proves the delegate-first RBAC path rather than bypassing it.
+    # ``ALL ON *.*`` (AGENTS.md §6), and USAGE/ALTER/DROP are per-catalog grants
+    # that cannot be granted ON SYSTEM. USAGE is what lets the Explorer, which
+    # lists metadata on the caller's own session, show the catalog's databases.
+    # Provisioning them on the suite's own account proves the delegate-first
+    # RBAC path rather than bypassing it.
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO '{L3_ADMIN_USER}'")
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT ALTER, DROP ON CATALOG * TO '{L3_ADMIN_USER}'")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"GRANT USAGE ON ALL CATALOGS TO '{L3_ADMIN_USER}'")
 
     yield L3_ADMIN_USER
 
