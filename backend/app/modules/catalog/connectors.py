@@ -7,15 +7,20 @@ the named storage connection (``resolve_storage_credentials``, the same resolver
 one. A built statement carries real credentials and goes only to the engine.
 
 Phase 1 ships Iceberg and Hive (the GA types) plus the native internal catalog,
-which is synced but never created. JDBC sources join through the same
-``connector_for`` registry in a later phase.
+which is synced but never created. Phase 2 adds Postgres and MySQL as StarRocks
+JDBC catalogs built from a registered connection (:class:`JdbcConnector`): the
+connection's credentials are resolved after authorization and exist only in
+the statement sent to the engine.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Protocol
+from urllib.parse import parse_qsl, urlencode
 
+from app.common.sql_guard import is_credential_property
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.modules.query.dialect.injector import resolve_storage_credentials
 
@@ -43,6 +48,12 @@ def safe_catalog_name(name: str) -> str:
 def quote_literal(value: str) -> str:
     """Single-quote a SQL literal, escaping an embedded quote."""
     return "'" + value.replace("'", "''") + "'"
+
+
+def _engine_literal(value: str) -> str:
+    """A StarRocks string literal: the engine reads a backslash as an escape,
+    so a password holding one must have it doubled to arrive unchanged."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
 
 
 def _properties_clause(params: dict[str, str]) -> str:
@@ -158,9 +169,211 @@ class StarRocksNativeConnector:
         raise CatalogError("The internal catalog cannot be dropped")
 
 
+# ---------------------------------------------------------------------------
+# JDBC sources (phase 2)
+# ---------------------------------------------------------------------------
+
+#: Where the FE and BE images keep bundled JDBC drivers. StarRocks loads the
+#: driver from ``driver_url`` on both: the FE to read metadata, every BE to scan.
+#: A ``file://`` URL under this directory means no download at create time.
+JDBC_DRIVER_DIR = "/opt/starrocks/drivers"
+
+_HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.\-]{0,252}[A-Za-z0-9])?$")
+_DATABASE = re.compile(r"^[A-Za-z0-9_$][A-Za-z0-9_$.\-]{0,127}$")
+_OPTION_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.]{0,63}$")
+_OPTION_VALUE = re.compile(r"^[A-Za-z0-9_.:/\-]{0,256}$")
+
+#: Engine catalog properties a caller may add to a JDBC catalog. Everything
+#: that picks the driver, the endpoint, or the identity comes from Nova:
+#: accepting ``driver_url`` would let a caller make every FE and BE load an
+#: arbitrary jar.
+_JDBC_ALLOWED_PROPERTY = re.compile(
+    r"^jdbc_(meta_\w+|row_count_cache_\w+|connection_pool_size|minimum_idle_connections"
+    r"|connection_idle_timeout_ms)$"
+)
+
+
+@dataclass(frozen=True)
+class JdbcDriver:
+    """A JDBC driver bundled in the FE and BE images."""
+
+    jar: str
+    driver_class: str
+    scheme: str
+    default_port: int
+    database_required: bool
+
+    @property
+    def driver_url(self) -> str:
+        return f"file://{JDBC_DRIVER_DIR}/{self.jar}"
+
+
+#: The engine selects its schema resolver from the driver class name. MySQL uses
+#: the MariaDB driver: 4.1.4 swaps a ``mysql`` driver class for it anyway
+#: (``JDBCMetadata.getDriverName``), and naming it directly keeps the FE and the
+#: BE scanner on the same class and jar.
+JDBC_DRIVERS: dict[str, JdbcDriver] = {
+    "postgres": JdbcDriver(
+        "postgresql-42.7.12.jar", "org.postgresql.Driver", "postgresql", 5432, True
+    ),
+    "mysql": JdbcDriver(
+        "mariadb-java-client-3.3.2.jar", "org.mariadb.jdbc.Driver", "mariadb", 3306, False
+    ),
+}
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    """Where a connection points: no user, no password, ever."""
+
+    host: str
+    port: int
+    database: str | None = None
+    options: dict[str, str] = field(default_factory=dict)
+
+    def jdbc_uri(self, driver: JdbcDriver) -> str:
+        uri = f"jdbc:{driver.scheme}://{self.host}:{self.port}"
+        if self.database:
+            uri += f"/{self.database}"
+        if self.options:
+            uri += "?" + urlencode(sorted(self.options.items()))
+        return uri
+
+
+def validate_connector_type(value: str) -> str:
+    """The connector type for a connection (``postgres`` or ``mysql``)."""
+    connector_type = (value or "").strip().lower()
+    if connector_type == "postgresql":
+        connector_type = "postgres"
+    if connector_type not in JDBC_DRIVERS:
+        raise CatalogError(
+            f"Unsupported connection type {value!r}; expected one of "
+            + ", ".join(sorted(JDBC_DRIVERS))
+        )
+    return connector_type
+
+
+def parse_endpoint(connector_type: str, value: str) -> Endpoint:
+    """Parse ``host[:port][/database][?option=value&...]``.
+
+    An endpoint is metadata, so anything that could carry a credential is
+    refused: ``user@host``, a URL scheme, and a credential-named option.
+    """
+    driver = JDBC_DRIVERS[validate_connector_type(connector_type)]
+    text = (value or "").strip()
+    if not text or len(text) > 1024:
+        raise CatalogError("A connection endpoint is required (host[:port][/database])")
+    if "@" in text or "://" in text or any(ch.isspace() for ch in text):
+        raise CatalogError(
+            "A connection endpoint is host[:port][/database]; credentials and URL "
+            "schemes are not accepted"
+        )
+    text, _, query = text.partition("?")
+    address, _, database = text.partition("/")
+    host, _, port_text = address.partition(":")
+    if not _HOST.match(host):
+        raise CatalogError("The connection endpoint has an invalid host")
+    try:
+        port = int(port_text) if port_text else driver.default_port
+    except ValueError:
+        raise CatalogError("The connection endpoint has an invalid port") from None
+    if not 0 < port < 65536:
+        raise CatalogError("The connection endpoint has an invalid port")
+    if database and not _DATABASE.match(database):
+        raise CatalogError("The connection endpoint has an invalid database name")
+    if driver.database_required and not database:
+        raise CatalogError("A Postgres endpoint names its database: host:5432/database")
+    options: dict[str, str] = {}
+    for key, option in parse_qsl(query, keep_blank_values=True, strict_parsing=bool(query)):
+        if (
+            not _OPTION_KEY.match(key)
+            or not _OPTION_VALUE.match(option)
+            or is_credential_property(key)
+            or key.lower() in {"user", "username"}
+        ):
+            raise CatalogError(f"Connection option {key!r} is not accepted")
+        options[key] = option
+    return Endpoint(host, port, database or None, options)
+
+
+def check_jdbc_properties(properties: dict[str, str]) -> dict[str, str]:
+    """Refuse JDBC catalog properties that Nova owns or does not allow."""
+    for key in properties:
+        if is_credential_property(key) or not _JDBC_ALLOWED_PROPERTY.match(key):
+            raise CatalogError(
+                f"Property '{key}' cannot be set on a foreign catalog; the driver, "
+                "endpoint, and identity come from the connection"
+            )
+    return dict(properties)
+
+
+class JdbcConnector:
+    """A Postgres or MySQL source as a StarRocks JDBC catalog.
+
+    Created only from a registered connection (:meth:`build_foreign_catalog_sql`),
+    never from a free-form request, so the driver, endpoint, and identity always
+    come from Nova.
+    """
+
+    creatable = False
+
+    def __init__(self, catalog_type: str) -> None:
+        self.catalog_type = catalog_type
+
+    def build_foreign_catalog_sql(
+        self,
+        name: str,
+        *,
+        connector_type: str,
+        endpoint: Endpoint,
+        username: str,
+        password: str,
+        comment: str | None = None,
+        properties: dict[str, str] | None = None,
+    ) -> str:
+        """``CREATE EXTERNAL CATALOG`` for the engine. Carries the password."""
+        driver = JDBC_DRIVERS[validate_connector_type(connector_type)]
+        params: dict[str, str] = {
+            "type": "jdbc",
+            "user": username,
+            "password": password,
+            "jdbc_uri": endpoint.jdbc_uri(driver),
+            "driver_url": driver.driver_url,
+            "driver_class": driver.driver_class,
+        }
+        params.update(check_jdbc_properties(properties or {}))
+        clause = f"COMMENT {_engine_literal(comment)} " if comment else ""
+        values = ", ".join(
+            f"{_engine_literal(key)} = {_engine_literal(value)}" for key, value in params.items()
+        )
+        return f"CREATE EXTERNAL CATALOG {safe_catalog_name(name)} {clause}PROPERTIES ({values})"
+
+    def build_create_sql(self, body: ExternalCatalogCreate) -> str:
+        raise CatalogError("Create a JDBC catalog from a connection: CREATE FOREIGN CATALOG")
+
+    def build_alter_sql(self, name: str, body: ExternalCatalogAlter) -> str:
+        if body.metastore_uri:
+            raise CatalogError("A JDBC catalog has no metastore; change its connection")
+        params = check_jdbc_properties(body.properties)
+        if not params:
+            raise CatalogError("Nothing to alter: no properties supplied")
+        return f"ALTER CATALOG {safe_catalog_name(name)} SET ({_properties_clause(params)})"
+
+    def build_drop_sql(self, name: str) -> str:
+        return f"DROP CATALOG {safe_catalog_name(name)}"
+
+
 _CONNECTORS: dict[str, CatalogConnector] = {
     connector.catalog_type: connector
-    for connector in (IcebergConnector(), HiveConnector(), StarRocksNativeConnector())
+    for connector in (
+        IcebergConnector(),
+        HiveConnector(),
+        StarRocksNativeConnector(),
+        JdbcConnector("postgres"),
+        JdbcConnector("mysql"),
+        # A JDBC catalog made in raw SQL is recorded with the engine's type.
+        JdbcConnector("jdbc"),
+    )
 }
 
 

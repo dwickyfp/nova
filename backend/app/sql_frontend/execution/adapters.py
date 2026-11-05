@@ -33,6 +33,7 @@ from app.sql_frontend.execution.executor import ActionHandler, SQLExecutor
 from app.sql_frontend.execution.stages import StageRuntime
 from app.sql_frontend.parser import ParsedStatement
 from app.sql_frontend.planning.execution import (
+    CatalogPayload,
     EngineSqlPlan,
     ForecastPayload,
     MaterializePayload,
@@ -163,7 +164,126 @@ class FeatureAdapters:
         executor.register(MaterializePayload, self.materialize)
         executor.register(SecurityPayload, self.security)
         executor.register(StreamPayload, self.stream_unavailable)
+        executor.register(CatalogPayload, self.catalog)
         return executor
+
+    async def catalog(self, plan: NovaActionPlan, context: ExecutionContext) -> QueryResult:
+        """Run a Nova Catalog DDL statement through the catalog services.
+
+        The services authorize (security-admin role), audit, and resolve any
+        connection credential only after that check; this adapter only maps the
+        typed payload and shapes the result.
+        """
+        from app.modules.access_control.security_context import require_security_context
+        from app.modules.catalog.connections import connection_service
+
+        if not isinstance(plan.payload, CatalogPayload):
+            raise SemanticError("Catalog action requires a typed catalog payload")
+        payload = plan.payload
+        parsed = context.statements[payload.source_key].parsed
+        start = time.monotonic()
+        user = {
+            "username": context.username,
+            "encrypted_password": context.encrypted_password,
+            "connection": context.connection,
+            "session_id": context.session_id,
+            "active_role": context.role,
+            "security_context_version": context.security_context_version,
+            "security": require_security_context(
+                principal=context.username,
+                active_role=context.role,
+                database=context.database,
+                session_id=context.session_id,
+                security_context_version=context.security_context_version,
+            ),
+        }
+        columns: list[str] = ["Result"]
+        rows: list[list[Any]] = []
+        try:
+            operation = payload.operation
+            if operation == "create_connection":
+                await connection_service.create(
+                    name=payload.name,
+                    connector_type=payload.connector_type or "",
+                    endpoint=payload.endpoint or "",
+                    secret_ref=payload.secret_ref,
+                    comment=payload.comment,
+                    user=user,
+                    if_not_exists=payload.if_not_exists,
+                )
+                rows = [[f"Connection {payload.name} created"]]
+            elif operation == "drop_connection":
+                dropped = await connection_service.drop(
+                    payload.name, user, if_exists=payload.if_exists
+                )
+                rows = [[f"Connection {payload.name} " + ("dropped" if dropped else "not found")]]
+            elif operation in {"show_connections", "describe_connection"}:
+                if operation == "show_connections":
+                    found = await connection_service.list_connections(user)
+                else:
+                    one = await connection_service.describe(payload.name, user)
+                    if one is None:
+                        raise ValueError(f"Connection '{payload.name}' does not exist")
+                    found = [one]
+                columns = [
+                    "Name", "Type", "Credentials", "Catalogs", "Owner", "Comment", "Created",
+                ]
+                rows = [
+                    [
+                        item.name,
+                        item.connector_type,
+                        item.credential_source if item.has_credentials else "missing",
+                        ", ".join(item.catalogs),
+                        item.owner,
+                        item.comment,
+                        str(item.created_at) if item.created_at else None,
+                    ]
+                    for item in found
+                ]
+            elif operation == "create_foreign_catalog":
+                await connection_service.create_foreign_catalog(
+                    name=payload.name,
+                    connection=payload.connection or "",
+                    comment=payload.comment,
+                    properties=dict(payload.properties),
+                    user=user,
+                    if_not_exists=payload.if_not_exists,
+                )
+                rows = [[f"Catalog {payload.name} created"]]
+            elif operation == "refresh_catalog":
+                runs = await connection_service.refresh_catalog(
+                    payload.name, user, schema=payload.schema, relation=payload.relation
+                )
+                columns = ["Catalog", "Status", "Databases", "Relations", "Error"]
+                rows = [
+                    [
+                        run.catalog_name,
+                        run.status,
+                        run.counts.get("databases"),
+                        run.counts.get("relations"),
+                        run.error,
+                    ]
+                    for run in runs
+                ]
+            else:
+                raise SemanticError("Unsupported catalog operation")
+        except Exception as exc:
+            # The services audited the refusal or failure with its context.
+            message = _redact_error_message(str(exc))
+            return QueryResult(
+                error=message,
+                elapsed_ms=round((time.monotonic() - start) * 1000, 2),
+                original_sql=parsed.original_sql,
+                executed_sql=parsed.normalized_sql,
+            )
+        return QueryResult(
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            elapsed_ms=round((time.monotonic() - start) * 1000, 2),
+            original_sql=parsed.original_sql,
+            executed_sql=parsed.normalized_sql,
+        )
 
     async def stream_unavailable(self, plan, context) -> QueryResult:
         from app.modules.streams.runtime import require_stream_runtime

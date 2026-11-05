@@ -228,6 +228,10 @@ FOLLOWING: 'FOLLOWING';
 FOLLOWER: 'FOLLOWER';
 FOR: 'FOR';
 FORCE: 'FORCE';
+// NOVA-BEGIN (Nova Catalog phase 2): token for `CREATE FOREIGN CATALOG`. It must
+// also appear in `nonReserved` (StarRocks.g4) so a column named `foreign` parses.
+FOREIGN: 'FOREIGN';
+// NOVA-END
 FORMAT: 'FORMAT';
 FREE: 'FREE';
 FROM: 'FROM';

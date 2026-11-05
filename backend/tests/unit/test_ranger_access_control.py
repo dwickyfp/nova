@@ -682,3 +682,73 @@ async def test_accountadmin_mutations_rejected_before_ranger_or_engine(
             await getattr(service, operation)(security, role)
     assert not ranger.mock_calls
     execute.assert_not_awaited()
+
+
+def test_ranger_bootstrap_opens_no_catalog_to_every_role(monkeypatch, tmp_path) -> None:
+    """A new catalog (a Nova foreign catalog, say) must stay closed until a policy
+    grants it. Only Ranger's own ``all - *`` policies span every catalog, and the
+    bootstrap gives those to ``ACCOUNTADMIN`` alone; every policy it writes for
+    other roles names its catalog."""
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    bootstrap_path = Path(__file__).resolve().parents[3] / "docker" / "ranger" / "bootstrap.py"
+    service_def = tmp_path / "starrocks-service-def.json"
+    service_def.write_text(json.dumps({"name": "starrocks", "dataMaskDef": {"maskTypes": []}}))
+    monkeypatch.setenv("RANGER_PASSWORD", "unused")
+    real_path = Path
+
+    def fake_path(value, *args):
+        return service_def if value == "/starrocks-service-def.json" else real_path(value, *args)
+
+    monkeypatch.setattr("pathlib.Path", fake_path)
+    spec = importlib.util.spec_from_file_location("nova_ranger_bootstrap_catalogs", bootstrap_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    policies: list[dict] = [
+        {
+            "id": 1,
+            "service": module.SERVICE_NAME,
+            "name": "all - catalog, database, table, column",
+            "resources": {"catalog": {"values": ["*"]}},
+            "policyItems": [{"users": ["root"], "accesses": [{"type": "select"}]}],
+        }
+    ]
+
+    def fake_request(method, path, payload=None):
+        if path.startswith("/service/plugins/definitions"):
+            return 200, {"id": 1, "name": "starrocks"}
+        if path.startswith("/service/plugins/services"):
+            return 200, {"id": 1, "name": module.SERVICE_NAME}
+        if path == "/service/public/v2/api/policy" and method == "GET":
+            return 200, policies
+        if path.startswith("/service/public/v2/api/policy"):
+            policy = dict(payload)
+            policies[:] = [p for p in policies if p.get("id") != policy.get("id")]
+            policy.setdefault("id", len(policies) + 100)
+            policies.append(policy)
+            return 200, policy
+        return 200, []
+
+    monkeypatch.setattr(module, "request", fake_request)
+    module.main()
+
+    def roles(policy):
+        return {
+            role
+            for key in ("policyItems", "rowFilterPolicyItems", "dataMaskPolicyItems")
+            for item in policy.get(key, [])
+            for role in item.get("roles", [])
+        }
+
+    for policy in policies:
+        catalogs = policy.get("resources", {}).get("catalog", {}).get("values", [])
+        if "*" in catalogs:
+            assert roles(policy) <= {"ACCOUNTADMIN"}, policy["name"]
+            assert all(
+                "public" not in item.get("groups", []) for item in policy.get("policyItems", [])
+            )
+        elif roles(policy) - {"ACCOUNTADMIN"}:
+            assert catalogs and "*" not in catalogs, policy["name"]

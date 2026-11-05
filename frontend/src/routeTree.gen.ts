@@ -32,6 +32,7 @@ import { Route as AuthenticatedAgentsSkillsRouteImport } from './routes/_authent
 import { Route as AuthenticatedAgentsStudioRouteImport } from './routes/_authenticated/agents/studio'
 import { Route as AuthenticatedAgentsToolsRouteImport } from './routes/_authenticated/agents/tools'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
+import { Route as AuthenticatedConnectionsIndexRouteImport } from './routes/_authenticated/connections/index'
 import { Route as AuthenticatedExternalCatalogsIndexRouteImport } from './routes/_authenticated/external-catalogs/index'
 import { Route as AuthenticatedFunctionsIndexRouteImport } from './routes/_authenticated/functions/index'
 import { Route as AuthenticatedMlModelsIndexRouteImport } from './routes/_authenticated/ml-models/index'
@@ -184,6 +185,12 @@ const AuthenticatedAiProvidersIndexRoute =
   AuthenticatedAiProvidersIndexRouteImport.update({
     id: '/ai-providers/',
     path: '/ai-providers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedConnectionsIndexRoute =
+  AuthenticatedConnectionsIndexRouteImport.update({
+    id: '/connections/',
+    path: '/connections/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedExternalCatalogsIndexRoute =
@@ -376,6 +383,7 @@ export interface FileRoutesByFullPath {
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/connections/': typeof AuthenticatedConnectionsIndexRoute
   '/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
   '/functions/': typeof AuthenticatedFunctionsIndexRoute
   '/ml-models/': typeof AuthenticatedMlModelsIndexRoute
@@ -425,6 +433,7 @@ export interface FileRoutesByTo {
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/agents': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
+  '/connections': typeof AuthenticatedConnectionsIndexRoute
   '/external-catalogs': typeof AuthenticatedExternalCatalogsIndexRoute
   '/functions': typeof AuthenticatedFunctionsIndexRoute
   '/ml-models': typeof AuthenticatedMlModelsIndexRoute
@@ -477,6 +486,7 @@ export interface FileRoutesById {
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/_authenticated/connections/': typeof AuthenticatedConnectionsIndexRoute
   '/_authenticated/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
   '/_authenticated/functions/': typeof AuthenticatedFunctionsIndexRoute
   '/_authenticated/ml-models/': typeof AuthenticatedMlModelsIndexRoute
@@ -529,6 +539,7 @@ export interface FileRouteTypes {
     | '/users/$username'
     | '/agents/'
     | '/ai-providers/'
+    | '/connections/'
     | '/external-catalogs/'
     | '/functions/'
     | '/ml-models/'
@@ -578,6 +589,7 @@ export interface FileRouteTypes {
     | '/users/$username'
     | '/agents'
     | '/ai-providers'
+    | '/connections'
     | '/external-catalogs'
     | '/functions'
     | '/ml-models'
@@ -629,6 +641,7 @@ export interface FileRouteTypes {
     | '/_authenticated/users/$username'
     | '/_authenticated/agents/'
     | '/_authenticated/ai-providers/'
+    | '/_authenticated/connections/'
     | '/_authenticated/external-catalogs/'
     | '/_authenticated/functions/'
     | '/_authenticated/ml-models/'
@@ -811,6 +824,13 @@ declare module '@tanstack/react-router' {
       path: '/ai-providers'
       fullPath: '/ai-providers/'
       preLoaderRoute: typeof AuthenticatedAiProvidersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/connections/': {
+      id: '/_authenticated/connections/'
+      path: '/connections'
+      fullPath: '/connections/'
+      preLoaderRoute: typeof AuthenticatedConnectionsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/external-catalogs/': {
@@ -1055,6 +1075,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
   AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
   AuthenticatedAiProvidersIndexRoute: typeof AuthenticatedAiProvidersIndexRoute
+  AuthenticatedConnectionsIndexRoute: typeof AuthenticatedConnectionsIndexRoute
   AuthenticatedExternalCatalogsIndexRoute: typeof AuthenticatedExternalCatalogsIndexRoute
   AuthenticatedFunctionsIndexRoute: typeof AuthenticatedFunctionsIndexRoute
   AuthenticatedMlModelsIndexRoute: typeof AuthenticatedMlModelsIndexRoute
@@ -1096,6 +1117,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
   AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
   AuthenticatedAiProvidersIndexRoute: AuthenticatedAiProvidersIndexRoute,
+  AuthenticatedConnectionsIndexRoute: AuthenticatedConnectionsIndexRoute,
   AuthenticatedExternalCatalogsIndexRoute:
     AuthenticatedExternalCatalogsIndexRoute,
   AuthenticatedFunctionsIndexRoute: AuthenticatedFunctionsIndexRoute,

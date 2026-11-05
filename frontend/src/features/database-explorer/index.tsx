@@ -1,6 +1,7 @@
 import { Logo } from '@/assets/logo'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
   ChevronRight,
@@ -41,6 +42,8 @@ import {
   CreateCatalogDialog,
   DropCatalogDialog,
 } from '@/features/external-catalogs/catalog-dialogs'
+import { fetchConnections } from '@/features/connections/api'
+import { CreateForeignCatalogDialog } from '@/features/connections/connection-dialogs'
 import {
   buildCatalogTree,
   buildDatabaseChildren,
@@ -348,6 +351,15 @@ export function DatabaseExplorerPage() {
   )
 
   const [createCatalogOpen, setCreateCatalogOpen] = useState(false)
+  const [foreignCatalogOpen, setForeignCatalogOpen] = useState(false)
+  // Connections are listed only for security admins; others see the
+  // dialog's own "no connection" hint.
+  const { data: connectionsData } = useQuery({
+    queryKey: ['catalog-connections', securityEpoch],
+    queryFn: fetchConnections,
+    enabled: foreignCatalogOpen && canRefreshMetadata,
+    retry: false,
+  })
   const [dropCatalogTarget, setDropCatalogTarget] = useState<{ name: string } | null>(null)
 
   const handleCatalogChanged = useCallback(() => {
@@ -577,15 +589,25 @@ export function DatabaseExplorerPage() {
           </div>
         </div>
         <div className='ml-auto flex items-center gap-2'>
-          <Button
-            variant='outline'
-            size='sm'
-            className='h-8'
-            onClick={() => setCreateCatalogOpen(true)}
-          >
-            <Plus className='mr-1.5 h-3.5 w-3.5' />
-            Add catalog
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant='outline' size='sm' className='h-8'>
+                <Plus className='mr-1.5 h-3.5 w-3.5' />
+                Add catalog
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end'>
+              <DropdownMenuItem onClick={() => setForeignCatalogOpen(true)}>
+                From a connection
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCreateCatalogOpen(true)}>
+                Iceberg or Hive
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to='/connections'>Manage connections</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant='outline' size='icon' className='h-8 w-8' aria-label='Explorer actions'>
@@ -683,6 +705,13 @@ export function DatabaseExplorerPage() {
       <CreateCatalogDialog
         open={createCatalogOpen}
         onOpenChange={setCreateCatalogOpen}
+        onCreated={handleCatalogChanged}
+      />
+
+      <CreateForeignCatalogDialog
+        open={foreignCatalogOpen}
+        onOpenChange={setForeignCatalogOpen}
+        connections={connectionsData?.connections ?? []}
         onCreated={handleCatalogChanged}
       />
 

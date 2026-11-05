@@ -177,6 +177,11 @@ statement
     | showCatalogsStatement
     | showCreateExternalCatalogStatement
     | alterCatalogStatement
+    // NOVA-BEGIN (Nova Catalog phase 2): connections, foreign catalogs, and
+    // catalog refresh. Nova-only statements: the engine has no CONNECTION object
+    // and no `REFRESH CATALOG`; lowering turns them into Nova catalog actions.
+    | novaCatalogStatement
+    // NOVA-END
 
     // DML Statement
     | insertStatement
@@ -1151,6 +1156,37 @@ showCatalogsStatement
 alterCatalogStatement
     : ALTER CATALOG catalogName=identifierOrString modifyPropertiesClause
     ;
+// NOVA-BEGIN (Nova Catalog phase 2): the Nova Catalog DDL surface.
+//
+//   CREATE CONNECTION [IF NOT EXISTS] name
+//       TYPE = postgres ENDPOINT = 'host:5432/db' SECRET = '<reference>' [COMMENT = '...']
+//   DROP CONNECTION [IF EXISTS] name
+//   SHOW CONNECTIONS
+//   DESC | DESCRIBE CONNECTION name
+//   CREATE FOREIGN CATALOG [IF NOT EXISTS] name USING CONNECTION conn
+//       [COMMENT 'text'] [PROPERTIES ("key" = "value", ...)]
+//   REFRESH CATALOG name [SCHEMA s [TABLE t]]
+//
+// Connection clauses are `identifier = value` pairs rather than new keywords
+// (`ENDPOINT`, `SECRET`): the validator owns the accepted names, so the
+// grammar adds one token (`FOREIGN`) and no reserved word. A credential is
+// never a clause: `SECRET` names a reference, and the validator rejects
+// credential-named properties before anything is persisted.
+novaCatalogStatement
+    : CREATE CONNECTION (IF NOT EXISTS)? connectionName=identifier novaConnectionClause+  #novaCreateConnection
+    | DROP CONNECTION (IF EXISTS)? connectionName=identifier                                #novaDropConnection
+    | SHOW CONNECTIONS                                                                      #novaShowConnections
+    | (DESC | DESCRIBE) CONNECTION connectionName=identifier                                #novaDescribeConnection
+    | CREATE FOREIGN CATALOG (IF NOT EXISTS)? catalogName=identifier
+          USING CONNECTION connectionName=identifier comment? properties?                    #novaCreateForeignCatalog
+    | REFRESH CATALOG catalogName=identifier
+          (SCHEMA schemaName=identifier (TABLE relationName=identifier)?)?                      #novaRefreshCatalog
+    ;
+
+novaConnectionClause
+    : key=identifier EQ (string | identifier)
+    ;
+// NOVA-END
 
 // ---------------------------------------- Storage Volume Statement ---------------------------------------------------
 
@@ -2200,7 +2236,11 @@ authOption
     ;
 
 privObjectName
-    : identifierOrStringOrStar ('.' identifierOrStringOrStar)?
+    // NOVA-BEGIN (Nova Catalog phase 2): a grant object may name its catalog,
+    // `catalog.database.table`, so Ranger policies can target a foreign catalog.
+    // Nova decodes every grant itself; none is forwarded to the engine.
+    : identifierOrStringOrStar ('.' identifierOrStringOrStar)? ('.' identifierOrStringOrStar)?
+    // NOVA-END
     ;
 
 privObjectNameList
@@ -3736,6 +3776,9 @@ nonReserved
     | DATA | DATE | DATACACHE | DATETIME | DAY | DAYS | DECOMMISSION | DIALECT | DIGEST | DISABLE | DISK | DISTRIBUTION | DUPLICATE | DYNAMIC | DISTRIBUTED | DICTIONARY | DICTIONARY_GET | DEALLOCATE
     | ENABLE | END | ENGINE | ENGINES | ERRORS | EVENTS | EXECUTE | EXTERNAL | EXTRACT | EVERY | ENCLOSE | ESCAPE | EXPORT
     | FAILPOINT | FAILPOINTS | FIELDS | FILE | FILTER | FIRST | FLOOR | FOLLOWING | FORMAT | FN | FRONTEND | FRONTENDS | FOLLOWER | FREE
+    // NOVA-BEGIN (Nova Catalog phase 2): see the FOREIGN token note.
+    | FOREIGN
+    // NOVA-END
     // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.
     | FINALIZE
     // NOVA-END

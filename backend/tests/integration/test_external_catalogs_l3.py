@@ -412,22 +412,19 @@ class TestExternalTableQuery:
             f"CREATE TABLE {catalog}.{database}.{table} (id INT, name STRING) "
             "PROPERTIES ('write.format.default'='parquet')"
         )
+        tables_url = f"/api/v1/external-catalogs/{catalog}/databases/{database}/tables"
 
-        resp = await admin_client.get(
-            f"/api/v1/external-catalogs/{catalog}/databases/{database}/tables"
-        )
-        assert resp.status_code == 200, resp.text
-        assert table in [t["name"] for t in resp.json()]
-
-        # The explorer lists metadata on the caller's own session, so the engine
-        # decides what appears. With USAGE on the catalog but no privilege in
-        # the database, the catalog shows and the database does not.
+        # Both listings run on the caller's own session, so the engine decides
+        # what appears. With USAGE on the catalog but no privilege in the
+        # database, the catalog shows and the database does not.
         resp = await admin_client.get("/api/v1/explorer/catalogs")
         assert resp.status_code == 200
         catalogs = resp.json()["catalogs"]
         ext = next((c for c in catalogs if c["name"] == catalog), None)
         assert ext is not None, catalogs
         assert database not in ext["databases"]
+        resp = await admin_client.get(tables_url)
+        assert resp.status_code == 404, resp.text
 
         await _admin_execute_in_catalog(
             catalog,
@@ -440,6 +437,9 @@ class TestExternalTableQuery:
 
         await visibility.bump()
 
+        resp = await admin_client.get(tables_url)
+        assert resp.status_code == 200, resp.text
+        assert table in [t["name"] for t in resp.json()]
         resp = await admin_client.get("/api/v1/explorer/catalogs")
         assert resp.status_code == 200
         ext = next((c for c in resp.json()["catalogs"] if c["name"] == catalog), None)

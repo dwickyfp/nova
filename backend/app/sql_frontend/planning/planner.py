@@ -110,6 +110,7 @@ def default_registry() -> PlannerRegistry:
     registry.register(ast.SecurityStatement, SecurityPlanner(ActionKind.SECURITY))
     for node, action in {
         ast.StreamStatement: ActionKind.STREAM,
+        ast.CatalogStatement: ActionKind.CATALOG,
         ast.CreateTaskStatement: ActionKind.CREATE_TASK,
         ast.CreateMLModelStatement: ActionKind.CREATE_ML_MODEL,
         ast.MLPredictStatement: ActionKind.ML_PREDICT,
