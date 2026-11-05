@@ -488,7 +488,12 @@ services:
 
   # ── StarRocks BE (Backend — storage, compute) ────────────────────
   starrocks-be:
-    image: starrocks/be-ubuntu:4.1.4
+    # Upstream BE plus the bundled JDBC drivers for Nova Catalog connections.
+    build:
+      context: ..
+      dockerfile: docker/starrocks-be.Dockerfile
+      args:
+        STARROCKS_VERSION: 4.1.4
     container_name: nova-starrocks-be
     hostname: starrocks-be
     depends_on:
