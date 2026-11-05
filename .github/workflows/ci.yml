@@ -441,7 +441,6 @@ jobs:
     # job has neither the patch nor the fixtures. Playwright and the engine
     # both need 24.04 (see the frontend and L3 jobs).
     runs-on: ubuntu-24.04
-    needs: [frontend]
     timeout-minutes: 60
     env:
       E2E_TELEMETRY_DISABLED: "1"
