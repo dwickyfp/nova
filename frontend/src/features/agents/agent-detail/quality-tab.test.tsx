@@ -304,13 +304,21 @@ describe("Agent Quality", () => {
     await screen
       .getByRole("option", { name: "Require other mandatory cases" })
       .click();
-    await screen.getByLabelText("Maximum latency (ms)").fill("10");
-    await screen.getByLabelText("Maximum latency (ms)").fill("");
-    await screen.getByLabelText("Maximum tool calls").fill("1");
-    await screen.getByLabelText("Maximum tool calls").fill("");
-    await screen.getByLabelText("Maximum metadata reads").fill("5");
-    await screen.getByLabelText("Maximum metadata reads").fill("");
+    // Wait for each cleared field to read empty before the next step: on a
+    // slow runner the state from the first fill could still be pending when
+    // the evaluation was submitted.
+    for (const [label, value] of [
+      ["Maximum latency (ms)", "10"],
+      ["Maximum tool calls", "1"],
+      ["Maximum metadata reads", "5"],
+    ] as const) {
+      await screen.getByLabelText(label).fill(value);
+      await expect.element(screen.getByLabelText(label)).toHaveValue(Number(value));
+      await screen.getByLabelText(label).fill("");
+      await expect.element(screen.getByLabelText(label)).toHaveValue(null);
+    }
     await screen.getByLabelText("Maximum total tokens").fill("0");
+    await expect.element(screen.getByLabelText("Maximum total tokens")).toHaveValue(0);
     await screen.getByRole("button", { name: "Evaluate release" }).click();
     await vi.waitFor(() =>
       expect(
