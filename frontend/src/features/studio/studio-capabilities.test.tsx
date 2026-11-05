@@ -412,20 +412,23 @@ describe("Studio personal capabilities", () => {
   it("accepts 25 MB files and rejects files above the limit", async () => {
     await render(wrap(<SkillUpload onClose={vi.fn()} />));
     const contents = new Uint8Array(MAX_SKILL_BYTES + 1).fill(120);
-    await userEvent.upload(
-      page.getByLabelText("Upload SKILL.md"),
-      new File([contents], "SKILL.md"),
-    );
+    // Attach the 25 MB files in the page: userEvent.upload ships each one
+    // through the browser driver, which alone can exceed the test timeout.
+    const chooseFile = (file: File) => {
+      const input = page.getByLabelText("Upload SKILL.md").element() as HTMLInputElement;
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    chooseFile(new File([contents], "SKILL.md"));
     await expect
       .element(page.getByRole("alert"))
       .toHaveTextContent("25 MB or smaller");
     await expect
       .element(page.getByRole("button", { name: "Verify skill", exact: true }))
       .toBeDisabled();
-    await userEvent.upload(
-      page.getByLabelText("Upload SKILL.md"),
-      new File([contents.subarray(0, MAX_SKILL_BYTES)], "SKILL.md"),
-    );
+    chooseFile(new File([contents.subarray(0, MAX_SKILL_BYTES)], "SKILL.md"));
     await expect
       .element(page.getByRole("button", { name: "Verify skill", exact: true }))
       .toBeEnabled();

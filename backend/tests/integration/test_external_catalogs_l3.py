@@ -97,6 +97,22 @@ async def _admin_execute(sql: str):
     return None
 
 
+async def _admin_execute_in_catalog(catalog: str, *statements: str) -> None:
+    """Run statements as root after ``SET CATALOG`` on one session.
+
+    StarRocks grants database and table privileges of an external catalog in
+    that catalog's context, so the switch and the grants share a connection.
+    """
+    conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(f"SET CATALOG `{catalog}`")
+            for statement in statements:
+                await cur.execute(statement)
+    finally:
+        conn.close()
+
+
 def _minio_client():
     import boto3
 
@@ -160,13 +176,17 @@ async def l3_admin_user(request):
     await _admin_execute(f"GRANT '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     await _admin_execute(f"SET DEFAULT ROLE '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     # Creating an external catalog is a SYSTEM-level privilege, distinct from
-    # ``ALL ON *.*`` (AGENTS.md §6), and ALTER/DROP are per-catalog grants that
-    # cannot be granted ON SYSTEM. Provisioning them on the suite's own account
-    # proves the delegate-first RBAC path rather than bypassing it.
+    # ``ALL ON *.*`` (AGENTS.md §6), and USAGE/ALTER/DROP are per-catalog grants
+    # that cannot be granted ON SYSTEM. USAGE is what lets the Explorer, which
+    # lists metadata on the caller's own session, show the catalog's databases.
+    # Provisioning them on the suite's own account proves the delegate-first
+    # RBAC path rather than bypassing it.
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO '{L3_ADMIN_USER}'")
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT ALTER, DROP ON CATALOG * TO '{L3_ADMIN_USER}'")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"GRANT USAGE ON ALL CATALOGS TO '{L3_ADMIN_USER}'")
 
     yield L3_ADMIN_USER
 
@@ -397,13 +417,30 @@ class TestExternalTableQuery:
         assert resp.status_code == 200, resp.text
         assert table in [t["name"] for t in resp.json()]
 
-        # And through the explorer catalog tree endpoint.
+        # The explorer lists metadata on the caller's own session, so the engine
+        # decides what appears. With USAGE on the catalog but no privilege in
+        # the database, the catalog shows and the database does not.
         resp = await admin_client.get("/api/v1/explorer/catalogs")
         assert resp.status_code == 200
         catalogs = resp.json()["catalogs"]
         ext = next((c for c in catalogs if c["name"] == catalog), None)
         assert ext is not None, catalogs
+        assert database not in ext["databases"]
+
+        await _admin_execute_in_catalog(
+            catalog,
+            f"GRANT ALL ON DATABASE `{database}` TO '{L3_ADMIN_USER}'",
+            f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO '{L3_ADMIN_USER}'",
+        )
+
+        resp = await admin_client.get("/api/v1/explorer/catalogs")
+        assert resp.status_code == 200
+        ext = next((c for c in resp.json()["catalogs"] if c["name"] == catalog), None)
+        assert ext is not None
         assert database in ext["databases"]
+        resp = await admin_client.get(f"/api/v1/explorer/databases/{database}?catalog={catalog}")
+        assert resp.status_code == 200, resp.text
+        assert table in [t["name"] for t in resp.json()["tables"]]
 
 
 class TestNoCredentialLeak:
