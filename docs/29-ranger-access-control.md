@@ -175,6 +175,19 @@ Verify it against a clean upstream checkout:
 ./patches/starrocks/verify.sh
 ```
 
+Mask policies accept only the mask types that service definition declares:
+`MASK`, `MASK_HASH`, `MASK_NULL`, `MASK_NONE`, `MASK_DATE_SHOW_YEAR`, and
+`CUSTOM` (which requires a value expression). The API rejects any other type
+before calling Ranger, and the UI offers `MASK`, `MASK_HASH`, and `MASK_NULL`.
+The pinned definition writes the `MASK_HASH` transformer with an uppercase
+`{COL}` placeholder that Ranger does not substitute, so every query on a
+hash-masked column failed to parse. `docker/ranger/bootstrap.py` rewrites the
+placeholder to `{col}` before it registers the definition; rerun the bootstrap
+to correct an existing Ranger. A Ranger that Nova's bootstrap does not manage
+needs the same edit to its `starrocks` service definition. `MASK_HASH` returns
+the hex-encoded SHA-256 of the value cast back to the column type, so on a
+non-string column the masked value is `NULL`.
+
 Policy writes are recorded as `PROPAGATING` because Ranger acceptance does not
 prove that every FE has refreshed. Health reports pending rows and detected
 role drift. Reconciliation must move a policy to `ACTIVE` only after a plugin
