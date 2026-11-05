@@ -46,14 +46,26 @@ from app.modules.assistant.provider import (
 )
 
 PUBLIC_IP = "93.184.216.34"
-PRIVATE_ENDPOINTS = [
+# A model served on this machine or the private network is a supported
+# provider endpoint (Ollama, LM Studio, vLLM). Provider writes are admin-only.
+LOCAL_NETWORK_ENDPOINTS = [
     "http://127.0.0.1:8000/v1/chat/completions",
     "http://localhost:11434/v1/chat/completions",
-    "http://169.254.169.254/latest/meta-data",
     "http://10.0.0.5/v1/chat/completions",
     "http://192.168.1.10/v1/chat/completions",
     "http://[::1]:9000/v1/chat/completions",
 ]
+# Never reachable from a provider endpoint: the cloud metadata service and the
+# other link-local, unspecified, multicast and CGNAT ranges.
+BLOCKED_ENDPOINTS = [
+    "http://169.254.169.254/latest/meta-data",
+    "http://[::ffff:169.254.169.254]/latest/meta-data",
+    "http://[fe80::1]/v1/chat/completions",
+    "http://0.0.0.0:8000/v1/chat/completions",
+    "http://224.0.0.1/v1/chat/completions",
+    "http://100.64.0.1/v1/chat/completions",
+]
+PRIVATE_ENDPOINTS = LOCAL_NETWORK_ENDPOINTS + BLOCKED_ENDPOINTS
 
 
 def _public_dns(monkeypatch) -> None:
@@ -97,15 +109,15 @@ class _GuardedMock(_GuardedTransport):
         self._handler = handler
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        resolve_and_validate_url(str(request.url))
+        resolve_and_validate_url(str(request.url), allow_private_network=True)
         return await self._handler(request)
 
 
 # ── 1. assistant path: private targets are refused before any socket ────────
 
 
-@pytest.mark.parametrize("endpoint", PRIVATE_ENDPOINTS)
-async def test_assistant_refuses_private_endpoint_without_calling_out(endpoint, monkeypatch):
+@pytest.mark.parametrize("endpoint", BLOCKED_ENDPOINTS)
+async def test_assistant_refuses_blocked_endpoint_without_calling_out(endpoint, monkeypatch):
     called = False
 
     def tracking_client(*args, **kwargs):
@@ -123,6 +135,29 @@ async def test_assistant_refuses_private_endpoint_without_calling_out(endpoint, 
 
     assert called is False, "egress was attempted to a blocked endpoint"
     assert "not allowed" in str(exc.value)
+
+
+@pytest.mark.parametrize("endpoint", LOCAL_NETWORK_ENDPOINTS)
+async def test_assistant_calls_a_local_network_model(endpoint, monkeypatch):
+    requested: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(
+            200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+        )
+
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
+    )
+
+    client = AssistantProviderClient(timeout_seconds=1.0)
+    message = await client.complete(
+        messages=[{"role": "user", "content": "hi"}], provider=_config(endpoint)
+    )
+
+    assert message["content"] == "ok"
+    assert requested == [endpoint]
 
 
 async def test_assistant_blocked_message_does_not_leak_internal_detail():
@@ -200,12 +235,12 @@ async def test_assistant_retries_a_transient_dns_failure(monkeypatch):
     real_validate = resolve_and_validate_url
     validations = 0
 
-    def flaky_validate(url: str):
+    def flaky_validate(url: str, **kwargs):
         nonlocal validations
         validations += 1
         if validations == 1:
             raise BlockedEndpointError("Endpoint host could not be resolved", retryable=True)
-        return real_validate(url)
+        return real_validate(url, **kwargs)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -231,7 +266,7 @@ async def test_assistant_reports_persistent_dns_failure_accurately(monkeypatch):
     validations = 0
     client_constructed = False
 
-    def unresolved(_url: str):
+    def unresolved(_url: str, **kwargs):
         nonlocal validations
         validations += 1
         raise BlockedEndpointError("Endpoint host could not be resolved", retryable=True)
@@ -481,21 +516,32 @@ class TestProviderWriteRoutesRequireAdmin:
 
 
 class TestProviderEndpointValidatedAtStoreTime:
-    @pytest.mark.parametrize("endpoint", PRIVATE_ENDPOINTS)
-    def test_admin_private_endpoint_on_create_is_400(self, app, spy, endpoint):
+    @pytest.mark.parametrize("endpoint", BLOCKED_ENDPOINTS)
+    def test_admin_blocked_endpoint_on_create_is_400(self, app, spy, endpoint):
         with _as(app, ADMIN_USER) as client:
             resp = client.post(f"{PREFIX}/providers", json={**CREATE_BODY, "endpoint": endpoint})
         assert resp.status_code == 400, resp.text
         assert "not allowed" in resp.json()["detail"]
         assert spy.create_calls == [], "a private endpoint was persisted"
 
-    @pytest.mark.parametrize("endpoint", PRIVATE_ENDPOINTS)
-    def test_admin_private_endpoint_on_update_is_400(self, app, spy, endpoint):
+    @pytest.mark.parametrize("endpoint", BLOCKED_ENDPOINTS)
+    def test_admin_blocked_endpoint_on_update_is_400(self, app, spy, endpoint):
         with _as(app, ADMIN_USER) as client:
             resp = client.put(f"{PREFIX}/providers/p1", json={"endpoint": endpoint})
         assert resp.status_code == 400, resp.text
         assert "not allowed" in resp.json()["detail"]
         assert spy.update_calls == [], "a private endpoint was persisted"
+
+    @pytest.mark.parametrize("endpoint", LOCAL_NETWORK_ENDPOINTS)
+    def test_admin_can_store_a_local_network_endpoint(self, app, spy, endpoint):
+        with _as(app, ADMIN_USER) as client:
+            created = client.post(
+                f"{PREFIX}/providers", json={**CREATE_BODY, "endpoint": endpoint}
+            )
+            updated = client.put(f"{PREFIX}/providers/p1", json={"endpoint": endpoint})
+        assert created.status_code == 201, created.text
+        assert updated.status_code == 200, updated.text
+        assert spy.create_calls and spy.update_calls
 
     def test_error_does_not_leak_resolved_address(self, app, spy):
         with _as(app, ADMIN_USER) as client:
@@ -552,4 +598,9 @@ def test_guard_still_classifies_the_expected_ranges():
     for blocked in PRIVATE_ENDPOINTS:
         with pytest.raises(BlockedEndpointError):
             resolve_and_validate_url(blocked)
+    for blocked in BLOCKED_ENDPOINTS:
+        with pytest.raises(BlockedEndpointError):
+            resolve_and_validate_url(blocked, allow_private_network=True)
+    for local in LOCAL_NETWORK_ENDPOINTS:
+        resolve_and_validate_url(local, allow_private_network=True)
     assert ipaddress.ip_address(PUBLIC_IP).is_global

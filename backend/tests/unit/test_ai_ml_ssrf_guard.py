@@ -266,3 +266,133 @@ async def test_a_public_mock_endpoint_still_succeeds(monkeypatch):
     )
     assert result["success"] is True
     assert result["models"] == ["gpt-4o", "gpt-4o-mini"]
+
+
+# ── Local and private-network model servers ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:11434/v1",
+        "http://127.0.0.1:1234/v1",
+        "http://[::1]:9000/v1",
+        "http://10.0.0.5/v1",
+        "http://192.168.1.10:8000/v1",
+        "http://172.16.5.4/v1",
+        "http://[fc00::1]/v1",
+    ],
+)
+def test_private_network_mode_allows_local_model_servers(url):
+    assert resolve_and_validate_url(url, allow_private_network=True).addresses
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::ffff:169.254.169.254]/latest/meta-data",
+        "http://[fe80::1]/v1",
+        "http://0.0.0.0/v1",
+        "http://[::]/v1",
+        "http://224.0.0.1/v1",
+        "http://100.64.0.1/v1",
+        "http://240.0.0.1/v1",
+        "file:///etc/passwd",
+    ],
+)
+def test_private_network_mode_still_blocks_metadata_and_reserved(url):
+    with pytest.raises(BlockedEndpointError):
+        resolve_and_validate_url(url, allow_private_network=True)
+
+
+def test_private_network_mode_checks_every_resolved_address(monkeypatch):
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.65.254", port)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", port)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    with pytest.raises(BlockedEndpointError):
+        resolve_and_validate_url("http://host.docker.internal:11434/v1", allow_private_network=True)
+
+
+async def test_private_network_client_refuses_redirect_to_metadata(monkeypatch):
+    from app.common.ssrf_guard import _GuardedTransport
+
+    class MockGuarded(_GuardedTransport):
+        async def handle_async_request(self, request):
+            resolve_and_validate_url(
+                str(request.url), allow_private_network=self._allow_private_network
+            )
+            if request.url.host == "localhost":
+                return httpx.Response(302, headers={"location": "http://169.254.169.254/"})
+            return httpx.Response(200)
+
+    async with httpx.AsyncClient(
+        transport=MockGuarded(allow_private_network=True), follow_redirects=True
+    ) as client:
+        with pytest.raises(BlockedEndpointError):
+            await client.get("http://localhost:11434/v1/models")
+
+
+async def test_service_allows_a_local_endpoint_only_when_asked(monkeypatch):
+    from app.modules.ai_ml.service import AIService
+
+    seen: list[bool] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "llama3"}]})
+
+    def client_factory(*args, **kwargs):
+        seen.append(kwargs.get("allow_private_network", False))
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr("app.modules.ai_ml.service.guarded_async_client", client_factory)
+
+    refused = await AIService().test_connection(
+        provider_type="openai_compatible", endpoint="http://localhost:11434/v1", api_key=None
+    )
+    allowed = await AIService().test_connection(
+        provider_type="openai_compatible",
+        endpoint="http://localhost:11434/v1",
+        api_key=None,
+        allow_private_network=True,
+    )
+
+    assert refused["success"] is False and "not allowed" in refused["message"]
+    assert allowed["success"] is True and allowed["models"] == ["llama3"]
+    assert seen == [True]
+
+
+@pytest.mark.parametrize(
+    "roles,expected", [(["ACCOUNTADMIN"], True), (["ANALYST"], False), ([], False)]
+)
+def test_test_connection_route_allows_local_network_only_for_admins(
+    monkeypatch, roles, expected
+):
+    from unittest.mock import AsyncMock
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.core import deps
+    from app.modules.ai_ml import router as ai_router
+
+    probe = AsyncMock(return_value={"success": True, "message": "ok", "models": []})
+    monkeypatch.setattr(ai_router.ai_service, "test_connection", probe)
+    app = FastAPI()
+    app.include_router(ai_router.router, prefix="/api/v1/ai")
+
+    async def current_user():
+        return {"username": "u", "roles": roles}
+
+    app.dependency_overrides[deps.get_current_user] = current_user
+    resp = TestClient(app).post(
+        "/api/v1/ai/test-connection",
+        json={"type": "openai_compatible", "endpoint": "http://localhost:11434/v1"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert probe.await_args.kwargs["allow_private_network"] is expected

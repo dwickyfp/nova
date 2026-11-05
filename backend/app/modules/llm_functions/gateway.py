@@ -235,7 +235,9 @@ class LLMGateway:
         status, content = "error", None
         try:
             timeout = settings.LLM_GATEWAY_TIMEOUT_SECONDS
-            async with self._slots, guarded_async_client(timeout=timeout) as client:
+            async with self._slots, guarded_async_client(
+                timeout=timeout, allow_private_network=True
+            ) as client:
                 response = await client.post(
                     resolved.endpoint,
                     headers={"Authorization": f"Bearer {resolved.api_key}"},
