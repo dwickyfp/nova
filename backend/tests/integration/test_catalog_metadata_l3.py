@@ -33,7 +33,9 @@ from tests.integration.test_external_catalogs_l3 import _admin_execute
 
 pytestmark = pytest.mark.engine
 
+l3_admin_user = external_l3.l3_admin_user
 engine = external_l3.engine
+admin_client = external_l3.admin_client
 namespace = external_l3.namespace
 
 NATIVE = "default_catalog"
@@ -42,8 +44,6 @@ NATIVE = "default_catalog"
 #: Login answers that carry a usable session token.
 _SIGNED_IN = {"AUTHENTICATED", "SETUP_REQUIRED", "PASSWORD_CHANGE_REQUIRED"}
 
-#: A fixture user ``docker/init-nova.sql`` creates with the ``marketing`` role.
-BOB = ("bob", "NovaBob2026!")
 
 
 async def _login(client, username: str, password: str) -> dict:
@@ -182,7 +182,7 @@ class TestNativeTableMetadata:
 
 class TestIcebergColumnMetadata:
     async def test_iceberg_column_tag_is_governed_and_kept_after_a_drop(
-        self, client, namespace
+        self, admin_client, namespace
     ):
         catalog, database, table = namespace["catalog"], namespace["database"], namespace["table"]
         await catalog_l3._create_raw_catalog(namespace)
@@ -194,15 +194,11 @@ class TestIcebergColumnMetadata:
         try:
             await reconcile_catalogs(trigger="manual")
             await visibility.bump()
-            headers = await _nova_admin_headers(client)
-            bob = await _login(client, *BOB)
-            assert bob.get("status") in _SIGNED_IN and bob.get("access_token"), bob
-
-            # bob's role is neither a security admin nor granted ALTER in Ranger:
-            # the change is refused and the refusal audited.
-            refused = await client.put(
-                f"/api/v1/catalog/objects/{ip}/tags", json={"tags": [{"key": "pii"}]},
-                headers={"Authorization": f"Bearer {bob['access_token']}"},
+            headers = await _nova_admin_headers(admin_client)
+            # The suite's own admin role is neither a security admin nor granted
+            # ALTER in Ranger: the change is refused and the refusal audited.
+            refused = await admin_client.put(
+                f"/api/v1/catalog/objects/{ip}/tags", json={"tags": [{"key": "pii"}]}
             )
             assert refused.status_code in (403, 404), refused.text
             audit = await _admin_execute(
@@ -211,17 +207,17 @@ class TestIcebergColumnMetadata:
             )
             assert audit and audit[0][0] == "DENIED"
 
-            tagged = await client.put(
+            tagged = await admin_client.put(
                 f"/api/v1/catalog/objects/{ip}/tags",
                 json={"tags": [{"key": "pii", "value": "ip"}]}, headers=headers,
             )
             assert tagged.status_code == 200, tagged.text
             name = f"{catalog}.{database}.{table}.ip"
-            assert (await _search(client, headers, tag="pii=ip"))[name]["status"] == "live"
+            assert (await _search(admin_client, headers, tag="pii=ip"))[name]["status"] == "live"
 
             await _admin_execute(f"DROP TABLE {catalog}.{database}.{table} FORCE")
             assert (await sync_catalog(catalog, trigger="manual"))["status"] == "ok"
-            dropped = await _search(client, headers, tag="pii=ip", include_dropped="true")
+            dropped = await _search(admin_client, headers, tag="pii=ip", include_dropped="true")
             assert dropped[name]["status"] == "dropped"
             assert dropped[name]["tags"][0]["key"] == "pii"
             catalog_l3._assert_no_credential(dropped)
