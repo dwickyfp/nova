@@ -485,6 +485,19 @@ sungguhan.**
   utuh di `SHOW CREATE CATALOG`.
 - Belum: konektor Nova `snowflake`, panen `ACCOUNT_USAGE`, dan semantic view atau agen
   di atas tabel Snowflake. Ketiganya menunggu fase 2.
+- **Keputusan pemilik produk (2026-11-05): koneksi Snowflake harus bisa memakai key
+  pair maupun Programmatic Access Token (PAT).** Konektor menyimpan keduanya sebagai
+  kredensial terenkripsi, bukan di URI, dan tidak pernah membacanya kembali ke klien.
+  - **Key pair** (sudah terbukti di acceptance): `authenticator=SNOWFLAKE_JWT` dengan
+    private key PKCS#8, opsional terenkripsi passphrase. Driver hanya bisa membaca key
+    dari file (`private_key_file`), dan file itu harus ada di FE dan semua BE. Cara
+    mengirim file key ke sana masih harus dirancang.
+  - **PAT**: token dikirim lewat properti `password`, karena properti itu disembunyikan
+    oleh `SHOW CREATE CATALOG` sedangkan `jdbc_uri` tidak. Tokennya tidak boleh masuk
+    URI. PAT punya masa berlaku, jadi konektor perlu mendukung rotasi token dan
+    menampilkan tanggal kedaluwarsanya. Apakah engine pin bisa mengganti `password`
+    lewat `ALTER CATALOG` atau catalog harus dibuat ulang belum dicek.
+    Jalur ini belum diuji dengan akun sungguhan.
 
 - Patch FE `SnowflakeSchemaResolver` (§6.2) dengan prosedur di
   `patches/starrocks/AGENTS.md`, plus JAR driver Snowflake di image FE.
