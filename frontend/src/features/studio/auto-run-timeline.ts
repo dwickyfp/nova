@@ -75,6 +75,8 @@ export function autoRunSteps(
     const base = {
       id: `auto-${event.event_id}`,
       childRunId,
+      actor: childRunId ? name : undefined,
+      at: event.created_at,
       status: "done" as const,
     };
     switch (event.type) {
@@ -129,7 +131,7 @@ export function autoRunSteps(
         break;
       }
       case "agent_completed":
-        rows.push({ ...base, kind: childRunId ? "delegate" : "note", label: "completed", text: childRunId ? `${name} finished` : "Main finished the answer" });
+        rows.push({ ...base, kind: childRunId ? "delegate" : "note", label: "completed", text: childRunId ? `${name} finished` : "Main finished the answer", detail: childRunId ? string(payload.summary) || undefined : undefined });
         break;
       case "agent_failed":
       case "agent_cancelled":

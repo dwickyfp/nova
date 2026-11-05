@@ -439,6 +439,145 @@ input:-webkit-autofill:active {
   }
 }
 
+/* Studio run rail. Each step hangs off the rail on an elbow; the elbow draws
+   itself and the rail grows to the next row as steps arrive, so a live run
+   reads as work accumulating rather than lines swapping. The elbow into a live
+   row takes the primary colour. One curve for everything: the same
+   cubic-bezier(0.16, 1, 0.3, 1) the subagent panel opens with. */
+.nova-rail-item {
+  --rail-mid: 16px;
+  position: relative;
+  padding-left: 20px;
+  padding-bottom: 4px;
+  animation: nova-rail-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+@media (max-width: 39.99rem) {
+  .nova-rail-item[data-branch],
+  .nova-rail-item:has(> button) {
+    --rail-mid: 22px;
+  }
+}
+
+.nova-rail-item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: var(--rail-mid);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-bottom-left-radius: 8px;
+  transition: border-color 200ms ease-out;
+  animation: nova-rail-draw 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.nova-rail-item[data-live]::before {
+  border-color: var(--primary);
+}
+
+.nova-rail-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-left: 1px solid var(--border);
+  transform-origin: top;
+  animation: nova-rail-grow 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nova-rail-result {
+  animation: nova-rail-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes nova-rail-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nova-rail-draw {
+  0% {
+    clip-path: inset(0 calc(100% - 1px) 100% 0);
+  }
+  60% {
+    clip-path: inset(0 calc(100% - 1px) 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes nova-rail-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* The status mark fills and its check draws once, for a step the reader
+   watched finish. */
+.nova-mark-settle .nova-mark-disc {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: nova-mark-pop 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nova-mark-settle .nova-mark-ink {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: nova-mark-ink 240ms 80ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes nova-mark-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes nova-mark-ink {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The run is live: a ring leaves the dot, the way a signal reads as on air. */
+.nova-live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 1px solid var(--primary);
+  border-radius: 9999px;
+  animation: nova-live-ring 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes nova-live-ring {
+  from {
+    opacity: 0.7;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
 /* Studio chat — message entrance. Short and subtle: a new turn fades and rises
    a few pixels so the transcript reads as settling, not jumping. */
 .nova-chat-item {
@@ -589,8 +728,21 @@ input:-webkit-autofill:active {
   .nova-shimmer,
   .nova-chat-item,
   .nova-subagent-panel,
-  .nova-rail-body {
+  .nova-rail-body,
+  .nova-rail-item,
+  .nova-rail-item::before,
+  .nova-rail-item::after,
+  .nova-rail-result,
+  .nova-live-dot::after,
+  .nova-mark-settle .nova-mark-disc,
+  .nova-mark-settle .nova-mark-ink {
     animation: none;
+  }
+  .nova-mark-settle .nova-mark-ink {
+    stroke-dashoffset: 0;
+  }
+  .nova-rail-item::before {
+    transition: none;
   }
   .CollapsibleContent[data-state="open"],
   .CollapsibleContent[data-state="closed"] {
