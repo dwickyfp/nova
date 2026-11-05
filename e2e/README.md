@@ -84,5 +84,8 @@ The `e2e` job in `.github/workflows/ci.yml` builds the governed stack from
 `docker/docker-compose-engine.yml` with disposable credentials, serves the
 built frontend with `vite preview`, and runs Chromium, then Lightpanda. It
 reads the persona passwords from the seed so the two cannot drift apart.
+On a fresh stack it also runs `minio-init` (nothing depends on it, but it
+creates the buckets workspace files need) and completes `nova_admin`'s
+first-login setup with a throwaway password.
 The Studio test skips there: CI has no model provider or agent worker.
 Reports are uploaded as the `e2e-reports` artifact.

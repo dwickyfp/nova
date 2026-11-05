@@ -485,6 +485,9 @@ jobs:
         run: |
           $COMPOSE config --quiet
           $COMPOSE up -d --build --wait nova-backend
+          # Nothing depends on minio-init, but it creates the buckets and the
+          # service account the backend stores workspace files with.
+          $COMPOSE run --rm minio-init
           for attempt in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8000/ready >/dev/null && exit 0
             sleep 5
@@ -494,14 +497,31 @@ jobs:
 
       # The personas are the stack's own seed (docker/init-nova.sql): read the
       # passwords from it so the suite and the seed cannot drift apart.
-      - name: Expose the seeded persona passwords
+      - name: Expose the persona passwords and finish admin setup
         run: |
           seed=docker/init-nova.sql
           pick() { grep -oE "CREATE USER IF NOT EXISTS '$1' IDENTIFIED BY '[^']+'" "$seed" | sed "s/.*BY '//; s/'$//"; }
+          admin_seed="$(pick nova_admin)"
+          alice="$(pick alice)"
+          bob="$(pick bob)"
+          for value in "$admin_seed" "$alice" "$bob"; do echo "::add-mask::$value"; done
+          # A fresh stack makes nova_admin's first sign-in finish setup with a
+          # new password (SETUP_REQUIRED); do that here with a throwaway one.
+          admin="$admin_seed"
+          login="$(jq -n --arg u nova_admin --arg p "$admin_seed" '{username: $u, password: $p}' |
+            curl -fsS -H 'content-type: application/json' --data @- http://127.0.0.1:8000/api/v1/auth/login)"
+          if [ "$(jq -r .status <<<"$login")" = "SETUP_REQUIRED" ]; then
+            admin="CiN9$(openssl rand -hex 16)"
+            echo "::add-mask::$admin"
+            jq -n --arg p "$admin" '{new_password: $p, confirm_password: $p}' |
+              curl -fsS -H 'content-type: application/json' \
+                -H "Authorization: Bearer $(jq -r .access_token <<<"$login")" \
+                --data @- http://127.0.0.1:8000/api/v1/auth/setup >/dev/null
+          fi
           {
-            echo "NOVA_E2E_ADMIN_PASSWORD=$(pick nova_admin)"
-            echo "NOVA_E2E_ALICE_PASSWORD=$(pick alice)"
-            echo "NOVA_E2E_BOB_PASSWORD=$(pick bob)"
+            echo "NOVA_E2E_ADMIN_PASSWORD=$admin"
+            echo "NOVA_E2E_ALICE_PASSWORD=$alice"
+            echo "NOVA_E2E_BOB_PASSWORD=$bob"
           } >> "$GITHUB_ENV"
 
       - name: Build and serve the frontend
@@ -540,6 +560,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-reports
+          # The reports live in dot directories, which v4 skips by default.
+          include-hidden-files: true
           path: |
             e2e/.e2e
             e2e/.e2e-lightpanda
