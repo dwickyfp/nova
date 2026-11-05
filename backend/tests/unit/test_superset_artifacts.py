@@ -180,14 +180,22 @@ class FakeBi:
         self.columns = columns
         self.fail_chart = fail_chart
         self.stored_query_context = "{}"
+        self.drafts: list[dict] = []
+        self.fail_form_data = False
 
     async def nova_database_id(self) -> int:
         return 1
 
     async def request(self, method, path, *, body=None):
         self.calls.append((method, path, body))
+        if method == "GET" and path.startswith("/api/v1/dataset/?q="):
+            return {"result": self.drafts}
         if method == "POST" and path == "/api/v1/dataset/":
-            return {"id": 11}
+            return {"id": 41 if str(body.get("table_name", "")).startswith("nova_draft_") else 11}
+        if method == "POST" and path == "/api/v1/explore/form_data":
+            if self.fail_form_data:
+                raise BiError("explore refused", status=422)
+            return {"key": "Kx9_draft"}
         if method == "GET" and path.startswith("/api/v1/dataset/"):
             return {
                 "result": {
@@ -379,6 +387,17 @@ async def test_deleting_removes_superset_objects_best_effort(fake_bi):
     )
     assert fake_bi.paths("DELETE") == ["/api/v1/chart/21", "/api/v1/dataset/11"]
     fake_bi.calls.clear()
+    fake_bi.drafts = [{"id": 41, "table_name": "nova_draft_a1_1234abcd"}]
+    await bi.delete_bi_objects(
+        OWNER, {"artifact_id": "a1", "bi_kind": "chart", "bi_object_id": 21, "bi_dataset_id": 11}
+    )
+    assert fake_bi.paths("DELETE") == [
+        "/api/v1/chart/21",
+        "/api/v1/dataset/11",
+        "/api/v1/dataset/41",
+    ]
+    fake_bi.drafts = []
+    fake_bi.calls.clear()
     await bi.delete_bi_objects(OWNER, {"artifact_id": "legacy", "bi_kind": None})
     assert fake_bi.calls == []
 
@@ -490,3 +509,145 @@ def test_framed_paths_never_show_supersets_navigation_bar():
 
     assert bi_paths("chart", None) == (None, None)
     assert bi_paths(None, 3) == (None, None)
+
+
+# ── Category order ───────────────────────────────────────────────────────
+
+
+def test_a_query_order_reaches_the_axis_when_the_spec_names_none():
+    plan = ChartPlan(kind="bar", x="region", measures=[Measure(column="revenue")])
+    by_value = charts.with_sql_order(
+        plan, "SELECT region, SUM(x) AS revenue FROM t GROUP BY region ORDER BY revenue DESC"
+    )
+    assert by_value is not None and by_value.order == "value_desc"
+    by_aggregate = charts.with_sql_order(
+        plan, "SELECT region, revenue FROM t ORDER BY SUM(revenue) ASC"
+    )
+    assert by_aggregate is not None and by_aggregate.order == "value_asc"
+    by_category = charts.with_sql_order(
+        plan, "SELECT region, revenue FROM t ORDER BY `region` DESC"
+    )
+    assert by_category is not None and by_category.order == "x_desc"
+    # A nested query's order is not the result's; the last ORDER BY is.
+    unrelated = charts.with_sql_order(plan, "SELECT region, revenue FROM t ORDER BY other")
+    assert unrelated is not None and unrelated.order is None
+    assert charts.with_sql_order(plan, "SELECT region, revenue FROM t") == plan
+    named = plan.model_copy(update={"order": "x_asc"})
+    assert charts.with_sql_order(named, "SELECT 1 ORDER BY revenue DESC") == named
+    table = charts.table_plan(["a"])
+    assert charts.with_sql_order(table, "SELECT a FROM t ORDER BY a") == table
+    assert charts.with_sql_order(None, "SELECT 1") is None
+
+
+@pytest.mark.parametrize(
+    ("sort", "order"),
+    [
+        ("-y", "value_desc"),
+        ("y", "value_asc"),
+        ("descending", "x_desc"),
+        ("ascending", "x_asc"),
+        ({"field": "revenue", "order": "descending"}, "value_desc"),
+        ({"field": "region", "order": "ascending"}, "x_asc"),
+        (None, None),
+    ],
+)
+def test_vega_sort_becomes_the_axis_order(sort, order):
+    spec = {
+        "mark": "bar",
+        "encoding": {
+            "x": {"field": "region", "type": "nominal", "sort": sort},
+            "y": {"field": "revenue", "type": "quantitative"},
+        },
+    }
+    assert charts.plan_from_vega(spec).order == order
+
+
+def test_axis_order_sorts_categories_but_never_time():
+    plan = ChartPlan(
+        kind="line", x="region", measures=[Measure(column="revenue")], order="value_desc"
+    )
+    _viz, form, _query = charts.to_superset(
+        plan, dataset_id=5, columns=["region", "revenue"], temporal=set()
+    )
+    assert form["x_axis_sort"] == "SUM(revenue)" and form["x_axis_sort_asc"] is False
+    by_name = plan.model_copy(update={"order": "x_asc"})
+    _viz, form, _query = charts.to_superset(
+        by_name, dataset_id=5, columns=["region", "revenue"], temporal=set()
+    )
+    assert form["x_axis_sort"] == "region" and form["x_axis_sort_asc"] is True
+    over_time = plan.model_copy(update={"x": "day"})
+    _viz, form, _query = charts.to_superset(
+        over_time, dataset_id=5, columns=["day", "revenue"], temporal={"day"}
+    )
+    assert "x_axis_sort" not in form and form["x_axis_sort_asc"] is True
+
+
+# ── Drafts drawn by Superset ─────────────────────────────────────────────
+
+ARTIFACT = {
+    "artifact_id": "a1",
+    "title": "Revenue by region",
+    "bi_dataset_id": 11,
+    "bi_object_id": 21,
+    "sql_text": "SELECT region, total FROM t",
+    "schema_name": "sales",
+}
+
+
+async def test_a_draft_over_the_same_query_is_drawn_on_the_charts_own_dataset(fake_bi):
+    plan = ChartPlan(kind="line", x="region", measures=[Measure(column="total")])
+    path = await bi.preview_chart_draft(
+        OWNER, ARTIFACT, sql_text="SELECT region,  total FROM t;", plan=plan
+    )
+    assert path == "/bi/explore/?form_data_key=Kx9_draft&standalone=1"
+    assert "/api/v1/dataset/" not in fake_bi.paths("POST")
+    stored = next(body for verb, p, body in fake_bi.calls if p == "/api/v1/explore/form_data")
+    assert stored["datasource_id"] == 11 and stored["datasource_type"] == "table"
+    assert json.loads(stored["form_data"])["viz_type"] == "echarts_timeseries_line"
+    # Drawn through the chart data API before Superset shows it.
+    assert "/api/v1/chart/data" in fake_bi.paths("POST")
+
+
+async def test_a_draft_with_new_sql_gets_its_own_dataset_and_replaces_older_drafts(fake_bi):
+    fake_bi.drafts = [
+        {"id": 40, "table_name": "nova_draft_a1_00000000"},
+        {"id": 99, "table_name": "someone_elses_dataset"},
+    ]
+    await bi.preview_chart_draft(
+        OWNER, ARTIFACT, sql_text="SELECT region, total FROM t ORDER BY total DESC", plan=None
+    )
+    created = next(
+        body for verb, p, body in fake_bi.calls if verb == "POST" and p == "/api/v1/dataset/"
+    )
+    assert created["table_name"].startswith("nova_draft_a1_")
+    assert created["sql"].endswith("ORDER BY total DESC") and created["schema"] == "sales"
+    assert fake_bi.paths("DELETE") == ["/api/v1/dataset/40"]
+    stored = next(body for verb, p, body in fake_bi.calls if p == "/api/v1/explore/form_data")
+    assert stored["datasource_id"] == 41
+
+
+async def test_a_draft_bi_refuses_leaves_no_dataset_behind(fake_bi):
+    fake_bi.fail_form_data = True
+    with pytest.raises(BiError):
+        await bi.preview_chart_draft(OWNER, ARTIFACT, sql_text="SELECT region FROM t", plan=None)
+    assert fake_bi.paths("DELETE") == ["/api/v1/dataset/41"]
+
+
+async def test_a_draft_refuses_write_sql_before_superset(fake_bi):
+    with pytest.raises(ValueError):
+        await bi.preview_chart_draft(OWNER, ARTIFACT, sql_text="DELETE FROM t", plan=None)
+    assert fake_bi.calls == []
+
+
+async def test_applying_or_discarding_removes_the_drafts(fake_bi, monkeypatch):
+    monkeypatch.setattr(
+        bi.artifact_repository, "update_bi_source", AsyncMock(return_value={"artifact_id": "a1"})
+    )
+    fake_bi.drafts = [{"id": 40, "table_name": "nova_draft_a1_00000000"}]
+    await bi.update_chart_source(
+        OWNER, ARTIFACT, sql_text="SELECT region FROM t", plan=None, expected_updated_at="x"
+    )
+    assert "/api/v1/dataset/40" in fake_bi.paths("DELETE")
+    fake_bi.calls.clear()
+    await bi.discard_chart_drafts(OWNER, ARTIFACT)
+    assert fake_bi.paths("DELETE") == ["/api/v1/dataset/40"]

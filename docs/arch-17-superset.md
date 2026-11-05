@@ -378,6 +378,22 @@ viewer's own BI session and leaves the bar when it cannot tell.
 Dashboard cards in the artifact list show Superset's thumbnail, drawn for the
 viewer's session (S9), and say "Preparing preview" while Superset computes it.
 
+**Editing by prompt.** A proposed edit to a BI chart comes back with a
+`preview_path`: Superset's own Explore view of the draft, stored as Explore
+form data (a key, never credentials) over the chart's dataset when the query is
+unchanged, or over a draft dataset owned by the caller (`nova_draft_<artifact>_…`)
+when it changes. The draft opens in the chart's own frame with an **Unsaved**
+bar (Discard, Apply changes); the header keeps its actions, disabled, so
+nothing moves. While Nova works, the chart rests dimmed and a status line names
+the instruction. A new path or version loads under the view already shown and
+replaces it once Superset has drawn it, so a draft, an apply or a discard never
+passes through an empty frame. Applying, discarding (`DELETE
+/studio/artifacts/{id}/draft`), a newer draft and deleting the artifact remove
+the draft datasets. When Superset cannot draw the draft, it is reviewed from its
+rows and still applied through Superset. An axis chart that names no category
+order takes its query's `ORDER BY` (`with_sql_order`), and a Vega-Lite `sort`
+becomes Superset's `x_axis_sort`; a time axis always runs in time order.
+
 Because Superset is same-origin, Nova reads the framed location directly (to
 keep `/analytics?path=` in step) and sets the theme through shared storage; no
 postMessage bridge is needed. The panel owns the frame's size. Filter hand-off

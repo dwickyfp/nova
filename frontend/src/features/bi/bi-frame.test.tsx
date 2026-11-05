@@ -71,6 +71,42 @@ describe("BiFrame", () => {
     expect(stillDrawing(blocked)).toBe(false);
   });
 
+  it("swaps to a new version under the shown view, never through an empty frame", async () => {
+    mocks.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaAuthor" });
+    const queries = client();
+    const screen = await render(
+      <QueryClientProvider client={queries}>
+        <BiFrame path="/bi/explore/?slice_id=1&standalone=1" version="v1" title="Chart" />
+      </QueryClientProvider>,
+    );
+    const first = page.getByTitle("Chart");
+    await expect.element(first).toHaveAttribute("src", "/bi/explore/?slice_id=1&standalone=1");
+    first.element().dispatchEvent(new Event("load"));
+    await expect.element(first).toHaveClass("opacity-100");
+
+    await screen.rerender(
+      <QueryClientProvider client={queries}>
+        <BiFrame path="/bi/explore/?form_data_key=K1&standalone=1" version="v1" title="Chart" />
+      </QueryClientProvider>,
+    );
+    // The new view loads under the old one, which stays on screen, dimmed,
+    // and leaves the accessibility tree; Nova's full loading state does not
+    // come back.
+    const frames = () => [...document.querySelectorAll("iframe")];
+    expect(frames()).toHaveLength(2);
+    const [old, next] = frames();
+    expect(old.getAttribute("aria-hidden")).toBe("true");
+    expect(old.className).toContain("opacity-50");
+    expect(next.getAttribute("title")).toBe("Chart");
+    await expect.element(page.getByRole("status")).toHaveTextContent("Updating");
+
+    next.dispatchEvent(new Event("load"));
+    await expect.poll(() => frames().length).toBe(1);
+    expect(frames()[0].getAttribute("src")).toBe("/bi/explore/?form_data_key=K1&standalone=1");
+    expect(frames()[0].className).toContain("opacity-100");
+    await expect.element(page.getByRole("status")).not.toBeInTheDocument();
+  });
+
   it("opens one BI session for every frame on the page", async () => {
     mocks.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaViewer" });
     render(

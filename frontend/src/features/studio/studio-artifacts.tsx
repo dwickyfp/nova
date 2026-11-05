@@ -122,6 +122,8 @@ function ArtifactDetail({
     enabled: isDashboard && Boolean(meta.data?.legacy),
   });
   const [chatBusy, setChatBusy] = useState(false);
+  // The instruction Nova is working on, shown until its draft arrives.
+  const [pendingInstruction, setPendingInstruction] = useState<string | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
   const [editNotice, setEditNotice] = useState<string | null>(null);
   const displayedData =
@@ -129,6 +131,8 @@ function ArtifactDetail({
       ? {
           ...detail.data,
           artifact: { ...detail.data.artifact, ...draftResponse.draft },
+          // The saved sheet's model describes the saved chart, not the draft.
+          presmodel: undefined,
           columns: draftResponse.columns,
           rows: draftResponse.rows,
           row_count: draftResponse.row_count,
@@ -170,6 +174,7 @@ function ArtifactDetail({
     setChatInput("");
     setEditNotice(null);
     setChatBusy(true);
+    setPendingInstruction(instruction);
     try {
       const response = await studioApi.editArtifact(artifactId, {
         instruction,
@@ -192,7 +197,18 @@ function ArtifactDetail({
       toast.error((error as Error).message);
     } finally {
       setChatBusy(false);
+      setPendingInstruction(null);
     }
+  };
+
+  const discardDraft = () => {
+    if (draftResponse?.preview_path) {
+      // Superset's draft objects go too; the saved chart never changed.
+      void studioApi.discardArtifactDraft(artifactId).catch(() => undefined);
+    }
+    setDraftResponse(null);
+    setEditHistory([]);
+    setEditNotice(null);
   };
 
   const applyEdit = async () => {
@@ -210,7 +226,7 @@ function ArtifactDetail({
       setDraftResponse(null);
       setEditHistory([]);
       setEditNotice(null);
-      toast.success("Artifact updated");
+      toast.success("Chart updated");
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -364,8 +380,13 @@ function ArtifactDetail({
   const biEdit = saved.bi_edit_path ?? artifact.bi_edit_path ?? null;
   // The chart editor takes the whole body, edge to edge, under Nova's header.
   const editorOpen = Boolean(editing && biEdit && !draftResponse?.draft);
-  // Superset draws the saved chart edge to edge, inside one border.
-  const biFramed = Boolean(biView && !draftResponse?.draft && !narrowed);
+  // Superset draws the chart edge to edge, inside one border: the saved chart,
+  // or a draft Superset could draw. Both stay in one frame, so a draft, an
+  // apply or a discard swaps views without leaving Superset.
+  const draft = draftResponse?.draft ?? null;
+  const draftPreview = draft ? (draftResponse?.preview_path ?? null) : null;
+  const framePath = draft ? draftPreview : biView;
+  const biFramed = Boolean(framePath && !narrowed);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {editorOpen ? (
@@ -379,10 +400,12 @@ function ArtifactDetail({
       <DetailHeader
         onBack={onBack}
         title={artifact.title}
-        subtitle={`${draftResponse?.draft ? "Draft" : `Updated ${formatTimestamp(saved.updated_at)}`} · ${activeData.row_count.toLocaleString()} rows · ${formatDuration(activeData.elapsed_ms)}`}
+        subtitle={`Updated ${formatTimestamp(saved.updated_at)} · ${detail.data.row_count.toLocaleString()} rows · ${formatDuration(detail.data.elapsed_ms)}`}
         refreshing={detail.isFetching}
+        // While a draft is open the saved chart's actions wait, in place.
+        actionsDisabled={Boolean(draft)}
         onRefresh={() => void detail.refetch()}
-        onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
+        onExport={(format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
         extraAction={
           biEdit && editing ? (
@@ -397,8 +420,14 @@ function ArtifactDetail({
             >
               Done editing
             </Button>
-          ) : biEdit && !editing && !draftResponse?.draft ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+          ) : biEdit && !editing ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={Boolean(draft)}
+              onClick={() => setEditing(true)}
+            >
               Edit chart
             </Button>
           ) : null
@@ -419,16 +448,6 @@ function ArtifactDetail({
             blockers={artifact.legacy_blockers ?? []}
             notes={artifact.legacy_notes ?? []}
           />
-        ) : null}
-        {draftResponse?.draft ? (
-          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-3">
-            <div className="min-w-0 flex-1 text-sm">
-              <p className="font-medium">Draft preview</p>
-              <p className="text-xs text-muted-foreground">
-                Review the result, then apply it to the saved artifact.
-              </p>
-            </div>
-          </div>
         ) : null}
         {!editing ? (
           <ArtifactFilterBar
@@ -458,24 +477,35 @@ function ArtifactDetail({
           <section
             aria-label="Artifact preview"
             aria-busy={chatBusy}
-            data-ai-processing={chatBusy ? "true" : undefined}
             className={cn(
-              biFramed
-                ? "min-w-0 overflow-hidden rounded-xl border"
-                : "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
-              chatBusy && "artifact-ai-active",
+              "min-w-0 overflow-hidden rounded-xl border",
+              !biFramed && "bg-card shadow-sm",
             )}
           >
-            <span className="sr-only" role="status">
-              {chatBusy ? "Nova is preparing an artifact preview." : ""}
-            </span>
-            {/* BI draws the saved chart; a draft or narrowing filter is drawn here. */}
-            {biFramed && biView ? (
+            {draft ? (
+              <DraftBar
+                message={draftResponse?.message ?? ""}
+                applying={applyBusy}
+                onDiscard={discardDraft}
+                onApply={() => void applyEdit()}
+              />
+            ) : null}
+            {/* While Nova works the chart rests, dimmed, rather than animating. */}
+            <div
+              className={cn(
+                "transition-opacity duration-200",
+                chatBusy && "opacity-60",
+                !biFramed && "p-4",
+              )}
+            >
+            {/* Superset draws the chart and its drafts; a narrowing filter, or
+                a draft BI could not draw, is drawn here. */}
+            {biFramed && framePath ? (
               <div className="flex aspect-video min-h-64 min-w-0 flex-col">
                 <BiFrame
-                  key={saved.updated_at}
-                  path={biView}
-                  title={`Chart ${artifact.title}`}
+                  path={framePath}
+                  version={saved.updated_at}
+                  title={draft ? `Draft of ${artifact.title}` : `Chart ${artifact.title}`}
                 />
               </div>
             ) : activeData.rows.length > 0 && filteredRows.length === 0 ? (
@@ -485,6 +515,7 @@ function ArtifactDetail({
             ) : (
               <ArtifactVisual data={visibleData} compact />
             )}
+            </div>
           </section>
         )}
 
@@ -539,44 +570,21 @@ function ArtifactDetail({
           void sendEdit();
         }}
       >
-        {editNotice ? (
+        {pendingInstruction ? (
+          <p
+            className="mx-auto mb-2 flex max-w-3xl items-center gap-2 text-xs text-muted-foreground"
+            role="status"
+          >
+            <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+            <span className="truncate">Changing the chart: “{pendingInstruction}”</span>
+          </p>
+        ) : editNotice ? (
           <p
             className="mx-auto mb-2 max-w-3xl text-xs text-muted-foreground"
             role="status"
           >
             {editNotice}
           </p>
-        ) : null}
-        {draftResponse?.draft ? (
-          <div className="mx-auto mb-2 flex max-w-3xl items-center justify-end gap-2">
-            <span className="mr-auto text-xs text-muted-foreground">
-              Draft ready to review
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDraftResponse(null);
-                setEditHistory([]);
-                setEditNotice(null);
-              }}
-              disabled={applyBusy}
-            >
-              Discard draft
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void applyEdit()}
-              disabled={applyBusy}
-            >
-              {applyBusy ? (
-                <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-              ) : null}
-              Apply changes
-            </Button>
-          </div>
         ) : null}
         <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border bg-card p-2 shadow-sm focus-within:border-ring">
           <textarea
@@ -634,6 +642,46 @@ function ArtifactDetail({
 }
 
 /**
+ * An unsaved edit, at the top of the chart it changes: what Nova did, and the
+ * two ways out. The chart below already shows the result.
+ */
+function DraftBar({
+  message,
+  applying,
+  onDiscard,
+  onApply,
+}: {
+  message: string;
+  applying: boolean;
+  onDiscard: () => void;
+  onApply: () => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Unsaved change"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-muted/40 px-3 py-2"
+    >
+      <span className="rounded-md border bg-background px-1.5 py-0.5 text-xs font-medium">
+        Unsaved
+      </span>
+      <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground" title={message}>
+        {message || "Review the change, then apply it."}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onDiscard} disabled={applying}>
+          Discard
+        </Button>
+        <Button type="button" size="sm" onClick={onApply} disabled={applying}>
+          {applying ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
+          {applying ? "Applying" : "Apply changes"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The header while Superset's editor is open. The editor shows the title and
  * owns Save, so this bar only leaves the editor: one title, one save action.
  */
@@ -660,10 +708,12 @@ function DetailHeader({
   onExport,
   onDelete,
   extraAction,
+  actionsDisabled = false,
 }: {
   onBack: () => void;
   title: string;
   subtitle?: string;
+  actionsDisabled?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
   onExport?: (format: ExportFormat) => Promise<void>;
@@ -706,7 +756,7 @@ function DetailHeader({
           type="button"
           variant="outline"
           size="sm"
-          disabled={refreshing}
+          disabled={refreshing || actionsDisabled}
           onClick={onRefresh}
           aria-label="Refresh"
         >
@@ -720,7 +770,13 @@ function DetailHeader({
       {onExport ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="outline" size="sm" disabled={exporting} aria-label="Export">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exporting || actionsDisabled}
+              aria-label="Export"
+            >
               {exporting ? (
                 <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
               ) : (

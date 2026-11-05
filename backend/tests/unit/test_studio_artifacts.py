@@ -282,3 +282,71 @@ async def test_repository_source_update_requires_matching_owner_and_revision(mon
     statement, parameters = execute.await_args.args
     assert "owner_name = %s AND updated_at = %s" in statement
     assert parameters[-3:] == ["art-1", "analyst", expected]
+
+
+BI_CHART = {
+    "artifact_id": "art-1",
+    "owner_name": "analyst",
+    "title": "Revenue",
+    "artifact_type": "chart",
+    "sql_text": "SELECT region, revenue FROM sales.summary",
+    "bi_kind": "chart",
+    "bi_object_id": 7,
+    "bi_dataset_id": 9,
+    "legacy": False,
+    "updated_at": "2026-09-21 08:00:00",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("preview", ["/bi/explore/?form_data_key=K1&standalone=1", None])
+async def test_a_bi_chart_edit_comes_with_supersets_own_preview(monkeypatch, preview) -> None:
+    from app.modules.agents import studio_router
+    from app.modules.agents.studio_schemas import ArtifactEditResponse
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
+
+    monkeypatch.setattr(studio_router.artifact_repository, "get", AsyncMock(return_value=BI_CHART))
+    monkeypatch.setattr(studio_router, "write_audit_log", AsyncMock())
+    draft = ArtifactDraft(
+        sql_text="SELECT region, revenue FROM sales.summary ORDER BY revenue DESC",
+        chart_spec={
+            "mark": "line",
+            "encoding": {"x": {"field": "region"}, "y": {"field": "revenue"}},
+        },
+    )
+    monkeypatch.setattr(
+        studio_router,
+        "propose_artifact_edit",
+        AsyncMock(return_value=ArtifactEditResponse(message="Done.", draft=draft)),
+    )
+    previewing = AsyncMock(return_value=preview, side_effect=None if preview else BiError("down"))
+    monkeypatch.setattr(bi_artifacts, "preview_chart_draft", previewing)
+
+    response = await studio_router.edit_artifact(
+        "art-1",
+        ArtifactEditRequest(instruction="line, biggest first"),
+        user={"username": "analyst"},
+    )
+
+    # A preview BI cannot draw never blocks the edit itself.
+    assert response.draft == draft and response.preview_path == preview
+    plan = previewing.await_args.kwargs["plan"]
+    assert plan.kind == "line" and plan.order == "value_desc"
+
+
+@pytest.mark.asyncio
+async def test_discarding_an_edit_removes_its_bi_drafts(monkeypatch) -> None:
+    from app.modules.agents import studio_router
+    from app.modules.superset import artifacts as bi_artifacts
+
+    monkeypatch.setattr(studio_router.artifact_repository, "get", AsyncMock(return_value=BI_CHART))
+    audit = AsyncMock()
+    monkeypatch.setattr(studio_router, "write_audit_log", audit)
+    discard = AsyncMock()
+    monkeypatch.setattr(bi_artifacts, "discard_chart_drafts", discard)
+
+    await studio_router.discard_artifact_draft("art-1", user={"username": "analyst"})
+
+    discard.assert_awaited_once()
+    assert audit.await_args.kwargs["action"] == "discard_edit"

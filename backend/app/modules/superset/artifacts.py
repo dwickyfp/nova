@@ -15,6 +15,7 @@ import json
 import logging
 import re
 from typing import Any
+from urllib.parse import quote
 from uuid import uuid4
 
 from app.common.audit import write_audit_log
@@ -77,12 +78,18 @@ async def _chart_payload(
 
 
 async def _create_dataset(
-    bi: SupersetClient, *, title: str, sql: str, schema: str | None, suffix: str
+    bi: SupersetClient,
+    *,
+    title: str,
+    sql: str,
+    schema: str | None,
+    suffix: str,
+    name: str | None = None,
 ) -> int:
     body: dict[str, Any] = {
         "database": await bi.nova_database_id(),
         "catalog": "default_catalog",
-        "table_name": _dataset_name(title, suffix),
+        "table_name": name or _dataset_name(title, suffix),
         "sql": sql,
     }
     if schema:
@@ -322,6 +329,7 @@ async def update_chart_source(
                     "query_context": json.dumps(query_context),
                 },
             )
+        await _discard_drafts(bi, artifact["artifact_id"])
     updated = await artifact_repository.update_bi_source(
         artifact["artifact_id"],
         owner_name=user["username"],
@@ -354,5 +362,124 @@ async def delete_bi_objects(user: dict[str, Any], artifact: dict[str, Any]) -> N
             await _delete_quietly(bi, f"/api/v1/{kind}/{object_id}")
             if artifact.get("bi_dataset_id"):
                 await _delete_quietly(bi, f"/api/v1/dataset/{artifact['bi_dataset_id']}")
+            if kind == "chart":
+                await _discard_drafts(bi, artifact["artifact_id"])
     except BiError as exc:
         logger.warning("Superset cleanup for %s failed: %s", artifact["artifact_id"], exc.message)
+
+
+# ── Drafts: an unsaved edit, drawn by Superset itself ────────────────────
+
+#: Datasets behind an unsaved edit are named from this prefix and the
+#: artifact, so every later step can find and remove them.
+_DRAFT_PREFIX = "nova_draft_"
+
+
+def _draft_prefix(artifact_id: str) -> str:
+    return f"{_DRAFT_PREFIX}{re.sub(r'[^a-z0-9]', '', artifact_id.lower())[:16]}_"
+
+
+def _same_sql(left: str, right: str | None) -> bool:
+    def normal(sql: str) -> str:
+        return " ".join(sql.strip().rstrip(";").split())
+
+    return right is not None and normal(left) == normal(right)
+
+
+async def _discard_drafts(bi: SupersetClient, artifact_id: str) -> None:
+    """Remove the datasets of the artifact's unsaved edits. Best effort."""
+    prefix = _draft_prefix(artifact_id)
+    query = f"(filters:!((col:table_name,opr:ct,value:'{prefix}')),page_size:100)"
+    try:
+        body = await bi.request("GET", f"/api/v1/dataset/?q={quote(query)}")
+    except BiError as exc:
+        logger.warning("Listing draft datasets for %s failed: %s", artifact_id, exc.message)
+        return
+    rows = body.get("result")
+    for row in rows if isinstance(rows, list) else []:
+        if str(row.get("table_name", "")).startswith(prefix):
+            await _delete_quietly(bi, f"/api/v1/dataset/{row['id']}")
+
+
+async def _current_form(bi: SupersetClient, chart_id: int, dataset_id: int) -> dict[str, Any]:
+    """The saved chart's definition over ``dataset_id``, or a table when its
+    fields no longer draw there."""
+    current = (await bi.request("GET", f"/api/v1/chart/{chart_id}")).get("result", {})
+    form: dict[str, Any] = json.loads(current.get("params") or "{}")
+    form["datasource"] = f"{dataset_id}__table"
+    stored: dict[str, Any] = json.loads(current.get("query_context") or "{}")
+    if not stored:
+        return form
+    stored["datasource"] = {"id": dataset_id, "type": "table"}
+    if isinstance(stored.get("form_data"), dict):
+        stored["form_data"]["datasource"] = form["datasource"]
+    try:
+        await bi.request("POST", "/api/v1/chart/data", body=stored)
+        return form
+    except BiError:
+        columns, _ = await _dataset_columns(bi, dataset_id)
+        return (await _chart_payload(bi, table_plan(columns), dataset_id))[1]
+
+
+async def preview_chart_draft(
+    user: dict[str, Any],
+    artifact: dict[str, Any],
+    *,
+    sql_text: str,
+    plan: ChartPlan | None,
+) -> str:
+    """Superset's Explore view of an unsaved edit to a BI chart; its ``/bi`` path.
+
+    The draft is drawn by Superset, as the saved chart will be: its definition
+    is stored as Explore form data (a key, no credentials), over the chart's
+    own dataset when the query is unchanged and over a draft dataset owned by
+    the caller otherwise. Earlier drafts of the artifact are removed first;
+    applying or discarding the edit removes this one.
+    """
+    sql = validate_artifact_sql(sql_text)
+    chart_id = int(artifact["bi_object_id"])
+    saved_dataset = int(artifact["bi_dataset_id"])
+    async with SupersetClient.for_user(user) as bi:
+        await _discard_drafts(bi, artifact["artifact_id"])
+        if _same_sql(sql, artifact.get("sql_text")):
+            source = saved_dataset
+        else:
+            source = await _create_dataset(
+                bi,
+                title=str(artifact.get("title") or "draft"),
+                sql=sql,
+                schema=artifact.get("schema_name") or artifact.get("database_name"),
+                suffix="draft",
+                name=f"{_draft_prefix(artifact['artifact_id'])}{uuid4().hex[:8]}",
+            )
+        try:
+            if plan is None:
+                form = await _current_form(bi, chart_id, source)
+            else:
+                form = (await _chart_payload(bi, plan, source))[1]
+            stored = await bi.request(
+                "POST",
+                "/api/v1/explore/form_data",
+                body={
+                    "datasource_id": source,
+                    "datasource_type": "table",
+                    "form_data": json.dumps(form),
+                },
+            )
+        except BiError:
+            if source != saved_dataset:
+                await _delete_quietly(bi, f"/api/v1/dataset/{source}")
+            raise
+    key = str(stored.get("key") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", key):
+        raise BiError("BI did not keep the draft. Try again.")
+    return f"/bi/explore/?form_data_key={key}&standalone=1"
+
+
+async def discard_chart_drafts(user: dict[str, Any], artifact: dict[str, Any]) -> None:
+    """Remove the Superset datasets behind the artifact's unsaved edits."""
+    try:
+        async with SupersetClient.for_user(user, author=False) as bi:
+            await _discard_drafts(bi, artifact["artifact_id"])
+    except BiError as exc:
+        logger.warning("Discarding drafts of %s failed: %s", artifact["artifact_id"], exc.message)

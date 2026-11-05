@@ -675,6 +675,8 @@ export type StudioArtifactEditResponse = {
   rows: (string | number | null)[][];
   row_count: number;
   elapsed_ms: number;
+  /** Superset's own view of the draft, when BI can draw it. */
+  preview_path?: string | null;
 };
 
 export const toolsApi = {
@@ -758,6 +760,8 @@ export const studioApi = {
       `/agents/studio/artifacts/${encodeURIComponent(id)}`,
       body,
     ),
+  discardArtifactDraft: (id: string) =>
+    api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}/draft`),
   deleteArtifact: (id: string) =>
     api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}`),
   convertArtifacts: (body: { artifact_ids?: string[]; force?: boolean }) =>

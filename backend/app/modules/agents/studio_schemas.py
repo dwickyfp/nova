@@ -192,6 +192,9 @@ class ArtifactEditResponse(BaseModel):
     rows: list[list[Any]] = Field(default_factory=list)
     row_count: int = 0
     elapsed_ms: float = 0.0
+    #: Superset's view of the draft (a ``/bi`` path holding an Explore form
+    #: data key, never credentials), when BI can draw it.
+    preview_path: str | None = None
 
 
 class ArtifactApplyRequest(BaseModel):
