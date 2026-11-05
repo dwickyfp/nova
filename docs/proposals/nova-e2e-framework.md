@@ -268,7 +268,36 @@ seluruh suite Chromium (7 tes) lolos 3/3 dan Lightpanda (4 tes) lolos 3/3.
 3. Dalam spike singkat ini, e2e sudah menemukan satu bug produk yang lolos
    dari 1.435 tes komponen.
 
-### Fase 1: Fondasi
+### Fase 1: Fondasi (dikerjakan 2026-11-05)
+
+Status: paket `e2e/` dan job CI `e2e` ada di PR #206. Rinciannya:
+
+- **Persona dari seed stack.** `docker/init-nova.sql` dan bootstrap Ranger
+  sudah membuat `nova_admin`, `alice`, dan `bob` beserta role, scope kota,
+  row filter, mask, dan data `analytics`. Suite tidak membuat user atau
+  policy sendiri, sehingga tidak ada sisa di stack bersama. Ini juga menjawab
+  masalah bahwa Nova belum punya API untuk menghapus policy.
+- **Tes tata kelola lewat API SQL** (`governance.e2e.ts`): row filter per user
+  (alice Jakarta, bob Bandung), `regional_manager` melihat keduanya,
+  `finance` ditolak, dan telepon tersamar untuk `marketing` tetapi asli untuk
+  `regional_manager`. Jalan di Chromium dan Lightpanda.
+- **Tes Studio** (`studio.e2e.ts`, tag `agentic`): pertanyaan lewat composer,
+  lalu `agent.extract` membaca jawabannya dan membandingkannya dengan API SQL
+  sebagai persona yang sama. Model lewat `NOVA_E2E_MODEL_*`
+  (OpenAI-compatible, provider yang sama dengan Nova). Tes ini di-skip saat
+  koleksi kalau model belum diisi, karena fixture `agent` tanpa model membuat
+  seluruh run gagal (`MODEL_UNAVAILABLE`). Prasyarat tambahan yang ditemukan:
+  Studio memakai Smart mode secara default, dan run-nya hanya mengantre
+  ("Main queued") sampai worker agen (`python -m app.agent_worker`) berjalan.
+- **Job CI `e2e`**: membangun stack governed dari
+  `docker/docker-compose-engine.yml` dengan kredensial sekali pakai (tanpa
+  Superset), menyajikan build frontend dengan `vite preview`, lalu
+  menjalankan Chromium dan Lightpanda. Laporan diunggah sebagai artifact. Di
+  CI tes Studio di-skip karena tidak ada provider model maupun worker agen.
+- **Hasil lokal terhadap build produksi:** Chromium 12 lolos dan 1 di-skip
+  (Studio). Lightpanda 9/9 lolos (±5 detik).
+
+### Fase 1: Rencana awal
 
 - Paket `e2e/`, config dua target, persona, fixture tata kelola dan data.
 - Job CI `e2e-smoke` di stack governed sementara.

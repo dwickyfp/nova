@@ -434,6 +434,128 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  e2e:
+    name: E2E (governed stack, Chromium + Lightpanda)
+    # The governed stack (patched FE, Ranger, the seeded alice/bob fixtures)
+    # is what the governance tests exercise; the upstream engine in the L3
+    # job has neither the patch nor the fixtures. Playwright and the engine
+    # both need 24.04 (see the frontend and L3 jobs).
+    runs-on: ubuntu-24.04
+    needs: [frontend]
+    timeout-minutes: 60
+    env:
+      E2E_TELEMETRY_DISABLED: "1"
+      COMPOSE: docker compose -f docker/docker-compose-engine.yml --env-file docker/.env --profile app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate disposable stack credentials
+        run: |
+          ranger_password="CiA9$(openssl rand -hex 24)"
+          ranger_db_password="CiD9$(openssl rand -hex 24)"
+          signing_key="$(openssl rand -hex 32)"
+          encryption_key="$(openssl rand -base64 32 | tr '+/' '-_')"
+          bi_token="$(openssl rand -hex 32)"
+          bi_db_password="CiS9$(openssl rand -hex 24)"
+          bi_secret="$(openssl rand -hex 32)"
+          for value in "$ranger_password" "$ranger_db_password" "$signing_key" \
+            "$encryption_key" "$bi_token" "$bi_db_password" "$bi_secret"; do
+            echo "::add-mask::$value"
+          done
+          {
+            echo "RANGER_ADMIN_PASSWORD=$ranger_password"
+            echo "RANGER_DB_PASSWORD=$ranger_db_password"
+            echo "NOVA_SECRET_KEY=$signing_key"
+            echo "NOVA_FERNET_KEY=$encryption_key"
+            echo "NOVA_SUPERSET_SERVICE_TOKEN=$bi_token"
+            echo "SUPERSET_DB_PASSWORD=$bi_db_password"
+            echo "SUPERSET_SECRET_KEY=$bi_secret"
+          } > docker/.env
+
+      - name: Start the governed stack
+        run: |
+          $COMPOSE config --quiet
+          $COMPOSE up -d --build --wait nova-backend
+          for attempt in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8000/ready >/dev/null && exit 0
+            sleep 5
+          done
+          echo "::error::nova-backend never became ready"
+          exit 1
+
+      # The personas are the stack's own seed (docker/init-nova.sql): read the
+      # passwords from it so the suite and the seed cannot drift apart.
+      - name: Expose the seeded persona passwords
+        run: |
+          seed=docker/init-nova.sql
+          pick() { grep -oE "CREATE USER IF NOT EXISTS '$1' IDENTIFIED BY '[^']+'" "$seed" | sed "s/.*BY '//; s/'$//"; }
+          {
+            echo "NOVA_E2E_ADMIN_PASSWORD=$(pick nova_admin)"
+            echo "NOVA_E2E_ALICE_PASSWORD=$(pick alice)"
+            echo "NOVA_E2E_BOB_PASSWORD=$(pick bob)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and serve the frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          nohup pnpm exec vite preview --port 5182 --strictPort --host 127.0.0.1 > ../vite-preview.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:5182/ >/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error::vite preview never answered"
+          exit 1
+
+      - name: Install the e2e runner and browsers
+        working-directory: e2e
+        run: |
+          pnpm install --frozen-lockfile
+          node node_modules/playwright-core/cli.js install --with-deps chromium
+          docker run -d --name nova-e2e-lightpanda --network host \
+            -e LIGHTPANDA_DISABLE_TELEMETRY=true lightpanda/browser:nightly \
+            /bin/lightpanda serve --host 127.0.0.1 --port 9333
+
+      - name: Run e2e on Chromium
+        working-directory: e2e
+        run: pnpm exec e2e run --target chromium --reporter list,junit
+
+      - name: Run e2e on Lightpanda (tests without the layout tag)
+        if: always()
+        working-directory: e2e
+        run: pnpm exec e2e run --target lightpanda --exclude-tag layout --reporter list,junit --output .e2e-lightpanda
+
+      - name: Upload e2e reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-reports
+          path: |
+            e2e/.e2e
+            e2e/.e2e-lightpanda
+            vite-preview.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stack logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 300 || true
+
+      - name: Tear down the stack
+        if: always()
+        run: $COMPOSE down -v || true
+
   superset:
     name: Superset integration (image build, unit tests)
     runs-on: ubuntu-latest

@@ -1,7 +1,7 @@
 import { test as base } from '@e2e-dev/web';
 import { credentials, expect } from 'e2e';
 
-type Persona = 'admin' | 'alice';
+type Persona = 'admin' | 'alice' | 'bob';
 
 /** Sign in through the real form and wait for the signed-in shell. */
 async function signIn(
@@ -26,11 +26,19 @@ async function switchRole(screen: any, from: string, to: string): Promise<void> 
   await expect(screen.getByRole('button', new RegExp(`${to}$`)).first()).toBeVisible();
 }
 
+export type QueryResult = {
+  success: boolean;
+  columns: string[];
+  rows: unknown[][];
+  error?: string | null;
+};
+
 export const test = base.extend<{
   signIn: (persona: Persona) => Promise<void>;
   switchRole: (from: string, to: string) => Promise<void>;
   api: (path: string, init?: RequestInit) => Promise<Response>;
   useRole: (role: string) => Promise<void>;
+  sql: (statement: string) => Promise<QueryResult>;
 }>({
   signIn: async ({ app, screen }, use) => {
     await use((persona) => signIn({ app, screen }, persona));
@@ -62,6 +70,19 @@ export const test = base.extend<{
         body: JSON.stringify({ role }),
       });
       expect(response.status).toBe(200);
+    });
+  },
+  /** Run SQL through Nova's query API as the signed-in user and active role. */
+  sql: async ({ api }, use) => {
+    await use(async (statement) => {
+      const response = await api('/query/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sql: statement, database: 'analytics' }),
+      });
+      expect(response.status).toBe(200);
+      const [result] = (await response.json()) as QueryResult[];
+      return result;
     });
   },
 });
