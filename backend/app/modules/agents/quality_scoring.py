@@ -13,6 +13,7 @@ from app.modules.intelligence.contracts import Contract
 SCORERS = frozenset(
     {
         "semantic_selection",
+        "concept_grounding",
         "tool_selection",
         "tool_arguments",
         "numeric_consistency",
@@ -42,6 +43,7 @@ MEASURED_COUNTS = frozenset(
 SCORER_VERSION = "1"
 FAILURES = {
     "semantic_selection": "WRONG_SEMANTIC_METRIC",
+    "concept_grounding": "WRONG_BUSINESS_CONCEPT",
     "tool_selection": "WRONG_TOOL",
     "tool_arguments": "BAD_TOOL_ARGUMENTS",
     "numeric_consistency": "UNSUPPORTED_CONCLUSION",
@@ -116,7 +118,7 @@ class Assertion(Contract):
 
 class PromotionGates(Contract):
     other_cases: Literal["report_only", "mandatory", "all"] = "report_only"
-    required_scorers: list[str] = Field(default_factory=list, max_length=11)
+    required_scorers: list[str] = Field(default_factory=list, max_length=12)
     performance: Literal["report_only", "required"] = "report_only"
     max_latency_ms: float | None = Field(default=None, ge=0)
     count_budgets: dict[str, Annotated[int, Field(strict=True, ge=0)]] = Field(
@@ -194,6 +196,7 @@ def _score_assertion(assertion: Assertion, trace: dict) -> Score:
     detail = "Required execution evidence is unavailable"
     if name in {
         "semantic_selection",
+        "concept_grounding",
         "tool_arguments",
         "clarification_quality",
         "task_completeness",

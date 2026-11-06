@@ -36,7 +36,7 @@ Read these guides even when the edited file is outside their directory:
 | Query service, proxy, ML SQL preparation, grammar, dialect helpers, SQL tests | [SQL frontend](app/sql_frontend/AGENTS.md) |
 | Auth, role gates, Ranger integration, stage authorization, user-data adapters | [Access control](app/modules/access_control/AGENTS.md) |
 | Assistant loop, providers, tool registry, consent, evals | [Assistant](app/modules/assistant/AGENTS.md) |
-| Studio orchestration, Smart workers, resources, semantic agent tools | [Agents](app/modules/agents/AGENTS.md) |
+| Studio agents, Missions, automations, resources, semantic agent tools | [Agents](app/modules/agents/AGENTS.md) |
 | Test Compose, seed scripts, engine fixtures | [Docker](../docker/AGENTS.md) |
 
 Current domain docs include [Intelligence](../docs/28-intelligence-foundation.md),

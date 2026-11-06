@@ -977,7 +977,7 @@
     },
     {
       "type": "row",
-      "title": "Studio Auto worker",
+      "title": "Migration jobs",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -990,53 +990,24 @@
     },
     {
       "type": "stat",
-      "title": "Agent worker scrape",
-      "description": "Prometheus scrape state. No data means this target is not configured.",
+      "title": "Active migrations",
+      "description": "Migration jobs currently executing inside the task worker process.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "max(up{job=\"nova-agent-worker\"})",
+          "expr": "sum(nova_migration_worker_active_jobs{job=\"nova-worker\"})",
           "legendFormat": "",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "short",
           "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "Down",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "Up",
-                  "color": "green"
-                }
-              }
-            }
-          ],
-          "noValue": "Not configured",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
+            "mode": "palette-classic"
           }
         },
         "overrides": []
@@ -1058,30 +1029,30 @@
         },
         "orientation": "auto",
         "textMode": "auto",
-        "colorMode": "background",
-        "graphMode": "none",
+        "colorMode": "value",
+        "graphMode": "area",
         "justifyMode": "auto"
       },
       "id": 19
     },
     {
       "type": "stat",
-      "title": "Active runs",
-      "description": "",
+      "title": "Terminal jobs/s",
+      "description": "Completed attempts that persisted a terminal outcome.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "sum(nova_agent_worker_active{job=\"nova-agent-worker\"})",
+          "expr": "sum(rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status!=\"unfinished\"}[5m]))",
           "legendFormat": "",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "reqps",
           "color": {
             "mode": "palette-classic"
           }
@@ -1113,15 +1084,15 @@
     },
     {
       "type": "stat",
-      "title": "Completed/s",
-      "description": "",
+      "title": "Non-success/s",
+      "description": "Partial, failed, or interrupted terminal outcomes; unfinished attempts are shown separately.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "sum(rate(nova_agent_worker_runs_total{job=\"nova-agent-worker\",status=\"completed\"}[5m]))",
+          "expr": "sum(rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status=~\"partial|failed|interrupted\"}[5m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1131,6 +1102,23 @@
           "unit": "reqps",
           "color": {
             "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
           }
         },
         "overrides": []
@@ -1160,15 +1148,15 @@
     },
     {
       "type": "stat",
-      "title": "Failed/s",
-      "description": "",
+      "title": "Unfinished/s",
+      "description": "An attempt that could not persist a terminal result; inspect worker logs and job state.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "sum(rate(nova_agent_worker_runs_total{job=\"nova-agent-worker\",status=~\"failed|interrupted\"}[5m]))",
+          "expr": "sum(rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status=\"unfinished\"}[5m]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1224,7 +1212,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Agent run outcomes",
+      "title": "Migration outcomes",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1232,7 +1220,7 @@
       },
       "targets": [
         {
-          "expr": "sum by(status) (rate(nova_agent_worker_runs_total{job=\"nova-agent-worker\"}[5m]))",
+          "expr": "sum by(status) (rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status!=\"unfinished\"}[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -1285,7 +1273,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Agent run duration",
+      "title": "Migration operations",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1293,14 +1281,14 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(nova_agent_worker_run_duration_seconds_bucket{job=\"nova-agent-worker\"}[5m])))",
-          "legendFormat": "Agent run duration",
+          "expr": "sum by(operation) (rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status!=\"unfinished\"}[5m]))",
+          "legendFormat": "{{operation}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "reqps",
           "color": {
             "mode": "palette-classic"
           },
@@ -1346,22 +1334,22 @@
     },
     {
       "type": "timeseries",
-      "title": "Agent poll and claim errors",
-      "description": "Errors while polling for work or claiming a queued run.",
+      "title": "Migration duration, p95",
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "sum by(phase) (rate(nova_agent_worker_poll_errors_total{job=\"nova-agent-worker\"}[5m]))",
-          "legendFormat": "{{phase}}",
+          "expr": "histogram_quantile(0.95, sum by(le, operation) (rate(nova_migration_worker_job_duration_seconds_bucket{job=\"nova-worker\",status!=\"unfinished\"}[5m])))",
+          "legendFormat": "{{operation}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "s",
           "color": {
             "mode": "palette-classic"
           },
@@ -1407,22 +1395,22 @@
     },
     {
       "type": "timeseries",
-      "title": "Agent worker CPU",
-      "description": "",
+      "title": "Migration poll errors",
+      "description": "Polling, claiming, or reconciling a migration job failed.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "rate(process_cpu_seconds_total{job=\"nova-agent-worker\"}[5m])",
-          "legendFormat": "Agent worker CPU",
+          "expr": "sum by(phase) (rate(nova_migration_worker_poll_errors_total{job=\"nova-worker\"}[5m]))",
+          "legendFormat": "{{phase}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "reqps",
           "color": {
             "mode": "palette-classic"
           },
@@ -1467,546 +1455,6 @@
       "id": 26
     },
     {
-      "type": "timeseries",
-      "title": "Agent worker memory",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "process_resident_memory_bytes{job=\"nova-agent-worker\"}",
-          "legendFormat": "Agent worker memory",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisColorMode": "text",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 58
-      },
-      "transparent": false,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 27
-    },
-    {
-      "type": "row",
-      "title": "Migration jobs",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 66
-      },
-      "panels": [],
-      "id": 28
-    },
-    {
-      "type": "stat",
-      "title": "Active migrations",
-      "description": "Migration jobs currently executing inside the task worker process.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(nova_migration_worker_active_jobs{job=\"nova-worker\"})",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 67
-      },
-      "transparent": false,
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "id": 29
-    },
-    {
-      "type": "stat",
-      "title": "Terminal jobs/s",
-      "description": "Completed attempts that persisted a terminal outcome.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status!=\"unfinished\"}[5m]))",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 67
-      },
-      "transparent": false,
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "id": 30
-    },
-    {
-      "type": "stat",
-      "title": "Non-success/s",
-      "description": "Partial, failed, or interrupted terminal outcomes; unfinished attempts are shown separately.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status=~\"partial|failed|interrupted\"}[5m]))",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.01
-              },
-              {
-                "color": "red",
-                "value": 0.1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 67
-      },
-      "transparent": false,
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "id": 31
-    },
-    {
-      "type": "stat",
-      "title": "Unfinished/s",
-      "description": "An attempt that could not persist a terminal result; inspect worker logs and job state.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status=\"unfinished\"}[5m]))",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.01
-              },
-              {
-                "color": "red",
-                "value": 0.1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 67
-      },
-      "transparent": false,
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "id": 32
-    },
-    {
-      "type": "timeseries",
-      "title": "Migration outcomes",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum by(status) (rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status!=\"unfinished\"}[5m]))",
-          "legendFormat": "{{status}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisColorMode": "text",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 71
-      },
-      "transparent": false,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 33
-    },
-    {
-      "type": "timeseries",
-      "title": "Migration operations",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum by(operation) (rate(nova_migration_worker_jobs_total{job=\"nova-worker\",status!=\"unfinished\"}[5m]))",
-          "legendFormat": "{{operation}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisColorMode": "text",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 71
-      },
-      "transparent": false,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 34
-    },
-    {
-      "type": "timeseries",
-      "title": "Migration duration, p95",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by(le, operation) (rate(nova_migration_worker_job_duration_seconds_bucket{job=\"nova-worker\",status!=\"unfinished\"}[5m])))",
-          "legendFormat": "{{operation}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisColorMode": "text",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 79
-      },
-      "transparent": false,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 35
-    },
-    {
-      "type": "timeseries",
-      "title": "Migration poll errors",
-      "description": "Polling, claiming, or reconciling a migration job failed.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum by(phase) (rate(nova_migration_worker_poll_errors_total{job=\"nova-worker\"}[5m]))",
-          "legendFormat": "{{phase}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisColorMode": "text",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 79
-      },
-      "transparent": false,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 36
-    },
-    {
       "type": "row",
       "title": "Search indexing",
       "collapsed": false,
@@ -2014,10 +1462,10 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 87
+        "y": 58
       },
       "panels": [],
-      "id": 37
+      "id": 27
     },
     {
       "type": "stat",
@@ -2047,7 +1495,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 88
+        "y": 59
       },
       "transparent": false,
       "options": {
@@ -2064,7 +1512,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 38
+      "id": 28
     },
     {
       "type": "stat",
@@ -2111,7 +1559,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 88
+        "y": 59
       },
       "transparent": false,
       "options": {
@@ -2128,7 +1576,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 39
+      "id": 29
     },
     {
       "type": "stat",
@@ -2175,7 +1623,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 88
+        "y": 59
       },
       "transparent": false,
       "options": {
@@ -2192,7 +1640,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 40
+      "id": 30
     },
     {
       "type": "stat",
@@ -2239,7 +1687,7 @@
         "h": 4,
         "w": 12,
         "x": 0,
-        "y": 92
+        "y": 63
       },
       "transparent": false,
       "options": {
@@ -2256,7 +1704,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 41
+      "id": 31
     },
     {
       "type": "stat",
@@ -2303,7 +1751,7 @@
         "h": 4,
         "w": 12,
         "x": 12,
-        "y": 92
+        "y": 63
       },
       "transparent": false,
       "options": {
@@ -2320,7 +1768,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 42
+      "id": 32
     },
     {
       "type": "timeseries",
@@ -2364,7 +1812,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 96
+        "y": 67
       },
       "transparent": false,
       "options": {
@@ -2381,7 +1829,7 @@
           "sort": "desc"
         }
       },
-      "id": 43
+      "id": 33
     },
     {
       "type": "timeseries",
@@ -2425,7 +1873,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 96
+        "y": 67
       },
       "transparent": false,
       "options": {
@@ -2442,7 +1890,7 @@
           "sort": "desc"
         }
       },
-      "id": 44
+      "id": 34
     },
     {
       "type": "timeseries",
@@ -2491,7 +1939,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 75
       },
       "transparent": false,
       "options": {
@@ -2508,7 +1956,7 @@
           "sort": "desc"
         }
       },
-      "id": 45
+      "id": 35
     },
     {
       "type": "row",
@@ -2518,10 +1966,10 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 112
+        "y": 83
       },
       "panels": [],
-      "id": 46
+      "id": 36
     },
     {
       "type": "timeseries",
@@ -2565,7 +2013,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 113
+        "y": 84
       },
       "transparent": false,
       "options": {
@@ -2582,7 +2030,7 @@
           "sort": "desc"
         }
       },
-      "id": 47
+      "id": 37
     },
     {
       "type": "timeseries",
@@ -2626,7 +2074,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 113
+        "y": 84
       },
       "transparent": false,
       "options": {
@@ -2643,7 +2091,7 @@
           "sort": "desc"
         }
       },
-      "id": 48
+      "id": 38
     },
     {
       "type": "timeseries",
@@ -2687,7 +2135,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 121
+        "y": 92
       },
       "transparent": false,
       "options": {
@@ -2704,7 +2152,7 @@
           "sort": "desc"
         }
       },
-      "id": 49
+      "id": 39
     },
     {
       "type": "timeseries",
@@ -2748,7 +2196,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 121
+        "y": 92
       },
       "transparent": false,
       "options": {
@@ -2765,7 +2213,7 @@
           "sort": "desc"
         }
       },
-      "id": 50
+      "id": 40
     },
     {
       "type": "timeseries",
@@ -2809,7 +2257,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 129
+        "y": 100
       },
       "transparent": false,
       "options": {
@@ -2826,7 +2274,7 @@
           "sort": "desc"
         }
       },
-      "id": 51
+      "id": 41
     },
     {
       "type": "timeseries",
@@ -2870,7 +2318,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 129
+        "y": 100
       },
       "transparent": false,
       "options": {
@@ -2887,7 +2335,7 @@
           "sort": "desc"
         }
       },
-      "id": 52
+      "id": 42
     },
     {
       "type": "timeseries",
@@ -2899,7 +2347,7 @@
       },
       "targets": [
         {
-          "expr": "time() - nova_service_last_heartbeat_timestamp_seconds{job=~\"nova-scheduler|nova-worker|nova-agent-worker\"}",
+          "expr": "time() - nova_service_last_heartbeat_timestamp_seconds{job=~\"nova-scheduler|nova-worker\"}",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
@@ -2931,7 +2379,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 137
+        "y": 108
       },
       "transparent": false,
       "options": {
@@ -2948,7 +2396,7 @@
           "sort": "desc"
         }
       },
-      "id": 53
+      "id": 43
     }
   ]
 }

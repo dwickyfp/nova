@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -74,6 +75,7 @@ _FORBIDDEN_EXECUTION_ROLES = frozenset(
         "CLUSTER_ADMIN",
     }
 )
+logger = logging.getLogger(__name__)
 _MAX_VIEWS = 8
 _READER_CONCURRENCY = 4
 #: Model drafts attempted per cycle; the rest keep the template until the next one.
@@ -853,6 +855,10 @@ class NewsroomService:
             for item in dataset.fields
             for value in item.sample_values
         }
+        from app.modules.intelligence.business_events import record_stories_safely
+
+        # Every story of the edition, so a cycle that stopped here last time is healed.
+        await record_stories_safely(stories, user)
         written, rejected = await self._write(stories, config, ir, known_values, budget)
         await self._audit_cycle(
             view,
@@ -1104,13 +1110,21 @@ class NewsroomService:
         views = (await self.semantic.news_views())[:_MAX_VIEWS]
         # Each view is proven on its own budget, so the views are read side by side.
         found = await asyncio.gather(*(self._visible(view, user, day) for view in views))
+        significance = await _significance(
+            [story for result in found if result for story in result[1]], user
+        )
         sections = [
             {
                 "view_id": view["id"],
                 "name": view["name"],
                 "edition_date": edition.edition_date.isoformat(),
                 "pressed_at": edition.pressed_at.isoformat(),
-                "stories": [public_story(story) | {"view_name": view["name"]} for story in stories],
+                "stories": [
+                    public_story(story)
+                    | {"view_name": view["name"]}
+                    | ({"significance": significance[story.id]} if story.id in significance else {})
+                    for story in stories
+                ],
             }
             for view, (edition, stories) in (
                 (view, result) for view, result in zip(views, found, strict=True) if result
@@ -1134,20 +1148,34 @@ class NewsroomService:
             "sections": sections,
         }
 
-    async def story(self, story_id: str, user: dict) -> dict:
-        found = None
+    async def _proven_story(self, story_id: str, user: dict):
+        """The story, its view and edition when ``user`` reproduces every proof now."""
         record = await self.repository.shared_story(story_id, Story)
-        if record is not None:
-            view = await self.semantic._get(record.semantic.view_id)
-            if view and view["status"] != "DEPRECATED":
-                found = await self._visible(view, user, record.edition_date, only=record.id)
+        if record is None:
+            return None
+        view = await self.semantic._get(record.semantic.view_id)
+        if not view or view["status"] == "DEPRECATED":
+            return None
+        found = await self._visible(view, user, record.edition_date, only=record.id)
         if not found or not found[1]:
+            return None
+        return found[1][0], view, found[0]
+
+    async def readable(self, story_id: str, user: dict) -> Story | None:
+        """The story if ``user`` can read it now; the caller audits its own read."""
+        proven = await self._proven_story(story_id, user)
+        return proven[0] if proven else None
+
+    async def story(self, story_id: str, user: dict) -> dict:
+        proven = await self._proven_story(story_id, user)
+        if proven is None:
             await self._audit_read(user, "READ_STORY", story_id[:64], "DENIED", "DENY", 0)
             raise HTTPException(status_code=404, detail=_UNAVAILABLE)
+        story, view, edition = proven
         await self._audit_read(user, "READ_STORY", story_id[:64], "SUCCESS", "ALLOW", 1)
-        return public_story(found[1][0]) | {
+        return public_story(story) | {
             "view_name": view["name"],
-            "pressed_at": found[0].pressed_at.isoformat(),
+            "pressed_at": edition.pressed_at.isoformat(),
         }
 
     async def react(self, story_id: str, reaction: str | None, user: dict) -> dict:
@@ -1175,6 +1203,19 @@ class NewsroomService:
             security_context_version=user.get("security_context_version"),
             decision=decision,
         )
+
+
+async def _significance(stories: list, user: dict) -> dict[str, dict]:
+    """Business significance of the visible stories; News still ranks without it."""
+    if not stories:
+        return {}
+    from app.modules.intelligence.business_events import significance
+
+    try:
+        return await significance(stories, user)
+    except Exception as exc:  # noqa: BLE001 - ranking falls back to the statistical order
+        logger.warning("Story significance unavailable: %s", type(exc).__name__)
+        return {}
 
 
 async def _model_writer(story, config, ir, known_values):

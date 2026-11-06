@@ -1,3 +1,0 @@
-- targets: ["nova-agent-worker:9103"]
-  labels:
-    service: nova-agent-worker

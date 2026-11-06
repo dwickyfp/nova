@@ -95,3 +95,35 @@ def test_forecast_uses_chronological_statsforecast_not_tabular_regression():
     assert result.metrics["validation_strategy"] == "chronological_holdout"
     assert result.metrics["training_end"] < result.metrics["validation_start"]
     assert len(result.results) == 5
+
+
+def test_a_daily_series_with_missing_days_is_forecast_on_a_regular_grid():
+    weekly = [300.0, 220.0, 240.0, 260.0, 280.0, 350.0, 390.0]
+    rows = [
+        {
+            "order_date": (pd.Timestamp("2026-05-01") + pd.Timedelta(days=day)).date(),
+            "units_sold": weekly[day % 7],
+        }
+        for day in range(120)
+        # Days with no orders produce no row; the series has no regular frequency.
+        if day % 11 != 5
+    ]
+    spec = MLExecutionSpec(
+        task=MLTask.FORECAST,
+        input_sql="SELECT order_date, units_sold FROM sales",
+        security=MLSecurityContext("analyst", "secret"),
+        mode=MLMode.BALANCED,
+        target_column="units_sold",
+        timestamp_column="order_date",
+        horizon=14,
+        budget=ExecutionBudget(10, 1_000, 10_000_000),
+    )
+
+    result = train_forecast(pa.Table.from_pylist(rows), spec)
+
+    assert result.metrics["frequency"] == "D"
+    assert result.metrics["filled_periods"] == 120 - len(rows)
+    assert result.training_rows == 120
+    predictions = [row["prediction"] for row in result.results]
+    # The weekly pattern survives: not one flat average repeated for every day.
+    assert max(predictions) - min(predictions) > 50

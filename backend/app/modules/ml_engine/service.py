@@ -28,6 +28,7 @@ from app.modules.ml_engine.data.mysql_fallback import (
 )
 from app.modules.ml_engine.engines.base import TrainingOutput
 from app.modules.ml_engine.engines.lazy import (
+    optimize_routes,
     train_anomaly,
     train_clustering,
     train_forecast,
@@ -71,6 +72,8 @@ def _train_worker(table: pa.Table, spec: MLExecutionSpec):
         return train_anomaly(table, spec)
     if spec.task is MLTask.CLUSTERING:
         return train_clustering(table, spec)
+    if spec.task is MLTask.ROUTE_OPTIMIZATION:
+        return optimize_routes(table, spec)
     raise ValueError(f"Unsupported ML task: {spec.task}")
 
 

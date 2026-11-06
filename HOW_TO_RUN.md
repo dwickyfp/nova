@@ -370,6 +370,11 @@ backend dan worker di compose memakai `AI_PROVIDER_LOOPBACK_HOST`
 langsung di host membiarkan variabel ini kosong. Di Docker Linux tanpa
 `host.docker.internal`, isi dengan alamat gateway host.
 
+Daftarkan endpoint provider di host sebagai `localhost` (misalnya
+`http://localhost:20128/v1`), bukan `host.docker.internal`. Nama itu hanya
+dikenal di dalam container, sehingga backend di host akan gagal dengan
+`provider_error`; `localhost` berlaku di host dan diteruskan otomatis di compose.
+
 ---
 
 ## 3. Jalankan Frontend
@@ -786,6 +791,32 @@ diganti ketika diminta.
 
 ---
 
+## Mode Development Cepat (hot reload)
+
+Selama development, hanya infrastruktur (StarRocks, Ranger, Redis, MinIO) yang
+berjalan di Docker. Backend, scheduler, worker, dan Vite
+berjalan di host lewat satu perintah, sehingga perubahan kode langsung berlaku
+tanpa rebuild image:
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova
+docker stop nova-backend nova-worker   # sekali, jika profil app pernah dijalankan
+UV_NO_SYNC=1 ./dev.sh
+```
+
+- Backend memakai `uvicorn --reload` yang mengawasi `backend/app`.
+- Scheduler dan `nova-worker` dijalankan lewat
+  `watchfiles` dan restart sendiri saat file Python di `backend/app` berubah.
+- Vite me-reload UI seperti biasa.
+- `UV_NO_SYNC=1` menjaga venv host apa adanya. Di macOS yang tidak bisa memuat
+  scipy versi lock (`dlopen ... zero-fill section type`), pasang versi yang
+  bisa dimuat dan selalu jalankan dengan variabel ini:
+  `cd backend && VIRTUAL_ENV=.venv uv pip install scipy==1.17.1`.
+- Log tiap proses ada di `.dev-logs/`. Ctrl+C menghentikan semuanya.
+
+Jangan jalankan container aplikasi dan `dev.sh` bersamaan: keduanya memakai
+port 8000 dan worker yang sama akan berebut antrean run.
+
 ## Urutan Startup Harian
 
 Setelah dependency dan file `.env` selesai disiapkan, gunakan terminal berikut.
@@ -844,28 +875,14 @@ menjalankan `nova-worker` bersama backend. Isi kredensial akun worker khusus
 aktif, `WORKER_IMPERSONATION_ROLE`) di `docker/.env` sebelum mengaktifkan profil
 tersebut. Jangan gunakan akun `root` atau `nova_admin`.
 
-### Terminal 6 — Studio Smart agent worker
-
-Studio Smart requires a separate worker process. It claims queued runs from
-`NOVA_SYSTEM`, checks the originating session and active role in Redis, and
-executes specialist runs independently of the API process.
+Otomasi agen terjadwal di Studio juga berjalan di `nova-worker`, sebagai pemilik
+jadwal. Berikan akun worker impersonation terbatas untuk setiap pemilik yang
+jadwalnya perlu berjalan:
 
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
-uv run python -m app.agent_worker
-```
-
-Scheduled internal work also runs in this worker, as the owner of the schedule.
-Give it the same `WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD` and
-`WORKER_IMPERSONATION_ROLE` as `nova-worker`, and grant that account scoped
-impersonation of each owner whose schedules should run:
-
-```bash
 uv run python scripts/provision_task_worker_access.py --owner <username>
 ```
-
-Without it a scheduled Smart run ends as `scheduled_run_unauthorized`. The
-`nova-worker` process (Terminal 5) fires the schedules.
 
 Studio's Mission workflow, Actions, quality monitoring, and analysis workspace
 are always on; there are no rollout flags. The analysis workspace still needs

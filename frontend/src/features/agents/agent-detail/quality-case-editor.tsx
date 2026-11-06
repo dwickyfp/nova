@@ -31,6 +31,8 @@ const assertionHints: Record<string, string> = {
     'Expected object: {"tool_calls":10,"provider_calls":10}. Choose the permitted call limits.',
   semantic_selection:
     "Use the expected semantic fields recorded in the trace, such as the selected metric and time range.",
+  concept_grounding:
+    'Expected object: {"status":"grounded","concepts":["Finance.NetRevenue"]}. Use "ambiguous" when the question must be clarified.',
   tool_arguments:
     "Use expected tool arguments recorded by the runtime. Include only public values.",
   clarification_quality:

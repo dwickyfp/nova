@@ -2,6 +2,7 @@ import { api } from "@/lib/api-client";
 
 export const qualityScorers = [
   "semantic_selection",
+  "concept_grounding",
   "tool_selection",
   "tool_arguments",
   "numeric_consistency",

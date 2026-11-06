@@ -12,7 +12,7 @@ always on; there are no rollout flags. Production scoring also needs per-agent
 opt-in and an authorized role execution binding. Analytical execution stays
 blocked while no isolated executor exists.
 
-API, task-worker, and Smart-worker startup logs contain a credential-free Studio
+API and task-worker startup logs contain a credential-free Studio
 capability snapshot. Studio's Capabilities → Business workflow view reads the
 same additive `runtime` contract from `/api/v1/agents/studio/capabilities`.
 `available` describes whether a capability can operate with its configured
@@ -25,8 +25,8 @@ acceptance.
 
 Use stable signing/encryption keys shared by API/workers, existing managed
 storage, and the patched FE/Ranger path for governed data. Start the existing
-scheduler/task worker for monitor/quality schedules and the Smart worker for
-participant turns. Read [process startup](../HOW_TO_RUN.md#urutan-startup-harian)
+scheduler/task worker for monitor/quality schedules and per-agent automations.
+Read [process startup](../HOW_TO_RUN.md#urutan-startup-harian)
 and verify ownership; a healthy API does not prove workers are running.
 
 ## Additive migration and bootstrap
@@ -39,7 +39,7 @@ adds flat tables without replacing existing journals:
 | `CONFIG_AGENT_RELEASE_MANIFESTS` | Immutable dependency manifests |
 | `CONFIG_AGENT_QUALITY_CASES`, `CONFIG_AGENT_QUALITY_RUNS`, `CONFIG_AGENT_QUALITY_MONITORING`, `CONFIG_AGENT_IMPROVEMENT_PROPOSALS` | Revisioned quality records/review proposals |
 | `CONFIG_STUDIO_MISSIONS`, `CONFIG_STUDIO_DELIVERABLES` | Mission projections and evidence-backed deliverables |
-| `CONFIG_STUDIO_RESOURCES`, `CONFIG_STUDIO_RESOURCE_GRANTS` | Attachment references/participant grants |
+| `CONFIG_STUDIO_RESOURCES`, `CONFIG_STUDIO_RESOURCE_GRANTS` | Smart attachment grants; kept in place and unused since Smart was removed |
 | `CONFIG_INTELLIGENCE_ACTIONS`, `CONFIG_INTELLIGENCE_ACTION_EVENTS`, `CONFIG_INTELLIGENCE_COMPARISONS` | Action ledger/events and one-off comparison lineage |
 
 Fresh-install [bootstrap SQL](../docker/init-nova.sql) includes the matching
@@ -197,7 +197,7 @@ Reload current revisions before reviewer approval, execution, verification, or
 compensation. The original dispatch receipt stays immutable; disable readback
 is recorded separately as `compensation_receipt`. Decision approval, Action
 approval, and per-call allow-once consent
-serve separate checks. Smart participants cannot execute business actions. The
+serve separate checks. The
 monitor schedule requires an authorized role execution binding.
 
 Both `monitor-v1` and `automation-v1` require the active published Semantic View
@@ -227,11 +227,10 @@ Creation, configuration readback, and consented disable compensation establish
 an operational effect. They carry the same dispatch fencing and uncertain
 mutation recovery rules as monitoring; external delivery is excluded.
 
-Resource failures require checking session/role/security version, original
-message/digest, participant lineage, and explicit grants. Do not copy bodies into
-coordination messages or widen sibling access. Historical source checks are
-narrowly authorized by the Mission's original run binding; a new run needs new
-grants and current consent.
+Resource failures require checking session/role/security version and the
+original message/digest. Do not copy attachment bodies into messages. Historical
+source checks are narrowly authorized by the Mission's original run binding; a
+new run needs current consent.
 
 ## Acceptance commands
 
@@ -499,8 +498,7 @@ pnpm test:coverage
 
 Record revenue decline through Mission, semantic evidence, hypotheses, scenarios,
 Decision approval, monitor Action, verification, Outcome, and persisted
-quality/context references. Include denial, cancellation, reconnect, and selective
-nested attachment delegation. Inspect empty, loading, partial, error,
+quality/context references. Include denial, cancellation, and reconnect. Inspect empty, loading, partial, error,
 permission-disabled, populated, keyboard/focus, 320px/desktop, and light/dark
 states. Scripted backend checks are separate from browser evidence.
 

@@ -123,10 +123,12 @@ def rank(stories: list[dict], rows: list[dict]) -> list[dict]:
         lean = max(-1.0, min(1.0, sum(pull.values())))
         # A critical move outranks a material one, and a move of the whole view
         # outranks a slice of similar size.
+        significance = story.get("significance") or {}
         base = (
             (2.0 if story["severity"] == "critical" else 1.0)
             + min(abs(story.get("relative_change") or 0.0), 1.0)
             + (0.0 if story.get("slice") else 0.5)
+            + float(significance.get("boost") or 0.0)
         )
         reaction = reacted.get(story["id"])
         score = base * (1 + lean) - (100.0 if reaction == "dislike" else 0.0)
@@ -140,7 +142,7 @@ def rank(stories: list[dict], rows: list[dict]) -> list[dict]:
                 "reason": (
                     f"Matches stories you liked: {_label(*strongest[0])}"
                     if strongest[0] is not None and strongest[1] > 0.1
-                    else LARGEST
+                    else (significance.get("reasons") or [LARGEST])[0]
                 ),
             }
         )

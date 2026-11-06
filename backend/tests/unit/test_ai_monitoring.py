@@ -39,7 +39,7 @@ def event(name="one", at="2026-09-25T10:00:00", **kwargs):
 @pytest.fixture
 def service(monkeypatch):
     service = AIUsageService()
-    for method in ("_messages", "_runs", "_functions", "_function_tokens"):
+    for method in ("_messages", "_functions", "_function_tokens"):
         monkeypatch.setattr(service, method, AsyncMock(return_value=([], False)))
     return service
 
@@ -84,7 +84,7 @@ async def test_filters_apply_to_every_aggregate_and_pagination(service):
 
 async def test_partial_data_never_has_a_comparison(service):
     service._messages.return_value = ([event()], True)
-    service._runs.side_effect = RuntimeError("sensitive database error")
+    service._functions.side_effect = RuntimeError("sensitive database error")
     data = await service.dashboard(now=NOW)
     assert data["partial"]
     assert data["previous_summary"] is None
@@ -94,27 +94,14 @@ async def test_partial_data_never_has_a_comparison(service):
 
 async def test_all_failed_is_unavailable_not_zero(service):
     for method in (
-        service._messages, service._runs, service._functions, service._function_tokens
+        service._messages, service._functions, service._function_tokens
     ):
         method.side_effect = RuntimeError("offline")
     with pytest.raises(ai_usage.AIUsageUnavailable):
         await service.dashboard(now=NOW)
 
 
-async def test_smart_counts_are_not_assumed_measured_zero(monkeypatch):
-    execute = AsyncMock(return_value={"rows": [
-        ("root", NOW, "alice", 0, "completed", 100, 25),
-        ("child", NOW, "alice", 1, "failed", 0, 0),
-    ]})
-    monkeypatch.setattr(ai_usage.db, "execute_system", execute)
-    events, _ = await AIUsageService()._runs(NOW, NOW)
-    assert "OR agent_id IN ('__smart__', '__auto__')" in execute.call_args.args[0]
-    assert events[0]["total_tokens"] == 125
-    assert events[0]["model"] is None
-    assert events[1]["total_tokens"] is None
-
-
-async def test_message_query_excludes_smart_summary_and_projects_no_content(monkeypatch):
+async def test_message_query_excludes_retired_smart_answers_and_projects_no_content(monkeypatch):
     execute = AsyncMock(return_value={"rows": []})
     monkeypatch.setattr(ai_usage.db, "execute_system", execute)
     await AIUsageService()._messages(NOW, NOW)

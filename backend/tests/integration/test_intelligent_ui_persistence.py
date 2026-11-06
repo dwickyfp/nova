@@ -1,6 +1,5 @@
 """Seeded StarRocks/Redis migration, cross-device state and journal replay."""
 
-import asyncio
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -19,50 +18,6 @@ from tests.unit.test_intelligent_ui import CALCULATOR, MAP_SELECTION, MAP_TABLES
 intelligence_db = test_intelligence_metadata.intelligence_db
 
 pytestmark = pytest.mark.engine
-
-
-async def test_cancelled_root_survives_concurrent_api_and_worker_writes(intelligence_db):
-    from app.modules.agents.harness_repository import HarnessRepository
-
-    scope = intelligence_db
-    worker = HarnessRepository()
-    api = HarnessRepository()
-    await worker.ensure_schema()
-    thread_id = str(uuid4())
-    try:
-        for _ in range(3):
-            root = await api.create_root(
-                owner_name=scope.principal, thread_id=thread_id, role_name=scope.active_role,
-                session_id=scope.session_id, security_version=scope.security_context_version,
-                objective="Synthetic cancellation race fixture",
-            )
-            run_id = root["run_id"]
-            assert await worker.claim(run_id, "fixture-worker")
-            child = await worker.spawn(
-                parent=root, agent_id="fixture-agent", objective="Synthetic child",
-                operation_id="child",
-            )
-            assert await worker.claim(child["run_id"], "fixture-worker")
-
-            async def renew(target):
-                for _ in range(8):
-                    await worker.heartbeat(target, "fixture-worker")
-                    await worker.add_usage(target, prompt_tokens=1, completion_tokens=0)
-
-            _, _, cancelled = await asyncio.gather(
-                renew(run_id), renew(child["run_id"]), api.cancel_tree(run_id),
-            )
-            assert cancelled
-            saved = await api.get(run_id)
-            assert saved["status"] == "cancelled"
-            assert not await worker.transition(
-                run_id, from_status="running", to_status="completed",
-                lease_owner="fixture-worker", generation=1,
-            )
-            assert (await api.get(run_id))["status"] == "cancelled"
-            assert (await api.get(child["run_id"]))["status"] == "cancelled"
-    finally:
-        await run_journal.delete_thread(thread_id, owner_name=scope.principal)
 
 
 async def test_map_selection_restored_from_scoped_persisted_program(intelligence_db):

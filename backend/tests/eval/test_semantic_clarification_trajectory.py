@@ -67,7 +67,7 @@ async def test_clarification_turn_cannot_run_more_tools(monkeypatch):
 async def test_a_model_that_keeps_calling_tools_still_ends_as_the_clarification(monkeypatch):
     """A compound request the catalog cannot express in one query: the model wants
     to split it, but a clarification turn runs no more tools. It ends as the
-    clarification instead of failing, so a delegating Smart run gets an answer."""
+    clarification instead of failing."""
     tool, _planner, execute = setup_tool(monkeypatch, _plan(unresolved_concepts=[
         {"text": "outlets per city", "type_hint": "metric", "material": True},
     ]))
@@ -85,111 +85,6 @@ async def test_a_model_that_keeps_calling_tools_still_ends_as_the_clarification(
     # The question back names what is missing and what the view offers instead.
     assert "outletspercity" in joined and "Ithasthesemeasures" in joined
     execute.assert_not_awaited()
-
-
-async def test_a_specialist_asks_a_multi_part_task_again_part_by_part(monkeypatch):
-    """Smart handed one specialist two results. The whole task as one question is
-    not covered; the specialist gets one chance to ask each part on its own."""
-    from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
-
-    tool, _planner, execute = setup_tool(
-        monkeypatch,
-        _plan(unresolved_concepts=[
-            {"text": "outlets per city", "type_hint": "metric", "material": True},
-        ]),
-        _plan(dimensions=["city"]),
-    )
-    registry = ToolRegistry()
-    registry.register(tool)
-    task = "Return revenue by city and outlets per city as two results."
-    provider = ScriptedProvider(script=[
-        tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
-        tool_call_frame("s2", name="semantic_query", arguments={"question": "revenue by city"}),
-        text_frame("Revenue by city is ready; outlets per city is not in this data."),
-    ])
-    context = LoopContext(user_name="alice", user=USER.copy(),
-                          collaboration_tools=tuple(COLLABORATION_TOOLS))
-    frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
-        thread=AssistantThread(thread_id="split", user_name="alice", title="Eval"),
-        user_content=task, context=context, resolve_consent=allow,
-    )]
-    joined = "".join(frames).replace(" ", "")
-    assert '"finish_reason":"clarification"' not in joined
-    assert "unexpected_tool_call" not in joined
-    execute.assert_awaited_once()
-    assert context.verified_evidence["tables"]
-
-
-async def test_a_specialist_that_keeps_calling_tools_returns_the_results_it_holds(monkeypatch):
-    """The outlet specialist of a measured run: its result was in, it was sent to
-    compose, and it kept asking for queries. Smart reads its tables, so the turn
-    returns them instead of failing and losing them."""
-    from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
-
-    tool, _planner, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
-    registry = ToolRegistry()
-    registry.register(tool)
-    task = "Outlets per city for the whole period."
-    provider = ScriptedProvider(script=[
-        tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
-        tool_call_frame("s2", name="semantic_query", arguments={"question": "registered outlets"}),
-        tool_call_frame("s3", name="semantic_query", arguments={"question": "outlets by region"}),
-    ])
-    context = LoopContext(user_name="alice", user=USER.copy(),
-                          collaboration_tools=tuple(COLLABORATION_TOOLS))
-    frames = [frame async for frame in AssistantLoop(
-        provider=provider, registry=registry, max_iterations=3, iterative=True,
-    ).run(
-        thread=AssistantThread(thread_id="persist", user_name="alice", title="Eval"),
-        user_content=task, context=context, resolve_consent=allow,
-    )]
-    joined = "".join(frames).replace(" ", "")
-    assert '"finish_reason":"stop"' in joined, joined[-400:]
-    assert "unexpected_tool_call" not in joined
-    assert "attachedverifiedtables" in joined
-    execute.assert_awaited_once()
-    assert context.verified_evidence["tables"]
-
-
-async def test_a_specialist_returns_data_and_leaves_charts_to_the_root(monkeypatch):
-    """Only the root's charts reach the answer: a specialist asked for a chart is
-    neither offered nor required to make one, and still completes its task."""
-    from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
-    from tests.eval.harness import EvalTool
-
-    tool, _planner, _execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
-    chart = EvalTool("data_to_chart", chart={"chart_spec": "{}"})
-    registry = ToolRegistry()
-    for item in (tool, chart):
-        registry.register(item)
-
-    class Recording(ScriptedProvider):
-        offered: list[set[str]]
-
-        async def stream(self, *, messages, tools=None, provider=None):
-            self.offered.append({item["function"]["name"] for item in tools or []})
-            async for frame in super().stream(messages=messages, tools=tools, provider=provider):
-                yield frame
-
-    task = "Chart outlets per city."
-    provider = Recording(script=[
-        tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
-        text_frame("Outlets per city are ready."),
-    ], turn_plan={
-        "intent": "semantic_analytics", "tools": ["semantic_query", "data_to_chart"],
-        "required_tools": ["semantic_query", "data_to_chart"],
-    })
-    provider.offered = []
-    context = LoopContext(user_name="alice", user=USER.copy(),
-                          collaboration_tools=tuple(COLLABORATION_TOOLS))
-    frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
-        thread=AssistantThread(thread_id="data-only", user_name="alice", title="Eval"),
-        user_content=task, context=context, resolve_consent=allow,
-    )]
-    joined = "".join(frames).replace(" ", "")
-    assert '"finish_reason":"stop"' in joined, joined[-400:]
-    assert provider.offered and not any("data_to_chart" in names for names in provider.offered)
-    assert not chart.runs
 
 
 async def test_studio_runs_the_governed_tool_itself_when_the_model_will_not(monkeypatch):
@@ -295,3 +190,93 @@ async def test_a_turn_that_holds_results_answers_from_them_even_after_a_clarific
     assert '"finish_reason": "stop"' in joined or '"finish_reason":"stop"' in joined
     assert "4805" in joined and "77 more" not in joined
     assert context.verified_evidence["tables"]
+
+
+async def test_a_direct_agent_still_fails_when_a_required_capability_never_runs(monkeypatch):
+    from tests.eval.harness import EvalTool
+
+    tool, _planner, _execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
+    registry = ToolRegistry()
+    registry.register(tool)
+    registry.register(EvalTool("diagnose_change", data={"drivers": []}))
+    task = "Explain why tea sales in Medan fell since September."
+    provider = ScriptedProvider(script=[
+        tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
+        text_frame("Sales fell."), text_frame("Sales fell."),
+    ], turn_plan={"intent": "semantic_analytics", "tools": ["semantic_query", "diagnose_change"],
+                  "required_tools": ["semantic_query", "diagnose_change"]})
+    frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
+        thread=AssistantThread(thread_id="why2", user_name="alice", title="Eval"),
+        user_content=task, context=LoopContext(user_name="alice", user=USER.copy()),
+        resolve_consent=allow,
+    )]
+    assert "required_capability_incomplete" in "".join(frames)
+
+
+async def test_a_direct_ml_turn_asks_for_the_data_again_without_the_ml_steps(monkeypatch):
+    """A direct agent asked for a forecast or a route: its first query carries the ML
+    and map steps, which are not data. It asks once more for the data alone instead of
+    turning the steps into a question back."""
+    tool, _planner, execute = setup_tool(
+        monkeypatch,
+        _plan(unresolved_concepts=[
+            {"text": "ML clustering and route map", "type_hint": "metric", "material": True},
+        ]),
+        _plan(dimensions=["city"]),
+    )
+    registry = ToolRegistry()
+    registry.register(tool)
+    task = "Kelompokkan outlet dengan ML dan tampilkan peta rutenya."
+    provider = ScriptedProvider(
+        script=[
+            tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
+            tool_call_frame("s2", name="semantic_query", arguments={"question": "revenue by city"}),
+            text_frame("Revenue by city is ready."),
+        ],
+        turn_plan={"intent": "machine_learning", "tools": ["semantic_query"],
+                   "required_tools": ["semantic_query"], "ml_task": "route_optimization"},
+    )
+    context = LoopContext(user_name="alice", user=USER.copy())
+    frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
+        thread=AssistantThread(thread_id="direct-ml", user_name="alice", title="Eval"),
+        user_content=task, context=context, resolve_consent=allow,
+    )]
+    joined = "".join(frames).replace(" ", "")
+    assert '"finish_reason":"clarification"' not in joined
+    execute.assert_awaited_once()
+
+
+async def test_a_compound_turn_that_answers_with_a_question_is_sent_to_query_its_parts(monkeypatch):
+    """The direct route agent's failure: the whole request as one query was refused,
+    and after the hint the model asked "shall I continue?" instead of querying. It is
+    told once more to query the parts, and then answers from them."""
+    tool, _planner, execute = setup_tool(
+        monkeypatch,
+        _plan(unresolved_concepts=[
+            {"text": "purchase volume with routes", "type_hint": "metric", "material": True},
+        ]),
+        _plan(dimensions=["city"]),
+    )
+    registry = ToolRegistry()
+    registry.register(tool)
+    task = "Rute terbaik dan jarak per driver di Medan."
+    provider = ScriptedProvider(
+        script=[
+            tool_call_frame("s1", name="semantic_query", arguments={"question": task}),
+            text_frame("Mau saya lanjutkan dengan jarak per driver saja?"),
+            tool_call_frame("s2", name="semantic_query", arguments={"question": "revenue by city"}),
+            text_frame("Revenue by city is ready."),
+        ],
+        turn_plan={"intent": "compound_analytics", "tools": ["semantic_query"],
+                   "required_tools": ["semantic_query"], "ml_task": None},
+    )
+    context = LoopContext(user_name="alice", user=USER.copy(),
+                          agent_scope={"surface": "studio"})
+    frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
+        thread=AssistantThread(thread_id="direct-compound", user_name="alice", title="Eval"),
+        user_content=task, context=context, resolve_consent=allow,
+    )]
+    joined = "".join(frames).replace(" ", "")
+    assert '"finish_reason":"clarification"' not in joined
+    assert '"finish_reason":"out_of_scope"' not in joined
+    execute.assert_awaited_once()

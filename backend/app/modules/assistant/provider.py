@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
@@ -152,8 +153,12 @@ class AssistantProviderClient:
         *,
         max_attempts: int = 3,
         retry_base_seconds: float = 0.25,
+        call_timeout_seconds: float = 180.0,
     ) -> None:
         self._timeout = timeout_seconds
+        # httpx's timeout bounds each read; a stream that keeps trickling bytes, or
+        # stalls after its headers, needs a bound on the whole call as well.
+        self._call_timeout = call_timeout_seconds
         self._max_attempts = max(1, max_attempts)
         self._retry_base_seconds = max(0.0, retry_base_seconds)
 
@@ -419,9 +424,15 @@ class AssistantProviderClient:
                     ) as client,
                     observe_http_dispatches(client),
                 ):
-                    response = await client.post(
-                        config.endpoint, headers=self._headers(config), json=body
-                    )
+                    try:
+                        response = await asyncio.wait_for(
+                            client.post(config.endpoint, headers=self._headers(config), json=body),
+                            self._call_timeout,
+                        )
+                    except TimeoutError:
+                        raise httpx.ReadTimeout(
+                            "AI provider call exceeded its time limit"
+                        ) from None
             except BlockedEndpointError as exc:
                 # A redirect hop was refused by the guarded transport.
                 measured = current_measurements()
@@ -536,7 +547,9 @@ class AssistantProviderClient:
                         await self._backoff(attempt, response)
                         continue
                     self._raise_for_status(response, config)
-                    async for line in response.aiter_lines():
+                    async for line in _lines_until(
+                        response, time.monotonic() + self._call_timeout
+                    ):
                         payload = parse_sse_data_line(line)
                         if payload is None:
                             continue
@@ -571,6 +584,22 @@ class AssistantProviderClient:
             provider_response(message)
             yield ("message", message)
             return
+
+
+async def _lines_until(response: httpx.Response, deadline: float) -> AsyncIterator[str]:
+    """The stream's lines, ending in a timeout once the call's deadline passes."""
+    lines = response.aiter_lines().__aiter__()
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise httpx.ReadTimeout("AI provider stream exceeded its time limit")
+        try:
+            line = await asyncio.wait_for(lines.__anext__(), remaining)
+        except StopAsyncIteration:
+            return
+        except TimeoutError:
+            raise httpx.ReadTimeout("AI provider stream exceeded its time limit") from None
+        yield line
 
 
 assistant_provider = AssistantProviderClient()

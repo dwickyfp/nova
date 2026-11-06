@@ -65,4 +65,4 @@ Map clients report only `ready`, `failed`, `fallback` or `route_unavailable` plu
 
 `VITE_STUDIO_MAPCN_ENABLED` defaults to true. Set it to `false` and rebuild to use the legacy renderer for v2 content and Markdown fallback for v3 content. Both application versions must retain the v2 validator artifacts.
 
-The existing Intelligent UI feature flag remains the outer gate. No composer, Smart-mode, SQL authorization or agent-loop behavior changes are required. See the [acceptance record](../testing/studio-mapcn/README.md) for validation status and limitations.
+The existing Intelligent UI feature flag remains the outer gate. No composer, SQL authorization or agent-loop behavior changes are required. See the [acceptance record](../testing/studio-mapcn/README.md) for validation status and limitations.

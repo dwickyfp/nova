@@ -9,6 +9,7 @@ import { byPriority, desk, humanize, kicker, longDate } from "./format";
 import { Highlighted } from "./highlight";
 import {
   newspaperApi,
+  type InvestigationHandoff,
   type Newspaper,
   type Reaction,
   type Story,
@@ -26,7 +27,10 @@ type Props = {
   onEdition?: (edition?: string) => void;
   onOpen: (id?: string) => void;
   onAlerts: () => void;
-  onFollowUp: (prompt: string) => void;
+  /** Open the Studio Mission the server created for a story. */
+  onInvestigate: (handoff: InvestigationHandoff) => void;
+  /** The agent that investigates a story; null without one, undefined while loading. */
+  investigateAgentId?: string | null;
 };
 type React_ = (id: string, reaction: Reaction | null) => void;
 const REFRESH_MS = 60_000;
@@ -223,7 +227,8 @@ export function NewspaperPage({
   onEdition,
   onOpen,
   onAlerts,
-  onFollowUp,
+  onInvestigate,
+  investigateAgentId,
 }: Props) {
   const epoch = useAuthStore((state) => state.securityEpoch);
   const client = useQueryClient();
@@ -365,7 +370,8 @@ export function NewspaperPage({
           epoch={epoch}
           onOpen={onOpen}
           onReact={onReact}
-          onFollowUp={onFollowUp}
+          onInvestigate={onInvestigate}
+          investigateAgentId={investigateAgentId}
         />
       )}
     </div>

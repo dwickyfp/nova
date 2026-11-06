@@ -122,8 +122,30 @@ describe("mapcn evidence and state contract", () => {
   });
 });
 
+describe("routes from ordered stops", () => {
+  const stops = {
+    stops: [
+      { route: "Area 1", stop_seq: 1, stop: "A", lat: 3.58, lon: 98.66 },
+      { route: "Area 1", stop_seq: 2, stop: "B", lat: 3.59, lon: 98.67 },
+    ],
+  };
+  it("accepts located stops with a stop order on the route layer", () => {
+    const program =
+      '$s=-1\nroot=Col([GeoMap(@Evidence("stops"),"lon","lat",null,"stop","Routes",$s,{layer:"route",sequence:"stop_seq",group:"route"})])';
+    expect(validateProgram(program, stops, true, { $s: 0 }).selections[0].row).toEqual(stops.stops[0]);
+  });
+  it("refuses a stop order off the route layer and a route with neither line nor order", () => {
+    const off =
+      '$s=-1\nroot=Col([GeoMap(@Evidence("stops"),"lon","lat",null,"stop","Routes",$s,{sequence:"stop_seq"})])';
+    const bare =
+      '$s=-1\nroot=Col([GeoMap(@Evidence("stops"),"lon","lat",null,"stop","Routes",$s,{layer:"route"})])';
+    expect(() => validateProgram(off, stops, true)).toThrow();
+    expect(() => validateProgram(bare, stops, true)).toThrow();
+  });
+});
+
 describe("basemaps", () => {
-  it("loads CARTO only for public places and keeps business maps local", () => {
+  it("streets come from CARTO and the bundled overview stays offline", () => {
     for (const url of Object.values(PUBLIC_MAP_STYLES))
       expect(new URL(url).hostname).toBe("basemaps.cartocdn.com");
     expect(PUBLIC_3D_STYLE).toBe(

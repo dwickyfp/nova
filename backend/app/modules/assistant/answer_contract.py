@@ -1099,8 +1099,11 @@ def finalize_verified_answer(
         ).accepted:
             return VerifiedAnswer(rendered, check, True, comparison)
     if check.accepted:
+        # An answer that already sets out a table has shown the comparison; computed
+        # highest/lowest lines after it only repeat it.
         leaders = (
-            verified_leaders(tables, language=language, answer=answer) if comparison else []
+            verified_leaders(tables, language=language, answer=answer)
+            if comparison and not _MARKDOWN_TABLE.search(answer) else []
         )
         text = answer.rstrip() + ("\n\n" + "\n".join(leaders) if leaders else "")
         return VerifiedAnswer(text, check, False, comparison)
@@ -1156,16 +1159,38 @@ def _layout(table: dict[str, Any]) -> tuple[list[str], list[list[Any]], list[int
         for row in (table.get("rows") or [])[:20]
         if isinstance(row, (list, tuple)) and len(row) >= len(columns)
     ]
+    # A column with no value in any row (a forecast's unused series) labels nothing.
+    kept = [
+        index for index in range(len(columns))
+        if not rows or any(row[index] not in (None, "") for row in rows)
+    ]
+    columns = [columns[index] for index in kept]
+    rows = [[row[index] for index in kept] for row in rows]
     labels = [
         index for index in range(len(columns))
         if rows and all(_number(row[index]) is None for row in rows)
     ]
     measures = [
         index for index in range(len(columns))
-        if index not in labels and columns[index].casefold() != "rank"
+        if index not in labels and not _is_reference(columns[index])
         and rows and all(_number(row[index]) is not None for row in rows)
     ][:3]
     return columns, rows, labels, measures
+
+
+#: Numeric columns that place or name a row rather than measure it: no reader
+#: wants "highest latitude" or "lowest cluster id".
+_REFERENCE_COLUMNS = re.compile(
+    r"(^|[._])(rank|lat|latitude|lon|lng|longitude|cluster_id|row_id|stop_seq|sequence|"
+    r"[a-z]*_id)$"
+)
+
+
+_MARKDOWN_TABLE = re.compile(r"^\s*\|.*\|\s*\n\s*\|\s*:?-{3,}", re.MULTILINE)
+
+
+def _is_reference(column: str) -> bool:
+    return bool(_REFERENCE_COLUMNS.search(column.casefold()))
 
 
 def _numeric_cell(row: list[Any], *, index: int) -> Decimal:

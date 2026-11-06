@@ -3,15 +3,15 @@ import { mapColor } from "@/components/ui/map/tokens";
 
 export type Bounds = [[number, number], [number, number]];
 
-// The CARTO basemaps mapcn uses. Only public places may load them: tile requests
-// reveal the viewed area, so business maps keep the bundled overview.
+// The CARTO basemaps mapcn uses, for public and business maps alike. Tile
+// requests reveal the viewed area to CARTO; the offline overview below stays for
+// maps rendered with basemap "bundled".
 export const PUBLIC_MAP_STYLES = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
 
 // mapcn's "OpenStreetMap 3D" example: Liberty carries extruded building layers.
-// Public places only, for the same reason as the basemaps above.
 export const PUBLIC_3D_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 const OVERVIEW_GLYPHS = "/maps/fonts/{fontstack}/{range}.pbf";
 

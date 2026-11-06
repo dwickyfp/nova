@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   search: { agent: "a1", thread: "thread-1" } as {
     agent?: string;
     thread?: string;
-    view?: "chat" | "artifacts" | "capabilities";
+    view?: "chat" | "artifacts" | "capabilities" | "news";
+    desk?: "alerts";
   },
 }));
 
@@ -39,7 +40,6 @@ vi.mock("@tanstack/react-router", async importOriginal => {
 });
 
 vi.mock("@/features/agents/api", () => ({
-  AUTO_AGENT_ID: "__smart__",
   agentsApi: {
     listStudio: vi.fn(async () => ({
       agents: [
@@ -75,14 +75,17 @@ vi.mock("./studio-chat", () => ({
     onThreadChange,
     initialPrompt,
     onSelectAgent,
+    noAgents,
   }: {
     agent: { name: string } | null;
     onThreadChange: (id: string | null) => void;
     initialPrompt?: string;
     onSelectAgent: (id: string) => void;
+    noAgents?: boolean;
   }) => (
     <div>
       <span>{agent?.name ?? "No agent"}</span>
+      {noAgents ? <span>Empty agent catalog</span> : null}
       <span>{initialPrompt}</span>
       <button onClick={() => onSelectAgent("a2")}>Choose Support</button>
       <button type="button" onClick={() => onThreadChange(null)}>
@@ -130,6 +133,16 @@ vi.mock("./studio-sidebar", () => ({
   ),
 }));
 vi.mock("./studio-account-menu", () => ({ StudioAccountMenu: () => null }));
+vi.mock("./studio-intelligence", () => ({
+  StudioIntelligence: ({ onFollowUp }: { onFollowUp: (prompt: string) => void }) => (
+    <button type="button" onClick={() => onFollowUp("Why did refunds rise?")}>Follow up alert</button>
+  ),
+}));
+vi.mock("./news/newspaper-page", () => ({
+  NewspaperPage: ({ investigateAgentId }: { investigateAgentId?: string | null }) => (
+    <span>Investigates with {investigateAgentId === undefined ? "loading" : investigateAgentId ?? "no agent"}</span>
+  ),
+}));
 vi.mock("./studio-artifacts", () => ({
   StudioArtifacts: () => <div>Artifacts view</div>,
   chartSpecWithRows: () => "{}",
@@ -162,6 +175,7 @@ describe("StudioApp thread routing", () => {
     vi.mocked(agentsApi.renameThread).mockClear();
     mocks.search = { agent: "a1", thread: "thread-1" };
     mocks.pathname = '/studio';
+    window.localStorage.removeItem("nova.studio.lastAgent");
   });
 
   const mixedHistory = {
@@ -169,7 +183,7 @@ describe("StudioApp thread routing", () => {
     threads: [
       { thread_id: "support-1", agent_id: "a2", title: "Support" },
       { thread_id: "thread-1", agent_id: "a1", title: "Revenue" },
-      { thread_id: "smart-1", agent_id: "__auto__", title: "Earlier Smart" },
+      { thread_id: "thread-0", agent_id: "a1", title: "Older revenue" },
     ] as AgentThread[],
   };
 
@@ -180,8 +194,8 @@ describe("StudioApp thread routing", () => {
     expect(agentsApi.listThreads).toHaveBeenCalledWith();
     await userEvent.click(screen.getByRole("button", { name: "Open Support" }));
     expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a2", thread: "support-1" }, replace: true });
-    await userEvent.click(screen.getByRole("button", { name: "Open Earlier Smart" }));
-    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "__smart__", thread: "smart-1" }, replace: true });
+    await userEvent.click(screen.getByRole("button", { name: "Open Older revenue" }));
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a1", thread: "thread-0" }, replace: true });
   });
 
   it("renames and deletes another agent's history without using the selected agent", async () => {
@@ -230,7 +244,7 @@ describe("StudioApp thread routing", () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it("keeps Auto available while the specialist catalog is temporarily unavailable", async () => {
+  it("reports an agent catalog that cannot load and retries it", async () => {
     mocks.search = {};
     const listStudio = vi.mocked(agentsApi.listStudio);
     const listThreads = vi.mocked(agentsApi.listThreads);
@@ -241,13 +255,14 @@ describe("StudioApp thread routing", () => {
     try {
       const screen = await renderStudio();
 
-      await expect.element(screen.getByText("Smart", { exact: true })).toBeVisible();
-      await expect.element(screen.getByText("No agent")).not.toBeInTheDocument();
+      await expect.element(screen.getByText("No agent")).toBeVisible();
+      // A failed load is not the same as having no agents.
+      await expect.element(screen.getByText("Empty agent catalog")).not.toBeInTheDocument();
       await expect.element(screen.getByRole("status")).toHaveTextContent(
-        "Specialists are temporarily unavailable.",
+        "Your agents could not load.",
       );
       const calls = listStudio.mock.calls.length;
-      await userEvent.click(screen.getByRole("button", { name: "Retry specialists" }));
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }));
       await expect.poll(() => listStudio.mock.calls.length).toBeGreaterThan(calls);
     } finally {
       if (normalStudio) listStudio.mockImplementation(normalStudio);
@@ -260,14 +275,14 @@ describe("StudioApp thread routing", () => {
     const listStudio = vi.mocked(agentsApi.listStudio);
     const normalStudio = listStudio.getMockImplementation();
     listStudio.mockResolvedValue({
-      agents: [{ agent_id: "__smart__", name: "Smart" }] as Awaited<ReturnType<typeof agentsApi.listStudio>>["agents"],
+      agents: [{ agent_id: "a3", name: "Field Ops" }] as Awaited<ReturnType<typeof agentsApi.listStudio>>["agents"],
       count: 1,
       needs_access: [{ agent_id: "sales", name: "Sales Agent" }],
     });
     try {
       const screen = await renderStudio();
 
-      await expect.element(screen.getByText("Smart", { exact: true })).toBeVisible();
+      await expect.element(screen.getByText("Field Ops", { exact: true })).toBeVisible();
       await expect.element(screen.getByText(/not available here yet/)).not.toBeInTheDocument();
       await expect.element(screen.getByRole("button", { name: "Open access settings" })).not.toBeInTheDocument();
       await expect.element(screen.getByText("Sales Agent")).not.toBeInTheDocument();
@@ -296,7 +311,7 @@ describe("StudioApp thread routing", () => {
       await expect.element(screen.getByRole("button", { name: "ANALYST" })).toBeVisible();
       await expect.element(screen.getByRole("button", { name: "FINANCE" })).toBeVisible();
       await expect
-        .element(screen.getByText("Specialists are temporarily unavailable."))
+        .element(screen.getByText("Your agents could not load."))
         .not.toBeInTheDocument();
     } finally {
       if (normalSettings) settings.mockImplementation(normalSettings);
@@ -414,7 +429,7 @@ describe("StudioApp thread routing", () => {
       .toBeInTheDocument();
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/studio",
-      search: { agent: "__smart__" },
+      search: { agent: "a1" },
       replace: true,
     });
   });
@@ -441,6 +456,90 @@ describe("StudioApp thread routing", () => {
       to: "/studio",
       search: { agent: "a1", thread: "thread-2" },
       replace: true,
+    });
+  });
+
+  describe("default agent", () => {
+    const emptyHistory = { threads: [] as AgentThread[], count: 0 };
+
+    it("opens the agent last used in this browser and starts new chats with it", async () => {
+      mocks.search = {};
+      window.localStorage.setItem("nova.studio.lastAgent", "a2");
+      vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(emptyHistory);
+      const screen = await renderStudio();
+      await expect.element(screen.getByText("Support Agent")).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: "Sidebar new chat" }));
+      expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a2" }, replace: true });
+    });
+
+    it("falls back to the first agent when the remembered one is gone", async () => {
+      mocks.search = {};
+      window.localStorage.setItem("nova.studio.lastAgent", "deleted-agent");
+      vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(emptyHistory);
+      const screen = await renderStudio();
+      await expect.element(screen.getByText("Revenue Analyst")).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: "Sidebar new chat" }));
+      expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a1" }, replace: true });
+    });
+
+    it("opens the default agent for a retired agent link", async () => {
+      for (const retired of ["__smart__", "__auto__"]) {
+        mocks.search = { agent: retired };
+        window.localStorage.setItem("nova.studio.lastAgent", "a2");
+        vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(emptyHistory);
+        const screen = await renderStudio();
+        await expect.element(screen.getByText("Support Agent")).toBeVisible();
+        await screen.unmount();
+      }
+    });
+
+    it("remembers the agent the user chooses", async () => {
+      const screen = await renderStudio();
+      await userEvent.click(screen.getByRole("button", { name: "Choose Support" }));
+      expect(window.localStorage.getItem("nova.studio.lastAgent")).toBe("a2");
+    });
+
+    it("tells the chat when the user has no agent", async () => {
+      mocks.search = {};
+      const listStudio = vi.mocked(agentsApi.listStudio);
+      const normalStudio = listStudio.getMockImplementation();
+      listStudio.mockResolvedValue({ agents: [], count: 0 });
+      vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(emptyHistory);
+      try {
+        const screen = await renderStudio();
+        await expect.element(screen.getByText("Empty agent catalog")).toBeVisible();
+        await expect.element(screen.getByText("No agent")).toBeVisible();
+      } finally {
+        if (normalStudio) listStudio.mockImplementation(normalStudio);
+      }
+    });
+
+    it("follows up a News alert with the default agent", async () => {
+      mocks.search = { view: "news", desk: "alerts" };
+      window.localStorage.setItem("nova.studio.lastAgent", "a2");
+      const screen = await renderStudio();
+      await userEvent.click(screen.getByRole("button", { name: "Follow up alert" }));
+      expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a2" }, replace: true });
+      await expect.element(screen.getByText("Why did refunds rise?")).toBeVisible();
+    });
+
+    it("hands News the default agent to investigate with, or none", async () => {
+      mocks.search = { view: "news" };
+      window.localStorage.setItem("nova.studio.lastAgent", "a2");
+      const screen = await renderStudio();
+      await expect.element(screen.getByText("Investigates with a2")).toBeVisible();
+      await screen.unmount();
+
+      const listStudio = vi.mocked(agentsApi.listStudio);
+      const normalStudio = listStudio.getMockImplementation();
+      listStudio.mockResolvedValue({ agents: [], count: 0 });
+      try {
+        mocks.search = { view: "news" };
+        const empty = await renderStudio();
+        await expect.element(empty.getByText("Investigates with no agent")).toBeVisible();
+      } finally {
+        if (normalStudio) listStudio.mockImplementation(normalStudio);
+      }
     });
   });
 });

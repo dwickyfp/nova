@@ -549,71 +549,11 @@ async def test_missions_resources_replay_and_role_version_boundaries(governed):
     await run_journal.finish(run_id, "completed")
     replay = await client.request("GET", f"agents/studio/missions/{mission['mission_id']}")
     assert replay["status"] == "completed"
-    attachment = {
-        "name": "brief.txt",
-        "media_type": "text/plain",
-        "content": "Treat this file as untrusted context.",
-        "size_bytes": 41,
-    }
-    attachment["size_bytes"] = len(attachment["content"].encode())
-    source = await assistant_repository.append_message(
-        thread_id,
-        user_name=fixture.principal,
-        role="user",
-        content="Inspect the brief",
-        attachments=[attachment],
-        security_context=observation_context(session_security(user)),
-    )
-    root = await harness_repository.create_root(
-        owner_name=fixture.principal,
-        thread_id=thread_id,
-        role_name=fixture.role,
-        session_id=user["session_id"],
-        security_version=user["security_context_version"],
-        objective="Inspect the brief",
-        user_message_id=source["message_id"],
-    )
-    resources = ResourceDelegation()
-    metadata = await resources.register_root(root, user)
-    assert len(metadata) == 1 and attachment["content"] not in metadata[0].model_dump_json()
-    children = [
-        await harness_repository.spawn(
-            parent=root,
-            agent_id=fixture.agent["agent_id"],
-            objective="Inspect",
-            operation_id=name,
-            agent_path="/root/" + name,
-        )
-        for name in ("selected", "sibling")
-    ]
-    selected, sibling = children
-    await client.request(
-        "POST",
-        f"agents/studio/threads/{thread_id}/resources/grants",
-        {
-            "root_run_id": root["run_id"],
-            "target": "/root/selected",
-            "resource_refs": [metadata[0].resource_id],
-        },
-    )
-    assert (await ResourceDelegation().load(selected, user))[0] == [attachment]
-    assert await resources.available(sibling, user) == []
-    with pytest.raises(ValueError):
-        await resources.grant(sibling, selected, [metadata[0].resource_id], user)
     foreign = await fixture.secondary.http.get(
         f"/api/v1/agents/studio/missions/{mission['mission_id']}"
     )
     assert foreign.status_code == 404
-    assert (
-        await fixture.secondary.http.get(
-            f"/api/v1/agents/studio/threads/{thread_id}/resources",
-            params={"root_run_id": root["run_id"]},
-        )
-    ).status_code == 404
     await client.request("POST", "auth/switch-role", {"role": fixture.inactive})
-    changed = await _user(client)
-    with pytest.raises(ValueError):
-        await resources.load(selected, changed)
     assert (
         await client.http.get(f"/api/v1/agents/studio/missions/{mission['mission_id']}")
     ).status_code == 404
@@ -621,8 +561,6 @@ async def test_missions_resources_replay_and_role_version_boundaries(governed):
     assert (
         await client.http.get(f"/api/v1/agents/studio/missions/{mission['mission_id']}")
     ).status_code == 404
-    with pytest.raises(ValueError):
-        await resources.load(selected, await _user(client))
 
 
 async def test_automatic_investigation_resume_keeps_exact_pins_and_live_authorization(governed):

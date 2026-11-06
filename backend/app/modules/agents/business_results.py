@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException
 
-from app.modules.agents.child_timeline import safe_public_text
+from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.modules.agents.mission import mission_service
 from app.modules.agents.mission_schema import ObjectRef, SemanticAnchor
 from app.modules.agents.semantic.planning import SemanticPlan
@@ -15,9 +16,23 @@ from app.modules.assistant.business_observation import (
     MAX_BUSINESS_OBSERVATION_BYTES,
     BusinessResultHookResult,
 )
+from app.modules.assistant.skills import contains_credential_shape
+from app.modules.assistant.tools.redaction import is_credential_value
 from app.modules.intelligence.contracts import SemanticRef
 from app.modules.intelligence.engine import CanonicalizationCollector, intelligence_service
 from app.modules.intelligence.evidence import semantic_population_fingerprint
+
+
+def safe_public_text(value: Any, limit: int) -> str:
+    """A bounded value safe to show: credential-shaped text is redacted."""
+    try:
+        # Only a missing value is empty: a 0 or False cell is data.
+        safe = redact_sql_credentials("" if value is None else str(value))
+    except CredentialsRedactionError:
+        return "[redacted]"
+    if contains_credential_shape(safe) or is_credential_value(safe):
+        return "[redacted]"
+    return safe[:limit]
 
 
 def planner_target(plan, context) -> SemanticAnchor | None:
@@ -74,11 +89,28 @@ async def pin_time(invocation, payload, context):
     )
 
 
-def bind_business_hooks(context):
+def bind_business_hooks(context, mission=None):
     if context.mission_id:
         context.business_result_hook = governed_result
         context.business_time_hook = pin_time
         context.business_clock_hook = execution_clock
+    anchors = (mission or {}).get("business_anchors") if isinstance(mission, dict) else (
+        getattr(mission, "business_anchors", None)
+    )
+    incident = (mission or {}).get("incident_anchor") if isinstance(mission, dict) else (
+        getattr(mission, "incident_anchor", None)
+    )
+    if incident and hasattr(context, "incident_id"):
+        # The tools read the incident by reference; its content is proven per call.
+        context.incident_id = (
+            incident["incident_id"] if isinstance(incident, dict) else incident.incident_id
+        )
+    if anchors and hasattr(context, "ontology_release_id") and not context.ontology_release_id:
+        # A continued mission keeps the business definitions its answers used.
+        latest = anchors[-1]
+        context.ontology_release_id = (
+            latest["release_id"] if isinstance(latest, dict) else latest.release_id
+        )
 
 
 def canonical_observation(investigation, news, comparison, *, target_metric: str) -> dict:
@@ -216,6 +248,22 @@ async def _governed_result(invocation, outcome, context, collector) -> BusinessR
         context.mission_id, envelope.semantic, envelope.metrics, context.user,
         filter_population_fingerprint=business["population_fingerprint"],
     )
+    business_context = (getattr(outcome, "evidence", None) or {}).get("business_context")
+    if business_context:
+        from app.modules.agents.mission_schema import BusinessContextAnchor, ConceptPin
+
+        mission = await mission_service.record_business_anchor(
+            context.mission_id,
+            BusinessContextAnchor(
+                release_id=business_context["ontology_release_id"],
+                manifest_hash=business_context["manifest_hash"],
+                concepts=[
+                    ConceptPin(id=item["id"], revision=item["revision"])
+                    for item in business_context["concepts"]
+                ],
+            ),
+            context.user,
+        )
     effective_intent = getattr(context, "effective_work_intent", None)
     if effective_intent != "INVESTIGATE":
         collector.complete("skipped")

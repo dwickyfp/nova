@@ -48,6 +48,28 @@ afterEach(async () => {
 });
 
 describe("automatic chat routing", () => {
+  it("opens a News handoff with its prompt and continues the handed-off Mission", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => accepted());
+    const handoff = { threadId: mission.thread_id, missionId: "news-mission", prompt: "Investigate this News incident" };
+    await render(<QueryClientProvider client={client}><div className="flex h-dvh min-w-0 overflow-hidden">
+      <StudioChat agent={agent} agents={[agent]} onSelectAgent={vi.fn()} currentRole="ANALYST" activeThreadId={mission.thread_id} onThreadChange={vi.fn()} handoff={handoff} />
+    </div></QueryClientProvider>);
+    const input = page.getByRole("textbox", { name: "Message Nova" });
+    await expect.element(input).toHaveValue("Investigate this News incident");
+    await expect.element(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect.poll(() => fetch.mock.calls.length).toBe(1);
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body)).continue_mission_id).toBe("news-mission");
+  });
+
+  it("ignores a News handoff while another conversation is open", async () => {
+    await render(<QueryClientProvider client={client}><div className="flex h-dvh min-w-0 overflow-hidden">
+      <StudioChat agent={agent} agents={[agent]} onSelectAgent={vi.fn()} currentRole="ANALYST" activeThreadId={mission.thread_id} onThreadChange={vi.fn()}
+        handoff={{ threadId: "another-thread", missionId: "news-mission", prompt: "Investigate this News incident" }} />
+    </div></QueryClientProvider>);
+    await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toHaveValue("");
+  });
+
   it("retains a typed prompt until the selected conversation has loaded", async () => {
     let release: (value: Awaited<ReturnType<typeof agentsApi.getThread>>) => void = () => {};
     vi.mocked(agentsApi.getThread).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));

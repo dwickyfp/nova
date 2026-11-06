@@ -15,14 +15,15 @@ from app.common.audit import write_audit_log
 from app.core.database import db
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.harness_repository import harness_repository
-from app.modules.agents.identity import SMART_AGENT_IDS
 from app.modules.agents.mission_schema import (
     MISSION_DDLS,
     STAGE_LABELS,
+    BusinessContextAnchor,
     ContinuationDecision,
     DeliverableCreate,
     DeliverableSource,
     ExecutionTimeContext,
+    IncidentAnchor,
     InvestigationRequirements,
     Mission,
     MissionBinding,
@@ -180,7 +181,7 @@ async def require_thread(thread_id: str, user: dict) -> dict:
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     agent_id = thread.get("agent_id")
-    if agent_id and agent_id not in SMART_AGENT_IDS:
+    if agent_id:
         agent = await agent_repository.get_agent(agent_id, owner_name=scope.principal)
         if agent is None:
             agent = await agent_repository.get_shared_agent(agent_id, role_name=scope.active_role)
@@ -206,12 +207,50 @@ def default_steps(intent: WorkIntent) -> builtins.list[StageKind]:
     }[intent]
 
 
+#: Tool classifications whose successful call is the work an ACT mission asked for.
+CHANGING_TOOL_CLASSES = frozenset({"session_change", "destructive"})
+
+
+#: Changing tools whose success the shared loop checks against a persisted record
+#: before it reports ``done`` (``_verify_tool_outcome``), so that report also
+#: verifies the change. A filed ontology proposal is read back with its id and its
+#: in-review status; it waits for a steward, which is the expected next step.
+VERIFIED_CHANGE_TOOLS = frozenset({"knowledge_propose"})
+
+
+def _add_refs(stage: MissionStage, *refs: str | None) -> None:
+    for ref in refs:
+        if ref and ref not in stage.source_refs and len(stage.source_refs) < 100:
+            stage.source_refs.append(ref)
+
+
+def _stage(mission: Mission, kind: StageKind) -> MissionStage:
+    stage = next((s for s in mission.stages if s.kind == kind), None)
+    if stage is None:
+        stage = MissionStage(kind=kind, label=STAGE_LABELS[kind])
+        mission.stages.append(stage)
+    return stage
+
+
+def _touch_stage(
+    mission: Mission, kind: StageKind, status: MissionStageStatus, *refs: str | None
+) -> None:
+    stage = _stage(mission, kind)
+    if stage.status != "completed":
+        stage.status = status
+    _add_refs(stage, *refs)
+
+
+def _call_ref(run_id: str, payload: dict) -> str | None:
+    call_id = payload.get("tool_call_id")
+    if not isinstance(call_id, str) or not call_id:
+        return None
+    ref = f"call:{run_id}:{call_id}"
+    return ref if len(ref) <= 256 else None
+
+
 def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> None:
     """Copy only code-owned stage transitions and identifiers, never journal prose."""
-    if kind == "child_activity":
-        kind = str(payload.get("event_type") or "")
-        if kind == "table" and isinstance(payload.get("table"), dict):
-            payload = payload["table"]
     stage_kind = None
     stage_status: MissionStageStatus = "running"
     if kind in {"table", "chart"} or (
@@ -230,21 +269,24 @@ def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> No
             and ref not in mission.evidence_refs
         ):
             mission.evidence_refs.append(ref)
-    elif kind == "delegation_plan":
-        stage_kind = StageKind.INVESTIGATE
     elif kind in {"approval_request", "consent_request"}:
         stage_kind = StageKind.APPROVE
-    elif kind in {"error", "agent_failed"}:
+    elif kind == "tool_call" and payload.get("classification") in CHANGING_TOOL_CLASSES:
+        # A tool that files or changes something is the mission's execution step.
+        # Its call id is remembered so only that call's success can complete it.
+        change_ref = _call_ref(run_id, payload)
+        _touch_stage(mission, StageKind.EXECUTE, "running", run_id, change_ref)
+        if change_ref and payload.get("tool_name") in VERIFIED_CHANGE_TOOLS:
+            _touch_stage(mission, StageKind.VERIFY, "running", run_id, change_ref)
+    elif kind == "tool_status" and payload.get("status") == "done":
+        ref = _call_ref(run_id, payload)
+        for stage in mission.stages:
+            if stage.kind in {StageKind.EXECUTE, StageKind.VERIFY} and ref in stage.source_refs:
+                stage.status = "completed"
+    elif kind == "error":
         mission.status = "blocked"
     if stage_kind is not None:
-        stage = next((s for s in mission.stages if s.kind == stage_kind), None)
-        if stage is None:
-            stage = MissionStage(kind=stage_kind, label=STAGE_LABELS[stage_kind])
-            mission.stages.append(stage)
-        if stage.status != "completed":
-            stage.status = stage_status
-        if run_id not in stage.source_refs:
-            stage.source_refs.append(run_id)
+        _touch_stage(mission, stage_kind, stage_status, run_id)
 
 
 async def canonical_payload(
@@ -464,7 +506,7 @@ class MissionService:
         agent_id = thread.get("agent_id")
         if mission.agent_id and mission.agent_id != agent_id:
             raise HTTPException(status_code=409, detail="Mission thread agent changed")
-        if agent_id and agent_id not in SMART_AGENT_IDS:
+        if agent_id:
             from app.modules.agents.releases import load_runtime_manifest, resource_contracts
 
             agent = await agent_repository.get_agent(agent_id, owner_name=mission.scope.principal)
@@ -487,6 +529,16 @@ class MissionService:
             await intelligence_service.authorize_semantic(semantic, user)
         for pin in mission.release_pins:
             await self.authorize_release_pin(pin, user)
+        from app.modules.agents.releases import authorize_ontology_release
+
+        for business in {(a.release_id, a.manifest_hash) for a in mission.business_anchors}:
+            await authorize_ontology_release(*business)
+        if mission.incident_anchor is not None:
+            from app.modules.intelligence.newsroom import newsroom_service
+
+            # The story is proven again for the caller's current role and data.
+            if await newsroom_service.readable(mission.incident_anchor.story_id, user) is None:
+                raise HTTPException(status_code=404, detail="Mission source unavailable")
         for ref in mission.pinned_objects:
             record = await intelligence_service.get_for_mission(
                 {
@@ -542,76 +594,6 @@ class MissionService:
                 raise HTTPException(
                     status_code=409, detail="Old-session execution must stop before resume"
                 )
-            if run["smart"]:
-                await self._reauthorize_smart_resume(mission, run_id, user, check_execution)
-
-    async def _reauthorize_smart_resume(
-        self, mission: Mission, run_id: str, user: dict, check_execution: bool
-    ) -> None:
-        from app.modules.agents.resource_delegation import resource_delegation
-        from app.modules.assistant.attachments import MAX_FILES
-
-        binding = mission.run_bindings[run_id]
-        tree = await harness_repository.tree(
-            run_id,
-            owner_name=mission.scope.principal,
-            role_name=mission.scope.active_role,
-        )
-        if not tree or len(tree) > 100:
-            raise HTTPException(status_code=409, detail="Mission execution tree unavailable")
-        for participant in tree:
-            if [
-                participant.get("owner_name"),
-                participant.get("role_name"),
-                participant.get("session_id"),
-                participant.get("security_version"),
-            ] != scope_params(binding) or participant.get("thread_id") != mission.thread_id:
-                raise HTTPException(status_code=403, detail="Mission execution tree scope changed")
-            if (check_execution or binding != workflow_scope(user)) and participant[
-                "status"
-            ] not in {"completed", "failed", "cancelled", "interrupted"}:
-                raise HTTPException(
-                    status_code=409, detail="Old-session execution must stop before resume"
-                )
-        for agent_id in {row["agent_id"] for row in tree} - set(SMART_AGENT_IDS):
-            from app.modules.agents.releases import load_runtime_manifest, resource_contracts
-
-            agent = await agent_repository.get_agent(agent_id, owner_name=binding.principal)
-            if agent is None:
-                agent = await agent_repository.get_shared_agent(
-                    agent_id, role_name=binding.active_role
-                )
-            if agent is None or not await has_verified_access(
-                agent, role_name=binding.active_role, user=user
-            ):
-                raise HTTPException(status_code=404, detail="Mission participant unavailable")
-            manifest = await load_runtime_manifest(agent)
-            if manifest and manifest["dependencies"].get("resources") != await resource_contracts(
-                dict(agent), user
-            ):
-                raise HTTPException(status_code=409, detail="Pinned participant resources changed")
-        resources = await db.execute_system(
-            "SELECT resource_id FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCES "
-            f"WHERE {SCOPE_SQL} AND thread_id=%s AND root_run_id=%s LIMIT 4",
-            [*scope_params(binding), mission.thread_id, run_id],
-        )
-        expected = {row[0] for row in resources["rows"]}
-        expected.update(
-            ref for row in tree for ref in (row.get("payload") or {}).get("resource_refs", [])
-        )
-        if len(expected) > MAX_FILES:
-            raise HTTPException(status_code=409, detail="Mission resource bound exceeded")
-        if expected:
-            try:
-                available = await resource_delegation.reauthorize_for_mission(
-                    mission.mission_id, run_id, user
-                )
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=403, detail="Pinned resources require current authorization"
-                ) from exc
-            if expected - set(available):
-                raise HTTPException(status_code=403, detail="Pinned resources are unavailable")
 
     async def resume(self, mission_id: str, body: MissionResume, user: dict) -> Mission:
         scope = workflow_scope(user)
@@ -1004,13 +986,11 @@ class MissionService:
         if len(result["rows"]) != 1:
             raise HTTPException(status_code=404, detail="Mission run not found")
         status, sequence, session, version, agent_id = result["rows"][0]
-        smart = agent_id in SMART_AGENT_IDS
         if session != binding.session_id or version != binding.security_context_version:
             raise HTTPException(status_code=403, detail="Mission run security context changed")
         return {
             "status": status,
             "sequence": int(sequence),
-            "smart": smart,
             "agent_id": agent_id,
         }
 
@@ -1046,8 +1026,10 @@ class MissionService:
                 user,
                 budget=budget,
             )
+        from app.modules.agents.releases import authorize_ontology_pin
         from app.modules.agents.resources import validate_resources
 
+        await authorize_ontology_pin(dependencies)
         configuration = dict(dependencies.get("configuration") or {})
         await validate_resources(configuration, user)
         if "resources" in dependencies and dependencies["resources"] != await resource_contracts(
@@ -1130,23 +1112,9 @@ class MissionService:
             mission = await self._get(mission_id, workflow_scope(user))
             if mission.cancel_requested:
                 raise HTTPException(status_code=409, detail="Mission cancellation requested")
-            root_run_id: str | None = run_id
-            if run_id not in mission.run_ids:
-                participant = await harness_repository.get(run_id)
-                root_run_id = participant.get("root_run_id") if participant else None
-                if (
-                    not participant
-                    or participant.get("thread_id") != mission.thread_id
-                    or tuple(
-                        participant.get(key)
-                        for key in ("owner_name", "role_name", "session_id", "security_version")
-                    )
-                    != tuple(scope_params(mission.scope))
-                ):
-                    raise HTTPException(status_code=403, detail="Mission execution binding changed")
             if (
-                root_run_id not in mission.run_ids
-                or mission.run_bindings.get(root_run_id) != mission.scope
+                run_id not in mission.run_ids
+                or mission.run_bindings.get(run_id) != mission.scope
             ):
                 raise HTTPException(status_code=403, detail="Mission execution binding changed")
             await self._run(mission, run_id)
@@ -1198,6 +1166,40 @@ class MissionService:
             mission.semantic_anchors.append(anchor)
             return await self._save(mission, mission.revision, owned)
 
+    async def record_business_anchor(
+        self, mission_id: str, anchor: BusinessContextAnchor, user: dict
+    ) -> Mission:
+        mission = await self.get(mission_id, user, project=False)
+        async with harness_repository.admission_lock(
+            mission.thread_id, mission.scope.principal
+        ) as owned:
+            mission = await self._get(mission_id, workflow_scope(user))
+            if mission.cancel_requested:
+                raise HTTPException(status_code=409, detail="Mission cancellation requested")
+            if anchor in mission.business_anchors:
+                return mission
+            if len(mission.business_anchors) >= 32:
+                raise HTTPException(status_code=422, detail="Mission business anchor bound reached")
+            mission.business_anchors.append(anchor)
+            return await self._save(mission, mission.revision, owned)
+
+    async def record_incident_anchor(
+        self, mission_id: str, anchor: IncidentAnchor, user: dict
+    ) -> Mission:
+        mission = await self.get(mission_id, user, project=False)
+        async with harness_repository.admission_lock(
+            mission.thread_id, mission.scope.principal
+        ) as owned:
+            mission = await self._get(mission_id, workflow_scope(user))
+            if mission.incident_anchor == anchor:
+                return mission
+            if mission.incident_anchor is not None:
+                raise HTTPException(
+                    status_code=409, detail="Mission already investigates another incident"
+                )
+            mission.incident_anchor = anchor
+            return await self._save(mission, mission.revision, owned)
+
     async def record_investigation_requirements(
         self,
         mission_id: str,
@@ -1239,30 +1241,21 @@ class MissionService:
                 run = await self._run(mission, run_id)
                 runs.append(run)
                 cursor = mission.projection_cursor.get(run_id, -1)
-                if run["smart"]:
-                    rows = await db.execute_system(
-                        "SELECT session_sequence,run_id,event_type,payload FROM "
-                        "NOVA_SYSTEM.CONFIG_AGENT_SESSION_EVENTS WHERE root_run_id=%s "
-                        "AND session_sequence>%s ORDER BY session_sequence LIMIT 100",
-                        [run_id, cursor],
-                    )
-                    events = [(r[0], r[1], r[2], _decode(r[3]) or {}) for r in rows["rows"]]
-                else:
-                    rows = await db.execute_system(
-                        "SELECT `sequence`,frame FROM NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS "
-                        "WHERE run_id=%s AND `sequence`>%s ORDER BY `sequence` LIMIT 100",
-                        [run_id, cursor],
-                    )
-                    events = []
-                    for sequence, frame in rows["rows"]:
-                        try:
-                            kind = frame.split("event: ", 1)[1].split("\n", 1)[0]
-                            payload = json.loads(frame.split("data: ", 1)[1])
-                        except (IndexError, ValueError, TypeError) as exc:
-                            raise HTTPException(
-                                status_code=409, detail="Run journal needs reconciliation"
-                            ) from exc
-                        events.append((sequence, run_id, kind, payload))
+                rows = await db.execute_system(
+                    "SELECT `sequence`,frame FROM NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS "
+                    "WHERE run_id=%s AND `sequence`>%s ORDER BY `sequence` LIMIT 100",
+                    [run_id, cursor],
+                )
+                events = []
+                for sequence, frame in rows["rows"]:
+                    try:
+                        kind = frame.split("event: ", 1)[1].split("\n", 1)[0]
+                        payload = json.loads(frame.split("data: ", 1)[1])
+                    except (IndexError, ValueError, TypeError) as exc:
+                        raise HTTPException(
+                            status_code=409, detail="Run journal needs reconciliation"
+                        ) from exc
+                    events.append((sequence, run_id, kind, payload))
                 for sequence, source_run_id, kind, payload in events:
                     if int(sequence) <= cursor:
                         raise HTTPException(status_code=409, detail="Run journal order is invalid")
@@ -1484,18 +1477,14 @@ class MissionService:
 
     async def _stop_run(self, mission: Mission, run_id: str) -> None:
         run = await self._run(mission, run_id)
-        if run["smart"]:
-            if run["status"] not in {"completed", "failed", "interrupted"}:
-                await harness_repository.cancel_tree(run_id)
-                await harness_repository.reconcile_cancelled_children(run_id)
-        elif run["status"] == "running":
+        if run["status"] == "running":
             await run_journal.finish(run_id, "interrupted")
 
     async def cancellation_requested(self, mission_id: str, user: dict) -> bool:
         return (await self.get(mission_id, user, project=False)).cancel_requested
 
     async def project_run(self, run_id: str, user: dict) -> Mission | None:
-        """Refresh a linked Mission for the existing direct/Smart streaming producer."""
+        """Refresh a linked Mission for the existing direct streaming producer."""
         scope = workflow_scope(user)
         rows = await db.execute_system(
             "SELECT thread_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS WHERE run_id=%s "

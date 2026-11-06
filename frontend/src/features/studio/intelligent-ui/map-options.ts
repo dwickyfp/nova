@@ -14,6 +14,13 @@ export const mapOptionsSchema = z
     progress: field.optional(),
     toLongitude: field.optional(),
     toLatitude: field.optional(),
+    // layer "route" with point rows: the stop order and the route each stop is on
+    // (a driver, an area). Nova joins the stops into one coloured line per route.
+    sequence: field.optional(),
+    group: field.optional(),
+    // Per-route values to list beside the map (e.g. distance, saving), read from
+    // the route's first stop row.
+    routeFields: z.array(field).max(4).optional(),
   })
   .strict();
 export type MapOptions = z.infer<typeof mapOptionsSchema>;

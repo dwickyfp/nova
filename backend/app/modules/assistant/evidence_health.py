@@ -261,7 +261,7 @@ def attach_execution_health(outcome: ToolOutcome, tool_name: str) -> ToolOutcome
     assessment_sources = (
         sources if tool_name in {
             "semantic_query", "semantic_view_query", "feature_lookup",
-            "context_graph", "decision_lab", "wait_agent", "list_agents",
+            "context_graph", "decision_lab",
         } else []
     )
     assessments = []

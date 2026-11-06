@@ -102,11 +102,12 @@ def composer_prompt(*, enabled: bool, presentation: str) -> str:
         return ""
     if presentation != "interactive":
         prompt = (
-            "Choose the most useful presentation as the answer develops. Plain Markdown "
-            "is a complete answer for greetings, explanations and clarifications. "
-            "Add an interactive UI when controls, a visual comparison, a map or a "
-            "simulation helps the user; no special mode, data source or explicit UI "
-            "request is required. Do not add a widget just to restate prose. "
+            "Choose the most useful presentation as the answer develops. When the answer "
+            "rests on verified business results, prefer a data view bound to those rows: "
+            "a ranking, trend, comparison, filtered detail or map. If you write none, Nova "
+            "draws a basic view of the rows itself. Plain Markdown is a complete answer "
+            "for greetings, explanations and clarifications. No special mode or explicit "
+            "UI request is required. Do not add a widget just to restate prose. "
             "The following catalog instructions apply ONLY when you choose to include "
             "an interactive program. Otherwise return Markdown without an OpenUI fence.\n"
             "<OPTIONAL_UI_CATALOG>\n" + prompt + "\n</OPTIONAL_UI_CATALOG>"

@@ -57,7 +57,6 @@ MESSAGES: dict[str, str] = {
         "The interactive view could not be prepared. Only text is available."
     ),
     "loop.simulation_values": "Calculated from the simulation assumptions:",
-    "loop.results_attached": "The results are in the attached verified tables.",
     "suggest.by": "{metric} by {dimension}{period}",
     "suggest.previous": "{metric}{period} compared with the previous period",
     "suggest.trend": "monthly {metric} trend this year",
@@ -112,7 +111,6 @@ BUILTIN: dict[str, dict[str, str]] = {
             "Tampilan interaktif belum dapat disiapkan. Hanya jawaban teks yang tersedia."
         ),
         "loop.simulation_values": "Dihitung dari asumsi simulasi:",
-        "loop.results_attached": "Hasilnya ada di tabel terverifikasi terlampir.",
         "suggest.by": "{metric} per {dimension}{period}",
         "suggest.previous": "{metric}{period} dibanding periode sebelumnya",
         "suggest.trend": "tren {metric} per bulan tahun ini",

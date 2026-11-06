@@ -11,7 +11,7 @@ reviewable improvements. Each step extends its existing owner:
 | Responsibility | Owner |
 | --- | --- |
 | Provider/tool iteration, bounds, consent | [AssistantLoop](../backend/app/modules/assistant/service.py), [shared tool gate](../backend/app/modules/assistant/tool_gate.py) |
-| Smart participants, delegation, recovery | [AgentControl](../backend/app/modules/agents/agent_control.py), existing run journals |
+| Studio chat with one selected agent, recovery | [agents router](../backend/app/modules/agents/router.py), existing run journals |
 | Releases and evaluation | [releases](../backend/app/modules/agents/releases.py), [quality](../backend/app/modules/agents/quality.py), [scorers](../backend/app/modules/agents/quality_scoring.py) |
 | Missions and attachment grants | [Mission service](../backend/app/modules/agents/mission.py), [resource delegation](../backend/app/modules/agents/resource_delegation.py) |
 | Investigation, Decision, Outcome, Context Graph | Existing [Intelligence service](../backend/app/modules/intelligence/engine.py) and [revision repository](../backend/app/modules/intelligence/engine_repository.py) |
@@ -22,19 +22,34 @@ leases, admission, and wakeups. Attachment bodies stay in existing message
 attachment storage; references and grants do not copy bodies into another store.
 Mission projection and Evidence Health assessment make no model calls.
 
+## Studio chat
+
+Studio chats with one selected agent at a time. Each message runs the direct
+agent loop in [`backend/app/modules/assistant/`](../backend/app/modules/assistant/)
+through the [agents router](../backend/app/modules/agents/router.py); no
+coordinator delegates the request to other agents. Studio opens the agent the
+user last chatted with, remembered per browser, and otherwise the first agent.
+With no agents it shows an empty state that links to Agents. Per-agent
+automations run through the task worker.
+
+The Smart coordinator and its agent worker were removed on 2026-11-07. Existing
+Smart automations are switched off once at startup, and old Smart chats no
+longer appear in history. [Architecture 11](arch-11-smart-collaboration.md)
+keeps the retired design as a historical record.
+
 ## Capabilities
 
 Mission workflow, Actions, quality observations with production trace scoring,
 and the analysis workspace are always on; there are no rollout flags. Mission
-workflow covers common tool-result health projection and governed Smart
-attachment registration and delegation. Offline quality APIs and
+workflow covers common tool-result health projection and governed attachment
+registration. Offline quality APIs and
 manifested-release promotion checks are separate from production scoring, which
 still needs per-agent opt-in. Capability availability does not authorize data
 access, satisfy consent, or demonstrate acceptance.
 
 The [effective-capability helper](../backend/app/core/studio_capabilities.py)
-reports bounded availability for each capability. API, task-worker, and
-Smart-worker startup diagnostics use that same snapshot. The additive `runtime`
+reports bounded availability for each capability. API and task-worker
+startup diagnostics use that same snapshot. The additive `runtime`
 field in Studio capabilities reports `AVAILABLE` or `BLOCKED_BY_INFRASTRUCTURE`.
 Only the analysis workspace depends on infrastructure: it reports executor
 availability and stays blocked until an isolated analytical executor exists.
@@ -168,7 +183,7 @@ anchors, canonical references, and screen follow-ups. A different semantic
 target or filtered population starts separate work. Unrelated or ambiguous work
 defaults to a new Mission; lightweight answers can return `none`. The response
 includes a public reason code. Cancelled Missions cannot continue and completed
-Missions require explicit continuation. Smart children inherit the root Mission.
+Missions require explicit continuation.
 Operation IDs with changed inputs conflict.
 Projection reads bounded journal pages; it neither dispatches tools nor invents
 stage completion from coordination prose. Cancellation uses existing run control.
@@ -188,11 +203,11 @@ Intelligence read path admits only pinned records and their exact recorded
 scopes; general Intelligence scope checks remain in force. Continuing a Decision,
 Action, or Outcome uses the current binding while preserving historical proofs.
 
-Continue and New apply to one accepted message. The composer captures the routing
-choice before sending and resets it only on acceptance. A refusal before acceptance
-preserves the choice and draft; a disconnected accepted run reconnects through its
-existing event journal. Resume selects Continue for the next message under the
-same acceptance rule.
+Studio routes each message automatically and shows no Mission panel; Missions
+remain server-side records. A News investigation handoff opens a thread with the
+reader's default agent and pins its Mission for the next accepted message. The API's Continue, New, and Resume choices apply to one
+accepted message; a refusal before acceptance leaves them unset, and a
+disconnected accepted run reconnects through its existing event journal.
 
 HTTP, SSE, canonical-object reads, and legacy replay use public allowlist projections
 on the existing endpoints. Business revisions, stages, references, hypotheses,
@@ -202,13 +217,10 @@ cursors, leases, and dispatch fences do not enter the public payload. Existing
 pagination tokens and journal event/sequence IDs retain their replay/access contracts.
 
 Resources reference the original user attachment message/index, digest, name,
-type, and size. Root access and child grants check principal, role, session,
-security version, thread, root run, and participant lineage. `spawn_agent` and
-`followup_task` accept optional `resource_refs`. A participant can grant only
-resources it holds to a descendant; siblings do not inherit a grant. Loading
+type, and size. Access checks principal, role, session, security version,
+thread, and run. Loading
 rechecks source identity/digest, existing attachment limits, and provider modality.
-Public lists, coordination events, and durable Smart checkpoints carry references
-rather than raw bodies. Attachment content remains untrusted input.
+Public lists and events carry references rather than raw bodies. Attachment content remains untrusted input.
 
 Mission deliverables use `CONFIG_STUDIO_DELIVERABLES` separately from query-backed
 chart/table artifacts. Analysis summaries, Investigation reports, scenario
@@ -248,8 +260,8 @@ historical published version and its bounded neighborhood. The displayed
 authority and conflicts belong to that selected graph.
 
 Workflow provenance is a separate server-owned transport object containing
-`mission_id`, `run_id`, and `root_run_id`. It survives traces, journal replay, and
-authorized Smart evidence import without changing semantic metric definitions or
+`mission_id`, `run_id`, and `root_run_id`. It survives traces and journal replay
+without changing semantic metric definitions or
 granting access. Evidence follows the selected Mission by default; All conversation
 evidence explicitly includes other Missions and legacy evidence. Run/tool-call
 pairs identify results. Changing Missions clears a Context selection unless that
@@ -285,7 +297,7 @@ definition.
 Successful validated semantic execution can derive an `InvestigationSeed` for
 the existing comparison, News, and Investigation owners. Execution first persists
 a concrete timezone-aware time context; SQL and provenance use those same bounds.
-Direct, Smart, Nove, evaluations, and scheduled turns receive an explicit timezone
+Direct, Nove, evaluations, and scheduled turns receive an explicit timezone
 from the existing `configured_timezone()` owner of `NOVA_TIMEZONE`. An explicit
 object timezone wins. Persisted execution contexts retain their original timezone
 and clock during retries; configuration changes do not reinterpret historical
@@ -311,8 +323,7 @@ comparison revisions before continuing the same loop iteration. The observation
 is bounded to 16 KiB, ten hypotheses, and twenty canonical evidence references,
 with explicit truncation and limitations. Canonical values and contributions enter
 the existing numeric verifier and checkpoint; hypothesis claims retain canonical
-causal labels. Authorized specialist evidence can carry these facts into synthesis,
-while coordination prose remains untrusted.
+causal labels.
 
 Mission work and active ordered hooks remain serial. Independent read-only calls
 retain overlap subject to existing consent, dependency, release, and budget checks;
@@ -354,8 +365,7 @@ and delivers internally to Studio. External delivery is excluded.
 
 Preview validates the selected Decision revision and governed monitor scope.
 Execution requires current policy, authorized reviewer approval, and separate
-allow-once consent through the shared tool gate. Smart participants cannot execute
-business actions. Durable intent precedes mutation; lease/fence checks protect
+allow-once consent through the shared tool gate. Durable intent precedes mutation; lease/fence checks protect
 writes. Same key/same input recovers the Action; changed input returns `409`.
 Uncertain dispatch becomes `verification_required`, or `compensation_required`
 for compensation, and cannot automatically dispatch again. Cancellation before

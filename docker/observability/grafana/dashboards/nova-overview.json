@@ -405,7 +405,7 @@
     },
     {
       "type": "stat",
-      "title": "Agent worker",
+      "title": "StarRocks FE",
       "description": "Prometheus scrape state. No data means this target is not configured.",
       "datasource": {
         "type": "prometheus",
@@ -413,7 +413,7 @@
       },
       "targets": [
         {
-          "expr": "max(up{job=\"nova-agent-worker\"})",
+          "expr": "max(up{job=\"starrocks-fe\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -481,7 +481,7 @@
     },
     {
       "type": "stat",
-      "title": "StarRocks FE",
+      "title": "StarRocks BE",
       "description": "Prometheus scrape state. No data means this target is not configured.",
       "datasource": {
         "type": "prometheus",
@@ -489,7 +489,7 @@
       },
       "targets": [
         {
-          "expr": "max(up{job=\"starrocks-fe\"})",
+          "expr": "max(up{job=\"starrocks-be\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -557,7 +557,7 @@
     },
     {
       "type": "stat",
-      "title": "StarRocks BE",
+      "title": "Linux runtime",
       "description": "Prometheus scrape state. No data means this target is not configured.",
       "datasource": {
         "type": "prometheus",
@@ -565,7 +565,7 @@
       },
       "targets": [
         {
-          "expr": "max(up{job=\"starrocks-be\"})",
+          "expr": "max(up{job=\"node-exporter\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -632,82 +632,6 @@
       "id": 9
     },
     {
-      "type": "stat",
-      "title": "Linux runtime",
-      "description": "Prometheus scrape state. No data means this target is not configured.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "max(up{job=\"node-exporter\"})",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "Down",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "Up",
-                  "color": "green"
-                }
-              }
-            }
-          ],
-          "noValue": "Not configured",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 8
-      },
-      "transparent": false,
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      },
-      "id": 10
-    },
-    {
       "type": "row",
       "title": "Traffic and latency",
       "collapsed": false,
@@ -718,7 +642,7 @@
         "y": 12
       },
       "panels": [],
-      "id": 11
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -779,7 +703,7 @@
           "sort": "desc"
         }
       },
-      "id": 12
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -840,7 +764,7 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 12
     },
     {
       "type": "timeseries",
@@ -901,7 +825,7 @@
           "sort": "desc"
         }
       },
-      "id": 14
+      "id": 13
     },
     {
       "type": "timeseries",
@@ -962,7 +886,7 @@
           "sort": "desc"
         }
       },
-      "id": 15
+      "id": 14
     },
     {
       "type": "row",
@@ -975,7 +899,7 @@
         "y": 29
       },
       "panels": [],
-      "id": 16
+      "id": 15
     },
     {
       "type": "stat",
@@ -1039,7 +963,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 17
+      "id": 16
     },
     {
       "type": "stat",
@@ -1086,11 +1010,11 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 18
+      "id": 17
     },
     {
       "type": "stat",
-      "title": "Active agent runs",
+      "title": "SQL proxy sessions",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1098,7 +1022,7 @@
       },
       "targets": [
         {
-          "expr": "sum(nova_agent_worker_active{job=\"nova-agent-worker\"})",
+          "expr": "sum(nova_proxy_connections_active{job=~\"nova-backend|nova-proxy\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1133,54 +1057,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 19
-    },
-    {
-      "type": "stat",
-      "title": "SQL proxy sessions",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(nova_proxy_connections_active{job=~\"nova-backend|nova-proxy\"})",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 30
-      },
-      "transparent": false,
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "id": 20
+      "id": 18
     },
     {
       "type": "stat",
@@ -1226,7 +1103,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 16,
+        "x": 12,
         "y": 30
       },
       "transparent": false,
@@ -1244,7 +1121,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 21
+      "id": 19
     },
     {
       "type": "stat",
@@ -1290,7 +1167,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 20,
+        "x": 16,
         "y": 30
       },
       "transparent": false,
@@ -1308,7 +1185,7 @@
         "graphMode": "area",
         "justifyMode": "auto"
       },
-      "id": 22
+      "id": 20
     },
     {
       "type": "timeseries",
@@ -1369,26 +1246,26 @@
           "sort": "desc"
         }
       },
-      "id": 23
+      "id": 21
     },
     {
       "type": "timeseries",
-      "title": "Agent run results",
-      "description": "",
+      "title": "Service loop age",
+      "description": "Time since the latest process heartbeat; worker heartbeats continue during long jobs.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "sum by(status) (rate(nova_agent_worker_runs_total{job=\"nova-agent-worker\"}[5m]))",
-          "legendFormat": "{{status}}",
+          "expr": "time() - nova_service_last_heartbeat_timestamp_seconds{job=~\"nova-scheduler|nova-worker\"}",
+          "legendFormat": "{{job}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "s",
           "color": {
             "mode": "palette-classic"
           },
@@ -1430,68 +1307,7 @@
           "sort": "desc"
         }
       },
-      "id": 24
-    },
-    {
-      "type": "timeseries",
-      "title": "Service loop age",
-      "description": "Time since the latest process heartbeat; worker heartbeats continue during long jobs.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "nova-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "time() - nova_service_last_heartbeat_timestamp_seconds{job=~\"nova-scheduler|nova-worker|nova-agent-worker\"}",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisColorMode": "text",
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 42
-      },
-      "transparent": false,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 25
+      "id": 22
     },
     {
       "type": "timeseries",
@@ -1503,7 +1319,7 @@
       },
       "targets": [
         {
-          "expr": "up{job=~\"nova-backend|nova-query|nova-scheduler|nova-worker|nova-agent-worker|starrocks-fe|starrocks-be|redis\"}",
+          "expr": "up{job=~\"nova-backend|nova-query|nova-scheduler|nova-worker|starrocks-fe|starrocks-be|redis\"}",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
@@ -1534,7 +1350,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 42
       },
       "transparent": false,
@@ -1552,7 +1368,7 @@
           "sort": "desc"
         }
       },
-      "id": 26
+      "id": 23
     },
     {
       "type": "row",
@@ -1565,7 +1381,7 @@
         "y": 50
       },
       "panels": [],
-      "id": 27
+      "id": 24
     },
     {
       "type": "stat",
@@ -1641,7 +1457,7 @@
         "graphMode": "none",
         "justifyMode": "auto"
       },
-      "id": 28
+      "id": 25
     },
     {
       "type": "stat",
@@ -1717,7 +1533,7 @@
         "graphMode": "none",
         "justifyMode": "auto"
       },
-      "id": 29
+      "id": 26
     },
     {
       "type": "stat",
@@ -1793,7 +1609,7 @@
         "graphMode": "none",
         "justifyMode": "auto"
       },
-      "id": 30
+      "id": 27
     },
     {
       "type": "stat",
@@ -1869,7 +1685,7 @@
         "graphMode": "none",
         "justifyMode": "auto"
       },
-      "id": 31
+      "id": 28
     }
   ]
 }

@@ -27,22 +27,6 @@ def catalog_table(table: dict[str, Any]) -> bool:
     )
 
 
-def discovered_agents(evidence: Any) -> list[dict[str, Any]]:
-    return next((item.metadata.get("agents", []) for item in reversed(evidence.items)
-                 if item.tool == "discover_agents"), [])
-
-
-def metric_owners(evidence: Any) -> list[dict[str, Any]]:
-    return [agent for agent in discovered_agents(evidence) if agent.get("semantic_matches")]
-
-
-def no_semantic_owner(evidence: Any) -> bool:
-    """Discovery ran and no accessible specialist owns what was asked."""
-    return any(item.tool == "discover_agents" for item in evidence.items) and not metric_owners(
-        evidence
-    )
-
-
 def nonredundant_business_tables(evidence: Any) -> dict[str, dict[str, Any]]:
     """Hide repeated projections only when their source, query scope, and cells agree."""
     tables = evidence.business_tables
@@ -89,60 +73,3 @@ def nonredundant_business_tables(evidence: Any) -> dict[str, dict[str, Any]]:
         if not redundant:
             kept[key] = table
     return kept
-
-
-def next_collaboration_tool(evidence: Any) -> str | None:
-    if not any(item.tool == "discover_agents" for item in evidence.items):
-        return "discover_agents"
-    owners = {agent["agent_id"] for agent in metric_owners(evidence)}
-    if owners:
-        spawned = {item.metadata.get("agent_id") for item in evidence.items
-                   if item.tool == "spawn_agent"}
-        if not spawned & owners:
-            return "spawn_agent"
-        if not any(item.metadata.get("source_agent_id") in owners for item in evidence.items):
-            return "wait_agent"
-    return None
-
-
-def incomplete_metrics(evidence: Any, question: str, frame: Any = None) -> list[str]:
-    owners = metric_owners(evidence)
-    requirements: dict[str, list[tuple[dict, dict]]] = {}
-    for agent in owners:
-        for match in agent.get("semantic_matches", []):
-            alias = str(match.get("matched_alias") or match["metric"]).casefold().replace("_", " ")
-            requirements.setdefault(alias, []).append((agent, match))
-    # The year and whether a series was asked come from the intent frame, in any
-    # language; the question text itself is never parsed here.
-    requested = str(getattr(frame, "range", "") or "")
-    year = requested if re.fullmatch(r"[12]\d{3}", requested) else None
-    asks_series = bool(getattr(frame, "asks_series", False))
-    missing = []
-    for alias, alternatives in requirements.items():
-        covered = False
-        for agent, match in alternatives:
-            for item in evidence.items:
-                metadata = item.metadata
-                table = evidence.business_tables.get(item.evidence_id)
-                if not table or metadata.get("source_agent_id") != agent["agent_id"]:
-                    continue
-                if match["metric"] not in metadata.get("metrics", []):
-                    continue
-                dimensions = set(agent.get("dimension_matches", []))
-                if not dimensions <= set(metadata.get("dimensions", [])):
-                    continue
-                plan = metadata.get("semantic_plan") or {}
-                if year and str((plan.get("time") or {}).get("range")) != year:
-                    continue
-                grain = (plan.get("time") or {}).get("grain")
-                if year and grain and not asks_series:
-                    continue
-                if not {match["metric"], *dimensions} <= set(table["columns"]):
-                    continue
-                covered = True
-                break
-            if covered:
-                break
-        if not covered:
-            missing.append(alias)
-    return missing

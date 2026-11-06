@@ -27,8 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AUTO_AGENT_ID, skillsApi, studioApi, type Skill } from "@/features/agents/api";
-import { AgentAutomationsTab } from "@/features/agents/agent-detail/automations-tab";
+import { skillsApi, studioApi, type Skill } from "@/features/agents/api";
 import { SkillEditor } from "./skill-editor";
 import { skillDocument } from "./skill-document";
 import { SkillUpload } from "./skill-upload";
@@ -96,7 +95,6 @@ export function StudioCapabilities({
               { id: "skills", label: "Skills" },
               { id: "connectors", label: "MCP Connectors" },
               { id: "business", label: "Business workflow" },
-              { id: "schedules", label: "Scheduled reports" },
             ].map((item) => (
               <Button
                 key={item.id}
@@ -129,9 +127,7 @@ export function StudioCapabilities({
                   ? "Your skills"
                   : tab === "business"
                     ? "Business capabilities"
-                    : tab === "schedules"
-                      ? "Scheduled reports"
-                      : "MCP Connectors"}
+                    : "MCP Connectors"}
               </h2>
               {tab === "connectors" ? (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -256,9 +252,6 @@ export function StudioCapabilities({
                 </div>
               )}
             </section>
-          ) : tab === "schedules" ? (
-            // Reports and alerts that Smart runs on a schedule, across all your data.
-            <AgentAutomationsTab agentId={AUTO_AGENT_ID} />
           ) : tab === "business" ? (
             <section aria-labelledby="capability-heading">
               {caps.isPending ? (

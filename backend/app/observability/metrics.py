@@ -117,24 +117,6 @@ MIGRATION_WORKER_POLL_ERRORS = Counter(
     ("phase",),
 )
 
-AGENT_WORKER_ACTIVE = Gauge(
-    "nova_agent_worker_active", "Studio Auto agent runs currently executing in this worker."
-)
-AGENT_WORKER_RUNS = Counter(
-    "nova_agent_worker_runs_total", "Studio Auto agent runs by outcome.", ("status",)
-)
-AGENT_WORKER_RUN_DURATION = Histogram(
-    "nova_agent_worker_run_duration_seconds",
-    "Studio Auto agent run duration in seconds.",
-    ("status",),
-    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 1800),
-)
-AGENT_WORKER_POLL_ERRORS = Counter(
-    "nova_agent_worker_poll_errors_total",
-    "Studio Auto poll and claim failures by phase.",
-    ("phase",),
-)
-
 STUDIO_WORKFLOW_OPERATIONS = Counter(
     "nova_studio_workflow_operations_total",
     "Governed Studio operations by bounded component, operation, and outcome.",

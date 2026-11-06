@@ -15,7 +15,7 @@ def test_unified_history_checks_each_agent_and_preserves_recency(monkeypatch) ->
     rows = [
         {"thread_id": f"thread-{i}", "agent_id": agent, "title": agent,
          "created_at": now, "updated_at": now}
-        for i, agent in enumerate(["sales", "__smart__", "denied", "sales", "__auto__"])
+        for i, agent in enumerate(["sales", "finance", "denied", "sales", "ops"])
     ]
     listing = AsyncMock(return_value=rows)
     monkeypatch.setattr(router.assistant_repository, "list_threads", listing)

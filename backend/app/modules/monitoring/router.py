@@ -62,7 +62,7 @@ require_kill = Depends(require_active_role(*KILL_ROLES))
 @router.get("/ai/usage")
 async def get_ai_usage(
     days: int = Query(7, ge=1, le=30),
-    source: str | None = Query(None, pattern="^(assistant|smart|functions)$"),
+    source: str | None = Query(None, pattern="^(assistant|functions)$"),
     model: str | None = Query(None, max_length=128),
     user_name: str | None = Query(None, max_length=128),
     offset: int = Query(0, ge=0, le=30000),

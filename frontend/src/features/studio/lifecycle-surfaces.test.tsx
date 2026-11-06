@@ -1,9 +1,7 @@
-import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AgentMessage } from "@/features/agents/api";
 import {
   AgentDoctor,
   DoctorFindings,
@@ -24,19 +22,8 @@ import {
   type News,
 } from "@/features/intelligence/lifecycle-api";
 import { capacityScenario } from "@/features/intelligence/scenario-fixtures.test-support";
-import { semanticViewsApi } from "@/features/intelligence/semantic-views-api";
 import { api, ApiError } from "@/lib/api-client";
-import { ContextPanel } from "./context-panel";
-import { EvidencePanel } from "./evidence-panel";
 import type { EvidenceEnvelope, EvidenceHealth } from "./evidence-health";
-import { InvestigationStart } from "./investigation-start";
-import { MissionObjects } from "./mission-objects";
-import {
-  applyEvent,
-  replayThread,
-  type TranscriptTurn,
-} from "./studio-transcript";
-import { WorkflowRail } from "./workflow-rail";
 import {
   workflowApi,
   type Mission,
@@ -175,36 +162,6 @@ const persistedReport: MissionDeliverable = {
     },
   ],
 };
-const messages: AgentMessage[] = [
-  {
-    message_id: "question-1",
-    role: "user",
-    content: "Investigate revenue",
-    created_at: "2026-10-04T09:00:00Z",
-  },
-  {
-    message_id: "answer-1",
-    role: "assistant",
-    content: "Recorded revenue changed.",
-    created_at: "2026-10-04T10:00:00Z",
-    steps: [
-      {
-        kind: "tool",
-        name: "semantic_query",
-        tool_call_id: "query-1",
-        status: "done",
-        arguments: {},
-        workflow: {
-          mission_id: mission.mission_id,
-          run_id: "run-1",
-          root_run_id: null,
-        },
-        trace_detail: { evidence_health: health, evidence_envelope: envelope },
-      },
-    ],
-  },
-] as AgentMessage[];
-const replay = replayThread(messages);
 const matrix = [
   { theme: "light", width: 360 },
   { theme: "dark", width: 360 },
@@ -237,54 +194,6 @@ function keyboardActivate(element: Element) {
 function assertContained(width: number) {
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
 }
-function ReplayHost({
-  onFollowUp,
-}: {
-  onFollowUp: (prompt: string, missionId?: string) => void;
-}) {
-  const [available, setAvailable] = useState(false);
-  const [open, setOpen] = useState(false);
-  const opener = useRef<HTMLButtonElement>(null);
-  return (
-    <div className="flex h-dvh min-w-0 overflow-hidden">
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="shrink-0 p-3">
-          Studio
-          {available && (
-            <button
-              ref={opener}
-              className="ml-2 min-h-11 rounded border px-3"
-              onClick={() => setOpen(true)}
-            >
-              Open workflow details
-            </button>
-          )}
-        </header>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
-          <p className="mb-3 text-sm">{replay[0].answer}</p>
-          <MissionObjects mission={mission} onFollowUp={onFollowUp} />
-        </div>
-      </main>
-      <WorkflowRail
-        threadId={mission.thread_id}
-        turns={replay}
-        streaming={false}
-        agents={[]}
-        runs={[]}
-        runLoading={false}
-        runError={false}
-        retryRuns={vi.fn()}
-        onSelectChild={vi.fn()}
-        onAvailable={setAvailable}
-        mobileOpen={open}
-        onMobileOpenChange={(value) => {
-          setOpen(value);
-          if (!value) requestAnimationFrame(() => opener.current?.focus());
-        }}
-      />
-    </div>
-  );
-}
 beforeEach(() => {
   vi.spyOn(workflowApi, "list").mockResolvedValue({ missions: [mission] });
   vi.spyOn(workflowApi, "resumable").mockResolvedValue({ missions: [] });
@@ -302,262 +211,6 @@ afterEach(async () => {
 });
 
 describe("governed lifecycle browser surfaces", () => {
-  it.each(matrix)(
-    "replays pinned records and selects exact Context by keyboard ($theme, $width px)",
-    async ({ theme, width }) => {
-      await viewport(theme, width);
-      const emptyTurn: TranscriptTurn = {
-        id: "question-1",
-        question: "Investigate revenue",
-        steps: [],
-        answer: "",
-        content: [],
-        pendingConsent: null,
-        blocks: { tables: [], charts: [], citations: [] },
-        state: "streaming",
-      };
-      const live = applyEvent([emptyTurn], "question-1", {
-        type: "evidence_envelope",
-        tool_call_id: "query-1",
-        tool_name: "semantic_query",
-        payload: envelope,
-        workflow: {
-          mission_id: mission.mission_id,
-          run_id: "run-1",
-          root_run_id: null,
-        },
-      });
-      expect(replay[0].evidence).toEqual(live[0].evidence);
-      const followup = vi.fn();
-      const graph = {
-        nodes: [
-          {
-            id: "exact-revenue",
-            name: "Selected historical revenue",
-            kind: "metric",
-            reference_id: "sales:2:revenue",
-            state: "CONFLICTED",
-            semantic,
-            authority: "published_semantic_definition",
-            source_kind: "published_semantic",
-            validity: "historical",
-            freshness: "unknown",
-            authority_basis: { version: 2 },
-            contradictions: ["conflict-revenue"],
-          },
-        ],
-        edges: [],
-        bounded: true,
-        conflicts: [
-          {
-            kind: "metric",
-            term: "revenue",
-            node_ids: ["exact-revenue", "conflict-revenue"],
-            resolved: false,
-          },
-        ],
-      };
-      const resolve = vi.spyOn(api, "post").mockResolvedValue({
-        status: "resolved",
-        selected_metric: "revenue",
-        node_id: "exact-revenue",
-        selected_node: graph.nodes[0],
-        semantic,
-        graph,
-      } as never);
-      await render(
-        <QueryClientProvider client={client()}>
-          <ReplayHost onFollowUp={followup} />
-        </QueryClientProvider>,
-      );
-      await expect
-        .element(
-          page.getByRole("heading", {
-            name: "Regional arithmetic contribution",
-          }),
-        )
-        .toBeVisible();
-      await keyboardActivate(
-        page
-          .getByRole("button", { name: "Continue investigation", exact: true })
-          .element(),
-      );
-      expect(followup.mock.calls[0][1]).toBe(mission.mission_id);
-      if (width === 360) {
-        await keyboardActivate(
-          page.getByRole("button", { name: "Open workflow details" }).element(),
-        );
-        await expect.element(page.getByRole("dialog")).toBeVisible();
-      }
-      await page
-        .getByRole("button", {
-          name: "Pinned investigation report · revision 7",
-        })
-        .click();
-      await expect
-        .element(
-          page.getByRole("heading", { name: "Recorded regional analysis" }),
-        )
-        .toBeVisible();
-      await keyboardActivate(
-        page.getByText("Source references", { exact: true }).element(),
-      );
-      await expect
-        .element(
-          page.getByText(
-            /investigation: investigation-1 · revision 3 · fingerprint/,
-          ),
-        )
-        .toBeVisible();
-      const activity = page.getByRole("tab", { name: "Activity", exact: true });
-      (activity.element() as HTMLElement).focus();
-      await userEvent.keyboard("{ArrowRight}");
-      await expect
-        .element(page.getByRole("tab", { name: "Evidence", exact: true }))
-        .toHaveFocus();
-      await expect
-        .element(page.getByText("Limited evidence", { exact: true }))
-        .toBeVisible();
-      await expect
-        .element(page.getByText("Arithmetic contribution", { exact: true }))
-        .toBeVisible();
-      await expect
-        .element(page.getByText("coverage partial", { exact: true }))
-        .toBeVisible();
-      await expect
-        .element(page.getByText(/Current: 2026-10-01T00:00:00Z/))
-        .toBeVisible();
-      await keyboardActivate(
-        page
-          .getByRole("button", { name: "View revenue context", exact: true })
-          .element(),
-      );
-      await expect
-        .element(
-          page.getByRole("region", { name: "Context authority and conflicts" }),
-        )
-        .toBeVisible();
-      await expect
-        .element(
-          page.getByText("Unresolved definition conflicts", { exact: true }),
-        )
-        .toBeVisible();
-      await expect
-        .element(page.getByText("historical", { exact: true }))
-        .toBeVisible();
-      expect(resolve).toHaveBeenCalledWith(
-        "/intelligence/context/resolve-metric",
-        { semantic, term: "revenue", exact: true, include_context: true },
-      );
-      assertContained(width);
-      await page.screenshot({
-        path: `__screenshots__/lifecycle-context-${theme}-${width}.png`,
-      });
-      if (width === 360) {
-        await userEvent.keyboard("{Escape}");
-        await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-        await expect
-          .element(page.getByRole("button", { name: "Open workflow details" }))
-          .toHaveFocus();
-      } else {
-        expect(
-          page
-            .getByRole("complementary", { name: "Workflow details" })
-            .element()
-            .getBoundingClientRect().height,
-        ).toBeLessThanOrEqual(900);
-      }
-    },
-  );
-
-  it.each(matrix)(
-    "prefills missing Investigation inputs and shows honest count limits ($theme, $width px)",
-    async ({ theme, width }) => {
-      await viewport(theme, width);
-      vi.spyOn(intelligenceApi, "page").mockResolvedValue({
-        items: [],
-        next_after: null,
-      });
-      vi.spyOn(semanticViewsApi, "get").mockResolvedValue({
-        versions: [
-          {
-            version: 2,
-            fingerprint: semantic.fingerprint,
-            definition: {
-              metrics: [
-                {
-                  name: "revenue",
-                  default_time_dimension: "orders.ordered_at",
-                },
-              ],
-              datasets: [
-                {
-                  name: "orders",
-                  fields: [
-                    { name: "ordered_at", dimension: { is_time: true } },
-                  ],
-                },
-              ],
-            },
-          },
-        ],
-      } as never);
-      const pendingMission: Mission = {
-        ...mission,
-        status: "blocked",
-        investigation_requirements: {
-          required_inputs: ["time_dimension"],
-          established: envelope,
-        },
-      };
-      await render(
-        wrap(<InvestigationStart mission={pendingMission} refresh={vi.fn()} />),
-      );
-      await keyboardActivate(
-        page
-          .getByRole("button", { name: "Complete investigation setup" })
-          .element(),
-      );
-      await expect
-        .element(
-          page.getByText(
-            "Sample count remains unknown for this one-time comparison.",
-          ),
-        )
-        .toBeVisible();
-      await expect
-        .element(page.getByLabelText("Time dimension", { exact: true }))
-        .toHaveValue("orders.ordered_at");
-      for (const name of [
-        "Baseline start",
-        "Baseline end",
-        "Observed start",
-        "Observed end",
-      ]) {
-        expect(
-          (
-            page
-              .getByLabelText(name, { exact: true })
-              .element() as HTMLInputElement
-          ).value,
-        ).not.toBe("");
-      }
-      await expect
-        .element(
-          page.getByRole("button", { name: "Run governed investigation" }),
-        )
-        .toBeEnabled();
-      await expect
-        .element(
-          page.getByText(
-            /Established: revenue · semantic version 2. Missing: time dimension/,
-          ),
-        )
-        .toBeVisible();
-      assertContained(width);
-    },
-  );
-
   it.each(matrix)(
     "renders a generic scenario and uncertain automation without redispatch ($theme, $width px)",
     async ({ theme, width }) => {
@@ -933,8 +586,6 @@ describe("governed lifecycle browser surfaces", () => {
       await render(
         wrap(
           <div className="space-y-5">
-            <MissionObjects mission={mission} onFollowUp={vi.fn()} />
-            <ContextPanel semantic={semantic} metric="revenue" />
             <ActionLifecycle
               actionId="denied-action"
               threadId={mission.thread_id}
@@ -945,21 +596,12 @@ describe("governed lifecycle browser surfaces", () => {
               onCreated={vi.fn()}
             />
             <AgentDoctor agentId="sales-agent" epoch={0} />
-            <EvidencePanel evidence={[]} />
           </div>,
         ),
       );
       await keyboardActivate(
         page.getByText("Prepare a decision", { exact: true }).element(),
       );
-      await expect
-        .element(page.getByText("Investigation access revoked"))
-        .toBeVisible();
-      await expect
-        .element(
-          page.getByText(/Context is unavailable or its definition changed/),
-        )
-        .toBeVisible();
       await expect
         .element(
           page.getByText(/Action could not be loaded: Action access revoked/),
@@ -978,21 +620,6 @@ describe("governed lifecycle browser surfaces", () => {
             /Release diagnosis could not be loaded: Release history access revoked/,
           ),
         )
-        .toBeVisible();
-      await expect
-        .element(
-          page.getByRole("heading", {
-            name: "Regional arithmetic contribution",
-          }),
-        )
-        .not.toBeInTheDocument();
-      await expect
-        .element(
-          page.getByRole("region", { name: "Context authority and conflicts" }),
-        )
-        .not.toBeInTheDocument();
-      await expect
-        .element(page.getByText("Evidence has not been assessed"))
         .toBeVisible();
       assertContained(width);
     },

@@ -1,31 +1,22 @@
-"""Durable attachment references and explicit participant grants, without copying bodies."""
+"""Attachment references granted to collaboration participants, without copying bodies."""
 
 from __future__ import annotations
 
 import copy
 import hashlib
-import json
-from typing import Any
-from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field
 
-from app.common.audit import write_audit_log
 from app.core.database import db
-from app.modules.agents.identity import participant_id, participant_path
 from app.modules.agents.mission import SCOPE_SQL, scope_params, workflow_scope
 from app.modules.assistant.attachments import (
     MAX_FILES,
     MAX_TEXT_TOTAL_BYTES,
     MAX_TOTAL_BYTES,
-    attachment_prompt,
-    provider_user_content,
 )
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.security import observation_context, session_security
-from app.modules.assistant.skills import contains_credential_shape
-from app.modules.intelligence.contracts import Contract, Scope, fingerprint, utc_now
-from app.observability.metrics import studio_operation
+from app.modules.intelligence.contracts import Contract, Scope
 
 RESOURCES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STUDIO_RESOURCES (
@@ -74,24 +65,8 @@ class ResourceMetadata(Contract):
     attachment_index: int = Field(ge=0, lt=MAX_FILES)
 
 
-class ResourceGrantRequest(Contract):
-    root_run_id: str = Field(min_length=1, max_length=64)
-    grantor: str = Field(default="/root", max_length=512)
-    target: str = Field(min_length=1, max_length=512)
-    resource_refs: list[str] = Field(max_length=MAX_FILES)
-
-
-def normalize_refs(refs: list[str] | None) -> list[str]:
-    if refs is None:
-        return []
-    if (
-        not isinstance(refs, list)
-        or len(refs) > MAX_FILES
-        or any(not isinstance(ref, str) or not ref or len(ref) > 64 for ref in refs)
-        or len(set(refs)) != len(refs)
-    ):
-        raise ValueError("Invalid attachment resource references")
-    return sorted(refs)
+def participant_id(turn: dict) -> str:
+    return str((turn.get("payload") or {}).get("agent_session_id") or turn["run_id"])
 
 
 def _digest(item: dict) -> str:
@@ -118,70 +93,6 @@ class ResourceDelegation:
     async def ensure_schema(self) -> None:
         for ddl in RESOURCE_DDLS:
             await db.execute_system(ddl)
-
-    async def register_root(self, root: dict, user: dict) -> list[ResourceMetadata]:
-        scope = check_participant(root, user)
-        if root.get("depth") != 0:
-            raise ValueError("Only a root may register message attachments")
-        message_id = (root.get("payload") or {}).get("user_message_id")
-        if not message_id:
-            return []
-        source = await assistant_repository.attachment_message(
-            root["thread_id"],
-            message_id,
-            user_name=scope.principal,
-            security_context=observation_context(session_security(user)),
-        )
-        if source is None:
-            raise ValueError("Attachment message is unavailable in this security context")
-        attachments = source["attachments"]
-        if len(attachments) > MAX_FILES:
-            raise ValueError("Attachment source exceeds the file bound")
-        resources = []
-        for index, item in enumerate(attachments):
-            if not isinstance(item, dict) or not isinstance(item.get("content"), str):
-                raise ValueError("Invalid persisted attachment")
-            if not item.get("media_type", "").startswith("image/") and contains_credential_shape(
-                item["content"]
-            ):
-                raise ValueError("Credential-bearing attachments cannot be delegated")
-            resource_id = str(
-                uuid5(
-                    NAMESPACE_URL,
-                    "nova:attachment:"
-                    + fingerprint([root["run_id"], scope.model_dump(), message_id, index]),
-                )
-            )
-            metadata = ResourceMetadata(
-                resource_id=resource_id,
-                message_id=message_id,
-                attachment_index=index,
-                name=item["name"],
-                media_type=item["media_type"],
-                size_bytes=item["size_bytes"],
-                digest=_digest(item),
-            )
-            prior = await self._metadata(resource_id, root, scope)
-            if prior is not None and prior != metadata:
-                raise ValueError("Attachment source changed after registration")
-            if prior is None:
-                await db.execute_system(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_RESOURCES (resource_id,owner_name,"
-                    "role_name,session_id,security_version,thread_id,root_run_id,message_id,"
-                    "attachment_index,payload) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                    [
-                        resource_id,
-                        *scope_params(scope),
-                        root["thread_id"],
-                        root["run_id"],
-                        message_id,
-                        index,
-                        metadata.model_dump_json(),
-                    ],
-                )
-            await self._grant(metadata, root, root, scope)
-            resources.append(metadata)
-        return resources
 
     async def _metadata(self, resource_id: str, run: dict, scope: Scope) -> ResourceMetadata | None:
         root_id = run.get("root_run_id") or run["run_id"]
@@ -220,126 +131,6 @@ class ResourceDelegation:
             result.append(metadata)
         return sorted(result, key=lambda item: item.resource_id)
 
-    async def reauthorize_for_mission(
-        self, mission_id: str, root_run_id: str, user: dict
-    ) -> list[str]:
-        from app.modules.agents.harness_repository import harness_repository
-        from app.modules.agents.mission import mission_service, require_thread
-        from app.modules.intelligence.actions import action_service
-
-        current = workflow_scope(user)
-        await action_service.revalidate(user)
-        mission = await mission_service._get_owner(mission_id, current)
-        await require_thread(mission.thread_id, user)
-        binding = mission.run_bindings.get(root_run_id)
-        root = await harness_repository.get(root_run_id)
-        if (
-            binding is None
-            or root_run_id not in mission.run_ids
-            or root is None
-            or root.get("root_run_id") not in {None, root_run_id}
-            or root.get("thread_id") != mission.thread_id
-            or [
-                root.get(key)
-                for key in ("owner_name", "role_name", "session_id", "security_version")
-            ]
-            != scope_params(binding)
-        ):
-            raise ValueError("Mission attachment binding is unavailable")
-        grants = await db.execute_system(
-            "SELECT resource_id FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS "
-            f"WHERE participant_id=%s AND {SCOPE_SQL} AND thread_id=%s AND root_run_id=%s LIMIT 4",
-            [participant_id(root), *scope_params(binding), mission.thread_id, root_run_id],
-        )
-        refs = normalize_refs([row[0] for row in grants["rows"]])
-        total_bytes = 0
-        text_bytes = 0
-        for ref in refs:
-            metadata = await self._metadata(ref, root, binding)
-            if metadata is None:
-                raise ValueError("Mission attachment grant has no source")
-            source = await assistant_repository.attachment_message(
-                mission.thread_id,
-                metadata.message_id,
-                user_name=current.principal,
-                security_context=binding.model_dump(mode="json"),
-            )
-            if source is None or metadata.attachment_index >= len(source["attachments"]):
-                raise ValueError("Mission attachment source is unavailable")
-            item = source["attachments"][metadata.attachment_index]
-            if (
-                not isinstance(item, dict)
-                or not isinstance(item.get("content"), str)
-                or _digest(item) != metadata.digest
-                or any(
-                    item.get(key) != getattr(metadata, key)
-                    for key in ("name", "media_type", "size_bytes")
-                )
-            ):
-                raise ValueError("Mission attachment source changed after delegation")
-            total_bytes += item["size_bytes"]
-            if not item["media_type"].startswith("image/"):
-                text_bytes += len(item["content"].encode())
-        if total_bytes > MAX_TOTAL_BYTES or text_bytes > MAX_TEXT_TOTAL_BYTES:
-            raise ValueError("Mission attachments exceed the input budget")
-        return refs
-
-    async def _grant(
-        self, metadata: ResourceMetadata, grantor: dict, recipient: dict, scope: Scope
-    ) -> None:
-        root_id = grantor.get("root_run_id") or grantor["run_id"]
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS (resource_id,participant_id,"
-            "owner_name,role_name,session_id,security_version,thread_id,root_run_id,"
-            "grantor_participant_id,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            [
-                metadata.resource_id,
-                participant_id(recipient),
-                *scope_params(scope),
-                grantor["thread_id"],
-                root_id,
-                participant_id(grantor),
-                utc_now().replace(tzinfo=None),
-            ],
-        )
-
-    async def grant(self, grantor: dict, recipient: dict, refs: list[str], user: dict) -> list[str]:
-        with studio_operation("resource", "grant"):
-            try:
-                return await self._grant_resources(grantor, recipient, refs, user)
-            except ValueError:
-                await self._audit(grantor, workflow_scope(user), "DENIED")
-                raise
-
-    async def _grant_resources(
-        self, grantor: dict, recipient: dict, refs: list[str], user: dict
-    ) -> list[str]:
-        refs = normalize_refs(refs)
-        if not refs:
-            return []
-        scope = check_participant(grantor, user)
-        check_participant(recipient, user)
-        root_id = grantor.get("root_run_id") or grantor["run_id"]
-        if (
-            recipient.get("root_run_id") != root_id
-            or recipient["thread_id"] != grantor["thread_id"]
-        ):
-            raise ValueError("Attachment delegation crosses a collaboration boundary")
-        ancestor = participant_path(grantor).value.rstrip("/") + "/"
-        if not participant_path(recipient).value.startswith(ancestor):
-            raise ValueError("Attachment delegation requires a descendant participant")
-        available = {r.resource_id: r for r in await self.available(grantor, user)}
-        if any(ref not in available for ref in refs):
-            raise ValueError("Cannot delegate an attachment unavailable to this participant")
-        existing = {r.resource_id for r in await self.available(recipient, user)}
-        if len(existing | set(refs)) > MAX_FILES:
-            raise ValueError("Participant attachment bound exceeded")
-        for ref in refs:
-            if ref not in existing:
-                await self._grant(available[ref], grantor, recipient, scope)
-        await self._audit(grantor, scope, "SUCCESS")
-        return refs
-
     async def load(self, run: dict, user: dict) -> tuple[list[dict], list[str]]:
         metadata = await self.available(run, user)
         attachments = []
@@ -374,76 +165,6 @@ class ResourceDelegation:
         ):
             raise ValueError("Participant attachments exceed the input budget")
         return attachments, [r.resource_id for r in metadata]
-
-    @staticmethod
-    async def _audit(run: dict, scope: Scope, status: str) -> None:
-        await write_audit_log(
-            event_type="STUDIO_RESOURCE",
-            user_name=scope.principal,
-            action="DELEGATE",
-            object_type="AGENT_RUN",
-            object_name=run["run_id"],
-            status=status,
-            active_role=scope.active_role,
-            session_id=scope.session_id,
-            security_context_version=scope.security_context_version,
-        )
-
-
-def reference_checkpoint(
-    state: dict, *, prompt: str, attachments: list[dict], refs: list[str]
-) -> dict:
-    """Replace live input with references before writing a Smart checkpoint."""
-    if not attachments:
-        return copy.deepcopy(state)
-    if len(attachments) != len(normalize_refs(refs)):
-        raise ValueError("Checkpoint attachments require matching resource references")
-    original = provider_user_content(attachment_prompt(prompt, attachments), attachments)
-    secrets: list[str] = []
-    for item in attachments:
-        body = item["content"]
-        secrets.extend(
-            (
-                body,
-                json.dumps(body, ensure_ascii=False)[1:-1],
-                json.dumps(body, ensure_ascii=True)[1:-1],
-            )
-        )
-        if item["media_type"].startswith("image/"):
-            secrets.append(f"data:{item['media_type']};base64,{body}")
-    secrets = sorted(set(secrets), key=len, reverse=True)
-
-    def clean(value: Any):
-        if isinstance(value, dict):
-            if value.get("role") == "user" and value.get("content") == original:
-                value = {**value, "content": {"nova_attachment_refs": refs, "task": prompt}}
-            return {clean(k): clean(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [clean(v) for v in value]
-        if isinstance(value, str):
-            for body in secrets:
-                if body:
-                    value = value.replace(body, "[attachment content omitted]")
-        return value
-
-    return clean(state)
-
-
-def restore_resource_checkpoint(
-    state: dict | None, attachments: list[dict], refs: list[str]
-) -> dict | None:
-    if state is None:
-        return None
-    restored = copy.deepcopy(state)
-    for message in restored.get("messages", []):
-        content = message.get("content")
-        if isinstance(content, dict) and "nova_attachment_refs" in content:
-            if message.get("role") != "user" or content["nova_attachment_refs"] != refs:
-                raise ValueError("Checkpoint attachment grants changed")
-            message["content"] = provider_user_content(
-                attachment_prompt(content["task"], attachments), attachments
-            )
-    return restored
 
 
 resource_delegation = ResourceDelegation()

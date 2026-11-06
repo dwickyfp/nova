@@ -226,9 +226,8 @@ async def test_tool_dispatch_counts_exclude_denials_and_do_not_guess_nested_cost
         assert budget(record, participants=1) == "unavailable"
 
 
-async def test_collaboration_does_not_guess_participant_count():
-    context = LoopContext(user_name="alice", agent_id="agent", collaboration_root=True)
-    context, _ = await run(ScriptedProvider([text_frame("Ready.")]), context=context)
+async def test_a_checkpointed_turn_does_not_guess_participant_count():
+    context, _ = await run(ScriptedProvider([text_frame("Ready.")]), save_state=AsyncMock())
     assert budget(observation(context), participants=1) == "unavailable"
 
 

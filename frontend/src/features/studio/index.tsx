@@ -5,9 +5,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getCookie, setCookie } from "@/lib/cookies";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { agentsApi, studioApi, AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
+import { agentsApi, studioApi } from "@/features/agents/api";
 import { api } from "@/lib/api-client";
-import { StudioChat } from "./studio-chat";
+import { StudioChat, type StudioHandoff } from "./studio-chat";
 import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
@@ -18,34 +18,7 @@ import { NewspaperPage } from "./news/newspaper-page";
 import { ShareDialog } from "./share-dialog";
 import { flushUiStates } from "./intelligent-ui/state";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
-
-const AUTO_WHILE_CATALOG_LOADS: Agent = {
-  agent_id: AUTO_AGENT_ID,
-  owner_name: "",
-  database_name: null,
-  schema_name: null,
-  name: "Smart",
-  description: "Solve a request with tools and governed specialists.",
-  avatar: null,
-  color: null,
-  model_provider_id: null,
-  model_name: null,
-  instructions_response: "",
-  instructions_orchestration: "",
-  response_style: null,
-  sample_questions: [],
-  budget_seconds: null,
-  budget_tokens: null,
-  tool_not_accessible: "deny",
-  default_tools: [],
-  default_skills: [],
-  policy: "auto_read_only",
-  semantic_model_id: null,
-  semantic_model_ids: [],
-  visibility: "private",
-  created_at: "",
-  updated_at: "",
-};
+import { pickDefaultAgent, rememberLastAgent } from "./default-agent";
 
 export function StudioApp() {
   return <StudioAppContent />;
@@ -63,11 +36,7 @@ function StudioAppContent() {
     retryDelay: 500,
     refetchInterval: (query) => query.state.status === "error" ? 5000 : false,
   });
-  const agents = agentsQuery.data?.agents?.length
-    ? agentsQuery.data.agents
-    : agentsQuery.isError || search.agent === AUTO_AGENT_ID
-      ? [AUTO_WHILE_CATALOG_LOADS]
-      : [];
+  const agents = useMemo(() => agentsQuery.data?.agents ?? [], [agentsQuery.data]);
   const authorQuery = useQuery({
     queryKey: ["studio", "skill-author"],
     queryFn: studioApi.skillAuthor,
@@ -89,10 +58,13 @@ function StudioAppContent() {
     window.location.reload();
   };
 
-  const requestedAgentId = search.agent === "__auto__" ? AUTO_AGENT_ID : search.agent;
+  const requestedAgentId = search.agent;
+  // Without a valid agent in the URL (none, removed, or a retired id), open
+  // the agent last used in this browser, then the first one in the catalog.
+  const defaultAgentId = pickDefaultAgent(agents);
   const agentId = requestedAgentId && (
     requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
-  ) ? requestedAgentId : (agents.find((item) => item.agent_id === AUTO_AGENT_ID)?.agent_id ?? agents[0]?.agent_id ?? null);
+  ) ? requestedAgentId : defaultAgentId;
   const view: StudioView = search.view ?? "chat";
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
@@ -106,6 +78,8 @@ function StudioAppContent() {
   // one, which is the opposite of what they asked for.
   const [freshChat, setFreshChat] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
+  // A News story handed to Studio: its own thread, Mission and prompt.
+  const [handoff, setHandoff] = useState<StudioHandoff | null>(null);
   const [sharing, setSharing] = useState<{ id: string; title: string } | null>(null);
   // Shared with Nova's main sidebar, so the rail remembers its state whichever
   // surface set it last.
@@ -144,10 +118,8 @@ function StudioAppContent() {
   });
   const threads = [...new Map(threadsQuery.data?.pages.flatMap((page) => page.threads).map((thread) => [thread.thread_id, thread]) ?? []).values()];
 
-  const threadAgentId = (id: string) => {
-    const owner = threads.find((thread) => thread.thread_id === id)?.agent_id;
-    return owner === "__auto__" ? AUTO_AGENT_ID : owner;
-  };
+  const threadAgentId = (id: string) =>
+    threads.find((thread) => thread.thread_id === id)?.agent_id;
 
   // Restore the newest conversation with its original agent.
   useEffect(() => {
@@ -159,12 +131,12 @@ function StudioAppContent() {
     )
       return;
     const newest = requestedAgentId
-      ? threads.find((thread) => (thread.agent_id === "__auto__" ? AUTO_AGENT_ID : thread.agent_id) === requestedAgentId)
+      ? threads.find((thread) => thread.agent_id === requestedAgentId)
       : threads[0];
     if (!newest?.agent_id) return;
     navigate({
       to: "/studio",
-      search: { agent: newest.agent_id === "__auto__" ? AUTO_AGENT_ID : newest.agent_id, thread: newest.thread_id },
+      search: { agent: newest.agent_id, thread: newest.thread_id },
       replace: true,
     });
   }, [
@@ -184,6 +156,7 @@ function StudioAppContent() {
     setInitialPrompt("");
     setNewChatNonce(0);
 
+    rememberLastAgent(id);
     // A new agent starts a fresh conversation, so the thread is dropped.
     setFreshChat(true);
     await navigate({ to: "/studio", search: { agent: id }, replace: true });
@@ -215,7 +188,7 @@ function StudioAppContent() {
     setNewChatNonce((n) => n + 1);
     navigate({
       to: "/studio",
-      search: { agent: AUTO_AGENT_ID },
+      search: { agent: pickDefaultAgent(agents) ?? undefined },
       replace: true,
     });
   };
@@ -325,7 +298,7 @@ function StudioAppContent() {
           footer={
             <StudioAccountMenu
               identity={settingsQuery.data?.identity}
-              memoryAgentId={agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID ? agent.agent_id : null}
+              memoryAgentId={agent && agent.agent_id !== SKILL_AUTHOR_ID ? agent.agent_id : null}
               onIdentityChange={() =>
                 queryClient.invalidateQueries({
                   queryKey: ["studio", "settings"],
@@ -350,9 +323,9 @@ function StudioAppContent() {
           </div>
         ) : agentsQuery.isError ? (
           <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-            <span>Specialists are temporarily unavailable. Smart can still try your question.</span>
+            <span>Your agents could not load.</span>
             <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>
-              Retry specialists
+              Retry
             </Button>
           </div>
         ) : null}
@@ -384,6 +357,8 @@ function StudioAppContent() {
             }}
             newChatNonce={newChatNonce}
             initialPrompt={initialPrompt}
+            handoff={handoff}
+            noAgents={agentsQuery.isSuccess && agents.length === 0}
           />
         ) : view === "news" && !search.item && search.desk !== "alerts" ? (
           <NewspaperPage
@@ -392,12 +367,15 @@ function StudioAppContent() {
             onEdition={(edition) => navigate({ to: "/studio", search: { view: "news", edition }, replace: true })}
             onOpen={(story) => navigate({ to: "/studio", search: { view: "news", story, edition: search.edition }, replace: true })}
             onAlerts={() => navigate({ to: "/studio", search: { view: "news", desk: "alerts" }, replace: true })}
-            onFollowUp={(prompt) => {
-              setInitialPrompt(prompt);
-              setFreshChat(true);
-              setNewChatNonce((value) => value + 1);
-
-              navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
+            investigateAgentId={agentsQuery.isSuccess ? defaultAgentId : undefined}
+            onInvestigate={(next) => {
+              setHandoff({ threadId: next.thread_id, missionId: next.mission_id, prompt: next.prompt });
+              setFreshChat(false);
+              navigate({
+                to: "/studio",
+                search: { agent: next.agent_id, thread: next.thread_id },
+                replace: true,
+              });
             }} />
         ) : view === "news" ? (
           <StudioIntelligence item={search.item}
@@ -407,7 +385,7 @@ function StudioAppContent() {
               setFreshChat(true);
               setNewChatNonce((value) => value + 1);
 
-              navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
+              navigate({ to: "/studio", search: { agent: pickDefaultAgent(agents) ?? undefined }, replace: true });
             }} />
         ) : view === "artifacts" || view === "dashboards" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />

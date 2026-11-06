@@ -115,8 +115,6 @@ class MissionIO:
                     [seq, frame] for seq, frame in self.events.get(params[0], []) if seq > params[1]
                 ][:100]
             }
-        if "CONFIG_AGENT_SESSION_EVENTS" in sql:
-            return {"rows": [r for r in self.events.get(params[0], []) if r[0] > params[1]][:100]}
         raise AssertionError(sql)
 
 
@@ -381,62 +379,6 @@ async def test_explicit_new_mission_operation_is_reused_by_root_planning_hook(mi
     assert planned.mission_id == original.mission_id
 
 
-async def test_child_table_references_preserve_source_participant(mission_io):
-    _, service = mission_io
-    mission = await create(service)
-    project_event(
-        mission,
-        "child",
-        "child_activity",
-        {
-            "event_type": "table",
-            "table": {"columns": ["sales"], "rows": [[1]], "tool_call_id": "semantic-call"},
-        },
-    )
-    assert mission.evidence_refs == ["child:semantic-call"]
-    assert mission.stages[-1].source_refs == ["child"]
-
-
-async def test_plan_and_completed_run_do_not_fabricate_business_stage_completion(mission_io):
-    io, service = mission_io
-    mission = await create(service)
-    io.runs["smart"] = {
-        "thread_id": "thread",
-        "scope": module.scope_params(mission.scope),
-        "status": "completed",
-        "sequence": 0,
-        "agent_id": "__smart__",
-    }
-    io.events["smart"] = [[0, "smart", "agent_completed", {"text": "All actions succeeded"}]]
-    await service.attach_run(mission.mission_id, "smart", USER)
-    mission = await service.get(mission.mission_id, USER)
-    assert mission.status == "blocked"
-    assert all(stage.status == "planned" for stage in mission.stages)
-
-
-async def test_cancellation_is_durable_and_uses_existing_smart_owner(mission_io, monkeypatch):
-    io, service = mission_io
-    mission = await create(service)
-    io.runs["smart"] = {
-        "thread_id": "thread",
-        "scope": module.scope_params(mission.scope),
-        "status": "running",
-        "sequence": -1,
-        "agent_id": "__smart__",
-    }
-    mission = await service.attach_run(mission.mission_id, "smart", USER)
-    cancel = AsyncMock(return_value=True)
-    monkeypatch.setattr(module.harness_repository, "cancel_tree", cancel)
-    monkeypatch.setattr(module.harness_repository, "reconcile_cancelled_children", AsyncMock())
-    cancelled = await service.cancel(mission.mission_id, mission.revision, USER)
-    assert cancelled.cancel_requested
-    cancel.assert_awaited_once_with("smart")
-    assert await service.cancellation_requested(mission.mission_id, USER)
-    assert (await service.cancel(mission.mission_id, 1, USER)).cancel_requested
-    with pytest.raises(HTTPException):
-        await service.attach_run(mission.mission_id, "smart", USER)
-
-
 def add_run(io, mission, run_id="direct", *, agent="finance", status="running", sequence=-1):
     io.runs[run_id] = {
         "thread_id": mission.thread_id,
@@ -637,24 +579,12 @@ async def test_object_revision_cannot_regress_and_cancel_rejects_new_links(missi
         )
 
 
-@pytest.mark.parametrize("smart", [False, True])
-async def test_projection_pages_are_durable_across_service_restarts(mission_io, smart):
+async def test_projection_pages_are_durable_across_service_restarts(mission_io):
     io, service = mission_io
     mission = await create(service, public_work_steps=[StageKind.EVIDENCE])
-    add_run(
-        io,
-        mission,
-        "run",
-        agent="__smart__" if smart else "finance",
-        status="completed",
-        sequence=100,
-    )
-    if smart:
-        io.events["run"] = [[i, "run", "thinking", {}] for i in range(100)]
-        io.events["run"].append([100, "child", "table", {"evidence_id": "final-evidence"}])
-    else:
-        io.events["run"] = [(i, "event: thinking\ndata: {}\n\n") for i in range(100)]
-        io.events["run"].append((100, 'event: table\ndata: {"evidence_id":"final-evidence"}\n\n'))
+    add_run(io, mission, "run", agent="finance", status="completed", sequence=100)
+    io.events["run"] = [(i, "event: thinking\ndata: {}\n\n") for i in range(100)]
+    io.events["run"].append((100, 'event: table\ndata: {"evidence_id":"final-evidence"}\n\n'))
     await service.attach_run(mission.mission_id, "run", USER)
     page = await service.get(mission.mission_id, USER)
     assert page.status == "running" and page.projection_cursor["run"] == 99
@@ -1122,43 +1052,6 @@ async def test_deliverables_require_pinned_factual_sources_and_are_reproducible(
     assert revoked.value.status_code == 403
 
 
-async def test_smart_child_pins_context_under_root_mission(mission_io, monkeypatch):
-    io, service = mission_io
-    mission = await create(service)
-    add_run(io, mission, "root", agent="__smart__")
-    add_run(io, mission, "child", agent="finance")
-    mission = await service.attach_run(mission.mission_id, "root", USER)
-    monkeypatch.setattr(
-        module.harness_repository,
-        "get",
-        AsyncMock(
-            return_value={
-                "run_id": "child",
-                "root_run_id": "root",
-                "thread_id": "thread",
-                "owner_name": "alice",
-                "role_name": "analyst",
-                "session_id": "login",
-                "security_version": 1,
-            }
-        ),
-    )
-    pinned = await service.record_execution_context(
-        mission.mission_id,
-        "child",
-        "tool",
-        {
-            "execution_now": "2026-10-04T11:00:00Z",
-            "timezone": "Asia/Jakarta",
-            "semantic": SEMANTIC,
-            "plan_fingerprint": "a" * 64,
-        },
-        USER,
-    )
-    assert pinned.run_id == "child"
-    assert io.missions[mission.mission_id].run_ids == ["root"]
-
-
 async def test_missing_inputs_are_bounded_persisted_and_cleared_by_canonical_link(
     mission_io, monkeypatch
 ):
@@ -1416,61 +1309,6 @@ async def test_deliverable_authorization_forwards_one_budget_to_all_sources(
     authorize.assert_awaited_once_with(document.sources[0].semantic, USER, budget=budget)
 
 
-@pytest.mark.parametrize("failure", ["active_child", "attachment", "revoked_participant"])
-async def test_smart_resume_reauthorizes_tree_and_root_attachment_without_payload_refs(
-    mission_io, monkeypatch, failure
-):
-    io, service = mission_io
-    mission = await create(service)
-    add_run(io, mission, "root", agent="__smart__", status="completed")
-    mission = await service.attach_run(mission.mission_id, "root", USER)
-    root = {
-        "run_id": "root",
-        "root_run_id": None,
-        "agent_id": "__smart__",
-        "owner_name": "alice",
-        "role_name": "analyst",
-        "session_id": "login",
-        "security_version": 1,
-        "thread_id": "thread",
-        "status": "completed",
-        "payload": {},
-    }
-    child = {**root, "run_id": "child", "root_run_id": "root"}
-    if failure == "active_child":
-        child["status"] = "running"
-    if failure == "revoked_participant":
-        child["agent_id"] = "finance"
-        monkeypatch.setattr(module.agent_repository, "get_agent", AsyncMock(return_value=None))
-        monkeypatch.setattr(
-            module.agent_repository, "get_shared_agent", AsyncMock(return_value=None)
-        )
-    monkeypatch.setattr(module.harness_repository, "tree", AsyncMock(return_value=[root, child]))
-    from app.modules.agents.resource_delegation import resource_delegation
-    from app.modules.intelligence.actions import action_service
-
-    monkeypatch.setattr(action_service, "revalidate", AsyncMock())
-    resource_read = AsyncMock(side_effect=ValueError("Attachment security context changed"))
-    monkeypatch.setattr(resource_delegation, "reauthorize_for_mission", resource_read)
-    if failure == "attachment":
-        io.resources = ["registered-root-resource"]
-    with pytest.raises(HTTPException) as refused:
-        await service.resume(
-            mission.mission_id,
-            MissionResume(expected_revision=mission.revision, operation_id="resume-smart"),
-            NEW_SESSION,
-        )
-    assert (
-        refused.value.status_code
-        == {"active_child": 409, "attachment": 403, "revoked_participant": 404}[failure]
-    )
-    assert io.missions[mission.mission_id].scope == mission.scope
-    if failure == "attachment":
-        resource_read.assert_awaited_once_with(mission.mission_id, "root", NEW_SESSION)
-    else:
-        resource_read.assert_not_awaited()
-
-
 async def test_completed_turn_preserves_unfinished_business_stages(mission_io):
     io, service = mission_io
     mission = await create(
@@ -1555,3 +1393,66 @@ async def test_oversized_deliverable_source_returns_bounded_error(mission_io, mo
     assert refused.value.status_code == 422
     assert refused.value.detail == {"code": "deliverable_source_bound_exceeded"}
     assert not io.deliverables
+
+
+def _call(call_id, classification, status="pending", tool="knowledge_propose"):
+    return {"tool_call_id": call_id, "tool_name": tool,
+            "classification": classification, "status": status}
+
+
+async def test_a_successful_changing_tool_completes_the_execute_stage(mission_io):
+    _, service = mission_io
+    mission = await create(
+        service, work_intent=WorkIntent.ACT, public_work_steps=[StageKind.EXECUTE]
+    )
+    project_event(mission, "run", "tool_call", _call("read", "read_only"))
+    project_event(mission, "run", "tool_status", {"tool_call_id": "read", "status": "done"})
+    (execute,) = mission.stages
+    assert execute.status == "planned"  # a read is not the change the user asked for
+
+    project_event(mission, "run", "tool_call", _call("schedule", "session_change", tool="x"))
+    project_event(mission, "run", "tool_status", {"tool_call_id": "schedule", "status": "done"})
+    # A change without a capability check completes execution but verifies nothing.
+    assert [(s.kind, s.status) for s in mission.stages] == [(StageKind.EXECUTE, "completed")]
+
+
+async def test_a_filed_proposal_completes_and_verifies_the_change(mission_io):
+    _, service = mission_io
+    mission = await create(
+        service, work_intent=WorkIntent.ACT,
+        public_work_steps=[StageKind.EXECUTE, StageKind.VERIFY],
+    )
+    project_event(mission, "run", "tool_call", _call("propose", "session_change"))
+    assert [s.status for s in mission.stages] == ["running", "running"]
+    project_event(mission, "other", "tool_status", {"tool_call_id": "propose", "status": "done"})
+    assert [s.status for s in mission.stages] == ["running", "running"]  # another run's call
+    project_event(mission, "run", "tool_status", {"tool_call_id": "propose", "status": "done"})
+    assert [(s.kind, s.status) for s in mission.stages] == [
+        (StageKind.EXECUTE, "completed"), (StageKind.VERIFY, "completed"),
+    ]
+    assert mission.stages[0].source_refs == ["run", "call:run:propose"]
+
+
+def test_the_loop_verifies_that_a_proposal_was_recorded():
+    from app.modules.agents.mission import VERIFIED_CHANGE_TOOLS
+    from app.modules.assistant.service import _verify_tool_outcome
+
+    for tool in VERIFIED_CHANGE_TOOLS:
+        empty = SimpleNamespace(ok=True, data={})
+        assert _verify_tool_outcome(tool, empty)
+    filed = SimpleNamespace(ok=True, data={"proposal_id": "p1", "status": "PENDING"})
+    assert _verify_tool_outcome("knowledge_propose", filed) is None
+
+
+async def test_a_denied_or_failed_change_leaves_the_execute_stage_open(mission_io):
+    _, service = mission_io
+    for status in ("denied", "failed", "cancelled"):
+        mission = await service.create(
+            "thread",
+            MissionCreate(objective=f"File {status}", operation_id=f"request-{status}",
+                          work_intent=WorkIntent.ACT, public_work_steps=[StageKind.EXECUTE]),
+            USER,
+        )
+        project_event(mission, "run", "tool_call", _call("propose", "destructive"))
+        project_event(mission, "run", "tool_status", {"tool_call_id": "propose", "status": status})
+        assert {s.status for s in mission.stages} == {"running"}, status

@@ -1,4 +1,4 @@
-"""Authenticated Studio Mission, resource, and deliverable endpoints."""
+"""Authenticated Studio Mission and deliverable endpoints."""
 
 from typing import Annotated
 
@@ -6,10 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 
 from app.core.deps import get_current_user
-from app.modules.agents.agent_control import AgentControl
-from app.modules.agents.harness_repository import harness_repository
-from app.modules.agents.identity import participant_path
-from app.modules.agents.mission import mission_service, require_thread
+from app.modules.agents.mission import mission_service
 from app.modules.agents.mission_schema import (
     DeliverableCreate,
     MissionCreate,
@@ -27,7 +24,6 @@ from app.modules.agents.public_projections import (
     PublicResumableMissionList,
     public_mission,
 )
-from app.modules.agents.resource_delegation import ResourceGrantRequest, resource_delegation
 from app.modules.intelligence.contracts import Contract
 from app.modules.intelligence.public_projections import (
     PublicAction,
@@ -163,47 +159,3 @@ async def list_deliverables(mission_id: str, user: Annotated[dict, Depends(get_c
             PublicMissionDeliverable.model_validate(projection_input(result)) for result in results
         ]
     )
-
-
-async def _resource_control(thread_id: str, root_run_id: str, user: dict) -> AgentControl:
-    await require_thread(thread_id, user)
-    root = await harness_repository.get(root_run_id)
-    if root is None or root["thread_id"] != thread_id or root["depth"] != 0:
-        raise HTTPException(status_code=404, detail="Resource collaboration not found")
-    control = AgentControl(harness_repository, root, user)
-    try:
-        await control._tree()
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail="Resource collaboration not found") from exc
-    return control
-
-
-@router.get("/threads/{thread_id}/resources")
-async def list_resources(
-    thread_id: str,
-    root_run_id: str,
-    user: Annotated[dict, Depends(get_current_user)],
-    participant: str = "/root",
-):
-    control = await _resource_control(thread_id, root_run_id, user)
-    try:
-        run, _ = await control._target(participant)
-        return {"resources": await resource_delegation.available(run, user)}
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail="Resource access denied") from exc
-
-
-@router.post("/threads/{thread_id}/resources/grants")
-async def grant_resources(
-    thread_id: str, body: ResourceGrantRequest, user: Annotated[dict, Depends(get_current_user)]
-):
-    control = await _resource_control(thread_id, body.root_run_id, user)
-    async with harness_repository.admission_lock(control.root_id, user["username"]) as owned:
-        try:
-            grantor, _ = await control._target(body.grantor)
-            recipient, _ = await control._target(body.target)
-            await owned()
-            refs = await resource_delegation.grant(grantor, recipient, body.resource_refs, user)
-            return {"resource_refs": refs, "participant": participant_path(recipient).value}
-        except ValueError as exc:
-            raise HTTPException(status_code=403, detail="Resource delegation rejected") from exc

@@ -140,7 +140,6 @@ class HistoryRepository:
         user_name: str,
         limit: int = 50,
         cursor: str | None = None,
-        synchronize: bool = False,
     ) -> tuple[list[dict], str | None]:
         _limit(limit)
         scope = _scope("messages", user_name, thread_id)
@@ -160,13 +159,7 @@ class HistoryRepository:
         )
         params.append(limit + 1)
         try:
-            if synchronize:
-                async with db.system_conn() as conn, conn.cursor() as cur:
-                    await cur.execute("SYNC")
-                    await cur.execute(sql, params)
-                    rows = await cur.fetchall()
-            else:
-                rows = (await db.execute_system(sql, params))["rows"]
+            rows = (await db.execute_system(sql, params))["rows"]
             if not isinstance(rows, (list, tuple)) or len(rows) > limit + 1:
                 raise ValueError("Invalid message page")
             for row in rows:

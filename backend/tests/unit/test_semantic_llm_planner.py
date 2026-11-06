@@ -333,3 +333,91 @@ def test_a_malformed_frame_keeps_only_valid_fields():
     assert frame.language == "ja"
     assert frame.range is None and frame.compare is None and frame.grain is None
     assert frame.top_n is None and frame.order is None and frame.threshold is None
+
+
+def test_a_plan_that_would_multiply_its_metric_is_sent_back_for_repair():
+    import pytest
+
+    from app.modules.agents.semantic.model_planner import _check_grain, primary_plan_from
+    from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
+
+    model = sales_model(with_items=True)
+    # Order revenue grouped by a product of its items counts each order once per item.
+    fanout = _plan(dimensions=["product_name"])
+    with pytest.raises(SemanticPlanError, match="metric's own dataset"):
+        _check_grain(model, SemanticPlan.from_dict(fanout))
+    # The turn planner's plan is then planned again rather than refused at compile.
+    assert primary_plan_from(fanout, model) is None
+    assert primary_plan_from(_plan(dimensions=["city"]), model) is not None
+
+
+def test_the_catalog_tells_the_planner_where_a_metric_can_be_grouped():
+    from app.modules.agents.semantic.model_planner import compact_catalog
+
+    catalog = compact_catalog(sales_model(with_items=True))
+    revenue = next(item for item in catalog["metrics"] if item["name"] == "total_revenue")
+    # Orders reach their region many-to-one; their items are one-to-many and are not listed.
+    assert revenue["groupable_by_datasets"] == ["orders", "regions"]
+
+
+async def test_a_multi_step_turn_runs_the_resolved_data_and_names_the_rest(monkeypatch):
+    with_steps = _plan(dimensions=["city"], unresolved_concepts=[
+        {"text": "optimise the visit order and show the route map", "type_hint": "route",
+         "material": True},
+    ])
+    tool, _provider, execute = setup_tool(monkeypatch, with_steps)
+    context = LoopContext(user_name="alice", user=USER.copy(),
+                          execution_now=datetime(2026, 10, 22, 12, tzinfo=UTC))
+    context.route = {"intent": "machine_learning", "ml_task": "route_optimization"}
+    outcome = await tool.run(
+        ToolInvocation("s1", "semantic_query", {"question": "revenue by city, then a route"}),
+        context,
+    )
+    assert outcome.ok, outcome.safe_detail
+    execute.assert_awaited_once()
+    assert "Not covered by it: optimise the visit order" in outcome.summary
+
+    # A plain data question with an unresolved constraint still asks back.
+    tool, _provider, execute = setup_tool(monkeypatch, with_steps)
+    asked = await _run(tool, "revenue by city, then a route")
+    assert not asked.ok and asked.error_class == "CLARIFICATION_REQUIRED"
+    execute.assert_not_awaited()
+
+
+async def test_a_question_naming_one_views_metric_queries_that_view(monkeypatch):
+    from app.modules.agents.semantic import access
+    from app.modules.agents.tools.semantic_query import SemanticQueryTool
+    from tests.benchmark.retail_field.views import VIEWS
+
+    models = [{"semantic_model_id": name, "name": name, "definition": json.dumps(view)}
+              for name, view in VIEWS.items()]
+    monkeypatch.setattr(access, "load_authorized_models", AsyncMock(return_value=models))
+    tool = SemanticQueryTool(provider=SimpleNamespace())
+    question = "Bandingkan planned_distance_km dan actual_distance_km per driver di Medan."
+    # A made-up view name does not send the query to the first view.
+    context = SimpleNamespace(requested_semantic_view="retail_operations", primary_plan={
+        "view": "retail_sales",
+    })
+    chosen = await tool._resolve_model(context, question)
+    assert chosen["semantic_model_id"] == "delivery_routes"
+    # A real named view still wins.
+    context.requested_semantic_view = "outlet_stock"
+    assert (await tool._resolve_model(context, question))["semantic_model_id"] == "outlet_stock"
+
+
+async def test_the_first_query_runs_early_only_from_a_usable_turn_plan(monkeypatch):
+    from app.modules.agents.semantic import access
+
+    models = [{"semantic_model_id": "sales",
+               "definition": json.loads(json.dumps(semantic_ir_to_definition(sales_model())))}]
+    monkeypatch.setattr(access, "load_authorized_models", AsyncMock(return_value=models))
+    tool = SemanticQueryTool(provider=SimpleNamespace())
+    context_defaults = {"requested_semantic_view": None}
+    context = SimpleNamespace(primary_plan={"plan": _plan(dimensions=["city"]), "view": "sales"},
+                              **context_defaults)
+    assert await tool.primary_plan_usable(context)
+    # A plan naming what the view does not have is not run early; the model asks.
+    context.primary_plan = {"plan": _plan(metrics=["gross_merchandise"]), "view": "sales"}
+    assert not await tool.primary_plan_usable(context)
+    context.primary_plan = None
+    assert not await tool.primary_plan_usable(context)

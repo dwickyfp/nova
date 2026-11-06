@@ -48,7 +48,7 @@ row filters, and masks using the caller's single active role.
 | Surface | Role |
 | --- | --- |
 | Nova Console | Data and control foundation: SQL Workspace, Database Explorer, catalog, stages, ingestion/export, ML, tasks, monitoring, security, and Intelligence objects. |
-| Nova Studio | Intelligence workspace: agents and Smart collaboration, Missions, investigations, evidence, scenarios, Decisions, governed Actions, Outcomes, artifacts, dashboards, skills, and connectors. |
+| Nova Studio | Intelligence workspace: agents, Missions, investigations, evidence, scenarios, Decisions, governed Actions, Outcomes, artifacts, dashboards, skills, and connectors. |
 
 Both surfaces share authentication, governed data access, SQL execution,
 storage, and the bounded assistant engine. The MySQL proxy exposes the same
@@ -59,7 +59,7 @@ Nova-aware SQL path to existing clients.
 | Layer | Responsibility |
 | --- | --- |
 | Studio | People and agents work through Missions, evidence, Decisions, Actions, Outcomes, and artifacts. |
-| Intelligence runtime | The shared bounded engine composes agents, Smart, skills, tools, and scoped memory. |
+| Intelligence runtime | The shared bounded engine composes agents, skills, tools, and scoped memory. |
 | Business context | Context Graph links semantic definitions, knowledge, and decision revisions; business policies govern supported decisions and actions. |
 | Semantic layer | Semantic Views define metrics, relationships, and verified queries. |
 | Data foundation | SQL, warehouse, catalog, stages, ingestion/export, ML, and StarRocks provide governed data and computation. |
@@ -137,7 +137,7 @@ The compact product description for About/help surfaces is:
 | Local operation | [Run guide](../HOW_TO_RUN.md) |
 | Data and SQL | [SQL frontend](arch-13-sql-frontend.md), [stages](04-stage-manager.md), [task orchestration](08-task-manager.md) |
 | Semantics and context | [Intelligence foundation](28-intelligence-foundation.md) |
-| Agents | [Smart collaboration](arch-11-smart-collaboration.md) |
+| Agents | [Governed Studio](arch-15-governed-studio.md) |
 | Decisions, Actions, Outcomes, and Quality | [Governed Studio](arch-15-governed-studio.md), [operating guide](governed-studio-operations.md) |
 | Security | [Ranger architecture](arch-08-ranger-authorization.md), [Ranger runbook](29-ranger-access-control.md) |
 | ML | [Native ML runtime](28-native-ml-runtime.md) |

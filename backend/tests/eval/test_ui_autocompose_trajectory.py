@@ -159,3 +159,44 @@ async def test_located_result_gets_a_governed_map() -> None:
     assert 'GeoMap(@Evidence("evidence_1"), "longitude", "latitude"' in program
     assert len(_payloads(frames, "table")) == 1
     assert provider.calls == 2
+
+
+REGION = {
+    "columns": ["region", "revenue_total"],
+    "rows": [["Surabaya", "803480000.00"], ["Jakarta", "979755000.00"],
+             ["Medan", "507710000.00"]],
+}
+
+
+def _events(frames: list[str]) -> set[str]:
+    return {frame.split("\n", 1)[0].removeprefix("event: ")
+            for frame in frames if frame.startswith("event: ")}
+
+
+async def test_a_plain_data_answer_gets_a_ranking_on_the_same_stream() -> None:
+    registry = ToolRegistry()
+    registry.register(TableQuery(REGION))
+    frames, context, provider = await _run(
+        [tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
+         text_frame("Jakarta leads revenue.")],
+        registry, intelligent_ui=True, plan=MAP_PLAN,
+    )
+    ui = _payloads(frames, "ui")
+    assert len(ui) == 1
+    provenance = ui[0]["payload"]["provenance"]
+    assert provenance["auto"] == "ranking" and provenance["composer"] == "deterministic"
+    assert provenance["evidence_ids"] == ["evidence_1"]
+    assert provenance["tool_calls"] == {"evidence_1": "q-1"}
+    program = "".join(item["text"] for item in _payloads(frames, "ui_delta"))
+    assert 'Chart(@Sort(@Evidence("evidence_1"), "revenue_total", "desc")' in program
+    assert any(step.get("kind") == "ui" for step in context.steps)
+    # No provider call is added, and the view travels on the frames a map already uses.
+    assert provider.calls == 2
+    map_frames, _, _ = await _map_run()
+    assert _events(frames) <= _events(map_frames)
+    plain, _, _ = await _run(
+        [tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
+         text_frame("Jakarta leads revenue.")],
+        registry, intelligent_ui=False, plan=MAP_PLAN,
+    )
+    assert not _payloads(plain, "ui")

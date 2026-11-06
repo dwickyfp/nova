@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, api } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import {
   newspaperApi,
@@ -100,7 +100,7 @@ function mount(props: Partial<Parameters<typeof NewspaperPage>[0]> = {}) {
   return render(
     <QueryClientProvider client={client}>
       <div className="flex h-dvh min-w-0 flex-col">
-        <NewspaperPage onOpen={vi.fn()} onAlerts={vi.fn()} onFollowUp={vi.fn()} {...props} />
+        <NewspaperPage onOpen={vi.fn()} onAlerts={vi.fn()} onInvestigate={vi.fn()} {...props} />
       </div>
     </QueryClientProvider>,
   );
@@ -451,9 +451,21 @@ it.each([
   document.documentElement.classList.toggle("dark", dark);
   vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
   vi.spyOn(newspaperApi, "story").mockResolvedValue(detail);
-  const onFollowUp = vi.fn();
+  vi.spyOn(newspaperApi, "incident").mockResolvedValue({ incident: null });
+  const handoff = {
+    handoff_status: "READY" as const,
+    incident_id: "inc_1",
+    mission_id: "mission-1",
+    thread_id: "thread-1",
+    agent_id: "agent-revenue",
+    prompt: "Investigate this News incident",
+  };
+  const investigate = vi.spyOn(newspaperApi, "investigate").mockResolvedValue(handoff);
+  const onInvestigate = vi.fn();
   const onOpen = vi.fn();
-  const screen = await mount({ story: "story-bandung", onFollowUp, onOpen });
+  const screen = await mount({
+    story: "story-bandung", onInvestigate, onOpen, investigateAgentId: "agent-revenue",
+  });
 
   const panel = screen.getByRole("dialog", { name: "Revenue fell 34.6% in Bandung" });
   await expect.element(panel).toBeVisible();
@@ -473,14 +485,39 @@ it.each([
     .element(screen.getByText(/Written by the default model from verified figures/))
     .toBeVisible();
   await expect.element(screen.getByText(/must be explained in the weekly review/)).toBeVisible();
-  await screen.getByRole("button", { name: "Ask Studio about this" }).click();
-  expect(onFollowUp.mock.calls[0][0]).toBe(
-    "From News: Revenue fell 34.6% in Bandung. What could explain this change, and what should I check first?",
-  );
+  await expect.element(screen.getByText("No related signals yet", { exact: false })).toBeVisible();
+  await screen.getByRole("button", { name: "Investigate in Studio" }).click();
+  await expect.poll(() => onInvestigate.mock.calls.length).toBe(1);
+  // The server makes the handoff from the story id and the chosen agent; the
+  // headline is not sent.
+  expect(investigate).toHaveBeenCalledWith("story-bandung", "agent-revenue");
+  expect(onInvestigate.mock.calls[0][0]).toEqual(handoff);
   await screen.getByRole("button", { name: "Close" }).click();
   expect(onOpen).toHaveBeenLastCalledWith();
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
   await page.screenshot();
+});
+
+it("asks for an agent before a story can be investigated", async () => {
+  vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
+  vi.spyOn(newspaperApi, "story").mockResolvedValue(detail);
+  vi.spyOn(newspaperApi, "incident").mockResolvedValue({ incident: null });
+  const investigate = vi.spyOn(newspaperApi, "investigate");
+  const screen = await mount({ story: "story-bandung", investigateAgentId: null });
+
+  const button = screen.getByRole("button", { name: "Investigate in Studio" });
+  await expect.element(button).toBeDisabled();
+  await expect.element(button).toHaveAccessibleDescription("Create an agent to investigate");
+  expect(investigate).not.toHaveBeenCalled();
+});
+
+it("sends the agent with an investigation request", async () => {
+  const post = vi.spyOn(api, "post").mockResolvedValue({});
+  await newspaperApi.investigate("story/1", "agent-revenue");
+  expect(post).toHaveBeenCalledWith(
+    "/intelligence/stories/story%2F1/investigate",
+    { agent_id: "agent-revenue" },
+  );
 });
 
 it("does not reveal whether a hidden story exists", async () => {

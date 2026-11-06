@@ -221,7 +221,7 @@ export function StudioAccountMenu({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={!memoryAgentId}
-            title={!memoryAgentId ? "Select a specialist agent to view its memory" : undefined}
+            title={!memoryAgentId ? "Select an agent to view its memory" : undefined}
             onSelect={() => setMemoryOpen(true)}
           >
             <BookOpen />

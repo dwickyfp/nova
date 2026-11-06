@@ -17,6 +17,7 @@ from app.modules.ml_engine.data.datasource import ExtractionMetrics, collect_bou
 from app.modules.ml_engine.data.mysql_fallback import PreferredDataSource
 from app.modules.ml_engine.engines.base import TrainingOutput
 from app.modules.ml_engine.engines.lazy import (
+    optimize_routes,
     train_anomaly,
     train_clustering,
     train_forecast,
@@ -130,6 +131,8 @@ def execute_worker_job(job: MLWorkerJob) -> MLWorkerResult:
         output = train_anomaly(dataset.table, worker_spec)
     elif worker_spec.task is MLTask.CLUSTERING:
         output = train_clustering(dataset.table, worker_spec)
+    elif worker_spec.task is MLTask.ROUTE_OPTIMIZATION:
+        output = optimize_routes(dataset.table, worker_spec)
     else:  # pragma: no cover - enum validation prevents this
         raise ValueError(f"Unsupported ML task: {worker_spec.task}")
     if output.result_table is not None:

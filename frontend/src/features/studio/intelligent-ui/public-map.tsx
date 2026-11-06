@@ -73,7 +73,6 @@ export default function PublicMap({
       aria-label={String(p.label ?? "Public map")}
     >
       <MapSurface
-        publicMap
         bounds={bounds}
         options={options}
         viewport={viewport.value}
@@ -137,16 +136,14 @@ export default function PublicMap({
           ))}
         {options.layer === "arc" && places.length > 1 && (
           <MapArc
-            data={places
-              .slice(1)
-              .map((place, i) => ({
-                id: String(i),
-                from: [places[i].longitude, places[i].latitude] as [
-                  number,
-                  number,
-                ],
-                to: [place.longitude, place.latitude] as [number, number],
-              }))}
+            data={places.slice(1).map((place, i) => ({
+              id: String(i),
+              from: [places[i].longitude, places[i].latitude] as [
+                number,
+                number,
+              ],
+              to: [place.longitude, place.latitude] as [number, number],
+            }))}
             paint={{ "line-color": primary }}
           />
         )}

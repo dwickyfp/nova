@@ -710,7 +710,7 @@ async def test_outcome_rechecks_binding_and_decision_after_observation_before_pe
 async def test_outcome_does_not_commit_after_admission_ownership_is_lost(
     resumed_outcome, monkeypatch,
 ):
-    from app.modules.agents.harness_repository import AutoAdmissionUnavailable
+    from app.modules.agents.harness_repository import AdmissionUnavailable
 
     service, repo, _, _, approved, user, binding, admission = resumed_outcome
     read = repo.get
@@ -718,11 +718,11 @@ async def test_outcome_does_not_commit_after_admission_ownership_is_lost(
     async def lose_admission(kind, *args, **kwargs):
         record = await read(kind, *args, **kwargs)
         if kind == "outcomes":
-            admission.assert_owned.side_effect = AutoAdmissionUnavailable("Admission lease lost")
+            admission.assert_owned.side_effect = AdmissionUnavailable("Admission lease lost")
         return record
 
     monkeypatch.setattr(repo, "get", lose_admission)
-    with pytest.raises(AutoAdmissionUnavailable):
+    with pytest.raises(AdmissionUnavailable):
         await service.evaluate_outcome(approved.id, user, mission_id=binding.mission_id)
     assert not [kind for kind, _ in repo.rows if kind == "outcomes"]
 

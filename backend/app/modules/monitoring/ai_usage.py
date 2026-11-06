@@ -107,6 +107,7 @@ class AIUsageService:
             "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES m "
             "LEFT JOIN NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS t "
             "ON t.thread_id = m.thread_id AND t.user_name = m.user_name "
+            # Answers of the retired Smart mode are not counted as assistant usage.
             "WHERE m.role = 'assistant' AND (m.agent_id IS NULL "
             "OR m.agent_id NOT IN ('__smart__', '__auto__')) "
             "AND m.created_at >= %s AND m.created_at < %s "
@@ -121,27 +122,6 @@ class AIUsageService:
                 r[4], r[5], r[6], r[7], "recorded",
             ) for r in rows[:SOURCE_LIMIT]
         ]
-        return events, len(rows) > SOURCE_LIMIT
-
-    async def _runs(self, start: datetime, end: datetime) -> tuple[list[dict], bool]:
-        result = await db.execute_system(
-            "SELECT run_id, started_at, owner_name, depth, status, prompt_tokens, "
-            "completion_tokens FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE (root_run_id IS NOT NULL OR agent_id IN ('__smart__', '__auto__')) "
-            "AND started_at >= %s AND started_at < %s "
-            "ORDER BY started_at DESC, run_id DESC LIMIT %s",
-            [start.replace(tzinfo=None), end.replace(tzinfo=None), SOURCE_LIMIT + 1],
-        )
-        rows = result["rows"]
-        events = []
-        for r in rows[:SOURCE_LIMIT]:
-            # Run counters start at zero even when the provider omits usage.
-            known = (_count(r[5]) or 0) + (_count(r[6]) or 0) > 0
-            events.append(_event(
-                f"run:{r[0]}", r[1], r[2], "smart",
-                "Smart specialist" if r[3] else "Smart coordinator",
-                None, r[5] if known else None, r[6] if known else None, None, r[4],
-            ))
         return events, len(rows) > SOURCE_LIMIT
 
     async def _functions(self, start: datetime, end: datetime) -> tuple[list[dict], bool]:
@@ -202,7 +182,7 @@ class AIUsageService:
         start = end.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
         previous_start, previous_end = start - timedelta(days=days), end - timedelta(days=days)
         loaders = {
-            "assistant": self._messages, "smart": self._runs, "functions": self._functions,
+            "assistant": self._messages, "functions": self._functions,
             "function_tokens": self._function_tokens,
         }
 

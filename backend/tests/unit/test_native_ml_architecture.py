@@ -340,6 +340,7 @@ def test_agent_registry_exposes_structured_ml_execute() -> None:
         "forecast",
         "anomaly_detection",
         "clustering",
+        "route_optimization",
     }
 
 

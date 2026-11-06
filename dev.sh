@@ -2,12 +2,12 @@
 #
 # dev.sh — run every Nova process on the local machine with one command.
 #
-# Starts the five host-side processes (nothing that belongs in Docker):
+# Starts the four host-side processes (nothing that belongs in Docker). The
+# backend and the workers reload on Python edits; Vite hot-reloads the UI.
 #   backend    FastAPI web + embedded MySQL proxy (port 8000, 4406)
 #              (--split: web 8000, query tier 8001, standalone proxy 4406)
 #   scheduler  nova-scheduler (cron/interval tick -> Redis Streams)
 #   worker     nova-worker (runs task graphs and migration jobs)
-#   agent-worker  Studio Smart coordinator and specialist runs
 #   frontend   Vite dev server (port 5173)
 #
 # Docker infrastructure (StarRocks, Ranger, MinIO, Redis) is NOT managed here.
@@ -342,11 +342,11 @@ if [[ "$SPLIT" -eq 1 ]]; then
   # by path the way the gateway does in a deployment.
   run backend "$C_BLUE" "$BACKEND_DIR" \
     "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=web PROXY_ENABLED=false ML_TRAINING_EXECUTOR=worker \
-    uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
+    uv run uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port "$BACKEND_PORT"
 
   run query "$C_BLUE" "$BACKEND_DIR" \
     "${BACKEND_ENV[@]}" NOVA_PROCESS_ROLE=query PROXY_ENABLED=false ML_TRAINING_EXECUTOR=worker \
-    uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$QUERY_PORT"
+    uv run uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port "$QUERY_PORT"
 
   run proxy "$C_BLUE" "$BACKEND_DIR" \
     "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
@@ -355,22 +355,22 @@ else
   # Backend: FastAPI with the embedded MySQL proxy (PROXY_PORT, default 4406).
   run backend "$C_BLUE" "$BACKEND_DIR" \
     "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
-    uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
+    uv run uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port "$BACKEND_PORT"
 fi
 
 # Standalone workers. They share NOVA_SYSTEM + Redis; migration jobs are
-# claimed by app.worker, never executed in the FastAPI process.
+# claimed by app.worker, never executed in the FastAPI process. Like the
+# backend, each restarts when a Python file under backend/app changes, so an
+# edit to Smart or a worker is live without restarting dev.sh.
+WATCH=(uv run watchfiles --filter python)
+
 run scheduler "$C_CYAN" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" \
-  uv run python -m app.scheduler
+  "${WATCH[@]}" "python -m app.scheduler" app
 
 run worker "$C_CYAN" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" \
-  uv run python -m app.worker
-
-run agent-worker "$C_CYAN" "$BACKEND_DIR" \
-  "${BACKEND_ENV[@]}" \
-  uv run python -m app.agent_worker
+  "${WATCH[@]}" "python -m app.worker" app
 
 if [[ "$RUN_FRONTEND" -eq 1 ]]; then
   # `pnpm dev` in package.json already passes `--port 5173`; use this to

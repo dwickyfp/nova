@@ -39,6 +39,8 @@ const inputProps = {
   required: z.boolean().default(false),
 };
 
+// Data components come first: the prompt lists components in this order, and
+// Nova answers are about governed data before anything else.
 export const componentDefinitions = [
   {
     name: "Kpi",
@@ -50,6 +52,37 @@ export const componentDefinitions = [
       label: short,
       digits: num.int().min(0).max(10).default(2),
     }),
+  },
+  {
+    name: "Table",
+    description:
+      "Records with optional selected columns. Business data must use @Evidence(id).",
+    props: z.object({
+      data: rows,
+      columns: z.array(short).max(50).optional(),
+      title: short.optional(),
+    }),
+  },
+  {
+    name: "Chart",
+    description:
+      "Bar, line, area, pie, donut or scatter chart of records. Business data must bind @Evidence(id).",
+    props: z.object({
+      data: rows,
+      x: short,
+      y: short,
+      type: z
+        .enum(["bar", "line", "area", "pie", "donut", "scatter"])
+        .default("bar"),
+      title: short.optional(),
+      series: z.array(short).max(8).optional(),
+      selected: bound.optional(),
+    }),
+  },
+  {
+    name: "GeoMap",
+    description: "Governed business map. data must bind @Evidence(id). Use longitude/latitude columns or a geometry column containing WKT or GeoJSON Point, LineString or Polygon. Coordinates are WGS84 longitude first. selected binds a $variable: zero-based index into currently displayed rows, -1 for none. Use deterministic filters/sorts, never Shuffle/Pick/Random. Use a separate Button @ToAssistant for drill-down; Nova resolves the selected row.",
+    props: z.object({ data: rows, longitude: short.optional(), latitude: short.optional(), geometry: short.optional(), label: short.optional(), title: short.default("Locations"), selected: bound, options: mapOptionsSchema.optional(), viewport: optionalBound }),
   },
   {
     name: "Col",
@@ -228,37 +261,6 @@ export const componentDefinitions = [
     props: z.object({ name: short, label: short.optional() }),
   },
   {
-    name: "Table",
-    description:
-      "Records with optional selected columns. Business data must use @Evidence(id).",
-    props: z.object({
-      data: rows,
-      columns: z.array(short).max(50).optional(),
-      title: short.optional(),
-    }),
-  },
-  {
-    name: "Chart",
-    description:
-      "Bar, line, area, pie, donut or scatter chart of records. Business data must bind @Evidence(id).",
-    props: z.object({
-      data: rows,
-      x: short,
-      y: short,
-      type: z
-        .enum(["bar", "line", "area", "pie", "donut", "scatter"])
-        .default("bar"),
-      title: short.optional(),
-      series: z.array(short).max(8).optional(),
-      selected: bound.optional(),
-    }),
-  },
-  {
-    name: "GeoMap",
-    description: "Governed business map. data must bind @Evidence(id). Use longitude/latitude columns or a geometry column containing WKT or GeoJSON Point, LineString or Polygon. Coordinates are WGS84 longitude first. selected binds a $variable: zero-based index into currently displayed rows, -1 for none. Use deterministic filters/sorts, never Shuffle/Pick/Random. Use a separate Button @ToAssistant for drill-down; Nova resolves the selected row.",
-    props: z.object({ data: rows, longitude: short.optional(), latitude: short.optional(), geometry: short.optional(), label: short.optional(), title: short.default("Locations"), selected: bound, options: mapOptionsSchema.optional(), viewport: optionalBound }),
-  },
-  {
     name: "Map",
     description:
       "Public itinerary map. Static public locations only; driving route optional.",
@@ -394,9 +396,11 @@ export function createSchemaLibrary(evidence: EvidenceRows = {}) {
 // Replaces the OpenUI default, which asks for code only: Nova answers are
 // Markdown first, and the server finds the program by its fence.
 export const uiPromptPreamble =
-  "You write Nova answers that can include an interactive view in openui-lang, a declarative UI language. Write the answer in Markdown. When an interactive view helps, add its openui-lang program after the Markdown in exactly one fenced ```openui block. Never return openui-lang outside that fence: unfenced statements are shown to the user as text.";
+  "You write Nova answers in Markdown and can add a view in openui-lang, a declarative UI language. Nova is a data platform: when an answer rests on verified business results, show those rows with data components (Kpi, Table, Chart, GeoMap) bound to @Evidence, so the reader can see, compare and explore the data, not only read about it. Add the openui-lang program after the Markdown in exactly one fenced ```openui block. Never return openui-lang outside that fence: unfenced statements are shown to the user as text.";
 
 export const uiPromptRules = [
+  "Pick the data component from the result's shape: Kpi for single metrics, Chart line for a measure over time, Chart bar sorted by the measure for a ranking or breakdown, Table for detail, several measures or two dimensions, GeoMap for located rows. Use one primary data view; add a second only when it shows something the first cannot.",
+  "General components (Timer, Flashcard, Celebration, YouTube, SearchImage, Image, Map, MapMarker, HtmlView, Svg and its shapes) serve non-business requests such as study aids, public places and diagrams. Never add them to decorate a data answer.",
   "Return short useful Markdown explaining the answer, then exactly one fenced ```openui program, then optional <claims> as usual. Markdown must independently explain the answer when the UI is unavailable.",
   "Use one root = Col([...]) statement. Declare $state variables with literal primitive/list defaults only, never expressions or references. Use regular variables without $ for derived expressions, e.g. weights=[$a,$b]; total=@Sum(weights). Inputs bind state variables and must affect displayed content or a form action.",
   "Every action component has a unique id. Use @ToAssistant for new data or Nova actions, @Set/@Reset for local changes. Query, Mutation and @Run are prohibited. Never invent a tool or direct SQL endpoint.",
@@ -409,23 +413,28 @@ export const uiPromptRules = [
   "HtmlView is offline and isolated: inline JavaScript/CSS only, no external scripts, fetch, storage, parent, navigation or business data. Provide keyboard controls and a fallback description.",
   "HtmlView receives Nova CSS variables. For canvas paint use getComputedStyle(canvas).color; its default black paint may be invisible in dark mode. Avoid dynamic property names and Object introspection/assignment in scripts.",
   "Compose answers inline: avoid wrapping the whole answer in Card. Use Card only for a related input group. Choose a visual when it helps the task; plain questions need prose. Do not repeat the Markdown answer inside the UI.",
-  'Map options are a literal object: controls (map action buttons), advanced, editable (public assumptions only), simulation (public only), popupFields (up to 8 columns), layer (geometry/route/arc), progress (business progress column 0..1), toLongitude/toLatitude (arc destination columns). Append options and optional $viewport after existing arguments. $viewport starts null; Map also accepts $routeSelected after it. Never put data, URLs, functions, or expressions in options. Business route requires a supplied LineString; arcs connect evidence endpoints, not road paths or travel measurements.',
+  'Map options are a literal object: controls (map action buttons), advanced, editable (public assumptions only), simulation (public only), popupFields (up to 8 columns), layer (geometry/route/arc), progress (business progress column 0..1), toLongitude/toLatitude (arc destination columns), sequence and group (stop-order and route columns of located stop rows, with layer route), routeFields (up to 4 per-route columns listed beside the map). Append options and optional $viewport after existing arguments. $viewport starts null; Map also accepts $routeSelected after it. Never put data, URLs, functions, or expressions in options. A business route is a supplied LineString, or located stop rows with layer route and a sequence column (group splits them into routes such as drivers or areas): Nova joins them into numbered, coloured routes. Use it for delivery routes and visit orders instead of plain points. Arcs connect evidence endpoints, not road paths or travel measurements.',
   "GeoMap is for verified business locations only. Never send business coordinates to Map, routing, images or external URLs. Select column names from actual evidence. Use Geometry WKT or GeoJSON only when supplied by the query; never invent a boundary.",
   "Apply the same local filter to a business map and its companion table. Map selection is an index into that filtered result, not the original evidence. Assistant actions receive selected_rows_snapshot resolved by Nova; do not ask the user to interpret internal indices.",
   "Use Nova token tones, no custom CSS colors. Keep prose short and responsive; make all controls labelled and usable with keyboard.",
 ];
 
 export const uiExamples = [
+  {
+    purpose: "Ranking or breakdown: one dimension and one measure, sorted by the measure. Use the actual result id and column names.",
+    program: 'root = Col([Chart(@Sort(@Evidence("result-id"), "revenue", "desc"), "branch", "revenue", "bar", "Revenue by branch")])',
+  },
+  {
+    purpose: "Trend: one measure over time, in time order.",
+    program: 'root = Col([Chart(@Sort(@Evidence("result-id"), "month", "asc"), "month", "revenue", "line", "Revenue by month")])',
+  },
+  {
+    purpose: "Detail with a local filter. Filters cover only these result rows.",
+    program: '$branch = ""\nroot = Col([Input($branch, "Branch contains"), Table(@Filter(@Evidence("result-id"), "branch", "contains", $branch), null, "Revenue by branch"), Caption("Filtered within these result rows")])',
+  },
   { purpose: "Verified route geometry and observed progress; no new routing request.", program: '$selected=-1\n$viewport=null\nroot=Col([GeoMap(@Evidence("result-id"),null,null,"geometry","name","Routes",$selected,{layer:"route",progress:"progress",advanced:true},$viewport)])' },
+  { purpose: "Optimised delivery routes from ordered stops, listed beside the map.", program: '$selected=-1\n$viewport=null\nroot=Col([GeoMap(@Evidence("result-id"),"longitude","latitude",null,"stop","Delivery routes",$selected,{layer:"route",sequence:"stop_seq",group:"route",routeFields:["route_km","saving_pct"],popupFields:["demand"]},$viewport)])' },
   { purpose: "Origin–destination relationships, not road distances.", program: '$selected=-1\nroot=Col([GeoMap(@Evidence("result-id"),"longitude","latitude",null,"name","Connections",$selected,{layer:"arc",toLongitude:"destination_longitude",toLatitude:"destination_latitude"})])' },
-  {
-    purpose: "Verified comparison. Use the actual result id and column names.",
-    program: 'root = Col([Chart(@Evidence("result-id"), "month", "revenue", "line", "Revenue")])',
-  },
-  {
-    purpose: "Public places. Only static public locations may use Map.",
-    program: 'root = Col([Map([MapMarker(-6.1754, 106.8272, "Monas")], false, "Jakarta")])',
-  },
   {
     purpose: "Business map. Selection is a row index within these displayed result rows.",
     program: '$selected = -1\nroot = Col([GeoMap(@Evidence("result-id"), "longitude", "latitude", null, "branch", "Branches", $selected), Button("Investigate selected branch", @ToAssistant("Investigate the selected result row"), "branch-detail")])',
@@ -435,8 +444,8 @@ export const uiExamples = [
     program: '$price = 100\n$quantity = 2\nroot = Col([Text("Assumption calculator"), Input($price, "Price", null, false, "number"), Input($quantity, "Quantity", null, false, "number"), Text("Estimated total: " + @Round($price * $quantity))])',
   },
   {
-    purpose: "Follow-up form. Forms do not execute tools directly.",
-    program: '$question = ""\nroot = Col([Form("followup", [TextArea($question, "Question", null, true), Button("Ask Nova", @ToAssistant("Answer my follow-up question"), "ask")])])',
+    purpose: "Public places, not business data. Only static public locations may use Map.",
+    program: 'root = Col([Map([MapMarker(-6.1754, 106.8272, "Monas")], false, "Jakarta")])',
   },
 ];
 export const uiPromptExamples = uiExamples.map(({ purpose, program }) => `${purpose}\n${program}`);

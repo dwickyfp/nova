@@ -40,8 +40,9 @@ and finally proposals/research. An explicit migration can describe intended
 behavior that is not implemented yet: check its status and tests rather than
 treating either old code or a proposal as an automatic replacement mandate.
 
-Not every document in `docs/` describes the current runtime. Smart and the SQL
-frontend are current extension points; Auto is legacy recovery. Historical
+Not every document in `docs/` describes the current runtime. The direct agent
+loop and the SQL frontend are current extension points; Smart/Auto
+collaboration was removed and its architecture docs are historical. Historical
 architecture examples, dated benchmarks, proposals, and research are
 non-normative unless current code/tests or a requested migration establish them.
 Do not copy stale examples into production. Report unrelated documentation debt.
@@ -121,11 +122,10 @@ Do not copy stale examples into production. Report unrelated documentation debt.
   parser. Existing guard and stage-lowering helpers retain their responsibilities.
 - Plans remain credential-free. Authorize stage access before resolving storage
   secrets at execution. Never forward unsupported managed Nova syntax silently.
-- Studio and specialists compose the shared bounded engine in
+- Studio agents compose the shared bounded engine in
   `backend/app/modules/assistant/`. Do not create a second inference/tool loop.
-  Smart is current; extend Auto only for explicitly requested compatibility or
-  recovery. Delegation cannot broaden access or turn coordination text into
-  trusted data evidence.
+  Studio runs one selected agent per turn; do not reintroduce multi-agent
+  delegation (Smart/Auto) unless the user explicitly asks for it.
 - Find the existing owner before adding infrastructure. Do not introduce a
   parallel parser/planner, authorization engine, storage abstraction, repository
   layer, semantic execution path, scheduler, agent loop, or audit subsystem
@@ -141,9 +141,10 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 | SQL frontend, query/proxy consumers, grammar/generated parser, dialect compatibility | [SQL guide](backend/app/sql_frontend/AGENTS.md), [current SQL architecture](docs/arch-13-sql-frontend.md) |
 | Auth, active roles, stages, Ranger adapters, filtering/masking | [access-control guide](backend/app/modules/access_control/AGENTS.md), [Ranger architecture](docs/arch-08-ranger-authorization.md) |
 | Shared agent loop, context, providers, consent, tools | [assistant guide](backend/app/modules/assistant/AGENTS.md) |
-| Studio, Smart, delegation, resources, memory, recovery | [agents guide](backend/app/modules/agents/AGENTS.md), [Smart architecture](docs/arch-11-smart-collaboration.md) |
+| Studio agents, Missions, automations, resources, memory | [agents guide](backend/app/modules/agents/AGENTS.md), [governed Studio architecture](docs/arch-15-governed-studio.md) |
 | Saved Studio charts and dashboards, Superset BI surface, `/bi`, BI tokens, `nova_superset`, legacy artifact conversion | [Superset architecture](docs/arch-17-superset.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
 | Inline chat charts, ShowMe, presentation models, read-only legacy views (viz core; authoring retired) | [viz architecture](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
+| Business ontology: domains, concepts, relations, metric bindings, stewardship, releases | [ontology architecture](docs/arch-18-business-ontology.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
 | Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
 | Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
 | StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |

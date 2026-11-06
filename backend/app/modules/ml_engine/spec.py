@@ -15,6 +15,7 @@ class MLTask(StrEnum):
     FORECAST = "forecast"
     ANOMALY_DETECTION = "anomaly_detection"
     CLUSTERING = "clustering"
+    ROUTE_OPTIMIZATION = "route_optimization"
     SIMULATION = "simulation"
     ANALYSIS = "analysis"
 
@@ -100,6 +101,13 @@ class MLExecutionSpec:
                 raise InvalidMLSpec("timestamp_column is required for forecast")
             if not self.horizon or self.horizon < 1:
                 raise InvalidMLSpec("horizon must be at least 1 for forecast")
+        if self.task is MLTask.ROUTE_OPTIMIZATION:
+            if self.persist:
+                raise InvalidMLSpec("route_optimization produces an order, not a model to save")
+            if not (
+                self.parameters.get("latitude_column") and self.parameters.get("longitude_column")
+            ):
+                raise InvalidMLSpec("latitude and longitude are required for route_optimization")
 
 
 @dataclass

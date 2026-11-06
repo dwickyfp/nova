@@ -101,13 +101,6 @@ class Settings(BaseSettings):
 
     QUERY_AUTOPILOT_LOCAL_LOG_FIXTURES: dict[str, list[Path]] = {}
 
-    SMART_MAX_AGENT_DEPTH: int = 4
-    SMART_MAX_CONCURRENT_AGENTS: int = 8
-    SMART_MAX_TOTAL_AGENT_SESSIONS: int = 32
-    SMART_MAX_TOTAL_TURNS: int = 128
-    SMART_MAX_TOTAL_TOKENS: int = 240000
-    SMART_MAX_WALL_TIME: int = 600
-
     # --- Task orchestration: scheduler process (nova-scheduler) ---
     # The scheduler is a standalone process (`python -m app.scheduler`); the
     # web process never runs it. All values live here so both processes read
@@ -293,6 +286,10 @@ class Settings(BaseSettings):
     ML_EPHEMERAL_MAX_MEMORY_BYTES: int = 64 * 1024 * 1024
     ML_SQL_RESULT_MAX_ROWS: int = 100_000
     ML_RANDOM_SEED: int = 42
+    # Road distances for route_optimization (an OSRM server's table service). The
+    # public server receives the stops' coordinates; point it at a self-hosted OSRM
+    # to keep them inside the deployment. Empty uses great-circle distances.
+    ROUTING_OSRM_URL: str = "https://router.project-osrm.org"
     ML_INFERENCE_BATCH_ROWS: int = 4096
     ML_WORKER_RESULT_MAX_BYTES: int = 1024 * 1024
     ML_INFERENCE_MAX_BATCH_BYTES: int = 16 * 1024 * 1024

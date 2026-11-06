@@ -76,6 +76,15 @@ def publication_preflight(monkeypatch):
     monkeypatch.setattr(semantic_views.query_service, "execute", checkpoint)
     monkeypatch.setattr(semantic_views.db, "execute_system", writes)
     monkeypatch.setattr(session_store, "get", AsyncMock(return_value=deepcopy(USER)))
+
+    async def drift(view_id, caller):
+        # Ontology bindings are re-checked after the publication writes.
+        assert inside_lock and writes.await_count == 3 and caller is USER
+
+    monkeypatch.setattr(
+        "app.modules.ontology.representations.refresh_after_publish",
+        AsyncMock(side_effect=drift),
+    )
     return service, view, version, writes, checkpoint, lease
 
 
@@ -85,6 +94,9 @@ async def test_publication_probes_sources_before_acquiring_the_short_write_lease
     service, _, _, writes, checkpoint, _ = publication_preflight
     assert await service.publish("view", 2, USER) == {"active_version": 2, "bi_datasets": []}
     assert writes.await_count == 3
+    from app.modules.ontology import representations
+
+    representations.refresh_after_publish.assert_awaited_once_with("view", USER)
     service.sync_bi.assert_awaited_once_with("view", USER)
     checkpoint.assert_awaited_once_with(
         sql="SELECT 1",

@@ -11,6 +11,7 @@ import {
   Plug,
   House,
   KeyRound,
+  Library,
   ListTodo,
   Shield,
   Sparkles,
@@ -74,6 +75,11 @@ export const sidebarData: SidebarData = {
               title: "Semantic Views",
               url: "/semantic-views",
               icon: BrainCircuit,
+            },
+            {
+              title: "Business Ontology",
+              url: "/business-ontology",
+              icon: Library,
             },
             {
               title: "AI Search",

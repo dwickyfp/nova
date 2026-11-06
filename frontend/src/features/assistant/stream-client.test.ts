@@ -47,9 +47,9 @@ afterEach(() => {
 });
 
 describe("toConsentPayload", () => {
-  it("preserves adjacent Smart cursors above JavaScript's safe integer limit", async () => {
+  it("preserves adjacent run cursors above JavaScript's safe integer limit", async () => {
     const frame = (sequence: string, text: string) =>
-      `event: text_delta\ndata: ${JSON.stringify({run_id: "smart", sequence, text})}\n\n`;
+      `event: text_delta\ndata: ${JSON.stringify({run_id: "run-1", sequence, text})}\n\n`;
     fetchMock.mockResolvedValueOnce(new Response(
       frame("183551631220940801", "First") + frame("183551631220940802", "Second") +
       frame("183551631220940802", "Duplicate"),

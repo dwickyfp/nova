@@ -16,7 +16,7 @@ from app.modules.assistant.skills import contains_credential_shape
 from app.modules.intelligence.contracts import fingerprint
 from app.modules.intelligence.engine_repository import metadata_lock
 
-SCORER_SET_VERSION = "nova-agent-scorers:2"
+SCORER_SET_VERSION = "nova-agent-scorers:3"
 RELEASES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RELEASE_MANIFESTS (
     manifest_id VARCHAR(64) NOT NULL,
@@ -291,6 +291,7 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
         {
             "configuration": configuration(agent),
             "semantic_views": semantics,
+            "ontology_release": await ontology_release_pin(),
             "skills": [
                 vars(registry.skill_definitions[name])
                 for name in sorted(registry.skill_definitions)
@@ -331,6 +332,35 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
         return manifest
 
 
+async def ontology_release_pin() -> dict | None:
+    """The published business ontology release a new agent version is evaluated with."""
+    from app.modules.ontology.releases import release_service
+
+    alias = await release_service.alias()
+    if alias is None:
+        return None
+    release = await release_service.get(alias.release_id)
+    return {"release_id": release.id, "manifest_hash": release.manifest_hash}
+
+
+async def authorize_ontology_release(release_id: str, manifest_hash: str) -> None:
+    """A pinned ontology release must still be the published, unchanged one."""
+    from app.modules.ontology.releases import release_service
+
+    try:
+        release = await release_service.get(release_id)
+    except HTTPException:
+        release = None
+    if release is None or release.status != "PUBLISHED" or release.manifest_hash != manifest_hash:
+        raise HTTPException(409, "Pinned business ontology release is unavailable")
+
+
+async def authorize_ontology_pin(dependencies: dict) -> None:
+    pin = dependencies.get("ontology_release")
+    if pin:
+        await authorize_ontology_release(pin["release_id"], pin["manifest_hash"])
+
+
 async def load_runtime_manifest(agent: dict) -> dict | None:
     identifier = agent.get("release_manifest_id")
     if not identifier:
@@ -339,6 +369,7 @@ async def load_runtime_manifest(agent: dict) -> dict | None:
     if not manifest or manifest["fingerprint"] != fingerprint(manifest["dependencies"]):
         raise HTTPException(409, "Pinned release manifest is unavailable or corrupt")
     dependencies = manifest["dependencies"]
+    await authorize_ontology_pin(dependencies)
     # Older manifests pinned the retired System One routing models after the
     # agent's own model. Those models no longer run, so they cannot drift.
     routing = dependencies.get("routing") or {}

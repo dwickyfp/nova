@@ -11,7 +11,6 @@ SQL-level scoping without a live StarRocks.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
@@ -91,11 +90,11 @@ async def test_unified_studio_history_keeps_user_scope_and_excludes_unbound_thre
     recording._select_rows = [
         [f"thread-{i}", "alice", "Title", None, agent,
          "2026-09-25 00:00:00", "2026-09-25 00:00:00", 1]
-        for i, agent in enumerate(["sales", "support", "__smart__", "__auto__"])
+        for i, agent in enumerate(["sales", "support", "finance", "ops"])
     ]
     threads = await AssistantRepository().list_threads(user_name="alice", all_agents=True)
     assert [thread["agent_id"] for thread in threads] == [
-        "sales", "support", "__smart__", "__auto__",
+        "sales", "support", "finance", "ops",
     ]
     sql, params = recording.calls[-2]
     assert "t.user_name = %s AND t.agent_id IS NOT NULL" in sql
@@ -170,26 +169,26 @@ async def test_list_threads_reports_persistent_malformed_read_as_unavailable(mon
 
 async def test_list_threads_retries_transient_empty_snapshot(monkeypatch):
     valid = [
-        "thread", "alice", "Title", None, "__auto__",
+        "thread", "alice", "Title", None, "ops",
         "2026-09-25 00:00:00", "2026-09-25 00:00:00", 1,
     ]
     execute = AsyncMock(side_effect=[
         {"rows": []},
-        {"rows": [["alice", "__auto__", 11]]},
+        {"rows": [["alice", "ops", 11]]},
         {"rows": [valid]},
-        {"rows": [["alice", "__auto__", 1]]},
+        {"rows": [["alice", "ops", 1]]},
     ])
     monkeypatch.setattr(repo_module.db, "execute_system", execute)
     monkeypatch.setattr(repo_module.asyncio, "sleep", AsyncMock())
 
     threads = await AssistantRepository().list_threads(
-        user_name="alice", agent_id="__auto__"
+        user_name="alice", agent_id="ops"
     )
 
     assert len(threads) == 1
     assert execute.await_count == 4
     assert execute.await_args_list[1].args[1] == [
-        "alice", "__auto__", "alice", "__auto__",
+        "alice", "ops", "alice", "ops",
     ]
 
 
@@ -208,39 +207,39 @@ async def test_list_threads_confirms_genuine_empty_scope(monkeypatch):
 
 async def test_list_threads_retries_partial_nonempty_snapshot(monkeypatch):
     first = [
-        "t1", "alice", "One", None, "__auto__",
+        "t1", "alice", "One", None, "ops",
         "2026-09-25 00:00:00", "2026-09-25 00:00:00", 1,
     ]
     second = [
-        "t2", "alice", "Two", None, "__auto__",
+        "t2", "alice", "Two", None, "ops",
         "2026-09-25 00:00:00", "2026-09-25 00:00:00", 0,
     ]
     execute = AsyncMock(side_effect=[
-        {"rows": [first]}, {"rows": [["alice", "__auto__", 2]]},
-        {"rows": [first, second]}, {"rows": [["alice", "__auto__", 2]]},
+        {"rows": [first]}, {"rows": [["alice", "ops", 2]]},
+        {"rows": [first, second]}, {"rows": [["alice", "ops", 2]]},
     ])
     monkeypatch.setattr(repo_module.db, "execute_system", execute)
     monkeypatch.setattr(repo_module.asyncio, "sleep", AsyncMock())
 
     threads = await AssistantRepository().list_threads(
-        user_name="alice", agent_id="__auto__"
+        user_name="alice", agent_id="ops"
     )
 
     assert [thread["thread_id"] for thread in threads] == ["t1", "t2"]
     assert execute.await_count == 4
     assert all(
-        call.args[1] == ["alice", "__auto__"]
+        call.args[1] == ["alice", "ops"]
         for call in (execute.await_args_list[0], execute.await_args_list[2])
     )
     assert all(
-        call.args[1] == ["alice", "__auto__", "alice", "__auto__"]
+        call.args[1] == ["alice", "ops", "alice", "ops"]
         for call in (execute.await_args_list[1], execute.await_args_list[3])
     )
 
 
 async def test_list_threads_rejects_persistent_partial_nonempty_snapshot(monkeypatch):
     partial = [
-        "t1", "alice", "One", None, "__auto__",
+        "t1", "alice", "One", None, "ops",
         "2026-09-25 00:00:00", "2026-09-25 00:00:00", 1,
     ]
     calls = 0
@@ -249,7 +248,7 @@ async def test_list_threads_rejects_persistent_partial_nonempty_snapshot(monkeyp
         nonlocal calls
         calls += 1
         if "AS requested_user" in sql:
-            return {"rows": [["alice", "__auto__", 2]]}
+            return {"rows": [["alice", "ops", 2]]}
         return {"rows": [partial]}
 
     monkeypatch.setattr(repo_module.db, "execute_system", partial_snapshot)
@@ -257,7 +256,7 @@ async def test_list_threads_rejects_persistent_partial_nonempty_snapshot(monkeyp
 
     with pytest.raises(AssistantThreadListUnavailable, match="temporarily unavailable"):
         await AssistantRepository().list_threads(
-            user_name="alice", agent_id="__auto__"
+            user_name="alice", agent_id="ops"
         )
 
     assert calls == 16
@@ -281,7 +280,7 @@ async def test_thread_list_routes_return_503_for_persistent_unavailability(monke
         await assistant_router.list_threads(user={"username": "alice"})
     with pytest.raises(HTTPException) as agent_error:
         await agents_router.list_agent_threads(
-            "__auto__", user={"username": "alice"}
+            "ops", user={"username": "alice"}
         )
 
     assert assistant_error.value.status_code == agent_error.value.status_code == 503
@@ -316,42 +315,6 @@ async def test_list_messages_filters_by_thread_and_user(recording):
     sql, params = recording.calls[-1]
     assert "thread_id = %s" in sql and "user_name = %s" in sql
     assert params == ["t1", "alice"]
-
-
-async def test_synced_message_read_uses_one_connection_for_sync_and_select(monkeypatch):
-    calls: list[tuple[str, list | None]] = []
-
-    class Cursor:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def execute(self, sql, params=None):
-            calls.append((" ".join(sql.split()), params))
-
-        async def fetchall(self):
-            return [("final", "assistant", "Answer", "2026-09-25 00:00:00")]
-
-    class Connection:
-        def cursor(self):
-            return Cursor()
-
-    @asynccontextmanager
-    async def system_conn():
-        yield Connection()
-
-    monkeypatch.setattr(repo_module.db, "system_conn", system_conn)
-
-    messages = await AssistantRepository().list_messages(
-        "thread", user_name="alice", synchronize=True
-    )
-
-    assert messages[0]["message_id"] == "final"
-    assert calls[0] == ("SYNC", None)
-    assert "WHERE thread_id = %s AND user_name = %s" in calls[1][0]
-    assert calls[1][1] == ["thread", "alice"]
 
 
 async def test_list_messages_returns_the_trace_and_usage(monkeypatch):

@@ -265,7 +265,15 @@ ML_MODEL_CACHE_TTL_SECONDS       ML_EPHEMERAL_TTL_SECONDS
 ML_EPHEMERAL_MAX_ENTRIES         ML_EPHEMERAL_MAX_MEMORY_BYTES
 ML_SQL_RESULT_MAX_ROWS
 ML_RANDOM_SEED
+ROUTING_OSRM_URL
 ```
+
+`route_optimization` orders stops by driving distance from the OSRM table service
+at `ROUTING_OSRM_URL` (default: the public `https://router.project-osrm.org`, which
+receives the stops' coordinates). Point it at a self-hosted OSRM to keep them inside
+the deployment, or set it empty for straight-line distances. When the server does
+not answer, the run falls back to straight lines and says so in its warnings and in
+`metrics.distance`. Studio route maps draw road lines from the same public service.
 
 The repeatable local smoke benchmark is:
 

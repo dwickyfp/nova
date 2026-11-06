@@ -16,3 +16,13 @@ it('keeps conversation approval available for reads', async () => {
   await screen.getByRole('button', { name: 'Allow for this chat' }).click()
   expect(decide).toHaveBeenCalledExactlyOnceWith('allow_session')
 })
+
+it('shows a statement as code and a tool sentence as text', async () => {
+  const decide = vi.fn().mockResolvedValue(undefined)
+  const prose = await render(<ConsentCard call={{ tool_name: 'knowledge_propose', sql_preview: 'Propose a change to a business definition for steward review', classification: 'session_change', status: 'pending' }} onDecide={decide} />)
+  const sentence = prose.getByText('Propose a change to a business definition for steward review').element()
+  expect(sentence.closest('pre')).toBeNull()
+  await prose.unmount()
+  const sql = await render(<ConsentCard call={{ tool_name: 'query_mutate', sql_preview: 'DELETE FROM sales.orders WHERE id = 1', classification: 'destructive', status: 'pending' }} onDecide={decide} />)
+  expect(sql.getByText('DELETE FROM sales.orders WHERE id = 1').element().closest('pre')).not.toBeNull()
+})

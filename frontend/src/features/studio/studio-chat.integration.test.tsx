@@ -3,7 +3,14 @@ import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import type { Agent } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
 import { registerUiFlush } from "./intelligent-ui/state";
 import "@/styles/index.css";
@@ -288,7 +295,7 @@ it.each([false, true])("reconnects a direct run after reload and supports server
     String(url).endsWith("/messages") && init?.method === "POST")).toHaveLength(0);
 });
 
-it("remembers Smart Stop before acceptance and cancels the accepted server run", async () => {
+it("remembers Stop before acceptance and cancels the accepted server run", async () => {
   const fetch = mockFetch();
   const fallback = fetch.getMockImplementation()!;
   let accept: ((value: Response) => void) | undefined;
@@ -300,17 +307,14 @@ it("remembers Smart Stop before acceptance and cancels the accepted server run",
         responseStream?.error(new DOMException("Aborted", "AbortError")));
       return new Promise<Response>((resolve) => { accept = resolve; });
     }
-    if (url.endsWith("/smart/runs/pending-smart/cancel")) {
+    if (url.endsWith("/runs/pending-run/cancel")) {
       return Response.json({ status: "cancelled" });
     }
-    if (url.includes("/smart/") && init?.method !== "POST")
-      return Response.json({ runs: [], events: [] });
     return fallback(input, init);
   });
-  const smart = { ...AGENT, agent_id: AUTO_AGENT_ID, name: "Smart" };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const screen = await render(<QueryClientProvider client={client}>
-    <StudioChat agent={smart} agents={[smart]} onSelectAgent={() => {}}
+    <StudioChat agent={AGENT} agents={[AGENT]} onSelectAgent={() => {}}
       currentRole="ACCOUNTADMIN" activeThreadId={null} onThreadChange={() => {}} />
   </QueryClientProvider>);
   await screen.getByRole("textbox", { name: "Message Nova" }).fill("Make a calculator");
@@ -320,12 +324,9 @@ it("remembers Smart Stop before acceptance and cancels the accepted server run",
   expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/cancel"))).toBe(false);
   accept!(new Response(new ReadableStream({
     start(controller) { responseStream = controller; },
-  }), { headers: { "Content-Type": "text/event-stream", "X-Nova-Run-ID": "pending-smart" } }));
+  }), { headers: { "Content-Type": "text/event-stream", "X-Nova-Run-ID": "pending-run" } }));
   await vi.waitFor(() => expect(fetch.mock.calls.filter(([url]) =>
-    String(url).endsWith("/smart/runs/pending-smart/cancel"))).toHaveLength(1));
-  const request = fetch.mock.calls.find(([url, init]) =>
-    String(url).endsWith("/messages") && init?.method === "POST");
-  await vi.waitFor(() => expect(request?.[1]?.signal?.aborted).toBe(true));
+    String(url).endsWith("/agents/a1/threads/t1/runs/pending-run/cancel"))).toHaveLength(1));
 });
 
 it("keeps a direct provider-format failure visible after reload without resubmitting", async () => {
@@ -352,66 +353,61 @@ it("keeps a direct provider-format failure visible after reload without resubmit
   expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
 });
 
-it.each(["cancelled", "failed", "interrupted"])("restores a Smart %s outcome from its durable run after reload", async (status) => {
-  const fetch = mockFetch();
-  const fallback = fetch.getMockImplementation()!;
-  fetch.mockImplementation(async (input, init) => {
-    const url = String(input);
-    if (/\/threads\/t-past(?:\?|$)/.test(url))
-      return Response.json({ thread: { thread_id: "t-past" }, messages: [PERSISTED_MESSAGES[0]] });
-    if (url.endsWith("/smart/threads/t-past/runs"))
-      return Response.json({ runs: [{
-        run_id: "terminal", status, user_message_id: PERSISTED_MESSAGES[0].message_id,
-        objective: PERSISTED_MESSAGES[0].content, started_at: "2026-01-01T00:00:00",
-      }] });
-    if (url.includes("/smart/runs/terminal"))
-      return Response.json({ runs: [], events: [] });
-    return fallback(input, init);
-  });
-  const smart = { ...AGENT, agent_id: AUTO_AGENT_ID, name: "Smart" };
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const screen = await render(<QueryClientProvider client={client}>
-    <StudioChat agent={smart} agents={[smart]} onSelectAgent={() => {}}
-      currentRole="ACCOUNTADMIN" activeThreadId="t-past" onThreadChange={() => {}} />
-  </QueryClientProvider>);
-  await expect.element(screen.getByText(status === "cancelled"
-    ? "Stopped before the answer finished."
-    : "The run did not finish. Review its activity before retrying.")).toBeVisible();
-  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
-});
-
-it("preserves the draft across Smart and manual selection and restores the last accessible agent", async () => {
+it("preserves the draft when the user switches agents", async () => {
   mockFetch("read_only", false);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const smart = { ...AGENT, agent_id: AUTO_AGENT_ID, name: "Smart" };
-  const choices = [smart, AGENT];
-  function ModeHarness() {
-    const [agent, setAgent] = useState(smart);
+  const other = { ...AGENT, agent_id: "a2", name: "Field Ops" };
+  const choices = [AGENT, other];
+  function PickerHarness() {
+    const [agent, setAgent] = useState(AGENT);
     return <QueryClientProvider client={client}>
       <StudioChat agent={agent} agents={choices}
         onSelectAgent={(id) => setAgent(choices.find((item) => item.agent_id === id)!)}
         currentRole="ACCOUNTADMIN" activeThreadId={null} onThreadChange={() => {}} />
     </QueryClientProvider>;
   }
-  const screen = await render(<ModeHarness />);
+  const screen = await render(<PickerHarness />);
   const draft = screen.getByRole("textbox", { name: "Message Nova" });
-  const toggle = screen.getByRole("button", { name: "Smart mode" });
-  await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect.element(screen.getByRole("button", { name: "Revenue Analyst" })).not.toBeInTheDocument();
   await userEvent.fill(draft, "Keep this draft");
-  await toggle.click();
-  await expect.element(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
-  await expect.element(draft).toHaveValue("Keep this draft");
-  await screen.getByRole("button", { name: "Select an agent" }).click();
-  await page.getByRole("menuitem", { name: "Revenue Analyst" }).click();
+  await screen.getByRole("button", { name: "Revenue Analyst" }).click();
+  await page.getByRole("menuitem", { name: "Field Ops" }).click();
+  await expect.element(screen.getByRole("button", { name: "Field Ops" })).toBeVisible();
   await expect.element(draft).toHaveValue("Keep this draft");
   await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
-  await toggle.click();
-  await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
-  await toggle.click();
-  await expect.element(screen.getByRole("button", { name: "Revenue Analyst" })).toBeVisible();
-  await expect.element(draft).toHaveValue("Keep this draft");
+  // The picker lists only real agents.
+  await screen.getByRole("button", { name: "Field Ops" }).click();
+  await expect.element(page.getByRole("menuitem", { name: "Revenue Analyst" })).toBeVisible();
+  expect(page.getByRole("menuitem").elements()).toHaveLength(2);
+});
+
+it("remembers the agent a message was sent with", async () => {
+  window.localStorage.removeItem("nova.studio.lastAgent");
+  const screen = await renderStudio();
+  await userEvent.fill(screen.getByRole("textbox", { name: "Message Nova" }), "Top SKUs");
+  await screen.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.element(screen.getByText("Omzet tertinggi ada di", { exact: false })).toBeVisible();
+  expect(window.localStorage.getItem("nova.studio.lastAgent")).toBe("a1");
+});
+
+it("explains that Studio needs an agent when the user has none", async () => {
+  mockFetch();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const root = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={client}>
+        <StudioChat agent={null} agents={[]} noAgents onSelectAgent={() => {}}
+          currentRole="ACCOUNTADMIN" activeThreadId={null} onThreadChange={() => {}} />
+      </QueryClientProvider>
+    ),
+  });
+  const router = createRouter({
+    routeTree: root.addChildren([createRoute({ getParentRoute: () => root, path: "/agents" })]),
+    history: createMemoryHistory({ initialEntries: ["/studio"] }),
+  });
+  const screen = await render(<RouterProvider router={router} />);
+  await expect.element(screen.getByRole("heading", { name: "You have no agent yet" })).toBeVisible();
+  await expect.element(screen.getByRole("link", { name: "Go to Agents" })).toHaveAttribute("href", "/agents");
+  await expect.element(screen.getByRole("textbox", { name: "Message Nova" })).toBeDisabled();
 });
 
 it("sends once when repeated Enter waits for an interactive state flush", async () => {

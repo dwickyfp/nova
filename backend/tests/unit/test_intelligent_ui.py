@@ -150,40 +150,6 @@ async def test_evidence_transport_reports_omitted_rows(count):
     assert block["provenance"]["omitted_rows"] == max(0, count - 200)
 
 
-async def test_smart_preserves_sealed_ui_and_assigns_distinct_resume_cursors(monkeypatch):
-    from app.modules.agents import router
-    from app.modules.agents.harness_worker import _root_artifacts
-
-    context = LoopContext(user_name="alice", steps=[])
-    block = await ui.compose_block(
-        CALCULATOR, "100 units at 20 each totals 2000.",
-        tables={}, business=False, question="Assumption calculator", claims=None, language="en",
-    )
-    _ordered_output_frames("Adjust the assumptions.", [PendingArtifact("ui", block)], context)
-    artifacts = _root_artifacts(context.steps)
-    assert [item["kind"] for item in artifacts] == ["text", "ui"]
-    assert artifacts[1]["program_sha256"] == block["program_sha256"]
-    assert artifacts[1]["content_id"] == "content-1"
-    monkeypatch.setattr(router.harness_repository, "events_page", AsyncMock(return_value=[{
-        "event_id": 1_792_512_000_000_00, "run_id": "run", "type": "agent_completed",
-        "payload": {"answer": "Adjust the assumptions.", "artifacts": artifacts},
-    }]))
-
-    async def collect(after):
-        return [frame async for frame in router._stream_auto_events("run", after)]
-
-    frames = await collect(-1)
-    decoded = [(frame.splitlines()[0], json.loads(frame.split("data: ", 1)[1]))
-               for frame in frames]
-    assert all(isinstance(value["sequence"], str) for _, value in decoded)
-    cursors = [int(value["sequence"]) for _, value in decoded]
-    assert cursors == sorted(set(cursors))
-    assert any(kind == "event: ui" for kind, _ in decoded)
-    assert any(kind == "event: content_block_done" for kind, _ in decoded)
-    for index, cursor in enumerate(cursors[:-1]):
-        assert await collect(cursor) == frames[index + 1:]
-
-
 async def test_official_parser_validates_functional_programs_and_bound_evidence():
     result = await ui.parse_program(CALCULATOR)
     assert result["state"] == {"$units": 5}
@@ -288,6 +254,25 @@ def test_catalog_prompt_asks_for_markdown_and_a_fenced_program():
     assert "exactly one fenced ```openui block" in prompt
 
 
+def test_catalog_prompt_leads_with_data_components_and_examples():
+    prompt = ui.catalog()["prompt"]
+    signatures = [prompt.index(f"\n{name}(") for name in
+                  ("Kpi", "Table", "Chart", "GeoMap", "Col", "Timer", "YouTube", "HtmlView")]
+    assert signatures == sorted(signatures)
+    assert "bound to @Evidence" in prompt.split("## Syntax Rules")[0]
+    examples = prompt.split("## Examples", 1)[1]
+    assert examples.index("Ranking or breakdown") < examples.index("Public places")
+    assert "Never add them to decorate a data answer" in prompt
+
+
+def test_optional_catalog_prefers_a_data_view_for_verified_results(monkeypatch):
+    monkeypatch.setattr(ui, "runtime_available", lambda: True)
+    prompt = ui.composer_prompt(enabled=True, presentation="text")
+    preface = prompt.split("<OPTIONAL_UI_CATALOG>")[0]
+    assert "prefer a data view bound to those rows" in preface
+    assert "Plain Markdown is a complete answer" in preface
+
+
 UNFENCED = (
     '$selected = null\n'
     'root = Col([Title("Rute"), GeoMap(@Evidence("evidence_2"), null, null, "geometry", '
@@ -388,3 +373,15 @@ async def test_revision_conflict_is_serialized_without_touching_message_row(monk
     assert saved["revision"] == 3
     assert "CONFIG_ASSISTANT_UI_STATE" in db.execute_system.call_args.args[0]
     assert "CONFIG_ASSISTANT_MESSAGES" not in db.execute_system.call_args.args[0]
+
+
+def test_the_final_composer_sends_the_catalog_only_when_it_is_not_pinned():
+    from app.modules.assistant.intelligence import EvidenceTracker
+    from app.modules.assistant.service import LoopContext, _final_composer_prompt
+
+    context = LoopContext(user_name="alice", intelligent_ui=True)
+    context.ui_prompt = "<OPTIONAL_UI_CATALOG>catalog</OPTIONAL_UI_CATALOG>"
+    evidence = EvidenceTracker()
+    assert context.ui_prompt in _final_composer_prompt(evidence, context)
+    pinned = _final_composer_prompt(evidence, context, include_ui=False)
+    assert "OPTIONAL_UI_CATALOG" not in pinned and "<FINAL_COMPOSER>" in pinned

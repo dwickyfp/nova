@@ -18,7 +18,7 @@ Harness² is an optimization reference, not a replacement for Nova's runtime. Pu
 
 | Behavior | Baseline `d068264f` | Implemented behavior under acceptance |
 | --- | --- | --- |
-| Composer mode | Agent-oriented selection | Default Smart brain toggle; manual selector only when disabled; original composer styling |
+| Composer mode | Agent-oriented selection | One selected agent per chat; original composer styling. The Smart toggle was removed on 2026-11-07. |
 | Interactive answers | Markdown and existing result artifacts | One renderer for every Studio visual: model programs, deterministic maps/KPIs, tool charts, artifacts and dashboard tiles; Markdown fallback retained |
 | UI continuation | No versioned UI state/action contract | Source-bound revisions and idempotent action operations through the agent endpoint |
 | Direct run reload/Stop | In-memory reconnect; Stop disconnected the browser | Discover/replay the scoped journal after reload; explicit server cancellation |
@@ -59,9 +59,9 @@ Studio has one visual system: the intelligent UI catalog components (`Chart`, `T
 - **Tables.** `result-table.tsx` is the only result grid: answer tables, catalog `Table` nodes, chart companion data, artifacts, dashboard tiles and shared results.
 - **Saving.** Charts, tables and maps inside a block save as artifacts. Every block records `provenance.tool_calls` (evidence id → query tool call), so the artifact reuses that query's read-only SQL. Missing query provenance refuses saving instead of guessing a nearby query. Distinct chart definitions keep independent saved states. A chart of the result's own columns (one measure, or two with the second as colour) is saved as a Vega-Lite template; a chart of values calculated in the answer is saved as its source table, and the reader is told so.
 
-Smart is the default for a new chat. The brain toggle exposes `aria-pressed`; the manual agent selector appears only when Smart is off. Draft and attachments survive mode changes, and the last accessible manual selection is restored. A pending manual selection blocks sending. Mode changes are disabled during a run so its identity stays stable. The existing composer dimensions and styling remain intact.
+Studio chats with one selected agent at a time. A new chat opens the agent the user last chatted with, remembered per browser, and otherwise the first agent. The existing composer dimensions and styling remain intact.
 
-Activity is summarized in one disclosure. Tools, evidence and child work remain inspectable; consent and actionable failures remain visible. Answers use the normal transcript width and prose spacing. Controls can be grouped, without wrapping each answer in a second card. Completed interactive answers group raw query tables in one source-data disclosure; filtering, export and artifact actions remain available. Unknown catalog versions and failed turns keep source tables expanded.
+Activity is summarized in one disclosure. Tools and evidence remain inspectable; consent and actionable failures remain visible. Answers use the normal transcript width and prose spacing. Controls can be grouped, without wrapping each answer in a second card. Completed interactive answers group raw query tables in one source-data disclosure; filtering, export and artifact actions remain available. Unknown catalog versions and failed turns keep source tables expanded.
 
 ## Charts and geospatial
 
@@ -77,15 +77,13 @@ Business basemap: bundled Natural Earth 1:110m land geometry, public domain. Att
 
 ## Runtime harness changes
 
-Nova already owns bounded inference, tool authorization, consent, role revalidation, evidence, delegation, cancellation and journaled recovery. The changes extend those owners:
+Nova already owns bounded inference, tool authorization, consent, role revalidation, evidence, cancellation and journaled recovery. The changes extend those owners:
 
 - Checkpoints persist remaining turn time, an absolute deadline and consumed measured tokens, alongside existing repairs, tool uses, evidence and operation identities. Downtime cannot replenish the allowance. A budgeted recovery without a valid token counter fails closed before another provider call.
 - Provider retries, tool repairs and UI repair share six repair slots, with stricter per-kind limits. Existing terminal authorization/policy/consent failures do not become retryable. Legacy counts consume the allowance; malformed counts fail closed.
-- Smart root projection preserves sealed UI and ordered prose. Terminal fragments receive distinct replay cursors. Smart cursors are decimal strings because timestamp-based cursor expansion exceeds JavaScript safe integers; clients compare with `BigInt`. Legacy safe numeric cursors remain readable.
-- Run-row writes share a renewable Redis lock across API processes, workers and the direct journal. StarRocks updates rewrite whole rows, so a process-local lock cannot prevent a concurrent heartbeat from restoring a cancelled state. Cancellation shares root admission coordination with delegation and serializes each descendant update. A missing or lost coordinator fails closed; an uncertain write is not automatically replayed.
-- Smart run observation, cancellation and SSE replay compare owner, active role and security-context version; a missing legacy version fails closed.
+- Run-row writes share a renewable Redis lock across API processes, workers and the direct journal. StarRocks updates rewrite whole rows, so a process-local lock cannot prevent a concurrent heartbeat from restoring a cancelled state. A missing or lost coordinator fails closed; an uncertain write is not automatically replayed.
 - Existing generation/lease fencing and uncertain mutation replay guards remain in the shared engine. UI does not execute a parallel inference loop.
-- Direct-agent reload discovers the running journal only for the same principal, role and security-context version, then subscribes without reposting the message. Stop requests cancellation through Redis and waits for the server's terminal event. A disconnected browser alone does not cancel work. Persisted terminal outcomes preserve stopped/error labels after history reload, including cancellation during journal writes. A Smart Stop clicked before run acceptance is retained until its run ID arrives; failed cancellation leaves the stream available for retry.
+- Direct-agent reload discovers the running journal only for the same principal, role and security-context version, then subscribes without reposting the message. Stop requests cancellation through Redis and waits for the server's terminal event. A disconnected browser alone does not cancel work. Persisted terminal outcomes preserve stopped/error labels after history reload, including cancellation during journal writes.
 - A StarRocks planner timeout while polling worker metadata uses bounded exponential backoff, retaining active tasks. Other syntax/access failures remain terminal. This retry does not replay tools or uncertain mutations.
 
 ## Offline experiment contract
@@ -100,4 +98,4 @@ Candidates can append validated response instructions. They cannot change tools,
 
 Selection requires the same case/scorer set, a complete eligible candidate, no loss of a passing assertion, and strictly more passes. Ties, invalid proposals, uncertain stages and incomplete runs retain baseline. The recommendation is an immutable candidate version; ordinary draft/version/release approval gates still govern promotion.
 
-UI validity, evidence binding and source-validated action completion extend quality facts/scorers (`nova-agent-scorers:2`). A cancelled, interrupted or failed action cannot score as completed. Smart completion retains final response usage that arrives after the last checkpoint, without counting checkpointed usage twice. The shared engine records first-useful-content latency with bounded direct/Smart labels. UI validation, repair and fallback use the existing bounded Studio operation metrics; existing run traces retain usage, latency and recovery outcomes. Metrics labels contain no programs, coordinates, state values or credentials.
+UI validity, evidence binding and source-validated action completion extend quality facts/scorers (`nova-agent-scorers:2`). A cancelled, interrupted or failed action cannot score as completed. The shared engine records first-useful-content latency with bounded labels. UI validation, repair and fallback use the existing bounded Studio operation metrics; existing run traces retain usage, latency and recovery outcomes. Metrics labels contain no programs, coordinates, state values or credentials.

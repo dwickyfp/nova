@@ -9,8 +9,6 @@ from app.core.database import db
 HISTORY_SORT_KEYS: dict[str, tuple[str, ...]] = {
     "CONFIG_ASSISTANT_MESSAGES": ("thread_id", "seq"),
     "CONFIG_ASSISTANT_THREADS": ("user_name", "updated_at", "thread_id"),
-    "CONFIG_AGENT_MESSAGES": ("recipient_run_id", "created_at"),
-    "CONFIG_AGENT_SESSION_EVENTS": ("root_run_id", "session_sequence"),
     "CONFIG_WORKSPACE_FILE_VERSIONS": ("entry_id", "version"),
     "AUDIT_LOG": ("event_time", "log_id"),
 }

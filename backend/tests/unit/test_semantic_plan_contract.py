@@ -247,3 +247,35 @@ def test_a_comparison_over_two_whole_months_is_those_two_months(time, expected):
     })
     assert (plan.time.grain, plan.time.compare) == expected
     assert plan.time.range == time["range"]
+
+
+def test_an_order_field_may_name_its_dimension_qualified_or_not():
+    import json
+
+    from app.modules.agents.semantic.compiler import SemanticCompiler
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.ossie import parse_ossie
+    from app.modules.agents.semantic.planning import (
+        SemanticOrder,
+        SemanticPlan,
+        SemanticPlanError,
+        SemanticTime,
+    )
+    from tests.benchmark.retail_field.views import VIEWS
+
+    model = SemanticModelIR.from_ossie(parse_ossie(json.dumps(VIEWS["outlet_stock"])).as_dict())
+    for time, order in (("outlet_stock_daily.stock_date", "stock_date"),
+                        ("stock_date", "outlet_stock_daily.stock_date")):
+        sql = SemanticCompiler().compile(model, SemanticPlan(
+            metrics=("sell_out_units",), time=SemanticTime(dimension=time, grain="month"),
+            order_by=(SemanticOrder(field=order, direction="asc"),),
+        )).sql
+        assert sql.rstrip().endswith(f"ORDER BY `{time}` ASC")
+    try:
+        SemanticCompiler().compile(model, SemanticPlan(
+            metrics=("sell_out_units",), order_by=(SemanticOrder(field="closing_qty"),),
+        ))
+    except SemanticPlanError as exc:
+        assert "is not selected" in str(exc)
+    else:
+        raise AssertionError("an unselected order field must be refused")

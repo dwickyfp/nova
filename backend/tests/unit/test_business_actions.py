@@ -375,24 +375,6 @@ def test_action_payload_does_not_accept_credentials():
 
 
 @pytest.mark.asyncio
-async def test_smart_tool_cannot_mutate_or_replay(action_program):
-    service, action, _, fake, _, _, _, _ = action_program
-    tool = actions.BusinessActionTool(service)
-    context = SimpleNamespace(
-        collaboration_root=False,
-        collaboration_tools=("spawn_agent",),
-        user=USER,
-        user_name="alice",
-        thread_id="thread",
-    )
-    invocation = actions.ToolInvocation(
-        "call", tool.name, {"action_id": action.id, **operation(action).model_dump()}
-    )
-    result = await tool.run(invocation, context)
-    assert not result.ok and result.error_class == "POLICY_DENIED" and not fake.effects
-
-
-@pytest.mark.asyncio
 async def test_monitor_adapter_verifies_monitor_and_schedule_independently(action_program):
     service, action, _, _, _, _, repo, _ = action_program
     adapter = MonitorActionAdapter(

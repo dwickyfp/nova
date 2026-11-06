@@ -1,5 +1,4 @@
 import { threadTitle } from "./thread-title";
-import { treeRefetchInterval } from "./smart-agent-tree";
 import {
   memo,
   useCallback,
@@ -9,7 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   FileText,
@@ -22,7 +22,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils";
 import type { AssistantEvent } from "@/features/assistant/types";
 import {
-  AUTO_AGENT_ID,
   agentsApi,
   streamAgentTurn,
   resumeAgentTurn,
@@ -48,10 +47,6 @@ import { AnswerFooter, type AnswerFeedback } from "./answer-footer";
 import { DeepResearchCard } from "./deep-research-card";
 import { deepResearchApi } from "@/features/agents/studio-intelligence-api";
 import { UserMessageFooter } from "./user-message-footer";
-import { AutoSubagentPanel } from "./auto-subagent-card";
-import { AutomationProposalCard } from "./automation-proposal-card";
-import { AutoTurnRail } from "./auto-turn-rail";
-import { rootRunForTurn } from "./auto-run-timeline";
 import {
   MAX_FILES,
   MAX_TOTAL_BYTES,
@@ -61,12 +56,14 @@ import {
 } from "./studio-attachments";
 import { Composer } from "./studio-composer";
 import { useTranscriptStream } from "./use-transcript-stream";
-import { WorkflowRail } from "./workflow-rail";
-import { ThreadMissionObjects } from "./mission-objects";
+import { rememberLastAgent } from "./default-agent";
 import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
+
+/** A News story handed to Studio: its thread, investigating Mission and prompt. */
+export type StudioHandoff = { threadId: string; missionId: string; prompt: string };
 
 
 let turnSeq = 0;
@@ -94,6 +91,8 @@ export function StudioChat({
   onThreadChange,
   newChatNonce = 0,
   initialPrompt = "",
+  handoff = null,
+  noAgents = false,
 }: {
   agent: Agent | null;
   agents: Agent[];
@@ -108,13 +107,16 @@ export function StudioChat({
   /** Bumped by the sidebar's "New" control to start a fresh conversation. */
   newChatNonce?: number;
   initialPrompt?: string;
+  /** A News story handed to Studio; applied only in the thread it created. */
+  handoff?: StudioHandoff | null;
+  /** The catalog loaded and the user has no agent to chat with. */
+  noAgents?: boolean;
 }) {
   const queryClient = useQueryClient();
   const selectComposerAgent = async (id: string) => {
     if (streaming || readingFiles || abortRef.current) return;
     try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
     preserveDraft.current = true;
-    setManualPending(false);
     try {
       const changed = await onSelectAgent(id);
       if (changed === false) preserveDraft.current = false;
@@ -123,50 +125,22 @@ export function StudioChat({
       toast.error((error as Error).message);
     }
   };
-  const toggleSmart = () => {
-    if (streaming || readingFiles || abortRef.current) return;
-    if (agent?.agent_id !== AUTO_AGENT_ID || manualPending) {
-      if (agent?.agent_id === AUTO_AGENT_ID) setManualPending(false);
-      else void selectComposerAgent(AUTO_AGENT_ID);
-    } else {
-      const previous = agents.find((item) => item.agent_id === lastManual.current);
-      if (previous) void selectComposerAgent(previous.agent_id);
-      else setManualPending(true);
-    }
-  };
-
-  const [manualPending, setManualPending] = useState(false);
-  const lastManual = useRef<string | null>(null);
   const preserveDraft = useRef(false);
-  useEffect(() => {
-    if (agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID)
-      lastManual.current = agent.agent_id;
-    setManualPending(false);
-  }, [agent?.agent_id, activeThreadId, newChatNonce]);
   // `threadId` records the thread whose transcript is actually loaded. It
   // starts empty even when the URL names a thread, so the load effect below
   // always runs for that thread instead of assuming it is already in hand.
   const [threadId, setThreadId] = useState<string | null>(null);
   const [research, setResearch] = useState<{ agentId: string; runId: string } | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
-  const [workflowAvailable, setWorkflowAvailable] = useState(false);
   const [followUpMissionId, setFollowUpMissionId] = useState<string>();
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
-  const manualSecurityEpoch = useRef(securityEpoch);
+  const draftSecurityEpoch = useRef(securityEpoch);
   useEffect(() => {
-    if (manualSecurityEpoch.current === securityEpoch) return;
-    manualSecurityEpoch.current = securityEpoch;
-    lastManual.current = null;
+    if (draftSecurityEpoch.current === securityEpoch) return;
+    draftSecurityEpoch.current = securityEpoch;
     preserveDraft.current = false;
-    setManualPending(false);
   }, [securityEpoch]);
   useEffect(() => setFollowUpMissionId(undefined), [activeThreadId, agent?.agent_id, securityEpoch]);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
-  const workflowButtonRef = useRef<HTMLButtonElement | null>(null);
-  const changeWorkflowOpen = useCallback((open: boolean) => {
-    setWorkflowOpen(open);
-    if (!open) requestAnimationFrame(() => workflowButtonRef.current?.focus());
-  }, []);
   const storedMessagesRef = useRef<AgentMessage[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -179,84 +153,7 @@ export function StudioChat({
   const [streaming, setStreaming] = useState(false);
   const directRunRef = useRef<{ agentId: string; threadId: string; runId: string } | null>(null);
   const stopRequestedRef = useRef(false);
-  const [activeAutoRun, setActiveAutoRun] = useState<{
-    runId: string;
-    threadId: string;
-  } | null>(null);
-  const [selectedChild, setSelectedChild] = useState<{ rootRunId: string; childRunId: string } | null>(null);
-  const childOpenerRef = useRef<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const openChild = useCallback((rootRunId: string, childRunId: string) => {
-    childOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSelectedChild({ rootRunId, childRunId });
-  }, []);
-  const closeChild = useCallback(() => {
-    setSelectedChild(null);
-    requestAnimationFrame(() => {
-      if (childOpenerRef.current?.isConnected) childOpenerRef.current.focus();
-      else textareaRef.current?.focus();
-    });
-  }, []);
-  useEffect(() => setSelectedChild(null), [activeThreadId]);
-  useEffect(() => setWorkflowOpen(false), [activeThreadId, agent?.agent_id]);
-  const activeAutoRunId = activeAutoRun && activeAutoRun.threadId === activeThreadId
-    ? activeAutoRun.runId
-    : null;
-  const refreshedAutoRunsRef = useRef<Set<string>>(new Set());
-  const autoRunsQuery = useQuery({
-    queryKey: ["studio", "auto-runs", activeThreadId],
-    queryFn: () => agentsApi.listAutoThreadRuns(activeThreadId as string),
-    enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(activeThreadId),
-  });
-  const displayedAutoRunId = activeThreadId && activeThreadId === threadId
-    ? activeAutoRunId ?? autoRunsQuery.data?.runs[0]?.run_id ?? null
-    : null;
-  const settleReadsRef = useRef<{ runId: string | null; seen: number; count: number }>({ runId: null, seen: -1, count: 0 });
-  const autoTreeQuery = useQuery({
-    queryKey: ["studio", "auto-tree", displayedAutoRunId],
-    queryFn: () => agentsApi.getAutoRunTree(displayedAutoRunId as string),
-    enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(displayedAutoRunId),
-    refetchInterval: (query) => {
-      const reads = settleReadsRef.current;
-      if (reads.runId !== displayedAutoRunId) settleReadsRef.current = { runId: displayedAutoRunId, seen: -1, count: 0 };
-      const root = query.state.data?.runs.find((run) => run.depth === 0)?.status;
-      // Count each read after the root settled once, however often this is asked.
-      if (root && !streaming && settleReadsRef.current.seen !== query.state.dataUpdateCount
-          && ["completed", "failed", "cancelled", "interrupted"].includes(root)) {
-        settleReadsRef.current.seen = query.state.dataUpdateCount;
-        settleReadsRef.current.count += 1;
-      }
-      return treeRefetchInterval(query.state.data?.runs ?? [], streaming, settleReadsRef.current.count);
-    },
-  });
-  const historicalChildTreeQuery = useQuery({
-    queryKey: ["studio", "auto-tree", selectedChild?.rootRunId],
-    queryFn: () => agentsApi.getAutoRunTree(selectedChild?.rootRunId as string),
-    enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(selectedChild?.rootRunId && selectedChild.rootRunId !== displayedAutoRunId),
-  });
-  useEffect(() => {
-    if (!streaming && (!activeThreadId || (threadId && activeThreadId !== threadId))) {
-      setActiveAutoRun(null);
-    }
-  }, [activeThreadId, threadId, streaming]);
-  useEffect(() => {
-    const root = autoTreeQuery.data?.runs.find((run) => run.depth === 0);
-    if (!root || !["completed", "failed", "cancelled", "interrupted"].includes(root.status)
-        || streaming || !activeThreadId || activeThreadId !== threadId
-        || refreshedAutoRunsRef.current.has(root.run_id)) return;
-    refreshedAutoRunsRef.current.add(root.run_id);
-    void agentsApi.getThread(AUTO_AGENT_ID, activeThreadId).then((detail) => {
-      if (activeThreadIdRef.current === activeThreadId) {
-        const newestIds = new Set(detail.messages.map((message) => message.message_id));
-        const hasEarlierMessages = storedMessagesRef.current.some((message) => !newestIds.has(message.message_id));
-        storedMessagesRef.current = [...new Map([...storedMessagesRef.current, ...detail.messages].map((m) => [m.message_id, m])).values()];
-        setTurns(replayThread(storedMessagesRef.current));
-        if (!hasEarlierMessages) setOlderCursor(detail.next_cursor ?? null);
-      }
-    }).catch(() => {
-      refreshedAutoRunsRef.current.delete(root.run_id);
-    });
-  }, [autoTreeQuery.data, activeThreadId, threadId, streaming]);
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
@@ -330,8 +227,6 @@ export function StudioChat({
     storedMessagesRef.current = [];
     setOlderCursor(null);
     setLoadingOlder(false);
-    setActiveAutoRun(null);
-    setSelectedChild(null);
     if (!preserveDraft.current) {
       setInput("");
       setAttachments([]);
@@ -370,7 +265,7 @@ export function StudioChat({
         if (cancelled) return;
         const restored = replayThread(detail.messages);
         const unfinished = restored[restored.length - 1];
-        const active = agent.agent_id !== AUTO_AGENT_ID && unfinished && !unfinished.messageId
+        const active = unfinished && !unfinished.messageId
           ? await Promise.resolve().then(() => agentsApi.activeRun(agent.agent_id, activeThreadId)).catch(() => null)
           : null;
         if (cancelled) return;
@@ -434,7 +329,6 @@ export function StudioChat({
     discardQueuedEvents();
     followOutputRef.current = true;
     setThreadId(null);
-    setActiveAutoRun(null);
     setTurns([]);
     historyRequestRef.current += 1;
     storedMessagesRef.current = [];
@@ -453,6 +347,15 @@ export function StudioChat({
       textareaRef.current?.focus();
     }
   }, [initialPrompt, newChatNonce, agent?.agent_id]);
+
+  // A News handoff: declared after the resets above (agent change, Mission
+  // follow-up, new chat) so its prompt and Mission win in the handoff thread.
+  useEffect(() => {
+    if (!handoff || handoff.threadId !== activeThreadId) return;
+    setFollowUpMissionId(handoff.missionId);
+    setInput(handoff.prompt);
+    textareaRef.current?.focus();
+  }, [handoff, activeThreadId, agent?.agent_id, securityEpoch]);
 
   // Follow the newest content, but only while the user is already at the
   // bottom, so scrolling back to read an earlier step is not yanked away.
@@ -547,24 +450,6 @@ export function StudioChat({
     }
   }, []);
 
-  const cancelSmartRun = useCallback(async (runId: string, turnId?: string) => {
-    const controller = abortRef.current;
-    try {
-      await agentsApi.cancelAutoRun(runId);
-      controller?.abort();
-      if (abortRef.current && abortRef.current !== controller) return;
-      flushEvents();
-      setStreaming(false);
-      setTurns((prev) => prev.map((turn) =>
-        turn.id === turnId
-          ? { ...turn, state: "cancelled", stopReason: "cancelled", error: undefined }
-          : turn,
-      ));
-    } catch {
-      toast.error("Could not cancel the Smart run. Check its activity and try again.");
-    }
-  }, [abortRef, flushEvents]);
-
   const openingConversation = loadingThread || Boolean(
     activeThreadId && activeThreadId !== threadId &&
     activeThreadId !== staleThreadAfterNewChatRef.current,
@@ -574,7 +459,7 @@ export function StudioChat({
     async (override?: string, uiAction?: UiAction) => {
       const content = (override ?? input).trim();
       const pending = attachments;
-      if (openingConversation || manualPending || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
+      if (openingConversation || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
       try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
       if (abortRef.current) return;
 
@@ -604,6 +489,7 @@ export function StudioChat({
       setStreaming(true);
       stopRequestedRef.current = false;
       setDeepenTarget(null);
+      rememberLastAgent(agent.agent_id);
 
       let accepted = false;
       let submittedThread: string | null = null;
@@ -625,17 +511,11 @@ export function StudioChat({
             setFollowUpMissionId((current) => current === followUpMissionId ? undefined : current);
           },
           onRunId: (runId) => {
-            if (agent.agent_id === AUTO_AGENT_ID) {
-              setActiveAutoRun({ runId, threadId: thread });
-              void queryClient.invalidateQueries({ queryKey: ["studio", "auto-runs", thread] });
-              if (stopRequestedRef.current) void cancelSmartRun(runId, turnId);
-            } else {
-              directRunRef.current = { agentId: agent.agent_id, threadId: thread, runId };
-              if (stopRequestedRef.current) {
-                void agentsApi.cancelRun(agent.agent_id, thread, runId).catch(() => {
-                  toast.error("Could not cancel the agent run. Try Stop again.");
-                });
-              }
+            directRunRef.current = { agentId: agent.agent_id, threadId: thread, runId };
+            if (stopRequestedRef.current) {
+              void agentsApi.cancelRun(agent.agent_id, thread, runId).catch(() => {
+                toast.error("Could not cancel the agent run. Try Stop again.");
+              });
             }
           },
           onEvent: (event: AssistantEvent) => onTurnEvent(turnId, event),
@@ -670,9 +550,7 @@ export function StudioChat({
           queryKey: ["agents", "threads"],
         });
         void queryClient.invalidateQueries({ queryKey: ["studio", "workflow"] });
-        if (agent.agent_id === AUTO_AGENT_ID) {
-          void queryClient.invalidateQueries({ queryKey: ["studio", "auto-runs"] });
-        } else if (submittedThread && queryClient.getQueryData<{ missions: Mission[] }>(["studio", "workflow", useAuthStore.getState().securityEpoch, submittedThread])?.missions) {
+        if (submittedThread && queryClient.getQueryData<{ missions: Mission[] }>(["studio", "workflow", useAuthStore.getState().securityEpoch, submittedThread])?.missions) {
           const target = submittedThread;
           const epoch = useAuthStore.getState().securityEpoch;
           void agentsApi.getThread(agent.agent_id, target).then((detail) => {
@@ -694,7 +572,6 @@ export function StudioChat({
       currentRole,
       ensureThread,
       flushEvents,
-      cancelSmartRun,
       input,
       followUpMissionId,
       queryClient,
@@ -704,22 +581,18 @@ export function StudioChat({
       openingConversation,
       streaming,
       turns.length,
-    manualPending, ],
+    ],
   );
 
   const stop = useCallback(() => {
     stopRequestedRef.current = true;
-    if (agent?.agent_id === AUTO_AGENT_ID) {
-      if (activeAutoRun) void cancelSmartRun(activeAutoRun.runId, turns[turns.length - 1]?.id);
-    } else if (agent?.agent_id !== AUTO_AGENT_ID) {
-      const run = directRunRef.current;
-      if (run) {
-        void agentsApi.cancelRun(run.agentId, run.threadId, run.runId).catch(() => {
-          toast.error("Could not cancel the agent run. Try Stop again.");
-        });
-      }
+    const run = directRunRef.current;
+    if (run) {
+      void agentsApi.cancelRun(run.agentId, run.threadId, run.runId).catch(() => {
+        toast.error("Could not cancel the agent run. Try Stop again.");
+      });
     }
-  }, [activeAutoRun, agent?.agent_id, cancelSmartRun, turns]);
+  }, []);
 
   /**
    * Send the user's decision on a tool call, then clear the card. The closing
@@ -935,7 +808,7 @@ export function StudioChat({
   }, [agent, threadId]);
 
   const researchable = Boolean(
-    agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID && !streaming,
+    agent && agent.agent_id !== SKILL_AUTHOR_ID && !streaming,
   );
   const startResearch = async () => {
     const question = input.trim();
@@ -951,9 +824,6 @@ export function StudioChat({
 
   const empty = turns.length === 0;
   const welcome = empty && (!agent || !loadingThread);
-  const selectedTreeQuery = selectedChild?.rootRunId === displayedAutoRunId ? autoTreeQuery : historicalChildTreeQuery;
-  const chronologicalAutoRuns = [...(autoRunsQuery.data?.runs ?? [])].reverse();
-  const autoTurns = turns.filter((turn) => turn.origin !== "reconsider");
   const creatingSkill =
     agent?.agent_id === SKILL_AUTHOR_ID ||
     input.trimStart().startsWith(CREATE_SKILL_COMMAND) ||
@@ -967,8 +837,7 @@ export function StudioChat({
         "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
       )}
     >
-      <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", selectedChild && "hidden lg:flex")}>
-      {workflowAvailable && !selectedChild && <div className="flex shrink-0 justify-end border-b border-border px-4 py-2 xl:hidden"><Button ref={workflowButtonRef} variant="ghost" className="min-h-11" aria-label="Open workflow details" aria-haspopup="dialog" onClick={() => changeWorkflowOpen(true)}>Activity and evidence</Button></div>}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col",
@@ -1003,6 +872,8 @@ export function StudioChat({
                   saving it to your skills.
                 </p>
               </div>
+            ) : !agent && noAgents ? (
+              <NoAgentState />
             ) : empty || !agent ? (
               <>
                 <Greeting displayName={displayName} />
@@ -1018,22 +889,13 @@ export function StudioChat({
                     {loadingOlder ? "Loading…" : "Load older messages"}
                   </Button>
                 ) : null}
-                {turns.map((turn, index) => {
-                  const autoRunId = agent.agent_id === AUTO_AGENT_ID
-                    ? rootRunForTurn(turn, chronologicalAutoRuns, autoTurns, activeAutoRunId) : null;
-                  const autoRunStatus = autoTreeQuery.data?.runs.find((run) => run.run_id === autoRunId)?.status
-                    ?? chronologicalAutoRuns.find((run) => run.run_id === autoRunId)?.status;
-                  return (
+                {turns.map((turn, index) => (
                   <TurnView
                     key={turn.id}
                     turn={turn}
                     uiContext={threadId ? { agentId: agent.agent_id, threadId, onAction: send } : undefined}
                     onAsk={index === turns.length - 1 && !streaming ? (question) => void send(question) : undefined}
                     agent={agent}
-                    agents={agents}
-                    autoRunId={autoRunId}
-                    autoRunStatus={autoRunStatus}
-                    onOpenChild={openChild}
                     deepenable={
                       extended && turn.state === "done" && Boolean(turn.answer)
                     }
@@ -1047,8 +909,7 @@ export function StudioChat({
                     savedContentIds={savedContentIds}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
-                ); })}
-                {workflowAvailable && threadId && <ThreadMissionObjects threadId={threadId} onFollowUp={(prompt, missionId) => { setInput(prompt); setFollowUpMissionId(missionId); textareaRef.current?.focus(); }} />}
+                ))}
               </div>
             )}
           </div>
@@ -1088,12 +949,10 @@ export function StudioChat({
           onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
             streaming={streaming}
             disabled={!agent}
-            sendDisabled={manualPending || openingConversation}
-            agent={manualPending ? null : agent}
+            sendDisabled={openingConversation}
+            agent={agent}
             agents={agents}
             onSelectAgent={(id) => void selectComposerAgent(id)}
-            smartEnabled={agent?.agent_id === AUTO_AGENT_ID && !manualPending}
-            onToggleSmart={toggleSmart}
           />
         </div>
       </div>
@@ -1104,27 +963,6 @@ export function StudioChat({
         />
       ) : null}
       </div>
-      {threadId && activeThreadId === threadId && !selectedChild && !creatingSkill ? <WorkflowRail
-        threadId={threadId}
-        turns={turns}
-        streaming={streaming}
-        agents={agents}
-        runs={autoTreeQuery.data?.runs ?? []}
-        runLoading={agent?.agent_id === AUTO_AGENT_ID && autoTreeQuery.isLoading}
-        runError={autoTreeQuery.isError}
-        retryRuns={() => void autoTreeQuery.refetch()}
-        onSelectChild={(id) => displayedAutoRunId && openChild(displayedAutoRunId, id)}
-        onAvailable={setWorkflowAvailable}
-        mobileOpen={workflowOpen}
-        onMobileOpenChange={changeWorkflowOpen}
-      /> : null}
-      {selectedChild ? <AutoSubagentPanel
-        selected={selectedChild}
-        runs={selectedTreeQuery.data?.runs ?? []}
-        agents={agents}
-        onClose={closeChild}
-        onRefreshTree={() => void selectedTreeQuery.refetch()}
-      /> : null}
     </div>
   );
 }
@@ -1133,10 +971,6 @@ const TurnView = memo(function TurnView({
   turn,
   onAsk,
   agent,
-  agents,
-  autoRunId,
-  autoRunStatus,
-  onOpenChild,
   deepenable,
   deepening,
   onDeepen,
@@ -1153,10 +987,6 @@ const TurnView = memo(function TurnView({
   /** Ask a follow-up; set only for the latest finished turn. */
   onAsk?: (question: string) => void;
   agent: Agent;
-  agents: Agent[];
-  autoRunId: string | null;
-  autoRunStatus?: string;
-  onOpenChild: (rootRunId: string, childRunId: string) => void;
   deepenable: boolean;
   deepening: boolean;
   onDeepen: (turn: TranscriptTurn) => Promise<void>;
@@ -1216,16 +1046,7 @@ const TurnView = memo(function TurnView({
         </div>
       )}
 
-      {agent.agent_id === AUTO_AGENT_ID ? (
-        <AutoTurnRail
-          rootRunId={autoRunId}
-          agents={agents}
-          running={running}
-          onOpenChild={(childRunId) => autoRunId && onOpenChild(autoRunId, childRunId)}
-        />
-      ) : (
-        <ProcessRail steps={visibleSteps} running={running} revealKey={turn.revealKey} />
-      )}
+      <ProcessRail steps={visibleSteps} running={running} revealKey={turn.revealKey} />
 
       {turn.pendingConsent ? (
         <ConsentCard
@@ -1263,10 +1084,10 @@ const TurnView = memo(function TurnView({
         </div>
       ) : null}
 
-      {turn.state === "cancelled" || autoRunStatus === "cancelled" ? (
+      {turn.state === "cancelled" ? (
         <StopNotice text="Stopped before the answer finished." />
       ) : null}
-      {!turn.error && (turn.state === "error" || ["failed", "interrupted"].includes(autoRunStatus ?? "")) ? (
+      {!turn.error && turn.state === "error" ? (
         <StopNotice text="The run did not finish. Review its activity before retrying." />
       ) : null}
 
@@ -1283,10 +1104,6 @@ const TurnView = memo(function TurnView({
           reconsidering={deepening}
           reconsiderDisabled={reconsiderDisabled}
         />
-      ) : null}
-
-      {!running && turn.automationProposal ? (
-        <AutomationProposalCard proposal={turn.automationProposal} />
       ) : null}
 
       {!running && onAsk && turn.suggestions?.length ? (
@@ -1325,6 +1142,22 @@ function Greeting({ displayName }: { displayName?: string | null }) {
       <p className="mt-2 text-2xl leading-tight font-normal text-muted-foreground sm:text-4xl">
         What would you like to work on?
       </p>
+    </div>
+  );
+}
+
+function NoAgentState() {
+  return (
+    <div className="text-left" role="status">
+      <h1 className="text-2xl leading-8 font-normal text-foreground">
+        You have no agent yet
+      </h1>
+      <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
+        Studio chats through an agent. Create one, or ask an admin to share one with your role.
+      </p>
+      <Button asChild className="mt-6">
+        <Link to="/agents">Go to Agents</Link>
+      </Button>
     </div>
   );
 }

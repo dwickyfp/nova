@@ -64,6 +64,11 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     if duplicates:
         raise ValueError(f"Forecast input contains {int(duplicates)} duplicate timestamp(s)")
     frequency = _aligned_frequency(spec.frequency, frame)
+    frame, filled = _regular_periods(
+        frame, frequency, str(spec.parameters.get("missing_periods", "interpolate"))
+    )
+    if filled:
+        warnings.append(f"Filled {filled} missing period(s) between observations")
     if int(frame["unique_id"].nunique()) * horizon > settings.ML_RESULT_INLINE_MAX_ROWS:
         raise DataBudgetExceeded(
             "Forecast output exceeds the inline row budget; reduce series or horizon"
@@ -112,6 +117,7 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         "validation_start": validation["ds"].min().isoformat(),
         "selected_estimator": algorithm,
         "warnings": warnings,
+        "filled_periods": filled,
         "dropped_series": insufficient if warnings else [],
         "arrow_to_pandas_seconds": arrow_to_pandas_seconds,
     }
@@ -178,11 +184,59 @@ def _aligned_frequency(given: str | None, frame: pd.DataFrame) -> str:
     return observed if _unit(observed) == _unit(given) else given
 
 
+def _regular_periods(
+    frame: pd.DataFrame, frequency: str, policy: str
+) -> tuple[pd.DataFrame, int]:
+    """Every series on one regular grid: a day with no orders is still a day.
+
+    StatsForecast reads rows as consecutive periods, so a gap silently shortens the
+    history and breaks seasonality. Missing periods are interpolated (a level such as
+    stock or price) or set to zero (``missing_periods="zero"``, a sum such as units).
+    """
+    if policy not in {"interpolate", "zero"}:
+        raise ValueError("missing_periods must be 'interpolate' or 'zero'")
+    parts = []
+    filled = 0
+    for name, group in frame.groupby("unique_id", sort=False):
+        grid = pd.date_range(group["ds"].min(), group["ds"].max(), freq=frequency)
+        if not group["ds"].isin(grid).all():
+            # Observations off the grid (a misaligned anchor): leave the series as is.
+            parts.append(group)
+            continue
+        regular = group.set_index("ds")[["y"]].reindex(grid)
+        missing = int(regular["y"].isna().sum())
+        if missing:
+            filled += missing
+            regular["y"] = (
+                regular["y"].fillna(0) if policy == "zero"
+                else regular["y"].interpolate(method="linear")
+            )
+        regular = regular.rename_axis("ds").reset_index()
+        regular["unique_id"] = name
+        parts.append(regular[["unique_id", "ds", "y"]])
+    return pd.concat(parts, ignore_index=True), filled
+
+
+def _step_frequency(values: pd.Series) -> str | None:
+    """The usual step of a series with gaps: daily rows with some days missing."""
+    steps = values.diff().dropna()
+    if steps.empty:
+        return None
+    step = steps.mode().iloc[0]
+    if step <= pd.Timedelta(0) or step > pd.Timedelta(days=7):
+        return None
+    if (steps % step != pd.Timedelta(0)).any():
+        return None
+    return pd.tseries.frequencies.to_offset(step).freqstr
+
+
 def _infer_frequency(frame: pd.DataFrame) -> str:
     frequencies: list[str] = []
     for _, group in frame.groupby("unique_id"):
         values = group["ds"].drop_duplicates().sort_values()
         inferred = pd.infer_freq(values) if len(values) >= 3 else None
+        if not inferred and len(values) >= 3:
+            inferred = _step_frequency(values)
         if inferred:
             frequencies.append(inferred)
     if not frequencies:

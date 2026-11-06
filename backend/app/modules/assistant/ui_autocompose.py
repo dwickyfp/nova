@@ -1,10 +1,10 @@
 """Deterministic Nova UI for verified results that no other visual shows.
 
-The model writes an OpenUI program only when an answer needs a composed view,
-and Studio draws every tool chart with the same UI components. A located result
-or a single metric in an otherwise plain answer is compiled here into a map or
-KPI from verified evidence, without another provider call, and validated by the
-same Node runtime as model programs.
+When the model writes no OpenUI program, a data answer still gets a data view.
+Each verified result is classified by the shape of its columns and compiled
+here into a map, KPI tiles, a trend, a ranking or a grid bound to its evidence,
+without another provider call, and validated by the same Node runtime as model
+programs. Results with no recognisable shape get no block.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -27,6 +28,24 @@ _LABEL = re.compile(r"name|nama|label|title|judul", re.IGNORECASE)
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 _MAX_KPIS = 4
 _POPUP_FIELDS = 6
+# Numeric columns that identify or order rows rather than measure them:
+# "outlet_id", "visit_order", "rank", but not "order_count".
+_KEY = re.compile(
+    r"(?:^|_)(?:id|no|nomor|seq|sequence|order|urutan|urut|rank|peringkat|kode|code)$",
+    re.IGNORECASE,
+)
+# A time column names its period first or last: "month", "order_date", "week_start".
+_PERIOD = (r"date|day|week|month|quarter|year|period|time|tanggal|tgl|hari|minggu|bulan|"
+           r"kuartal|tahun|periode|waktu")
+_TEMPORAL_NAME = re.compile(rf"^(?:{_PERIOD})(?:_|$)|_(?:{_PERIOD})$", re.IGNORECASE)
+_TEMPORAL_VALUE = re.compile(r"^\d{4}-\d{2}(?:-\d{2})?(?:[ T][\d:.+Z-]*)?$")
+_SAMPLE = 50
+_TREND_MIN_ROWS = 3
+_RANKING_MAX_ROWS = 30
+_TOP = 10
+_MAX_GRID_MEASURES = 4
+_MAX_COLUMNS = 50
+_MAX_DATA_BLOCKS = 2
 
 
 def _text(value: str) -> str:
@@ -82,6 +101,42 @@ def _located(latitudes: list[Any], longitudes: list[Any]) -> bool:
     return False
 
 
+def _lines(table: dict[str, Any], column: str) -> bool:
+    """Whether a geometry column holds lines (an ordered route), not places."""
+    values = [value for value in _column(table, column)[:20] if isinstance(value, str)]
+    return bool(values) and all(
+        value.lstrip().upper().startswith(("LINESTRING", "MULTILINESTRING"))
+        or '"LineString"' in value
+        for value in values
+    )
+
+
+#: Stop-order columns: located rows with one of these are a route, not places.
+_SEQUENCE = ("stop_seq", "sequence", "visit_order", "stop_order", "urutan")
+_ROUTE_GROUP = ("route", "route_id", "driver", "driver_id", "area", "cluster", "cluster_id")
+
+
+def _route_columns(table: dict[str, Any]) -> tuple[str, str | None] | None:
+    """The stop-order column, and the route column if any, of ordered stop rows."""
+    names = _names(table)
+    bare = {name.rsplit(".", 1)[-1].casefold(): name for name in names}
+    sequence = next((bare[key] for key in _SEQUENCE if key in bare), None)
+    if sequence is None or any(_number(value) is None for value in _column(table, sequence)[:20]):
+        return None
+    group = next((bare[key] for key in _ROUTE_GROUP if key in bare), None)
+    return sequence, group
+
+
+def _route_first(tables: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """A result of routes is the map the reader asked for; its stops come after."""
+    def routes(table: dict[str, Any]) -> bool:
+        return _route_columns(table) is not None or any(
+            _lines(table, name) for name in _names(table)
+        )
+
+    return dict(sorted(tables.items(), key=lambda item: not routes(item[1])))
+
+
 def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | None:
     """A governed GeoMap for a result that carries coordinates or shapes."""
     names = _names(table)
@@ -107,8 +162,37 @@ def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | No
         (name for name in rest
          if all(_number(value) is None for value in _column(table, name)[:20])), None,
     )
+    route = _route_columns(table) if latitude and longitude else None
+    if route:
+        sequence, group = route
+        rest = [name for name in rest if name not in {sequence, group}]
+        label = next((name for name in rest if name.rsplit(".", 1)[-1] == "stop"), label)
+        totals = [name for name in rest
+                  if name.rsplit(".", 1)[-1] in {"route_km", "saving_pct", "original_order_km"}]
+        popup = [name for name in rest if name != label and name not in totals
+                 and name.rsplit(".", 1)[-1] not in {"route_stops"}][:_POPUP_FIELDS]
+        settings = ['layer: "route"', f"sequence: {_text(sequence)}"]
+        if group:
+            settings.append(f"group: {_text(group)}")
+        if totals:
+            settings.append("routeFields: [" + ", ".join(_text(name) for name in totals) + "]")
+        if popup:
+            settings.append("popupFields: [" + ", ".join(_text(name) for name in popup) + "]")
+        options = "{" + ", ".join(settings) + "}"
+        args = [
+            f"@Evidence({_text(evidence_id)})", _text(str(longitude)), _text(str(latitude)), "null",
+            _text(label) if label else "null", _text(title or "Routes"),
+            "$selected", options, "$viewport",
+        ]
+        return ("$selected = -1\n$viewport = null\n"
+                f"root = Col([GeoMap({', '.join(args)})])")
     popup = [name for name in rest if name != label][:_POPUP_FIELDS]
-    options = "{popupFields: [" + ", ".join(_text(name) for name in popup) + "]}" if popup else "{}"
+    settings = []
+    if popup:
+        settings.append("popupFields: [" + ", ".join(_text(name) for name in popup) + "]")
+    if geometry and _lines(table, geometry):
+        settings.append('layer: "route"')
+    options = "{" + ", ".join(settings) + "}"
     args = [
         f"@Evidence({_text(evidence_id)})",
         _text(longitude) if longitude else "null",
@@ -130,6 +214,19 @@ def kpi_column(table: dict[str, Any]) -> str | None:
     return names[0] if _number(_column(table, names[0])[0]) is not None else None
 
 
+def kpi_columns(table: dict[str, Any]) -> list[str]:
+    """The metrics of a one-row result whose every column is a measure."""
+    if (column := kpi_column(table)):
+        return [column]
+    if len(table.get("rows") or []) != 1:
+        return []
+    kinds = shape(table)
+    measures = kinds["measure"]
+    if not measures or len(measures) > _MAX_KPIS or len(measures) != len(_names(table)):
+        return []
+    return measures
+
+
 def kpi_program(metrics: list[tuple[str, str, dict[str, Any]]]) -> str:
     tiles = []
     for evidence_id, column, table in metrics:
@@ -142,6 +239,71 @@ def kpi_program(metrics: list[tuple[str, str, dict[str, Any]]]) -> str:
     if len(tiles) == 1:
         return f"root = Col([{tiles[0]}])"
     return f"root = Col([Grid([{', '.join(tiles)}], {len(tiles)})])"
+
+
+def _kind(name: str, values: list[Any]) -> str:
+    """temporal, measure, key, category, or empty for a column's sampled values."""
+    sample = [value for value in values[:_SAMPLE] if value is not None and value != ""]
+    if not sample:
+        return "empty"
+    if all(isinstance(value, date) or (
+        isinstance(value, str) and _TEMPORAL_VALUE.match(value.strip())
+    ) for value in sample):
+        return "temporal"
+    numbers = [_number(value) for value in sample]
+    if all(number is not None for number in numbers):
+        if _TEMPORAL_NAME.search(name) and all(
+            number is not None and number.is_integer() for number in numbers
+        ):
+            return "temporal"
+        return "key" if _KEY.search(name) else "measure"
+    return "category"
+
+
+def shape(table: dict[str, Any]) -> dict[str, list[str]]:
+    """Column names grouped by kind, in result order."""
+    groups: dict[str, list[str]] = {
+        "temporal": [], "measure": [], "key": [], "category": [], "empty": [],
+    }
+    for name in _names(table):
+        groups[_kind(name, _column(table, name))].append(name)
+    return groups
+
+
+def data_program(evidence_id: str, table: dict[str, Any],
+                 title: str | None) -> tuple[str, str] | None:
+    """A trend, ranking or grid for a verified result, with the reason chosen.
+
+    Returns None for a result with fewer than two rows, too many columns or
+    measures, or a shape this composer does not recognise.
+    """
+    names, rows = _names(table), table.get("rows") or []
+    if not rows or not names or len(names) > _MAX_COLUMNS:
+        return None
+    kinds = shape(table)
+    temporal, measures, categories = kinds["temporal"], kinds["measure"], kinds["category"]
+    source = f"@Evidence({_text(evidence_id)})"
+    if (len(temporal) == 1 and len(measures) == 1 and not categories
+            and len(rows) >= _TREND_MIN_ROWS):
+        x, y = temporal[0], measures[0]
+        heading = _text(title or _label(y))
+        return (f"root = Col([Chart(@Sort({source}, {_text(x)}, \"asc\"), {_text(x)}, "
+                f"{_text(y)}, \"line\", {heading})])", "trend")
+    if len(categories) == 1 and len(measures) == 1 and not temporal and len(rows) >= 2:
+        x, y = categories[0], measures[0]
+        heading = _text(title or _label(y))
+        if len(rows) <= _RANKING_MAX_ROWS:
+            return (f"root = Col([Chart(@Sort({source}, {_text(y)}, \"desc\"), {_text(x)}, "
+                    f"{_text(y)}, \"bar\", {heading})])", "ranking")
+        return (f"root = Col([Chart(@Top({source}, {_text(y)}, {_TOP}), {_text(x)}, "
+                f"{_text(y)}, \"bar\", {heading}), "
+                f"Caption(\"Highest values within these result rows\"), "
+                f"Table({source}, null, {heading})])", "ranking")
+    # One row reads better as prose than as a one-line grid.
+    if (len(rows) >= 2 and len(measures) <= _MAX_GRID_MEASURES
+            and (categories or temporal or kinds["key"])):
+        return f"root = Col([Table({source}, null, {_text(title or 'Result')})])", "grid"
+    return None
 
 
 async def _block(program: str, tables: dict[str, dict[str, Any]], fallback: str,
@@ -157,15 +319,17 @@ async def compose(
     *,
     maps_only: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """A map, or else KPI tiles, for an answer no other visual shows.
+    """Data views for an answer no other visual shows.
 
-    ``tables`` are the verified results the answer displays. A chart does not
-    show locations, so ``maps_only`` still draws a located result but no KPI.
-    Returns the blocks and the reasons any were skipped.
+    ``tables`` are the verified results the answer displays. A located result
+    gets a map and nothing else. Otherwise single metrics share KPI tiles, and
+    up to two other results each get a trend, ranking or grid. A tool chart
+    does not show locations, so ``maps_only`` still draws a located result but
+    nothing else. Returns the blocks and the reasons any were skipped.
     """
     blocks: list[dict[str, Any]] = []
     skipped: list[str] = []
-    for evidence_id, table in tables.items():
+    for evidence_id, table in _route_first(tables).items():
         title = (summaries.get(evidence_id) or "Locations")[:256]
         program = map_program(evidence_id, table, title)
         if program is None:
@@ -179,7 +343,7 @@ async def compose(
         return blocks, skipped
 
     metrics = [(evidence_id, column, table) for evidence_id, table in tables.items()
-               if (column := kpi_column(table))][:_MAX_KPIS]
+               for column in kpi_columns(table)][:_MAX_KPIS]
     if metrics:
         try:
             blocks.append(await _block(
@@ -188,4 +352,20 @@ async def compose(
             ))
         except UiValidationError:
             skipped.append("kpi_validation")
+    shown_metrics = {evidence_id for evidence_id, _, _ in metrics}
+    drawn = 0
+    for evidence_id, table in tables.items():
+        if evidence_id in shown_metrics or kpi_columns(table) or drawn >= _MAX_DATA_BLOCKS:
+            continue
+        summary = (summaries.get(evidence_id) or "")[:256] or None
+        chosen = data_program(evidence_id, table, summary)
+        if chosen is None:
+            continue
+        program, auto = chosen
+        drawn += 1
+        fallback = f"**{summary or _label(next(iter(shape(table)['measure']), 'Result'))}**"
+        try:
+            blocks.append(await _block(program, {evidence_id: table}, fallback, auto))
+        except UiValidationError:
+            skipped.append(f"{auto}_validation")
     return blocks, skipped

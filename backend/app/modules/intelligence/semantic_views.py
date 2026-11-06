@@ -1036,6 +1036,9 @@ class SemanticViewService:
         )
         await self._audit("PUBLISH", view["name"], user)
         await _relink(view_id)
+        from app.modules.ontology.representations import refresh_after_publish
+
+        await refresh_after_publish(view_id, user)
         return {**view, "active_version": version, "status": "ACTIVE"}
 
     async def deprecate(self, view_id: str, user: dict) -> None:

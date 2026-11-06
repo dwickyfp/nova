@@ -40,6 +40,7 @@ from app.modules.external_catalogs.router import router as external_catalogs_rou
 from app.modules.functions.router import router as functions_router
 from app.modules.indexes.router import router as indexes_router
 from app.modules.intelligence.autopilot import router as semantic_autopilot_router
+from app.modules.intelligence.business_events_router import router as business_events_router
 from app.modules.intelligence.engine_router import router as intelligence_engine_router
 from app.modules.intelligence.engine_schema import ensure_engine_schema
 from app.modules.intelligence.entities import router as entities_router
@@ -58,6 +59,8 @@ from app.modules.ml_engine.internal_router import router as ml_internal_router
 from app.modules.ml_engine.router import router as ml_router
 from app.modules.monitoring.router import router as monitoring_router
 from app.modules.objects.router import router as objects_router
+from app.modules.ontology.router import router as ontology_router
+from app.modules.ontology.schema import ensure_ontology_schema
 from app.modules.pipes.router import router as pipes_router
 from app.modules.query.router import router as query_router
 from app.modules.query_autopilot.router import router as query_autopilot_router
@@ -157,6 +160,7 @@ async def _bootstrap_control_plane() -> None:
     await ensure_semantic_view_schema()
     await ensure_feature_schema()
     await ensure_engine_schema()
+    await ensure_ontology_schema()
 
     # Workspace object storage (NOVA-137). Idempotent: creates the configured
     # bucket if absent so the first "create file" does not fail with
@@ -217,9 +221,6 @@ async def _bootstrap_control_plane() -> None:
 
         await mission_service.ensure_schema()
         await resource_delegation.ensure_schema()
-        from app.modules.agents.capabilities import capability_repository
-
-        await capability_repository.ensure_schema()
         await memory_repository.ensure_schema()
         await rule_proposal_repository.ensure_schema()
         await run_journal.ensure_schema()
@@ -528,6 +529,10 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix=f"{prefix}/agents", tags=["agent-knowledge"])
     app.include_router(intelligence_engine_router, prefix=f"{prefix}/intelligence",
                        tags=["intelligence"])
+    app.include_router(ontology_router, prefix=f"{prefix}/ontology", tags=["ontology"])
+    app.include_router(
+        business_events_router, prefix=f"{prefix}/intelligence", tags=["business-events"]
+    )
     # Nova Catalog: catalog store, sync, and catalog management.
     app.include_router(catalog_router, prefix=f"{prefix}/catalog", tags=["catalog"])
     app.include_router(

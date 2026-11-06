@@ -54,7 +54,7 @@ def effective_studio_capabilities(
 
 def log_studio_capabilities(
     logger: logging.Logger,
-    process: Literal["api", "task-worker", "smart-worker"],
+    process: Literal["api", "task-worker"],
 ) -> None:
     from app.modules.assistant.analysis_workspace import analytical_workspace
 

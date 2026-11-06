@@ -131,30 +131,6 @@ services:
     networks:
       - nova
 
-  nova-agent-worker:
-    profiles: ["app"]
-    build:
-      context: ..
-      dockerfile: docker/backend.Dockerfile
-    container_name: nova-agent-worker
-    command: ["python", "-m", "app.agent_worker"]
-    depends_on:
-      starrocks-init:
-        condition: service_completed_successfully
-      ranger-bootstrap:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      <<: *nova-runtime-env
-    volumes:
-      - ./nova.yaml:/opt/nova/config/nova.yaml:ro
-    restart: unless-stopped
-    networks:
-      - nova
-
 volumes:
   prometheus_data:
   grafana_data:

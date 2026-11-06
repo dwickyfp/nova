@@ -1,5 +1,8 @@
 # mapcn migration acceptance record
 
+> Note: Smart mode and its agent worker were removed from Studio on 2026-11-07.
+> Results below that mention Smart record the product as tested on these dates.
+
 Implementation complete; validation recorded 21 October 2026, Asia/Jakarta. This record distinguishes deterministic browser fixtures from configured-provider acceptance. No production deployment or GitHub Actions result is claimed.
 
 Baseline: Intelligent UI v2 plus `origin/main` at `4819e1bd`. The feature branch integrated that main commit without conflicts. Mapcn source is pinned at `40c790f739c058f0f0d22b9287d13fe7cfd4a5bf`.

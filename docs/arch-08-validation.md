@@ -1,5 +1,9 @@
 # Architecture 8: Auto Harness Validation
 
+> **Status: retired.** The harness validated here was removed from the product on
+> 2026-11-07. This record is kept as history. For the current Studio chat path,
+> see [Architecture 15: Governed Studio](arch-15-governed-studio.md#studio-chat).
+
 > Validation record for the durable Nova Studio multi-agent runtime, 2026-09-24–25.
 
 The Auto unit, evaluation, frontend, live two-agent, and real worker-kill checks

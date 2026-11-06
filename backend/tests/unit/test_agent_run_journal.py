@@ -16,9 +16,9 @@ from app.modules.assistant.schemas import AgentMessageRequest
 @pytest.fixture(autouse=True)
 def run_write_coordination(monkeypatch):
     from app.core.redis import session_store
-    from tests.unit.test_agent_harness import _EventRedis
+    from tests.unit.fake_lock_redis import FakeLockRedis
 
-    monkeypatch.setattr(session_store, "_redis", _EventRedis())
+    monkeypatch.setattr(session_store, "_redis", FakeLockRedis())
 
 
 @pytest.mark.asyncio
