@@ -994,3 +994,60 @@ async def test_a_sources_own_system_schemas_are_not_synced(monkeypatch):
     await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
 
     assert {o["database_name"] for o in repo.objects.values()} == {"public"}
+
+
+async def test_an_unreachable_source_is_not_cached_as_empty(monkeypatch):
+    """A Snowflake catalog that timed out lists no databases once, not for the TTL."""
+    redis = FakeRedis()
+    monkeypatch.setattr(visibility.session_store, "_redis", redis)
+    monkeypatch.setattr(visibility.settings, "CATALOG_VISIBILITY_CACHE_SECONDS", 60)
+    answers = [None, ["SALES"]]  # None: the source timed out on the first ask
+    opened: list[str] = []
+
+    class Caller:
+        unreachable = False
+
+        async def catalogs(self):
+            return [{"name": "sf", "type": "Jdbc", "comment": None}]
+
+        async def databases(self, catalog):
+            answer = answers.pop(0)
+            if answer is None:
+                self.unreachable = True
+                return []
+            return answer
+
+    @contextlib.asynccontextmanager
+    async def opener(user):
+        opened.append(user["active_role"])
+        yield Caller()
+
+    first = await visibility.visible_catalogs(ADMIN, opener)
+    second = await visibility.visible_catalogs(ADMIN, opener)
+    third = await visibility.visible_catalogs(ADMIN, opener)
+
+    assert first[0]["databases"] == []
+    assert second[0]["databases"] == third[0]["databases"] == ["SALES"]
+    assert len(opened) == 2  # asked again after the failure, then cached
+
+
+async def test_a_refusal_is_a_real_answer_and_an_outage_is_not():
+    from app.modules.explorer.repository import CallerMetadata
+
+    class Cursor:
+        def __init__(self, error):
+            self.error = error
+
+        async def execute(self, sql):
+            raise self.error
+
+        async def fetchall(self):
+            return []
+
+    refused = CallerMetadata(Cursor(RuntimeError("(5203) Access denied; you need USAGE")))
+    assert await refused.databases("sf") == [] and refused.unreachable is False
+
+    down = CallerMetadata(Cursor(RuntimeError(
+        "list db names for JDBC catalog fail! HikariPool-2 - Connection is not available"
+    )))
+    assert await down.databases("sf") == [] and down.unreachable is True

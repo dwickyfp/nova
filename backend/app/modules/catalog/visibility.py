@@ -56,6 +56,21 @@ async def bump() -> None:
         log.warning("Could not retire cached catalog visibility", exc_info=True)
 
 
+class _Uncached(Exception):  # noqa: N818 - control flow, not an error
+    """Carries an answer the cache must not keep (a source was unreachable)."""
+
+    def __init__(self, value: Any) -> None:
+        super().__init__("uncached visibility answer")
+        self.value = value
+
+
+def _answer(caller: Any, value: Any) -> Any:
+    """``value``, or raise :class:`_Uncached` when the caller hit an unreachable source."""
+    if getattr(caller, "unreachable", False):
+        raise _Uncached(value)
+    return value
+
+
 async def _cached(user: dict, scope: str, load, *, fresh: bool = False):  # type: ignore[no-untyped-def]
     """``load()``'s answer, reused for the TTL unless ``fresh`` asks the engine now."""
     try:
@@ -70,7 +85,12 @@ async def _cached(user: dict, scope: str, load, *, fresh: bool = False):  # type
                 return json.loads(raw)
         except Exception:  # noqa: BLE001
             log.debug("Catalog visibility cache read failed", exc_info=True)
-    value = await load()
+    try:
+        value = await load()
+    except _Uncached as uncached:
+        # An unreachable source listed nothing; ask again next time instead of
+        # hiding its databases for the whole TTL.
+        return uncached.value
     if key is not None:
         try:
             await session_store._redis.set(  # type: ignore[union-attr]
@@ -95,10 +115,10 @@ async def visible_catalogs(user: dict, opener: Opener | None = None) -> list[dic
 
     async def load() -> list[dict]:
         async with open_caller(user) as caller:
-            return [
+            return _answer(caller, [
                 {**catalog, "databases": await caller.databases(catalog["name"])}
                 for catalog in await caller.catalogs()
-            ]
+            ])
 
     return await _cached(user, "catalogs", load)
 
@@ -111,7 +131,7 @@ async def visible_databases(
 
     async def load() -> list[str]:
         async with open_caller(user) as caller:
-            return await caller.databases(catalog)
+            return _answer(caller, await caller.databases(catalog))
 
     return await _cached(user, f"databases:{catalog}", load, fresh=fresh)
 
@@ -125,7 +145,7 @@ async def visible_relations(
     async def load() -> dict[str, str]:
         async with open_caller(user) as caller:
             if database not in await caller.databases(catalog):
-                return {}
-            return await caller.relations(catalog, database)
+                return _answer(caller, {})
+            return _answer(caller, await caller.relations(catalog, database))
 
     return await _cached(user, f"relations:{catalog}\x1f{database}", load)
