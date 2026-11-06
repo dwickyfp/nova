@@ -1668,7 +1668,6 @@ updateStatement
 deleteStatement
     : explainDesc? withClause? DELETE FROM qualifiedName partitionNames? (USING using=relations)? (WHERE where=expression)?
     ;
-
 // NOVA-BEGIN (MERGE INTO): the Nova MERGE surface.
 //
 //   MERGE INTO target [[AS] t] USING (source | (query)) [[AS] s] ON condition
@@ -1696,6 +1695,7 @@ novaMergeClause
     | WHEN NOT MATCHED (AND condition=expression)? THEN INSERT columnAliases?
           VALUES '(' expressionOrDefault (',' expressionOrDefault)* ')'                 #novaMergeInsert
     ;
+
 // NOVA-END
 
 // ------------------------------------------- Routine Statement -----------------------------------------------------------
