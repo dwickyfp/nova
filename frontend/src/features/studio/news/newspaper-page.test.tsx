@@ -100,7 +100,7 @@ function mount(props: Partial<Parameters<typeof NewspaperPage>[0]> = {}) {
   return render(
     <QueryClientProvider client={client}>
       <div className="flex h-dvh min-w-0 flex-col">
-        <NewspaperPage onOpen={vi.fn()} onAlerts={vi.fn()} onFollowUp={vi.fn()} {...props} />
+        <NewspaperPage onOpen={vi.fn()} onAlerts={vi.fn()} onInvestigate={vi.fn()} {...props} />
       </div>
     </QueryClientProvider>,
   );
@@ -451,9 +451,19 @@ it.each([
   document.documentElement.classList.toggle("dark", dark);
   vi.spyOn(newspaperApi, "read").mockResolvedValue(paper);
   vi.spyOn(newspaperApi, "story").mockResolvedValue(detail);
-  const onFollowUp = vi.fn();
+  vi.spyOn(newspaperApi, "incident").mockResolvedValue({ incident: null });
+  const handoff = {
+    handoff_status: "READY" as const,
+    incident_id: "inc_1",
+    mission_id: "mission-1",
+    thread_id: "thread-1",
+    agent_id: "__smart__",
+    prompt: "Investigate this News incident",
+  };
+  const investigate = vi.spyOn(newspaperApi, "investigate").mockResolvedValue(handoff);
+  const onInvestigate = vi.fn();
   const onOpen = vi.fn();
-  const screen = await mount({ story: "story-bandung", onFollowUp, onOpen });
+  const screen = await mount({ story: "story-bandung", onInvestigate, onOpen });
 
   const panel = screen.getByRole("dialog", { name: "Revenue fell 34.6% in Bandung" });
   await expect.element(panel).toBeVisible();
@@ -473,10 +483,12 @@ it.each([
     .element(screen.getByText(/Written by the default model from verified figures/))
     .toBeVisible();
   await expect.element(screen.getByText(/must be explained in the weekly review/)).toBeVisible();
-  await screen.getByRole("button", { name: "Ask Studio about this" }).click();
-  expect(onFollowUp.mock.calls[0][0]).toBe(
-    "From News: Revenue fell 34.6% in Bandung. What could explain this change, and what should I check first?",
-  );
+  await expect.element(screen.getByText("No related signals yet", { exact: false })).toBeVisible();
+  await screen.getByRole("button", { name: "Investigate in Studio" }).click();
+  await expect.poll(() => onInvestigate.mock.calls.length).toBe(1);
+  // The server makes the handoff from the story id; the headline is not sent.
+  expect(investigate).toHaveBeenCalledWith("story-bandung");
+  expect(onInvestigate.mock.calls[0][0]).toEqual(handoff);
   await screen.getByRole("button", { name: "Close" }).click();
   expect(onOpen).toHaveBeenLastCalledWith();
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);

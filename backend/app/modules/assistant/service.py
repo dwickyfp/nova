@@ -249,6 +249,8 @@ class LoopContext:
     #: The business ontology release this turn resolved terms against, so every
     #: query of one turn uses the same approved definitions.
     ontology_release_id: str | None = None
+    #: The incident a News handoff asked this Mission to investigate, by reference.
+    incident_id: str | None = None
     #: This turn's verified result tables by evidence id, for ``compute_metrics``.
     #: Set before each tool call; never persisted or sent upstream.
     evidence_tables: dict[str, dict[str, Any]] | None = None

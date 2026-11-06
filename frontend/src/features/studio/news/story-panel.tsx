@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingLines } from "@/components/ui/loading-overlay";
@@ -8,9 +8,16 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { toast } from "sonner";
 import { formatValue, humanize, kicker, longDate } from "./format";
 import { Highlighted } from "./highlight";
-import { newspaperApi, type Reaction, type StoryDetail } from "./newspaper-api";
+import { IncidentSection } from "./incident-section";
+import {
+  newspaperApi,
+  type InvestigationHandoff,
+  type Reaction,
+  type StoryDetail,
+} from "./newspaper-api";
 import { Reactions } from "./reactions";
 import { DriverChart, TrendChart, WeekdayChart } from "./story-chart";
 import { HeadFigure, NewsFailure, Severity } from "./story-parts";
@@ -35,11 +42,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Body({
   story,
-  onFollowUp,
+  epoch,
+  onInvestigate,
 }: {
   story: StoryDetail;
-  onFollowUp: (prompt: string) => void;
+  epoch: number;
+  onInvestigate: (handoff: InvestigationHandoff) => void;
 }) {
+  const investigate = useMutation({
+    mutationFn: () => newspaperApi.investigate(story.id),
+    onSuccess: onInvestigate,
+    onError: (error: Error) => toast.error(error.message),
+  });
   return (
     <article className="min-w-0">
       <div className="flex flex-wrap items-center gap-2 text-xs tracking-wide text-muted-foreground uppercase">
@@ -104,16 +118,17 @@ function Body({
           data changes, the story is withdrawn until the next edition.
         </p>
       </Section>
+      <Section title="Related signals and findings">
+        <IncidentSection storyId={story.id} epoch={epoch} />
+      </Section>
       <div className="border-t pt-5">
-        <Button
-          onClick={() =>
-            onFollowUp(
-              `From News: ${story.narrative.headline}. What could explain this change, and what should I check first?`,
-            )
-          }
-        >
-          Ask Studio about this
+        <Button disabled={investigate.isPending} onClick={() => investigate.mutate()}>
+          {investigate.isPending ? "Opening Studio" : "Investigate in Studio"}
         </Button>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Opens your own Studio Mission for this story. Studio checks your access again and
+          reads the figures itself; the headline is not passed on as fact.
+        </p>
       </div>
     </article>
   );
@@ -127,7 +142,7 @@ export function StoryPanel({
   epoch,
   onOpen,
   onReact,
-  onFollowUp,
+  onInvestigate,
 }: {
   /** The reader's reaction as the edition page holds it. */
   reaction: Reaction | null | undefined;
@@ -137,7 +152,7 @@ export function StoryPanel({
   ids: string[];
   epoch: number;
   onOpen: (id?: string) => void;
-  onFollowUp: (prompt: string) => void;
+  onInvestigate: (handoff: InvestigationHandoff) => void;
 }) {
   const story = useQuery({
     queryKey: ["newspaper", epoch, "story", id],
@@ -193,7 +208,7 @@ export function StoryPanel({
               <LoadingLines />
             </>
           ) : (
-            <Body story={story.data} onFollowUp={onFollowUp} />
+            <Body story={story.data} epoch={epoch} onInvestigate={onInvestigate} />
           )}
         </div>
       </SheetContent>

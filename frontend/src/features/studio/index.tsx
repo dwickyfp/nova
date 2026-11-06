@@ -7,7 +7,7 @@ import { getCookie, setCookie } from "@/lib/cookies";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { agentsApi, studioApi, AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
 import { api } from "@/lib/api-client";
-import { StudioChat } from "./studio-chat";
+import { StudioChat, type StudioHandoff } from "./studio-chat";
 import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
@@ -106,6 +106,8 @@ function StudioAppContent() {
   // one, which is the opposite of what they asked for.
   const [freshChat, setFreshChat] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
+  // A News story handed to Studio: its own thread, Mission and prompt.
+  const [handoff, setHandoff] = useState<StudioHandoff | null>(null);
   const [sharing, setSharing] = useState<{ id: string; title: string } | null>(null);
   // Shared with Nova's main sidebar, so the rail remembers its state whichever
   // surface set it last.
@@ -384,6 +386,7 @@ function StudioAppContent() {
             }}
             newChatNonce={newChatNonce}
             initialPrompt={initialPrompt}
+            handoff={handoff}
           />
         ) : view === "news" && !search.item && search.desk !== "alerts" ? (
           <NewspaperPage
@@ -392,12 +395,14 @@ function StudioAppContent() {
             onEdition={(edition) => navigate({ to: "/studio", search: { view: "news", edition }, replace: true })}
             onOpen={(story) => navigate({ to: "/studio", search: { view: "news", story, edition: search.edition }, replace: true })}
             onAlerts={() => navigate({ to: "/studio", search: { view: "news", desk: "alerts" }, replace: true })}
-            onFollowUp={(prompt) => {
-              setInitialPrompt(prompt);
-              setFreshChat(true);
-              setNewChatNonce((value) => value + 1);
-
-              navigate({ to: "/studio", search: { agent: AUTO_AGENT_ID }, replace: true });
+            onInvestigate={(next) => {
+              setHandoff({ threadId: next.thread_id, missionId: next.mission_id, prompt: next.prompt });
+              setFreshChat(false);
+              navigate({
+                to: "/studio",
+                search: { agent: next.agent_id, thread: next.thread_id },
+                replace: true,
+              });
             }} />
         ) : view === "news" ? (
           <StudioIntelligence item={search.item}

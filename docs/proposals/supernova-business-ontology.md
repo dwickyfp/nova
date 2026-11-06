@@ -1,6 +1,6 @@
 # Supernova Business Ontology — analisis dan rencana implementasi
 
-**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware), Fase 3 (halaman Business Ontology di Console) dan Fase 4 (Signal dan Incident) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 5–7 masih proposal.
+**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware), Fase 3 (halaman Business Ontology di Console), Fase 4 (Signal dan Incident) dan Fase 5 (jembatan News ↔ Studio) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 6–7 masih proposal.
 **Branch:** `feat/supernova-ontology` (dari `origin/main` @ `1ecb13c7`)
 **Sumber:** *Supernova Business Ontology v1.1* (6 Nov 2026), dibandingkan dengan source Nova saat ini.
 
@@ -177,6 +177,11 @@ Dibangun sebagai halaman Console `AI & ML → Business Ontology`, di sebelah Sem
 - Tool `incident_context` (read-only) dan `investigation_update` (`session_change`, consent). Update ditolak bila ref evidence/query tidak terverifikasi.
 - Review update → timeline incident di News: tombol "Ask Studio about this" diganti "Investigate in Studio", ditambah timeline dan badge concept di `story-panel.tsx`.
 - **Test:** STUDIO-001..005, NEWS-004, role diturunkan di tengah alur, dan eval trajectory untuk kedua tool.
+
+**Catatan implementasi Fase 5:**
+
+- **Siapa yang melihat temuan.** Temuan investigasi hanya ditampilkan ke pembaca dengan active role yang sama dengan penulisnya, yang juga bisa membuktikan semua signal yang dilihat penulis. Reviewer adalah pembaca lain di role itu. Alasannya: angka di temuan dihitung di bawah data policy role penulis.
+- **Agent yang menerima handoff.** Handoff membuka agent Smart. Karena itu `incident_context` dan `investigation_update` ditambahkan ke tool root Smart, selain bisa dipilih untuk agent lain.
 
 ### Fase 6 — Learning dan significance
 

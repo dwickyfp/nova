@@ -70,7 +70,16 @@ from app.observability.metrics import (
 #: chart what specialists return. ``catalog_search`` reads only catalog metadata
 #: the caller's active role can list, so the root can find tables and tags
 #: before it delegates.
-SMART_ROOT_TOOLS = ("load_skill", "catalog_search", "compute_metrics", "data_to_chart")
+#: ``incident_context`` and ``investigation_update`` let a Mission opened from News
+#: read its incident and post reviewed findings; both need consent.
+SMART_ROOT_TOOLS = (
+    "load_skill",
+    "catalog_search",
+    "compute_metrics",
+    "data_to_chart",
+    "incident_context",
+    "investigation_update",
+)
 
 logger = logging.getLogger(__name__)
 MAX_PARALLEL_RUNS = 32

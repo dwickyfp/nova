@@ -57,6 +57,69 @@ export type Story = {
   view_name?: string;
 };
 export type Reaction = "like" | "dislike";
+
+export type IncidentStatus =
+  | "OPEN"
+  | "TRIAGED"
+  | "INVESTIGATING"
+  | "DECISION_PENDING"
+  | "ACTION_IN_PROGRESS"
+  | "OBSERVING"
+  | "RESOLVED"
+  | "DISMISSED";
+export type CausalStatus = "arithmetic" | "association" | "unknown";
+export type IncidentSignal = {
+  id: string;
+  source: { type: "NEWSROOM_STORY" | "MONITOR_NEWS_ITEM"; id: string };
+  semantic_view_id: string;
+  metric: string;
+  concept: { id: string; qualified_name: string; label: string } | null;
+  binding: "BOUND" | "ONTOLOGY_UNBOUND" | "NO_RELEASE";
+  direction: "increase" | "decrease";
+  severity: "info" | "warning" | "critical";
+  window: { start: string; end: string };
+};
+export type InvestigationUpdate = {
+  id: string;
+  revision: number;
+  status: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+  summary: string;
+  claims: { statement: string; causal_status: CausalStatus }[];
+  author: string;
+  can_review: boolean;
+  review: { principal: string; decision: "APPROVE" | "REJECT"; rationale: string; at: string } | null;
+  created_at: string;
+};
+export type Incident = {
+  id: string;
+  revision: number;
+  status: IncidentStatus;
+  severity: "info" | "warning" | "critical";
+  causal_status: "unknown";
+  note: string;
+  signals: IncidentSignal[];
+  grouping: {
+    signal_id: string;
+    rule: "opened" | "same_concept" | "related_concepts" | "same_metric";
+    with_signal_id: string | null;
+  }[];
+  transitions: {
+    from_status: IncidentStatus;
+    to_status: IncidentStatus;
+    principal: string;
+    reason: string;
+    at: string;
+  }[];
+  updates: InvestigationUpdate[];
+};
+export type InvestigationHandoff = {
+  handoff_status: "READY";
+  incident_id: string;
+  mission_id: string;
+  thread_id: string;
+  agent_id: string;
+  prompt: string;
+};
 export type StoryDetail = Story & { view_name: string; pressed_at: string };
 export type NewspaperSection = {
   view_id: string;
@@ -85,5 +148,23 @@ export const newspaperApi = {
     api.get<StoryDetail>(
       `/intelligence/stories/${encodeURIComponent(id)}`,
       signal,
+    ),
+  incident: (storyId: string, signal?: AbortSignal) =>
+    api.get<{ incident: Incident | null }>(
+      `/intelligence/stories/${encodeURIComponent(storyId)}/incident`,
+      signal,
+    ),
+  investigate: (storyId: string) =>
+    api.post<InvestigationHandoff>(
+      `/intelligence/stories/${encodeURIComponent(storyId)}/investigate`,
+    ),
+  reviewUpdate: (
+    incidentId: string,
+    updateId: string,
+    body: { decision: "APPROVE" | "REJECT"; rationale: string; operation_id: string },
+  ) =>
+    api.post<Incident>(
+      `/intelligence/incidents/${encodeURIComponent(incidentId)}/updates/${encodeURIComponent(updateId)}/review`,
+      body,
     ),
 };

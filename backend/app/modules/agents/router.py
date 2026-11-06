@@ -217,6 +217,8 @@ KNOWN_TOOLS = {
     "decision_lab",
     "ontology_resolve",
     "ontology_explain",
+    "incident_context",
+    "investigation_update",
     "ml_execute",
     "execute_business_action",
     "analysis_workspace",

@@ -68,6 +68,9 @@ import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
+/** A News story handed to Studio: its thread, investigating Mission and prompt. */
+export type StudioHandoff = { threadId: string; missionId: string; prompt: string };
+
 
 let turnSeq = 0;
 function nextTurnId(): string {
@@ -94,6 +97,7 @@ export function StudioChat({
   onThreadChange,
   newChatNonce = 0,
   initialPrompt = "",
+  handoff = null,
 }: {
   agent: Agent | null;
   agents: Agent[];
@@ -108,6 +112,8 @@ export function StudioChat({
   /** Bumped by the sidebar's "New" control to start a fresh conversation. */
   newChatNonce?: number;
   initialPrompt?: string;
+  /** A News story handed to Studio; applied only in the thread it created. */
+  handoff?: StudioHandoff | null;
 }) {
   const queryClient = useQueryClient();
   const selectComposerAgent = async (id: string) => {
@@ -453,6 +459,15 @@ export function StudioChat({
       textareaRef.current?.focus();
     }
   }, [initialPrompt, newChatNonce, agent?.agent_id]);
+
+  // A News handoff: declared after the resets above (agent change, Mission
+  // follow-up, new chat) so its prompt and Mission win in the handoff thread.
+  useEffect(() => {
+    if (!handoff || handoff.threadId !== activeThreadId) return;
+    setFollowUpMissionId(handoff.missionId);
+    setInput(handoff.prompt);
+    textareaRef.current?.focus();
+  }, [handoff, activeThreadId, agent?.agent_id, securityEpoch]);
 
   // Follow the newest content, but only while the user is already at the
   // bottom, so scrolling back to read an earlier step is not yanked away.

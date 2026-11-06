@@ -82,6 +82,14 @@ def bind_business_hooks(context, mission=None):
     anchors = (mission or {}).get("business_anchors") if isinstance(mission, dict) else (
         getattr(mission, "business_anchors", None)
     )
+    incident = (mission or {}).get("incident_anchor") if isinstance(mission, dict) else (
+        getattr(mission, "incident_anchor", None)
+    )
+    if incident and hasattr(context, "incident_id"):
+        # The tools read the incident by reference; its content is proven per call.
+        context.incident_id = (
+            incident["incident_id"] if isinstance(incident, dict) else incident.incident_id
+        )
     if anchors and hasattr(context, "ontology_release_id") and not context.ontology_release_id:
         # A continued mission keeps the business definitions its answers used.
         latest = anchors[-1]

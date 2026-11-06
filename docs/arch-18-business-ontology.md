@@ -243,9 +243,57 @@ incident through `OPEN`, `TRIAGED`, `INVESTIGATING`, `DECISION_PENDING`,
 a reason, `expected_revision` and an `operation_id`, and only allowed moves
 are accepted. Every read and move is audited, refusals included.
 
+## News to Studio investigation
+
+**Handoff.** In a News story, **Investigate in Studio** calls
+`POST /intelligence/stories/{id}/investigate`
+(`backend/app/modules/intelligence/investigations.py`). The server:
+1. proves the story again for the caller;
+2. records its signal and incident;
+3. creates, or finds again, a Smart thread and an investigating Mission. Their
+   ids derive from the story, its proof digest and the caller's principal and
+   role, so a second click or a retry opens the same Mission, and each reader
+   gets their own;
+4. anchors the Mission to the incident by reference (`Mission.incident_anchor`).
+   The headline is never passed on as trusted context;
+5. moves an `OPEN` or `TRIAGED` incident to `INVESTIGATING`.
+
+Studio opens that thread with a prepared prompt and the Mission selected.
+Resuming the Mission later proves the story again, so a reader who lost
+access cannot continue.
+
+**Tools.** The Smart root and any agent that bundles them can use:
+- `incident_context`: reads the incident (`LoopContext.incident_id`) with
+  every source proven again for the caller.
+- `investigation_update`: posts a finding. Each claim cites the `evidence_id`
+  of a verified result table from the current run, and anything else is
+  refused (`UNVERIFIED_EVIDENCE`). A claim's causal status is `arithmetic`,
+  `association` or `unknown`; an agent can never assert `supported_effect`.
+  Only digests of the cited evidence are stored.
+
+Both need consent. The update tool writes a reviewable proposal
+(`session_change`), never a published fact.
+
+**Review and timeline.** Findings are stored in
+`CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES` as `PENDING_REVIEW`. Their figures
+were computed under the author's data policy, so:
+- a finding is shown only to readers whose active role is the author's and
+  who can prove every signal the author could see;
+- another reader in that role, never the author, approves or rejects it
+  (`POST /intelligence/incidents/{id}/updates/{update_id}/review`).
+
+The story panel's **Related signals and findings** section
+(`GET /intelligence/stories/{id}/incident`) shows:
+- related signals as concepts and grouping rules;
+- the correlation caveat;
+- reviewed findings with their causal labels;
+- findings waiting for review, which can be reviewed there;
+- the incident's transitions.
+
+The original story is never changed.
+
 ## Not yet built
 
-- News → Studio investigation handoff and investigation updates (Phase 5).
-- Learning proposals (Phase 6).
+- Learning proposals from outcomes and feedback (Phase 6).
 
 See the [proposal](proposals/supernova-business-ontology.md).

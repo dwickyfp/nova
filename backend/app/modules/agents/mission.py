@@ -24,6 +24,7 @@ from app.modules.agents.mission_schema import (
     DeliverableCreate,
     DeliverableSource,
     ExecutionTimeContext,
+    IncidentAnchor,
     InvestigationRequirements,
     Mission,
     MissionBinding,
@@ -492,6 +493,12 @@ class MissionService:
 
         for business in {(a.release_id, a.manifest_hash) for a in mission.business_anchors}:
             await authorize_ontology_release(*business)
+        if mission.incident_anchor is not None:
+            from app.modules.intelligence.newsroom import newsroom_service
+
+            # The story is proven again for the caller's current role and data.
+            if await newsroom_service.readable(mission.incident_anchor.story_id, user) is None:
+                raise HTTPException(status_code=404, detail="Mission source unavailable")
         for ref in mission.pinned_objects:
             record = await intelligence_service.get_for_mission(
                 {
@@ -1220,6 +1227,23 @@ class MissionService:
             if len(mission.business_anchors) >= 32:
                 raise HTTPException(status_code=422, detail="Mission business anchor bound reached")
             mission.business_anchors.append(anchor)
+            return await self._save(mission, mission.revision, owned)
+
+    async def record_incident_anchor(
+        self, mission_id: str, anchor: IncidentAnchor, user: dict
+    ) -> Mission:
+        mission = await self.get(mission_id, user, project=False)
+        async with harness_repository.admission_lock(
+            mission.thread_id, mission.scope.principal
+        ) as owned:
+            mission = await self._get(mission_id, workflow_scope(user))
+            if mission.incident_anchor == anchor:
+                return mission
+            if mission.incident_anchor is not None:
+                raise HTTPException(
+                    status_code=409, detail="Mission already investigates another incident"
+                )
+            mission.incident_anchor = anchor
             return await self._save(mission, mission.revision, owned)
 
     async def record_investigation_requirements(

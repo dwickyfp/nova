@@ -40,6 +40,7 @@ from app.modules.intelligence.contracts import (
 )
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.modules.intelligence.evidence import semantic_population_fingerprint
+from app.modules.intelligence.investigation_contracts import Claim, UpdateSubmission
 from app.modules.ontology.binding import MetricBinding, bind_metric, linked
 from app.modules.ontology.contracts import Actor, OntologyRecord
 from app.modules.ontology.repository import RevisionRepository
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 EVENT_TABLES = {
     "signals": "CONFIG_INTELLIGENCE_SIGNALS",
     "incidents": "CONFIG_INTELLIGENCE_INCIDENTS",
+    "updates": "CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES",
 }
 EVENT_DDL = tuple(revision_table_ddl(name) for name in EVENT_TABLES.values())
 UNAVAILABLE = "Incident unavailable"
@@ -153,6 +155,47 @@ class BusinessIncident(OntologyRecord):
     transitions: list[Transition] = Field(default_factory=list, max_length=200)
 
 
+class EvidenceDigest(Contract):
+    id: str = Field(min_length=1, max_length=128)
+    digest: str = Field(min_length=64, max_length=64)
+
+
+class UpdateReview(Contract):
+    principal: str = Field(min_length=1, max_length=128)
+    active_role: str = Field(min_length=1, max_length=128)
+    decision: Literal["APPROVE", "REJECT"]
+    rationale: str = Field(min_length=1, max_length=2000)
+    operation_id: str = Field(min_length=8, max_length=64)
+    at: datetime = Field(default_factory=utc_now)
+
+
+class InvestigationUpdate(OntologyRecord):
+    """An evidence-backed finding posted to an incident; shown only after review.
+
+    It is shared only with readers in the author's active role who can prove
+    every signal the author could see, because the figures behind it were
+    computed under that role's data policy.
+    """
+
+    incident_id: str = Field(min_length=1, max_length=64)
+    mission_id: str | None = Field(default=None, max_length=64)
+    author: str = Field(min_length=1, max_length=128)
+    author_role: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=2000)
+    claims: list[Claim] = Field(min_length=1, max_length=10)
+    evidence: list[EvidenceDigest] = Field(min_length=1, max_length=40)
+    source_signal_ids: list[str] = Field(min_length=1, max_length=MAX_SIGNALS)
+    status: Literal["PENDING_REVIEW", "APPROVED", "REJECTED"] = "PENDING_REVIEW"
+    review: UpdateReview | None = None
+    operation_id: str = Field(min_length=8, max_length=64)
+
+
+class UpdateReviewRequest(Contract):
+    decision: Literal["APPROVE", "REJECT"]
+    rationale: str = Field(min_length=1, max_length=2000)
+    operation_id: str = Field(min_length=8, max_length=64)
+
+
 class TransitionRequest(Contract):
     to: IncidentStatus
     reason: str = Field(min_length=1, max_length=2000)
@@ -182,6 +225,15 @@ def windows_overlap(left: Window, right: Window) -> bool:
 
 def _union(left: Window, right: Window) -> Window:
     return Window(start=min(left.start, right.start), end=max(left.end, right.end))
+
+
+def _story_source(story: Any) -> SignalSource:
+    return SignalSource(
+        type="NEWSROOM_STORY",
+        id=story.id,
+        revision=story.revision,
+        digest=fingerprint([proof.digest for proof in story.proofs]),
+    )
 
 
 def _signal_id(source: SignalSource) -> str:
@@ -281,12 +333,7 @@ class BusinessEventService:
             key = story.semantic.model_dump_json()
             if key not in definitions:
                 definitions[key] = await self.definition(story.semantic)
-            source = SignalSource(
-                type="NEWSROOM_STORY",
-                id=story.id,
-                revision=story.revision,
-                digest=fingerprint([proof.digest for proof in story.proofs]),
-            )
+            source = _story_source(story)
             recorded.append(
                 await self._record(
                     source,
@@ -522,9 +569,143 @@ class BusinessEventService:
                 if item.signal_id in ids and (item.with_signal_id in ids or item.rule == "opened")
             ],
             "transitions": [item.model_dump(mode="json") for item in incident.transitions],
+            "updates": await self._visible_updates(incident, signals, user),
             "created_at": incident.created_at,
             "updated_at": incident.updated_at,
         }
+
+    async def _visible_updates(
+        self, incident: BusinessIncident, signals: list[BusinessSignal], user: dict
+    ) -> list[dict]:
+        """Approved updates this reader may see, and pending ones they may review."""
+        actor = Actor.from_user(user)
+        provable = {signal.id for signal in signals}
+        shown = []
+        for update in await self.repository.current_matching(
+            "updates", InvestigationUpdate, "incident_id", incident.id, limit=100
+        ):
+            if update.author_role != actor.active_role:
+                continue
+            if not set(update.source_signal_ids) <= provable:
+                continue
+            mine = update.author == actor.principal
+            if update.status in {"APPROVED", "PENDING_REVIEW"}:
+                shown.append(
+                    {
+                        "id": update.id,
+                        "revision": update.revision,
+                        "status": update.status,
+                        "summary": update.summary,
+                        "claims": [claim.model_dump(mode="json") for claim in update.claims],
+                        "author": update.author,
+                        "mission_id": update.mission_id if mine else None,
+                        "can_review": update.status == "PENDING_REVIEW" and not mine,
+                        "review": update.review.model_dump(mode="json") if update.review else None,
+                        "created_at": update.created_at,
+                    }
+                )
+        return sorted(shown, key=lambda item: item["created_at"])
+
+    async def incident_for_story(self, story_id: str, user: dict) -> dict | None:
+        """The incident of a story the reader can read now, if it has one."""
+        story = await self.read_story(story_id, user)
+        if story is None:
+            await self._audit(user, "READ_STORY_INCIDENT", story_id, "DENIED", "DENY")
+            raise HTTPException(status_code=404, detail=UNAVAILABLE)
+        signal = await self.repository.latest(
+            "signals", _signal_id(_story_source(story)), BusinessSignal
+        )
+        if signal is None or not signal.incident_id:
+            return None
+        return await self.get(signal.incident_id, user)
+
+    async def submit_update(
+        self,
+        incident_id: str,
+        body: UpdateSubmission,
+        user: dict,
+        *,
+        evidence: dict[str, str],
+        operation_id: str,
+        mission_id: str | None = None,
+    ) -> InvestigationUpdate:
+        """Post a finding that cites only evidence verified in the caller's own run."""
+        incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
+        signals = await self._visible_signals(incident, user) if incident else []
+        if incident is None or not signals:
+            raise HTTPException(status_code=404, detail=UNAVAILABLE)
+        cited = {
+            ref
+            for claim in body.claims
+            for ref in (*claim.supporting_evidence_ids, *claim.contradicting_evidence_ids)
+        }
+        unknown = sorted(cited - set(evidence))
+        if unknown:
+            await self._audit(user, "POST_INVESTIGATION_UPDATE", incident.id, "DENIED", "DENY")
+            raise HTTPException(
+                status_code=422,
+                detail="These evidence ids are not verified results of this run: "
+                + ", ".join(unknown[:10]),
+            )
+        actor = Actor.from_user(user)
+        update = InvestigationUpdate(
+            id="upd_" + fingerprint([incident.id, actor.principal, operation_id])[:32],
+            actor=actor,
+            incident_id=incident.id,
+            mission_id=mission_id,
+            author=actor.principal,
+            author_role=actor.active_role,
+            summary=body.summary,
+            claims=body.claims,
+            evidence=[EvidenceDigest(id=ref, digest=evidence[ref]) for ref in sorted(cited)],
+            source_signal_ids=[signal.id for signal in signals],
+            operation_id=operation_id,
+        )
+        saved = await self.repository.save("updates", update)
+        await self._audit(user, "POST_INVESTIGATION_UPDATE", incident.id, "SUCCESS", "PENDING")
+        return saved
+
+    async def review_update(
+        self, incident_id: str, update_id: str, body: UpdateReviewRequest, user: dict
+    ) -> dict:
+        update = await self.repository.latest("updates", update_id, InvestigationUpdate)
+        incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
+        signals = await self._visible_signals(incident, user) if incident else []
+        actor = Actor.from_user(user)
+        if (
+            update is None
+            or incident is None
+            or update.incident_id != incident.id
+            or update.author_role != actor.active_role
+            or not set(update.source_signal_ids) <= {signal.id for signal in signals}
+        ):
+            raise HTTPException(status_code=404, detail=UNAVAILABLE)
+        if update.review and update.review.operation_id == body.operation_id:
+            return await self.get(incident.id, user)
+        if update.author == actor.principal:
+            await self._audit(user, "REVIEW_INVESTIGATION_UPDATE", update.id, "DENIED", "DENY")
+            raise HTTPException(status_code=403, detail="The author cannot review their own update")
+        if update.status != "PENDING_REVIEW":
+            raise HTTPException(status_code=409, detail="This update was already reviewed")
+        await self.repository.save(
+            "updates",
+            update.model_copy(
+                update={
+                    "actor": actor,
+                    "status": "APPROVED" if body.decision == "APPROVE" else "REJECTED",
+                    "review": UpdateReview(
+                        principal=actor.principal,
+                        active_role=actor.active_role,
+                        decision=body.decision,
+                        rationale=body.rationale,
+                        operation_id=body.operation_id,
+                    ),
+                }
+            ),
+            expected_revision=update.revision,
+        )
+        await self._audit(user, "REVIEW_INVESTIGATION_UPDATE", update.id, "SUCCESS", body.decision)
+        return await self.get(incident.id, user)
 
     async def get(self, incident_id: str, user: dict) -> dict:
         incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
@@ -629,6 +810,9 @@ async def record_news_item_safely(news, monitor, user: dict) -> None:
 
 __all__ = [
     "BusinessIncident",
+    "InvestigationUpdate",
+    "UpdateReviewRequest",
+    "UpdateSubmission",
     "BusinessSignal",
     "TransitionRequest",
     "business_event_service",

@@ -124,6 +124,16 @@ class BusinessContextAnchor(Contract):
         return self
 
 
+class IncidentAnchor(Contract):
+    """The News source a Mission investigates, by reference only."""
+
+    incident_id: str = Field(min_length=1, max_length=64)
+    story_id: str = Field(min_length=1, max_length=64)
+    source_revision: int = Field(ge=1)
+    source_digest: str = Field(min_length=64, max_length=64)
+    ontology_release_id: str | None = Field(default=None, max_length=64)
+
+
 class ExecutionTimeContext(Contract):
     execution_now: datetime
     timezone: str = Field(min_length=1, max_length=64)
@@ -209,6 +219,7 @@ class Mission(Contract):
     historical_bindings: list[Scope] = Field(default_factory=list, max_length=32)
     semantic_anchors: list[SemanticAnchor] = Field(default_factory=list, max_length=32)
     business_anchors: list[BusinessContextAnchor] = Field(default_factory=list, max_length=32)
+    incident_anchor: IncidentAnchor | None = None
     execution_contexts: list[MissionExecutionContext] = Field(default_factory=list, max_length=100)
     release_pins: list[MissionReleasePin] = Field(default_factory=list, max_length=100)
     continuation: ContinuationDecision | None = None
