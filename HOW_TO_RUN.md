@@ -370,6 +370,11 @@ backend dan worker di compose memakai `AI_PROVIDER_LOOPBACK_HOST`
 langsung di host membiarkan variabel ini kosong. Di Docker Linux tanpa
 `host.docker.internal`, isi dengan alamat gateway host.
 
+Daftarkan endpoint provider di host sebagai `localhost` (misalnya
+`http://localhost:20128/v1`), bukan `host.docker.internal`. Nama itu hanya
+dikenal di dalam container, sehingga backend di host akan gagal dengan
+`provider_error`; `localhost` berlaku di host dan diteruskan otomatis di compose.
+
 ---
 
 ## 3. Jalankan Frontend
@@ -785,6 +790,32 @@ Password default `nova_admin` hanya untuk setup development awal dan harus
 diganti ketika diminta.
 
 ---
+
+## Mode Development Cepat (hot reload)
+
+Selama development, hanya infrastruktur (StarRocks, Ranger, Redis, MinIO) yang
+berjalan di Docker. Backend, scheduler, worker, Smart agent worker, dan Vite
+berjalan di host lewat satu perintah, sehingga perubahan kode langsung berlaku
+tanpa rebuild image:
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova
+docker stop nova-backend nova-worker nova-agent-worker   # sekali, jika profil app pernah dijalankan
+UV_NO_SYNC=1 ./dev.sh
+```
+
+- Backend memakai `uvicorn --reload` yang mengawasi `backend/app`.
+- Scheduler, `nova-worker`, dan `nova-agent-worker` dijalankan lewat
+  `watchfiles` dan restart sendiri saat file Python di `backend/app` berubah.
+- Vite me-reload UI seperti biasa.
+- `UV_NO_SYNC=1` menjaga venv host apa adanya. Di macOS yang tidak bisa memuat
+  scipy versi lock (`dlopen ... zero-fill section type`), pasang versi yang
+  bisa dimuat dan selalu jalankan dengan variabel ini:
+  `cd backend && VIRTUAL_ENV=.venv uv pip install scipy==1.17.1`.
+- Log tiap proses ada di `.dev-logs/`. Ctrl+C menghentikan semuanya.
+
+Jangan jalankan container aplikasi dan `dev.sh` bersamaan: keduanya memakai
+port 8000 dan worker yang sama akan berebut antrean run.
 
 ## Urutan Startup Harian
 

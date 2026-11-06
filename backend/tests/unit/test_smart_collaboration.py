@@ -926,3 +926,22 @@ async def test_smart_remembers_what_a_specialist_asked_back(monkeypatch):
     assert pending == {"kind": PENDING_CLARIFICATION, "request": "Show revenue by channel",
                        "questions": ["Finance.Revenue or Sales.Revenue?"]}
     assert await worker._pending_clarification(root, [answered, failed]) is None
+
+
+def test_the_smart_root_reads_specialist_rows_within_its_budget():
+    from app.modules.assistant.service import _PREVIEW_ROWS, _collected_previews
+
+    rows = [[f"Region {index}", str(index * 1000)] for index in range(60)]
+    tables = {"ev_1": {"columns": ["region", "revenue_total"], "rows": rows}}
+    results = [{"evidence_id": "ev_1", "columns": ["region", "revenue_total"], "row_count": 60}]
+    # A specialist that answered with a heading still gives the root its numbers.
+    (shown,) = _collected_previews(results, tables, room=100_000)
+    assert shown["rows"] == rows[:_PREVIEW_ROWS] and shown["truncated"] is True
+    (small,) = _collected_previews(
+        [{**results[0], "row_count": 5}], {"ev_1": {"rows": rows[:5]}}, room=100_000,
+    )
+    assert small["rows"] == rows[:5] and small["truncated"] is False
+    # A tight budget keeps fewer rows, and none at all when even one does not fit.
+    (tight,) = _collected_previews(results, tables, room=200)
+    assert 0 < len(tight["rows"]) < _PREVIEW_ROWS and tight["truncated"] is True
+    assert _collected_previews(results, tables, room=10) == results

@@ -2810,6 +2810,11 @@ class AssistantLoop:
             )
             if collected_results:
                 envelope["collected_results"] = collected_results
+                envelope["collected_results"] = _collected_previews(
+                    collected_results,
+                    evidence.tables,
+                    self._context_manager.token_budget - estimate_messages_tokens(messages),
+                )
             if invocation.tool_name in {"wait_agent", "list_agents"}:
                 envelope["data"] = _collaboration_view(envelope.get("data"))
             shown = evidence.tables.get(evidence_item.evidence_id)
@@ -3333,6 +3338,34 @@ _SETTLED = frozenset({"idle", "completed", "failed", "cancelled", "interrupted"}
 
 #: Characters of a teammate's summary the model reads in a collaboration result.
 _TEAMMATE_SUMMARY_CHARS = 600
+
+
+def _collected_previews(
+    results: list[dict[str, Any]], tables: dict[str, dict[str, Any]], room: int,
+) -> list[dict[str, Any]]:
+    """Specialist results with their rows, as many as fit the context budget.
+
+    A specialist may answer with a heading and leave its numbers to its table. The
+    root writes the answer, so it reads each result's rows, bounded like any other
+    result preview; when even one row does not fit, it keeps the columns and count.
+    """
+    limit = _PREVIEW_ROWS
+    while limit:
+        previews = [
+            {
+                **item,
+                "rows": [
+                    list(row)[:_PREVIEW_COLUMNS]
+                    for row in (tables.get(item["evidence_id"]) or {}).get("rows", [])[:limit]
+                ],
+                "truncated": item["row_count"] > limit,
+            }
+            for item in results
+        ]
+        if len(json.dumps(previews, default=str)) // 3 * 4 <= room:
+            return previews
+        limit //= 2
+    return results
 
 
 def _collaboration_view(data: Any) -> Any:
