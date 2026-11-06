@@ -344,3 +344,87 @@ async def test_external_table_detail_uses_stored_columns_after_the_gate(monkeypa
     assert hidden is None
     store["list_columns"].assert_awaited_once_with("lake", "sales", "orders")
     mocks["get_table_detail"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_source_catalog_relations_are_grouped_by_their_source_kind(monkeypatch):
+    install_caller(monkeypatch, FakeCaller(
+        databases={"pg_shop": ["public"]},
+        relations={("pg_shop", "public"): {
+            "orders": "BASE TABLE", "jakarta_orders": "BASE TABLE", "customers": "BASE TABLE",
+            "city_totals": "BASE TABLE", "unsynced": "BASE TABLE",
+        }},
+    ))
+    install_repo(monkeypatch)
+    install_store(monkeypatch, objects=[
+        {"object_name": "orders", "object_type": "table", "engine": "Partitioned table"},
+        {"object_name": "customers", "object_type": "table", "engine": "JDBC"},
+        {"object_name": "jakarta_orders", "object_type": "view", "engine": "View"},
+        {"object_name": "city_totals", "object_type": "materialized_view",
+         "engine": "Materialized view"},
+    ])
+    entities = AsyncMock(return_value=[])
+    monkeypatch.setattr(module.entity_registry, "list", entities)
+
+    result = await module.ExplorerService().get_database_objects(
+        "public", catalog="pg_shop", user=USER
+    )
+
+    # The engine's generic "JDBC" is not a kind: an unclassified relation has none.
+    assert [(t.name, t.engine) for t in result.tables] == [
+        ("customers", None), ("orders", "Partitioned table"), ("unsynced", None),
+    ]
+    assert [v.name for v in result.views] == ["jakarta_orders"]
+    assert [m.name for m in result.materialized_views] == ["city_totals"]
+    # A source catalog only provides data; Nova's core objects live in Nova.
+    assert (result.stages, result.pipes, result.tasks, result.functions) == ([], [], [], [])
+    assert (result.entities, result.semantic_views, result.feature_views) == ([], [], [])
+    entities.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_source_catalog_views_are_described_like_tables(monkeypatch):
+    install_caller(monkeypatch, FakeCaller(
+        databases={"sf": ["SALES"]},
+        relations={("sf", "SALES"): {"REGION_VIEW": "BASE TABLE"}},
+    ))
+    install_repo(monkeypatch)
+    install_store(
+        monkeypatch,
+        objects=[{"object_name": "REGION_VIEW", "object_type": "view", "engine": "Secure view"}],
+        columns=[{"ordinal": 1, "column_name": "REGION", "data_type": "varchar",
+                  "is_nullable": True, "column_comment": None}],
+    )
+
+    detail = await module.ExplorerService().get_table_detail(
+        "SALES", "REGION_VIEW", user=USER, catalog="sf"
+    )
+
+    assert (detail.object_type, detail.kind) == ("view", "Secure view")
+    assert [c.name for c in detail.columns] == ["REGION"]
+
+
+@pytest.mark.asyncio
+async def test_catalogs_carry_their_source_and_groups(monkeypatch):
+    install_caller(monkeypatch, FakeCaller(catalogs=[
+        {"name": "default_catalog", "type": "Internal", "comment": None},
+        {"name": "pg_shop", "type": "Jdbc", "comment": None},
+        {"name": "raw_jdbc", "type": "Jdbc", "comment": None},
+    ], databases={"default_catalog": [], "pg_shop": ["public", "pg_catalog"], "raw_jdbc": []}))
+    install_store(monkeypatch, catalogs=[
+        {"name": "pg_shop", "catalog_type": "postgres", "managed": True, "source": "nova"},
+    ])
+
+    catalogs = {c.name: c for c in (await module.ExplorerService().get_catalogs(USER)).catalogs}
+
+    assert (catalogs["default_catalog"].source_type, catalogs["default_catalog"].source_label) == (
+        "internal", "Nova"
+    )
+    assert "stages" in catalogs["default_catalog"].object_groups
+    assert (catalogs["pg_shop"].source_type, catalogs["pg_shop"].source_label) == (
+        "postgres", "PostgreSQL"
+    )
+    assert catalogs["pg_shop"].object_groups == ["tables", "views", "materialized_views"]
+    # Postgres's own catalog schema is not a database people query.
+    assert catalogs["pg_shop"].databases == ["public"]
+    assert catalogs["raw_jdbc"].source_label == "JDBC"

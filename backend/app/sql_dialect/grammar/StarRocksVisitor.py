@@ -1169,6 +1169,36 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#novaMergeStatement.
+    def visitNovaMergeStatement(self, ctx:StarRocksParser.NovaMergeStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeSourceTable.
+    def visitNovaMergeSourceTable(self, ctx:StarRocksParser.NovaMergeSourceTableContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeSourceQuery.
+    def visitNovaMergeSourceQuery(self, ctx:StarRocksParser.NovaMergeSourceQueryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeUpdate.
+    def visitNovaMergeUpdate(self, ctx:StarRocksParser.NovaMergeUpdateContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeDelete.
+    def visitNovaMergeDelete(self, ctx:StarRocksParser.NovaMergeDeleteContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeInsert.
+    def visitNovaMergeInsert(self, ctx:StarRocksParser.NovaMergeInsertContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#createRoutineLoadStatement.
     def visitCreateRoutineLoadStatement(self, ctx:StarRocksParser.CreateRoutineLoadStatementContext):
         return self.visitChildren(ctx)

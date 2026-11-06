@@ -3,11 +3,12 @@
 The invariants under test are the credential ones:
 
 - a request can never carry a secret property, so one can never be persisted;
-- the DDL builders resolve credentials from the shared storage resolver and are
-  the *only* place a secret enters a statement;
 - ``SHOW CREATE CATALOG`` output is redacted before it leaves the service,
   including the two keys StarRocks 4.1.4 returns in full
   (``aws.s3.session_token`` and ``hive.metastore.password``).
+
+Catalogs are created only from a connection; ``test_catalog_sources`` covers
+the statements each source builds.
 
 Values are placeholders. No real credential appears in this file.
 """
@@ -16,49 +17,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.modules.catalog import connectors as service_module
 from app.modules.catalog import service as catalog_service_module
-from app.modules.catalog.connectors import (
-    CatalogError,
-    HiveConnector,
-    IcebergConnector,
-    build_storage_credential_params,
-    connector_for,
-)
-from app.modules.catalog.schemas import (
-    CatalogType,
-    ExternalCatalogAlter,
-    ExternalCatalogCreate,
-    MetastoreType,
-    is_secret_property,
-)
+from app.modules.catalog.connectors import CatalogError, connector_for
+from app.modules.catalog.schemas import ExternalCatalogAlter, is_secret_property
 from app.modules.catalog.service import CatalogService
-
-ACCESS_KEY = "AKIA_TESTVALUE_123"
-SECRET_KEY = "SECRET_TESTVALUE_456"
-
-
-class FakeStorageConnection:
-    def __init__(self, endpoint="http://minio:29000", region="us-east-1"):
-        self.endpoint = endpoint
-        self.region = region
-        self.bucket = "nova-stages"
-
-
-@pytest.fixture
-def catalog_env(monkeypatch):
-    """Resolve storage credentials from a fixed connection, never real config."""
-    monkeypatch.setattr(
-        service_module,
-        "resolve_storage_credentials",
-        lambda storage_connection=None: (ACCESS_KEY, SECRET_KEY),
-    )
-    monkeypatch.setattr(
-        service_module,
-        "get_storage_connection",
-        lambda name: FakeStorageConnection(),
-    )
-    return service_module
 
 
 class TestSecretPropertyDetection:
@@ -154,33 +116,7 @@ class TestSecretPropertyDetection:
                 assert "LEAK_SENTINEL" not in redact_sql_credentials(stmt), key
 
 
-class TestCreateRequestRejectsSecrets:
-    @pytest.mark.parametrize(
-        "key",
-        [
-            "aws.s3.secret_key",
-            "hive.metastore.password",
-            "aws.s3.session_token",
-            # Dotted spellings — the class of bypass this suite pins. The value
-            # must never be accepted, so it never reaches the metadata store or
-            # the response ``properties``.
-            "aws.s3.secret.key",
-            "azure.account.key",
-            "gcp.gcs.private.key",
-            "gcp.gcs.service.account.key",
-            "aws.s3.session.token",
-            "hive.metastore.account.key",
-        ],
-    )
-    def test_create_rejects_a_secret_property(self, key):
-        with pytest.raises(ValueError):
-            ExternalCatalogCreate(
-                name="lake",
-                type=CatalogType.ICEBERG,
-                metastore_uri="thrift://hms:9083",
-                properties={key: "PLACEHOLDER"},
-            )
-
+class TestAlterRequestRejectsSecrets:
     @pytest.mark.parametrize(
         "key",
         [
@@ -196,104 +132,19 @@ class TestCreateRequestRejectsSecrets:
         with pytest.raises(ValueError):
             ExternalCatalogAlter(properties={key: "PLACEHOLDER"})
 
-    def test_create_accepts_non_secret_properties(self):
-        body = ExternalCatalogCreate(
-            name="lake",
-            type=CatalogType.ICEBERG,
-            metastore_uri="thrift://hms:9083",
-            properties={"iceberg.catalog.warehouse": "s3://bucket/wh"},
-        )
-        assert body.properties["iceberg.catalog.warehouse"] == "s3://bucket/wh"
-
-
-class TestCredentialParamsReuseStorageResolver:
-    def test_params_use_resolved_credentials(self, catalog_env):
-        params = build_storage_credential_params("production")
-        assert params["aws.s3.access_key"] == ACCESS_KEY
-        assert params["aws.s3.secret_key"] == SECRET_KEY
-
-    def test_no_credentials_means_no_params(self, monkeypatch):
-        monkeypatch.setattr(
-            service_module,
-            "resolve_storage_credentials",
-            lambda storage_connection=None: ("", ""),
-        )
-        assert build_storage_credential_params("production") == {}
-
-    def test_endpoint_is_rewritten_for_the_engine(self, catalog_env):
-        # A host-side endpoint must become the docker-internal one StarRocks can
-        # resolve; otherwise every catalog read fails with connection refused.
-        params = build_storage_credential_params("production")
-        assert params["aws.s3.endpoint"] == "http://minio:29000"
-        assert params["aws.s3.enable_path_style_access"] == "true"
-        assert params["aws.s3.enable_ssl"] == "false"
-
-
-class TestCreateSql:
-    def _body(self, **overrides):
-        data = {
-            "name": "lake",
-            "type": CatalogType.ICEBERG,
-            "metastore_type": MetastoreType.HMS,
-            "metastore_uri": "thrift://hms:9083",
-            "storage_connection": "production",
-        }
-        data.update(overrides)
-        return ExternalCatalogCreate(**data)
-
-    def test_iceberg_hms_maps_to_hive_catalog_type(self, catalog_env):
-        sql = _create_sql(self._body())
-        assert sql.startswith("CREATE EXTERNAL CATALOG lake PROPERTIES (")
-        assert "'type' = 'iceberg'" in sql
-        # 4.1.4 rejects the doc's ``hms`` alias; ``hive`` is the accepted value.
-        assert "'iceberg.catalog.type' = 'hive'" in sql
-        assert "'hive.metastore.uris' = 'thrift://hms:9083'" in sql
-
-    def test_iceberg_rest_uses_catalog_uri(self, catalog_env):
-        sql = _create_sql(
-            self._body(metastore_type=MetastoreType.REST, metastore_uri="http://rest:8181")
-        )
-        assert "'iceberg.catalog.type' = 'rest'" in sql
-        assert "'iceberg.catalog.uri' = 'http://rest:8181'" in sql
-
-    def test_hive_catalog_uses_metastore_uris(self, catalog_env):
-        sql = _create_sql(
-            self._body(type=CatalogType.HIVE, metastore_type=MetastoreType.HMS)
-        )
-        assert "'type' = 'hive'" in sql
-        assert "'hive.metastore.uris' = 'thrift://hms:9083'" in sql
-
-    def test_create_sql_carries_resolved_credentials(self, catalog_env):
-        sql = _create_sql(self._body())
-        assert f"'{ACCESS_KEY}'" in sql
-        assert f"'{SECRET_KEY}'" in sql
-
-    def test_comment_is_quoted(self, catalog_env):
-        sql = _create_sql(
-            self._body(comment="Iceberg lake")
-        )
-        assert "COMMENT 'Iceberg lake'" in sql
-
-    def test_embedded_quote_is_escaped(self, catalog_env):
-        sql = _create_sql(
-            self._body(properties={"iceberg.catalog.warehouse": "s3://b/it's"})
-        )
-        assert "'s3://b/it''s'" in sql
-
-
 class TestAlterAndDropSql:
     def test_alter_builds_set_clause(self):
-        sql = IcebergConnector().build_alter_sql(
+        sql = connector_for("iceberg").build_alter_sql(
             "lake", ExternalCatalogAlter(properties={"aws.s3.endpoint": "http://minio:29000"})
         )
         assert sql == "ALTER CATALOG lake SET ('aws.s3.endpoint' = 'http://minio:29000')"
 
     def test_alter_with_nothing_to_change_is_refused(self):
         with pytest.raises(CatalogError):
-            IcebergConnector().build_alter_sql("lake", ExternalCatalogAlter())
+            connector_for("iceberg").build_alter_sql("lake", ExternalCatalogAlter())
 
     def test_drop_builds_drop_statement(self):
-        assert HiveConnector().build_drop_sql("lake") == "DROP CATALOG lake"
+        assert connector_for("hive").build_drop_sql("lake") == "DROP CATALOG lake"
 
 
 class TestCatalogNameValidation:
@@ -396,17 +247,13 @@ def _async_return(value):
     return _fake
 
 
-
-def _create_sql(body):
-    return connector_for(body.type.value).build_create_sql(body)
-
-
 class FakeRepo:
     """In-memory catalog store recording every row written."""
 
     def __init__(self, catalogs=None):
         self.catalogs = {row["name"]: row for row in catalogs or []}
         self.written: list[dict] = []
+        self.retired: list[str] = []
 
     async def get_catalog(self, name):
         return self.catalogs.get(name)
@@ -420,6 +267,9 @@ class FakeRepo:
 
     async def list_objects(self, *args, **kwargs):
         return []
+
+    async def retire_catalog_objects(self, catalog, at):
+        self.retired.append(catalog)
 
     async def write_sync_run(self, run):
         return None
@@ -453,7 +303,7 @@ def quiet_service(monkeypatch):
 
 
 class TestServiceReadPathRedacts:
-    async def test_show_create_is_redacted(self, catalog_env, quiet_service, monkeypatch):
+    async def test_show_create_is_redacted(self, quiet_service, monkeypatch):
         async def fake_execute_system(sql, *args, **kwargs):
             return {
                 "rows": [
@@ -474,7 +324,7 @@ class TestServiceReadPathRedacts:
         assert "PW_SENTINEL" not in response.create_statement
 
     async def test_persisted_credential_property_is_dropped_on_read(
-        self, catalog_env, quiet_service, monkeypatch
+        self, quiet_service, monkeypatch
     ):
         """A dotted credential already in a store row must not be echoed."""
         repo = FakeRepo(
@@ -513,83 +363,19 @@ class TestServiceReadPathRedacts:
         assert executed == []
 
 
-def _body():
-    return ExternalCatalogCreate(
-        name="lake",
-        type=CatalogType.ICEBERG,
-        metastore_uri="thrift://hms:9083",
-        storage_connection="production",
-    )
-
-
-class TestServiceCreate:
-    async def test_store_row_never_holds_a_secret(self, catalog_env, quiet_service, monkeypatch):
-        repo = FakeRepo()
-        recording = RecordingQueryService()
-        monkeypatch.setattr(catalog_service_module, "query_service", recording)
-        monkeypatch.setattr(
-            catalog_service_module.db, "execute_system", _async_return({"rows": []})
-        )
-
-        await CatalogService(repo).create(_body(), USER)
-
-        flat = str(repo.written)
-        assert ACCESS_KEY not in flat
-        assert SECRET_KEY not in flat
-        row = repo.written[-1]
-        assert row["storage_connection"] == "production"
-        assert row["managed"] is True and row["source"] == "nova"
-
-    async def test_audit_form_has_no_credentials(self, catalog_env, quiet_service, monkeypatch):
-        recording = RecordingQueryService()
-        monkeypatch.setattr(catalog_service_module, "query_service", recording)
-        monkeypatch.setattr(
-            catalog_service_module.db, "execute_system", _async_return({"rows": []})
-        )
-
-        await CatalogService(FakeRepo()).create(_body(), USER)
-
-        # The engine gets the real credentials...
-        engine_sql = recording.calls[-1]
-        assert ACCESS_KEY in engine_sql and SECRET_KEY in engine_sql
-        # ...the audit form does not.
-        audit_sql = recording.audit_sql[-1]
-        assert ACCESS_KEY not in audit_sql
-        assert SECRET_KEY not in audit_sql
-
-    async def test_engine_error_is_surfaced_and_nothing_is_stored(
-        self, catalog_env, quiet_service, monkeypatch
+class TestServiceDrop:
+    async def test_drop_marks_the_row_and_its_objects_dropped(
+        self, quiet_service, monkeypatch
     ):
-        repo = FakeRepo()
-        monkeypatch.setattr(
-            catalog_service_module, "query_service", RecordingQueryService(error="denied")
-        )
-        with pytest.raises(CatalogError):
-            await CatalogService(repo).create(_body(), USER)
-        assert repo.written == []
-
-    async def test_existing_catalog_is_refused(self, catalog_env, quiet_service, monkeypatch):
-        recording = RecordingQueryService()
-        monkeypatch.setattr(catalog_service_module, "query_service", recording)
-        repo = FakeRepo([{"name": "lake", "catalog_type": "iceberg", "dropped_at": None}])
-        with pytest.raises(CatalogError):
-            await CatalogService(repo).create(_body(), USER)
-        assert recording.calls == []
-
-    async def test_drop_marks_the_row_dropped(self, catalog_env, quiet_service, monkeypatch):
         recording = RecordingQueryService()
         monkeypatch.setattr(catalog_service_module, "query_service", recording)
         repo = FakeRepo([{"name": "lake", "catalog_type": "iceberg", "dropped_at": None}])
         await CatalogService(repo).drop("lake", USER)
         assert recording.calls == ["DROP CATALOG lake"]
         assert repo.catalogs["lake"]["dropped_at"] is not None
+        assert repo.retired == ["lake"]
 
 
 def test_unknown_catalog_type_is_refused():
     with pytest.raises(CatalogError):
-        connector_for("snowflake")
-
-
-def test_internal_catalog_cannot_be_created():
-    with pytest.raises(CatalogError):
-        connector_for("internal").build_create_sql(_body())
+        connector_for("paimon")

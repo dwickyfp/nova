@@ -1,9 +1,10 @@
 """Nova Catalog connections and foreign catalogs (phase 2).
 
-A *connection* registers an external source (Postgres or MySQL): its endpoint
-and a secret reference, in ``NOVA_SYSTEM.CATALOG_CONNECTIONS``. A *foreign
-catalog* is a StarRocks JDBC catalog built from a connection, so the engine and
-Ranger govern every query against it like any other catalog.
+A *connection* registers an external source (one of :data:`.sources.SOURCES`:
+StarRocks, PostgreSQL, Snowflake): its endpoint and a secret reference, in
+``NOVA_SYSTEM.CATALOG_CONNECTIONS``. A *foreign catalog* is a StarRocks JDBC
+catalog built from a connection, so the engine and Ranger govern every query
+against it like any other catalog.
 
 Rules this module keeps:
 
@@ -36,18 +37,17 @@ from app.modules.access_control.security_context import SecurityContext, Securit
 from app.modules.access_control.service import AccessControlError, AccessControlService
 from app.storage.secrets import _SCHEME_ALIASES, SecretResolutionError, resolve_secret_reference
 
-from .connectors import (
-    CatalogError,
-    Endpoint,
-    JdbcConnector,
-    connector_for,
-    parse_endpoint,
-    safe_catalog_name,
-    validate_connector_type,
-)
+from .errors import CatalogError, safe_catalog_name
 from .repository import CatalogRepository, catalog_repo
 from .schemas import ConnectionSummary, SyncRun
 from .service import CatalogAccessDenied
+from .sources import (
+    SOURCES,
+    Credentials,
+    Endpoint,
+    parse_endpoint,
+    validate_connector_type,
+)
 from .sync import nova_now
 
 log = logging.getLogger(__name__)
@@ -405,8 +405,9 @@ class ConnectionService:
 
     # ── Foreign catalogs ────────────────────────────────────────
 
-    async def _credentials(self, connection: dict) -> tuple[str, str]:
-        """Resolve a connection's credential. Call only after authorization."""
+    async def resolve_credentials(self, connection: dict) -> Credentials:
+        """Resolve a connection's credential. Call only after authorization, or
+        from the control-plane sync, and never return it to a client."""
         ref = connection["secret_ref"]
         if ref.startswith(MANAGED_SCHEME):
             if ref != _managed_ref(connection["name"]):
@@ -416,12 +417,12 @@ class ConnectionService:
                 raise CatalogConnectionError(
                     f"Connection '{connection['name']}' has no credentials; enter them first"
                 )
-            return stored
+            return Credentials(*stored)
         try:
             value = await asyncio.to_thread(resolve_secret_reference, ref)
         except SecretResolutionError as exc:
             raise CatalogConnectionError(str(exc)) from None
-        return value.access_key, value.secret_key
+        return Credentials(value.access_key, value.secret_key)
 
     async def create_foreign_catalog(
         self,
@@ -447,18 +448,16 @@ class ConnectionService:
             row = await self.repo.get(connection)
             if row is None:
                 raise CatalogConnectionError(f"Connection '{connection}' does not exist")
-            connector = connector_for(row["connector_type"])
-            if not isinstance(connector, JdbcConnector):
+            source = SOURCES.get(row["connector_type"])
+            if source is None:
                 raise CatalogConnectionError(
-                    f"Connection type {row['connector_type']!r} cannot back a catalog"
+                    f"Connection type {row['connector_type']!r} can no longer back a "
+                    "catalog; supported types are " + ", ".join(sorted(SOURCES))
                 )
-            username, password = await self._credentials(row)
-            sql = connector.build_foreign_catalog_sql(
+            sql = source.build_catalog_sql(
                 name,
-                connector_type=row["connector_type"],
-                endpoint=endpoint_of(row),
-                username=username,
-                password=password,
+                endpoint_of(row),
+                await self.resolve_credentials(row),
                 comment=comment,
                 properties=properties,
             )

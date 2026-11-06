@@ -1,7 +1,8 @@
 import { api } from '@/lib/api-client'
 import type { CatalogDetail } from '@/features/external-catalogs/api'
+import type { SourceType } from './sources'
 
-export type ConnectorType = 'postgres' | 'mysql'
+export type ConnectorType = SourceType
 
 /**
  * A connection as the console shows it. The endpoint, the secret reference,
@@ -74,8 +75,3 @@ export function deleteConnection(name: string) {
 export function createForeignCatalog(input: CreateForeignCatalogInput) {
   return api.post<CatalogDetail>('/catalog/foreign-catalogs', input)
 }
-
-export const CONNECTOR_TYPES: { value: ConnectorType; label: string; example: string }[] = [
-  { value: 'postgres', label: 'PostgreSQL', example: 'db.internal:5432/sales' },
-  { value: 'mysql', label: 'MySQL', example: 'db.internal:3306' },
-]

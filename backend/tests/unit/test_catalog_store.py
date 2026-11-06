@@ -184,6 +184,16 @@ class MemoryRepo:
         for key in ids:
             self.objects[key]["dropped_at"] = at
 
+    async def catalogs_with_live_objects(self):
+        return {row["catalog_name"] for row in self.objects.values()
+                if row.get("dropped_at") is None}
+
+    async def retire_catalog_objects(self, catalog, at):
+        for row in self.objects.values():
+            if row["catalog_name"] == catalog and row.get("dropped_at") is None:
+                row["dropped_at"] = at
+        self.columns = {key: cols for key, cols in self.columns.items() if key[0] != catalog}
+
     async def replace_columns(self, catalog, database, obj, columns):
         self.column_writes += 1
         self.columns[(catalog, database, obj)] = list(columns)
@@ -318,6 +328,58 @@ async def test_reconcile_records_raw_sql_catalogs_and_marks_missing_ones():
     )
     assert repo.catalogs["gone"]["dropped_at"] is not None
     assert {run["catalog_name"] for run in runs} == {"default_catalog", "raw_lake"}
+
+
+async def test_reconcile_retires_the_objects_and_columns_of_a_vanished_catalog():
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "iceberg", "kind": "external"}])
+    harvester = FakeHarvester(
+        catalogs=[{"name": "lake", "type": "Iceberg", "comment": None}],
+        harvests={"lake": Harvest(["sales"], [_orders()])},
+    )
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+    assert ("lake", "sales", "orders") in repo.columns
+
+    harvester._catalogs = []
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+
+    assert repo.catalogs["lake"]["dropped_at"] is not None
+    assert repo.objects and all(o["dropped_at"] is not None for o in repo.objects.values())
+    assert not repo.columns
+
+
+async def test_reconcile_retires_objects_of_a_catalog_already_marked_dropped():
+    # A drop through Nova marks the catalog row first; the next pass must
+    # still retire the objects it left live.
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "iceberg", "kind": "external",
+                        "dropped_at": sync.nova_now()}])
+    key = row_id("lake", "sales", "orders", "relation")
+    repo.objects[key] = {"id": key, "catalog_name": "lake", "database_name": "sales",
+                         "object_name": "orders", "object_type": "table", "dropped_at": None}
+    repo.columns[("lake", "sales", "orders")] = [{"column_name": "id"}]
+    live = row_id("default_catalog", "d", "", "database")
+    repo.objects[live] = {"id": live, "catalog_name": "default_catalog", "database_name": "d",
+                          "object_name": "", "object_type": "database", "dropped_at": None}
+    harvester = FakeHarvester(
+        catalogs=[{"name": "default_catalog", "type": "Internal", "comment": None}],
+        harvests={"default_catalog": Harvest(["d"], [])},
+    )
+
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+
+    assert repo.objects[key]["dropped_at"] is not None
+    assert ("lake", "sales", "orders") not in repo.columns
+    assert repo.objects[live]["dropped_at"] is None
+
+
+async def test_retire_catalog_objects_marks_live_rows_and_deletes_columns(recording_db):
+    at = sync.nova_now()
+    await CatalogRepository().retire_catalog_objects("lake", at)
+    (update, update_params), (delete, delete_params) = recording_db.calls
+    assert update.startswith("UPDATE NOVA_SYSTEM.CATALOG_OBJECTS SET dropped_at = %s")
+    assert "catalog_name = %s AND dropped_at IS NULL" in update
+    assert update_params == [at, "lake"]
+    assert delete.startswith("DELETE FROM NOVA_SYSTEM.CATALOG_COLUMNS")
+    assert delete_params == ["lake"]
 
 
 async def test_reconcile_revives_a_recreated_catalog():
@@ -760,7 +822,6 @@ def test_catalog_routes_map_outcomes_to_status_codes(client, monkeypatch):
 
     svc = service.catalog_service
     monkeypatch.setattr(svc, "get_catalog", AsyncMock(return_value=_detail()))
-    monkeypatch.setattr(svc, "create", AsyncMock(return_value=_detail()))
     monkeypatch.setattr(svc, "alter", AsyncMock(return_value=None))
     monkeypatch.setattr(svc, "drop", AsyncMock(side_effect=service.CatalogError("denied")))
     monkeypatch.setattr(svc, "sync_runs", AsyncMock(return_value=[
@@ -775,7 +836,8 @@ def test_catalog_routes_map_outcomes_to_status_codes(client, monkeypatch):
     body = {"name": "lake", "type": "iceberg", "metastore_uri": "thrift://hms:9083"}
 
     assert client.get("/api/v1/catalog/catalogs/lake").json()["name"] == "lake"
-    assert client.post("/api/v1/catalog/catalogs", json=body).status_code == 201
+    # Catalogs are created from a connection (/catalog/foreign-catalogs) only.
+    assert client.post("/api/v1/catalog/catalogs", json=body).status_code == 405
     assert client.patch("/api/v1/catalog/catalogs/lake", json={"comment": "x"}).status_code == 404
     assert client.delete("/api/v1/catalog/catalogs/lake").status_code == 400
     assert client.get("/api/v1/catalog/catalogs/lake/sync-runs").json()["runs"][0]["id"] == "r1"
@@ -785,8 +847,8 @@ def test_catalog_routes_map_outcomes_to_status_codes(client, monkeypatch):
     assert columns.status_code == 404
     assert client.post("/api/v1/catalog/catalogs/lake/refresh").json() == {"runs": []}
     # A request can never carry a credential property.
-    bad = {**body, "properties": {"aws.s3.secret_key": "LEAK"}}
-    assert client.post("/api/v1/catalog/catalogs", json=bad).status_code == 422
+    bad = {"properties": {"aws.s3.secret_key": "LEAK"}}
+    assert client.patch("/api/v1/catalog/catalogs/lake", json=bad).status_code == 422
 
 
 def test_unlisted_objects_and_unknown_runs_are_404(client, monkeypatch):
@@ -795,3 +857,197 @@ def test_unlisted_objects_and_unknown_runs_are_404(client, monkeypatch):
     monkeypatch.setattr(svc, "list_objects", AsyncMock(return_value=None))
     assert client.get("/api/v1/catalog/catalogs/x/sync-runs").status_code == 404
     assert client.get("/api/v1/catalog/catalogs/x/databases/d/objects").status_code == 404
+
+
+# ── Source classification of foreign catalogs ───────────────────────────
+
+
+def _source_env(monkeypatch, *, kinds=None, error=None):
+    """A Postgres connection whose source reports ``kinds`` (or raises)."""
+    from app.modules.catalog import connections
+    from app.modules.catalog.sources import SOURCES, Credentials
+
+    calls: dict = {}
+
+    async def get(name):
+        calls["connection"] = name
+        return {"name": name, "connector_type": "postgres", "host": "pg", "port": 5432,
+                "database_name": "shop", "options": {}, "secret_ref": f"nova://{name}"}
+
+    async def resolve(connection):
+        return Credentials("reader", "pw")
+
+    async def read_objects(endpoint, credentials, databases):
+        calls["read"] = (endpoint.host, credentials.username, list(databases))
+        if error:
+            raise error
+        return kinds or {}
+
+    monkeypatch.setattr(connections.connection_repo, "get", get)
+    monkeypatch.setattr(connections.connection_service, "resolve_credentials", resolve)
+    monkeypatch.setattr(SOURCES["postgres"], "read_objects", read_objects)
+    return calls
+
+
+def _pg_catalog():
+    return {"name": "pg_shop", "catalog_type": "postgres", "kind": "foreign",
+            "properties": {"nova.connection": "shop_pg"}}
+
+
+def _pg_harvest():
+    return Harvest(["public"], [
+        Relation(database="public", name="orders", object_type="table", engine="JDBC"),
+        Relation(database="public", name="jakarta_orders", object_type="table", engine="JDBC"),
+    ])
+
+
+async def test_foreign_catalog_relations_get_their_kinds_from_the_source(monkeypatch):
+    from app.modules.catalog.sources import ObjectKind
+
+    calls = _source_env(monkeypatch, kinds={
+        ("public", "orders"): ObjectKind("table", "Partitioned table"),
+        ("public", "jakarta_orders"): ObjectKind("view", "View"),
+    })
+    repo = MemoryRepo([_pg_catalog()])
+    harvester = FakeHarvester(harvests={"pg_shop": _pg_harvest()})
+
+    await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    stored = {o["object_name"]: o for o in repo.objects.values() if o["object_name"]}
+    assert (stored["orders"]["object_type"], stored["orders"]["engine"]) == (
+        "table", "Partitioned table"
+    )
+    assert (stored["jakarta_orders"]["object_type"], stored["jakarta_orders"]["engine"]) == (
+        "view", "View"
+    )
+    assert calls == {"connection": "shop_pg", "read": ("pg", "reader", ["public"])}
+
+
+async def test_an_unreachable_source_keeps_the_kinds_of_the_last_sync(monkeypatch):
+    from app.modules.catalog.sources import ObjectKind
+
+    _source_env(monkeypatch, kinds={("public", "jakarta_orders"): ObjectKind("view", "View")})
+    repo = MemoryRepo([_pg_catalog()])
+    harvester = FakeHarvester(harvests={"pg_shop": _pg_harvest()})
+    await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    _source_env(monkeypatch, error=RuntimeError("password authentication failed: pw=SENTINEL"))
+    harvester.harvests["pg_shop"] = _pg_harvest()
+    run = await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    assert run["status"] == "ok"
+    view = repo.objects[row_id("pg_shop", "public", "jakarta_orders", "relation")]
+    assert (view["object_type"], view["engine"]) == ("view", "View")
+
+
+async def test_catalogs_without_a_connection_are_not_classified(monkeypatch):
+    calls = _source_env(monkeypatch)
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "iceberg"}])
+    harvester = FakeHarvester(harvests={"lake": Harvest(["sales"], [_orders()])})
+
+    await sync.sync_catalog("lake", repo=repo, harvester=harvester)
+
+    assert calls == {}
+    assert repo.objects[row_id("lake", "sales", "orders", "relation")]["object_type"] == "table"
+
+
+@pytest.mark.parametrize("stored", [
+    {},
+    # A row an earlier sync rewrote with the engine's type is healed.
+    {"catalog_type": "jdbc", "kind": "external"},
+])
+async def test_reconcile_keeps_a_foreign_catalogs_source_type(monkeypatch, stored):
+    """The engine reports every foreign catalog as ``jdbc``; the store keeps
+    ``postgres`` so the catalog is still presented and altered as its source."""
+    _source_env(monkeypatch)
+    repo = MemoryRepo([{**_pg_catalog(), **stored}])
+    harvester = FakeHarvester(
+        catalogs=[{"name": "pg_shop", "type": "Jdbc", "comment": None}],
+        harvests={"pg_shop": Harvest([], [])},
+    )
+
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+
+    stored = repo.catalogs["pg_shop"]
+    assert (stored["catalog_type"], stored["kind"]) == ("postgres", "foreign")
+
+
+async def test_reconcile_retypes_an_external_catalog_the_engine_changed():
+    repo = MemoryRepo([{"name": "lake", "catalog_type": "hive", "kind": "external"}])
+    harvester = FakeHarvester(
+        catalogs=[{"name": "lake", "type": "Iceberg", "comment": None}],
+        harvests={"lake": Harvest([], [])},
+    )
+    await sync.reconcile_catalogs(repo=repo, harvester=harvester)
+    assert repo.catalogs["lake"]["catalog_type"] == "iceberg"
+
+
+async def test_a_sources_own_system_schemas_are_not_synced(monkeypatch):
+    _source_env(monkeypatch)
+    repo = MemoryRepo([_pg_catalog()])
+    harvester = FakeHarvester(harvests={"pg_shop": Harvest(
+        ["public", "pg_catalog", "information_schema"],
+        [Relation(database="public", name="orders", object_type="table"),
+         Relation(database="pg_catalog", name="pg_class", object_type="table")],
+    )})
+
+    await sync.sync_catalog("pg_shop", repo=repo, harvester=harvester)
+
+    assert {o["database_name"] for o in repo.objects.values()} == {"public"}
+
+
+async def test_an_unreachable_source_is_not_cached_as_empty(monkeypatch):
+    """A Snowflake catalog that timed out lists no databases once, not for the TTL."""
+    redis = FakeRedis()
+    monkeypatch.setattr(visibility.session_store, "_redis", redis)
+    monkeypatch.setattr(visibility.settings, "CATALOG_VISIBILITY_CACHE_SECONDS", 60)
+    answers = [None, ["SALES"]]  # None: the source timed out on the first ask
+    opened: list[str] = []
+
+    class Caller:
+        unreachable = False
+
+        async def catalogs(self):
+            return [{"name": "sf", "type": "Jdbc", "comment": None}]
+
+        async def databases(self, catalog):
+            answer = answers.pop(0)
+            if answer is None:
+                self.unreachable = True
+                return []
+            return answer
+
+    @contextlib.asynccontextmanager
+    async def opener(user):
+        opened.append(user["active_role"])
+        yield Caller()
+
+    first = await visibility.visible_catalogs(ADMIN, opener)
+    second = await visibility.visible_catalogs(ADMIN, opener)
+    third = await visibility.visible_catalogs(ADMIN, opener)
+
+    assert first[0]["databases"] == []
+    assert second[0]["databases"] == third[0]["databases"] == ["SALES"]
+    assert len(opened) == 2  # asked again after the failure, then cached
+
+
+async def test_a_refusal_is_a_real_answer_and_an_outage_is_not():
+    from app.modules.explorer.repository import CallerMetadata
+
+    class Cursor:
+        def __init__(self, error):
+            self.error = error
+
+        async def execute(self, sql):
+            raise self.error
+
+        async def fetchall(self):
+            return []
+
+    refused = CallerMetadata(Cursor(RuntimeError("(5203) Access denied; you need USAGE")))
+    assert await refused.databases("sf") == [] and refused.unreachable is False
+
+    down = CallerMetadata(Cursor(RuntimeError(
+        "list db names for JDBC catalog fail! HikariPool-2 - Connection is not available"
+    )))
+    assert await down.databases("sf") == [] and down.unreachable is True

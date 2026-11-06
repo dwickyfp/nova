@@ -16,22 +16,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.common.crypto import decrypt
-from app.common.sql_guard import redact_sql_credentials
 from app.core.deps import get_current_user
 from app.modules.access_control.statement_router import SecurityStatementRouter
 from app.modules.catalog import connections, service
 from app.modules.catalog import repository as repo_module
 from app.modules.catalog.connections import ConnectionService, validate_secret_ref
 from app.modules.catalog.connections_router import router
-from app.modules.catalog.connectors import (
-    CatalogError,
-    Endpoint,
-    JdbcConnector,
-    check_jdbc_properties,
-    connector_for,
-    parse_endpoint,
-    validate_connector_type,
-)
+from app.modules.catalog.errors import CatalogError
 from app.modules.catalog.repository import CatalogRepository
 from app.sql_frontend.ast.builder import ast_builders
 from app.sql_frontend.ast.statements import CatalogStatement
@@ -53,127 +44,6 @@ ADMIN = {
 }
 ANALYST = {**ADMIN, "username": "alice", "active_role": "marketing"}
 PASSWORD = "Pg-s3cr3t\\'pw"
-
-
-# ── Connectors: endpoints, properties, statements ─────────────────────────
-
-
-@pytest.mark.parametrize(
-    ("connector_type", "endpoint", "expected"),
-    [
-        ("postgres", "pg.internal:5433/shop", Endpoint("pg.internal", 5433, "shop")),
-        ("postgresql", "pg/shop", Endpoint("pg", 5432, "shop")),
-        ("mysql", "db.local", Endpoint("db.local", 3306, None)),
-        (
-            "postgres",
-            "pg:5432/shop?sslmode=require",
-            Endpoint("pg", 5432, "shop", {"sslmode": "require"}),
-        ),
-    ],
-)
-def test_endpoints_parse_into_metadata(connector_type, endpoint, expected):
-    assert parse_endpoint(connector_type, endpoint) == expected
-
-
-@pytest.mark.parametrize(
-    "endpoint",
-    [
-        "admin:pw@pg:5432/shop",  # user and password in the endpoint
-        "postgresql://pg:5432/shop",  # a URL scheme
-        "pg:5432/shop?password=x",  # a credential option
-        "pg:5432/shop?user=admin",
-        "pg",  # Postgres needs its database
-        "pg:0/shop",
-        "pg:70000/shop",
-        "pg:abc/shop",
-        "pg 5432/shop",
-        "-pg/shop",
-        "",
-    ],
-)
-def test_endpoints_that_could_carry_credentials_or_are_malformed_are_refused(endpoint):
-    with pytest.raises(CatalogError):
-        parse_endpoint("postgres", endpoint)
-
-
-def test_only_postgres_and_mysql_are_connection_types():
-    assert validate_connector_type(" MySQL ") == "mysql"
-    with pytest.raises(CatalogError):
-        validate_connector_type("snowflake")
-
-
-def _jdbc_sql(connector_type="postgres", properties=None):
-    return connector_for(connector_type).build_foreign_catalog_sql(
-        "pg_sales",
-        connector_type=connector_type,
-        endpoint=parse_endpoint(connector_type, "pg:5432/shop"),
-        username="reader",
-        password=PASSWORD,
-        comment="Sales",
-        properties=properties,
-    )
-
-
-def test_postgres_catalog_uses_the_bundled_driver_and_the_connection_endpoint():
-    sql = _jdbc_sql()
-    assert sql.startswith("CREATE EXTERNAL CATALOG pg_sales COMMENT 'Sales' PROPERTIES (")
-    assert "'type' = 'jdbc'" in sql
-    assert "'jdbc_uri' = 'jdbc:postgresql://pg:5432/shop'" in sql
-    assert "'driver_url' = 'file:///opt/starrocks/drivers/postgresql-42.7.12.jar'" in sql
-    assert "'driver_class' = 'org.postgresql.Driver'" in sql
-    assert "http" not in sql  # never a download at create time
-
-
-def test_mysql_catalog_uses_the_mariadb_driver_on_fe_and_be():
-    sql = _jdbc_sql("mysql")
-    assert "'jdbc_uri' = 'jdbc:mariadb://pg:3306'" not in sql  # endpoint keeps its port
-    assert "'jdbc_uri' = 'jdbc:mariadb://pg:5432/shop'" in sql
-    assert "'driver_class' = 'org.mariadb.jdbc.Driver'" in sql
-    assert "mariadb-java-client-3.3.2.jar" in sql
-
-
-def test_password_is_escaped_for_the_engine_and_redacted_everywhere_else():
-    sql = _jdbc_sql()
-    # Backslash and quote doubled, so the engine reads the password unchanged.
-    assert "'password' = 'Pg-s3cr3t\\\\''pw'" in sql
-    redacted = redact_sql_credentials(sql)
-    assert "s3cr3t" not in redacted
-    assert "'password' = '***'" in redacted
-
-
-def test_show_create_catalog_output_for_jdbc_is_redacted():
-    """Regression: the JDBC ``password`` property never survives redaction,
-    whatever the engine prints for it."""
-    shown = (
-        "CREATE EXTERNAL CATALOG `pg_sales`\nPROPERTIES (\"driver_class\"  =  "
-        "\"org.postgresql.Driver\",\n\"password\"  =  \"Pg-s3cr3t\",\n\"type\"  =  \"jdbc\",\n"
-        "\"user\"  =  \"reader\",\n\"jdbc_uri\"  =  \"jdbc:postgresql://pg:5432/shop\"\n)"
-    )
-    assert "s3cr3t" not in redact_sql_credentials(shown)
-
-
-@pytest.mark.parametrize(
-    "key",
-    ["driver_url", "driver_class", "jdbc_uri", "type", "user", "password", "checksum",
-     "jdbc.password", "anything"],
-)
-def test_properties_that_choose_driver_endpoint_or_identity_are_refused(key):
-    with pytest.raises(CatalogError):
-        check_jdbc_properties({key: "x"})
-
-
-def test_engine_tuning_properties_are_accepted():
-    props = {"jdbc_meta_default_cache_enable": "false", "jdbc_connection_pool_size": "4"}
-    assert check_jdbc_properties(props) == props
-    assert "'jdbc_connection_pool_size' = '4'" in _jdbc_sql(properties=props)
-
-
-def test_jdbc_catalogs_are_only_created_from_a_connection():
-    connector = connector_for("jdbc")
-    assert isinstance(connector, JdbcConnector)
-    with pytest.raises(CatalogError):
-        connector.build_create_sql(None)  # type: ignore[arg-type]
-    assert connector.build_drop_sql("pg_sales") == "DROP CATALOG pg_sales"
 
 
 # ── Secret references ─────────────────────────────────────────────────────
@@ -328,7 +198,7 @@ async def test_non_admin_is_refused_and_audited_before_any_credential_is_read(au
         svc.describe("pg_shop", ANALYST),
         svc.drop("pg_shop", ANALYST),
         svc.set_credentials("pg_shop", "u", "p", ANALYST),
-        svc.create(name="other", connector_type="mysql", endpoint="db", secret_ref="aws://x",
+        svc.create(name="other", connector_type="starrocks", endpoint="db", secret_ref="aws://x",
                    user=ANALYST),
     ):
         with pytest.raises(service.CatalogAccessDenied):
@@ -424,12 +294,22 @@ async def test_external_reference_is_resolved_only_at_create(audits, engine, mon
 
     monkeypatch.setattr(connections, "resolve_secret_reference", resolve)
     svc = _service()
-    await svc.create(name="my_shop", connector_type="mysql", endpoint="db:3307",
-                     secret_ref="aws://nova/my_shop", user=ADMIN)
+    await svc.create(name="sr_shop", connector_type="starrocks", endpoint="sr-fe:9031",
+                     secret_ref="aws://nova/sr_shop", user=ADMIN)
     assert resolved == []
-    await svc.create_foreign_catalog(name="my_x", connection="my_shop", user=ADMIN)
-    assert resolved == ["aws://nova/my_shop"]
-    assert "'jdbc_uri' = 'jdbc:mariadb://db:3307'" in engine.await_args.args[0]
+    await svc.create_foreign_catalog(name="sr_x", connection="sr_shop", user=ADMIN)
+    assert resolved == ["aws://nova/sr_shop"]
+    assert "'jdbc_uri' = 'jdbc:mariadb://sr-fe:9031'" in engine.await_args.args[0]
+
+
+async def test_a_connection_of_a_retired_type_cannot_back_a_new_catalog(audits, engine):
+    svc = _service()
+    await svc.create(name="pg_shop", connector_type="postgres", endpoint="pg/shop",
+                     secret_ref=None, username="reader", password=PASSWORD, user=ADMIN)
+    svc.repo.rows["pg_shop"]["connector_type"] = "mysql"
+    with pytest.raises(CatalogError, match="can no longer back a catalog"):
+        await svc.create_foreign_catalog(name="my_x", connection="pg_shop", user=ADMIN)
+    engine.assert_not_awaited()
 
 
 async def test_engine_refusal_is_audited_and_nothing_is_recorded(audits, engine):

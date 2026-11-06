@@ -23,16 +23,17 @@ import { LoadingLines } from '@/components/ui/loading-overlay'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
-import { CONNECTOR_TYPES, fetchConnections, type ConnectionSummary } from './api'
+import { fetchConnections, type ConnectionSummary } from './api'
+import { sourceLabel } from './sources'
 import {
+  AddCatalogDialog,
   AddConnectionDialog,
-  CreateForeignCatalogDialog,
   CredentialsDialog,
   DropConnectionDialog,
 } from './connection-dialogs'
 
 function typeLabel(value: string) {
-  return CONNECTOR_TYPES.find((t) => t.value === value)?.label ?? value
+  return sourceLabel(value)
 }
 
 function CredentialStatus({ connection }: { connection: ConnectionSummary }) {
@@ -224,7 +225,7 @@ export function ConnectionsPage() {
       </div>
 
       <AddConnectionDialog open={addOpen} onOpenChange={setAddOpen} onCreated={changed} />
-      <CreateForeignCatalogDialog
+      <AddCatalogDialog
         open={catalogFrom !== null}
         onOpenChange={(open) => {
           if (!open) setCatalogFrom(null)
@@ -232,6 +233,7 @@ export function ConnectionsPage() {
         connections={connections}
         initialConnection={catalogFrom ?? undefined}
         onCreated={changed}
+        onConnectionCreated={changed}
       />
       <CredentialsDialog
         connection={credentialsFor}

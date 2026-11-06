@@ -14,7 +14,6 @@ from app.modules.catalog.schemas import (
     CatalogDetail,
     CatalogTableSummary,
     ExternalCatalogAlter,
-    ExternalCatalogCreate,
     ExternalCatalogResponse,
 )
 from app.modules.catalog.service import catalog_service
@@ -60,9 +59,6 @@ class ExternalCatalogService:
 
     async def get(self, name: str, user: dict) -> ExternalCatalogResponse:
         return _found(await catalog_service.get_catalog(name, user), name)
-
-    async def create(self, body: ExternalCatalogCreate, user: dict) -> ExternalCatalogResponse:
-        return _found(await catalog_service.create(body, user), body.name)
 
     async def alter(
         self, name: str, body: ExternalCatalogAlter, user: dict

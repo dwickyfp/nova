@@ -326,6 +326,10 @@ MASKING: 'MASKING';
 MATCH: 'MATCH';
 MATCH_ANY: 'MATCH_ANY';
 MATCH_ALL: 'MATCH_ALL';
+// NOVA-BEGIN (MERGE INTO): token for `WHEN [NOT] MATCHED`. It must also appear in
+// `nonReserved` (StarRocks.g4) so a column named `matched` parses.
+MATCHED: 'MATCHED';
+// NOVA-END
 MATERIALIZED: 'MATERIALIZED';
 MAX: 'MAX';
 MAXVALUE: 'MAXVALUE';

@@ -2,22 +2,16 @@
 
 from app.modules.catalog.schemas import (
     CatalogTableSummary,
-    CatalogType,
     ExternalCatalogAlter,
-    ExternalCatalogCreate,
     ExternalCatalogListResponse,
     ExternalCatalogResponse,
-    MetastoreType,
     is_secret_property,
 )
 
 __all__ = [
     "CatalogTableSummary",
-    "CatalogType",
     "ExternalCatalogAlter",
-    "ExternalCatalogCreate",
     "ExternalCatalogListResponse",
     "ExternalCatalogResponse",
-    "MetastoreType",
     "is_secret_property",
 ]

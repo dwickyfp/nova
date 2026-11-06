@@ -2,7 +2,6 @@
 
   GET    /external-catalogs                         → external catalogs the caller can see
   GET    /external-catalogs/{name}                  → detail (redacted SHOW CREATE)
-  POST   /external-catalogs                         → CREATE EXTERNAL CATALOG, as the caller
   PATCH  /external-catalogs/{name}                  → ALTER CATALOG ... SET, as the caller
   DELETE /external-catalogs/{name}                  → DROP CATALOG, as the caller
   GET    /external-catalogs/{name}/databases/{db}/tables → tables the caller can list
@@ -25,7 +24,6 @@ from app.modules.catalog.service import CatalogAccessDenied
 from .schemas import (
     CatalogTableSummary,
     ExternalCatalogAlter,
-    ExternalCatalogCreate,
     ExternalCatalogListResponse,
     ExternalCatalogResponse,
 )
@@ -56,16 +54,6 @@ async def list_external_catalogs(user: CurrentUser):
 async def get_external_catalog(name: str, user: CurrentUser):
     try:
         return await external_catalog_service.get(name, user)
-    except ExternalCatalogError as exc:
-        raise _http(exc) from exc
-
-
-@router.post("", response_model=ExternalCatalogResponse, status_code=201,
-             response_class=SanitizingJSONResponse)
-async def create_external_catalog(body: ExternalCatalogCreate, user: CurrentUser):
-    """Create an Iceberg or Hive catalog as the caller; secrets come from the connection."""
-    try:
-        return await external_catalog_service.create(body, user)
     except ExternalCatalogError as exc:
         raise _http(exc) from exc
 

@@ -1,8 +1,5 @@
 import { api } from '@/lib/api-client'
 
-export type CatalogType = 'hive' | 'iceberg'
-export type MetastoreType = 'hms' | 'rest'
-
 /** A catalog the caller can see, described by the Nova Catalog store. */
 export type CatalogSummary = {
   name: string
@@ -47,16 +44,6 @@ export type SyncRun = {
   error: string | null
 }
 
-export type CreateCatalogInput = {
-  name: string
-  type: CatalogType
-  metastore_type: MetastoreType
-  metastore_uri: string
-  storage_connection: string
-  comment?: string
-  properties?: Record<string, string>
-}
-
 export type AlterCatalogInput = {
   metastore_uri?: string
   comment?: string
@@ -71,10 +58,6 @@ export function fetchCatalogs() {
 
 export function fetchCatalog(name: string) {
   return api.get<CatalogDetail>(`${BASE}/${encodeURIComponent(name)}`)
-}
-
-export function createCatalog(input: CreateCatalogInput) {
-  return api.post<CatalogDetail>(BASE, input)
 }
 
 export function alterCatalog(name: string, input: AlterCatalogInput) {

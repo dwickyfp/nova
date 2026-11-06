@@ -829,6 +829,12 @@ class QueryService:
                     results.append(result)
                     if result.error:
                         break
+                    if connection is None:
+                        # Each statement here gets its own pooled connection, so
+                        # a script's USE / SET CATALOG is carried forward as the
+                        # context of the statements after it, as the proxy does
+                        # on its session.
+                        database, schema = _context_after(stmt_sql, database, schema)
                 except Exception as exc:
                     # Return error result for this statement and stop.
                     #
@@ -1447,3 +1453,23 @@ class QueryService:
 
 
 query_service = QueryService()
+
+
+def _context_after(
+    statement: str, database: str | None, schema: str | None
+) -> tuple[str | None, str | None]:
+    """The database context a script statement leaves for the next one.
+
+    ``USE db`` and ``USE catalog.db`` select that database; ``USE 'c'`` and
+    ``SET CATALOG c`` select the catalog with no database (``c.``, the form a
+    MySQL client sends), and ``default_catalog`` means no context at all.
+    """
+    from app.proxy.session import catalog_switch_target, connect_database, parse_use_statement
+
+    target = parse_use_statement(statement)
+    if target:
+        return target, None
+    catalog = catalog_switch_target(statement)
+    if catalog:
+        return connect_database(f"{catalog}."), None
+    return database, schema

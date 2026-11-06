@@ -8,11 +8,17 @@ the caller's own session before showing anything the store describes.
 
 * :func:`reconcile_catalogs` adds catalogs the engine has but the store does
   not (one created in raw SQL is recorded with ``source='engine'``), marks the
-  ones that disappeared as dropped, then syncs each live catalog.
+  ones that disappeared as dropped along with their objects, then syncs each
+  live catalog.
 * :func:`sync_catalog` refreshes one catalog: objects seen now are upserted,
   objects no longer seen get ``dropped_at``, and columns are rewritten only
   when an object's column fingerprint changed. Every run is recorded in
   ``CATALOG_SYNC_RUNS``; an error message is redacted before it is stored.
+* A foreign catalog's relations are classified by its source
+  (:func:`classify_from_source`): the engine reports every JDBC relation as a
+  table, so the source's own metadata says which are views and materialized
+  views. The source is read with the connection's credential, by the control
+  plane, and only kinds are kept.
 """
 
 from __future__ import annotations
@@ -46,6 +52,8 @@ MAX_DESCRIBED_RELATIONS = 2000
 _ERROR_LIMIT = 2000
 
 Execute = Callable[..., Awaitable[dict]]
+#: Sets each relation's kind from the catalog's source; see :func:`classify_from_source`.
+Classifier = Callable[[dict | None, "Harvest", CatalogRepository], Awaitable[None]]
 
 
 def nova_now() -> datetime:
@@ -241,12 +249,74 @@ class EngineHarvester:
         return relations
 
 
+def _without_system_schemas(harvest: Harvest, catalog: dict | None) -> Harvest:
+    """Drop a source's own catalog schemas (Postgres ``pg_catalog``, ...)."""
+    from .sources import describe_catalog_source
+
+    hidden = describe_catalog_source((catalog or {}).get("catalog_type")).system_schemas
+    if not hidden:
+        return harvest
+    return Harvest(
+        databases=[db for db in harvest.databases if db not in hidden],
+        relations=[r for r in harvest.relations if r.database not in hidden],
+    )
+
+
+async def classify_from_source(
+    catalog: dict | None, harvest: Harvest, repo: CatalogRepository
+) -> None:
+    """Give a foreign catalog's relations their kinds from the source itself.
+
+    Only a catalog built from a Nova connection is classified. When the source
+    cannot be read, relations keep the kinds the last sync stored, so a brief
+    outage does not move views back under tables.
+    """
+    from .connections import CONNECTION_PROPERTY, connection_repo, connection_service, endpoint_of
+    from .sources import SOURCES
+
+    connection_name = ((catalog or {}).get("properties") or {}).get(CONNECTION_PROPERTY)
+    if not connection_name or not harvest.relations:
+        return
+    try:
+        connection = await connection_repo.get(connection_name)
+        if connection is None:
+            return
+        source = SOURCES.get(connection["connector_type"])
+        if source is None:
+            return
+        kinds = await source.read_objects(
+            endpoint_of(connection),
+            await connection_service.resolve_credentials(connection),
+            harvest.databases,
+        )
+    except Exception as exc:  # noqa: BLE001 - the engine's harvest still syncs
+        log.warning("Cannot read object kinds of %s from its source: %s",
+                    catalog and catalog.get("name"), redact_error(exc))
+        stored = {
+            (row["database_name"], row["object_name"]): row
+            for row in await repo.list_objects(str((catalog or {}).get("name")))
+            if row["object_type"] != "database"
+        }
+        for relation in harvest.relations:
+            previous = stored.get((relation.database, relation.name))
+            if previous:
+                relation.object_type = previous["object_type"]
+                relation.engine = previous.get("engine") or relation.engine
+        return
+    for relation in harvest.relations:
+        kind = kinds.get((relation.database, relation.name))
+        if kind is not None:
+            relation.object_type = kind.object_type
+            relation.engine = kind.label
+
+
 async def sync_catalog(
     name: str,
     *,
     trigger: str = "schedule",
     repo: CatalogRepository | None = None,
     harvester: EngineHarvester | None = None,
+    classifier: Classifier = classify_from_source,
 ) -> dict:
     """Refresh one catalog in the store and record the run. Returns the run."""
     repo = repo or catalog_repo
@@ -261,7 +331,8 @@ async def sync_catalog(
     }
     catalog = await repo.get_catalog(name)
     try:
-        harvest = await harvester.harvest(name)
+        harvest = _without_system_schemas(await harvester.harvest(name), catalog)
+        await classifier(catalog, harvest, repo)
         counts = await _apply(repo, name, harvest, nova_now())
         counts.update(await securables.record_harvest(name, harvest, nova_now()))
     except Exception as exc:  # noqa: BLE001 - recorded on the run and the catalog
@@ -367,6 +438,47 @@ async def _apply(
     }
 
 
+def _type_changed(stored: dict, engine_type: str) -> bool:
+    """Whether the engine now reports a different type for a stored catalog.
+
+    A foreign catalog stores its source type (``postgres``, ``snowflake``, ...)
+    while the engine reports every one of them as ``jdbc``; that is the same
+    catalog, not a change.
+    """
+    engine_type = (engine_type or "").lower()
+    stored_type = (stored.get("catalog_type") or "").lower()
+    if _connection_of(stored) and engine_type == "jdbc":
+        return False
+    return stored_type != engine_type
+
+
+def _connection_of(stored: dict) -> str | None:
+    """The Nova connection a foreign catalog was built from, if any."""
+    from .connections import CONNECTION_PROPERTY
+
+    return (stored.get("properties") or {}).get(CONNECTION_PROPERTY)
+
+
+async def _heal_foreign(repo: CatalogRepository, stored: dict, now: datetime) -> None:
+    """Restore a foreign catalog's source type and kind from its connection.
+
+    Earlier syncs replaced them with the engine's ``jdbc``/``external``.
+    """
+    from .connections import connection_repo
+
+    name = _connection_of(stored)
+    if not name:
+        return
+    connection = await connection_repo.get(name)
+    if connection is None:
+        return
+    source_type = connection["connector_type"]
+    if (stored.get("kind"), stored.get("catalog_type")) != ("foreign", source_type):
+        await repo.upsert_catalog(
+            {**stored, "kind": "foreign", "catalog_type": source_type, "updated_at": now}
+        )
+
+
 async def reconcile_catalogs(
     *,
     trigger: str = "schedule",
@@ -395,9 +507,9 @@ async def reconcile_catalogs(
                     "updated_at": now,
                 }
             )
-        elif current.get("dropped_at") is not None or (
-            current.get("catalog_type") or ""
-        ) != row["type"].lower():
+        elif current.get("dropped_at") is None and _connection_of(current):
+            await _heal_foreign(repo, current, now)
+        elif current.get("dropped_at") is not None or _type_changed(current, row["type"]):
             await repo.upsert_catalog(
                 {
                     **current,
@@ -410,6 +522,10 @@ async def reconcile_catalogs(
     for name, row in stored.items():
         if name not in engine and row.get("dropped_at") is None:
             await repo.upsert_catalog({**row, "dropped_at": now, "updated_at": now})
+    # Objects of a catalog the engine no longer has, including one dropped
+    # through Nova before this pass, are retired with it.
+    for name in sorted(await repo.catalogs_with_live_objects() - engine.keys()):
+        await repo.retire_catalog_objects(name, now)
     await securables.record_catalogs(engine, now)
 
     runs = []

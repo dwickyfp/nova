@@ -12,7 +12,7 @@ export function SqlCodeBlock({
   return (
     <pre
       aria-label={`${label} syntax highlighted code`}
-      className="sql-code-block hljs overflow-x-auto rounded-xl border border-border/70 bg-muted/35 p-4 font-mono text-[13px] leading-6"
+      className="sql-code-block hljs overflow-x-auto rounded-lg border border-surface-border bg-surface-1 p-4 font-mono text-xs leading-5"
     >
       {highlighted ? (
         <code dangerouslySetInnerHTML={{ __html: highlighted }} />

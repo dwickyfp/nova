@@ -154,12 +154,12 @@ export function StageFilesPanel({ node }: { node: ExplorerNode }) {
     <div className='space-y-5'>
       {/* Header */}
       <div className='flex flex-wrap items-center gap-3'>
-        <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
-          <Box className='h-5 w-5' />
+        <div className='flex size-9 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-2 text-muted-foreground'>
+          <Box className='size-4' />
         </div>
         <div className='flex-1 space-y-1'>
           <div className='flex flex-wrap items-center gap-2'>
-            <h1 className='text-3xl font-semibold tracking-tight'>{stageName}</h1>
+            <h1 className='text-xl font-semibold tracking-tight'>{stageName}</h1>
             <Badge variant='secondary'>Stage</Badge>
           </div>
           <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
@@ -211,7 +211,7 @@ export function StageFilesPanel({ node }: { node: ExplorerNode }) {
         {filesLoading ? (
           <div className='flex items-center gap-2 p-6 text-sm text-muted-foreground'>
             <Loader2 className='h-4 w-4 animate-spin' />
-            Loading files...
+            Loading files
           </div>
         ) : filesError ? (
           <div className='flex items-center gap-2 p-6 text-sm text-destructive'>
@@ -255,7 +255,7 @@ export function StageFilesPanel({ node }: { node: ExplorerNode }) {
           </div>
           <table className='w-full'>
             <thead>
-              <tr className='border-b border-border text-left text-xs font-medium uppercase tracking-wider text-muted-foreground'>
+              <tr className='border-b border-border text-left text-xs font-medium text-muted-foreground'>
                 <th className='px-4 py-3'>Name</th>
                 <th className='w-28 px-4 py-3 text-right'>Size</th>
                 <th className='w-52 px-4 py-3 text-right'>Last Modified</th>
@@ -342,7 +342,7 @@ export function StageFilesPanel({ node }: { node: ExplorerNode }) {
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
               className={cn(
-                'flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 transition-colors',
+                'flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 transition-colors',
                 dragOver
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:border-muted-foreground/50',

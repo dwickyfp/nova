@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { buildCatalogTree, collectMatchingAncestorIds } from './helpers'
-import type { CatalogInfo, ExplorerNode } from './types'
+import {
+  EMPTY_LABEL,
+  LOADING_LABEL,
+  NATIVE_OBJECT_GROUPS,
+  buildCatalogTree,
+  buildDatabaseChildren,
+  catalogObjectGroups,
+  collectMatchingAncestorIds,
+} from './helpers'
+import type { CatalogInfo, DatabaseObjectsResponse, ExplorerNode } from './types'
 
 const catalog = (name: string, databases: string[]): CatalogInfo => ({
   name,
@@ -98,9 +106,63 @@ describe('collectMatchingAncestorIds', () => {
         type: 'catalog',
         path: ['external'],
         metadata: [],
-        children: [group('db-loading', 'Loading...', [])],
+        children: [group('db-loading', LOADING_LABEL, [])],
       },
     ]
     expect(collectMatchingAncestorIds(placeholderTree, 'loading').size).toBe(0)
+  })
+})
+
+
+const objects = (overrides: Partial<DatabaseObjectsResponse> = {}): DatabaseObjectsResponse =>
+  ({
+    database: 'public',
+    tables: [{ name: 'orders', table_model: null, engine: 'Partitioned table', row_count: null,
+      data_size: null, create_time: null }],
+    views: [{ name: 'jakarta_orders', definer: null, is_updatable: null }],
+    materialized_views: [{ name: 'city_totals', refresh_type: null, is_active: null,
+      last_refresh_state: null, table_rows: null }],
+    functions: [],
+    pipes: [],
+    stages: [],
+    tasks: [],
+    entities: [],
+    semantic_views: [],
+    feature_views: [],
+    ...overrides,
+  }) as DatabaseObjectsResponse
+
+describe('buildDatabaseChildren', () => {
+  it('shows a source catalog only its data groups, each node tagged with the catalog', () => {
+    const groups = catalogObjectGroups({
+      ...catalog('pg_shop', ['public']),
+      object_groups: ['tables', 'views', 'materialized_views'],
+    })
+    const children = buildDatabaseChildren(objects(), 'pg_shop', groups)
+    expect(children.map((g) => g.label)).toEqual(['Tables', 'Views', 'Materialized Views'])
+    const leaves = children.flatMap((g) => g.children ?? [])
+    expect(leaves.map((n) => [n.type, n.label, n.catalog])).toEqual([
+      ['table', 'orders', 'pg_shop'],
+      ['view', 'jakarta_orders', 'pg_shop'],
+      ['materialized_view', 'city_totals', 'pg_shop'],
+    ])
+    // A source table names its source's kind, not Nova's table model.
+    expect(leaves[0].metadata).toEqual([{ label: 'Kind', value: 'Partitioned table' }])
+  })
+
+  it('keeps every Nova group, in order, for the internal catalog', () => {
+    const children = buildDatabaseChildren(objects(), 'default_catalog', NATIVE_OBJECT_GROUPS)
+    expect(children.map((g) => g.label)).toEqual([
+      'Tables', 'Views', 'Materialized Views', 'Entities', 'Semantic Views', 'Feature Views',
+      'Functions', 'Pipes', 'Stages', 'Tasks',
+    ])
+    expect(children.find((g) => g.label === 'Pipes')?.children?.[0].label).toBe(EMPTY_LABEL)
+  })
+
+  it('falls back by catalog when the backend sends no groups', () => {
+    expect(catalogObjectGroups(catalog('default_catalog', []))).toEqual(NATIVE_OBJECT_GROUPS)
+    expect(catalogObjectGroups(catalog('legacy_lake', []))).toEqual([
+      'tables', 'views', 'materialized_views',
+    ])
   })
 })

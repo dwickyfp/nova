@@ -144,6 +144,8 @@ allows):
 | Rule | Detail |
 |---|---|
 | **Scope** | The task name is `database.schema.task`; `schema.task` uses the session database, `task` uses the session database/schema. A four-part name is rejected. |
+| **A database is required** | With no session database and no `database.schema.task` name, `CREATE TASK` is refused: an unscoped task could never run. |
+| **Unique names** | A task name is unique within its `database.schema`; creating it again is refused until `DROP TASK` removes it. |
 | **Order** | `AFTER`, `FINALIZE`, `WHEN`, `OVERLAP_POLICY`, `SCHEDULE` — any other order is rejected. |
 | **No duplicates** | Each clause appears at most once. |
 | **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE EVERY(INTERVAL …)` maps to `interval`. Invalid cron, zero interval, and unknown timezone are rejected before anything is stored. `SCHEDULE START(…) EVERY(…)` is rejected because Nova cannot honor its start time yet. |
@@ -523,7 +525,7 @@ Headers and toolbars remain outside the page's content scrollers.
 - **Native engine has no task dependencies/DAG** — Nova implements the scheduler and graph worker over one-shot engine tasks.
 - **No callback/trigger** on completion — progress must be observed by polling `information_schema.task_runs`
 - **No conditional branching** (if A fails, run C)
-- `MERGE` is not a supported task body on the tested engine. Use Primary Key `INSERT` for upsert, or `INSERT OVERWRITE` for replacement.
+- `MERGE INTO` runs in the Workspace and SQL API ([MERGE INTO](02-sql-worksheet.md#merge-into)) but is not a task body. In a task, use Primary Key `INSERT` for upsert, or `INSERT OVERWRITE` for replacement.
 - Manual execution needs the triggering session to remain valid when each node starts.
 - Native task bodies containing `@stage` references are rejected because expanded credentials would persist in engine task metadata.
 

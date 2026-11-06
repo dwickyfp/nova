@@ -255,6 +255,12 @@ def default_semantics() -> StatementSemanticsRegistry:
         ast.CatalogStatement,
         StatementSemantics(catalog_effects, validator=validate_catalog, preflight_safe=True),
     )
+    from app.sql_frontend.merge import merge_effects, validate_merge
+
+    registry.register(
+        ast.MergeStatement,
+        StatementSemantics(merge_effects, validator=validate_merge, preflight_safe=True),
+    )
     native = StatementSemantics(
         _native_effects, validator=validation._native_statement_checks, preflight_safe=True
     )

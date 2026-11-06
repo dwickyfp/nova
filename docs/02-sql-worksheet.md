@@ -41,6 +41,7 @@
 | Export JSON | Download results as JSON |
 | Row count | Show total rows returned |
 | Truncation | Indicate when results are truncated (LIMIT) |
+| Binary values | `VARBINARY`/`BINARY` cells show as text when they are UTF-8, otherwise as `0x` hex (`0xCAFE`), like the MySQL client |
 
 ### @stage Integration
 
@@ -126,7 +127,50 @@ StarRocks executes rewritten SQL → returns results to UI
 Nova SQL Worksheet supports ALL StarRocks SQL statements:
 
 - **DDL:** CREATE/ALTER/DROP (TABLE, VIEW, MV, DATABASE, FUNCTION, PIPE, TASK, CATALOG, etc.)
-- **DML:** SELECT, INSERT, UPDATE, DELETE, TRUNCATE
+- **DML:** SELECT, INSERT, UPDATE, DELETE, TRUNCATE, and Nova `MERGE INTO`
+  (see [MERGE INTO](#merge-into))
 - **LOAD:** INSERT INTO ... SELECT FROM FILES(), INSERT INTO FILES() (unload)
 - **ADMIN:** SHOW, DESCRIBE, EXPLAIN, SET, USE, KILL
 - **Custom:** @stage syntax, BROWSE STAGE, DESCRIBE FILE, LOAD FROM STAGE
+
+## MERGE INTO
+
+StarRocks 4.1.4 has no `MERGE`; Nova lowers it (`backend/app/sql_frontend/merge.py`)
+so a Nova Primary Key table can be synchronised from any relation the caller can
+read, including a Snowflake, PostgreSQL or remote StarRocks catalog:
+
+```sql
+MERGE INTO sales.orders AS t
+USING sf_sales.SALES.ORDERS AS s            -- a table, view, or (subquery) AS s
+ON t.order_id = s.ORDER_ID                  -- the target's whole primary key
+WHEN MATCHED AND s.IS_PAID THEN UPDATE SET status = 'paid', amount = s.AMOUNT
+WHEN MATCHED AND s.CANCELLED THEN DELETE
+WHEN NOT MATCHED THEN INSERT (order_id, region, amount) VALUES (s.ORDER_ID, s.REGION, s.AMOUNT)
+```
+
+- **Target.** A Nova Primary Key table (`default_catalog`). External catalogs
+  are read-only sources.
+- **ON.** Equalities joined by `AND` that compare every primary key column of
+  the target with a source value. Other conditions go in `WHEN ... AND`.
+- **Clauses.** Tried in order; the first whose condition holds applies, and a
+  row no clause selects is left unchanged. Only the last `WHEN MATCHED` and the
+  last `WHEN NOT MATCHED` may omit `AND <condition>`. `WHEN NOT MATCHED` reads
+  only the source. `UPDATE SET` cannot change a key column; `DEFAULT` gives a
+  column its table default. `INSERT` without a column list fills the columns in
+  table order (generated columns excepted); a column it omits gets its default
+  or, for an auto-increment column, the next value.
+- **Lowering.** Updates and inserts become one partial-update `INSERT INTO
+  target (key, columns the clauses set) SELECT ... FROM source LEFT JOIN target
+  ON ...`, so they are written completely or not at all. A matched row keeps
+  every column no clause sets and a new row gets its defaults, so columns the
+  MERGE never mentions (masked ones included) are never rewritten. Two source
+  rows acting on the same key fail the statement before anything is written.
+- **DELETE.** `WHEN MATCHED ... THEN DELETE` runs a key check and a `DELETE`
+  before the upsert. Those are separate engine statements (best-effort): the
+  engine has no multi-statement transaction for `DELETE` on this deployment.
+  `DELETE` cannot be combined with `WHEN NOT MATCHED ... INSERT` in one MERGE.
+- **Confirmation and audit.** A MERGE that can update or delete rows asks for
+  confirmation like `UPDATE`. The audit row records the MERGE and the
+  statements it ran; catalog lineage links the source tables to the target.
+- **Tasks.** MERGE is not a `CREATE TASK` body.
+

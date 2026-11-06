@@ -39,6 +39,11 @@ export type CatalogInfo = {
   /** Outcome of the last metadata sync: `ok` or `error`. */
   sync_status?: string | null
   last_sync_at?: string | null
+  /** The system the catalog reads: `internal` (Nova), `postgres`, `snowflake`, ... */
+  source_type?: string
+  source_label?: string
+  /** Explorer groups the catalog shows, in order (`tables`, `views`, ...). */
+  object_groups?: string[]
 }
 
 export type CatalogsResponse = {
@@ -248,4 +253,8 @@ export type TableDetailResponse = {
   partitions: PartitionInfo[]
   row_count: number | null
   data_size: number | null
+  /** `table`, `view`, or `materialized_view`; a source catalog describes all three. */
+  object_type?: string
+  /** The source's own name for the kind (`Dynamic table`, `Foreign table`, ...). */
+  kind?: string | null
 }

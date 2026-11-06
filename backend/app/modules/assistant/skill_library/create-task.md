@@ -50,6 +50,9 @@ CREATE TASK refresh_orders
 
 ## Caveats
 
+- A task needs a database: select one, or name it `database.schema.task`. A
+  name is unique within its schema; `DROP TASK` before creating it again.
+
 - Nova returns a warning stating no statement was sent to StarRocks. Say so
   rather than implying the engine accepted DDL.
 - The owner must have an active login session for the worker to run nodes

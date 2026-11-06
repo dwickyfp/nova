@@ -8,6 +8,7 @@ from app.core.database import db
 from app.core.security import decrypt_password
 from app.modules.catalog import visibility
 from app.modules.catalog.repository import catalog_repo
+from app.modules.catalog.sources import describe_catalog_source
 from app.modules.intelligence.entities import entity_registry
 from app.modules.intelligence.feature_store import feature_store
 from app.modules.intelligence.semantic_views import semantic_view_service
@@ -54,12 +55,18 @@ class ExplorerService:
         catalogs = []
         for cat in await visibility.visible_catalogs(user, caller_metadata):
             row = stored.get(cat["name"]) or {}
+            source = describe_catalog_source(row.get("catalog_type") or cat["type"])
             catalogs.append(
                 CatalogInfo(
+                    source_type=source.source_type,
+                    source_label=source.label,
+                    object_groups=list(source.object_groups),
                     name=cat["name"],
                     type=cat["type"],
                     comment=cat["comment"],
-                    databases=cat["databases"],
+                    databases=[
+                        db for db in cat["databases"] if db not in source.system_schemas
+                    ],
                     managed=bool(row.get("managed")),
                     source=row.get("source"),
                     sync_status=row.get("status"),
@@ -108,13 +115,22 @@ class ExplorerService:
             stages_raw = await explorer_repo.list_stages(database)
             tasks_raw = await explorer_repo.list_tasks(database)
         else:
+            # A source catalog only provides data: its relations, sorted into
+            # the kinds its source reported at the last sync.
             described = await _stored_objects(scoped_catalog, database)
-            tables_raw = [
-                {**described.get(name, {}), "name": name} for name in sorted(base_tables)
-            ]
-            views_raw = [{"name": name} for name in sorted(views)]
-            mvs_raw, funcs_raw, pipes_raw = [], [], []
-            stages_raw, tasks_raw = [], []
+            by_kind: dict[str, list[dict]] = {"table": [], "view": [], "materialized_view": []}
+            for name in sorted(relations):
+                row = described.get(name, {})
+                kind = row.get("object_type") or (
+                    "view" if relations[name] == "VIEW" else "table"
+                )
+                by_kind.get(kind, by_kind["table"]).append(
+                    {**row, "name": name, "engine": _source_kind(row)}
+                )
+            tables_raw = by_kind["table"]
+            views_raw = by_kind["view"]
+            mvs_raw = by_kind["materialized_view"]
+            funcs_raw, pipes_raw, stages_raw, tasks_raw = [], [], [], []
         password = decrypt_password(user["encrypted_password"])
         authorized_stages = []
         for stage in stages_raw:
@@ -128,19 +144,21 @@ class ExplorerService:
                 continue
             authorized_stages.append(stage)
         stages_raw = authorized_stages
-        entities = [
-            entity for entity in await entity_registry.list(user)
-            if entity.catalog == scoped_catalog and entity.database == database
-        ]
-        entity_ids = {entity.id for entity in entities}
-        semantic_views = [
-            view for view in await semantic_view_service.list(user)
-            if view["catalog_name"] == scoped_catalog and view["database_name"] == database
-        ]
-        feature_views = [
-            view for view in await feature_store.list_views(user)
-            if view["entity_id"] in entity_ids
-        ]
+        entities, semantic_views, feature_views = [], [], []
+        if internal:
+            entities = [
+                entity for entity in await entity_registry.list(user)
+                if entity.catalog == scoped_catalog and entity.database == database
+            ]
+            entity_ids = {entity.id for entity in entities}
+            semantic_views = [
+                view for view in await semantic_view_service.list(user)
+                if view["catalog_name"] == scoped_catalog and view["database_name"] == database
+            ]
+            feature_views = [
+                view for view in await feature_store.list_views(user)
+                if view["entity_id"] in entity_ids
+            ]
 
         return DatabaseObjectsResponse(
             database=database,
@@ -256,10 +274,14 @@ class ExplorerService:
     ) -> TableDetailResponse | None:
         scoped_catalog = catalog or INTERNAL_CATALOG
         relations = await self._visible_relations(user, database, scoped_catalog)
+        if scoped_catalog != INTERNAL_CATALOG:
+            # Any relation of a source catalog: its views and materialized
+            # views are described and previewed like its tables.
+            if table not in relations:
+                return None
+            return await _external_table_detail(scoped_catalog, database, table)
         if relations.get(table) != "BASE TABLE":
             return None
-        if scoped_catalog != INTERNAL_CATALOG:
-            return await _external_table_detail(scoped_catalog, database, table)
         raw = await explorer_repo.get_table_detail(database, table)
         if not raw:
             return None
@@ -390,7 +412,7 @@ async def _stored_objects(catalog: str, database: str) -> dict[str, dict]:
 async def _external_table_detail(
     catalog: str, database: str, table: str
 ) -> TableDetailResponse:
-    """An external table the caller can list, described by the catalog store.
+    """An external relation the caller can list, described by the catalog store.
 
     Columns come from the last sync. A table the store has not seen yet is
     described live on the system pool, after the caller's visibility gate.
@@ -421,6 +443,8 @@ async def _external_table_detail(
         partitions=[],
         row_count=stored.get("row_count"),
         data_size=stored.get("data_size"),
+        object_type=stored.get("object_type") or "table",
+        kind=_source_kind(stored),
     )
 
 
@@ -444,6 +468,12 @@ async def _describe_live(catalog: str, database: str, table: str) -> list[Column
         )
         for index, row in enumerate(result.get("rows") or [], start=1)
     ]
+
+
+def _source_kind(row: dict) -> str | None:
+    """The source's own kind of a relation; the engine's generic ``JDBC`` is not one."""
+    kind = row.get("engine")
+    return None if not kind or str(kind).upper() == "JDBC" else str(kind)
 
 
 def _yes_no(value: object) -> str | None:

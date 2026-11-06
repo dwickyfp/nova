@@ -31,23 +31,36 @@ SYSTEM_DBS = frozenset({"_statistics_", "information_schema", "sys"})
 INTERNAL_CATALOG = "default_catalog"
 
 
+#: Engine messages that mean "not for you": an empty answer is the answer.
+_REFUSAL_MARKERS = ("access denied", "privilege", "permission", "not authorized")
+
+
 class CallerMetadata:
     """Engine metadata as one caller sees it under their active role.
 
     Every statement runs on the caller's connection, so Ranger decides what
     is listed. A statement the engine refuses, or a catalog it cannot reach,
     yields an empty answer: nothing is shown that the caller could not list.
+    A refusal is a real answer; an unreachable source is not, so
+    :attr:`unreachable` tells the visibility cache not to keep it.
     """
 
     def __init__(self, cursor: Any) -> None:
         self._cursor = cursor
+        #: A listing failed for a reason other than a refusal (a source that
+        #: timed out or is down): its empty answer must not be cached.
+        self.unreachable = False
 
     async def _rows(self, sql: str) -> list[tuple]:
         try:
             await self._cursor.execute(sql)
             return list(await self._cursor.fetchall())
         except Exception as exc:  # noqa: BLE001 - a refusal hides the object
-            log.debug("Caller metadata statement refused: %s", exc)
+            if any(marker in str(exc).lower() for marker in _REFUSAL_MARKERS):
+                log.debug("Caller metadata statement refused: %s", exc)
+            else:
+                self.unreachable = True
+                log.info("Caller metadata statement failed: %s", exc)
             return []
 
     async def catalogs(self) -> list[dict]:

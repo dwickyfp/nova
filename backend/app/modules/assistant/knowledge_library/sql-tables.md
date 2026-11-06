@@ -26,8 +26,14 @@ UPDATE affects matching existing rows in Primary Key tables; it does not insert
 a missing row. DELETE also supports other key models with model-specific
 predicate restrictions. Inspect SHOW CREATE TABLE before choosing mutation
 semantics. Use explicit INSERT target columns and align SELECT expressions.
-Avoid MySQL ON DUPLICATE KEY UPDATE and Snowflake MERGE templates unless the
-installed engine version and grammar explicitly support the requested form.
+Avoid MySQL ON DUPLICATE KEY UPDATE. Nova SQL has MERGE INTO for a Primary
+Key target: ON must equate every target key column with a source value joined
+by AND, other filters go in WHEN ... AND, the first matching clause applies, and
+WHEN MATCHED ... DELETE cannot be combined with WHEN NOT MATCHED ... INSERT:
+MERGE INTO analytics.accounts AS t USING crm.public.accounts AS s
+ON t.account_id = s.id
+WHEN MATCHED THEN UPDATE SET name = s.name
+WHEN NOT MATCHED THEN INSERT (account_id, name) VALUES (s.id, s.name);
 
 CTAS: CREATE TABLE analytics.copy_accounts AS SELECT * FROM analytics.accounts;
 CTAS creates and loads; CREATE TABLE analytics.empty_accounts LIKE
