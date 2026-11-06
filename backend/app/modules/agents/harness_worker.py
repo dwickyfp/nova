@@ -1233,7 +1233,7 @@ class AgentHarnessWorker:
                     inherited.mission_id, child["run_id"], user
                 )
                 context.mission_id = inherited.mission_id
-                bind_business_hooks(context)
+                bind_business_hooks(context, inherited)
                 async def inherited_business_turn(turn_plan, loop_context):
                     mission = await mission_service.record_release(
                         inherited.mission_id, child["run_id"], loop_context.release_manifest, user,
@@ -1271,7 +1271,7 @@ class AgentHarnessWorker:
                         mission.mission_id, child["run_id"], loop_context.release_manifest, user,
                     )
                 loop_context.mission_id = mission.mission_id
-                bind_business_hooks(loop_context)
+                bind_business_hooks(loop_context, mission)
                 return mission.model_dump(mode="json")
 
             context.business_turn_hook = business_turn

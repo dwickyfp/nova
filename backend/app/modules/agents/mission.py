@@ -19,6 +19,7 @@ from app.modules.agents.identity import SMART_AGENT_IDS
 from app.modules.agents.mission_schema import (
     MISSION_DDLS,
     STAGE_LABELS,
+    BusinessContextAnchor,
     ContinuationDecision,
     DeliverableCreate,
     DeliverableSource,
@@ -487,6 +488,10 @@ class MissionService:
             await intelligence_service.authorize_semantic(semantic, user)
         for pin in mission.release_pins:
             await self.authorize_release_pin(pin, user)
+        from app.modules.agents.releases import authorize_ontology_release
+
+        for business in {(a.release_id, a.manifest_hash) for a in mission.business_anchors}:
+            await authorize_ontology_release(*business)
         for ref in mission.pinned_objects:
             record = await intelligence_service.get_for_mission(
                 {
@@ -1046,8 +1051,10 @@ class MissionService:
                 user,
                 budget=budget,
             )
+        from app.modules.agents.releases import authorize_ontology_pin
         from app.modules.agents.resources import validate_resources
 
+        await authorize_ontology_pin(dependencies)
         configuration = dict(dependencies.get("configuration") or {})
         await validate_resources(configuration, user)
         if "resources" in dependencies and dependencies["resources"] != await resource_contracts(
@@ -1196,6 +1203,23 @@ class MissionService:
             if len(mission.semantic_anchors) >= 32:
                 raise HTTPException(status_code=422, detail="Mission semantic anchor bound reached")
             mission.semantic_anchors.append(anchor)
+            return await self._save(mission, mission.revision, owned)
+
+    async def record_business_anchor(
+        self, mission_id: str, anchor: BusinessContextAnchor, user: dict
+    ) -> Mission:
+        mission = await self.get(mission_id, user, project=False)
+        async with harness_repository.admission_lock(
+            mission.thread_id, mission.scope.principal
+        ) as owned:
+            mission = await self._get(mission_id, workflow_scope(user))
+            if mission.cancel_requested:
+                raise HTTPException(status_code=409, detail="Mission cancellation requested")
+            if anchor in mission.business_anchors:
+                return mission
+            if len(mission.business_anchors) >= 32:
+                raise HTTPException(status_code=422, detail="Mission business anchor bound reached")
+            mission.business_anchors.append(anchor)
             return await self._save(mission, mission.revision, owned)
 
     async def record_investigation_requirements(

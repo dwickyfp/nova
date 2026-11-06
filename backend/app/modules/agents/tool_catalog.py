@@ -24,6 +24,7 @@ from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
 from app.modules.agents.tools.diagnose_change import DESCRIPTION as DIAGNOSE_DESCRIPTION
 from app.modules.agents.tools.diagnose_change import PARAMETERS as DIAGNOSE_PARAMETERS
 from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
+from app.modules.agents.tools.ontology import ontology_explain_tool, ontology_resolve_tool
 from app.modules.agents.tools.propose_automation import (
     DESCRIPTION as PROPOSE_AUTOMATION_DESCRIPTION,
 )
@@ -50,6 +51,8 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     ),
     "context_graph": (context_graph_tool.description, context_graph_tool.parameters),
     "decision_lab": (decision_lab_tool.description, decision_lab_tool.parameters),
+    "ontology_resolve": (ontology_resolve_tool.description, ontology_resolve_tool.parameters),
+    "ontology_explain": (ontology_explain_tool.description, ontology_explain_tool.parameters),
     **COLLABORATION_TOOLS,
     "describe_agent": (DESCRIPTION, PARAMETERS),
     "send_agent_message": (
@@ -401,6 +404,8 @@ AGENT_BUNDLEABLE_TOOLS = (
     "diagnose_change",
     "context_graph",
     "decision_lab",
+    "ontology_resolve",
+    "ontology_explain",
     "compute_metrics",
     "schedule_automation",
     "ml_execute",

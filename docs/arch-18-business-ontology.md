@@ -98,9 +98,70 @@ A stale binding is never usable. Release preparation and publication re-check
 freshness themselves, so the result does not depend on the drift hook having
 run.
 
+## Studio grounding
+
+Every `semantic_query` resolves the business terms in its question before it
+plans (`backend/app/modules/ontology/resolver.py` and `grounding.py`).
+
+**Resolution.** A visible, approved `METRIC` or `MEASURE` concept is named when
+one of these occurs in the question as whole words:
+- its qualified name;
+- its slug, also split at capitals (`NetRevenue` → "net revenue");
+- its label;
+- one of its aliases.
+
+The longest name wins over a name inside it. Matching is lexical. Embedding
+similarity never decides what an official concept is. A question in another
+language matches through aliases, which stewards add.
+
+**Effect on the query.**
+
+| Situation | Result |
+|---|---|
+| No published release, or no metric concept named | Nothing changes |
+| A name belongs to visible concepts in several domains, and the question names none of their domains | `CLARIFICATION_REQUIRED`: the turn ends as a question naming each choice; nothing is planned or run |
+| An approved concept has no binding the user and agent can use | The turn stops with `NO_AUTHORIZED_REPRESENTATION` and names the concept. It is never answered with a metric of a similar name |
+| The named metrics are computed in different views | `CLARIFICATION_REQUIRED`: ask for them one at a time |
+| Grounded | The binding's view is used, the planner receives the concepts and their metrics, and a plan that omits a required metric is rejected |
+
+A binding fits an agent's loaded view only when the metric's claim fingerprint
+there equals the validated one. An agent pinned to an older view version
+therefore still uses the approved definition, or refuses.
+
+If the ontology cannot be read, the query fails closed with
+`ONTOLOGY_UNAVAILABLE`. Missing ontology tables mean no release was ever
+published, so nothing changes.
+
+**Provenance.** A grounded result records `business_context` (release id,
+manifest hash, concept ids and revisions, metric, binding) in its evidence. It
+also records the `concept_grounding` Quality Lab fact, and a
+`BusinessContextAnchor` on the Mission.
+
+## Release pins
+
+The ontology release used is chosen in this order:
+1. **Released agents.** A new agent version records the current ontology
+   release in its manifest (`dependencies.ontology_release`). Loading the
+   manifest and authorizing a Mission release pin both require that release to
+   still be published with the same manifest hash.
+2. **Draft agents.** A turn uses one release for all its queries
+   (`LoopContext.ontology_release_id`).
+3. **Continued Missions.** A continued Mission keeps the release of its latest
+   business anchor. Mission resume re-checks every anchored release.
+
+## Tools
+
+- `ontology_resolve` returns the approved concepts a text names, or the choices
+  for an ambiguous term.
+- `ontology_explain` returns one concept's definition, its bindings and its
+  related concepts.
+
+Both are read-only, need consent, and are bundled per agent. Bindings are
+limited to the agent's Semantic Views and to views the caller can see.
+`GET /ontology/resolve?q=` exposes resolution over HTTP.
+
 ## Not yet built
 
-- Resolver and Studio grounding (Phase 2).
 - Steward UI (Phase 3).
 - News signals and incidents (Phases 4–5).
 - Learning proposals (Phase 6).

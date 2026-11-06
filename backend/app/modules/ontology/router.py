@@ -66,6 +66,18 @@ async def list_concepts(
     )
 
 
+@router.get("/resolve")
+async def resolve_terms(
+    user: CurrentUser,
+    q: Annotated[str, Query(min_length=1, max_length=2000)],
+    release_id: Annotated[str | None, Query(max_length=64)] = None,
+):
+    from app.modules.ontology.resolver import ConceptResolver
+
+    resolver = ConceptResolver(ontology_service)
+    return (await resolver.resolve(q, user, release_id=release_id)).public()
+
+
 @router.get("/concepts/{concept_id}")
 async def get_concept(concept_id: str, user: CurrentUser, scope: ScopeQuery = "current"):
     return await ontology_service.get_concept(concept_id, user, scope=scope)

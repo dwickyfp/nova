@@ -81,7 +81,7 @@ class World:
             self.finance,
             DomainUpdate(
                 steward_roles=["finance_steward"],
-                visibility_roles=["finance_analyst", "sales_steward"],
+                visibility_roles=[*finance["visibility_roles"], "sales_steward"],
                 expected_revision=finance["revision"],
             ),
             ADMIN,
@@ -785,3 +785,28 @@ def test_traversal_is_bounded():
     assert neighbourhood("c0", chain, visible, depth=2)[0] == ["c1", "c2"]
     with pytest.raises(ValueError):
         neighbourhood("c0", chain, visible, depth=3)
+
+
+async def test_published_release_snapshots_are_cached_by_release(world, monkeypatch):
+    from app.modules.ontology import service as service_module
+
+    await world.approved([world.concept(world.finance, "Revenue")])
+    first = await world.release()
+    reads = []
+    original = world.repository.current
+
+    async def counting(kind, model):
+        reads.append(kind)
+        return await original(kind, model)
+
+    monkeypatch.setattr(world.repository, "current", counting)
+    await world.reads.snapshot("current")
+    await world.reads.snapshot("current", release_id=first.id)
+    assert reads.count("concepts") == 1
+    monkeypatch.setattr(service_module, "RELEASE_CACHE_SIZE", 1)
+    await world.approved([world.concept(world.finance, "Margin")])
+    second = await world.release()
+    assert len((await world.reads.snapshot("current")).concepts) == 2
+    assert list(world.reads._released) == [second.id]
+    with pytest.raises(HTTPException):
+        await world.reads.snapshot("current", release_id="ont_rel_9999")

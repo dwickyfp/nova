@@ -215,6 +215,8 @@ KNOWN_TOOLS = {
     "diagnose_change",
     "context_graph",
     "decision_lab",
+    "ontology_resolve",
+    "ontology_explain",
     "ml_execute",
     "execute_business_action",
     "analysis_workspace",
@@ -2906,7 +2908,7 @@ async def send_agent_message(
                     mission.mission_id, run_id, current_context.release_manifest, user,
                 )
             current_context.mission_id = mission.mission_id
-            bind_business_hooks(current_context)
+            bind_business_hooks(current_context, mission)
             return mission.model_dump(mode="json")
         return None
 

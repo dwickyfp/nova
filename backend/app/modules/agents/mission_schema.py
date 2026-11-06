@@ -103,6 +103,27 @@ class SemanticAnchor(Contract):
         return self
 
 
+class ConceptPin(Contract):
+    id: str = Field(min_length=1, max_length=64)
+    revision: int = Field(ge=1)
+
+
+class BusinessContextAnchor(Contract):
+    """The approved business concepts and ontology release an answer used."""
+
+    release_id: str = Field(min_length=1, max_length=64)
+    manifest_hash: str = Field(min_length=64, max_length=64)
+    concepts: list[ConceptPin] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def ordered_concepts(self):
+        self.concepts = sorted(
+            {(item.id, item.revision): item for item in self.concepts}.values(),
+            key=lambda item: (item.id, item.revision),
+        )
+        return self
+
+
 class ExecutionTimeContext(Contract):
     execution_now: datetime
     timezone: str = Field(min_length=1, max_length=64)
@@ -187,6 +208,7 @@ class Mission(Contract):
     historical_object_refs: list[ObjectRef] = Field(default_factory=list, max_length=100)
     historical_bindings: list[Scope] = Field(default_factory=list, max_length=32)
     semantic_anchors: list[SemanticAnchor] = Field(default_factory=list, max_length=32)
+    business_anchors: list[BusinessContextAnchor] = Field(default_factory=list, max_length=32)
     execution_contexts: list[MissionExecutionContext] = Field(default_factory=list, max_length=100)
     release_pins: list[MissionReleasePin] = Field(default_factory=list, max_length=100)
     continuation: ContinuationDecision | None = None

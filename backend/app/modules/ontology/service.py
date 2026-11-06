@@ -9,6 +9,7 @@ concept that does not exist.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Literal, TypeVar
 
@@ -32,6 +33,7 @@ from app.modules.ontology.repository import OntologyRepository, ontology_reposit
 from app.modules.ontology.representations import SemanticCatalog, SemanticViewCatalog, freshness
 
 Scope = Literal["current", "working"]
+RELEASE_CACHE_SIZE = 8
 R = TypeVar("R", bound=OntologyRecord)
 
 
@@ -69,6 +71,9 @@ class OntologyService:
         self.repository = repository
         self.catalog: SemanticCatalog = catalog or SemanticViewCatalog()
         self.releases = ReleaseService(repository, self.catalog)
+        #: Published releases are immutable, so their pinned records are cached
+        #: by release id. Visibility is applied per caller after the cache.
+        self._released: OrderedDict[str, Snapshot] = OrderedDict()
 
     # --- domains -------------------------------------------------------------
 
@@ -151,7 +156,8 @@ class OntologyService:
                 records.append(record)
         return records
 
-    async def snapshot(self, scope: Scope) -> Snapshot:
+    async def snapshot(self, scope: Scope, *, release_id: str | None = None) -> Snapshot:
+        """The ``working`` state, the ``current`` release, or one named release."""
         if scope == "working":
             return Snapshot(
                 release=None,
@@ -162,10 +168,25 @@ class OntologyService:
                 relations=await self.repository.current("relations", Relation),
                 representations=await self.repository.current("representations", Representation),
             )
-        alias = await self.releases.alias()
-        if alias is None:
-            return Snapshot(None, {}, {}, [], [])
-        release = await self.releases.get(alias.release_id)
+        if release_id is None:
+            alias = await self.releases.alias()
+            if alias is None:
+                return Snapshot(None, {}, {}, [], [])
+            release_id = alias.release_id
+        cached = self._released.get(release_id)
+        if cached is not None:
+            self._released.move_to_end(release_id)
+            return cached
+        release = await self.releases.get(release_id)
+        if release.status != "PUBLISHED":
+            raise HTTPException(status_code=404, detail=access.NOT_FOUND)
+        snapshot = await self._release_snapshot(release)
+        self._released[release_id] = snapshot
+        while len(self._released) > RELEASE_CACHE_SIZE:
+            self._released.popitem(last=False)
+        return snapshot
+
+    async def _release_snapshot(self, release: Release) -> Snapshot:
         pins: dict[str, dict[str, int]] = {
             "domain": {}, "concept": {}, "relation": {}, "representation": {},
         }
@@ -187,7 +208,7 @@ class OntologyService:
         )
 
     @staticmethod
-    def _visible_concepts(snapshot: Snapshot, user: dict) -> dict[str, Concept]:
+    def visible_concepts(snapshot: Snapshot, user: dict) -> dict[str, Concept]:
         return {
             concept_id: concept
             for concept_id, concept in snapshot.concepts.items()
@@ -240,7 +261,7 @@ class OntologyService:
         snapshot = await self.snapshot(scope)
         needle = " ".join((query or "").split()).casefold()
         concepts = []
-        for concept in self._visible_concepts(snapshot, user).values():
+        for concept in self.visible_concepts(snapshot, user).values():
             if domain_id is not None and concept.domain_id != domain_id:
                 continue
             if concept.status != "APPROVED" and not include_deprecated:
@@ -257,14 +278,32 @@ class OntologyService:
             "truncated": len(concepts) > bound,
         }
 
+    async def find(
+        self, reference: str, user: dict, *, release_id: str | None = None
+    ) -> dict:
+        """A visible concept by id or qualified name (case-insensitive)."""
+        snapshot = await self.snapshot("current", release_id=release_id)
+        visible = self.visible_concepts(snapshot, user)
+        if reference in visible:
+            return self.concept_view(visible[reference], snapshot.domains)
+        wanted = reference.strip().casefold()
+        for concept in visible.values():
+            view = self.concept_view(concept, snapshot.domains)
+            if view["qualified_name"].casefold() == wanted:
+                return view
+        raise HTTPException(status_code=404, detail=access.NOT_FOUND)
+
     async def _visible(self, concept_id: str, snapshot: Snapshot, user: dict) -> Concept:
-        concept = self._visible_concepts(snapshot, user).get(concept_id)
+        concept = self.visible_concepts(snapshot, user).get(concept_id)
         if concept is None:
             raise HTTPException(status_code=404, detail=access.NOT_FOUND)
         return concept
 
-    async def get_concept(self, concept_id: str, user: dict, *, scope: Scope = "current") -> dict:
-        snapshot = await self.snapshot(scope)
+    async def get_concept(
+        self, concept_id: str, user: dict, *, scope: Scope = "current",
+        release_id: str | None = None,
+    ) -> dict:
+        snapshot = await self.snapshot(scope, release_id=release_id)
         concept = await self._visible(concept_id, snapshot, user)
         history = await self.repository.history("concepts", concept_id, Concept)
         return {
@@ -284,11 +323,12 @@ class OntologyService:
         }
 
     async def related(
-        self, concept_id: str, user: dict, *, scope: Scope = "current", depth: int = 1
+        self, concept_id: str, user: dict, *, scope: Scope = "current", depth: int = 1,
+        release_id: str | None = None,
     ) -> dict:
-        snapshot = await self.snapshot(scope)
+        snapshot = await self.snapshot(scope, release_id=release_id)
         await self._visible(concept_id, snapshot, user)
-        visible = self._visible_concepts(snapshot, user)
+        visible = self.visible_concepts(snapshot, user)
         reached, edges = neighbourhood(
             concept_id, snapshot.relations,
             {item.id for item in visible.values() if item.status == "APPROVED"},
@@ -311,9 +351,10 @@ class OntologyService:
         }
 
     async def representations(
-        self, concept_id: str, user: dict, *, scope: Scope = "current"
+        self, concept_id: str, user: dict, *, scope: Scope = "current",
+        release_id: str | None = None,
     ) -> dict:
-        snapshot = await self.snapshot(scope)
+        snapshot = await self.snapshot(scope, release_id=release_id)
         await self._visible(concept_id, snapshot, user)
         bindings = []
         for item in snapshot.representations:

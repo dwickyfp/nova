@@ -246,6 +246,9 @@ class LoopContext:
     primary_plan: dict[str, Any] | None = None
     #: The Semantic View the loop model named in its semantic_query call.
     requested_semantic_view: str | None = None
+    #: The business ontology release this turn resolved terms against, so every
+    #: query of one turn uses the same approved definitions.
+    ontology_release_id: str | None = None
     #: This turn's verified result tables by evidence id, for ``compute_metrics``.
     #: Set before each tool call; never persisted or sent upstream.
     evidence_tables: dict[str, dict[str, Any]] | None = None

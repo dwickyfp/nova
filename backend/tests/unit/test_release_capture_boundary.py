@@ -36,6 +36,10 @@ async def test_dependency_capture_precedes_lease_and_first_manifest_wins(
         assert not locked
         return []
 
+    async def ontology_pin():
+        assert not locked
+        return {"release_id": "ont_rel_0001", "manifest_hash": "a" * 64}
+
     @asynccontextmanager
     async def lock(key):
         nonlocal locked
@@ -57,6 +61,7 @@ async def test_dependency_capture_precedes_lease_and_first_manifest_wins(
     monkeypatch.setattr(releases, "metadata_lock", lock)
     monkeypatch.setattr(releases, "model_contract", model_contract)
     monkeypatch.setattr(releases, "resource_contracts", resources)
+    monkeypatch.setattr(releases, "ontology_release_pin", ontology_pin)
     monkeypatch.setattr(releases.db, "execute_system", write)
     monkeypatch.setattr(agent_service, "build_loop_inputs", build_inputs)
     monkeypatch.setattr(assistant_provider, "resolve", AsyncMock(return_value=SimpleNamespace(
@@ -72,6 +77,7 @@ async def test_dependency_capture_precedes_lease_and_first_manifest_wins(
     else:
         write.assert_awaited_once()
         assert result["version_id"] == "draft"
+        assert result["dependencies"]["ontology_release"]["release_id"] == "ont_rel_0001"
         assert result["fingerprint"] == releases.fingerprint(result["dependencies"])
 
 

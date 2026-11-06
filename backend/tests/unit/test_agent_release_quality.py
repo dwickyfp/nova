@@ -25,6 +25,7 @@ USER = {
 }
 EXPECTED = {
     "semantic_selection": {"metrics": ["revenue"]},
+    "concept_grounding": {"status": "grounded", "concepts": ["Finance.NetRevenue"]},
     "tool_selection": {"required": ["semantic_query"]},
     "tool_arguments": {"semantic_query": {"question": "Q1"}},
     "numeric_consistency": {"accepted": True},

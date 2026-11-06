@@ -174,7 +174,39 @@ class SemanticQueryTool:
             context, "requested_semantic_view"
         ):
             context.requested_semantic_view = requested_view.strip()
-        semantic_model = await self._resolve_model(context, question)
+        from app.modules.agents.semantic.access import load_authorized_models
+        from app.modules.ontology.grounding import ground, missing_metrics
+
+        grounding = await ground(question, context, lambda: load_authorized_models(context))
+        if isinstance(getattr(context, "quality_facts", None), dict):
+            context.quality_facts["concept_grounding"] = {
+                "status": grounding.status,
+                "release_id": grounding.resolution.release_id if grounding.resolution else None,
+                "concepts": sorted(
+                    item["qualified_name"]
+                    for item in (grounding.resolution.concepts if grounding.resolution else [])
+                ),
+                "ambiguous_terms": sorted(
+                    item.term
+                    for item in (grounding.resolution.ambiguities if grounding.resolution else [])
+                ),
+                "metrics": sorted(grounding.required),
+            }
+        if grounding.blocking:
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error=(
+                    "The question needs clarification."
+                    if grounding.error_class == "CLARIFICATION_REQUIRED"
+                    else grounding.user_message
+                ),
+                error_class=grounding.error_class,
+                recoverable=grounding.error_class == "CLARIFICATION_REQUIRED",
+                safe_detail=grounding.detail,
+                repair_context={"business_concepts": grounding.repair},
+            )
+        semantic_model = await self._resolve_model(context, question, grounding.view_id)
         if semantic_model is None:
             return ToolOutcome(
                 ok=False,
@@ -219,6 +251,8 @@ class SemanticQueryTool:
                 # The turn planner already read the question; its plan is checked,
                 # never trusted, and a rejected one is simply planned again here.
                 plan = primary_plan_from(primary.get("plan"), semantic_ir)
+                if plan is not None and missing_metrics(grounding, plan.metrics):
+                    plan = None  # it missed an official metric; plan with the concepts
                 plan_from_turn = plan is not None
             if plan is None:
                 plan = await generate_plan(
@@ -228,6 +262,7 @@ class SemanticQueryTool:
                     question,
                     context,
                     prior_plan=_prior_plan(semantic_ir, context),
+                    business_concepts=grounding.planner_hints(),
                 )
             material = [item.text for item in plan.unresolved_concepts if item.material]
             if material:
@@ -237,7 +272,7 @@ class SemanticQueryTool:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
             period_note = "; ".join(notes) or None
             verified_hit = _verified_match(definition, model_id, semantic_ir, plan)
-            errors = validate_plan(semantic_ir, plan)
+            errors = [*missing_metrics(grounding, plan.metrics), *validate_plan(semantic_ir, plan)]
             if errors:
                 raise SemanticPlanError("; ".join(errors))
             time_context = None
@@ -507,9 +542,14 @@ class SemanticQueryTool:
                 "semantic_plan": plan.as_dict(),
                 "sql": safe_sql,
                 "row_count": row_count,
+                **(
+                    {"business_concepts": grounding.planner_hints()}
+                    if grounding.status == "grounded" else {}
+                ),
             },
             evidence={
                 "source": "nova_semantic_view",
+                "business_context": grounding.provenance(),
                 "view_id": model_id,
                 "version": semantic_model.get("version"),
                 "semantic_model_id": semantic_model.get("semantic_model_id"),
@@ -579,10 +619,18 @@ class SemanticQueryTool:
         })
         return attach_evidence_health(outcome, health)
 
-    async def _resolve_model(self, context: Any, question: str) -> dict[str, Any] | None:
+    async def _resolve_model(
+        self, context: Any, question: str, grounded_view: str | None = None
+    ) -> dict[str, Any] | None:
         from app.modules.agents.semantic.access import load_authorized_models
 
         models = await load_authorized_models(context)
+        if grounded_view is not None:
+            # The ontology names the view that computes the official metric.
+            return next(
+                (model for model in models if str(model["semantic_model_id"]) == grounded_view),
+                None,
+            )
         if len(models) == 1:
             return models[0]
         # The view is chosen by name: the turn planner's primary view, or the one

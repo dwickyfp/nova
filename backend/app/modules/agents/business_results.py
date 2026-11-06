@@ -74,11 +74,20 @@ async def pin_time(invocation, payload, context):
     )
 
 
-def bind_business_hooks(context):
+def bind_business_hooks(context, mission=None):
     if context.mission_id:
         context.business_result_hook = governed_result
         context.business_time_hook = pin_time
         context.business_clock_hook = execution_clock
+    anchors = (mission or {}).get("business_anchors") if isinstance(mission, dict) else (
+        getattr(mission, "business_anchors", None)
+    )
+    if anchors and hasattr(context, "ontology_release_id") and not context.ontology_release_id:
+        # A continued mission keeps the business definitions its answers used.
+        latest = anchors[-1]
+        context.ontology_release_id = (
+            latest["release_id"] if isinstance(latest, dict) else latest.release_id
+        )
 
 
 def canonical_observation(investigation, news, comparison, *, target_metric: str) -> dict:
@@ -216,6 +225,22 @@ async def _governed_result(invocation, outcome, context, collector) -> BusinessR
         context.mission_id, envelope.semantic, envelope.metrics, context.user,
         filter_population_fingerprint=business["population_fingerprint"],
     )
+    business_context = (getattr(outcome, "evidence", None) or {}).get("business_context")
+    if business_context:
+        from app.modules.agents.mission_schema import BusinessContextAnchor, ConceptPin
+
+        mission = await mission_service.record_business_anchor(
+            context.mission_id,
+            BusinessContextAnchor(
+                release_id=business_context["ontology_release_id"],
+                manifest_hash=business_context["manifest_hash"],
+                concepts=[
+                    ConceptPin(id=item["id"], revision=item["revision"])
+                    for item in business_context["concepts"]
+                ],
+            ),
+            context.user,
+        )
     effective_intent = getattr(context, "effective_work_intent", None)
     if effective_intent != "INVESTIGATE":
         collector.complete("skipped")

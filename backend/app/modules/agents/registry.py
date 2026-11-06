@@ -36,6 +36,8 @@ KNOWN_TOOLS = frozenset(
         "diagnose_change",
         "context_graph",
         "decision_lab",
+        "ontology_resolve",
+        "ontology_explain",
         "compute_metrics",
         "schedule_automation",
         "ml_execute",
@@ -141,6 +143,16 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         for tool in (context_graph_tool, decision_lab_tool):
             if tool.name in selected:
                 registry.register(tool)
+
+    if selected & {"ontology_resolve", "ontology_explain"}:
+        from app.modules.agents.tools.ontology import (
+            ontology_explain_tool,
+            ontology_resolve_tool,
+        )
+
+        for ontology_tool in (ontology_resolve_tool, ontology_explain_tool):
+            if ontology_tool.name in selected:
+                registry.register(ontology_tool)
 
     if "ml_execute" in selected:
         from app.modules.agents.tools.ml_execute import ml_execute_tool

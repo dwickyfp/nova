@@ -172,8 +172,13 @@ async def generate_plan(
     context: Any,
     *,
     prior_plan: SemanticPlan | None = None,
+    business_concepts: list[dict[str, Any]] | None = None,
 ) -> SemanticPlan:
-    """Ask the model for a SemanticPlan, with one repair; Nova compiles it."""
+    """Ask the model for a SemanticPlan, with one repair; Nova compiles it.
+
+    ``business_concepts`` are approved ontology concepts the question names,
+    each with the catalog metric that computes it; the plan must use them.
+    """
     from app.modules.agents.semantic.guidance import (
         enforce_routing_guidance,
         required_named_filters,
@@ -198,6 +203,16 @@ async def generate_plan(
                     "catalog": catalog,
                     "routing_guidance": model_ir.question_routing_instructions,
                     "query_guidance": model_ir.query_generation_instructions,
+                    **(
+                        {
+                            "business_concepts": business_concepts,
+                            "business_concepts_rule": (
+                                "These are the organisation's approved definitions of terms "
+                                "in the question. Answer each with exactly its metric."
+                            ),
+                        }
+                        if business_concepts else {}
+                    ),
                     "response_schema": schema,
                 },
                 ensure_ascii=False,

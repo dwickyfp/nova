@@ -1,6 +1,6 @@
 # Supernova Business Ontology — analisis dan rencana implementasi
 
-**Status:** Fase 1 (ontology core backend) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 2–7 masih proposal.
+**Status:** Fase 1 (ontology core backend) dan Fase 2 (Studio ontology-aware) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 3–7 masih proposal.
 **Branch:** `feat/supernova-ontology` (dari `origin/main` @ `1ecb13c7`)
 **Sumber:** *Supernova Business Ontology v1.1* (6 Nov 2026), dibandingkan dengan source Nova saat ini.
 

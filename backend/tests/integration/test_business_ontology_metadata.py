@@ -1,6 +1,7 @@
 """Real StarRocks/Redis acceptance for ontology revisions and the release alias."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -95,6 +96,104 @@ async def test_revisions_are_appended_checked_and_read_back(ontology_db):
     ]
     current = {item.id: item for item in await repository.current("domains", Domain)}
     assert current[domain.id].revision == 2
+
+
+async def _empty_ontology() -> bool:
+    for table in ONTOLOGY_TABLES.values():
+        result = await db.execute_system(f"SELECT COUNT(*) FROM NOVA_SYSTEM.{table}")
+        if result["rows"][0][0]:
+            return False
+    return True
+
+
+async def test_steward_release_and_grounding_round_trip_on_the_engine(ontology_db, monkeypatch):
+    """Review, release, resolve and roll back through real StarRocks reads.
+
+    Releases and the ``current`` alias are deployment-wide, so this runs only
+    against an ontology nobody has started, and removes everything it wrote.
+    """
+    if not await _empty_ontology():
+        pytest.skip("the engine already holds ontology records; not touching them")
+    from app.modules.ontology import access
+    from app.modules.ontology.contracts import RepresentationChange
+    from app.modules.ontology.grounding import ground
+    from app.modules.ontology.releases import AliasMove, ReleasePrepare, ReleaseService
+    from app.modules.ontology.resolver import ConceptResolver
+    from app.modules.ontology.service import DomainCreate, OntologyService
+    from app.modules.ontology.stewardship import ProposalCreate, ReviewRequest, StewardshipService
+    from tests.unit._ontology import ADMIN, ANALYST, FINANCE_STEWARD, FakeCatalog
+
+    async def no_audit(**_):
+        return "audit"
+
+    monkeypatch.setattr(access, "write_audit_log", no_audit)
+    started = (await db.execute_system("SELECT NOW()"))["rows"][0][0]
+    repository = OntologyRepository()
+    catalog = FakeCatalog()
+    reads = OntologyService(repository, catalog)
+    stewardship = StewardshipService(repository, catalog)
+    releases = ReleaseService(repository, catalog)
+    try:
+        finance = await reads.create_domain(
+            DomainCreate(name="Finance", steward_roles=["finance_steward"],
+                         visibility_roles=["finance_analyst"]),
+            ADMIN,
+        )
+        from app.modules.ontology.contracts import ConceptBody, ConceptChange
+
+        proposal = await stewardship.create(
+            ProposalCreate(
+                title="Revenue", rationale="Engine acceptance", operation_id=ontology_db + "-p1",
+                changes=[
+                    ConceptChange(op="create", body=ConceptBody(
+                        domain_id=finance["id"], kind="METRIC", slug="NetRevenue",
+                        label="Net revenue", definition="Revenue after discounts.",
+                        aliases=["omzet"], unit="IDR",
+                    )),
+                    RepresentationChange(
+                        op="create", concept_id="@0", view_id="sales_sv", metric="revenue"
+                    ),
+                ],
+            ),
+            ANALYST,
+        )
+        applied = await stewardship.review(
+            proposal.id,
+            ReviewRequest(decision="APPROVE", rationale="ok", operation_id=ontology_db + "-r1"),
+            FINANCE_STEWARD,
+        )
+        assert applied.status == "APPLIED"
+        first = await releases.prepare(ReleasePrepare(), ADMIN)
+        assert first.status == "PREPARED", first.issues
+        await releases.publish(first.id, ADMIN)
+
+        resolver = ConceptResolver(reads)
+        resolved = await resolver.resolve("berapa omzet bulan ini", ANALYST)
+        assert [item["qualified_name"] for item in resolved.concepts] == ["Finance.NetRevenue"]
+        context = SimpleNamespace(
+            user=ANALYST, release_manifest=None, ontology_release_id=None,
+            requested_semantic_view=None,
+        )
+
+        async def models():
+            view = catalog.views["sales_sv"]
+            return [{"semantic_model_id": "sales_sv", "name": "sales_sv",
+                     "definition": view.definition}]
+
+        grounding = await ground("omzet per kota", context, models, resolver=resolver)
+        assert grounding.status == "grounded" and list(grounding.required) == ["revenue"]
+
+        second = await releases.prepare(ReleasePrepare(note="again"), ADMIN)
+        await releases.publish(second.id, ADMIN)
+        moved = await releases.rollback(first.id, AliasMove(reason="engine check"), ADMIN)
+        assert moved.release_id == first.id
+        pinned = await reads.list_concepts(ANALYST)
+        assert pinned["release_id"] == first.id and len(pinned["concepts"]) == 1
+    finally:
+        for table in ONTOLOGY_TABLES.values():
+            await db.execute_system(
+                f"DELETE FROM NOVA_SYSTEM.{table} WHERE created_at >= %s", [started]
+            )
 
 
 async def test_the_alias_moves_by_compare_and_swap(ontology_db):
