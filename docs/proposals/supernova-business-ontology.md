@@ -1,6 +1,6 @@
 # Supernova Business Ontology — analisis dan rencana implementasi
 
-**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware) dan Fase 3 (halaman Business Ontology di Console) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 4–7 masih proposal.
+**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware), Fase 3 (halaman Business Ontology di Console) dan Fase 4 (Signal dan Incident) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 5–7 masih proposal.
 **Branch:** `feat/supernova-ontology` (dari `origin/main` @ `1ecb13c7`)
 **Sumber:** *Supernova Business Ontology v1.1* (6 Nov 2026), dibandingkan dengan source Nova saat ini.
 
@@ -159,6 +159,13 @@ Dibangun sebagai halaman Console `AI & ML → Business Ontology`, di sebelah Sem
 - Proyeksi per pembaca: setiap signal sumber dibuktikan ulang lewat `newsroom_service.story` / NewsItem entitlement. Signal tersembunyi tidak dihitung dan tidak disebut.
 - Reconciler: handler `intelligence.signals` di task orchestration.
 - **Test:** NEWS-001..005, OPS-001.
+
+**Catatan implementasi (berbeda dari rencana di atas):**
+
+- **Penyimpanan.** Signal dan incident disimpan di tabel revisi bersama (seperti tabel ontology), bukan di `IntelligenceRepository`. Repository itu mengikat setiap record ke satu principal dan role, sehingga pembaca lain tidak akan pernah bisa melihat incident yang sama.
+- **ID signal.** ID diturunkan dari sumber dan digest proof-nya, bukan dari revisi Story. Revisi yang hanya mengubah narasi tetap menjadi signal yang sama.
+- **Tanpa proposal mapping otomatis.** Signal yang tidak terikat hanya ditandai `ONTOLOGY_UNBOUND`. Concept baru membutuhkan domain dan definisi yang belum diketahui pada saat deteksi.
+- **Tanpa handler reconciler terpisah.** Setiap cycle News mencatat ulang semua story di edisinya, dan setiap run monitor mencatat ulang deteksinya. Cycle berikutnya otomatis menyelesaikan pencatatan yang sempat terputus.
 
 ### Fase 5 — Jembatan News ↔ Studio
 

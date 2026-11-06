@@ -189,9 +189,63 @@ Console → AI & ML → **Business Ontology** (`/business-ontology`,
 Query keys carry the security epoch, so a role switch never shows cached
 meaning.
 
+## Business Event Hub
+
+Newsroom Stories and monitor NewsItems keep their own contracts and proofs.
+Each one also becomes a `BusinessSignal`
+(`backend/app/modules/intelligence/business_events.py`), and related signals
+form a `BusinessIncident`. Both are stored in
+`NOVA_SYSTEM.CONFIG_INTELLIGENCE_SIGNALS` and `_INCIDENTS`, using the same
+shared revision tables as the ontology.
+
+**What a signal stores.** Only routing metadata:
+- the source type, id, revision and proof digest;
+- the semantic metric;
+- the bound concept (`BOUND`, `ONTOLOGY_UNBOUND` or `NO_RELEASE`);
+- a population fingerprint (never the filter values);
+- the window, direction, severity and detection time.
+
+Measured values, segment names and narrative stay in the source.
+
+**Binding.** A signal is bound to a concept only when the published release
+has a validated binding to the same view and metric, with the same claim
+fingerprint as the definition the detection used.
+
+**Grouping into incidents.** A new signal joins an open incident when all of
+these hold:
+- the population fingerprint is the same;
+- the windows overlap by at least half of the shorter one;
+- the concepts are the same or linked by an active relation in the published
+  release (for unbound signals: the same view and metric).
+
+The incident records the reason as a rule (`same_concept`,
+`related_concepts` with the relation id, `same_metric`). Its causal status
+is always `unknown`. A closed incident never takes new signals.
+
+**Replay safety.** Signal ids derive from the source and its proof digest, and
+an incident id from the signal that opened it.
+- Every newsroom cycle records the signals of its whole edition, so a cycle
+  interrupted after its stories were saved is completed by the next one.
+- Every monitor run records its detection again.
+- Recording never fails the edition or the detection.
+
+**Reading.** `GET /intelligence/incidents` and
+`GET /intelligence/incidents/{id}` sit behind the News entitlement. Every
+source is proven again for the reader: stories through the newsroom reader
+proof, NewsItems through the caller's own scope. Only proven signals are
+shown, and severity, window and grouping are computed from them. Concept names
+appear only for concepts the reader's role may see. An incident with no
+provable signal answers the same 404 as a missing one.
+
+**Lifecycle.** `POST /intelligence/incidents/{id}/transition` moves an
+incident through `OPEN`, `TRIAGED`, `INVESTIGATING`, `DECISION_PENDING`,
+`ACTION_IN_PROGRESS`, `OBSERVING`, `RESOLVED` and `DISMISSED`. Each move needs
+a reason, `expected_revision` and an `operation_id`, and only allowed moves
+are accepted. Every read and move is audited, refusals included.
+
 ## Not yet built
 
-- News signals and incidents (Phases 4–5).
+- News → Studio investigation handoff and investigation updates (Phase 5).
 - Learning proposals (Phase 6).
 
 See the [proposal](proposals/supernova-business-ontology.md).

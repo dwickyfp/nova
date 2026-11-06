@@ -65,6 +65,12 @@ class FakeRepository:
             if records
         ]
 
+    async def current_matching(self, kind, model, field, value, *, limit=200):
+        return [
+            item for item in await self.current(kind, model)
+            if str(getattr(item, field)) == value
+        ][:limit]
+
     async def save(self, kind, record, *, expected_revision=0):
         records = self._records(kind, record.id)
         if records:

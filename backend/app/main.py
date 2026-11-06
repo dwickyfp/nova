@@ -40,6 +40,7 @@ from app.modules.external_catalogs.router import router as external_catalogs_rou
 from app.modules.functions.router import router as functions_router
 from app.modules.indexes.router import router as indexes_router
 from app.modules.intelligence.autopilot import router as semantic_autopilot_router
+from app.modules.intelligence.business_events_router import router as business_events_router
 from app.modules.intelligence.engine_router import router as intelligence_engine_router
 from app.modules.intelligence.engine_schema import ensure_engine_schema
 from app.modules.intelligence.entities import router as entities_router
@@ -532,6 +533,9 @@ def create_app() -> FastAPI:
     app.include_router(intelligence_engine_router, prefix=f"{prefix}/intelligence",
                        tags=["intelligence"])
     app.include_router(ontology_router, prefix=f"{prefix}/ontology", tags=["ontology"])
+    app.include_router(
+        business_events_router, prefix=f"{prefix}/intelligence", tags=["business-events"]
+    )
     # Nova Catalog: catalog store, sync, and catalog management.
     app.include_router(catalog_router, prefix=f"{prefix}/catalog", tags=["catalog"])
     app.include_router(

@@ -16,8 +16,9 @@ ONTOLOGY_TABLES = {
     "aliases": "CONFIG_ONTOLOGY_ALIASES",
 }
 
-ONTOLOGY_DDL = tuple(
-    f"""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.{name} (
+def revision_table_ddl(name: str) -> str:
+    """An append-only revision table for shared, deployment-wide records."""
+    return f"""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.{name} (
     id VARCHAR(64) NOT NULL,
     revision BIGINT NOT NULL,
     operation_id VARCHAR(32) NOT NULL,
@@ -29,8 +30,9 @@ ONTOLOGY_DDL = tuple(
 ) PRIMARY KEY(id, revision, operation_id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")"""
-    for name in ONTOLOGY_TABLES.values()
-)
+
+
+ONTOLOGY_DDL = tuple(revision_table_ddl(name) for name in ONTOLOGY_TABLES.values())
 
 
 async def ensure_ontology_schema() -> None:

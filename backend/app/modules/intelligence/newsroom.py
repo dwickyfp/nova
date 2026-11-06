@@ -853,6 +853,10 @@ class NewsroomService:
             for item in dataset.fields
             for value in item.sample_values
         }
+        from app.modules.intelligence.business_events import record_stories_safely
+
+        # Every story of the edition, so a cycle that stopped here last time is healed.
+        await record_stories_safely(stories, user)
         written, rejected = await self._write(stories, config, ir, known_values, budget)
         await self._audit_cycle(
             view,
@@ -1134,20 +1138,34 @@ class NewsroomService:
             "sections": sections,
         }
 
-    async def story(self, story_id: str, user: dict) -> dict:
-        found = None
+    async def _proven_story(self, story_id: str, user: dict):
+        """The story, its view and edition when ``user`` reproduces every proof now."""
         record = await self.repository.shared_story(story_id, Story)
-        if record is not None:
-            view = await self.semantic._get(record.semantic.view_id)
-            if view and view["status"] != "DEPRECATED":
-                found = await self._visible(view, user, record.edition_date, only=record.id)
+        if record is None:
+            return None
+        view = await self.semantic._get(record.semantic.view_id)
+        if not view or view["status"] == "DEPRECATED":
+            return None
+        found = await self._visible(view, user, record.edition_date, only=record.id)
         if not found or not found[1]:
+            return None
+        return found[1][0], view, found[0]
+
+    async def readable(self, story_id: str, user: dict) -> Story | None:
+        """The story if ``user`` can read it now; the caller audits its own read."""
+        proven = await self._proven_story(story_id, user)
+        return proven[0] if proven else None
+
+    async def story(self, story_id: str, user: dict) -> dict:
+        proven = await self._proven_story(story_id, user)
+        if proven is None:
             await self._audit_read(user, "READ_STORY", story_id[:64], "DENIED", "DENY", 0)
             raise HTTPException(status_code=404, detail=_UNAVAILABLE)
+        story, view, edition = proven
         await self._audit_read(user, "READ_STORY", story_id[:64], "SUCCESS", "ALLOW", 1)
-        return public_story(found[1][0]) | {
+        return public_story(story) | {
             "view_name": view["name"],
-            "pressed_at": found[0].pressed_at.isoformat(),
+            "pressed_at": edition.pressed_at.isoformat(),
         }
 
     async def react(self, story_id: str, reaction: str | None, user: dict) -> dict:

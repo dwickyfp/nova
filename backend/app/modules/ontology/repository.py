@@ -1,8 +1,9 @@
-"""Revision-checked persistence for ontology records.
+"""Revision-checked persistence for shared, deployment-wide records.
 
 The write protocol is the Intelligence one (a metadata lease, a re-read of the
 newest revision, and a compare on the expected revision), but records are
-shared across the deployment rather than owned by one principal.
+shared across the deployment rather than owned by one principal. The ontology
+and the business event hub each use it with their own tables.
 """
 
 from __future__ import annotations
@@ -34,10 +35,13 @@ def _check_fork(rows: list) -> None:
         raise HTTPException(status_code=409, detail="Concurrent revisions require reconciliation")
 
 
-class OntologyRepository:
-    @staticmethod
-    def _table(kind: str) -> str:
-        return "NOVA_SYSTEM." + ONTOLOGY_TABLES[kind]
+class RevisionRepository:
+    def __init__(self, tables: dict[str, str], namespace: str) -> None:
+        self.tables = tables
+        self.namespace = namespace
+
+    def _table(self, kind: str) -> str:
+        return "NOVA_SYSTEM." + self.tables[kind]
 
     async def latest(self, kind: str, record_id: str, model: type[R]) -> R | None:
         result = await db.execute_system(
@@ -82,13 +86,36 @@ class OntologyRepository:
             )
         return [model.model_validate(_decode(row[0])) for row in result["rows"]]
 
+    async def current_matching(
+        self, kind: str, model: type[R], field: str, value: str, *, limit: int = 200
+    ) -> list[R]:
+        """The newest revision of every record whose top-level ``field`` equals ``value``."""
+        if not field.isidentifier():
+            raise ValueError("Unsupported field")
+        result = await db.execute_system(
+            "SELECT payload,branches FROM (SELECT id,payload,"
+            "COUNT(*) OVER (PARTITION BY id,revision) AS branches,"
+            "ROW_NUMBER() OVER (PARTITION BY id ORDER BY revision DESC) AS rn "
+            f"FROM {self._table(kind)}) latest WHERE rn=1 "
+            f"AND get_json_string(CAST(payload AS VARCHAR),'$.{field}')=%s "
+            "ORDER BY id LIMIT %s",
+            [value, limit + 1],
+        )
+        if len(result["rows"]) > limit:
+            raise HTTPException(status_code=422, detail="Too many matching records")
+        if any(row[1] != 1 for row in result["rows"]):
+            raise HTTPException(
+                status_code=409, detail="Concurrent revisions require reconciliation"
+            )
+        return [model.model_validate(_decode(row[0])) for row in result["rows"]]
+
     async def save(self, kind: str, record: R, *, expected_revision: int = 0) -> R:
         """Append ``record`` as the next revision.
 
         Saving the content that is already current is a no-op, so an
         interrupted multi-record write can be replayed safely.
         """
-        async with metadata_lock(f"ontology:{kind}:{record.id}") as lock:
+        async with metadata_lock(f"{self.namespace}:{kind}:{record.id}") as lock:
             result = await db.execute_system(
                 f"SELECT payload,revision FROM {self._table(kind)} WHERE id=%s "
                 "ORDER BY revision DESC LIMIT 2",
@@ -128,6 +155,11 @@ class OntologyRepository:
                 ],
             )
             return record
+
+
+class OntologyRepository(RevisionRepository):
+    def __init__(self) -> None:
+        super().__init__(ONTOLOGY_TABLES, "ontology")
 
 
 ontology_repository = OntologyRepository()

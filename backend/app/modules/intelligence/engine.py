@@ -51,6 +51,14 @@ from app.modules.intelligence.engine_repository import intelligence_repository, 
 from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.ml_engine.analysis import detect_change, outcome_dimensions
 
+
+async def record_news_item_safely(news, monitor, user: dict) -> None:
+    """Record the shared business signal of a detection (imported late: it reads the engine)."""
+    from app.modules.intelligence.business_events import record_news_item_safely as record
+
+    await record(news, monitor, user)
+
+
 R = TypeVar("R", bound=Record)
 MODELS: dict[str, type[Record]] = {
     "nodes": ContextNode,
@@ -997,6 +1005,7 @@ class IntelligenceService:
         prior = await self.repository.get("news", dedup, Scope.from_user(user), NewsItem)
         evidence = [entry for row in observations for entry in row.evidence]
         if prior and [item.digest for item in prior.evidence] == [item.digest for item in evidence]:
+            await record_news_item_safely(prior, monitor, user)
             return {"observation_id": current.id, "detection": detection, "news_id": prior.id}
         news = NewsItem(
             id=dedup,
@@ -1033,6 +1042,7 @@ class IntelligenceService:
                 if [item.digest for item in current_news.evidence] == [
                     item.digest for item in evidence
                 ]:
+                    await record_news_item_safely(current_news, monitor, user)
                     return {
                         "observation_id": current.id,
                         "detection": detection,
@@ -1052,6 +1062,7 @@ class IntelligenceService:
                     expected_revision=current_news.revision,
                 )
                 await self._audit("REFRESH_DETECTION", news, user)
+                await record_news_item_safely(news, monitor, user)
                 return {"observation_id": current.id, "detection": detection, "news_id": news.id}
             prior = await self.repository.recent_incident(news, monitor.cooldown_hours)
             if prior:
@@ -1059,6 +1070,7 @@ class IntelligenceService:
                 return {"observation_id": current.id, "detection": detection, "news_id": prior.id}
             news = await self.repository.save("news", news)
         await self._audit("DETECT", news, user)
+        await record_news_item_safely(news, monitor, user)
         return {"observation_id": current.id, "detection": detection, "news_id": news.id}
 
     async def investigate(
