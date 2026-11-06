@@ -1,6 +1,6 @@
 # Supernova Business Ontology — analisis dan rencana implementasi
 
-**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware), Fase 3 (halaman Business Ontology di Console), Fase 4 (Signal dan Incident) dan Fase 5 (jembatan News ↔ Studio) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 6–7 masih proposal.
+**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware), Fase 3 (halaman Business Ontology di Console), Fase 4 (Signal dan Incident), Fase 5 (jembatan News ↔ Studio) dan Fase 6 (learning dan signifikansi) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 7 ditunda.
 **Branch:** `feat/supernova-ontology` (dari `origin/main` @ `1ecb13c7`)
 **Sumber:** *Supernova Business Ontology v1.1* (6 Nov 2026), dibandingkan dengan source Nova saat ini.
 
@@ -188,6 +188,11 @@ Dibangun sebagai halaman Console `AI & ML → Business Ontology`, di sebelah Sem
 - `knowledge_propose`: dari outcome, feedback, atau koreksi menjadi proposal ontology (Fase 1). Taksonomi feedback diperluas dari like/dislike secara aditif.
 - Significance score deterministik untuk ranking News, dengan bobot sebagai hipotesis yang dikalibrasi lewat label.
 - **Test:** LEARN-001/002, STUDIO-004.
+
+**Catatan implementasi Fase 6:**
+
+- **Taksonomi feedback belum diperluas.** Feedback News tetap like/dislike, dan dislike hanya mengubah urutan berita untuk pembaca itu. Laporan seperti "faktanya salah" atau "duplikat" belum dibuat.
+- **Uji langsung dengan model default** sudah dilakukan untuk empat alur: grounding, klarifikasi ambiguitas, definisi resmi, dan proposal alias. Skor signifikansi belum diuji langsung karena stack dev belum punya News aktif.
 
 ### Fase 7 (ditunda) — Object dan action runtime
 

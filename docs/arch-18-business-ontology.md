@@ -292,8 +292,41 @@ The story panel's **Related signals and findings** section
 
 The original story is never changed.
 
+## Learning without mutation
+
+**Agent proposals.** `knowledge_propose` turns a user's correction or teaching
+into an ontology proposal with source `AGENT`, submitted for the caller. It can:
+- add other names (aliases) to a concept;
+- revise a definition;
+- propose a new concept in a domain the caller can see.
+
+It needs consent (`session_change`), is bundleable, and is a Smart root tool.
+Nothing changes until a steward of the domain approves the proposal and a
+release is published. The caller can never approve it, because the caller is
+the submitter. Agents are told never to claim the definition already changed.
+
+**News feedback.** Likes and dislikes reorder only that reader's newspaper.
+They never create a proposal or touch a definition.
+
+**Business significance.** News ranking adds a deterministic boost with
+visible reasons (`business_events.significance`):
+
+| Feature | Weight | Reason shown |
+|---|---|---|
+| The story's concept has an active `AFFECTS_GOAL` link to a goal the reader can see | 0.75 | "Affects goal Finance.GrowthTarget" |
+| Other stories in the reader's own newspaper are signals of the same incident | 0.5 | "Moved with 1 related story here" |
+| The metric has an official definition the reader can see | 0.25 | "Official definition: Finance.NetRevenue" |
+
+The weights are starting hypotheses, to be calibrated against reviewed News
+labels; they are not learned values. Every feature reads only what the reader
+already sees, so the ranking cannot reveal hidden signals or concepts. When the
+reader's own preferences give no reason, the first significance reason
+replaces "Largest move in this edition". If significance cannot be computed,
+News ranks as before.
+
 ## Not yet built
 
-- Learning proposals from outcomes and feedback (Phase 6).
+- The operational object and action runtime (Phase 7). It is deferred until
+  the News and Studio loop has been run on real data.
 
 See the [proposal](proposals/supernova-business-ontology.md).

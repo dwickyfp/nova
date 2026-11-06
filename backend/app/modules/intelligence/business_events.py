@@ -792,6 +792,68 @@ class BusinessEventService:
 business_event_service = BusinessEventService()
 
 
+#: Starting weights of the business significance score. They are hypotheses to
+#: calibrate against reviewed News labels, not learned values: a story about an
+#: approved goal outranks a similar move, and corroboration outranks a lone move.
+SIGNIFICANCE_WEIGHTS = {"goal": 0.75, "corroboration": 0.5, "official": 0.25}
+
+
+async def significance(stories: list, user: dict, *, service: BusinessEventService | None = None,
+                       ontology=None) -> dict[str, dict]:
+    """Deterministic significance of the stories one reader can see now.
+
+    Every feature reads only what this reader already sees: other stories in
+    the same list, and ontology concepts their role may see. So the order
+    cannot reveal hidden signals or concepts.
+    """
+    from app.modules.ontology.service import ontology_service as default_ontology
+
+    service = service or business_event_service
+    ontology = ontology or default_ontology
+    ids = {story.id: _signal_id(_story_source(story)) for story in stories}
+    signals = await service.repository.latest_many(
+        "signals", list(ids.values()), BusinessSignal
+    )
+    snapshot = await ontology.snapshot("current")
+    visible = ontology.visible_concepts(snapshot, user) if snapshot.release else {}
+
+    def name(concept_id: str) -> str:
+        return ontology.concept_view(visible[concept_id], snapshot.domains)["qualified_name"]
+
+    goals: dict[str, list[str]] = {}
+    for relation in snapshot.relations:
+        if (
+            relation.status == "ACTIVE"
+            and relation.type.value == "AFFECTS_GOAL"
+            and relation.target_id in visible
+        ):
+            goals.setdefault(relation.source_id, []).append(relation.target_id)
+    incidents: dict[str, int] = {}
+    for known in signals.values():
+        if known.incident_id:
+            incidents[known.incident_id] = incidents.get(known.incident_id, 0) + 1
+
+    scored = {}
+    for story_id, signal_id in ids.items():
+        signal = signals.get(signal_id)
+        boost, reasons = 0.0, []
+        concept = signal.concept.concept_id if signal and signal.concept else None
+        if concept and goals.get(concept):
+            boost += SIGNIFICANCE_WEIGHTS["goal"]
+            reasons.append("Affects goal " + ", ".join(sorted(name(g) for g in goals[concept])))
+        others = incidents.get(signal.incident_id, 0) - 1 if signal and signal.incident_id else 0
+        if others > 0:
+            boost += SIGNIFICANCE_WEIGHTS["corroboration"]
+            reasons.append(
+                f"Moved with {others} related {'story' if others == 1 else 'stories'} here"
+            )
+        if concept and concept in visible:
+            boost += SIGNIFICANCE_WEIGHTS["official"]
+            reasons.append(f"Official definition: {name(concept)}")
+        scored[story_id] = {"boost": round(boost, 4), "reasons": reasons}
+    return scored
+
+
 async def record_stories_safely(stories: list, user: dict) -> None:
     """Called by the newsroom after an edition is saved; never fails the edition."""
     try:

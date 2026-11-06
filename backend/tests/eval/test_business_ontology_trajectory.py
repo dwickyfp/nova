@@ -152,3 +152,37 @@ async def test_the_explain_tool_stays_behind_consent(world):
                                  "define net revenue")
     assert "OfficialdefinitionofFinance.NetRevenue" in allowed
     assert context.ontology_release_id is not None
+
+
+async def test_a_users_correction_is_filed_for_review_behind_consent(world, monkeypatch):
+    from app.modules.agents.tools.ontology import knowledge_propose_tool
+    from app.modules.ontology import stewardship as stewardship_module
+    from app.modules.ontology.contracts import Concept, Proposal
+
+    monkeypatch.setattr(stewardship_module, "stewardship_service", world.stewardship)
+    concept_id = await bind(world, world.finance, "NetRevenue", "total_revenue", None)
+    await world.release()
+    registry = ToolRegistry()
+    registry.register(knowledge_propose_tool)
+    script = [
+        tool_call_frame("k1", name="knowledge_propose", arguments={
+            "change": "add_aliases", "concept": "Finance.NetRevenue",
+            "aliases": ["GMV bersih"], "rationale": "The user calls it GMV bersih",
+        }),
+        text_frame("I filed that for a Finance steward to review."),
+    ]
+    agent_proposals = lambda rows: [item for item in rows if item.source == "AGENT"]  # noqa: E731
+
+    question = "GMV bersih = net revenue"
+    denied, _ = await run(
+        ScriptedProvider(script=list(script)), registry, question, consent=deny
+    )
+    assert '"finish_reason":"denied"' in denied
+    assert agent_proposals(await world.repository.current("proposals", Proposal)) == []
+
+    allowed, _ = await run(ScriptedProvider(script=list(script)), registry, question)
+    assert '"finish_reason":"stop"' in allowed
+    (proposal,) = agent_proposals(await world.repository.current("proposals", Proposal))
+    assert proposal.status == "PENDING"
+    concept = await world.repository.latest("concepts", concept_id, Concept)
+    assert "GMV bersih" not in concept.aliases  # nothing changes before review and release

@@ -38,6 +38,7 @@ KNOWN_TOOLS = frozenset(
         "decision_lab",
         "ontology_resolve",
         "ontology_explain",
+        "knowledge_propose",
         "incident_context",
         "investigation_update",
         "compute_metrics",
@@ -146,13 +147,14 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
             if tool.name in selected:
                 registry.register(tool)
 
-    if selected & {"ontology_resolve", "ontology_explain"}:
+    if selected & {"ontology_resolve", "ontology_explain", "knowledge_propose"}:
         from app.modules.agents.tools.ontology import (
+            knowledge_propose_tool,
             ontology_explain_tool,
             ontology_resolve_tool,
         )
 
-        for ontology_tool in (ontology_resolve_tool, ontology_explain_tool):
+        for ontology_tool in (ontology_resolve_tool, ontology_explain_tool, knowledge_propose_tool):
             if ontology_tool.name in selected:
                 registry.register(ontology_tool)
 

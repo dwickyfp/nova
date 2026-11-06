@@ -102,3 +102,9 @@ async def test_incidents_are_found_by_population_on_the_engine(events_db):
     )
     assert [item.id for item in found] == [grown.id]
     assert found[0].revision == 2 and len(found[0].signal_ids) == 2
+    many = await repository.latest_many(
+        "incidents", [grown.id, f"{events_db}_inc_b", f"{events_db}_missing"], BusinessIncident
+    )
+    assert sorted(many) == sorted([grown.id, f"{events_db}_inc_b"])
+    assert many[grown.id].revision == 2
+    assert await repository.latest_many("incidents", [], BusinessIncident) == {}

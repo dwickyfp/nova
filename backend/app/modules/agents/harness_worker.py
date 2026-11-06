@@ -71,7 +71,8 @@ from app.observability.metrics import (
 #: the caller's active role can list, so the root can find tables and tags
 #: before it delegates.
 #: ``incident_context`` and ``investigation_update`` let a Mission opened from News
-#: read its incident and post reviewed findings; both need consent.
+#: read its incident and post reviewed findings; ``knowledge_propose`` files a user's
+#: correction of a business term for steward review. All need consent.
 SMART_ROOT_TOOLS = (
     "load_skill",
     "catalog_search",
@@ -79,6 +80,7 @@ SMART_ROOT_TOOLS = (
     "data_to_chart",
     "incident_context",
     "investigation_update",
+    "knowledge_propose",
 )
 
 logger = logging.getLogger(__name__)

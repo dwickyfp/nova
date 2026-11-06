@@ -25,7 +25,11 @@ from app.modules.agents.tools.diagnose_change import DESCRIPTION as DIAGNOSE_DES
 from app.modules.agents.tools.diagnose_change import PARAMETERS as DIAGNOSE_PARAMETERS
 from app.modules.agents.tools.incident import incident_context_tool, investigation_update_tool
 from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
-from app.modules.agents.tools.ontology import ontology_explain_tool, ontology_resolve_tool
+from app.modules.agents.tools.ontology import (
+    knowledge_propose_tool,
+    ontology_explain_tool,
+    ontology_resolve_tool,
+)
 from app.modules.agents.tools.propose_automation import (
     DESCRIPTION as PROPOSE_AUTOMATION_DESCRIPTION,
 )
@@ -54,6 +58,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     "decision_lab": (decision_lab_tool.description, decision_lab_tool.parameters),
     "ontology_resolve": (ontology_resolve_tool.description, ontology_resolve_tool.parameters),
     "ontology_explain": (ontology_explain_tool.description, ontology_explain_tool.parameters),
+    "knowledge_propose": (knowledge_propose_tool.description, knowledge_propose_tool.parameters),
     "incident_context": (incident_context_tool.description, incident_context_tool.parameters),
     "investigation_update": (
         investigation_update_tool.description, investigation_update_tool.parameters,
@@ -411,6 +416,7 @@ AGENT_BUNDLEABLE_TOOLS = (
     "decision_lab",
     "ontology_resolve",
     "ontology_explain",
+    "knowledge_propose",
     "incident_context",
     "investigation_update",
     "compute_metrics",

@@ -61,6 +61,26 @@ class RevisionRepository:
         _check_fork(result["rows"])
         return model.model_validate(_decode(result["rows"][0][0])) if result["rows"] else None
 
+    async def latest_many(self, kind: str, record_ids: list[str], model: type[R]) -> dict[str, R]:
+        """The newest revision of each given record, in one read."""
+        ids = sorted(set(record_ids))[:500]
+        if not ids:
+            return {}
+        marks = ",".join(["%s"] * len(ids))
+        result = await db.execute_system(
+            "SELECT payload,branches FROM (SELECT id,payload,"
+            "COUNT(*) OVER (PARTITION BY id,revision) AS branches,"
+            "ROW_NUMBER() OVER (PARTITION BY id ORDER BY revision DESC) AS rn "
+            f"FROM {self._table(kind)} WHERE id IN ({marks})) latest WHERE rn=1",
+            ids,
+        )
+        if any(row[1] != 1 for row in result["rows"]):
+            raise HTTPException(
+                status_code=409, detail="Concurrent revisions require reconciliation"
+            )
+        records = [model.model_validate(_decode(row[0])) for row in result["rows"]]
+        return {record.id: record for record in records}
+
     async def history(self, kind: str, record_id: str, model: type[R]) -> list[R]:
         result = await db.execute_system(
             f"SELECT payload,revision FROM {self._table(kind)} WHERE id=%s "

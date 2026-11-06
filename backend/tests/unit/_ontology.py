@@ -65,6 +65,14 @@ class FakeRepository:
             if records
         ]
 
+    async def latest_many(self, kind, record_ids, model):
+        found = {}
+        for record_id in record_ids:
+            record = await self.latest(kind, record_id, model)
+            if record is not None:
+                found[record_id] = record
+        return found
+
     async def current_matching(self, kind, model, field, value, *, limit=200):
         return [
             item for item in await self.current(kind, model)

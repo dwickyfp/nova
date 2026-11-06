@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -74,6 +75,7 @@ _FORBIDDEN_EXECUTION_ROLES = frozenset(
         "CLUSTER_ADMIN",
     }
 )
+logger = logging.getLogger(__name__)
 _MAX_VIEWS = 8
 _READER_CONCURRENCY = 4
 #: Model drafts attempted per cycle; the rest keep the template until the next one.
@@ -1108,13 +1110,21 @@ class NewsroomService:
         views = (await self.semantic.news_views())[:_MAX_VIEWS]
         # Each view is proven on its own budget, so the views are read side by side.
         found = await asyncio.gather(*(self._visible(view, user, day) for view in views))
+        significance = await _significance(
+            [story for result in found if result for story in result[1]], user
+        )
         sections = [
             {
                 "view_id": view["id"],
                 "name": view["name"],
                 "edition_date": edition.edition_date.isoformat(),
                 "pressed_at": edition.pressed_at.isoformat(),
-                "stories": [public_story(story) | {"view_name": view["name"]} for story in stories],
+                "stories": [
+                    public_story(story)
+                    | {"view_name": view["name"]}
+                    | ({"significance": significance[story.id]} if story.id in significance else {})
+                    for story in stories
+                ],
             }
             for view, (edition, stories) in (
                 (view, result) for view, result in zip(views, found, strict=True) if result
@@ -1193,6 +1203,19 @@ class NewsroomService:
             security_context_version=user.get("security_context_version"),
             decision=decision,
         )
+
+
+async def _significance(stories: list, user: dict) -> dict[str, dict]:
+    """Business significance of the visible stories; News still ranks without it."""
+    if not stories:
+        return {}
+    from app.modules.intelligence.business_events import significance
+
+    try:
+        return await significance(stories, user)
+    except Exception as exc:  # noqa: BLE001 - ranking falls back to the statistical order
+        logger.warning("Story significance unavailable: %s", type(exc).__name__)
+        return {}
 
 
 async def _model_writer(story, config, ir, known_values):
