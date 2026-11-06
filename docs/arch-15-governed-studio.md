@@ -188,11 +188,11 @@ Intelligence read path admits only pinned records and their exact recorded
 scopes; general Intelligence scope checks remain in force. Continuing a Decision,
 Action, or Outcome uses the current binding while preserving historical proofs.
 
-Continue and New apply to one accepted message. The composer captures the routing
-choice before sending and resets it only on acceptance. A refusal before acceptance
-preserves the choice and draft; a disconnected accepted run reconnects through its
-existing event journal. Resume selects Continue for the next message under the
-same acceptance rule.
+Studio routes each message automatically and shows no Mission panel; Missions
+remain server-side records. A News investigation handoff pins its Mission for the
+next accepted message. The API's Continue, New, and Resume choices apply to one
+accepted message; a refusal before acceptance leaves them unset, and a
+disconnected accepted run reconnects through its existing event journal.
 
 HTTP, SSE, canonical-object reads, and legacy replay use public allowlist projections
 on the existing endpoints. Business revisions, stages, references, hypotheses,

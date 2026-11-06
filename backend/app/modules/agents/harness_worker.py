@@ -70,17 +70,19 @@ from app.observability.metrics import (
 #: chart what specialists return. ``catalog_search`` reads only catalog metadata
 #: the caller's active role can list, so the root can find tables and tags
 #: before it delegates.
-#: ``incident_context`` and ``investigation_update`` let a Mission opened from News
-#: read its incident and post reviewed findings; ``knowledge_propose`` files a user's
-#: correction of a business term for steward review. All need consent.
+#: ``incident_context`` lets a Mission opened from News read its incident. A Smart
+#: turn cannot ask for consent, so findings and term corrections are drafted by the
+#: root-only draft tools (``SMART_DRAFT_TOOLS``) and filed by the user from Studio.
 SMART_ROOT_TOOLS = (
     "load_skill",
     "catalog_search",
     "compute_metrics",
     "data_to_chart",
     "incident_context",
-    "investigation_update",
-    "knowledge_propose",
+    # Approved business meaning is read here, not delegated: a definition is not
+    # data a specialist owns, and Smart grounds its answer in the published release.
+    "ontology_resolve",
+    "ontology_explain",
 )
 
 logger = logging.getLogger(__name__)
@@ -97,6 +99,30 @@ SMART_CHILD_TOKENS = 60_000
 ROOT_HISTORY_MESSAGES = 6
 ROOT_HISTORY_CHARS = 4000
 ANSWERED = frozenset({"stop", "out_of_scope", "clarification"})
+#: Step kind on a Smart answer that relayed a specialist's question back to the user.
+PENDING_CLARIFICATION = "pending_clarification"
+
+
+def clarified_request(history: list, objective: str) -> str:
+    """Read a reply to Smart's clarification together with the request it answers.
+
+    The user's answer ("booked order value") is not a request on its own: routing,
+    discovery and delegation need the original request and the question it settles.
+    """
+    last = history[-1] if history else None
+    if last is None or getattr(last, "role", None) != "assistant":
+        return objective
+    pending = next(
+        (step for step in (last.steps or [])
+         if isinstance(step, dict) and step.get("kind") == PENDING_CLARIFICATION),
+        None,
+    )
+    if not pending or not str(pending.get("request") or "").strip():
+        return objective
+    questions = " ".join(str(item) for item in pending.get("questions") or [])
+    return (
+        f"{pending['request']}\nAsked back: {questions}\nThe user answered: {objective}"
+    )[:4000]
 #: Tables and charts a Smart root may attach to its answer.
 MAX_ROOT_ARTIFACTS = 2
 MAX_CHILD_TOKENS = 20_000
@@ -111,7 +137,9 @@ MAX_DISCOVERY_ATTEMPTS = 6
 MAX_START_EVENT_ATTEMPTS = 6
 
 
-def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dict]:
+def _root_artifacts(
+    steps: list[dict], proposal: dict | None = None, drafts: list[dict] | None = None,
+) -> list[dict]:
     """The table and chart a Smart answer shows: the last of each, headed in plain words.
 
     Earlier tables are the inputs of the last one (two results, then their
@@ -132,6 +160,7 @@ def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dic
             item["content_index"] = index
         if proposal:
             shown.append({"kind": "automation_proposal", **proposal})
+        shown.extend({"kind": "smart_draft", **draft} for draft in drafts or [])
         return shown
 
     shown = []
@@ -148,6 +177,8 @@ def _root_artifacts(steps: list[dict], proposal: dict | None = None) -> list[dic
     if proposal:
         # A schedule Smart drafted; Studio shows it with a button that creates it.
         shown.append({"kind": "automation_proposal", **proposal})
+    # Proposals and findings Smart prepared; Studio shows each with a button that files it.
+    shown.extend({"kind": "smart_draft", **draft} for draft in drafts or [])
     return shown
 
 
@@ -986,6 +1017,7 @@ class AgentHarnessWorker:
                           int((usage or {}).get("prompt_tokens") or 0))
         root_completion = max(int(latest_root.get("completion_tokens") or 0),
                               int((usage or {}).get("completion_tokens") or 0))
+        pending = await self._pending_clarification(root, children)
         if not visible:
             child_prompt = sum(int(item.get("prompt_tokens") or 0) for item in children)
             child_completion = sum(int(item.get("completion_tokens") or 0) for item in children)
@@ -998,7 +1030,9 @@ class AgentHarnessWorker:
                 content=answer,
                 message_id=message_id,
                 agent_id=root["agent_id"],
-                steps=[*artifacts, carried] if carried else artifacts,
+                steps=[
+                    *artifacts, *([carried] if carried else []), *([pending] if pending else []),
+                ],
                 usage={
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
@@ -1039,6 +1073,20 @@ class AgentHarnessWorker:
                     "artifacts": json.loads(json.dumps(artifacts, default=_json_default)),
                 },
             )
+
+    async def _pending_clarification(self, root: dict, children: list[dict]) -> dict | None:
+        """What a specialist asked back this turn, kept so the reply can answer it."""
+        questions = [
+            str(item.get("result_summary") or "")[:1000]
+            for item in children
+            if item.get("status") == "completed"
+            and (item.get("checkpoint") or {}).get("finish_reason") == "clarification"
+            and item.get("result_summary")
+        ]
+        if not questions:
+            return None
+        request = clarified_request(await self._root_history(root), root["objective"])
+        return {"kind": PENDING_CLARIFICATION, "request": request, "questions": questions[:3]}
 
     @staticmethod
     async def _root_history(root: dict) -> list[AssistantMessage]:
@@ -1172,9 +1220,13 @@ class AgentHarnessWorker:
             )
             register_collaboration_tools(registry, control)
             if is_root:
+                from app.modules.agents.tools.incident import draft_investigation_update_tool
+                from app.modules.agents.tools.ontology import draft_knowledge_proposal_tool
                 from app.modules.agents.tools.propose_automation import propose_automation_tool
 
                 registry.register(propose_automation_tool)
+                registry.register(draft_knowledge_proposal_tool)
+                registry.register(draft_investigation_update_tool)
             system_prompt += collaboration_prompt(control)
         else:
             registry.register(SendAgentMessageTool(self.repository, child, root))
@@ -1213,7 +1265,10 @@ class AgentHarnessWorker:
             session_id=child["session_id"],
             thread_id=child["thread_id"],
             user=user,
-            routing_content=child["objective"],
+            routing_content=(
+                clarified_request(thread.messages, child["objective"])
+                if is_root else child["objective"]
+            ),
             agent_id=agent["agent_id"],
             agent_owner_name=agent["owner_name"],
             semantic_model_id=agent.get("semantic_model_id"),
@@ -1569,7 +1624,9 @@ class AgentHarnessWorker:
                     )
                     return
                 await self.repository.acknowledge_messages(mailbox_id, list(seen_messages))
-                shown = _root_artifacts(context.steps or [], context.automation_proposal)
+                shown = _root_artifacts(
+                    context.steps or [], context.automation_proposal, context.smart_drafts
+                )
                 await self._finish_root(
                     child, user, answer, [row for row in tree if row["depth"]], context.usage,
                     shown, _carried_result(context.verified_evidence, shown),
@@ -1588,6 +1645,7 @@ class AgentHarnessWorker:
                 "verified_evidence": context.verified_evidence or {},
                 "evidence_tables_omitted": omitted_tables,
                 "needs_data": bool((context.route or {}).get("needs_data")),
+                "finish_reason": finish_reason,
             }, prompt=prompt, attachments=attachments, refs=resource_refs),
             summary=answer or None,
             error_class=None if status == "completed" else finish_reason[:64],

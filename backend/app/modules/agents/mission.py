@@ -225,13 +225,24 @@ def _add_refs(stage: MissionStage, *refs: str | None) -> None:
             stage.source_refs.append(ref)
 
 
-def _touch_stage(
-    mission: Mission, kind: StageKind, status: MissionStageStatus, *refs: str | None
-) -> None:
+def _stage(mission: Mission, kind: StageKind) -> MissionStage:
     stage = next((s for s in mission.stages if s.kind == kind), None)
     if stage is None:
         stage = MissionStage(kind=kind, label=STAGE_LABELS[kind])
         mission.stages.append(stage)
+    return stage
+
+
+def _delegated(payload: dict) -> bool:
+    """A specialist run queued under Smart, from the code-owned journal event."""
+    agent_id = payload.get("agent_id")
+    return isinstance(agent_id, str) and bool(agent_id) and agent_id not in SMART_AGENT_IDS
+
+
+def _touch_stage(
+    mission: Mission, kind: StageKind, status: MissionStageStatus, *refs: str | None
+) -> None:
+    stage = _stage(mission, kind)
     if stage.status != "completed":
         stage.status = status
     _add_refs(stage, *refs)
@@ -285,6 +296,21 @@ def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> No
         for stage in mission.stages:
             if stage.kind in {StageKind.EXECUTE, StageKind.VERIFY} and ref in stage.source_refs:
                 stage.status = "completed"
+    elif kind == "agent_queued" and _delegated(payload):
+        # Smart handed part of the work to a specialist: the mission investigates
+        # until every delegated specialist run has completed.
+        stage = _stage(mission, StageKind.INVESTIGATE)
+        stage.status = "running"
+        _add_refs(stage, f"delegate:{run_id}")
+    elif kind == "agent_completed":
+        found = next((s for s in mission.stages if s.kind == StageKind.INVESTIGATE), None)
+        if found is not None and f"delegate:{run_id}" in found.source_refs:
+            found.source_refs = [
+                f"delegated:{run_id}" if ref == f"delegate:{run_id}" else ref
+                for ref in found.source_refs
+            ]
+            if not any(ref.startswith("delegate:") for ref in found.source_refs):
+                found.status = "completed"
     elif kind in {"error", "agent_failed"}:
         mission.status = "blocked"
     if stage_kind is not None:

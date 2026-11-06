@@ -334,9 +334,11 @@ async def test_specialist_prompt_queries_its_own_semantic_coverage(collaboration
 
     _, control = collaboration
     assert "discover_agents with the complete user request" in collaboration_prompt(control)
+    assert "ontology_resolve yourself" in collaboration_prompt(control)
     specialist = await spawn(control, "finance")
     prompt = collaboration_prompt(specialist)
     assert "Use your configured semantic_query" in prompt
+    assert "ontology_resolve yourself" not in prompt
     assert "discover_agents with the complete user request" not in prompt
 
 
@@ -877,3 +879,50 @@ def test_a_smart_chart_of_two_measures_draws_both():
     # that drops either one leaves out half of what was asked for.
     drawn = {pill.field for pill in spec.all_fields() if pill.is_measure}
     assert {"total_expense", "active_headcount"} <= drawn
+
+
+def test_a_reply_to_a_smart_clarification_is_routed_with_its_request():
+    from types import SimpleNamespace
+
+    from app.modules.agents.harness_worker import PENDING_CLARIFICATION, clarified_request
+
+    pending = {
+        "kind": PENDING_CLARIFICATION, "request": "Show revenue by channel",
+        "questions": ["Which revenue: Finance.Revenue (invoiced) or Sales.Revenue (booked)?"],
+    }
+    asked = [
+        SimpleNamespace(role="user", steps=[], content="Show revenue by channel"),
+        SimpleNamespace(role="assistant", steps=[pending], content="Invoiced or booked?"),
+    ]
+    routed = clarified_request(asked, "Booked order value")
+    assert routed.startswith("Show revenue by channel\n")
+    assert "Sales.Revenue (booked)" in routed
+    assert routed.endswith("The user answered: Booked order value")
+    # Only the reply right after the question answers it; anything else stands alone.
+    answered = [*asked, SimpleNamespace(role="user", steps=[], content="Booked")]
+    assert clarified_request(answered, "Units by region") == "Units by region"
+    plain = [SimpleNamespace(role="assistant", steps=[{"kind": "table"}], content="Done")]
+    assert clarified_request(plain, "Units by region") == "Units by region"
+    assert clarified_request([], "Units by region") == "Units by region"
+
+
+@pytest.mark.asyncio
+async def test_smart_remembers_what_a_specialist_asked_back(monkeypatch):
+    from app.modules.agents.harness_worker import PENDING_CLARIFICATION, AgentHarnessWorker
+
+    worker = AgentHarnessWorker.__new__(AgentHarnessWorker)
+
+    async def no_history(root):
+        return []
+
+    monkeypatch.setattr(AgentHarnessWorker, "_root_history", staticmethod(no_history))
+    root = {"objective": "Show revenue by channel"}
+    asked = {"status": "completed", "result_summary": "Finance.Revenue or Sales.Revenue?",
+             "checkpoint": {"finish_reason": "clarification"}}
+    answered = {"status": "completed", "result_summary": "12",
+                "checkpoint": {"finish_reason": "stop"}}
+    failed = {"status": "failed", "result_summary": "", "checkpoint": {"finish_reason": "error"}}
+    pending = await worker._pending_clarification(root, [asked, answered, failed])
+    assert pending == {"kind": PENDING_CLARIFICATION, "request": "Show revenue by channel",
+                       "questions": ["Finance.Revenue or Sales.Revenue?"]}
+    assert await worker._pending_clarification(root, [answered, failed]) is None

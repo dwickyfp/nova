@@ -80,6 +80,12 @@ def test_a_proposal_travels_with_the_answer_after_its_table_and_chart():
     assert [item["kind"] for item in shown] == ["table", "automation_proposal"]
     assert shown[1]["title"] == "Weekly expense"
     assert [item["kind"] for item in _root_artifacts(steps)] == ["table"]
+    drafts = [{"draft_kind": "knowledge_proposal", "title": "Add other names"}]
+    shown = _root_artifacts(steps, None, drafts)
+    assert [item["kind"] for item in shown] == ["table", "smart_draft"]
+    assert shown[1]["draft_kind"] == "knowledge_proposal"
+    ui = [{"kind": "ui", "content_index": 0, "program": "x"}]
+    assert [item["kind"] for item in _root_artifacts(ui, None, drafts)] == ["ui", "smart_draft"]
 
 
 @pytest.mark.asyncio

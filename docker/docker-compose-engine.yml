@@ -135,6 +135,52 @@ services:
     networks:
       - nova
 
+  # Studio Smart runs: claims queued runs and executes them as the originating
+  # session and active role. Without it every Smart request stays queued.
+  nova-agent-worker:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    container_name: nova-agent-worker
+    command: ["python", "-m", "app.agent_worker"]
+    depends_on:
+      starrocks-init:
+        condition: service_completed_successfully
+      ranger-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      STARROCKS_HOST: starrocks-fe
+      STARROCKS_FE_MYSQL_PORT: 9030
+      REDIS_URL: redis://:${REDIS_PASSWORD:-novaredis}@redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nova}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY:-novasecret}
+      RANGER_ADMIN_URL: http://ranger-admin:6080
+      RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
+      RANGER_USERNAME: admin
+      RANGER_PASSWORD: ${RANGER_ADMIN_PASSWORD:?set RANGER_ADMIN_PASSWORD in docker/.env}
+      RANGER_TLS_VERIFY: "false"
+      SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
+      FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
+      NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
+      MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
+      # Scheduled Smart runs execute as the schedule owner through this account.
+      WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
+      WORKER_IMPERSONATION_PASSWORD: ${WORKER_IMPERSONATION_PASSWORD:-}
+      WORKER_IMPERSONATION_ROLE: ${WORKER_IMPERSONATION_ROLE:-}
+      # A provider endpoint on localhost means the host machine, not this container.
+      AI_PROVIDER_LOOPBACK_HOST: ${AI_PROVIDER_LOOPBACK_HOST:-host.docker.internal}
+    volumes:
+      - ./nova.yaml:/opt/nova/config/nova.yaml:ro
+    restart: unless-stopped
+    networks:
+      - nova
+
   ranger-solr:
     image: apache/ranger-solr:${RANGER_VERSION:-2.9.0}
     container_name: nova-ranger-solr

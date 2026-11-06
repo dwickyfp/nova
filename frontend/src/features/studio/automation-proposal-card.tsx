@@ -79,7 +79,7 @@ export function AutomationProposalCard({ proposal }: { proposal: AutomationPropo
           ) : null}
           <p className="text-muted-foreground">
             {scheduled
-              ? "Scheduled. Each run reads with your access and appears in history. Manage it under Capabilities, Scheduled reports."
+              ? "Scheduled. Each run reads with your access and appears in history."
               : nextRun && !Number.isNaN(nextRun.getTime())
                 ? `Nothing is scheduled yet. The first run would be ${nextRun.toLocaleString()}.`
                 : "Nothing is scheduled yet."}

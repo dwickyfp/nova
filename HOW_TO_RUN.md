@@ -839,7 +839,7 @@ dan akses ke penyedia secret yang sama dengan backend. Worker membuka koneksi
 ke cluster sumber dan menyelesaikan referensi secret saat job berjalan.
 
 Untuk deployment Compose dengan profil `app`, `docker-compose-engine.yml`
-menjalankan `nova-worker` bersama backend. Isi kredensial akun worker khusus
+menjalankan `nova-worker` dan `nova-agent-worker` (Studio Smart) bersama backend. Isi kredensial akun worker khusus
 (`WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD`, dan, jika Ranger
 aktif, `WORKER_IMPERSONATION_ROLE`) di `docker/.env` sebelum mengaktifkan profil
 tersebut. Jangan gunakan akun `root` atau `nova_admin`.
@@ -848,7 +848,8 @@ tersebut. Jangan gunakan akun `root` atau `nova_admin`.
 
 Studio Smart requires a separate worker process. It claims queued runs from
 `NOVA_SYSTEM`, checks the originating session and active role in Redis, and
-executes specialist runs independently of the API process.
+executes specialist runs independently of the API process. The Compose `app`
+profile runs it as `nova-agent-worker`; start it by hand only for a host backend.
 
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend

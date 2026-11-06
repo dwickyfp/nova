@@ -133,8 +133,10 @@ def test_the_tool_files_proposals_behind_consent():
 
     assert knowledge_propose_tool.classification == "session_change"
     assert knowledge_propose_tool.requires_consent and knowledge_propose_tool.preview(None)
-    for registry_names in (KNOWN_TOOLS, AGENT_BUNDLEABLE_TOOLS, BUILTIN_TOOLS, SMART_ROOT_TOOLS):
+    for registry_names in (KNOWN_TOOLS, AGENT_BUNDLEABLE_TOOLS, BUILTIN_TOOLS):
         assert "knowledge_propose" in registry_names
+    # A Smart turn cannot ask consent: it drafts, and the user files the proposal.
+    assert "knowledge_propose" not in SMART_ROOT_TOOLS
     assert "knowledge_propose" in build_registry({"default_tools": ["knowledge_propose"]}).names()
 
 
@@ -253,3 +255,42 @@ async def test_newspaper_ranking_survives_a_significance_failure(monkeypatch):
     monkeypatch.setattr(business_events, "significance", boom)
     assert await newsroom._significance([SimpleNamespace(id="s")], ANALYST) == {}
     assert await newsroom._significance([], ANALYST) == {}
+
+
+def test_smart_reads_approved_meaning_itself():
+    from app.modules.agents.harness_worker import SMART_ROOT_TOOLS
+    from app.modules.agents.registry import build_registry
+
+    names = build_registry({"default_tools": list(SMART_ROOT_TOOLS)}).names()
+    assert {"ontology_resolve", "ontology_explain"} <= set(names)
+
+
+async def test_smart_drafts_a_proposal_that_only_the_user_files(world):
+    from app.modules.agents.tools.ontology import draft_knowledge_proposal_tool
+    from app.modules.assistant.service import SMART_DRAFT_TOOLS
+    from app.modules.ontology.stewardship import ProposalCreate
+
+    tool = draft_knowledge_proposal_tool
+    assert tool.name in SMART_DRAFT_TOOLS
+    assert tool.classification == "read_only" and not tool.requires_consent
+    context = LoopContext(user_name=ANALYST["username"], user=ANALYST, run_id="run-1")
+    args = {"change": "add_aliases", "concept": "Finance.NetRevenue",
+            "aliases": ["revenue bersih"], "rationale": "Finance says revenue bersih"}
+    before = await world.repository.current("proposals", Proposal)
+    outcome = await tool.run(ToolInvocation("d1", tool.name, args), context)
+    assert outcome.ok and outcome.data == {"title": "Add other names to Finance.NetRevenue",
+                                           "filed": False}
+    # Drafting files nothing; the draft is exactly what the user's click submits.
+    assert await world.repository.current("proposals", Proposal) == before
+    (draft,) = context.smart_drafts
+    assert draft["draft_kind"] == "knowledge_proposal"
+    assert draft["detail"] == "Other names: revenue bersih"
+    assert "operation_id" not in draft["payload"]
+    payload = ProposalCreate.model_validate({**draft["payload"], "operation_id": "card-12345678"})
+    filed = await world.stewardship.create(payload, ANALYST)
+    assert filed.status == "PENDING" and filed.changes[0].body.aliases == [
+        "omzet", "revenue bersih",
+    ]
+    hidden = await tool.run(ToolInvocation("d2", tool.name, args),
+                            LoopContext(user_name="x", user=OUTSIDER, run_id="run-2"))
+    assert not hidden.ok and hidden.error == "Ontology record not found"

@@ -2,6 +2,7 @@ import type {
   ChartBlock,
   AssistantEvent,
   PlanStep,
+  SmartDraft,
   ThinkingPhase,
   ThinkingStatus,
   ToolCallStatus,
@@ -182,6 +183,10 @@ export function parseAssistantEvent(
         return parseChart(record);
       case "citation":
         return parseCitation(record);
+      case "smart_draft": {
+        const draft = parseSmartDraft(record);
+        return draft ? { type: "smart_draft", draft } : null;
+      }
       case "automation_proposal": {
         const {
           title,
@@ -570,4 +575,17 @@ export async function* readSseFrames(
   } finally {
     reader.releaseLock();
   }
+}
+
+/** A Smart draft from a frame or a stored step; anything malformed is dropped. */
+export function parseSmartDraft(record: Record<string, unknown>): SmartDraft | null {
+  const { draft_kind: kind, title, detail, payload } = record;
+  if (typeof title !== "string" || typeof detail !== "string") return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (kind === "knowledge_proposal")
+    return { draft_kind: kind, title, detail, payload: payload as Record<string, unknown> };
+  const draft = (payload as Record<string, unknown>).draft;
+  if (kind === "investigation_update" && typeof record.incident_id === "string" && typeof draft === "string")
+    return { draft_kind: kind, title, detail, incident_id: record.incident_id, payload: { draft } };
+  return null;
 }

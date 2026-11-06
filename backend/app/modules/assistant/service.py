@@ -218,6 +218,8 @@ class LoopContext:
     authorized_semantic_models: list[dict[str, Any]] | None = None
     #: A recurring report or alert Smart drafted this turn for the user to confirm.
     automation_proposal: dict[str, Any] | None = None
+    #: Changes Smart prepared this turn for the user to submit (see tools/drafts.py).
+    smart_drafts: list[dict[str, Any]] = field(default_factory=list)
     #: Smart root only: every participant of the run with its results, so an answer
     #: is checked against all finished work, not only the specialists a wait named.
     collect_results: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None
@@ -312,6 +314,10 @@ class LoopContext:
 #: Repairs per kind of mistake in one turn. Separate budgets stop an early
 #: argument slip from ending the turn at a later, unrelated error.
 #: Tools that work on results already gathered and read no data themselves.
+#: Smart root tools that prepare something for the user to confirm, never write.
+SMART_DRAFT_TOOLS = (
+    "propose_automation", "draft_knowledge_proposal", "draft_investigation_update",
+)
 _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
 #: Tools that present a result to the user, which in Smart only the root does.
 _ROOT_PRESENTATION_TOOLS = frozenset({"data_to_chart", "dashboard_build"})
@@ -1074,7 +1080,7 @@ class AssistantLoop:
                 # The root computes and charts over what its specialists returned.
                 selected_tools = tuple(dict.fromkeys((
                     *selected_tools,
-                    *(name for name in (*_RESULT_TOOLS, "propose_automation")
+                    *(name for name in (*_RESULT_TOOLS, *SMART_DRAFT_TOOLS)
                       if self._registry.get(name) is not None),
                 )))
             else:

@@ -528,7 +528,7 @@ def _smart_final_frames(payload: dict, message_id: str) -> list[tuple[str, dict]
             ordered_text = True
             frames.append(("text_delta", {**identity, "text": artifact.get("text", "")}))
             frames.append(("content_block_done", identity))
-        elif kind in {"table", "chart", "automation_proposal"}:
+        elif kind in {"table", "chart", "automation_proposal", "smart_draft"}:
             frames.append((kind, {key: value for key, value in artifact.items() if key != "kind"}))
     if not ordered_text:
         frames.append(("text_delta", {"text": str(payload.get("answer") or "")}))

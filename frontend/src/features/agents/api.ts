@@ -4,7 +4,7 @@ import {
   parseAssistantEvent,
   readSseFrames,
 } from "@/features/assistant/events";
-import type { AssistantEvent, AutomationProposal, WorkflowProvenance } from "@/features/assistant/types";
+import type { AssistantEvent, AutomationProposal, SmartDraft, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
 import type { DashboardComputeResponse } from "@/features/viz/types";
 
@@ -1012,6 +1012,8 @@ export type TraceStep =
   | ({ kind: "dashboard"; content_index: number; content_id: string } & import("../viz/types").DashboardArtifactBlock)
   /** A schedule Smart drafted for the user to confirm. */
   | ({ kind: "automation_proposal" } & AutomationProposal)
+  /** A proposal or finding Smart prepared for the user to submit. */
+  | ({ kind: "smart_draft" } & SmartDraft)
   /** Sources a semantic search cited. */
   | {
       kind: "citation";

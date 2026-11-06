@@ -50,6 +50,7 @@ import { deepResearchApi } from "@/features/agents/studio-intelligence-api";
 import { UserMessageFooter } from "./user-message-footer";
 import { AutoSubagentPanel } from "./auto-subagent-card";
 import { AutomationProposalCard } from "./automation-proposal-card";
+import { SmartDraftCard } from "./smart-draft-card";
 import { AutoTurnRail } from "./auto-turn-rail";
 import { rootRunForTurn } from "./auto-run-timeline";
 import {
@@ -61,8 +62,6 @@ import {
 } from "./studio-attachments";
 import { Composer } from "./studio-composer";
 import { useTranscriptStream } from "./use-transcript-stream";
-import { WorkflowRail } from "./workflow-rail";
-import { ThreadMissionObjects } from "./mission-objects";
 import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { useAuthStore } from "@/stores/auth-store";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
@@ -155,7 +154,6 @@ export function StudioChat({
   const [threadId, setThreadId] = useState<string | null>(null);
   const [research, setResearch] = useState<{ agentId: string; runId: string } | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
-  const [workflowAvailable, setWorkflowAvailable] = useState(false);
   const [followUpMissionId, setFollowUpMissionId] = useState<string>();
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
   const manualSecurityEpoch = useRef(securityEpoch);
@@ -167,12 +165,6 @@ export function StudioChat({
     setManualPending(false);
   }, [securityEpoch]);
   useEffect(() => setFollowUpMissionId(undefined), [activeThreadId, agent?.agent_id, securityEpoch]);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
-  const workflowButtonRef = useRef<HTMLButtonElement | null>(null);
-  const changeWorkflowOpen = useCallback((open: boolean) => {
-    setWorkflowOpen(open);
-    if (!open) requestAnimationFrame(() => workflowButtonRef.current?.focus());
-  }, []);
   const storedMessagesRef = useRef<AgentMessage[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -204,7 +196,6 @@ export function StudioChat({
     });
   }, []);
   useEffect(() => setSelectedChild(null), [activeThreadId]);
-  useEffect(() => setWorkflowOpen(false), [activeThreadId, agent?.agent_id]);
   const activeAutoRunId = activeAutoRun && activeAutoRun.threadId === activeThreadId
     ? activeAutoRun.runId
     : null;
@@ -983,7 +974,6 @@ export function StudioChat({
       )}
     >
       <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", selectedChild && "hidden lg:flex")}>
-      {workflowAvailable && !selectedChild && <div className="flex shrink-0 justify-end border-b border-border px-4 py-2 xl:hidden"><Button ref={workflowButtonRef} variant="ghost" className="min-h-11" aria-label="Open workflow details" aria-haspopup="dialog" onClick={() => changeWorkflowOpen(true)}>Activity and evidence</Button></div>}
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col",
@@ -1063,7 +1053,6 @@ export function StudioChat({
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
                 ); })}
-                {workflowAvailable && threadId && <ThreadMissionObjects threadId={threadId} onFollowUp={(prompt, missionId) => { setInput(prompt); setFollowUpMissionId(missionId); textareaRef.current?.focus(); }} />}
               </div>
             )}
           </div>
@@ -1119,20 +1108,6 @@ export function StudioChat({
         />
       ) : null}
       </div>
-      {threadId && activeThreadId === threadId && !selectedChild && !creatingSkill ? <WorkflowRail
-        threadId={threadId}
-        turns={turns}
-        streaming={streaming}
-        agents={agents}
-        runs={autoTreeQuery.data?.runs ?? []}
-        runLoading={agent?.agent_id === AUTO_AGENT_ID && autoTreeQuery.isLoading}
-        runError={autoTreeQuery.isError}
-        retryRuns={() => void autoTreeQuery.refetch()}
-        onSelectChild={(id) => displayedAutoRunId && openChild(displayedAutoRunId, id)}
-        onAvailable={setWorkflowAvailable}
-        mobileOpen={workflowOpen}
-        onMobileOpenChange={changeWorkflowOpen}
-      /> : null}
       {selectedChild ? <AutoSubagentPanel
         selected={selectedChild}
         runs={selectedTreeQuery.data?.runs ?? []}
@@ -1303,6 +1278,10 @@ const TurnView = memo(function TurnView({
       {!running && turn.automationProposal ? (
         <AutomationProposalCard proposal={turn.automationProposal} />
       ) : null}
+
+      {!running && turn.smartDrafts?.map((draft, index) => (
+        <SmartDraftCard key={`${draft.draft_kind}:${index}`} draft={draft} />
+      ))}
 
       {!running && onAsk && turn.suggestions?.length ? (
         <nav aria-label="Suggested follow-up questions" className="nova-chat-item flex flex-wrap gap-2">

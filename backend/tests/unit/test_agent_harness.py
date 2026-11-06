@@ -2186,6 +2186,32 @@ async def test_stale_recovery_requeues_root_but_never_replays_child_tools(monkey
 
 
 @pytest.mark.asyncio
+async def test_stale_recovery_skips_a_run_whose_write_lock_is_held(monkeypatch) -> None:
+    from redis.exceptions import LockError
+
+    from app.modules.agents import harness_repository as module
+
+    async def execute(sql: str, params=None):
+        if sql.startswith("SELECT run_id, root_run_id"):
+            return {"rows": [["locked", None], ["free", None]]}
+        raise AssertionError(sql)
+
+    async def update(run_id, sql, params):
+        if run_id == "locked":
+            raise LockError("Unable to acquire lock within the time specified")
+        return {"affected": 1}
+
+    monkeypatch.setattr(module.db, "execute_system", execute)
+    monkeypatch.setattr(module, "_update_run", update)
+    repo = HarnessRepository()
+    repo.event = AsyncMock(return_value="0")
+    repo.wake_parent = AsyncMock(return_value=True)
+    repo.get = AsyncMock(side_effect=lambda run_id: _run(run_id, depth=0))
+    # A lock left by a worker that died mid-write must not stop recovery or the worker.
+    assert await repo.recover_stale() == ["free"]
+
+
+@pytest.mark.asyncio
 async def test_stale_recovery_survives_a_deleted_root(monkeypatch) -> None:
     from app.modules.agents import harness_repository as module
 

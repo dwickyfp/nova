@@ -1618,3 +1618,41 @@ async def test_a_denied_or_failed_change_leaves_the_execute_stage_open(mission_i
         project_event(mission, "run", "tool_call", _call("propose", "destructive"))
         project_event(mission, "run", "tool_status", {"tool_call_id": "propose", "status": status})
         assert {s.status for s in mission.stages} == {"running"}, status
+
+
+async def test_smart_investigates_until_every_delegated_specialist_completes(mission_io):
+    _, service = mission_io
+    mission = await create(
+        service, work_intent=WorkIntent.ANALYZE,
+        public_work_steps=[StageKind.INVESTIGATE, StageKind.EVIDENCE],
+    )
+    investigate = mission.stages[0]
+    # The root Smart run is not a delegation, and its prose never completes a stage.
+    project_event(mission, "root", "agent_queued", {"agent_id": "__smart__"})
+    project_event(mission, "root", "agent_completed", {"answer": "Investigation complete"})
+    assert investigate.status == "planned"
+
+    project_event(mission, "sales", "agent_queued", {"agent_id": "sales-analyst"})
+    assert investigate.status == "running"
+    project_event(mission, "sales", "agent_completed", {"summary": "Revenue by region"})
+    assert investigate.status == "completed"
+    # A second specialist delegated later reopens the stage until it completes too.
+    project_event(mission, "glossary", "agent_queued", {"agent_id": "glossary"})
+    assert investigate.status == "running"
+    project_event(mission, "other", "agent_completed", {"summary": "unrelated run"})
+    assert investigate.status == "running"
+    project_event(mission, "glossary", "agent_completed", {"summary": "Definition"})
+    assert investigate.status == "completed"
+    assert investigate.source_refs == ["delegated:sales", "delegated:glossary"]
+
+
+async def test_a_failed_specialist_leaves_the_investigation_open(mission_io):
+    _, service = mission_io
+    mission = await create(
+        service, work_intent=WorkIntent.ANALYZE,
+        public_work_steps=[StageKind.INVESTIGATE, StageKind.EVIDENCE],
+    )
+    project_event(mission, "sales", "agent_queued", {"agent_id": "sales-analyst"})
+    project_event(mission, "sales", "agent_failed", {"error_class": "timeout"})
+    assert mission.stages[0].status == "running"
+    assert mission.status == "blocked"

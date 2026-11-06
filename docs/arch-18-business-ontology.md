@@ -262,7 +262,7 @@ Studio opens that thread with a prepared prompt and the Mission selected.
 Resuming the Mission later proves the story again, so a reader who lost
 access cannot continue.
 
-**Tools.** The Smart root and any agent that bundles them can use:
+**Tools.** An agent that bundles them can use:
 - `incident_context`: reads the incident (`LoopContext.incident_id`) with
   every source proven again for the caller.
 - `investigation_update`: posts a finding. Each claim cites the `evidence_id`
@@ -273,6 +273,16 @@ access cannot continue.
 
 Both need consent. The update tool writes a reviewable proposal
 (`session_change`), never a published fact.
+
+**In Smart.** A Smart turn runs unattended and cannot ask for consent, so its
+root reads the incident with `incident_context` and drafts findings with
+`draft_investigation_update`, which writes nothing. It checks the citations
+against the run's verified tables and signs the checked draft with HMAC over
+`SECRET_KEY`, bound to the caller's principal, active role and security-context
+version, valid for 24 hours. Studio shows the draft as a card; **Post for
+review** sends it to `POST /intelligence/incidents/{id}/updates`, which accepts
+only an intact, unexpired draft for the same caller and then posts it as
+`investigation_update` would. Refusals are audited.
 
 **Review and timeline.** Findings are stored in
 `CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES` as `PENDING_REVIEW`. Their figures
@@ -300,7 +310,11 @@ into an ontology proposal with source `AGENT`, submitted for the caller. It can:
 - revise a definition;
 - propose a new concept in a domain the caller can see.
 
-It needs consent (`session_change`), is bundleable, and is a Smart root tool.
+It needs consent (`session_change`) and is bundleable. In Smart, which cannot
+ask consent, the root uses `draft_knowledge_proposal` instead: it validates the
+change and leaves a draft card; **Submit for review** files it through
+`POST /ontology/proposals` as the user. Smart also reads approved meaning itself
+with `ontology_resolve` and `ontology_explain` rather than delegating it.
 Nothing changes until a steward of the domain approves the proposal and a
 release is published. The caller can never approve it, because the caller is
 the submitter. Agents are told never to claim the definition already changed.

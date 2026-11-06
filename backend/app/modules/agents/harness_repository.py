@@ -12,6 +12,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from redis.exceptions import LockError
+
 from app.common.audit import write_audit_log
 from app.core.database import db
 from app.core.redis import session_store
@@ -833,13 +835,20 @@ class HarnessRepository:
                 if (replayable or (not smart and str(root_id or run_id) == str(run_id)))
                 else "interrupted"
             )
-            changed = await _update_run(
-                str(run_id),
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-                "SET status = %s, error_class = 'worker_lost', updated_at = %s "
-                "WHERE run_id = %s AND status = 'running' AND updated_at < %s",
-                [target, _now(), run_id, cutoff],
-            )
+            try:
+                changed = await _update_run(
+                    str(run_id),
+                    "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
+                    "SET status = %s, error_class = 'worker_lost', updated_at = %s "
+                    "WHERE run_id = %s AND status = 'running' AND updated_at < %s",
+                    [target, _now(), run_id, cutoff],
+                )
+            except LockError:
+                # Another process, or one that died mid-write, still holds this run's
+                # write lock. Recovery retries it on a later cycle; one held lock must
+                # not stop the worker from serving every other run.
+                logger.warning("Stale run %s is locked; recovery retries later", run_id)
+                continue
             if changed.get("affected", 0) == 1:
                 recovered.append(str(run_id))
                 try:

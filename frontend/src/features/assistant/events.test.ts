@@ -17,6 +17,18 @@ describe("parseAssistantEvent", () => {
     expect(parseAssistantEvent("automation_proposal", JSON.stringify({ ...proposal, schedule_kind: "hourly" }))).toBeNull();
     expect(parseAssistantEvent("automation_proposal", JSON.stringify({ title: "x" }))).toBeNull();
   });
+  it("reads the proposals and findings Smart prepared and drops malformed ones", () => {
+    const proposal = { draft_kind: "knowledge_proposal", title: "Add other names", detail: "Other names: GMV",
+      payload: { title: "Add other names", changes: [] } };
+    expect(parseAssistantEvent("smart_draft", JSON.stringify(proposal))).toEqual({ type: "smart_draft", draft: proposal });
+    const finding = { draft_kind: "investigation_update", title: "Finding", detail: "Refunds rose",
+      incident_id: "inc_1", payload: { draft: "abc.def", extra: "dropped" } };
+    expect(parseAssistantEvent("smart_draft", JSON.stringify(finding)))
+      .toEqual({ type: "smart_draft", draft: { ...finding, payload: { draft: "abc.def" } } });
+    expect(parseAssistantEvent("smart_draft", JSON.stringify({ ...finding, incident_id: 3 }))).toBeNull();
+    expect(parseAssistantEvent("smart_draft", JSON.stringify({ ...proposal, draft_kind: "delete_all" }))).toBeNull();
+    expect(parseAssistantEvent("smart_draft", JSON.stringify({ ...proposal, payload: [] }))).toBeNull();
+  });
   it("preserves bounded workflow provenance on both evidence event kinds", () => {
     const workflow = { mission_id: "mission-a", run_id: "child-run", root_run_id: "root-run" };
     for (const type of ["evidence_health", "evidence_envelope"]) {

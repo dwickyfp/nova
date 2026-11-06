@@ -145,6 +145,8 @@ export type AssistantEvent = (
   | { type: "suggestions"; suggestions: string[] }
   /** A recurring report or alert Smart drafted; nothing exists until the user confirms. */
   | { type: "automation_proposal"; proposal: AutomationProposal }
+  /** A proposal or finding Smart prepared; nothing is filed until the user submits it. */
+  | { type: "smart_draft"; draft: SmartDraft }
   | {
       type: "content_block_done";
       content_index: number;
@@ -189,6 +191,14 @@ export type ConsentDecisionPayload = "allow_once" | "allow_session" | "deny";
 
 /** Outcome of a turn, so the transcript can mark a cancelled partial answer. */
 export type TurnState = "streaming" | "done" | "cancelled" | "error";
+
+/**
+ * A change Smart prepared but cannot file: a Smart turn cannot ask consent, so the
+ * user submits it. ``payload`` is sent as-is; the server checks it again.
+ */
+export type SmartDraft =
+  | { draft_kind: "knowledge_proposal"; title: string; detail: string; payload: Record<string, unknown> }
+  | { draft_kind: "investigation_update"; title: string; detail: string; incident_id: string; payload: { draft: string } };
 
 /** A schedule Smart drafted for the user to confirm. */
 export type AutomationProposal = {

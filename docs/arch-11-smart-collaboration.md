@@ -167,7 +167,11 @@ still appear. The combined catalog is metadata, not business evidence.
 The turn planner routes a Smart request for values to discovery, never to the
 catalog: Smart owns no `semantic_query`, and its data is what its specialists
 serve. The root reads at most the six most recent user and assistant messages of
-its Studio thread, each bounded, so a follow-up keeps its subject. A year or
+its Studio thread, each bounded, so a follow-up keeps its subject. When a
+specialist asked back (its run ended `clarification`), the answer records a
+`pending_clarification` step with the request and the question; the reply in
+the next turn is routed and discovered as that request with its answer, so
+"booked order value" settles "revenue by channel" instead of standing alone. A year or
 limit the user named in an earlier turn may be repeated by the answer. When a
 Smart answer showed no table of its own, its newest specialist result is kept
 with the message as a `result` step, which Studio does not display, so "chart
@@ -268,8 +272,14 @@ contract and writes nothing; the draft travels with the answer as an
 `automation_proposal` artifact. Studio shows it as a card whose **Schedule**
 button calls `POST /api/v1/agents/__smart__/automations`, the automation endpoint
 every agent uses. Consent is that click: a Smart turn is unattended and cannot
-ask. Schedules are listed, paused and deleted under Capabilities, Scheduled
-reports.
+ask. Studio has no schedule list; schedules are listed, paused and deleted
+through the same automation endpoints.
+
+The same holds for other changes Smart prepares: a correction of a business
+term (`draft_knowledge_proposal`) and a News investigation finding
+(`draft_investigation_update`) arrive as `smart_draft` artifacts, and Studio's
+card files them through the ordinary endpoint as the user (see
+`docs/arch-18-business-ontology.md`).
 
 A fire is one Smart run. The automation worker stores the question, queues a root
 whose `session_id` is `automation:<automation id>` instead of a login session,

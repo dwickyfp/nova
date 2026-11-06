@@ -158,6 +158,12 @@ export const newspaperApi = {
     api.post<InvestigationHandoff>(
       `/intelligence/stories/${encodeURIComponent(storyId)}/investigate`,
     ),
+  /** Post a finding Smart prepared; the server checks the signed draft. */
+  submitFinding: (incidentId: string, draft: string) =>
+    api.post<{ update_id: string; status: string }>(
+      `/intelligence/incidents/${encodeURIComponent(incidentId)}/updates`,
+      { draft },
+    ),
   reviewUpdate: (
     incidentId: string,
     updateId: string,

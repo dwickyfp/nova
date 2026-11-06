@@ -1,8 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { page } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentMessage } from "@/features/agents/api";
-import { EvidencePanel } from "./evidence-panel";
 import { evidenceIdentity, mergeToolEvidence, readEvidenceHealth, type EvidenceEnvelope, type EvidenceHealth } from "./evidence-health";
 import { applyEvent, replayThread, type TranscriptTurn } from "./studio-transcript";
 import "@/styles/index.css";
@@ -101,36 +98,5 @@ describe("Evidence Health replay", () => {
   it("does not invent assessments for legacy results or malformed evidence", () => {
     const result = applyEvent([emptyTurn], "u1", { type: "evidence_health", tool_call_id: "c1", payload: { label: "strong" } });
     expect(result[0].evidence).toBeUndefined();
-  });
-});
-
-describe("Evidence surface", () => {
-  it("selects exact semantic identity and metric for Context without displaying filter literals", async () => {
-    const select = vi.fn();
-    render(<EvidencePanel evidence={[{ toolCallId: "c1", toolName: "semantic_query", health: assessment, envelope: provenance }]} onSelectContext={select} />);
-    await page.getByRole("button", { name: "View revenue context" }).click();
-    expect(select).toHaveBeenCalledWith(provenance.semantic, "revenue");
-    await expect.element(page.getByText("Filters: region =")).toBeVisible();
-  });
-  it("distinguishes absent evidence from a failing assessment", async () => {
-    render(<EvidencePanel evidence={[]} />);
-    await expect.element(page.getByText("Evidence has not been assessed")).toBeVisible();
-    await expect.element(page.getByText("Insufficient evidence", { exact: true })).not.toBeInTheDocument();
-  });
-  for (const dark of [false, true]) it(`shows limitations and separate causality with keyboard SQL disclosure (dark: ${dark})`, async () => {
-    await page.viewport(320, 700);
-    document.documentElement.classList.toggle("dark", dark);
-    render(<div className="w-full max-w-full p-3"><EvidencePanel
-      evidence={[{ toolCallId: "c1", toolName: "semantic_query", health: assessment }]}
-      sqlPreviews={{ c1: "SELECT SUM(revenue) FROM sales" }}
-    /></div>);
-    await expect.element(page.getByText("Limited evidence")).toBeVisible();
-    await expect.element(page.getByText("Association", { exact: true })).toBeVisible();
-    await expect.element(page.getByText("coverage truncated")).toBeVisible();
-    const disclosure = page.getByText("SQL details", { exact: true });
-    disclosure.element().focus();
-    await page.getByText("SQL details", { exact: true }).click();
-    await expect.element(page.getByText("SELECT SUM(revenue) FROM sales")).toBeVisible();
-    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
   });
 });

@@ -773,6 +773,10 @@ class BusinessEventService:
         await self._audit(user, "TRANSITION_INCIDENT", incident.id, "SUCCESS", body.to)
         return await self.get(incident.id, user)
 
+    async def audit_refusal(self, user: dict, action: str, name: str) -> None:
+        """Record a refused request that never reached the service."""
+        await self._audit(user, action, name, "DENIED", "DENY")
+
     @staticmethod
     async def _audit(user: dict, action: str, name: str, status: str, decision: str) -> None:
         await write_audit_log(
