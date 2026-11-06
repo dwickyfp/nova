@@ -53,6 +53,16 @@ class FakeTaskRepository:
         self._seq += 1
         return f"{prefix}_{self._seq}"
 
+    async def find_task(self, name, database_name, schema_name):
+        return next(
+            (
+                row for row in self.tasks.values()
+                if (row["name"], row.get("database_name"), row.get("schema_name"))
+                == (name, database_name, schema_name)
+            ),
+            None,
+        )
+
     async def create_task(self, data: dict[str, Any], created_by: str | None):
         task_id = self._next_id("task")
         row = {"id": task_id, "created_by": created_by, **data}
@@ -262,6 +272,30 @@ class TestQualifiedTaskScopeThroughPipeline:
 
 
 class TestValidationFailureIsReported:
+    async def test_a_task_without_a_database_is_refused(self, wired):
+        """An unscoped row could never run: its graph resolves no node."""
+        service, engine, tasks, _ = wired
+        result = await service.execute(
+            sql="CREATE TASK t1 AS INSERT INTO t SELECT 1",
+            username="alice",
+            role="analyst",
+            encrypted_password="enc",
+        )
+        assert result.error and "needs a database" in result.error
+        assert engine.calls == []
+        assert tasks.tasks == {}
+
+    async def test_a_second_task_with_the_same_name_is_refused(self, wired):
+        service, engine, tasks, _ = wired
+        sql = "CREATE TASK t1 AS INSERT INTO t SELECT 1"
+        kwargs = dict(username="alice", role="analyst", encrypted_password="enc",
+                      database="db1", schema="default")
+        first = await service.execute(sql=sql, **kwargs)
+        second = await service.execute(sql=sql, **kwargs)
+        assert first.error is None
+        assert second.error and "already exists" in second.error
+        assert len(tasks.tasks) == 1
+
     async def test_missing_role_is_rejected_without_metadata_or_engine_write(self, wired):
         service, engine, tasks, audit = wired
         from app.modules.access_control.security_context import SecurityContextError

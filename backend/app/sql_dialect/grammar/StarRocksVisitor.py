@@ -674,6 +674,41 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#novaCreateConnection.
+    def visitNovaCreateConnection(self, ctx:StarRocksParser.NovaCreateConnectionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaDropConnection.
+    def visitNovaDropConnection(self, ctx:StarRocksParser.NovaDropConnectionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaShowConnections.
+    def visitNovaShowConnections(self, ctx:StarRocksParser.NovaShowConnectionsContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaDescribeConnection.
+    def visitNovaDescribeConnection(self, ctx:StarRocksParser.NovaDescribeConnectionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaCreateForeignCatalog.
+    def visitNovaCreateForeignCatalog(self, ctx:StarRocksParser.NovaCreateForeignCatalogContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaRefreshCatalog.
+    def visitNovaRefreshCatalog(self, ctx:StarRocksParser.NovaRefreshCatalogContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaConnectionClause.
+    def visitNovaConnectionClause(self, ctx:StarRocksParser.NovaConnectionClauseContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#createStorageVolumeStatement.
     def visitCreateStorageVolumeStatement(self, ctx:StarRocksParser.CreateStorageVolumeStatementContext):
         return self.visitChildren(ctx)
@@ -1131,6 +1166,36 @@ class StarRocksVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by StarRocksParser#deleteStatement.
     def visitDeleteStatement(self, ctx:StarRocksParser.DeleteStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeStatement.
+    def visitNovaMergeStatement(self, ctx:StarRocksParser.NovaMergeStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeSourceTable.
+    def visitNovaMergeSourceTable(self, ctx:StarRocksParser.NovaMergeSourceTableContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeSourceQuery.
+    def visitNovaMergeSourceQuery(self, ctx:StarRocksParser.NovaMergeSourceQueryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeUpdate.
+    def visitNovaMergeUpdate(self, ctx:StarRocksParser.NovaMergeUpdateContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeDelete.
+    def visitNovaMergeDelete(self, ctx:StarRocksParser.NovaMergeDeleteContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaMergeInsert.
+    def visitNovaMergeInsert(self, ctx:StarRocksParser.NovaMergeInsertContext):
         return self.visitChildren(ctx)
 
 

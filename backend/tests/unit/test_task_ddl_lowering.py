@@ -375,6 +375,16 @@ class FakeLoweringRepository:
         self._seq += 1
         return f"{prefix}_{self._seq}"
 
+    async def find_task(self, name, database_name, schema_name):
+        return next(
+            (
+                row for row in self.tasks.values()
+                if (row["name"], row.get("database_name"), row.get("schema_name"))
+                == (name, database_name, schema_name)
+            ),
+            None,
+        )
+
     async def create_task(self, data: dict[str, Any], created_by: str | None):
         task_id = self._next_id("task")
         row = {"id": task_id, "created_by": created_by, **data}
@@ -497,12 +507,10 @@ class TestPersistLoweredTask:
 
         `b AFTER a` is stored under graph `b`; `a AFTER b` would be stored under
         graph `a`. A per-graph-key check would see neither, so this proves the
-        component-based validation is what actually catches it.
+        component-based validation is what actually catches it. `b AFTER a`
+        names `a` before `a` exists, which is how the cycle can form at all
+        now that a task name is unique within its schema.
         """
-        await repo.create_task(
-            {"name": "a", "database_name": "db1", "schema_name": "default", "timezone": "UTC"},
-            "alice",
-        )
         await repo.create_task(
             {"name": "b", "database_name": "db1", "schema_name": "default", "timezone": "UTC"},
             "alice",
@@ -523,3 +531,21 @@ class TestPersistLoweredTask:
         # remain, and no edge for the new statement survived.
         assert len(repo.tasks) == tasks_before
         assert not any(e["graph_id"] == "db1.default.a" for e in repo.edges)
+
+
+async def test_a_task_name_is_unique_within_its_schema(monkeypatch) -> None:
+    fake = FakeLoweringRepository()
+    monkeypatch.setattr(
+        "app.modules.task_orchestration.lowering.task_orchestration_repository", fake
+    )
+    await persist_lowered_task(lower("CREATE TASK db1.default.a AS INSERT INTO t SELECT 1"),
+                               created_by="alice")
+    with pytest.raises(TaskLoweringError, match="already exists"):
+        await persist_lowered_task(lower("CREATE TASK db1.default.a AS INSERT INTO t SELECT 2"),
+                                   created_by="alice")
+    # The same name in another schema is another task.
+    await persist_lowered_task(lower("CREATE TASK db1.other.a AS INSERT INTO t SELECT 3"),
+                               created_by="alice")
+    assert sorted((t["schema_name"], t["definition"]) for t in fake.tasks.values()) == [
+        ("default", "INSERT INTO t SELECT 1"), ("other", "INSERT INTO t SELECT 3"),
+    ]

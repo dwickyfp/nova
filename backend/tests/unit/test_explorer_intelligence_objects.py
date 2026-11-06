@@ -74,3 +74,4 @@ def _allow_all_caller(module, monkeypatch):
         yield _AllowAllCaller()
 
     monkeypatch.setattr(module, "caller_metadata", fake)
+    monkeypatch.setattr(module.catalog_repo, "list_objects", AsyncMock(return_value=[]))

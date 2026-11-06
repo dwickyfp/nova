@@ -194,6 +194,165 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ENTITIES (
 DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- Nova Catalog store: catalogs, synced objects and columns, and sync runs.
+-- Mirrors backend/app/modules/catalog/repository.py. No credential column.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CATALOGS (
+    name               VARCHAR(256) NOT NULL,
+    kind               VARCHAR(32) NOT NULL,
+    catalog_type       VARCHAR(64) NOT NULL,
+    managed            BOOLEAN NOT NULL,
+    source             VARCHAR(32) NOT NULL,
+    metastore_type     VARCHAR(32),
+    metastore_uri      VARCHAR(1024),
+    storage_connection VARCHAR(256),
+    comment            VARCHAR(1024),
+    properties_json    STRING,
+    status             VARCHAR(32),
+    last_sync_at       DATETIME,
+    last_sync_error    VARCHAR(2048),
+    created_by         VARCHAR(128),
+    created_at         DATETIME,
+    updated_at         DATETIME,
+    dropped_at         DATETIME
+) PRIMARY KEY(name)
+DISTRIBUTED BY HASH(name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_OBJECTS (
+    id            VARCHAR(64) NOT NULL,
+    catalog_name  VARCHAR(256) NOT NULL,
+    database_name VARCHAR(256) NOT NULL,
+    object_name   VARCHAR(256) NOT NULL,
+    object_type   VARCHAR(32) NOT NULL,
+    engine        VARCHAR(64),
+    comment       VARCHAR(2048),
+    row_count     BIGINT,
+    data_size     BIGINT,
+    fingerprint   VARCHAR(64),
+    first_seen_at DATETIME,
+    last_seen_at  DATETIME,
+    dropped_at    DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_COLUMNS (
+    id             VARCHAR(64) NOT NULL,
+    catalog_name   VARCHAR(256) NOT NULL,
+    database_name  VARCHAR(256) NOT NULL,
+    object_name    VARCHAR(256) NOT NULL,
+    ordinal        INT NOT NULL,
+    column_name    VARCHAR(256) NOT NULL,
+    data_type      VARCHAR(1024),
+    is_nullable    BOOLEAN,
+    column_comment VARCHAR(2048)
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SYNC_RUNS (
+    id           VARCHAR(64) NOT NULL,
+    catalog_name VARCHAR(256) NOT NULL,
+    `trigger`    VARCHAR(32) NOT NULL,
+    status       VARCHAR(32) NOT NULL,
+    started_at   DATETIME,
+    finished_at  DATETIME,
+    counts_json  STRING,
+    error        VARCHAR(2048)
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+-- Nova Catalog connections (phase 2): external sources foreign catalogs are
+-- built from. Endpoint metadata and a secret reference only, never a secret.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTIONS (
+    name             VARCHAR(256) NOT NULL,
+    connector_type   VARCHAR(64) NOT NULL,
+    host             VARCHAR(512) NOT NULL,
+    port             INT,
+    database_name    VARCHAR(256),
+    options_json     STRING,
+    secret_ref       VARCHAR(1024) NOT NULL,
+    owner            VARCHAR(128),
+    comment          VARCHAR(1024),
+    created_at       DATETIME,
+    updated_at       DATETIME
+) PRIMARY KEY(name)
+DISTRIBUTED BY HASH(name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+-- Credentials entered through Nova for a connection whose secret_ref is
+-- nova://<name>. Fernet ciphertext only; never read back to a client.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS (
+    connection_name  VARCHAR(256) NOT NULL,
+    username_enc     STRING NOT NULL,
+    password_enc     STRING NOT NULL,
+    updated_by       VARCHAR(128),
+    updated_at       DATETIME
+) PRIMARY KEY(connection_name)
+DISTRIBUTED BY HASH(connection_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+-- Nova Catalog business metadata (phase 3). Securable ids are stable per
+-- catalog, database, relation, and column; tags, annotations, lineage, and
+-- Semantic View/entity links attach to them and outlive a drop. Mirrors
+-- backend/app/modules/catalog/{securables,metadata,lineage,links}.py.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SECURABLES (
+    id             VARCHAR(64) NOT NULL,
+    securable_type VARCHAR(32) NOT NULL,
+    catalog_name   VARCHAR(256) NOT NULL,
+    database_name  VARCHAR(256) NOT NULL,
+    object_name    VARCHAR(256) NOT NULL,
+    column_name    VARCHAR(256) NOT NULL,
+    parent_id      VARCHAR(64),
+    data_type      VARCHAR(1024),
+    ordinal        INT,
+    first_seen_at  DATETIME,
+    updated_at     DATETIME,
+    dropped_at     DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_ANNOTATIONS (
+    securable_id   VARCHAR(64) NOT NULL,
+    securable_type VARCHAR(32) NOT NULL,
+    comment        VARCHAR(4096),
+    owner_name     VARCHAR(128),
+    owner_type     VARCHAR(16),
+    classification VARCHAR(32),
+    updated_at     DATETIME,
+    updated_by     VARCHAR(128)
+) PRIMARY KEY(securable_id)
+DISTRIBUTED BY HASH(securable_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_LINEAGE (
+    id             VARCHAR(64) NOT NULL,
+    source_id      VARCHAR(64) NOT NULL,
+    target_id      VARCHAR(64) NOT NULL,
+    source_name    VARCHAR(1024) NOT NULL,
+    target_name    VARCHAR(1024) NOT NULL,
+    statement_kind VARCHAR(32) NOT NULL,
+    first_seen_at  DATETIME,
+    last_seen_at   DATETIME,
+    last_query_id  VARCHAR(64)
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SECURABLE_LINKS (
+    id            VARCHAR(64) NOT NULL,
+    owner_type    VARCHAR(32) NOT NULL,
+    owner_id      VARCHAR(64) NOT NULL,
+    owner_label   VARCHAR(512),
+    securable_id  VARCHAR(64) NOT NULL,
+    relation_name VARCHAR(1024) NOT NULL,
+    updated_at    DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 -- Assistant conversations. Persisted per user so history survives a reload;
 -- every read/write is filtered by user_name. No credential column exists here.
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (
@@ -234,15 +393,20 @@ DISTRIBUTED BY HASH(message_id) BUCKETS 1
 ORDER BY (thread_id, seq)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- Nova Catalog tags, keyed by securable id (CATALOG_SECURABLES.id). Mirrors
+-- backend/app/modules/catalog/metadata.py, which also moves a pre-catalog
+-- name-keyed table aside on startup.
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
-  object_type VARCHAR(32) NOT NULL,
-  object_name VARCHAR(512) NOT NULL,
-  tag_key     VARCHAR(128) NOT NULL,
-  tag_value   VARCHAR(512),
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by  VARCHAR(128)
-) PRIMARY KEY (object_type, object_name, tag_key)
-DISTRIBUTED BY HASH(object_type) BUCKETS 1
+    securable_id   VARCHAR(64) NOT NULL,
+    tag_key        VARCHAR(128) NOT NULL,
+    tag_value      VARCHAR(512),
+    securable_type VARCHAR(32) NOT NULL,
+    created_at     DATETIME,
+    created_by     VARCHAR(128),
+    updated_at     DATETIME,
+    updated_by     VARCHAR(128)
+) PRIMARY KEY(securable_id, tag_key)
+DISTRIBUTED BY HASH(securable_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_DASHBOARDS (

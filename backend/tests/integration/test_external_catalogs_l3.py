@@ -1,9 +1,12 @@
 """L3 integration tests for external catalogs (NOVA-62) on StarRocks 4.1.4.
 
 These run against a **real** engine through the Nova API — not a mock — because
-the acceptance criterion is that the engine accepts the catalog DDL, lists the
-external table, and returns its rows, and that no credential leaks anywhere in
-the process.
+the acceptance criterion is that the engine lists the external table and
+returns its rows, and that no credential leaks anywhere in the process.
+
+Nova creates catalogs only from a connection now; the Iceberg catalog here is
+made in raw SQL (``tests/integration/_lakehouse.py``), as a DBA would, and the
+``/external-catalogs`` API lists, describes, alters, and drops it.
 
 The suite brings the engine up via ``docker-compose.test.yml`` by default; to
 point at an already-running stack::
@@ -31,6 +34,7 @@ import pytest
 import pytest_asyncio
 
 from tests.conftest import root_password, s3_credentials
+from tests.integration._lakehouse import iceberg_catalog_sql
 from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
     require_shared_stack,
@@ -52,7 +56,6 @@ MINIO_SECRET = s3_credentials()[1]
 BUCKET = "test-stage"
 
 #: Placeholders — never a real credential.
-ACCESS_SENTINEL = "AKIA_L3_SENTINEL_0001"
 SECRET_SENTINEL = "SECRET_L3_SENTINEL_0002"
 
 CATALOG_NAME = "nova_l3_iceberg"
@@ -97,6 +100,22 @@ async def _admin_execute(sql: str):
     return None
 
 
+async def _admin_execute_in_catalog(catalog: str, *statements: str) -> None:
+    """Run statements as root after ``SET CATALOG`` on one session.
+
+    StarRocks grants database and table privileges of an external catalog in
+    that catalog's context, so the switch and the grants share a connection.
+    """
+    conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(f"SET CATALOG `{catalog}`")
+            for statement in statements:
+                await cur.execute(statement)
+    finally:
+        conn.close()
+
+
 def _minio_client():
     import boto3
 
@@ -110,25 +129,23 @@ def _minio_client():
 
 
 async def _ensure_catalog_schema() -> None:
+    from app.modules.catalog.repository import CATALOG_DDLS
+
     await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
-    await _admin_execute(
-        """
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS (
-            id                 VARCHAR(64) NOT NULL,
-            name               VARCHAR(256) NOT NULL,
-            catalog_type       VARCHAR(32) NOT NULL,
-            metastore_type     VARCHAR(32),
-            metastore_uri      VARCHAR(1024),
-            storage_connection VARCHAR(256),
-            comment            VARCHAR(1024),
-            properties_json    TEXT,
-            created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by         VARCHAR(128)
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-        """
-    )
+    for ddl in CATALOG_DDLS:
+        await _admin_execute(ddl)
+
+
+async def _forget_catalog(name: str) -> None:
+    """Remove one test catalog's rows from the Nova Catalog store."""
+    for table, column in (
+        ("CATALOG_CATALOGS", "name"),
+        ("CATALOG_OBJECTS", "catalog_name"),
+        ("CATALOG_COLUMNS", "catalog_name"),
+        ("CATALOG_SYNC_RUNS", "catalog_name"),
+    ):
+        with contextlib.suppress(Exception):
+            await _admin_execute(f"DELETE FROM NOVA_SYSTEM.{table} WHERE {column} = '{name}'")
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -145,8 +162,12 @@ async def l3_admin_user(request):
     require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
+    # Idempotent: ``test_catalog_l3`` registers this fixture too, so a run of
+    # both modules sets the account up twice under the same names.
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
     await _admin_execute(f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'")
     await _admin_execute(f"GRANT ALL ON *.* TO '{L3_ADMIN_USER}' WITH GRANT OPTION")
     from app.integrations.ranger.client import ranger_client
@@ -160,20 +181,27 @@ async def l3_admin_user(request):
     await _admin_execute(f"GRANT '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     await _admin_execute(f"SET DEFAULT ROLE '{L3_ADMIN_ROLE}' TO '{L3_ADMIN_USER}'")
     # Creating an external catalog is a SYSTEM-level privilege, distinct from
-    # ``ALL ON *.*`` (AGENTS.md §6), and ALTER/DROP are per-catalog grants that
-    # cannot be granted ON SYSTEM. Provisioning them on the suite's own account
-    # proves the delegate-first RBAC path rather than bypassing it.
+    # ``ALL ON *.*`` (AGENTS.md §6), and USAGE/ALTER/DROP are per-catalog grants
+    # that cannot be granted ON SYSTEM. USAGE is what lets the Explorer, which
+    # lists metadata on the caller's own session, show the catalog's databases.
+    # Provisioning them on the suite's own account proves the delegate-first
+    # RBAC path rather than bypassing it.
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO '{L3_ADMIN_USER}'")
     with contextlib.suppress(Exception):
         await _admin_execute(f"GRANT ALTER, DROP ON CATALOG * TO '{L3_ADMIN_USER}'")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"GRANT USAGE ON ALL CATALOGS TO '{L3_ADMIN_USER}'")
 
     yield L3_ADMIN_USER
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
-    await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
-    await ranger_client.delete_role(L3_ADMIN_ROLE)
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP ROLE IF EXISTS '{L3_ADMIN_ROLE}'")
+    # The other registration may already have removed the Ranger role.
+    with contextlib.suppress(Exception):
+        await ranger_client.delete_role(L3_ADMIN_ROLE)
 
 
 @pytest_asyncio.fixture
@@ -225,10 +253,7 @@ async def namespace(engine):
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP CATALOG IF EXISTS {name}")
-    with contextlib.suppress(Exception):
-        await _admin_execute(
-            f"DELETE FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS WHERE name = '{name}'"
-        )
+    await _forget_catalog(name)
     # Remove the warehouse objects so the namespace cannot shadow a later run.
     with contextlib.suppress(Exception):
         paginator = client.get_paginator("list_objects_v2")
@@ -238,112 +263,54 @@ async def namespace(engine):
                 client.delete_objects(Bucket=BUCKET, Delete={"Objects": keys})
 
 
-def _create_body(namespace: dict) -> dict:
-    warehouse = f"s3://{BUCKET}/{namespace['warehouse']}"
-    return {
-        "name": namespace["catalog"],
-        "type": "iceberg",
-        "metastore_type": "hms",
-        "metastore_uri": warehouse,
-        "storage_connection": "production",
-        "comment": "NOVA-62 L3 iceberg catalog",
-        # The hadoop catalog type reads its warehouse from a non-secret
-        # property; credentials come from the storage connection.
-        "properties": {
-            "iceberg.catalog.type": "hadoop",
-            "iceberg.catalog.warehouse": warehouse,
-        },
-    }
+async def _create_catalog(namespace: dict) -> None:
+    """The suite's Iceberg catalog, made in raw SQL as root."""
+    await _admin_execute(iceberg_catalog_sql(
+        namespace["catalog"], f"s3://{BUCKET}/{namespace['warehouse']}",
+        comment="NOVA-62 L3 iceberg catalog",
+    ))
 
 
-class TestCatalogCrudThroughApi:
-    async def test_create_list_get_alter_drop(self, admin_client, namespace):
+class TestCatalogApi:
+    async def test_list_get_alter_drop(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        body = _create_body(namespace)
+        await _create_catalog(namespace)
+        from app.modules.catalog import visibility
 
-        # CREATE
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 201, resp.text
-        created = resp.json()
-        assert created["name"] == catalog
-        assert created["type"] == "iceberg"
+        await visibility.bump()
 
-        # LIST
         resp = await admin_client.get("/api/v1/external-catalogs")
         assert resp.status_code == 200
-        names = [c["name"] for c in resp.json()["catalogs"]]
-        assert catalog in names
+        assert catalog in [c["name"] for c in resp.json()["catalogs"]]
 
-        # GET — create_statement is present and redacted
+        # GET: create_statement is present and redacted
         resp = await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
         assert resp.status_code == 200
         detail = resp.json()
         assert detail["create_statement"]
-        assert ACCESS_SENTINEL not in detail["create_statement"]
-        assert SECRET_SENTINEL not in detail["create_statement"]
+        assert MINIO_SECRET not in detail["create_statement"]
 
-        # ALTER — a benign, non-secret property change
+        # ALTER: a benign, non-secret property change
+        warehouse = f"s3://{BUCKET}/{namespace['warehouse']}"
         resp = await admin_client.patch(
             f"/api/v1/external-catalogs/{catalog}",
-            json={"properties": {"iceberg.catalog.warehouse": body["metastore_uri"]}},
+            json={"properties": {"iceberg.catalog.warehouse": warehouse}},
         )
         assert resp.status_code == 200, resp.text
 
-        # DROP
         resp = await admin_client.delete(f"/api/v1/external-catalogs/{catalog}")
         assert resp.status_code == 200, resp.text
 
-    async def test_duplicate_create_is_rejected(self, admin_client, namespace):
-        body = _create_body(namespace)
-        first = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert first.status_code == 201, first.text
-        second = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert second.status_code == 400
-
-    async def test_secret_property_in_request_is_rejected(self, admin_client, namespace):
-        body = _create_body(namespace)
-        body["properties"]["aws.s3.secret_key"] = SECRET_SENTINEL
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 422
-
-    @pytest.mark.parametrize(
-        "key",
-        [
-            # The dotted spellings a final-segment match accepted. None may be
-            # persisted, echoed in ``properties``, or reach the engine.
-            "aws.s3.secret.key",
-            "azure.account.key",
-            "gcp.gcs.private.key",
-            "gcp.gcs.service.account.key",
-            "aws.s3.session.token",
-            "hive.metastore.account.key",
-        ],
-    )
-    async def test_dotted_secret_property_is_rejected(self, admin_client, namespace, key):
-        catalog = namespace["catalog"]
-        body = _create_body(namespace)
-        body["properties"][key] = SECRET_SENTINEL
-
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 422, resp.text
-
-        # The credential was refused, not persisted and not echoed. The GET
-        # endpoint always synthesizes a response, so assert on the value: the
-        # sentinel must not appear anywhere in the payload.
-        resp = await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
-        assert SECRET_SENTINEL not in resp.text
-        assert key not in resp.text
-        rows = await _admin_execute(
-            "SELECT properties_json FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS "
-            f"WHERE name = '{catalog}'"
-        )
-        assert not rows, rows
-        assert SECRET_SENTINEL not in str(rows)
+    async def test_lakehouse_catalogs_are_not_created_through_nova(self, admin_client, namespace):
+        body = {"name": namespace["catalog"], "type": "iceberg", "metastore_uri": "thrift://h:1"}
+        assert (await admin_client.post("/api/v1/external-catalogs", json=body)).status_code == 405
+        assert (await admin_client.post("/api/v1/catalog/catalogs", json=body)).status_code == 405
+        rows = await _admin_execute("SHOW CATALOGS")
+        assert namespace["catalog"] not in str(rows)
 
     async def test_dotted_secret_alter_is_rejected(self, admin_client, namespace):
         catalog = namespace["catalog"]
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
+        await _create_catalog(namespace)
 
         resp = await admin_client.patch(
             f"/api/v1/external-catalogs/{catalog}",
@@ -358,8 +325,7 @@ class TestCatalogCrudThroughApi:
 
 class TestExternalTableQuery:
     async def test_create_insert_select_through_engine(self, admin_client, namespace):
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
+        await _create_catalog(namespace)
 
         catalog, database, table = (
             namespace["catalog"],
@@ -378,9 +344,7 @@ class TestExternalTableQuery:
         assert [tuple(r) for r in (rows or [])] == [(1, "a"), (2, "b")], rows
 
     async def test_external_table_appears_in_catalog_tree(self, admin_client, namespace):
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
-
+        await _create_catalog(namespace)
         catalog, database, table = (
             namespace["catalog"],
             namespace["database"],
@@ -390,67 +354,59 @@ class TestExternalTableQuery:
             f"CREATE TABLE {catalog}.{database}.{table} (id INT, name STRING) "
             "PROPERTIES ('write.format.default'='parquet')"
         )
+        tables_url = f"/api/v1/external-catalogs/{catalog}/databases/{database}/tables"
 
-        resp = await admin_client.get(
-            f"/api/v1/external-catalogs/{catalog}/databases/{database}/tables"
-        )
-        assert resp.status_code == 200, resp.text
-        assert table in [t["name"] for t in resp.json()]
-
-        # And through the explorer catalog tree endpoint.
+        # Both listings run on the caller's own session, so the engine decides
+        # what appears. With USAGE on the catalog but no privilege in the
+        # database, the catalog shows and the database does not.
         resp = await admin_client.get("/api/v1/explorer/catalogs")
         assert resp.status_code == 200
         catalogs = resp.json()["catalogs"]
         ext = next((c for c in catalogs if c["name"] == catalog), None)
         assert ext is not None, catalogs
+        assert database not in ext["databases"]
+        resp = await admin_client.get(tables_url)
+        assert resp.status_code == 404, resp.text
+
+        await _admin_execute_in_catalog(
+            catalog,
+            f"GRANT ALL ON DATABASE `{database}` TO '{L3_ADMIN_USER}'",
+            f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO '{L3_ADMIN_USER}'",
+        )
+        # A grant made outside Nova reaches cached visibility within its short
+        # TTL; Nova's own access changes retire the cache at once, as here.
+        from app.modules.catalog import visibility
+
+        await visibility.bump()
+
+        resp = await admin_client.get(tables_url)
+        assert resp.status_code == 200, resp.text
+        assert table in [t["name"] for t in resp.json()]
+        resp = await admin_client.get("/api/v1/explorer/catalogs")
+        assert resp.status_code == 200
+        ext = next((c for c in resp.json()["catalogs"] if c["name"] == catalog), None)
+        assert ext is not None
         assert database in ext["databases"]
+        resp = await admin_client.get(f"/api/v1/explorer/databases/{database}?catalog={catalog}")
+        assert resp.status_code == 200, resp.text
+        assert table in [t["name"] for t in resp.json()["tables"]]
 
 
 class TestNoCredentialLeak:
     async def test_show_create_returns_no_credential(self, admin_client, namespace):
         """The engine returns ``session_token``/``metastore.password`` in full;
         the API response must not."""
-        body = _create_body(namespace)
-        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
-        assert resp.status_code == 201, resp.text
+        await _create_catalog(namespace)
+        from app.modules.catalog import visibility
+
+        await visibility.bump()
 
         detail = (
             await admin_client.get(f"/api/v1/external-catalogs/{namespace['catalog']}")
         ).json()
         statement = detail.get("create_statement") or ""
 
-        # The real MinIO credentials from the test stack must not appear. They
-        # are the actual resolved values for the ``production`` connection.
+        # The real MinIO credentials from the test stack must not appear.
         assert MINIO_ACCESS not in statement
         assert MINIO_SECRET not in statement
         assert s3_credentials()[1] not in str(detail)
-
-    async def test_audit_row_statement_is_redacted(self, admin_client, namespace):
-        catalog = namespace["catalog"]
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
-
-        rows = await _admin_execute(
-            "SELECT rewritten_sql FROM NOVA_SYSTEM.AUDIT_LOG "
-            f"WHERE event_type = 'query' AND rewritten_sql LIKE '%{catalog}%' "
-            "ORDER BY event_time DESC LIMIT 5"
-        )
-        assert rows, "no audit row was written for the catalog DDL"
-        for (rewritten,) in rows:
-            assert MINIO_ACCESS not in (rewritten or "")
-            assert MINIO_SECRET not in (rewritten or "")
-
-    async def test_metadata_table_has_no_credential(self, admin_client, namespace):
-        catalog = namespace["catalog"]
-        resp = await admin_client.post("/api/v1/external-catalogs", json=_create_body(namespace))
-        assert resp.status_code == 201, resp.text
-
-        rows = await _admin_execute(
-            "SELECT properties_json, metastore_uri, storage_connection "
-            "FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS "
-            f"WHERE name = '{catalog}'"
-        )
-        assert rows
-        flat = str(rows)
-        assert MINIO_ACCESS not in flat
-        assert MINIO_SECRET not in flat

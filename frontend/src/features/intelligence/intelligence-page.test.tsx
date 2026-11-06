@@ -137,14 +137,21 @@ describe("Nova Intelligence", () => {
     await userEvent.fill(screen.getByRole("textbox", { name: "Index name" }), "catalog");
     await userEvent.click(screen.getByRole("button", { name: "Source relation database" }));
     await userEvent.click(screen.getByRole("button", { name: "NOVA_SYSTEM", exact: true }));
+    // A closing popover returns focus to its trigger and would dismiss the next
+    // one, so let it unmount before opening another.
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Source relation relation" }));
     await userEvent.click(screen.getByRole("button", { name: "catalog", exact: true }));
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Key columns" }));
-    await userEvent.click(screen.getByText("id", { exact: true }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "id", exact: true }));
     await userEvent.keyboard("{Escape}");
+    // Wait for the closing popover to unmount, so only one column list exists.
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Search text columns" }));
-    await userEvent.click(screen.getByText("body", { exact: true }).last());
+    await userEvent.click(screen.getByRole("checkbox", { name: "body", exact: true }));
     await userEvent.keyboard("{Escape}");
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create search index" }));
     await expect.poll(() => mocks.post.mock.calls.length).toBe(1);
     expect(mocks.post).toHaveBeenCalledWith("/ai/search", expect.objectContaining({
@@ -168,13 +175,19 @@ describe("Nova Intelligence", () => {
     await userEvent.click(screen.getByRole("button", { name: /customer_features/ }));
     await userEvent.click(screen.getByRole("button", { name: "Label relation database" }));
     await userEvent.click(screen.getByRole("button", { name: "NOVA_SYSTEM" }));
+    // A closing popover returns focus to its trigger and would dismiss the next
+    // one, so let it unmount before opening another.
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Label relation relation" }));
     await userEvent.click(screen.getByRole("button", { name: "labels" }));
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Label timestamp column" }));
     await userEvent.click(screen.getByRole("button", { name: "label_ts" }));
     await userEvent.keyboard("{Escape}");
+    // Wait for the closing popover to unmount, so only one column list exists.
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Target column" }));
-    await userEvent.click(screen.getByRole("button", { name: "churn" }).last());
+    await userEvent.click(screen.getByRole("dialog").getByRole("button", { name: "churn" }));
     await userEvent.fill(screen.getByRole("textbox", { name: "Model name" }), "churn_model");
     await userEvent.click(screen.getByRole("button", { name: "Train model" }));
     await expect.poll(() => mocks.post.mock.calls.length).toBe(1);

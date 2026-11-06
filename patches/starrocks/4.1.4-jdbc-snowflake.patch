@@ -1,0 +1,925 @@
+diff --git a/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java b/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java
+new file mode 100644
+index 0000000..caa603f
+--- /dev/null
++++ b/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java
+@@ -0,0 +1,105 @@
++// Copyright 2021-present StarRocks, Inc. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package com.starrocks.connector.jdbc;
++
++import com.starrocks.connector.exception.StarRocksConnectorException;
++import org.apache.commons.codec.binary.Hex;
++
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStream;
++import java.net.URI;
++import java.net.URL;
++import java.net.URLClassLoader;
++import java.nio.file.Files;
++import java.security.MessageDigest;
++import java.security.NoSuchAlgorithmException;
++import java.util.Locale;
++import java.util.Map;
++import java.util.concurrent.ConcurrentHashMap;
++
++/**
++ * Class loaders for JDBC drivers that are not on the FE classpath.
++ *
++ * <p>Only drivers that ship as a local file are loaded, and the file must match the MD5 checksum that
++ * JDBCConnector recorded when the catalog was created (the same checksum the BE verifies). The FE never
++ * fetches driver code from a remote URL at metadata time. One loader is kept per driver file and
++ * checksum so catalogs share loaded classes and a replaced file needs a new checksum.
++ */
++final class JDBCDriverClassLoaders {
++
++    private static final Map<String, ClassLoader> LOADERS = new ConcurrentHashMap<>();
++
++    private JDBCDriverClassLoaders() {
++    }
++
++    static ClassLoader forDriver(String driverUrl, String checksum) {
++        if (driverUrl == null || driverUrl.isEmpty()) {
++            throw new StarRocksConnectorException("Missing driver_url for a driver that is not on the FE classpath");
++        }
++        if (checksum == null || checksum.isEmpty()) {
++            throw new StarRocksConnectorException("Missing checksum for JDBC driver " + driverUrl);
++        }
++        File driverFile = localDriverFile(driverUrl);
++        String key = driverFile.getAbsolutePath() + "#" + checksum.toLowerCase(Locale.ROOT);
++        return LOADERS.computeIfAbsent(key, k -> createLoader(driverFile, checksum));
++    }
++
++    static File localDriverFile(String driverUrl) {
++        URI uri;
++        try {
++            uri = URI.create(driverUrl);
++        } catch (IllegalArgumentException e) {
++            throw new StarRocksConnectorException("Invalid JDBC driver_url: " + driverUrl);
++        }
++        if (!"file".equalsIgnoreCase(uri.getScheme())) {
++            throw new StarRocksConnectorException(
++                    "JDBC driver_url must be a local file:// JAR for drivers not on the FE classpath: " + driverUrl);
++        }
++        File file = new File(uri.getPath());
++        if (!file.isFile()) {
++            throw new StarRocksConnectorException("JDBC driver file not found: " + driverUrl);
++        }
++        return file;
++    }
++
++    static String md5Hex(File file) {
++        try (InputStream in = Files.newInputStream(file.toPath())) {
++            MessageDigest digest = MessageDigest.getInstance("MD5");
++            byte[] buf = new byte[1 << 16];
++            int read;
++            while ((read = in.read(buf)) >= 0) {
++                digest.update(buf, 0, read);
++            }
++            return Hex.encodeHexString(digest.digest());
++        } catch (IOException | NoSuchAlgorithmException e) {
++            throw new StarRocksConnectorException("Cannot read JDBC driver file " + file + ": " + e.getMessage());
++        }
++    }
++
++    private static ClassLoader createLoader(File driverFile, String checksum) {
++        String actual = md5Hex(driverFile);
++        if (!actual.equalsIgnoreCase(checksum)) {
++            throw new StarRocksConnectorException("JDBC driver file " + driverFile
++                    + " does not match the checksum recorded for the catalog");
++        }
++        try {
++            URL url = driverFile.toURI().toURL();
++            return new URLClassLoader(new URL[] {url}, JDBCDriverClassLoaders.class.getClassLoader());
++        } catch (IOException e) {
++            throw new StarRocksConnectorException("Cannot load JDBC driver file " + driverFile + ": " + e.getMessage());
++        }
++    }
++}
+diff --git a/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java b/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java
+index e5a4639..eb72287 100644
+--- a/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java
++++ b/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java
+@@ -70,6 +70,8 @@ public class JDBCMetadata implements ConnectorMetadata {
+     private Map<String, String> properties;
+     JDBCSchemaResolver schemaResolver;
+     private String catalogName;
++    // Non-null only for a driver loaded from its driver_url JAR instead of the FE classpath.
++    private ClassLoader driverClassLoader;
+ 
+     private JDBCMetaCache<String, Database> dbCache;
+     private JDBCMetaCache<JDBCTableName, List<String>> partitionNamesCache;
+@@ -101,7 +103,7 @@ public class JDBCMetadata implements ConnectorMetadata {
+         this.catalogName = catalogName;
+         try {
+             String driverName = getDriverName();
+-            Class.forName(driverName);
++            driverClassLoader = loadDriverClass(driverName);
+         } catch (ClassNotFoundException e) {
+             LOG.warn(e.getMessage(), e);
+             throw new StarRocksConnectorException("doesn't find class: " + e.getMessage());
+@@ -118,6 +120,8 @@ public class JDBCMetadata implements ConnectorMetadata {
+             schemaResolver = new OracleSchemaResolver(properties);
+         } else if (properties.get(JDBCResource.DRIVER_CLASS).toLowerCase().contains("sqlserver")) {
+             schemaResolver = new SqlServerSchemaResolver();
++        } else if (SnowflakeSchemaResolver.isSnowflakeDriver(properties.get(JDBCResource.DRIVER_CLASS))) {
++            schemaResolver = new SnowflakeSchemaResolver(properties);
+         } else {
+             LOG.warn("{} not support yet", properties.get(JDBCResource.DRIVER_CLASS));
+             throw new StarRocksConnectorException(properties.get(JDBCResource.DRIVER_CLASS) + " not support yet");
+@@ -130,6 +134,26 @@ public class JDBCMetadata implements ConnectorMetadata {
+         createMetaAsyncCacheInstances(properties);
+     }
+ 
++    /**
++     * Loads the driver class and returns the class loader it came from, or null for the FE classpath.
++     * A Snowflake driver that is not on the FE classpath is loaded in isolation from its local
++     * driver_url JAR, so its bundled dependencies cannot shadow FE libraries.
++     */
++    private ClassLoader loadDriverClass(String driverName) throws ClassNotFoundException {
++        try {
++            Class.forName(driverName);
++            return null;
++        } catch (ClassNotFoundException e) {
++            if (!SnowflakeSchemaResolver.isSnowflakeDriver(driverName)) {
++                throw e;
++            }
++        }
++        ClassLoader loader = JDBCDriverClassLoaders.forDriver(properties.get(JDBCResource.DRIVER_URL),
++                properties.get(JDBCResource.CHECK_SUM));
++        Class.forName(driverName, true, loader);
++        return loader;
++    }
++
+     private String getDriverName() {
+         String driverName = properties.get(JDBCResource.DRIVER_CLASS);
+         // use org.mariadb.jdbc.Driver for mysql because of gpl protocol
+@@ -200,6 +224,20 @@ public class JDBCMetadata implements ConnectorMetadata {
+     }
+ 
+     private HikariDataSource createHikariDataSource() {
++        // Hikari resolves the driver through the thread context class loader.
++        Thread thread = Thread.currentThread();
++        ClassLoader previous = thread.getContextClassLoader();
++        if (driverClassLoader != null) {
++            thread.setContextClassLoader(driverClassLoader);
++        }
++        try {
++            return newHikariDataSource();
++        } finally {
++            thread.setContextClassLoader(previous);
++        }
++    }
++
++    private HikariDataSource newHikariDataSource() {
+         HikariConfig config = new HikariConfig();
+         config.setJdbcUrl(getJdbcUrl());
+         config.setUsername(properties.get(JDBCResource.USER));
+diff --git a/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java b/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java
+new file mode 100644
+index 0000000..a2ec9b0
+--- /dev/null
++++ b/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java
+@@ -0,0 +1,292 @@
++// Copyright 2021-present StarRocks, Inc. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package com.starrocks.connector.jdbc;
++
++import com.google.common.collect.ImmutableSet;
++import com.google.common.collect.Lists;
++import com.starrocks.catalog.Column;
++import com.starrocks.catalog.JDBCResource;
++import com.starrocks.catalog.JDBCTable;
++import com.starrocks.catalog.Table;
++import com.starrocks.common.DdlException;
++import com.starrocks.common.util.TimeUtils;
++import com.starrocks.connector.exception.StarRocksConnectorException;
++import com.starrocks.type.PrimitiveType;
++import com.starrocks.type.Type;
++import com.starrocks.type.TypeFactory;
++
++import java.sql.Connection;
++import java.sql.DatabaseMetaData;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Types;
++import java.util.Collection;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++
++/**
++ * Schema resolver for the Snowflake JDBC driver.
++ *
++ * <p>A StarRocks JDBC catalog maps to the single Snowflake database selected by the connection
++ * ({@code db=} in the JDBC URI); StarRocks databases are Snowflake schemas. Names are used exactly as
++ * Snowflake stores them (unquoted identifiers are upper case), and every remote identifier is
++ * double-quoted, so lookups never depend on Snowflake's case folding.
++ */
++public class SnowflakeSchemaResolver extends JDBCSchemaResolver {
++
++    /**
++     * Snowflake session parameter that decides how scale-0 NUMBER columns are typed in result sets.
++     * With the driver default (true) they are reported as BIGINT and read as java.lang.Long, which the BE
++     * JDBC scanner only accepts for BIGINT slots. When disabled they are read as java.math.BigDecimal.
++     */
++    static final String TREAT_DECIMAL_AS_INT = "JDBC_TREAT_DECIMAL_AS_INT";
++
++    private final boolean treatDecimalAsInt;
++
++    public SnowflakeSchemaResolver() {
++        this(Map.of());
++    }
++
++    public SnowflakeSchemaResolver(Map<String, String> properties) {
++        this.defaultTableTypes = new String[] {"TABLE", "VIEW"};
++        this.treatDecimalAsInt = !"false".equalsIgnoreCase(
++                uriParameter(properties.getOrDefault(JDBCResource.URI, ""), TREAT_DECIMAL_AS_INT));
++    }
++
++    static boolean isSnowflakeDriver(String driverClass) {
++        return driverClass != null && driverClass.toLowerCase(Locale.ROOT).contains("snowflake");
++    }
++
++    static boolean isSnowflakeUri(String jdbcUri) {
++        return jdbcUri != null && jdbcUri.toLowerCase(Locale.ROOT).startsWith("jdbc:snowflake:");
++    }
++
++    /** Returns the value of a {@code key=value} URI parameter (case-insensitive key), or null. */
++    static String uriParameter(String jdbcUri, String key) {
++        int start = jdbcUri.indexOf('?');
++        if (start < 0) {
++            return null;
++        }
++        for (String pair : jdbcUri.substring(start + 1).split("&")) {
++            int eq = pair.indexOf('=');
++            if (eq > 0 && pair.substring(0, eq).trim().equalsIgnoreCase(key)) {
++                return pair.substring(eq + 1).trim();
++            }
++        }
++        return null;
++    }
++
++    /** Quotes a Snowflake identifier exactly as stored, doubling embedded quotes. */
++    static String quoteIdentifier(String identifier) {
++        return "\"" + identifier.replace("\"", "\"\"") + "\"";
++    }
++
++    private static String currentDatabase(Connection connection) throws SQLException {
++        String database = connection.getCatalog();
++        if (database == null || database.isEmpty()) {
++            throw new StarRocksConnectorException(
++                    "Snowflake JDBC catalog requires a database: set db=<database> in the JDBC URI");
++        }
++        return database;
++    }
++
++    /** Escapes LIKE wildcards so a metadata pattern matches only the exact name. */
++    private static String exactPattern(DatabaseMetaData metaData, String name) throws SQLException {
++        String escape = metaData.getSearchStringEscape();
++        if (escape == null || escape.isEmpty()) {
++            return name;
++        }
++        return name.replace(escape, escape + escape)
++                .replace("_", escape + "_")
++                .replace("%", escape + "%");
++    }
++
++    @Override
++    public Collection<String> listSchemas(Connection connection) {
++        try {
++            String database = currentDatabase(connection);
++            try (ResultSet resultSet = connection.getMetaData().getSchemas(database, null)) {
++                ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
++                while (resultSet.next()) {
++                    String schemaName = resultSet.getString("TABLE_SCHEM");
++                    if (schemaName != null && !isInternalSchema(schemaName)) {
++                        schemaNames.add(schemaName);
++                    }
++                }
++                return schemaNames.build();
++            }
++        } catch (SQLException e) {
++            throw new StarRocksConnectorException(e.getMessage());
++        }
++    }
++
++    @Override
++    public boolean databaseExists(Connection connection, String dbName) throws SQLException {
++        if (isInternalSchema(dbName)) {
++            return false;
++        }
++        return listSchemas(connection).contains(dbName);
++    }
++
++    @Override
++    public ResultSet getTables(Connection connection, String dbName) throws SQLException {
++        DatabaseMetaData metaData = connection.getMetaData();
++        return metaData.getTables(currentDatabase(connection), exactPattern(metaData, dbName), "%",
++                defaultTableTypes);
++    }
++
++    @Override
++    public ResultSet getTables(Connection connection, String dbName, String tblName) throws SQLException {
++        DatabaseMetaData metaData = connection.getMetaData();
++        return metaData.getTables(currentDatabase(connection), exactPattern(metaData, dbName),
++                exactPattern(metaData, tblName), defaultTableTypes);
++    }
++
++    @Override
++    public ResultSet getColumns(Connection connection, String dbName, String tblName) throws SQLException {
++        DatabaseMetaData metaData = connection.getMetaData();
++        return metaData.getColumns(currentDatabase(connection), exactPattern(metaData, dbName),
++                exactPattern(metaData, tblName), "%");
++    }
++
++    private static Map<String, String> withRemoteTableName(Map<String, String> properties, String dbName,
++                                                           String name) {
++        Map<String, String> newProp = new HashMap<>(properties);
++        newProp.putIfAbsent(JDBCTable.JDBC_TABLENAME, quoteIdentifier(dbName) + "." + quoteIdentifier(name));
++        return newProp;
++    }
++
++    @Override
++    public Table getTable(long id, String name, List<Column> schema, String dbName, String catalogName,
++                          Map<String, String> properties) throws DdlException {
++        return new JDBCTable(id, name, schema, dbName, catalogName, withRemoteTableName(properties, dbName, name));
++    }
++
++    @Override
++    public Table getTable(long id, String name, List<Column> schema, List<Column> partitionColumns, String dbName,
++                          String catalogName, Map<String, String> properties) throws DdlException {
++        return new JDBCTable(id, name, schema, partitionColumns, dbName, catalogName,
++                withRemoteTableName(properties, dbName, name));
++    }
++
++    private static String normalizedTypeName(String typeName) {
++        return typeName == null ? "" : typeName.toUpperCase(Locale.ROOT).replace("_", "").trim();
++    }
++
++    private static Type varcharType(int columnSize) {
++        if (columnSize <= 0 || columnSize > TypeFactory.CATALOG_MAX_VARCHAR_LENGTH) {
++            return TypeFactory.createDefaultCatalogString();
++        }
++        return TypeFactory.createVarcharType(columnSize);
++    }
++
++    private Type numberType(int precision, int scale) {
++        if (scale <= 0) {
++            // Mirrors how the driver types the column in result sets (see TREAT_DECIMAL_AS_INT).
++            if (treatDecimalAsInt) {
++                return TypeFactory.createType(PrimitiveType.BIGINT);
++            }
++            return precision > 0 ? TypeFactory.createUnifiedDecimalType(precision, 0)
++                    : TypeFactory.createUnifiedDecimalType(38, 0);
++        }
++        if (precision <= 0 || precision < scale) {
++            return TypeFactory.createDefaultCatalogString();
++        }
++        return TypeFactory.createUnifiedDecimalType(precision, scale);
++    }
++
++    @Override
++    public Type convertColumnType(int dataType, String typeName, int columnSize, int digits) {
++        String snowflakeType = normalizedTypeName(typeName);
++        switch (dataType) {
++            case Types.BOOLEAN:
++            case Types.BIT:
++                return TypeFactory.createType(PrimitiveType.BOOLEAN);
++            case Types.TINYINT:
++            case Types.SMALLINT:
++            case Types.INTEGER:
++            case Types.BIGINT:
++                return numberType(columnSize, 0);
++            case Types.DECIMAL:
++            case Types.NUMERIC:
++                return numberType(columnSize, digits);
++            case Types.REAL:
++            case Types.FLOAT:
++            case Types.DOUBLE:
++                return TypeFactory.createType(PrimitiveType.DOUBLE);
++            case Types.CHAR:
++            case Types.NCHAR:
++            case Types.VARCHAR:
++            case Types.NVARCHAR:
++            case Types.LONGVARCHAR:
++            case Types.LONGNVARCHAR:
++                if (snowflakeType.equals("VARIANT") || snowflakeType.equals("OBJECT")
++                        || snowflakeType.equals("ARRAY")) {
++                    // Semi-structured values are read as JSON text.
++                    return TypeFactory.createType(PrimitiveType.JSON);
++                }
++                return varcharType(columnSize);
++            case Types.BINARY:
++            case Types.VARBINARY:
++            case Types.LONGVARBINARY:
++                return TypeFactory.createVarbinary(TypeFactory.CATALOG_MAX_VARCHAR_LENGTH);
++            case Types.DATE:
++                return TypeFactory.createType(PrimitiveType.DATE);
++            case Types.TIME:
++            case Types.TIME_WITH_TIMEZONE:
++                return TypeFactory.createType(PrimitiveType.TIME);
++            case Types.TIMESTAMP:
++            case Types.TIMESTAMP_WITH_TIMEZONE:
++                // TIMESTAMP_NTZ, TIMESTAMP_LTZ and TIMESTAMP_TZ arrive as java.sql.Timestamp.
++                return TypeFactory.createType(PrimitiveType.DATETIME);
++            case Types.STRUCT:
++            case Types.ARRAY:
++                // Structured OBJECT(...) / ARRAY(...) and VECTOR are read through getString.
++                return TypeFactory.createDefaultCatalogString();
++            default:
++                if (snowflakeType.equals("GEOGRAPHY") || snowflakeType.equals("GEOMETRY")) {
++                    return TypeFactory.createDefaultCatalogString();
++                }
++                return TypeFactory.createType(PrimitiveType.UNKNOWN_TYPE);
++        }
++    }
++
++    @Override
++    public long getTableRowCount(Connection connection, String dbName, String tableName) throws SQLException {
++        // INFORMATION_SCHEMA.TABLES.ROW_COUNT is maintained by Snowflake metadata; no table scan runs.
++        String sql = "SELECT ROW_COUNT FROM " + quoteIdentifier(currentDatabase(connection))
++                + ".INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
++        try (PreparedStatement ps = connection.prepareStatement(sql)) {
++            ps.setString(1, dbName);
++            ps.setString(2, tableName);
++            ps.setQueryTimeout(getQueryTimeoutSeconds());
++            try (ResultSet rs = ps.executeQuery()) {
++                if (rs.next()) {
++                    long rows = rs.getLong(1);
++                    return rs.wasNull() ? -1L : rows;
++                }
++            }
++        }
++        return -1L;
++    }
++
++    @Override
++    public List<Partition> getPartitions(Connection connection, Table table) {
++        return Lists.newArrayList(new Partition(table.getName(), TimeUtils.getEpochSeconds()));
++    }
++}
+diff --git a/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java b/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java
+index 6ce8cc4..faee00f 100644
+--- a/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java
++++ b/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java
+@@ -213,7 +213,8 @@ public class JDBCScanNode extends ScanNode {
+             return "`";
+         }
+         if (jdbcUri.startsWith("jdbc:postgresql") ||
+-                jdbcUri.startsWith("jdbc:postgres")) {
++                jdbcUri.startsWith("jdbc:postgres") ||
++                jdbcUri.startsWith("jdbc:snowflake")) {
+             return "\"";
+         }
+         return "";
+diff --git a/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java b/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java
+new file mode 100644
+index 0000000..d1f8444
+--- /dev/null
++++ b/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java
+@@ -0,0 +1,417 @@
++// Copyright 2021-present StarRocks, Inc. All rights reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package com.starrocks.connector.jdbc;
++
++import com.starrocks.catalog.Column;
++import com.starrocks.catalog.JDBCResource;
++import com.starrocks.catalog.JDBCTable;
++import com.starrocks.connector.exception.StarRocksConnectorException;
++import com.starrocks.type.PrimitiveType;
++import com.starrocks.type.ScalarType;
++import com.starrocks.type.Type;
++import com.starrocks.type.TypeFactory;
++import com.zaxxer.hikari.HikariDataSource;
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.io.File;
++import java.io.OutputStream;
++import java.lang.reflect.InvocationHandler;
++import java.lang.reflect.Proxy;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.sql.Connection;
++import java.sql.DatabaseMetaData;
++import java.sql.Driver;
++import java.sql.DriverPropertyInfo;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Types;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.HashMap;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Properties;
++import java.util.jar.JarEntry;
++import java.util.jar.JarOutputStream;
++import java.util.logging.Logger;
++
++public class SnowflakeSchemaResolverTest {
++
++    private static final String DB = "ANALYTICS";
++
++    /** A driver class on the test classpath whose name selects the Snowflake resolver. */
++    public static class FakeSnowflakeDriver implements Driver {
++        @Override
++        public Connection connect(String url, Properties info) {
++            return null;
++        }
++
++        @Override
++        public boolean acceptsURL(String url) {
++            return url.startsWith("jdbc:snowflake:");
++        }
++
++        @Override
++        public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
++            return new DriverPropertyInfo[0];
++        }
++
++        @Override
++        public int getMajorVersion() {
++            return 1;
++        }
++
++        @Override
++        public int getMinorVersion() {
++            return 0;
++        }
++
++        @Override
++        public boolean jdbcCompliant() {
++            return false;
++        }
++
++        @Override
++        public Logger getParentLogger() {
++            return Logger.getGlobal();
++        }
++    }
++
++    /** Records metadata calls and returns canned rows. */
++    private static final class FakeSnowflake {
++        final List<String> calls = new ArrayList<>();
++        String currentDatabase = DB;
++        List<Map<String, Object>> schemas = rows("TABLE_SCHEM", "INFORMATION_SCHEMA", "PUBLIC", "MY_SCHEMA");
++        List<Map<String, Object>> tables = rows("TABLE_NAME", "ORDERS");
++        List<Map<String, Object>> columns = new ArrayList<>();
++
++        Connection connection() {
++            DatabaseMetaData metaData = proxy(DatabaseMetaData.class, (p, method, args) -> {
++                switch (method.getName()) {
++                    case "getSearchStringEscape":
++                        return "\\";
++                    case "getSchemas":
++                        calls.add("getSchemas(" + args[0] + "," + args[1] + ")");
++                        return resultSet(schemas);
++                    case "getTables":
++                        calls.add("getTables(" + args[0] + "," + args[1] + "," + args[2] + ","
++                                + Arrays.toString((String[]) args[3]) + ")");
++                        return resultSet(tables);
++                    case "getColumns":
++                        calls.add("getColumns(" + args[0] + "," + args[1] + "," + args[2] + "," + args[3] + ")");
++                        return resultSet(columns);
++                    default:
++                        throw new UnsupportedOperationException(method.getName());
++                }
++            });
++            return proxy(Connection.class, (p, method, args) -> {
++                switch (method.getName()) {
++                    case "getCatalog":
++                        return currentDatabase;
++                    case "getMetaData":
++                        return metaData;
++                    case "setNetworkTimeout":
++                    case "close":
++                        return null;
++                    case "isClosed":
++                        return false;
++                    default:
++                        throw new UnsupportedOperationException(method.getName());
++                }
++            });
++        }
++    }
++
++    @SuppressWarnings("unchecked")
++    private static <T> T proxy(Class<T> type, InvocationHandler handler) {
++        return (T) Proxy.newProxyInstance(SnowflakeSchemaResolverTest.class.getClassLoader(),
++                new Class<?>[] {type}, handler);
++    }
++
++    private static List<Map<String, Object>> rows(String column, Object... values) {
++        List<Map<String, Object>> rows = new ArrayList<>();
++        for (Object value : values) {
++            Map<String, Object> row = new HashMap<>();
++            row.put(column, value);
++            rows.add(row);
++        }
++        return rows;
++    }
++
++    private static Map<String, Object> column(String name, int dataType, String typeName, int size, int digits,
++                                              String nullable, String remarks) {
++        Map<String, Object> row = new LinkedHashMap<>();
++        row.put("COLUMN_NAME", name);
++        row.put("DATA_TYPE", dataType);
++        row.put("TYPE_NAME", typeName);
++        row.put("COLUMN_SIZE", size);
++        row.put("DECIMAL_DIGITS", digits);
++        row.put("IS_NULLABLE", nullable);
++        row.put("REMARKS", remarks);
++        return row;
++    }
++
++    private static ResultSet resultSet(List<Map<String, Object>> rows) {
++        int[] cursor = {-1};
++        return proxy(ResultSet.class, (p, method, args) -> {
++            switch (method.getName()) {
++                case "next":
++                    return ++cursor[0] < rows.size();
++                case "getString":
++                    Object s = rows.get(cursor[0]).get((String) args[0]);
++                    return s == null ? null : s.toString();
++                case "getInt":
++                    Object i = rows.get(cursor[0]).get((String) args[0]);
++                    return i == null ? 0 : ((Number) i).intValue();
++                case "close":
++                    return null;
++                default:
++                    throw new UnsupportedOperationException(method.getName());
++            }
++        });
++    }
++
++    private static Map<String, String> catalogProperties(String uri, String driverClass) {
++        Map<String, String> properties = new HashMap<>();
++        properties.put(JDBCResource.DRIVER_CLASS, driverClass);
++        properties.put(JDBCResource.URI, uri);
++        properties.put(JDBCResource.USER, "NOVA");
++        properties.put(JDBCResource.PASSWORD, "unused");
++        properties.put(JDBCResource.DRIVER_URL, "file:///unused/snowflake-jdbc.jar");
++        properties.put(JDBCResource.CHECK_SUM, "1ce46a2882a3e349d37d8afee4e0e7e0");
++        return properties;
++    }
++
++    private static void assertType(Type expected, Type actual) {
++        Assertions.assertEquals(expected, actual, "expected " + expected + " but was " + actual);
++    }
++
++    @Test
++    public void testTypeMapping() {
++        SnowflakeSchemaResolver resolver = new SnowflakeSchemaResolver();
++        Type bigint = TypeFactory.createType(PrimitiveType.BIGINT);
++        // NUMBER(p,0), including the INT/BIGINT aliases (NUMBER(38,0)), is read as java.lang.Long.
++        assertType(bigint, resolver.convertColumnType(Types.BIGINT, "NUMBER", 38, 0));
++        assertType(bigint, resolver.convertColumnType(Types.DECIMAL, "NUMBER", 38, 0));
++        assertType(bigint, resolver.convertColumnType(Types.NUMERIC, "NUMBER", 10, 0));
++        assertType(TypeFactory.createUnifiedDecimalType(12, 2),
++                resolver.convertColumnType(Types.DECIMAL, "NUMBER", 12, 2));
++        assertType(TypeFactory.createUnifiedDecimalType(38, 10),
++                resolver.convertColumnType(Types.DECIMAL, "NUMBER", 38, 10));
++        assertType(TypeFactory.createType(PrimitiveType.DOUBLE),
++                resolver.convertColumnType(Types.DOUBLE, "FLOAT", 38, 0));
++        assertType(TypeFactory.createType(PrimitiveType.BOOLEAN),
++                resolver.convertColumnType(Types.BOOLEAN, "BOOLEAN", 1, 0));
++        assertType(TypeFactory.createVarcharType(255),
++                resolver.convertColumnType(Types.VARCHAR, "VARCHAR", 255, 0));
++        // TEXT/STRING default to 16 MB (newer accounts 128 MB): both fit the catalog maximum.
++        assertType(TypeFactory.createVarcharType(16777216),
++                resolver.convertColumnType(Types.VARCHAR, "VARCHAR", 16777216, 0));
++        assertType(TypeFactory.createVarcharType(134217728),
++                resolver.convertColumnType(Types.VARCHAR, "TEXT", 134217728, 0));
++        assertType(TypeFactory.createDefaultCatalogString(),
++                resolver.convertColumnType(Types.VARCHAR, "VARCHAR", 0, 0));
++        assertType(TypeFactory.createType(PrimitiveType.JSON),
++                resolver.convertColumnType(Types.VARCHAR, "VARIANT", 16777216, 0));
++        assertType(TypeFactory.createType(PrimitiveType.JSON),
++                resolver.convertColumnType(Types.VARCHAR, "OBJECT", 16777216, 0));
++        assertType(TypeFactory.createType(PrimitiveType.JSON),
++                resolver.convertColumnType(Types.VARCHAR, "ARRAY", 16777216, 0));
++        assertType(TypeFactory.createDefaultCatalogString(),
++                resolver.convertColumnType(Types.STRUCT, "OBJECT", 0, 0));
++        assertType(TypeFactory.createDefaultCatalogString(),
++                resolver.convertColumnType(Types.ARRAY, "ARRAY", 0, 0));
++        assertType(TypeFactory.createDefaultCatalogString(),
++                resolver.convertColumnType(Types.OTHER, "GEOGRAPHY", 0, 0));
++        assertType(TypeFactory.createVarbinary(TypeFactory.CATALOG_MAX_VARCHAR_LENGTH),
++                resolver.convertColumnType(Types.BINARY, "BINARY", 8388608, 0));
++        assertType(TypeFactory.createType(PrimitiveType.DATE),
++                resolver.convertColumnType(Types.DATE, "DATE", 10, 0));
++        assertType(TypeFactory.createType(PrimitiveType.TIME),
++                resolver.convertColumnType(Types.TIME, "TIME", 18, 9));
++        for (String name : new String[] {"TIMESTAMPNTZ", "TIMESTAMP_NTZ", "TIMESTAMPLTZ", "TIMESTAMP_LTZ"}) {
++            assertType(TypeFactory.createType(PrimitiveType.DATETIME),
++                    resolver.convertColumnType(Types.TIMESTAMP, name, 29, 9));
++        }
++        assertType(TypeFactory.createType(PrimitiveType.DATETIME),
++                resolver.convertColumnType(Types.TIMESTAMP_WITH_TIMEZONE, "TIMESTAMPTZ", 35, 9));
++        assertType(TypeFactory.createType(PrimitiveType.UNKNOWN_TYPE),
++                resolver.convertColumnType(Types.OTHER, "SOMETHING_NEW", 0, 0));
++    }
++
++    @Test
++    public void testScaleZeroNumberFollowsTreatDecimalAsInt() {
++        SnowflakeSchemaResolver resolver = new SnowflakeSchemaResolver(catalogProperties(
++                "jdbc:snowflake://acct.snowflakecomputing.com/?db=ANALYTICS&jdbc_treat_decimal_as_int=FALSE",
++                "net.snowflake.client.jdbc.SnowflakeDriver"));
++        Type decimal = resolver.convertColumnType(Types.DECIMAL, "NUMBER", 38, 0);
++        Assertions.assertTrue(decimal.isDecimalOfAnyVersion());
++        Assertions.assertEquals(38, ((ScalarType) decimal).getScalarPrecision());
++        Assertions.assertEquals(0, ((ScalarType) decimal).getScalarScale());
++        Assertions.assertEquals("FALSE", SnowflakeSchemaResolver.uriParameter(
++                "jdbc:snowflake://a/?db=X&JDBC_TREAT_DECIMAL_AS_INT=FALSE", "jdbc_treat_decimal_as_int"));
++        Assertions.assertNull(SnowflakeSchemaResolver.uriParameter("jdbc:snowflake://a/", "db"));
++    }
++
++    @Test
++    public void testDriverAndUriDetection() {
++        Assertions.assertTrue(SnowflakeSchemaResolver.isSnowflakeDriver("net.snowflake.client.jdbc.SnowflakeDriver"));
++        Assertions.assertFalse(SnowflakeSchemaResolver.isSnowflakeDriver("org.postgresql.Driver"));
++        Assertions.assertFalse(SnowflakeSchemaResolver.isSnowflakeDriver(null));
++        Assertions.assertTrue(SnowflakeSchemaResolver.isSnowflakeUri("jdbc:snowflake://a.snowflakecomputing.com/"));
++        Assertions.assertFalse(SnowflakeSchemaResolver.isSnowflakeUri("jdbc:postgresql://h/db"));
++    }
++
++    @Test
++    public void testListSchemasUsesConnectionDatabaseAndHidesInformationSchema() throws SQLException {
++        FakeSnowflake snowflake = new FakeSnowflake();
++        SnowflakeSchemaResolver resolver = new SnowflakeSchemaResolver();
++        Connection connection = snowflake.connection();
++        Assertions.assertEquals(Arrays.asList("PUBLIC", "MY_SCHEMA"),
++                new ArrayList<>(resolver.listSchemas(connection)));
++        Assertions.assertEquals("getSchemas(ANALYTICS,null)", snowflake.calls.get(0));
++        Assertions.assertTrue(resolver.databaseExists(connection, "PUBLIC"));
++        // Names are exact: Snowflake stores unquoted identifiers in upper case.
++        Assertions.assertFalse(resolver.databaseExists(connection, "public"));
++        Assertions.assertFalse(resolver.databaseExists(connection, "INFORMATION_SCHEMA"));
++    }
++
++    @Test
++    public void testMissingDatabaseIsRejected() {
++        FakeSnowflake snowflake = new FakeSnowflake();
++        snowflake.currentDatabase = null;
++        StarRocksConnectorException e = Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> new SnowflakeSchemaResolver().listSchemas(snowflake.connection()));
++        Assertions.assertTrue(e.getMessage().contains("db=<database>"), e.getMessage());
++    }
++
++    @Test
++    public void testMetadataPatternsMatchExactNames() throws SQLException {
++        FakeSnowflake snowflake = new FakeSnowflake();
++        SnowflakeSchemaResolver resolver = new SnowflakeSchemaResolver();
++        Connection connection = snowflake.connection();
++        resolver.getTables(connection, "MY_SCHEMA").close();
++        resolver.getTables(connection, "MY_SCHEMA", "ORDERS_2024%").close();
++        resolver.getColumns(connection, "MY_SCHEMA", "ORDERS").close();
++        Assertions.assertEquals(Arrays.asList(
++                "getTables(ANALYTICS,MY\\_SCHEMA,%,[TABLE, VIEW])",
++                "getTables(ANALYTICS,MY\\_SCHEMA,ORDERS\\_2024\\%,[TABLE, VIEW])",
++                "getColumns(ANALYTICS,MY\\_SCHEMA,ORDERS,%)"), snowflake.calls);
++    }
++
++    @Test
++    public void testColumnsKeepStoredNames() throws SQLException {
++        FakeSnowflake snowflake = new FakeSnowflake();
++        snowflake.columns.add(column("ORDER_ID", Types.BIGINT, "NUMBER", 38, 0, "NO", "order key"));
++        snowflake.columns.add(column("Mixed Case", Types.VARCHAR, "VARCHAR", 64, 0, "YES", null));
++        snowflake.columns.add(column("PAYLOAD", Types.VARCHAR, "VARIANT", 16777216, 0, "YES", null));
++        SnowflakeSchemaResolver resolver = new SnowflakeSchemaResolver();
++        Map<String, Integer> jdbcTypes = new HashMap<>();
++        List<Column> columns;
++        try (ResultSet rs = resolver.getColumns(snowflake.connection(), "PUBLIC", "ORDERS")) {
++            columns = resolver.convertToSRTable(rs, jdbcTypes);
++        }
++        Assertions.assertEquals(3, columns.size());
++        Assertions.assertEquals("ORDER_ID", columns.get(0).getName());
++        Assertions.assertEquals("order key", columns.get(0).getComment());
++        Assertions.assertFalse(columns.get(0).isAllowNull());
++        // Quoting happens in the scan node, so names stay as stored.
++        Assertions.assertEquals("Mixed Case", columns.get(1).getName());
++        Assertions.assertTrue(columns.get(2).getType().isJsonType());
++        Assertions.assertEquals(Types.BIGINT, jdbcTypes.get("order_id"));
++    }
++
++    @Test
++    public void testRemoteTableNameIsQuoted() throws Exception {
++        SnowflakeSchemaResolver resolver = new SnowflakeSchemaResolver();
++        Map<String, String> properties = catalogProperties(
++                "jdbc:snowflake://acct.snowflakecomputing.com/?db=ANALYTICS",
++                "net.snowflake.client.jdbc.SnowflakeDriver");
++        List<Column> schema = List.of(new Column("ID", TypeFactory.createType(PrimitiveType.BIGINT)));
++        JDBCTable table = (JDBCTable) resolver.getTable(1, "ORDERS", schema, List.of(), "PUBLIC", "sf", properties);
++        Assertions.assertEquals("\"PUBLIC\".\"ORDERS\"", table.getCatalogTableName());
++        JDBCTable odd = (JDBCTable) resolver.getTable(2, "say \"hi\"", schema, "My.Schema", "sf", properties);
++        Assertions.assertEquals("\"My.Schema\".\"say \"\"hi\"\"\"", odd.getCatalogTableName());
++        Assertions.assertFalse(properties.containsKey(JDBCTable.JDBC_TABLENAME), "catalog properties must not change");
++    }
++
++    @Test
++    public void testJdbcMetadataSelectsSnowflakeResolver() {
++        FakeSnowflake snowflake = new FakeSnowflake();
++        HikariDataSource dataSource = new HikariDataSource() {
++            @Override
++            public Connection getConnection() {
++                return snowflake.connection();
++            }
++        };
++        JDBCMetadata metadata = new JDBCMetadata(catalogProperties(
++                "jdbc:snowflake://acct.snowflakecomputing.com/?db=ANALYTICS",
++                FakeSnowflakeDriver.class.getName()), "sf", dataSource);
++        Assertions.assertTrue(metadata.schemaResolver instanceof SnowflakeSchemaResolver);
++        Assertions.assertEquals(Arrays.asList("PUBLIC", "MY_SCHEMA"), metadata.listDbNames(null));
++        Assertions.assertEquals(List.of("ORDERS"), metadata.listTableNames(null, "PUBLIC"));
++    }
++
++    @Test
++    public void testOtherMissingDriversStillFail() {
++        StarRocksConnectorException e = Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> new JDBCMetadata(catalogProperties("jdbc:postgresql://h/db", "org.example.MissingDriver"),
++                        "pg", new HikariDataSource()));
++        Assertions.assertTrue(e.getMessage().contains("doesn't find class"), e.getMessage());
++    }
++
++    @Test
++    public void testMissingSnowflakeDriverNeedsLocalJar() {
++        Map<String, String> properties = catalogProperties(
++                "jdbc:snowflake://acct.snowflakecomputing.com/?db=ANALYTICS",
++                "net.snowflake.client.jdbc.NotBundledDriver");
++        properties.put(JDBCResource.DRIVER_URL, "https://repo1.maven.org/snowflake-jdbc.jar");
++        properties.put(JDBCResource.CHECK_SUM, "00");
++        StarRocksConnectorException e = Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> new JDBCMetadata(properties, "sf", new HikariDataSource()));
++        Assertions.assertTrue(e.getMessage().contains("local file://"), e.getMessage());
++    }
++
++    @Test
++    public void testDriverClassLoaderVerifiesLocalJar(@TempDir Path dir) throws Exception {
++        File jar = dir.resolve("probe-driver.jar").toFile();
++        try (OutputStream out = Files.newOutputStream(jar.toPath());
++                JarOutputStream jarOut = new JarOutputStream(out)) {
++            jarOut.putNextEntry(new JarEntry("nova-driver-probe.txt"));
++            jarOut.write("probe".getBytes(StandardCharsets.UTF_8));
++            jarOut.closeEntry();
++        }
++        String url = jar.toURI().toString();
++        String checksum = JDBCDriverClassLoaders.md5Hex(jar);
++
++        ClassLoader loader = JDBCDriverClassLoaders.forDriver(url, checksum);
++        Assertions.assertNotNull(loader.getResource("nova-driver-probe.txt"));
++        Assertions.assertSame(loader, JDBCDriverClassLoaders.forDriver(url, checksum.toUpperCase()));
++
++        Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> JDBCDriverClassLoaders.forDriver(url, "0123456789abcdef0123456789abcdef"));
++        Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> JDBCDriverClassLoaders.forDriver(url, null));
++        Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> JDBCDriverClassLoaders.forDriver(dir.resolve("missing.jar").toUri().toString(), checksum));
++        Assertions.assertThrows(StarRocksConnectorException.class,
++                () -> JDBCDriverClassLoaders.forDriver("http://example.invalid/driver.jar", checksum));
++    }
++}

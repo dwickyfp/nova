@@ -218,6 +218,7 @@ KNOWN_TOOLS = {
     "ml_execute",
     "execute_business_action",
     "analysis_workspace",
+    "catalog_search",
 }
 
 

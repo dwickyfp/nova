@@ -24,6 +24,9 @@ class BoundColumn:
     key_column: bool | None = None
     hidden: bool | None = None
     partition_column: bool | None = None
+    #: The ``DEFAULT`` clause as SQL (``'abc'``, ``CURRENT_TIMESTAMP``, ``(uuid())``),
+    #: from the table definition; ``None`` when the definition gives none.
+    default_sql: str | None = None
 
     def __post_init__(self) -> None:
         if self.sql_type == UnknownType():

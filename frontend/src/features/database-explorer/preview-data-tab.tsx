@@ -7,30 +7,23 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { LoadingLines } from '@/components/ui/loading-overlay'
 import type { QueryResponse } from '@/features/workspaces/types'
-
-const PREVIEW_LIMIT = 10
-
-function quoteIdentifier(identifier: string) {
-  return `\`${identifier.replace(/`/g, '``')}\``
-}
+import { formatElapsed, PREVIEW_LIMIT, previewRequest } from './preview-request'
 
 export function PreviewDataTab({
+  catalog = 'default_catalog',
   database,
   table,
 }: {
+  catalog?: string
   database: string
   table: string
 }) {
   const [refetchKey, setRefetchKey] = useState(0)
 
   const previewQuery = useQuery<QueryResponse[]>({
-    queryKey: ['explorer-table-preview', database, table, refetchKey],
+    queryKey: ['explorer-table-preview', catalog, database, table, refetchKey],
     queryFn: () =>
-      api.post<QueryResponse[]>('/query/execute', {
-        sql: `SELECT * FROM ${quoteIdentifier(database)}.${quoteIdentifier(table)} LIMIT ${PREVIEW_LIMIT}`,
-        database,
-        max_rows: PREVIEW_LIMIT,
-      }),
+      api.post<QueryResponse[]>('/query/execute', previewRequest(catalog, database, table)),
   })
 
   useEffect(() => {
@@ -89,7 +82,7 @@ export function PreviewDataTab({
       <div className='flex items-center justify-between gap-2 text-sm text-muted-foreground'>
         <span>
           Previewing the first {rows.length} of up to {PREVIEW_LIMIT} rows
-          {result.elapsed_ms ? ` · ${result.elapsed_ms} ms` : ''}
+          {result.elapsed_ms ? ` · ${formatElapsed(result.elapsed_ms)}` : ''}
         </span>
         <Button
           variant='ghost'
@@ -128,7 +121,7 @@ export function PreviewDataTab({
                     className='px-4 py-2.5 font-mono text-xs whitespace-nowrap'
                   >
                     {cell === null || cell === undefined ? (
-                      <span className='text-muted-foreground italic'>NULL</span>
+                      <span className='font-mono text-xs text-muted-foreground'>NULL</span>
                     ) : (
                       String(cell)
                     )}

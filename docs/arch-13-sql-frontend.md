@@ -221,7 +221,8 @@ Unknown mode never enables shared-data transaction features.
 
 Capabilities resolve in order: conservative defaults, detected release profile,
 operator overrides. Unknown override names and non-boolean values are rejected.
-MERGE remains disabled in upstream 4.1.4. Cache keys contain host/port, deployment
+Native MERGE remains disabled in upstream 4.1.4 (`native_merge`); Nova's own
+`MERGE INTO` does not depend on it. Cache keys contain host/port, deployment
 configuration identity, deployment mode and overrides, never credentials. A
 single-flight lock per target/configuration prevents concurrent duplicate probes;
 successful identity lasts 15 minutes and
@@ -321,8 +322,15 @@ runs that extension through QueryService without adding a branch to its SQL flow
 effects, planner, relation binding, rule and payload handler, proves confirmation
 for a SELECT-prefixed mutation, and executes through the production adapters.
 
-MERGE, ALL BY NAME and schema evolution have no syntax or implementation here.
-Their future planners can use these registration, binding, capability and
-composite interfaces. Physical optimization remains StarRocks's responsibility.
+`MERGE INTO` (`novaMergeStatement`, `app/sql_frontend/merge.py`) is a Nova
+statement on these interfaces: a typed `MergeStatement`, a metadata-free
+validator, effects that follow its clauses, and a planner that binds the target's
+key, columns and defaults and lowers to a partial-update Primary Key
+`INSERT ... SELECT` (one
+`EngineSqlPlan`) or, with `WHEN MATCHED ... THEN DELETE`, a best-effort
+`CompositePlan` of a key check, a `DELETE`, and the upsert. See
+[MERGE INTO](02-sql-worksheet.md#merge-into). ALL BY NAME and schema evolution
+have no syntax or implementation here; their future planners can use the same
+registration, binding, capability and composite interfaces. Physical optimization remains StarRocks's responsibility.
 
 Query Autopilot uses the central frontend for canonical fingerprints, typed snapshot mappings, and governed maintenance. See [Query Autopilot architecture](arch-14-query-autopilot.md).

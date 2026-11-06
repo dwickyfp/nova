@@ -108,8 +108,12 @@ def default_registry() -> PlannerRegistry:
     registry.register(ast.NativeStatement, NativePlanner())
     registry.register(ast.StageAwareStatement, NativePlanner())
     registry.register(ast.SecurityStatement, SecurityPlanner(ActionKind.SECURITY))
+    from app.sql_frontend.merge import MergePlanner
+
+    registry.register(ast.MergeStatement, MergePlanner())
     for node, action in {
         ast.StreamStatement: ActionKind.STREAM,
+        ast.CatalogStatement: ActionKind.CATALOG,
         ast.CreateTaskStatement: ActionKind.CREATE_TASK,
         ast.CreateMLModelStatement: ActionKind.CREATE_ML_MODEL,
         ast.MLPredictStatement: ActionKind.ML_PREDICT,

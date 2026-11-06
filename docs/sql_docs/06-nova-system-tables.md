@@ -86,7 +86,11 @@ Binds a `function_type` (`complete`, `sentiment`, …) to a provider + model. In
 
 ### `CONFIG_OBJECT_TAGS`
 
-`object_type` + `object_name` + `tag_key` composite PK, `tag_value`, timestamps.
+`securable_id` + `tag_key` composite PK, `tag_value`, `securable_type`, created/updated timestamps and users. `securable_id` is a Nova Catalog securable (`CATALOG_SECURABLES.id`); see [Catalog Explorer](../03-catalog-explorer.md#business-metadata-search-and-lineage).
+
+### `CATALOG_SECURABLES`, `CATALOG_ANNOTATIONS`, `CATALOG_LINEAGE`, `CATALOG_SECURABLE_LINKS`
+
+Nova Catalog business metadata: one stable id per catalog, database, relation, and column (with `dropped_at`); the business description, owner, and column classification per id; table-to-table lineage edges harvested from `AUDIT_LOG`; and the securables each Semantic View and entity uses.
 
 ### `CONFIG_DASHBOARDS` / `CONFIG_DASHBOARD_WIDGETS`
 

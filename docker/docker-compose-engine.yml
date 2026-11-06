@@ -488,7 +488,12 @@ services:
 
   # ── StarRocks BE (Backend — storage, compute) ────────────────────
   starrocks-be:
-    image: starrocks/be-ubuntu:4.1.4
+    # Upstream BE plus the bundled JDBC drivers for Nova Catalog connections.
+    build:
+      context: ..
+      dockerfile: docker/starrocks-be.Dockerfile
+      args:
+        STARROCKS_VERSION: 4.1.4
     container_name: nova-starrocks-be
     hostname: starrocks-be
     depends_on:
@@ -521,6 +526,32 @@ services:
       timeout: 5s
       retries: 30
       start_period: 120s
+    networks:
+      - nova
+
+  # ── Nova Catalog acceptance source (profile `catalog-test`) ──────
+  # A disposable PostgreSQL for the phase 2 governed acceptance
+  # (backend/scripts/verify_catalog_jdbc_e2e.py). Started only with
+  # `--profile catalog-test`; no published port and no volume, so it is
+  # reachable only from the engine network and reseeds on every recreate.
+  # The passwords are local test fixtures; override them in docker/.env.
+  catalog-test-postgres:
+    image: postgres:16.10-alpine
+    container_name: nova-catalog-test-postgres
+    hostname: catalog-test-postgres
+    profiles: ["catalog-test"]
+    environment:
+      POSTGRES_USER: nova_catalog_owner
+      POSTGRES_PASSWORD: ${CATALOG_TEST_POSTGRES_PASSWORD:-nova-catalog-owner-test}
+      POSTGRES_DB: shop
+      CATALOG_TEST_READER_PASSWORD: ${CATALOG_TEST_READER_PASSWORD:-nova-catalog-reader-test}
+    volumes:
+      - ./catalog-test/postgres-init.sh:/docker-entrypoint-initdb.d/10-seed.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nova_catalog_owner", "-d", "shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - nova
 

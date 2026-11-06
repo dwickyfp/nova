@@ -249,6 +249,18 @@ def default_semantics() -> StatementSemanticsRegistry:
         ast.StreamStatement,
         StatementSemantics(stream_effects, validator=validate_stream, preflight_safe=True),
     )
+    from app.sql_frontend.catalog_ddl import catalog_effects, validate_catalog
+
+    registry.register(
+        ast.CatalogStatement,
+        StatementSemantics(catalog_effects, validator=validate_catalog, preflight_safe=True),
+    )
+    from app.sql_frontend.merge import merge_effects, validate_merge
+
+    registry.register(
+        ast.MergeStatement,
+        StatementSemantics(merge_effects, validator=validate_merge, preflight_safe=True),
+    )
     native = StatementSemantics(
         _native_effects, validator=validation._native_statement_checks, preflight_safe=True
     )

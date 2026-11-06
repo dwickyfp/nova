@@ -177,11 +177,21 @@ statement
     | showCatalogsStatement
     | showCreateExternalCatalogStatement
     | alterCatalogStatement
+    // NOVA-BEGIN (Nova Catalog phase 2): connections, foreign catalogs, and
+    // catalog refresh. Nova-only statements: the engine has no CONNECTION object
+    // and no `REFRESH CATALOG`; lowering turns them into Nova catalog actions.
+    | novaCatalogStatement
+    // NOVA-END
 
     // DML Statement
     | insertStatement
     | updateStatement
     | deleteStatement
+    // NOVA-BEGIN (MERGE INTO): Nova-only DML. The pinned engine has no MERGE;
+    // the SQL frontend lowers it to a Primary Key upsert (and a DELETE for
+    // `WHEN MATCHED ... THEN DELETE`).
+    | novaMergeStatement
+    // NOVA-END
 
     // Routine Statement
     | createRoutineLoadStatement
@@ -1151,6 +1161,37 @@ showCatalogsStatement
 alterCatalogStatement
     : ALTER CATALOG catalogName=identifierOrString modifyPropertiesClause
     ;
+// NOVA-BEGIN (Nova Catalog phase 2): the Nova Catalog DDL surface.
+//
+//   CREATE CONNECTION [IF NOT EXISTS] name
+//       TYPE = postgres ENDPOINT = 'host:5432/db' SECRET = '<reference>' [COMMENT = '...']
+//   DROP CONNECTION [IF EXISTS] name
+//   SHOW CONNECTIONS
+//   DESC | DESCRIBE CONNECTION name
+//   CREATE FOREIGN CATALOG [IF NOT EXISTS] name USING CONNECTION conn
+//       [COMMENT 'text'] [PROPERTIES ("key" = "value", ...)]
+//   REFRESH CATALOG name [SCHEMA s [TABLE t]]
+//
+// Connection clauses are `identifier = value` pairs rather than new keywords
+// (`ENDPOINT`, `SECRET`): the validator owns the accepted names, so the
+// grammar adds one token (`FOREIGN`) and no reserved word. A credential is
+// never a clause: `SECRET` names a reference, and the validator rejects
+// credential-named properties before anything is persisted.
+novaCatalogStatement
+    : CREATE CONNECTION (IF NOT EXISTS)? connectionName=identifier novaConnectionClause+  #novaCreateConnection
+    | DROP CONNECTION (IF EXISTS)? connectionName=identifier                                #novaDropConnection
+    | SHOW CONNECTIONS                                                                      #novaShowConnections
+    | (DESC | DESCRIBE) CONNECTION connectionName=identifier                                #novaDescribeConnection
+    | CREATE FOREIGN CATALOG (IF NOT EXISTS)? catalogName=identifier
+          USING CONNECTION connectionName=identifier comment? properties?                    #novaCreateForeignCatalog
+    | REFRESH CATALOG catalogName=identifier
+          (SCHEMA schemaName=identifier (TABLE relationName=identifier)?)?                      #novaRefreshCatalog
+    ;
+
+novaConnectionClause
+    : key=identifier EQ (string | identifier)
+    ;
+// NOVA-END
 
 // ---------------------------------------- Storage Volume Statement ---------------------------------------------------
 
@@ -1627,6 +1668,35 @@ updateStatement
 deleteStatement
     : explainDesc? withClause? DELETE FROM qualifiedName partitionNames? (USING using=relations)? (WHERE where=expression)?
     ;
+// NOVA-BEGIN (MERGE INTO): the Nova MERGE surface.
+//
+//   MERGE INTO target [[AS] t] USING (source | (query)) [[AS] s] ON condition
+//       WHEN MATCHED [AND cond] THEN UPDATE SET col = expr [, ...]
+//       WHEN MATCHED [AND cond] THEN DELETE
+//       WHEN NOT MATCHED [AND cond] THEN INSERT [(col, ...)] VALUES (expr, ...)
+//
+// Clauses are tried in order and the first whose condition holds applies.
+// `MATCHED` is the only new token and is non-reserved.
+novaMergeStatement
+    : MERGE INTO target=qualifiedName (AS? targetAlias=identifier)?
+      USING novaMergeSource
+      ON condition=expression
+      novaMergeClause+
+    ;
+
+novaMergeSource
+    : qualifiedName (AS? alias=identifier)?                                             #novaMergeSourceTable
+    | subquery AS? alias=identifier                                                     #novaMergeSourceQuery
+    ;
+
+novaMergeClause
+    : WHEN MATCHED (AND condition=expression)? THEN UPDATE SET assignmentList           #novaMergeUpdate
+    | WHEN MATCHED (AND condition=expression)? THEN DELETE                              #novaMergeDelete
+    | WHEN NOT MATCHED (AND condition=expression)? THEN INSERT columnAliases?
+          VALUES '(' expressionOrDefault (',' expressionOrDefault)* ')'                 #novaMergeInsert
+    ;
+
+// NOVA-END
 
 // ------------------------------------------- Routine Statement -----------------------------------------------------------
 createRoutineLoadStatement
@@ -2200,7 +2270,11 @@ authOption
     ;
 
 privObjectName
-    : identifierOrStringOrStar ('.' identifierOrStringOrStar)?
+    // NOVA-BEGIN (Nova Catalog phase 2): a grant object may name its catalog,
+    // `catalog.database.table`, so Ranger policies can target a foreign catalog.
+    // Nova decodes every grant itself; none is forwarded to the engine.
+    : identifierOrStringOrStar ('.' identifierOrStringOrStar)? ('.' identifierOrStringOrStar)?
+    // NOVA-END
     ;
 
 privObjectNameList
@@ -3736,6 +3810,9 @@ nonReserved
     | DATA | DATE | DATACACHE | DATETIME | DAY | DAYS | DECOMMISSION | DIALECT | DIGEST | DISABLE | DISK | DISTRIBUTION | DUPLICATE | DYNAMIC | DISTRIBUTED | DICTIONARY | DICTIONARY_GET | DEALLOCATE
     | ENABLE | END | ENGINE | ENGINES | ERRORS | EVENTS | EXECUTE | EXTERNAL | EXTRACT | EVERY | ENCLOSE | ESCAPE | EXPORT
     | FAILPOINT | FAILPOINTS | FIELDS | FILE | FILTER | FIRST | FLOOR | FOLLOWING | FORMAT | FN | FRONTEND | FRONTENDS | FOLLOWER | FREE
+    // NOVA-BEGIN (Nova Catalog phase 2): see the FOREIGN token note.
+    | FOREIGN
+    // NOVA-END
     // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.
     | FINALIZE
     // NOVA-END
@@ -3747,6 +3824,9 @@ nonReserved
     | JOB
     | LABEL | LAST | LESS | LEVEL | LIST | LOCAL | LOCATION | LOGS | LOGICAL | LOW_PRIORITY | LOCK | LOCATIONS
     | MANUAL | MAP | MAPPING | MAPPINGS | MASKING | MATCH | MATCH_ANY | MATCH_ALL | MAPPINGS | MATERIALIZED | MAX | META | METADATA | MIN | MINUTE | MINUTES | MODE | MODIFY | MONTH | MERGE | MINUS | MULTIPLE
+    // NOVA-BEGIN (MERGE INTO): see the MATCHED token note.
+    | MATCHED
+    // NOVA-END
     | NAME | NAMES | NEGATIVE | NO | NODE | NODES | NONE | NULLS | NUMBER | NUMERIC
     | OBSERVER | OF | OFFSET | ONLY | OPTIMIZER | OPEN | OPERATE | OPTION | OVERWRITE | OFF
     // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.

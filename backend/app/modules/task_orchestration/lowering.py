@@ -70,10 +70,19 @@ async def persist_lowered_task(
     run instead of submitting their common root more than once. The new edges
     are persisted before the merged graph is validated.
 
-    Raises :class:`TaskLoweringError` when the merged graph would contain a
+    Raises :class:`TaskLoweringError` when a task with the same
+    ``database.schema.name`` exists, or when the merged graph would contain a
     cycle, after removing the rows this call created so a rejected statement
     leaves no partial task behind.
     """
+    if await task_orchestration_repository.find_task(
+        task.name, task.database_name, task.schema_name
+    ) is not None:
+        # Two rows with one identity would make every later lookup, DROP TASK
+        # and graph run pick one of them arbitrarily.
+        raise TaskLoweringError(
+            f"Task {task.qualified_name} already exists; drop it first with DROP TASK"
+        )
     graph_key = graph_id or await _graph_key_for_task(task)
     if owner_role:
         await _validate_owner_role(task, graph_key, owner_role)

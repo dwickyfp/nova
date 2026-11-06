@@ -82,6 +82,32 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         await execute(f"UPDATE {name} SET amount=11 WHERE id=1", True)
         await execute(f"DELETE FROM {name} WHERE id=2", True)
         assert (await execute(f"SELECT amount FROM {name}"))["rows"] == [[11]]
+        # Nova MERGE INTO: one Primary Key upsert, defaults for omitted columns.
+        await execute(
+            f"CREATE TABLE {name}_src (id INT, amount INT) DUPLICATE KEY(id) "
+            "DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1')"
+        )
+        await execute(f"INSERT INTO {name}_src VALUES (1,12),(4,40)")
+        merge = (
+            f"MERGE INTO {name} AS t USING {name}_src AS s ON t.id = s.id "
+            "WHEN MATCHED THEN UPDATE SET amount = s.amount "
+            "WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id)"
+        )
+        merged = await execute(merge, True)
+        assert merged["affected_rows"] == 2
+        assert f"INTO {name} (`id`, `amount`) SELECT" in merged["executed_sql"]
+        assert (await execute(f"SELECT id, amount FROM {name} ORDER BY id"))["rows"] == [
+            [1, 12], [4, 0],
+        ]
+        await execute(f"INSERT INTO {name}_src VALUES (4,41)")
+        duplicate = (await client.post("/api/v1/query/execute", json={
+            "sql": merge, "database": database, "confirm_destructive": True,
+        })).json()[0]
+        assert not duplicate["success"]
+        assert "more than one source row matches the same key" in duplicate["error"]
+        assert (await execute(f"SELECT id, amount FROM {name} ORDER BY id"))["rows"] == [
+            [1, 12], [4, 0],
+        ]
         assert (await execute("SELECT 'CREATE TASK; @s; ML_PREDICT; UPDATE' AS literal"))[
             "rows"
         ] == [["CREATE TASK; @s; ML_PREDICT; UPDATE"]]
@@ -138,6 +164,7 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         with suppress(Exception):
             await db.execute_system("DELETE FROM NOVA_SYSTEM.CONFIG_TASKS WHERE name=%s", [task])
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}_copy")
+        await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}_src")
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}")
         await db.execute_system(f"DROP ROLE IF EXISTS {role}")
         if policy:

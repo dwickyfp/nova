@@ -1,6 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { ExternalCatalogsPage } from '@/features/external-catalogs'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
+// The External Catalogs form moved: catalogs are created in Database Explorer,
+// and the sources they come from are managed on the Connections page.
 export const Route = createFileRoute('/_authenticated/external-catalogs/')({
-  component: ExternalCatalogsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/connections' })
+  },
 })

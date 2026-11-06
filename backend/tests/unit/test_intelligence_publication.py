@@ -25,6 +25,8 @@ def publication_preflight(monkeypatch):
     from app.core.redis import session_store
     from app.modules.intelligence import engine_repository
 
+    # Catalog re-linking after a publish has its own tests (test_catalog_metadata).
+    monkeypatch.setattr(semantic_views, "_relink", AsyncMock())
     service = semantic_views.SemanticViewService()
     view = {"name": "sales", "database_name": "sales_db", "active_version": 1}
     version = {

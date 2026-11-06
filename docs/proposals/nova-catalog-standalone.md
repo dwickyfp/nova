@@ -1,7 +1,9 @@
 # Proposal: Nova Catalog sebagai catalog mandiri (federated)
 
-> **Status:** proposal, belum diputuskan. Non-normatif sampai ada keputusan dan
-> implementasi yang lolos tes.
+> **Status:** Fase 1, 2, dan 3 diimplementasikan (lihat "Status Fase 1",
+> "Status Fase 2", dan "Status Fase 3" di §6). Fase 4 sisi engine (patch FE
+> Snowflake) sudah masuk; konektor Snowflake di Nova dan Fase 5 masih proposal
+> dan non-normatif sampai diimplementasikan dan lolos tes.
 > **Tanggal riset:** 2026-11-05. Engine pin: StarRocks `4.1.4` (`4a9848ed`).
 > **Tujuan:** Nova Catalog berdiri sendiri seperti Unity Catalog, sehingga
 > database lain (PostgreSQL, MySQL, Snowflake, dan seterusnya) bisa didaftarkan,
@@ -416,6 +418,30 @@ menampilkan objek kepada pengguna.
   role uji non-root; catalog SQL-mentah muncul di Connections; tidak ada
   kredensial di respons, log, maupun baris `NOVA_SYSTEM`.
 
+**Status Fase 1 (2026-11-05): diimplementasikan.** Perbedaan dari rencana di atas:
+
+- Sinkronisasi berjalan di **loop control-plane backend**
+  (`catalog/refresher.py`, interval `CATALOG_SYNC_INTERVAL_SECONDS`, default
+  300 detik, satu instance per pass lewat Redis leader lock), bukan di
+  `nova-worker`, karena worker tidak berjalan di dev maupun CI.
+- `CATALOG_CONNECTIONS` ditunda ke Fase 2 bersama JDBC dan `secret_ref`.
+- Konektor yang ada: Iceberg (Hive Metastore, REST; hadoop lewat properti),
+  Hive, dan internal (`default_catalog`, hanya disinkronkan).
+- Catalog yang dibuat lewat SQL mentah tercatat dengan `source='engine'` dan
+  terlihat di Explorer dan `GET /api/v1/catalog/catalogs`. Halaman Connections
+  baru masuk di Fase 2.
+- Visibilitas tetap dari sesi caller (Ranger), di-cache 60 detik per
+  principal, role aktif, dan versi security context. Perubahan akses lewat Nova
+  dan perubahan catalog langsung mengosongkan cache; grant di luar Nova terlihat
+  paling lambat setelah TTL.
+
+Kriteria keluar diuji di stack `docker` dev: untuk `nova_admin`/ACCOUNTADMIN,
+`alice` (marketing, finance, regional_manager), dan `bob` (marketing),
+`/catalog`, `/explorer`, dan `SHOW` sebagai caller menghasilkan database dan
+tabel yang sama. Refresh hanya diizinkan untuk role security admin dan setiap
+penolakan diaudit. Pemindaian `CATALOG_*` tidak menemukan kredensial. Pengujian
+catalog Iceberg via SQL mentah ada di `tests/integration/test_catalog_l3.py`.
+
 ### Fase 2: Postgres dan MySQL (queryable)
 
 - Konektor `postgres`, `mysql` → StarRocks JDBC catalog; JAR di image FE.
@@ -426,6 +452,65 @@ menampilkan objek kepada pengguna.
 - Keluar: user non-root dengan grant Ranger bisa `SELECT` dari
   `pg_catalog_x.public.orders`, tanpa grant ditolak, dan (jika S1 lolos) row
   filter/mask berlaku. Tes integrasi memakai Postgres di stack yang ada.
+
+**Status Fase 2 (2026-11-05): diimplementasikan.** Perbedaan dari rencana dan
+desain di atas:
+
+- **Sintaks.** `CREATE CONNECTION name TYPE = postgres ENDPOINT = 'host:port/db'
+  SECRET = '<ref>' [COMMENT = '...']`, `DROP CONNECTION`, `SHOW CONNECTIONS`,
+  `DESC[RIBE] CONNECTION`, `CREATE FOREIGN CATALOG name USING CONNECTION conn
+  [COMMENT '...'] [PROPERTIES (...)]`, dan `REFRESH CATALOG name [SCHEMA s
+  [TABLE t]]`. Klausa opsional memakai `PROPERTIES`, bukan `OPTIONS`, supaya
+  grammar hanya menambah satu token (`FOREIGN`). `METADATA ONLY` tidak ada,
+  sesuai S3. Klausa koneksi berbentuk `identifier = nilai`, jadi `ENDPOINT` dan
+  `SECRET` bukan kata kunci baru.
+- **`GRANT`/`REVOKE`** menerima `catalog.database.table` (blok NOVA di
+  `privObjectName`); nama dua bagian tetap `default_catalog`. Compiler Ranger
+  sudah menerima catalog sejak awal. Bootstrap tidak membuka catalog baru ke
+  role mana pun: hanya policy bawaan `all - *` milik `root` dan `ACCOUNTADMIN`
+  yang mencakup `catalog = *` (dicek di Ranger yang berjalan dan dengan tes
+  regresi).
+- **Otorisasi koneksi.** Semua operasi koneksi dan `CREATE FOREIGN CATALOG`
+  butuh role aktif security admin, diaudit termasuk penolakan, dan dicek
+  sebelum kredensial di-resolve. `CREATE EXTERNAL CATALOG` tetap dijalankan
+  sebagai caller, jadi Ranger juga harus mengizinkan.
+- **Kredensial.** `SECRET` hanya referensi: `aws://...`/ARN lewat
+  `SecretProvider`, atau `nova://<koneksi>` untuk kredensial yang dimasukkan
+  lewat UI/REST, disimpan terenkripsi Fernet di
+  `NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS` dan tidak pernah dibaca balik.
+  Nilai tanpa skema (misalnya `user:password`) ditolak sebagai referensi.
+- **Driver.** Ternyata **BE juga butuh JAR** di path `file://` yang sama, bukan
+  hanya FE. Image FE upstream sudah membawa `postgresql-42.7.12.jar` dan
+  `mariadb-java-client-3.3.2.jar`; keduanya disalin ke `/opt/starrocks/drivers`
+  di image FE, dan image BE baru (`docker/starrocks-be.Dockerfile`) menyalin
+  file yang sama dari image FE yang di-pin. MySQL memakai driver MariaDB karena
+  4.1.4 menukar driver MySQL ke MariaDB (`JDBCMetadata.getDriverName`).
+- **`REFRESH CATALOG`** menjalankan sinkronisasi Nova untuk seluruh catalog;
+  `SCHEMA ... TABLE ...` hanya menambahkan `REFRESH EXTERNAL TABLE` di engine
+  sebagai caller.
+- **UI.** Halaman Connections (`/connections`) menggantikan form External
+  Catalogs; `/external-catalogs` dialihkan ke sana. Database Explorer punya menu
+  **Add catalog** (dari koneksi, atau Iceberg/Hive). Endpoint dan kredensial
+  tidak pernah ditampilkan.
+
+Kriteria keluar diuji di stack `docker` (FE yang di-patch, Ranger) dengan
+Postgres uji `catalog-test-postgres` (profil compose `catalog-test`) lewat
+`backend/scripts/verify_catalog_jdbc_e2e.py`, lolos pada 2026-11-05:
+
+| Cek | Hasil |
+|---|---|
+| `CREATE CONNECTION`, kredensial lewat alur entri, `CREATE FOREIGN CATALOG`, `REFRESH CATALOG` sebagai `nova_admin` | Berhasil lewat jalur SQL Nova |
+| `GRANT SELECT ON TABLE pg_catalog_x.public.orders TO ROLE marketing` | Policy Ranger untuk catalog `pg_catalog_x` saja |
+| `alice` / `marketing` | Hanya baris Jakarta; `customer_email` termask (`xxx@xxxxxxx.xxx`) |
+| `bob` / `marketing` | Hanya baris Bandung |
+| `alice` / `finance` (tanpa grant) | Ditolak (`Access denied`) |
+| `alice` / `marketing` ke `public.customers` (tanpa grant) | Ditolak |
+| Setelah `REVOKE` | Ditolak |
+| Kredensial di detail catalog (`SHOW CREATE CATALOG`), baris `CATALOG_*`, `AUDIT_LOG` | Tidak ditemukan |
+
+`scripts/verify_ranger_e2e.py` (acceptance Ranger yang sudah ada) juga lolos
+di FE yang sama. FE yang berjalan saat uji dibangun dari branch Fase 4, yang
+memuat blok driver Fase 2 tanpa perubahan.
 
 ### Fase 3: Metadata bisnis dan pencarian
 
@@ -438,7 +523,95 @@ menampilkan objek kepada pengguna.
 - Keluar: tag pada kolom Postgres bisa dicari dan muncul di Studio; objek yang
   di-drop di sumber tetap menyimpan tag dengan status dropped.
 
+**Status Fase 3 (2026-11-05): diimplementasikan.** Rincian dan API ada di
+`docs/03-catalog-explorer.md` ("Business metadata, search, and lineage").
+
+- **Securable id.** `NOVA_SYSTEM.CATALOG_SECURABLES` memberi id stabil untuk
+  catalog, database, relasi, dan kolom. Id objek baru diturunkan dari kunci
+  alaminya, jadi dua proses yang menyinkronkan bersamaan sepakat, dan nama yang
+  belum pernah disinkronkan (baris audit lama, tag lama) tetap jatuh ke id yang
+  nanti didaftarkan sync. Id database dan relasi sama dengan id
+  `CATALOG_OBJECTS` Fase 1. Objek yang hilang diberi `dropped_at` dan tetap
+  menyimpan id, tag, dan lineage-nya; kolom hanya ditandai hilang kalau sync
+  benar-benar membaca kolom relasinya.
+- **Tag, komentar, owner, klasifikasi.** `CONFIG_OBJECT_TAGS` sekarang dikunci
+  ke securable id. Tabel lama berkunci nama diganti saat startup (yang kosong
+  di-drop, yang berisi disimpan sebagai `CONFIG_OBJECT_TAGS_LEGACY` lalu
+  disalin). Komentar bisnis, owner, dan klasifikasi kolom ada di
+  `CATALOG_ANNOTATIONS`. Klasifikasi bersifat advisory; masking tetap Ranger.
+- **Siapa boleh mengubah.** Role security admin, atau role yang oleh Ranger
+  diberi `ALTER`/`ALL` atas relasi itu (dibaca lewat
+  `AccessControlService.effective_access`, jalur yang sama dengan Verify
+  Access). Owner hanya oleh security admin. Tidak ada tabel izin baru. Setiap
+  perubahan dan penolakan masuk `AUDIT_LOG` tanpa nilai tag atau teks komentar.
+- **Pencarian** atas nama, kolom, tag, komentar, owner, dan klasifikasi, lalu
+  dipotong dengan apa yang bisa di-list sesi caller di engine. Objek dropped
+  tidak punya pasangan di engine, jadi hanya terlihat oleh security admin
+  (fail-closed, sesuai S3).
+- **Lineage** tabel-ke-tabel dari `AUDIT_LOG` (`INSERT ... SELECT`, CTAS,
+  `CREATE VIEW`, `CREATE MATERIALIZED VIEW`), diurai dengan parser
+  `sql_frontend` (`sql_frontend/analysis/lineage.py`), disimpan di
+  `CATALOG_LINEAGE` per pasangan securable id. Lineage kolom dan
+  `LINEAGE_LOAD_HISTORY` belum dikerjakan (roadmap #6 sisanya).
+- **Semantic view dan entity.** Baris pemiliknya tidak diubah;
+  `CATALOG_SECURABLE_LINKS` mencatat securable yang dipakai (versi aktif, atau
+  versi terbaru bila belum ada yang aktif). Link dibangun ulang setiap pass dan
+  segera setelah create, versi baru, publish, deprecate, atau drop.
+- **Studio dan agen** memakai tool read-only `catalog_search` di engine
+  assistant bersama (Nove, agen yang memilihnya, dan root Smart). Hasilnya
+  difilter per caller dan ditandai sebagai metadata, bukan instruksi atau bukti
+  data.
+- **UI**: kotak pencarian catalog di header Database Explorer (`tag:pii`
+  didukung) dan bagian "Business metadata" pada tabel, view, dan MV.
+
+Perbedaan dari rencana: kriteria keluar diuji dengan tabel native dan Iceberg,
+bukan Postgres, karena konektor Postgres ada di Fase 2 yang dikerjakan paralel.
+Konektor itu memakai sync dan securable id yang sama, jadi tidak butuh jalur
+baru. Uji: `tests/unit/test_catalog_metadata.py`,
+`tests/unit/test_catalog_lineage_and_tool.py`,
+`tests/eval/test_catalog_metadata_trajectory.py`, dan
+`tests/integration/test_catalog_metadata_l3.py` di stack `docker`.
+
 ### Fase 4: Snowflake
+
+**Status sisi engine (2026-11-05): selesai dan terbukti dengan akun Snowflake
+sungguhan.**
+
+- Patch `patches/starrocks/4.1.4-jdbc-snowflake.patch` menambahkan:
+  - `SnowflakeSchemaResolver` beserta pemetaan tipe Snowflake;
+  - quoting `"` di `JDBCScanNode`;
+  - pemuatan driver yang terisolasi. Driver hanya diambil dari JAR lokal `file://`
+    yang checksum-nya cocok, dan tidak pernah diletakkan di `fe/lib`, karena driver
+    Snowflake membawa `zstd-jni` sendiri.
+- Driver `snowflake-jdbc` 3.28.0 dibundel di image FE dan BE pada
+  `/opt/starrocks/drivers/`, dengan pin SHA-256.
+- Lulus: `CREATE EXTERNAL CATALOG`, `SHOW DATABASES`/`TABLES`, `DESC`, `SELECT`,
+  filter dan `LIMIT` yang didorong ke Snowflake (dicek lewat `EXPLAIN`), serta row
+  filter dan mask Ranger untuk role non-root. Row filter juga ikut didorong ke
+  Snowflake. `SHOW CREATE CATALOG` tidak menampilkan password.
+- Detail ada di `docs/benchmarks/snowflake-jdbc-2026-11-05/`.
+- URI wajib memuat `db=`, `JDBC_QUERY_RESULT_FORMAT=JSON`, dan `TIMEZONE=` yang sama
+  dengan zona waktu engine. URI tidak boleh berisi rahasia, karena `jdbc_uri` tampil
+  utuh di `SHOW CREATE CATALOG`.
+- Belum: konektor Nova `snowflake`, panen `ACCOUNT_USAGE`, dan semantic view atau agen
+  di atas tabel Snowflake. Ketiganya menunggu fase 2.
+- **Keputusan pemilik produk (2026-11-05): koneksi Snowflake harus bisa memakai key
+  pair maupun Programmatic Access Token (PAT).** Konektor menyimpan keduanya sebagai
+  kredensial terenkripsi, bukan di URI, dan tidak pernah membacanya kembali ke klien.
+  - **Key pair** (sudah terbukti di acceptance): `authenticator=SNOWFLAKE_JWT` dengan
+    private key PKCS#8, opsional terenkripsi passphrase. Driver hanya bisa membaca key
+    dari file (`private_key_file`), dan file itu harus ada di FE dan semua BE. Cara
+    mengirim file key ke sana masih harus dirancang.
+  - **PAT**: token dikirim lewat properti `password`, karena properti itu disembunyikan
+    oleh `SHOW CREATE CATALOG` sedangkan `jdbc_uri` tidak. Tokennya tidak boleh masuk
+    URI. PAT punya masa berlaku, jadi konektor perlu mendukung rotasi token dan
+    menampilkan tanggal kedaluwarsanya. Sudah terbukti dengan akun sungguhan: catalog
+    dengan PAT di `password` bisa `SHOW DATABASES` dan `SELECT`, dan
+    `SHOW CREATE CATALOG` tidak menampilkan token. Rotasi cukup dengan
+    `ALTER CATALOG ... SET ("password" = ...)`, tanpa membuat ulang catalog. Query
+    berikutnya langsung memakai kredensial baru. Catatan: Snowflake mewajibkan network
+    policy pada service user sebelum PAT bisa dipakai.
+    Jalur ini belum diuji dengan akun sungguhan.
 
 - Patch FE `SnowflakeSchemaResolver` (§6.2) dengan prosedur di
   `patches/starrocks/AGENTS.md`, plus JAR driver Snowflake di image FE.

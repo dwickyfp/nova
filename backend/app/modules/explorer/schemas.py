@@ -18,6 +18,15 @@ class CatalogInfo(BaseModel):
     type: str = Field(default="Internal")
     comment: str | None = None
     databases: list[str] = Field(default_factory=list)
+    # From the Nova Catalog store: who recorded it and its last metadata sync.
+    managed: bool = False
+    source: str | None = None
+    sync_status: str | None = None
+    last_sync_at: datetime | None = None
+    # What system the catalog reads and which explorer groups it shows.
+    source_type: str = "internal"
+    source_label: str = "Nova"
+    object_groups: list[str] = Field(default_factory=list)
 
 
 class CatalogsResponse(BaseModel):
@@ -46,6 +55,7 @@ class TableSummary(BaseModel):
     """Lightweight table info for tree view."""
 
     name: str
+    comment: str | None = None
     table_model: str | None = None  # PRIMARY_KEYS, DUPLICATE_KEYS, etc.
     engine: str | None = None
     row_count: int | None = None
@@ -190,11 +200,16 @@ class TableProperties(BaseModel):
 class TableDetailResponse(BaseModel):
     name: str
     database: str
+    catalog: str = "default_catalog"
     columns: list[ColumnInfo]
     properties: TableProperties
     partitions: list[PartitionInfo]
     row_count: int | None = None
     data_size: int | None = None
+    # ``table``, ``view`` or ``materialized_view``, and the source's own name
+    # for the kind (``Dynamic table``, ``Foreign table``, ...).
+    object_type: str = "table"
+    kind: str | None = None
 
 
 class ViewDetailResponse(BaseModel):

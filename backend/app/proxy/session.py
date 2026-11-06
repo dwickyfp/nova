@@ -559,6 +559,18 @@ def is_catalog_switch(statement: str) -> bool:
     return bool(_CATALOG_SWITCH.match(strip_sql_comments(statement)))
 
 
+def catalog_switch_target(statement: str) -> str | None:
+    """The catalog ``USE 'c'`` or ``SET CATALOG c`` selects, or ``None``."""
+    text = strip_sql_comments(statement).strip().rstrip(";").strip()
+    if not _CATALOG_SWITCH.match(text):
+        return None
+    name = text.split(None, 2)[-1] if text.upper().startswith("SET") else text.split(None, 1)[1]
+    name = name.strip()
+    if len(name) >= 2 and name[0] == name[-1] and name[0] in "'\"`":
+        name = name[1:-1]
+    return name or None
+
+
 def quote_database_target(target: str) -> str:
     """``USE`` target text for a ``COM_INIT_DB`` name (``db`` or ``catalog.db``)."""
     parts = target.split(".", 1) if target.count(".") == 1 else [target]

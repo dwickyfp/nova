@@ -10,6 +10,7 @@ from app.modules.query.repository import (
     QueryRepository,
     _binary_result_mode,
     _decode_result_rows,
+    _text_rows,
 )
 
 
@@ -96,3 +97,38 @@ async def test_relay_result_mode_restores_connection_after_unbuffered_cursor_dra
         assert conn._use_unicode is True and conn._decoders is decoders
     finally:
         conn.close()
+
+
+def test_web_results_render_binary_as_text_so_the_json_response_never_fails():
+    """A ``VARBINARY`` cell (a Snowflake ``BINARY`` column, ``to_binary``) used to
+    reach the JSON encoder as raw bytes and turn the whole query into a 500."""
+    rows = [(b"\xca\xfe", b"plain", bytearray(b"\x00\xff"), 7, None)]
+    expected = [["0xCAFE", "plain", "0x00FF", 7, None]]
+    assert _text_rows(rows) == expected
+    assert _text_rows([dict(zip("abcde", rows[0], strict=True))]) == expected
+
+
+async def test_web_execution_returns_text_for_binary_cells():
+    class Cursor:
+        description = [("raw", 252, None, -1, -1, 0, True)]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def execute(self, sql):
+            return None
+
+        async def fetchall(self):
+            return [{"raw": b"\xca\xfe"}]
+
+    class Conn:
+        def cursor(self, _):
+            return Cursor()
+
+    result = await QueryRepository._execute_on(
+        Conn(), "SELECT raw FROM t", role=None, max_rows=None, start=0.0
+    )
+    assert result.rows == [["0xCAFE"]]

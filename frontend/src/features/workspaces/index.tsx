@@ -917,7 +917,7 @@ export function WorkspacesPage() {
       sql: string;
       messageId: string;
     }) => {
-      const sourceTab = tabs[attachment.tabId];
+      const sourceTab = tabsRef.current[attachment.tabId];
       if (!sourceTab) return;
       const before = sourceTab.content;
       const next = replaceAttachedSql(
@@ -942,7 +942,7 @@ export function WorkspacesPage() {
         sourceMessageId: messageId,
       });
     },
-    [tabs, setProposedRewrite],
+    [setProposedRewrite],
   );
 
   const assistantCanApproveUiAction = useCallback(
@@ -1115,7 +1115,9 @@ export function WorkspacesPage() {
           loaded: false,
         };
       }
-      return next;
+      // Saved tabs can name files that were deleted since; restoring none of
+      // them must keep the same state object, not hand out a new empty one.
+      return Object.keys(next).length ? next : prev;
     });
   }, [queryContextQuery.data, workspaceTreeQuery.data]);
 
