@@ -160,9 +160,37 @@ Both are read-only, need consent, and are bundled per agent. Bindings are
 limited to the agent's Semantic Views and to views the caller can see.
 `GET /ontology/resolve?q=` exposes resolution over HTTP.
 
+## Console page
+
+Console → AI & ML → **Business Ontology** (`/business-ontology`,
+`frontend/src/features/ontology/`). The page has four tabs:
+
+- **Concepts.** Shows the published release by default, or the latest
+  approved definitions. Opening a concept shows:
+  - its definition and facts;
+  - the metrics that compute it, with whether each binding is in use;
+  - related concepts and its version history.
+
+  From there a reader can propose a new concept (optionally bound to a
+  published metric), a revision, a link or a deprecation. A deprecation also
+  retires the concept's links and revokes its bindings. **Draft from a
+  Semantic View** runs the bootstrap.
+- **Proposals.** Grouped as in review, approved, applied and closed. Each
+  proposal shows its changes in words, the domains it touches, which domains
+  still wait for a steward, and its reviews. A steward of an affected domain
+  approves or rejects with a rationale. The submitter can withdraw but never
+  review. An approved proposal whose application stopped can be finished.
+- **Releases.** Shows the release Studio uses and the release history. For
+  `ACCOUNTADMIN` it also offers preparing a release (issues and warnings
+  included), publishing it, and switching back to an earlier one.
+- **Domains.** Lists paths, steward and reader roles, and status.
+  `ACCOUNTADMIN` creates and edits domains.
+
+Query keys carry the security epoch, so a role switch never shows cached
+meaning.
+
 ## Not yet built
 
-- Steward UI (Phase 3).
 - News signals and incidents (Phases 4–5).
 - Learning proposals (Phase 6).
 

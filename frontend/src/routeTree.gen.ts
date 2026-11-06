@@ -18,6 +18,7 @@ import { Route as AuthenticatedAccessControlRouteImport } from './routes/_authen
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
 import { Route as AuthenticatedAiSearchRouteImport } from './routes/_authenticated/ai-search'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedBusinessOntologyRouteImport } from './routes/_authenticated/business-ontology'
 import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
 import { Route as AuthenticatedEntitiesRouteImport } from './routes/_authenticated/entities'
 import { Route as AuthenticatedFeatureStoreRouteImport } from './routes/_authenticated/feature-store'
@@ -106,6 +107,12 @@ const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBusinessOntologyRoute =
+  AuthenticatedBusinessOntologyRouteImport.update({
+    id: '/business-ontology',
+    path: '/business-ontology',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDatabaseExplorerRoute =
   AuthenticatedDatabaseExplorerRouteImport.update({
     id: '/database-explorer',
@@ -356,6 +363,7 @@ export interface FileRoutesByFullPath {
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/business-ontology': typeof AuthenticatedBusinessOntologyRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
   '/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -405,6 +413,7 @@ export interface FileRoutesByTo {
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/business-ontology': typeof AuthenticatedBusinessOntologyRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
   '/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -458,6 +467,7 @@ export interface FileRoutesById {
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
   '/_authenticated/ai-search': typeof AuthenticatedAiSearchRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
+  '/_authenticated/business-ontology': typeof AuthenticatedBusinessOntologyRoute
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/_authenticated/entities': typeof AuthenticatedEntitiesRoute
   '/_authenticated/feature-store': typeof AuthenticatedFeatureStoreRoute
@@ -512,6 +522,7 @@ export interface FileRouteTypes {
     | '/active-query'
     | '/ai-search'
     | '/analytics'
+    | '/business-ontology'
     | '/database-explorer'
     | '/entities'
     | '/feature-store'
@@ -561,6 +572,7 @@ export interface FileRouteTypes {
     | '/active-query'
     | '/ai-search'
     | '/analytics'
+    | '/business-ontology'
     | '/database-explorer'
     | '/entities'
     | '/feature-store'
@@ -613,6 +625,7 @@ export interface FileRouteTypes {
     | '/_authenticated/active-query'
     | '/_authenticated/ai-search'
     | '/_authenticated/analytics'
+    | '/_authenticated/business-ontology'
     | '/_authenticated/database-explorer'
     | '/_authenticated/entities'
     | '/_authenticated/feature-store'
@@ -726,6 +739,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics'
       fullPath: '/analytics'
       preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/business-ontology': {
+      id: '/_authenticated/business-ontology'
+      path: '/business-ontology'
+      fullPath: '/business-ontology'
+      preLoaderRoute: typeof AuthenticatedBusinessOntologyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/database-explorer': {
@@ -1055,6 +1075,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedActiveQueryRoute: typeof AuthenticatedActiveQueryRoute
   AuthenticatedAiSearchRoute: typeof AuthenticatedAiSearchRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
+  AuthenticatedBusinessOntologyRoute: typeof AuthenticatedBusinessOntologyRoute
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
   AuthenticatedEntitiesRoute: typeof AuthenticatedEntitiesRoute
   AuthenticatedFeatureStoreRoute: typeof AuthenticatedFeatureStoreRoute
@@ -1096,6 +1117,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedActiveQueryRoute: AuthenticatedActiveQueryRoute,
   AuthenticatedAiSearchRoute: AuthenticatedAiSearchRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
+  AuthenticatedBusinessOntologyRoute: AuthenticatedBusinessOntologyRoute,
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
   AuthenticatedEntitiesRoute: AuthenticatedEntitiesRoute,
   AuthenticatedFeatureStoreRoute: AuthenticatedFeatureStoreRoute,

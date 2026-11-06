@@ -1,6 +1,6 @@
 # Supernova Business Ontology — analisis dan rencana implementasi
 
-**Status:** Fase 1 (ontology core backend) dan Fase 2 (Studio ontology-aware) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 3–7 masih proposal.
+**Status:** Fase 1 (ontology core backend), Fase 2 (Studio ontology-aware) dan Fase 3 (halaman Business Ontology di Console) sudah diimplementasikan, lihat [arsitektur](../arch-18-business-ontology.md). Fase 4–7 masih proposal.
 **Branch:** `feat/supernova-ontology` (dari `origin/main` @ `1ecb13c7`)
 **Sumber:** *Supernova Business Ontology v1.1* (6 Nov 2026), dibandingkan dengan source Nova saat ini.
 
@@ -148,7 +148,7 @@ alur proposal → review → release.
 
 ### Fase 3 — UI steward ontology (frontend)
 
-`Studio → Ontology`: Domains, Concepts (definisi, alias, versi, diff), Relations, Representations (status + link ke metric view), Proposals (inbox + review), dan Releases (impact, publish, rollback). Jangan memakai istilah "concept" bila sudah dipakai oleh context panel. Ikuti `DESIGN.md` dan `frontend/AGENTS.md`. Graph explorer opsional.
+Dibangun sebagai halaman Console `AI & ML → Business Ontology`, di sebelah Semantic Views, karena pekerjaan steward dan release adalah governance, bukan percakapan Studio. Isinya: Domains, Concepts (definisi, alias, versi, diff), Relations, Representations (status + link ke metric view), Proposals (inbox + review), dan Releases (impact, publish, rollback). Jangan memakai istilah "concept" bila sudah dipakai oleh context panel. Ikuti `DESIGN.md` dan `frontend/AGENTS.md`. Graph explorer opsional.
 
 ### Fase 4 — Signal dan Incident (backend, News tetap seperti sekarang)
 
