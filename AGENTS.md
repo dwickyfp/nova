@@ -144,6 +144,7 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 | Studio, Smart, delegation, resources, memory, recovery | [agents guide](backend/app/modules/agents/AGENTS.md), [Smart architecture](docs/arch-11-smart-collaboration.md) |
 | Saved Studio charts and dashboards, Superset BI surface, `/bi`, BI tokens, `nova_superset`, legacy artifact conversion | [Superset architecture](docs/arch-17-superset.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
 | Inline chat charts, ShowMe, presentation models, read-only legacy views (viz core; authoring retired) | [viz architecture](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
+| Business ontology: domains, concepts, relations, metric bindings, stewardship, releases | [ontology architecture](docs/arch-18-business-ontology.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
 | Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
 | Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
 | StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |

@@ -139,7 +139,10 @@ async def test_semantic_publish_requires_acknowledgement_for_regression(
     monkeypatch.setattr(session_store, "get", AsyncMock(return_value=deepcopy(user)))
     execute = AsyncMock(return_value={"rows": []})
     monkeypatch.setattr(module.db, "execute_system", execute)
+    drift = AsyncMock()
+    monkeypatch.setattr("app.modules.ontology.representations.refresh_after_publish", drift)
     result = await service.publish("view-id", 2, user, acknowledge_regressions=True)
+    drift.assert_awaited_once_with("view-id", user)
     assert result["active_version"] == 2
     statements = [call.args[0] for call in execute.await_args_list]
     # Three publication writes, then the BI sync reads the view's datasets
