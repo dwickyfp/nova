@@ -288,6 +288,25 @@ def test_catalog_prompt_asks_for_markdown_and_a_fenced_program():
     assert "exactly one fenced ```openui block" in prompt
 
 
+def test_catalog_prompt_leads_with_data_components_and_examples():
+    prompt = ui.catalog()["prompt"]
+    signatures = [prompt.index(f"\n{name}(") for name in
+                  ("Kpi", "Table", "Chart", "GeoMap", "Col", "Timer", "YouTube", "HtmlView")]
+    assert signatures == sorted(signatures)
+    assert "bound to @Evidence" in prompt.split("## Syntax Rules")[0]
+    examples = prompt.split("## Examples", 1)[1]
+    assert examples.index("Ranking or breakdown") < examples.index("Public places")
+    assert "Never add them to decorate a data answer" in prompt
+
+
+def test_optional_catalog_prefers_a_data_view_for_verified_results(monkeypatch):
+    monkeypatch.setattr(ui, "runtime_available", lambda: True)
+    prompt = ui.composer_prompt(enabled=True, presentation="text")
+    preface = prompt.split("<OPTIONAL_UI_CATALOG>")[0]
+    assert "prefer a data view bound to those rows" in preface
+    assert "Plain Markdown is a complete answer" in preface
+
+
 UNFENCED = (
     '$selected = null\n'
     'root = Col([Title("Rute"), GeoMap(@Evidence("evidence_2"), null, null, "geometry", '
