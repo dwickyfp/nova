@@ -129,7 +129,7 @@ export function AssistantComposer({
             }
           }}
         />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {onSelectModel ? (
             <ModelSelector
               selected={selectedModel ?? null}
@@ -147,13 +147,12 @@ export function AssistantComposer({
               align="start"
             />
           ) : null}
-          <div className="flex-1" />
           {streaming ? (
             <Button
               type="button"
               size="icon"
               variant="outline"
-              className="size-8 rounded-full"
+              className="ml-auto size-8 shrink-0 rounded-full"
               onClick={onStop}
               aria-label="Stop generating"
             >
@@ -163,7 +162,7 @@ export function AssistantComposer({
             <Button
               type="button"
               size="icon"
-              className="size-8 rounded-full"
+              className="ml-auto size-8 shrink-0 rounded-full"
               disabled={!canSend}
               onClick={submit}
               aria-label="Send message"

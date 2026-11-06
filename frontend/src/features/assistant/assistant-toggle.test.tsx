@@ -256,8 +256,8 @@ describe("AssistantPanel motion guard", () => {
 });
 
 describe("AssistantPanel narrow ladder", () => {
-  it("renders the inline panel from md (768px) up", async () => {
-    await page.viewport(768, 900);
+  it("renders the inline panel from lg (1024px) up", async () => {
+    await page.viewport(1024, 900);
     try {
       const { getByRole } = await render(
         <AssistantPanel open onOpenChange={() => {}} />,
@@ -270,8 +270,8 @@ describe("AssistantPanel narrow ladder", () => {
     }
   });
 
-  it("renders the Sheet just below md (767px)", async () => {
-    await page.viewport(767, 900);
+  it("renders the Sheet just below lg (1023px)", async () => {
+    await page.viewport(1023, 900);
     try {
       const { getByRole, container } = await render(
         <AssistantPanel open onOpenChange={() => {}} />,
