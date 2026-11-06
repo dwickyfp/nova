@@ -80,10 +80,14 @@ export function autoRunSteps(
       status: "done" as const,
     };
     switch (event.type) {
+      // Main's own queued/started state is the run itself: the timeline header shows
+      // it. As a row it sat beside the steps it contains, spinning while they finished.
       case "agent_queued":
+        if (!childRunId) break;
         rows.push({ ...base, kind: childRunId ? "delegate" : "note", label: "queued", text: childRunId ? `Called ${name}` : "Main queued", body: childRunId ? string(payload.objective) : undefined });
         break;
       case "agent_started":
+        if (!childRunId) break;
         rows.push({ ...base, kind: childRunId ? "delegate" : "note", label: "started", text: childRunId ? `${name} started working` : "Main started working", status: settledAfter(event, ["agent_waiting", "agent_started", ...TERMINAL]) ? "done" : "running" });
         break;
       case "delegation_plan": {
@@ -92,7 +96,7 @@ export function autoRunSteps(
         break;
       }
       case "agent_waiting":
-        rows.push({ ...base, kind: "note", label: "waiting", text: `${name} waiting for specialists`, status: settledAfter(event, ["agent_started", ...TERMINAL]) ? "done" : "running" });
+        rows.push({ ...base, kind: "note", label: "waiting", text: `${name} waiting for specialists`, status: settledAfter(event, ["agent_started", "agent_resumed", ...TERMINAL]) ? "done" : "running" });
         break;
       case "agent_resumed":
         rows.push({ ...base, kind: "note", label: "resumed", text: "Main resumed after specialist updates" });
@@ -122,6 +126,8 @@ export function autoRunSteps(
           const tool = string(payload.tool_name);
           rows.push({ ...base, kind: "tool", label: tool || "tool", text: `${name} called ${tool || "a tool"}`, preview: string(payload.sql_preview) || undefined });
         } else if (kind === "tool_progress" || kind === "thinking" || kind === "plan") {
+          // The run's limits ("Access verified ... 32 steps") are setup, not progress.
+          if (kind === "thinking" && payload.phase === "plan") break;
           const detail = string(payload.text);
           if (detail) rows.push({ ...base, kind: childRunId ? "delegate" : "note", label: kind, text: `${name}: ${short(detail)}`, body: detail });
         } else if (kind === "error") {

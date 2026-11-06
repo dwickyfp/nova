@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import multiprocessing
 import queue
 import time
@@ -12,6 +13,8 @@ from typing import Any
 
 from app.core.config import settings
 from app.modules.ml_engine.spec import MLExecutionTimeout
+
+logger = logging.getLogger(__name__)
 
 
 class MLJobRunner:
@@ -111,6 +114,15 @@ def _worker_entry(results, func, args, kwargs, phase) -> None:
         elif isinstance(exc, MLError):
             error = type(exc)(redact_for_output(str(exc)))
         else:
+            import traceback
+
+            # Only the failing code locations are logged: messages can hold data values.
+            frames = traceback.extract_tb(exc.__traceback__)[-6:]
+            logger.error(
+                "ML worker failed during %s: %s at %s", deadline.STAGES[phase.value],
+                type(exc).__name__,
+                [(frame.filename.rsplit("/", 2)[-1], frame.name, frame.lineno) for frame in frames],
+            )
             error = RuntimeError(
                 f"ML worker failed during {deadline.STAGES[phase.value]} ({type(exc).__name__})"
             )

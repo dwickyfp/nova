@@ -407,3 +407,15 @@ async def test_revision_conflict_is_serialized_without_touching_message_row(monk
     assert saved["revision"] == 3
     assert "CONFIG_ASSISTANT_UI_STATE" in db.execute_system.call_args.args[0]
     assert "CONFIG_ASSISTANT_MESSAGES" not in db.execute_system.call_args.args[0]
+
+
+def test_the_final_composer_sends_the_catalog_only_when_it_is_not_pinned():
+    from app.modules.assistant.intelligence import EvidenceTracker
+    from app.modules.assistant.service import LoopContext, _final_composer_prompt
+
+    context = LoopContext(user_name="alice", intelligent_ui=True)
+    context.ui_prompt = "<OPTIONAL_UI_CATALOG>catalog</OPTIONAL_UI_CATALOG>"
+    evidence = EvidenceTracker()
+    assert context.ui_prompt in _final_composer_prompt(evidence, context)
+    pinned = _final_composer_prompt(evidence, context, include_ui=False)
+    assert "OPTIONAL_UI_CATALOG" not in pinned and "<FINAL_COMPOSER>" in pinned

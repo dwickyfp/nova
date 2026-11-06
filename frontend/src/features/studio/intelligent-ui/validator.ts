@@ -303,7 +303,8 @@ export function validateProgram(
         if (viewport != null) mapViewSchema.parse(viewport);
         if (v.typeName === "GeoMap") {
           if (options.locate || options.editable || options.simulation) throw new Error("Verified maps cannot use public location assumptions.");
-          if (options.layer === "route" && !props.geometry) throw new Error("Business routes need a geometry column.");
+          if (options.layer === "route" && !props.geometry && !options.sequence) throw new Error("Business routes need a geometry column or a stop-order column.");
+          if ((options.sequence || options.group || options.routeFields?.length) && (options.layer !== "route" || props.geometry)) throw new Error("Stop order and route columns need located stop rows on the route layer.");
           if (options.layer === "arc" && (!options.toLongitude || !options.toLatitude || props.geometry)) throw new Error("Arcs need explicit origin and destination columns.");
           if (options.progress && options.layer !== "route") throw new Error("Progress requires route geometry.");
         } else {

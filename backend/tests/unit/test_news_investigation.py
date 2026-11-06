@@ -250,6 +250,8 @@ async def test_incident_context_reads_the_mission_incident(hub, monkeypatch):
         ToolInvocation("t2", "incident_context", {}), tool_context()
     )
     assert not missing.ok and "No incident is attached" in missing.error
+    # Choosing an incident tool without an incident is recoverable, not a failed turn.
+    assert missing.recoverable
     monkeypatch.setattr(news_entitlement, "is_news_enabled", AsyncMock(return_value=False))
     denied = await incident_tools.incident_context_tool.run(
         ToolInvocation("t3", "incident_context", {}), context

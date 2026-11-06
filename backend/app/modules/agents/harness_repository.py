@@ -858,6 +858,12 @@ class HarnessRepository:
                         "agent_resumed" if target == "queued" else "agent_interrupted",
                         {},
                     )
+                except LockError:  # also a ValueError: first
+                    # A process killed mid-event still holds the root's event lock
+                    # until it expires. The run is already requeued or interrupted;
+                    # only its notice is skipped, and the worker keeps serving.
+                    logger.warning("Recovery event for run %s skipped: root event lock held",
+                                   run_id)
                 except ValueError as exc:
                     if str(exc) == "Conflicting Auto terminal event" and target == "interrupted":
                         try:

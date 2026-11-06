@@ -22,7 +22,7 @@ import {
   ZAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { formatNumber, measureCaption } from "./insight";
+import { formatNumber, measureCaption, measurePhrase } from "./insight";
 import type { PresModel } from "./types";
 
 /**
@@ -39,7 +39,9 @@ import type { PresModel } from "./types";
 const seriesColor = (index: number) => `var(--chart-${(index % 8) + 1})`;
 
 /** Abbreviated number format: 1.2K, 3.37T, 0.15. */
-export function formatMeasure(value: number | string | null | undefined): string {
+export function formatMeasure(
+  value: number | string | null | undefined,
+): string {
   if (value === null || value === undefined || value === "") return "–";
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return String(value);
@@ -82,14 +84,22 @@ export function VizView({
     );
   }
   // Several measures on an axis mark get one pane each, sharing the
-  // dimension axis, so measures on different scales stay readable.
+  // dimension axis, so measures on different scales stay readable. Lines on one
+  // scale (a forecast and its bounds) share a pane, told apart by a legend.
   const panes =
-    PANED_MARKS.has(presmodel.mark) && geometry.dimensions.length > 0 && geometry.series.length > 1
+    PANED_MARKS.has(presmodel.mark) &&
+    geometry.dimensions.length > 0 &&
+    geometry.series.length > 1 &&
+    !sharesScale(presmodel.mark, geometry)
       ? geometry.series.map((series) => ({ ...geometry, series: [series] }))
       : [geometry];
   return (
     <section
-      className={cn("viz-numerals min-w-0", thumbnail ? "flex h-full flex-col gap-1" : "flex flex-col gap-4", className)}
+      className={cn(
+        "viz-numerals min-w-0",
+        thumbnail ? "flex h-full flex-col gap-1" : "flex flex-col gap-4",
+        className,
+      )}
       aria-label={presmodel.title || "Chart"}
     >
       {panes.map((pane) => (
@@ -98,7 +108,9 @@ export function VizView({
           className={cn("min-w-0", thumbnail && "min-h-0 flex-1")}
         >
           {panes.length > 1 && !thumbnail ? (
-            <p className="type-label mb-1 px-1 text-ink-secondary">{measureCaption(pane.series[0].name)}</p>
+            <p className="type-label mb-1 px-1 text-ink-secondary">
+              {measurePhrase(pane.series[0].name)}
+            </p>
           ) : null}
           <Marks
             presmodel={presmodel}
@@ -115,7 +127,29 @@ export function VizView({
   );
 }
 
-const PANED_MARKS: ReadonlySet<string> = new Set(["bar", "line", "area", "tick", "square"]);
+const PANED_MARKS: ReadonlySet<string> = new Set([
+  "bar",
+  "line",
+  "area",
+  "tick",
+  "square",
+]);
+
+/** Line or area measures whose largest values are within 3x of each other. */
+function sharesScale(mark: string, geometry: Geometry): boolean {
+  if (mark !== "line" && mark !== "area") return false;
+  const peaks = geometry.series.map((series) =>
+    Math.max(
+      0,
+      ...geometry.chartData
+        .map((entry) => entry[series.name])
+        .filter((value): value is number => typeof value === "number")
+        .map(Math.abs),
+    ),
+  );
+  const low = Math.min(...peaks);
+  return low > 0 && Math.max(...peaks) / low <= 3;
+}
 
 /** Ranked horizontal bars read best up to this many categories. */
 const MAX_RANKED_BARS = 24;
@@ -145,20 +179,32 @@ function buildGeometry(presmodel: PresModel): Geometry {
 
   const legend = presmodel.legend.color;
   const colorField = legend?.field ?? null;
-  const colorIsDimension = dimensions.some((dimension) => dimension.name === colorField);
-  const axisDimensions = dimensions.filter((dimension) => dimension.name !== colorField);
+  const colorIsDimension = dimensions.some(
+    (dimension) => dimension.name === colorField,
+  );
+  const axisDimensions = dimensions.filter(
+    (dimension) => dimension.name !== colorField,
+  );
   const axisDimension = axisDimensions[0] ?? dimensions[0];
   // Several dimensions on the axis read as nested headers: "East · NY".
   const composite = axisDimensions.length > 1;
 
-  const series = measures.map((measure) => ({ name: measure.name, index: measure.index }));
+  const series = measures.map((measure) => ({
+    name: measure.name,
+    index: measure.index,
+  }));
   const xField = composite
     ? COMPOSITE_AXIS
     : axisDimension
       ? axisDimension.name
-      : measures[0]?.name ?? "value";
-  const xType = axisDimension || presmodel.axes.x?.discrete !== false ? "category" : "number";
-  const axisColumn = axisDimension ? presmodel.columns[axisDimension.index] : null;
+      : (measures[0]?.name ?? "value");
+  const xType =
+    axisDimension || presmodel.axes.x?.discrete !== false
+      ? "category"
+      : "number";
+  const axisColumn = axisDimension
+    ? presmodel.columns[axisDimension.index]
+    : null;
 
   const chartData = presmodel.rows.map((row) => {
     const entry: Record<string, unknown> = {};
@@ -184,13 +230,40 @@ function buildGeometry(presmodel: PresModel): Geometry {
     xType: presmodel.mark === "circle" && !axisDimension ? "number" : xType,
     series,
     colorField,
-    colorKind: colorField ? (colorIsDimension ? "categorical" : "quantitative") : null,
+    colorKind: colorField
+      ? colorIsDimension
+        ? "categorical"
+        : "quantitative"
+      : null,
     colorDomain: legend?.domain ?? [],
     chartData,
     dimensions,
     measures,
-    temporalAxis: Boolean(axisColumn && (axisColumn.field_type === "temporal" || axisColumn.date_part)),
+    temporalAxis: Boolean(
+      axisColumn &&
+      (axisColumn.field_type === "temporal" || axisColumn.date_part),
+    ),
   };
+}
+
+/** "2026-11-09T00:00:00+00:00" reads as "9 Nov 2026"; a time shows only when set. */
+export function dateTick(value: string | number): string {
+  if (typeof value !== "string") return String(value);
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?(?:[ T](\d{2}):(\d{2}))?/.exec(
+    value,
+  );
+  if (!match) return value;
+  const [, year, month, day, hour, minute] = match;
+  const name = new Date(
+    Date.UTC(Number(year), Number(month) - 1, 1),
+  ).toLocaleString("en", {
+    month: "short",
+    timeZone: "UTC",
+  });
+  const date = day ? `${Number(day)} ${name} ${year}` : `${name} ${year}`;
+  return hour && (hour !== "00" || minute !== "00")
+    ? `${date} ${hour}:${minute}`
+    : date;
 }
 
 function numericOr(value: CellValue): number | null {
@@ -212,7 +285,9 @@ function average(geometry: Geometry, seriesName: string): number | null {
   const values = geometry.chartData
     .map((entry) => entry[seriesName])
     .filter((value): value is number => typeof value === "number");
-  return values.length > 1 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  return values.length > 1
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : null;
 }
 
 function Marks({
@@ -255,15 +330,18 @@ function Marks({
         color: "var(--foreground)",
         fontSize: 12,
       }}
-      formatter={(value) => (typeof value === "number" ? formatMeasure(value) : value)}
+      formatter={(value) =>
+        typeof value === "number" ? formatMeasure(value) : value
+      }
     />
   );
   const neutral = geometry.colorKind !== "categorical";
   const isHighlighted = (entry: Record<string, unknown>) =>
     Boolean(
       highlight &&
-        (entry[highlight.dimension] === highlight.value ||
-          (geometry.xField === COMPOSITE_AXIS && entry[COMPOSITE_AXIS] === highlight.value)),
+      (entry[highlight.dimension] === highlight.value ||
+        (geometry.xField === COMPOSITE_AXIS &&
+          entry[COMPOSITE_AXIS] === highlight.value)),
     );
   const clickMark = (payload?: Record<string, unknown>) => {
     if (!onMarkClick || !payload) return;
@@ -273,11 +351,18 @@ function Marks({
     }
     onMarkClick(values);
   };
-  const grid = thumbnail ? null : <CartesianGrid stroke="var(--viz-grid)" vertical={false} />;
+  const grid = thumbnail ? null : (
+    <CartesianGrid stroke="var(--viz-grid)" vertical={false} />
+  );
 
   if (mark === "text") {
     return (
-      <TextTable presmodel={presmodel} geometry={geometry} onMarkClick={onMarkClick} selectedMark={selectedMark} />
+      <TextTable
+        presmodel={presmodel}
+        geometry={geometry}
+        onMarkClick={onMarkClick}
+        selectedMark={selectedMark}
+      />
     );
   }
 
@@ -338,8 +423,19 @@ function Marks({
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
             {thumbnail ? null : <CartesianGrid stroke="var(--viz-grid)" />}
-            <XAxis dataKey="x" type="number" name={measureCaption(xAxisMeasure.name)} {...axisProps} />
-            <YAxis dataKey="y" type="number" name={measureCaption(yAxisMeasure.name)} {...axisProps} width={56} />
+            <XAxis
+              dataKey="x"
+              type="number"
+              name={measureCaption(xAxisMeasure.name)}
+              {...axisProps}
+            />
+            <YAxis
+              dataKey="y"
+              type="number"
+              name={measureCaption(yAxisMeasure.name)}
+              {...axisProps}
+              width={56}
+            />
             <ZAxis range={[48, 48]} />
             {tooltip}
             <Scatter
@@ -358,13 +454,19 @@ function Marks({
     );
   }
 
-  const shared = { data: geometry.chartData, margin: { top: 12, right: 24, bottom: 4, left: 4 } };
+  const shared = {
+    data: geometry.chartData,
+    margin: { top: 12, right: 24, bottom: 4, left: 4 },
+  };
   const xAxis = (
     <XAxis
       dataKey={geometry.xField}
       type={geometry.xType === "number" ? "number" : "category"}
       minTickGap={16}
       {...axisProps}
+      tickFormatter={(value: string | number) =>
+        typeof value === "string" ? dateTick(value) : valueFormat(value)
+      }
     />
   );
   const yAxis = <YAxis {...axisProps} axisLine={false} width={56} />;
@@ -376,60 +478,91 @@ function Marks({
         y={mean}
         stroke="var(--viz-reference)"
         strokeDasharray="4 4"
-        label={{ value: `avg ${formatMeasure(mean)}`, position: "insideTopRight", fill: "var(--muted-foreground)", fontSize: 12 }}
+        label={{
+          value: `avg ${formatMeasure(mean)}`,
+          position: "insideTopRight",
+          fill: "var(--muted-foreground)",
+          fontSize: 12,
+        }}
       />
     ) : null;
 
   if (mark === "line" || mark === "area") {
-    const highlighted = single ? geometry.chartData.find(isHighlighted) : undefined;
+    const highlighted = single
+      ? geometry.chartData.find(isHighlighted)
+      : undefined;
     const Chart = mark === "line" ? LineChart : AreaChart;
-    return (
-      <div className={cn(height, "min-w-0")}>
-        <ResponsiveContainer width="100%" height="100%">
-          <Chart {...shared}>
-            {grid}
-            {xAxis}
-            {yAxis}
-            {tooltip}
-            {meanLine}
-            {geometry.series.map((series, index) => {
-              const color = neutral ? "var(--viz-line)" : colorForIndex(geometry, index);
-              return mark === "line" ? (
-                <Line
-                  key={series.name}
-                  dataKey={series.name}
-                  name={measureCaption(series.name)}
-                  stroke={color}
-                  strokeWidth={1.75}
-                  dot={false}
-                  activeDot={{ r: 4, fill: color, strokeWidth: 0 }}
-                  isAnimationActive={false}
-                />
-              ) : (
-                <Area
-                  key={series.name}
-                  dataKey={series.name}
-                  name={measureCaption(series.name)}
-                  stroke={color}
-                  fill={color}
-                  fillOpacity={0.14}
-                  strokeWidth={1.75}
-                  isAnimationActive={false}
-                />
-              );
-            })}
-            {highlighted && !thumbnail ? (
-              <ReferenceDot
-                x={highlighted[geometry.xField] as string | number}
-                y={highlighted[geometry.series[0].name] as number}
-                r={5}
-                fill="var(--viz-highlight)"
-                stroke="var(--card)"
-                strokeWidth={2}
+    const lineColor = (index: number) =>
+      single
+        ? "var(--viz-line)"
+        : neutral
+          ? seriesColor(index)
+          : colorForIndex(geometry, index);
+    const legend =
+      neutral && geometry.series.length > 1 && !thumbnail ? (
+        <ul className="mb-1 flex flex-wrap gap-x-4 gap-y-1 px-1 type-meta text-ink-secondary">
+          {geometry.series.map((series, index) => (
+            <li key={series.name} className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className="h-0.5 w-3 rounded-full"
+                style={{ background: lineColor(index) }}
               />
-            ) : null}
-          </Chart>
-        </ResponsiveContainer>
+              {measurePhrase(series.name)}
+            </li>
+          ))}
+        </ul>
+      ) : null;
+    return (
+      <div className="min-w-0">
+        {legend}
+        <div className={cn(height, "min-w-0")}>
+          <ResponsiveContainer width="100%" height="100%">
+            <Chart {...shared}>
+              {grid}
+              {xAxis}
+              {yAxis}
+              {tooltip}
+              {meanLine}
+              {geometry.series.map((series, index) => {
+                const color = lineColor(index);
+                return mark === "line" ? (
+                  <Line
+                    key={series.name}
+                    dataKey={series.name}
+                    name={measurePhrase(series.name)}
+                    stroke={color}
+                    strokeWidth={1.75}
+                    dot={false}
+                    activeDot={{ r: 4, fill: color, strokeWidth: 0 }}
+                    isAnimationActive={false}
+                  />
+                ) : (
+                  <Area
+                    key={series.name}
+                    dataKey={series.name}
+                    name={measurePhrase(series.name)}
+                    stroke={color}
+                    fill={color}
+                    fillOpacity={0.14}
+                    strokeWidth={1.75}
+                    isAnimationActive={false}
+                  />
+                );
+              })}
+              {highlighted && !thumbnail ? (
+                <ReferenceDot
+                  x={highlighted[geometry.xField] as string | number}
+                  y={highlighted[geometry.series[0].name] as number}
+                  r={5}
+                  fill="var(--viz-highlight)"
+                  stroke="var(--card)"
+                  strokeWidth={2}
+                />
+              ) : null}
+            </Chart>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
   }
@@ -445,12 +578,23 @@ function Marks({
   if (ranked) {
     const series = geometry.series[0];
     const rowHeight = compact ? 24 : 32;
-    const chartHeight = thumbnail ? undefined : geometry.chartData.length * rowHeight + 36;
+    const chartHeight = thumbnail
+      ? undefined
+      : geometry.chartData.length * rowHeight + 36;
     return (
-      <div className={cn("min-w-0", thumbnail && "h-full")} style={chartHeight ? { height: chartHeight } : undefined}>
+      <div
+        className={cn("min-w-0", thumbnail && "h-full")}
+        style={chartHeight ? { height: chartHeight } : undefined}
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart layout="vertical" data={geometry.chartData} margin={{ top: 4, right: 56, bottom: 4, left: 4 }}>
-            {thumbnail ? null : <CartesianGrid stroke="var(--viz-grid)" horizontal={false} />}
+          <BarChart
+            layout="vertical"
+            data={geometry.chartData}
+            margin={{ top: 4, right: 56, bottom: 4, left: 4 }}
+          >
+            {thumbnail ? null : (
+              <CartesianGrid stroke="var(--viz-grid)" horizontal={false} />
+            )}
             <XAxis type="number" {...axisProps} />
             <YAxis
               type="category"
@@ -466,7 +610,12 @@ function Marks({
                 x={mean}
                 stroke="var(--viz-reference)"
                 strokeDasharray="4 4"
-                label={{ value: `avg ${formatMeasure(mean)}`, position: "top", fill: "var(--muted-foreground)", fontSize: 12 }}
+                label={{
+                  value: `avg ${formatMeasure(mean)}`,
+                  position: "top",
+                  fill: "var(--muted-foreground)",
+                  fontSize: 12,
+                }}
               />
             ) : null}
             <Bar
@@ -476,10 +625,19 @@ function Marks({
               barSize={compact ? 14 : 20}
               isAnimationActive={false}
               cursor={onMarkClick ? "pointer" : undefined}
-              onClick={(data: { payload?: Record<string, unknown> }) => clickMark(data?.payload)}
+              onClick={(data: { payload?: Record<string, unknown> }) =>
+                clickMark(data?.payload)
+              }
             >
               {geometry.chartData.map((entry, index) => (
-                <Cell key={index} fill={isHighlighted(entry) ? "var(--viz-highlight)" : "var(--viz-mark)"} />
+                <Cell
+                  key={index}
+                  fill={
+                    isHighlighted(entry)
+                      ? "var(--viz-highlight)"
+                      : "var(--viz-mark)"
+                  }
+                />
               ))}
               {thumbnail ? null : (
                 <LabelList
@@ -511,12 +669,16 @@ function Marks({
               key={series.name}
               dataKey={series.name}
               name={measureCaption(series.name)}
-              fill={neutral ? "var(--viz-mark)" : colorForIndex(geometry, index)}
+              fill={
+                neutral ? "var(--viz-mark)" : colorForIndex(geometry, index)
+              }
               radius={mark === "bar" ? [2, 2, 0, 0] : undefined}
               barSize={mark === "tick" ? 3 : undefined}
               isAnimationActive={false}
               cursor={onMarkClick ? "pointer" : undefined}
-              onClick={(data: { payload?: Record<string, unknown> }) => clickMark(data?.payload)}
+              onClick={(data: { payload?: Record<string, unknown> }) =>
+                clickMark(data?.payload)
+              }
             >
               {geometry.chartData.map((entry, cellIndex) => (
                 <Cell
@@ -551,13 +713,17 @@ function TextTable({
   onMarkClick?: (values: Record<string, CellValue>) => void;
   selectedMark: Record<string, CellValue> | null;
 }) {
-  const colorMeasure = geometry.series.find((series) => series.name === geometry.colorField);
+  const colorMeasure = geometry.series.find(
+    (series) => series.name === geometry.colorField,
+  );
   const values = colorMeasure
     ? presmodel.rows
         .map((row) => numericOr(toDisplay(row, colorMeasure.index)))
         .filter((value): value is number => value !== null)
     : [];
-  const extent = values.length ? { min: Math.min(...values), max: Math.max(...values) } : null;
+  const extent = values.length
+    ? { min: Math.min(...values), max: Math.max(...values) }
+    : null;
   const shade = (value: number | null): string | null => {
     if (!extent || value === null || extent.max === extent.min) return null;
     const ratio = (value - extent.min) / (extent.max - extent.min);
@@ -580,9 +746,14 @@ function TextTable({
               <th
                 key={column.name}
                 scope="col"
-                className={cn("type-label px-3 py-2 text-left text-ink-secondary", column.role === "measure" && "text-right")}
+                className={cn(
+                  "type-label px-3 py-2 text-left text-ink-secondary",
+                  column.role === "measure" && "text-right",
+                )}
               >
-                {column.role === "measure" ? measureCaption(column.name) : column.name}
+                {column.role === "measure"
+                  ? measureCaption(column.name)
+                  : column.name}
               </th>
             ))}
           </tr>
@@ -611,14 +782,21 @@ function TextTable({
                 return (
                   <td
                     key={column.name}
-                    className={cn("px-3 py-2", isMeasure && "text-right font-medium")}
+                    className={cn(
+                      "px-3 py-2",
+                      isMeasure && "text-right font-medium",
+                    )}
                     style={
                       colorMeasure && column.name === colorMeasure.name
                         ? { background: shade(numericOr(raw)) ?? undefined }
                         : undefined
                     }
                   >
-                    {isMeasure ? formatMeasure(raw) : raw === null ? "–" : String(raw)}
+                    {isMeasure
+                      ? formatMeasure(raw)
+                      : raw === null
+                        ? "–"
+                        : String(raw)}
                   </td>
                 );
               })}
@@ -637,7 +815,11 @@ function FallbackGrid({ presmodel }: { presmodel: PresModel }) {
         <thead>
           <tr className="border-b">
             {presmodel.columns.map((column) => (
-              <th key={column.name} scope="col" className="type-label px-3 py-2 text-left text-ink-secondary">
+              <th
+                key={column.name}
+                scope="col"
+                className="type-label px-3 py-2 text-left text-ink-secondary"
+              >
                 {column.name}
               </th>
             ))}
@@ -645,11 +827,17 @@ function FallbackGrid({ presmodel }: { presmodel: PresModel }) {
         </thead>
         <tbody>
           {presmodel.rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-b border-viz-grid last:border-b-0">
+            <tr
+              key={rowIndex}
+              className="border-b border-viz-grid last:border-b-0"
+            >
               {presmodel.columns.map((column, columnIndex) => (
                 <td
                   key={column.name}
-                  className={cn("px-3 py-2", column.role === "measure" && "text-right font-medium")}
+                  className={cn(
+                    "px-3 py-2",
+                    column.role === "measure" && "text-right font-medium",
+                  )}
                 >
                   {column.role === "measure"
                     ? formatMeasure(toDisplay(row, columnIndex))

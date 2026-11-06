@@ -26,6 +26,12 @@ def train_anomaly(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     return run(table, spec)
 
 
+def optimize_routes(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
+    from app.modules.ml_engine.engines.routing import optimize_routes as run
+
+    return run(table, spec)
+
+
 def train_clustering(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     from app.modules.ml_engine.engines.clustering import train_clustering as run
 

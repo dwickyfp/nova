@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -178,6 +179,34 @@ COORDINATION_TOOLS = frozenset({
     "discover_agents", "spawn_agent", "send_message", "followup_task", "wait_agent",
     "list_agents", "interrupt_agent",
 })
+
+
+#: ml_execute summaries read "<task> completed with <algorithm>; N rows processed (run ...)".
+_ML_SUMMARY = re.compile(r"^([a-z_]+) completed with ")
+_ML_TITLES = {
+    "route_optimization": "Optimised delivery routes",
+    "forecast": "Forecast",
+    "clustering": "Clusters",
+    "anomaly_detection": "Anomalies",
+    "classification": "Classification",
+    "regression": "Prediction",
+}
+
+
+def display_title(summary: str, limit: int = 160) -> str:
+    """A result's title for people: the question it answered, never its SQL.
+
+    Tool summaries are written for the model ("question: ...\nsql:\n SELECT ...").
+    """
+    text = str(summary or "")
+    finished = _ML_SUMMARY.match(text)
+    if finished:
+        return _ML_TITLES.get(finished.group(1), finished.group(1).replace("_", " ").capitalize())
+    for line in text.splitlines():
+        if line.startswith("question:"):
+            return line.removeprefix("question:").strip()[:limit]
+    head = text.split("\nsql:", 1)[0].splitlines()
+    return (head[0].strip() if head else "")[:limit]
 
 
 class EvidenceTracker:

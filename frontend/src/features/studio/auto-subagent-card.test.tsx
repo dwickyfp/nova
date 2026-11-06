@@ -78,34 +78,23 @@ it("keeps the active turn visible while its follow-up waits", () => {
   expect(latestParticipants([active, queued])[0].run_id).toBe("finance");
 });
 
-it("steers Smart itself without offering a self-interrupt", async () => {
-  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, run_id: "root", agent_id: "__smart__", agent_name: "Smart", status: "running" } });
-  const send = vi.spyOn(agentsApi, "sendAutoChildMessage").mockResolvedValue({ message_id: "steering", status: "queued" });
-  render(<Fixture data={smartRuns} />);
-  await page.getByRole("button", { name: "Open Smart conversation" }).click();
-  await page.getByRole("textbox", { name: "Message subagent" }).fill("Prioritize enterprise customers");
-  await page.getByRole("button", { name: "Send to subagent" }).click();
-  expect(send).toHaveBeenCalledWith("root", "root", expect.objectContaining({ content: "Prioritize enterprise customers" }));
-  await expect.element(page.getByRole("button", { name: "Interrupt", exact: true })).not.toBeInTheDocument();
-});
-
-it("starts a follow-up for an idle Smart participant", async () => {
-  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue(finishedTimeline);
-  const followup = vi.spyOn(agentsApi, "followupSmartAgent").mockResolvedValue({});
-  render(<Fixture data={smartRuns} />);
-  await page.getByRole("button", { name: "Open Finance conversation" }).click();
-  await page.getByRole("textbox", { name: "Message subagent" }).fill("Correlate the campaign evidence");
-  await page.getByRole("button", { name: "Start follow-up" }).click();
-  expect(followup).toHaveBeenCalledWith("root", "finance", "Correlate the campaign evidence", expect.any(String));
-});
-
-it("interrupts only the selected nested participant", async () => {
-  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, run_id: "cohort", agent_name: "Customer Analytics", status: "running" } });
-  const interrupt = vi.spyOn(agentsApi, "interruptSmartAgent").mockResolvedValue({});
-  render(<Fixture data={smartRuns} />);
-  await page.getByRole("button", { name: "Open Customer Analytics conversation" }).click();
-  await page.getByRole("button", { name: "Interrupt", exact: true }).click();
-  expect(interrupt).toHaveBeenCalledWith("root", "cohort");
+it("keeps every participant's panel read-only: no composer, interrupt or cancel", async () => {
+  for (const [name, run] of [
+    ["Smart", { run_id: "root", agent_id: "__smart__", agent_name: "Smart", status: "running" }],
+    ["Customer Analytics", { run_id: "cohort", agent_name: "Customer Analytics", status: "running" }],
+    ["Finance", {}],
+  ] as const) {
+    vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, ...run } });
+    const screen = await render(<Fixture data={smartRuns} />);
+    await page.getByRole("button", { name: `Open ${name} conversation` }).click();
+    const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
+    await expect.element(panel.getByText("Assigned task")).toBeVisible();
+    expect(panel.element().querySelector("textarea")).toBeNull();
+    for (const label of ["Interrupt", "Cancel agent", "Send to subagent", "Start follow-up"])
+      await expect.element(panel.getByRole("button", { name: label, exact: true })).not.toBeInTheDocument();
+    await screen.unmount();
+    vi.restoreAllMocks();
+  }
 });
 
 for (const width of [320, 1440]) {
@@ -147,12 +136,15 @@ it("opens the specialist's complete replay with both directions of agent message
   await expect.element(panel).toBeVisible();
   expect(panel.element().getBoundingClientRect().width).toBeGreaterThan(500);
   await expect.element(panel.getByText("Assigned task")).toBeVisible();
-  await expect.element(panel.getByText("Smart to Finance")).toBeVisible();
-  await expect.element(panel.getByText("finance to root")).toBeVisible();
+  await expect.element(panel.getByText("Check the channel totals")).toBeVisible();
+  await expect.element(panel.getByText("The query returned five channels")).toBeVisible();
   await expect.element(panel.getByText("Query channel totals")).toBeVisible();
+  // One step per tool call, named for the reader; its request opens on demand.
+  const steps = panel.getByRole("list", { name: "Specialist steps" });
+  expect(steps.element().textContent?.match(/Queried business data/g)?.length).toBe(1);
+  await panel.getByText("Request", { exact: true }).click();
   await expect.element(panel.getByText("SELECT revenue FROM sales")).toBeVisible();
   expect(panel.element().textContent?.match(/Revenue fell 22%/g)?.length).toBe(1);
-  await expect.element(panel.getByText("read only", { exact: false })).toBeVisible();
   const mainComposer = page.getByRole("button", { name: "Main composer" });
   await expect.element(mainComposer).toBeVisible();
   await mainComposer.click();
@@ -176,7 +168,7 @@ it("marks the child's persisted activity limit instead of implying a complete tr
   render(<Fixture />);
   await page.getByRole("button", { name: "Open Finance conversation" }).click();
   const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
-  await expect.element(panel.getByRole("status")).toHaveTextContent("Additional activity was omitted after this run reached its event limit.");
+  await expect.element(panel.getByText("Later activity was not recorded: this run reached its event limit.")).toBeVisible();
 });
 
 it("catches up when completed status appears before the child's final answer event", async () => {
@@ -195,29 +187,11 @@ it("catches up when completed status appears before the child's final answer eve
   render(<Fixture />);
   await page.getByRole("button", { name: "Open Finance conversation" }).click();
   const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
-  await expect.element(panel.getByText("Finance started working.")).toBeVisible();
+  await expect.element(panel.getByText("Starting", { exact: true })).toBeVisible();
   await expect.poll(() => timeline.mock.calls.length, { timeout: 5000 }).toBeGreaterThanOrEqual(3);
   await expect.element(panel.getByText("Revenue fell 22%.")).toBeVisible();
   expect(timeline.mock.calls.map((call) => call[2])).toEqual([-1, 1, -1]);
   expect(panel.element().textContent?.match(/Revenue fell 22%/g)?.length).toBe(1);
-});
-
-it("lets the user steer and cancel a working subagent", async () => {
-  await page.viewport(1440, 900);
-  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, run_id: "marketing", agent_id: "marketing", agent_name: "Marketing", status: "running", objective: "Check campaign attribution" }, events: [] });
-  const send = vi.spyOn(agentsApi, "sendAutoChildMessage").mockResolvedValue({ message_id: "m1", status: "queued" });
-  const cancel = vi.spyOn(agentsApi, "cancelAutoChild").mockResolvedValue({ status: "cancelled" });
-  render(<Fixture />);
-  await page.getByRole("button", { name: "Open Marketing conversation" }).click();
-  const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
-  await expect.element(panel).toBeVisible();
-  await panel.getByRole("textbox", { name: "Message subagent" }).fill("Check paid channels too");
-  await panel.getByRole("button", { name: "Send to subagent" }).click();
-  await expect.poll(() => send.mock.calls.length).toBe(1);
-  expect(send.mock.calls[0][2].content).toBe("Check paid channels too");
-  await panel.getByRole("button", { name: "Cancel agent" }).click();
-  await expect.poll(() => cancel.mock.calls.length).toBe(1);
-  expect(cancel).toHaveBeenCalledWith("root", "marketing");
 });
 
 it("reflows the card and split panel at narrow widths without horizontal overflow", async () => {
@@ -275,5 +249,5 @@ it("recovers the child conversation after a timeline request fails", async () =>
   const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
   await expect.element(panel.getByRole("alert")).toHaveTextContent("Could not load the conversation.");
   await panel.getByRole("button", { name: "Retry" }).click();
-  await expect.element(panel.getByText("Smart to Finance")).toBeVisible();
+  await expect.element(panel.getByText("Check the channel totals")).toBeVisible();
 });

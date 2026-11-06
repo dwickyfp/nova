@@ -101,6 +101,42 @@ def _located(latitudes: list[Any], longitudes: list[Any]) -> bool:
     return False
 
 
+def _lines(table: dict[str, Any], column: str) -> bool:
+    """Whether a geometry column holds lines (an ordered route), not places."""
+    values = [value for value in _column(table, column)[:20] if isinstance(value, str)]
+    return bool(values) and all(
+        value.lstrip().upper().startswith(("LINESTRING", "MULTILINESTRING"))
+        or '"LineString"' in value
+        for value in values
+    )
+
+
+#: Stop-order columns: located rows with one of these are a route, not places.
+_SEQUENCE = ("stop_seq", "sequence", "visit_order", "stop_order", "urutan")
+_ROUTE_GROUP = ("route", "route_id", "driver", "driver_id", "area", "cluster", "cluster_id")
+
+
+def _route_columns(table: dict[str, Any]) -> tuple[str, str | None] | None:
+    """The stop-order column, and the route column if any, of ordered stop rows."""
+    names = _names(table)
+    bare = {name.rsplit(".", 1)[-1].casefold(): name for name in names}
+    sequence = next((bare[key] for key in _SEQUENCE if key in bare), None)
+    if sequence is None or any(_number(value) is None for value in _column(table, sequence)[:20]):
+        return None
+    group = next((bare[key] for key in _ROUTE_GROUP if key in bare), None)
+    return sequence, group
+
+
+def _route_first(tables: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """A result of routes is the map the reader asked for; its stops come after."""
+    def routes(table: dict[str, Any]) -> bool:
+        return _route_columns(table) is not None or any(
+            _lines(table, name) for name in _names(table)
+        )
+
+    return dict(sorted(tables.items(), key=lambda item: not routes(item[1])))
+
+
 def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | None:
     """A governed GeoMap for a result that carries coordinates or shapes."""
     names = _names(table)
@@ -126,8 +162,37 @@ def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | No
         (name for name in rest
          if all(_number(value) is None for value in _column(table, name)[:20])), None,
     )
+    route = _route_columns(table) if latitude and longitude else None
+    if route:
+        sequence, group = route
+        rest = [name for name in rest if name not in {sequence, group}]
+        label = next((name for name in rest if name.rsplit(".", 1)[-1] == "stop"), label)
+        totals = [name for name in rest
+                  if name.rsplit(".", 1)[-1] in {"route_km", "saving_pct", "original_order_km"}]
+        popup = [name for name in rest if name != label and name not in totals
+                 and name.rsplit(".", 1)[-1] not in {"route_stops"}][:_POPUP_FIELDS]
+        settings = ['layer: "route"', f"sequence: {_text(sequence)}"]
+        if group:
+            settings.append(f"group: {_text(group)}")
+        if totals:
+            settings.append("routeFields: [" + ", ".join(_text(name) for name in totals) + "]")
+        if popup:
+            settings.append("popupFields: [" + ", ".join(_text(name) for name in popup) + "]")
+        options = "{" + ", ".join(settings) + "}"
+        args = [
+            f"@Evidence({_text(evidence_id)})", _text(str(longitude)), _text(str(latitude)), "null",
+            _text(label) if label else "null", _text(title or "Routes"),
+            "$selected", options, "$viewport",
+        ]
+        return ("$selected = -1\n$viewport = null\n"
+                f"root = Col([GeoMap({', '.join(args)})])")
     popup = [name for name in rest if name != label][:_POPUP_FIELDS]
-    options = "{popupFields: [" + ", ".join(_text(name) for name in popup) + "]}" if popup else "{}"
+    settings = []
+    if popup:
+        settings.append("popupFields: [" + ", ".join(_text(name) for name in popup) + "]")
+    if geometry and _lines(table, geometry):
+        settings.append('layer: "route"')
+    options = "{" + ", ".join(settings) + "}"
     args = [
         f"@Evidence({_text(evidence_id)})",
         _text(longitude) if longitude else "null",
@@ -264,7 +329,7 @@ async def compose(
     """
     blocks: list[dict[str, Any]] = []
     skipped: list[str] = []
-    for evidence_id, table in tables.items():
+    for evidence_id, table in _route_first(tables).items():
         title = (summaries.get(evidence_id) or "Locations")[:256]
         program = map_program(evidence_id, table, title)
         if program is None:

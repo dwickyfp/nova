@@ -205,6 +205,7 @@ function FocusLocation({
 
 export function MapSurface({
   children,
+  aside,
   bounds,
   focusBounds,
   options = {},
@@ -212,10 +213,11 @@ export function MapSurface({
   onViewport,
   onError,
   onReady,
-  publicMap = false,
   basemap = "configured",
 }: {
   children: ReactNode;
+  /** A panel beside the map frame, below the toolbar, sharing the frame's height. */
+  aside?: ReactNode;
   bounds: Bounds | null;
   focusBounds?: Bounds | null;
   options?: MapOptions;
@@ -223,14 +225,15 @@ export function MapSurface({
   onViewport?: (view: MapViewport) => void;
   onError: () => void;
   onReady?: () => void;
-  publicMap?: boolean;
   basemap?: "bundled" | "configured";
 }) {
   const { resolvedTheme } = useTheme();
   const metric = useMapMetrics();
   const follow = useRef(true);
   const mapRef = useRef<MapRef | null>(null);
-  const streets = basemap !== "bundled" && publicMap;
+  // Business and public maps both show the online street basemap; "bundled"
+  // keeps the offline overview (tests, previews without network).
+  const streets = basemap !== "bundled";
   // Only the 3D toggle reaches 60°, so a saved camera at that pitch reopens in 3D.
   const [threeD, setThreeD] = useState(
     () => streets && (mapView(viewport)?.pitch ?? 0) >= 59.5,
@@ -255,41 +258,50 @@ export function MapSurface({
           onThreeD={streets ? setThreeD : undefined}
         />
       )}
-      <div className="h-80 w-full overflow-hidden rounded-lg border border-border">
-        <Map
-          ref={mapRef}
-          styles={styles}
-          theme={resolvedTheme}
-          viewport={view}
-          onMapError={() => {
-            metric("failed");
-            metric("fallback");
-            onError();
-          }}
-          onReady={() => {
-            metric("ready");
-            onReady?.();
-          }}
-          transformRequest={streets ? undefined : localMapRequest}
-          onViewportCommit={(next) => {
-            if (!follow.current) {
-              const normalized = {
-                ...next,
-                center: [
-                  ((((next.center[0] + 180) % 360) + 360) % 360) - 180,
-                  next.center[1],
-                ],
-                bearing: ((((next.bearing + 180) % 360) + 360) % 360) - 180,
-              };
-              const valid = mapView(normalized);
-              if (valid) onViewport?.(valid);
-            }
-          }}
-        >
-          <Camera bounds={bounds} initialView={view} follow={follow} />
-          <FocusLocation bounds={focusBounds} follow={follow} />
-          {children}
-        </Map>
+      <div
+        className={
+          aside
+            ? "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_15rem]"
+            : "contents"
+        }
+      >
+        <div className="h-80 w-full min-w-0 overflow-hidden rounded-lg border border-border">
+          <Map
+            ref={mapRef}
+            styles={styles}
+            theme={resolvedTheme}
+            viewport={view}
+            onMapError={() => {
+              metric("failed");
+              metric("fallback");
+              onError();
+            }}
+            onReady={() => {
+              metric("ready");
+              onReady?.();
+            }}
+            transformRequest={streets ? undefined : localMapRequest}
+            onViewportCommit={(next) => {
+              if (!follow.current) {
+                const normalized = {
+                  ...next,
+                  center: [
+                    ((((next.center[0] + 180) % 360) + 360) % 360) - 180,
+                    next.center[1],
+                  ],
+                  bearing: ((((next.bearing + 180) % 360) + 360) % 360) - 180,
+                };
+                const valid = mapView(normalized);
+                if (valid) onViewport?.(valid);
+              }
+            }}
+          >
+            <Camera bounds={bounds} initialView={view} follow={follow} />
+            <FocusLocation bounds={focusBounds} follow={follow} />
+            {children}
+          </Map>
+        </div>
+        {aside}
       </div>
     </div>
   );

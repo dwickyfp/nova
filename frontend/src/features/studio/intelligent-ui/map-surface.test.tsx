@@ -120,8 +120,8 @@ it("renders no navigation controls on the canvas", async () => {
   await expect
     .element(screen.getByRole("button", { name: "Show all locations" }))
     .toBeVisible();
-  // 3D loads external building tiles, so verified business maps never offer it.
-  expect(screen.container.textContent).not.toContain("3D view");
+  // The street basemap offers 3D as a toolbar button, never as a canvas control.
+  expect(screen.container.textContent).toContain("3D view");
   for (const name of [
     "Zoom in",
     "Zoom out",

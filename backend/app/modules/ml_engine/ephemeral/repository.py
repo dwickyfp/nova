@@ -52,8 +52,31 @@ def _sanitize(value: Any) -> Any:
     return redact_for_output(value) if isinstance(value, str) else value
 
 
+#: StarRocks STRING holds 65,533 bytes; the descriptor stays under it with room
+#: for multi-byte text.
+MAX_DESCRIPTOR_BYTES = 60_000
+
+
 def encode_entry(entry: EphemeralEntry) -> str:
+    """The cached run as JSON that fits its column: the result preview is trimmed
+    from the end (and marked) when the whole of it would not."""
+    results = list(entry.output.results)
+    encoded = _encode(entry, results, truncated=False)
+    if len(encoded.encode()) <= MAX_DESCRIPTOR_BYTES:
+        return encoded
+    low, high = 0, len(results)
+    while low < high:
+        middle = (low + high + 1) // 2
+        size = len(_encode(entry, results[:middle], truncated=True).encode())
+        low, high = (middle, high) if size <= MAX_DESCRIPTOR_BYTES else (low, middle - 1)
+    return _encode(entry, results[:low], truncated=True)
+
+
+def _encode(entry: EphemeralEntry, results: list[dict[str, Any]], *, truncated: bool) -> str:
     output = entry.output
+    metrics = _sanitize(output.metrics)
+    if truncated:
+        metrics = {**metrics, "cached_results_truncated": True}
     return json.dumps(
         {
             "run_id": entry.run_id,
@@ -68,10 +91,10 @@ def encode_entry(entry: EphemeralEntry) -> str:
             "output": {
                 "engine": output.engine,
                 "algorithm": output.algorithm,
-                "metrics": _sanitize(output.metrics),
+                "metrics": metrics,
                 "feature_columns": output.feature_columns,
                 "training_rows": output.training_rows,
-                "results": output.results,
+                "results": results,
             },
         },
         default=str,

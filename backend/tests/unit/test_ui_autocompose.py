@@ -25,7 +25,10 @@ def test_maps_prefer_exact_coordinates_then_geometry():
     assert 'popupFields: ["district", "depot_latitude"]' in program
     suffixed = {"columns": ["store", "store_lat", "store_lng"], "rows": [["A", "-6.2", "106.8"]]}
     assert '"store_lng", "store_lat"' in (ac.map_program("e", suffixed, "Stores") or "")
-    assert 'null, null, "geom", "route"' in (ac.map_program("e", ROUTES, "Routes") or "")
+    routes = ac.map_program("e", ROUTES, "Routes") or ""
+    assert 'null, null, "geom", "route"' in routes
+    # Lines are an ordered route: drawn as one, not as shapes.
+    assert 'layer: "route"' in routes
 
 
 @pytest.mark.parametrize("table", [
@@ -51,8 +54,7 @@ def test_single_metric_is_a_kpi_and_several_share_a_grid():
 
 async def test_maps_come_before_metrics_and_only_one_is_drawn():
     composed, skipped = await ac.compose(
-        {"evidence_1": TOTAL, "evidence_2": OUTLETS, "evidence_3": ROUTES},
-        {"evidence_2": "Outlets"},
+        {"evidence_1": TOTAL, "evidence_2": OUTLETS}, {"evidence_2": "Outlets"},
     )
     assert skipped == []
     assert [block["provenance"]["auto"] for block in composed] == ["map"]
@@ -60,6 +62,14 @@ async def test_maps_come_before_metrics_and_only_one_is_drawn():
     assert block["fallback"] == "**Outlets**"
     assert block["provenance"]["composer"] == "deterministic"
     assert set(block["evidence"]) == {"evidence_2"}
+
+
+async def test_planned_routes_are_the_map_before_their_stops():
+    composed, _ = await ac.compose(
+        {"evidence_2": OUTLETS, "evidence_3": ROUTES},
+        {"evidence_2": "Outlets", "evidence_3": "Optimized routes"},
+    )
+    assert [block["fallback"] for block in composed] == ["**Optimized routes**"]
 
 
 async def test_metrics_come_first_and_other_results_get_their_own_view():
@@ -164,3 +174,23 @@ async def test_validation_failure_is_reported_not_raised(monkeypatch):
     assert await ac.compose({"evidence_2": OUTLETS}, {}) == ([], ["map_validation"])
     assert await ac.compose({"evidence_1": TOTAL}, {}) == ([], ["kpi_validation"])
     assert await ac.compose({"evidence_1": REGION}, {}) == ([], ["ranking_validation"])
+
+
+STOPS = {"columns": ["route", "stop_seq", "stop", "latitude", "longitude", "demand",
+                     "leg_km", "route_km", "saving_pct"],
+         "rows": [["Area 1", 1, "Toko A", 3.58, 98.66, 120, 0, 4.2, 18.5],
+                  ["Area 1", 2, "Toko B", 3.59, 98.67, 80, 1.5, 4.2, 18.5],
+                  ["Area 2", 1, "Toko C", 3.52, 98.70, 60, 0, 2.1, 9.0]]}
+
+
+async def test_ordered_stops_are_drawn_as_numbered_routes():
+    program = ac.map_program("e", STOPS, "Delivery routes") or ""
+    assert '"longitude", "latitude", null, "stop", "Delivery routes"' in program
+    assert 'layer: "route", sequence: "stop_seq", group: "route"' in program
+    assert 'routeFields: ["route_km", "saving_pct"]' in program
+    composed, skipped = await ac.compose(
+        {"evidence_2": OUTLETS, "evidence_4": STOPS},
+        {"evidence_2": "Outlets", "evidence_4": "Delivery routes"},
+    )
+    assert skipped == []
+    assert [block["fallback"] for block in composed] == ["**Delivery routes**"]

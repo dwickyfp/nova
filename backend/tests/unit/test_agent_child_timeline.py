@@ -281,3 +281,13 @@ async def test_thread_roots_reject_persistently_foreign_metadata(monkeypatch) ->
 
     with pytest.raises(RuntimeError, match="thread run query returned inconsistent rows"):
         await repo.roots_for_thread("thread", owner_name="alice", role_name="analyst")
+
+
+def test_public_text_keeps_zero_cells():
+    from app.modules.agents.child_timeline import safe_public_text
+
+    # Cluster 0 or zero far check-ins are results, not missing values.
+    assert safe_public_text(0, 20) == "0"
+    assert safe_public_text(0.0, 20) == "0.0"
+    assert safe_public_text(False, 20) == "False"
+    assert safe_public_text(None, 20) == ""

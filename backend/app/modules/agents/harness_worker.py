@@ -92,15 +92,27 @@ MAX_ROOT_TOKENS = 30_000
 #: A Smart root pays for discovery, one spawn and wait per specialist, and synthesis.
 #: The legacy coordinator limit ends a two-specialist answer before it is written.
 SMART_ROOT_TOKENS = 90_000
+#: Each further specialist adds a spawn, a wait and its results to every later root
+#: prompt; a three-domain investigation does not fit the single-specialist allowance.
+SMART_ROOT_TOKENS_PER_SPECIALIST = 30_000
+SMART_ROOT_TOKENS_MAX = 150_000
 #: A specialist that queries and then forecasts or diagnoses spends about 25,000
 #: tokens when asked directly; the legacy child limit stops it before it answers.
-SMART_CHILD_TOKENS = 60_000
+#: A query -> cluster -> query -> route_optimization chain is about six calls of
+#: ~12,000 tokens each.
+SMART_CHILD_TOKENS = 80_000
 #: Earlier thread turns a Smart root sees, so a follow-up keeps its subject.
 ROOT_HISTORY_MESSAGES = 6
 ROOT_HISTORY_CHARS = 4000
 ANSWERED = frozenset({"stop", "out_of_scope", "clarification"})
 #: Step kind on a Smart answer that relayed a specialist's question back to the user.
 PENDING_CLARIFICATION = "pending_clarification"
+
+
+def smart_root_token_limit(specialists: int) -> int:
+    """The Smart root's token allowance for a turn with this many specialists."""
+    extra = SMART_ROOT_TOKENS_PER_SPECIALIST * max(0, specialists - 1)
+    return min(SMART_ROOT_TOKENS + extra, SMART_ROOT_TOKENS_MAX)
 
 
 def clarified_request(history: list, objective: str) -> str:
@@ -1360,7 +1372,11 @@ class AgentHarnessWorker:
             time_budget_seconds=time_limit,
             system_prompt=system_prompt,
             context_manager=ContextManager(token_budget=context_limit),
-            spend_limit=participant_token_limit if smart else None,
+            # The root's allowance grows with its specialists (enforced at each
+            # checkpoint), so its loop stops only at the highest allowance.
+            spend_limit=(
+                (SMART_ROOT_TOKENS_MAX if is_root else participant_token_limit) if smart else None
+            ),
             max_calls_per_tool=limits.max_calls_per_tool if limits else MAX_CALLS_PER_TOOL,
             iterative=bool(
                 limits and limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations
@@ -1412,9 +1428,19 @@ class AgentHarnessWorker:
             nonlocal over_budget
             await self._assert_running(child)
             self._check_wall_budget(root)
+            current_tree = (
+                await self.repository.tree(
+                    root["run_id"], owner_name=child["owner_name"], role_name=child["role_name"]
+                )
+                if smart else []
+            )
+            limit = (
+                smart_root_token_limit(sum(1 for row in current_tree if row.get("depth") == 1))
+                if smart and is_root else participant_token_limit
+            )
             # Once the answer is composed its tokens are spent: discarding it saves
             # nothing. Every authorization and cancellation check still runs.
-            if int((context.usage or {}).get("total_tokens") or 0) >= participant_token_limit:
+            if int((context.usage or {}).get("total_tokens") or 0) >= limit:
                 if not answer_composed:
                     raise BudgetExceeded("Participant token budget exhausted")
                 over_budget = True
@@ -1427,9 +1453,6 @@ class AgentHarnessWorker:
                 # Grants and message scope remain live on every established checkpoint.
                 await resource_delegation.load(child, current)
             if smart:
-                current_tree = await self.repository.tree(
-                    root["run_id"], owner_name=child["owner_name"], role_name=child["role_name"]
-                )
                 spent = sum(
                     int(row.get("prompt_tokens") or 0) + int(row.get("completion_tokens") or 0)
                     for row in current_tree

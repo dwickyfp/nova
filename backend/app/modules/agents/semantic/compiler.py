@@ -103,11 +103,10 @@ class SemanticCompiler:
         if order_by:
             order_parts = []
             for order_item in order_by:
-                if order_item.field not in columns:
+                column = _selected_column(order_item.field, columns)
+                if column is None:
                     raise SemanticPlanError(f"Order field {order_item.field!r} is not selected.")
-                order_parts.append(
-                    f"{_quote_output(order_item.field)} {order_item.direction.upper()}"
-                )
+                order_parts.append(f"{_quote_output(column)} {order_item.direction.upper()}")
             lines.append("ORDER BY " + ", ".join(order_parts))
         if plan.limit:
             lines.append(f"LIMIT {plan.limit}")
@@ -531,6 +530,23 @@ class SemanticCompiler:
             raise AdditivityError(
                 f"Metric {metric.name!r} cannot be summed across time grain {plan.time.grain!r}."
             )
+
+
+def _selected_column(field: str, columns: list[str]) -> str | None:
+    """The output column an order field names, qualified or not.
+
+    A plan may name a dimension ``stock_date`` in one place and
+    ``outlet_stock_daily.stock_date`` in another; both are the same selected
+    column when exactly one output matches.
+    """
+    if field in columns:
+        return field
+    bare = field.rsplit(".", 1)[-1]
+    matches = [
+        column for column in columns
+        if column == bare or (column.rsplit(".", 1)[-1] == bare and "." in column)
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _dataset_fields(model: SemanticModelIR, dataset: str) -> tuple[SemanticFieldIR, ...]:

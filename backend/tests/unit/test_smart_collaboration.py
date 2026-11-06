@@ -929,19 +929,103 @@ async def test_smart_remembers_what_a_specialist_asked_back(monkeypatch):
 
 
 def test_the_smart_root_reads_specialist_rows_within_its_budget():
-    from app.modules.assistant.service import _PREVIEW_ROWS, _collected_previews
+    from app.modules.assistant.service import _COLLECTED_PREVIEW_ROWS, _collected_previews
 
     rows = [[f"Region {index}", str(index * 1000)] for index in range(60)]
     tables = {"ev_1": {"columns": ["region", "revenue_total"], "rows": rows}}
     results = [{"evidence_id": "ev_1", "columns": ["region", "revenue_total"], "row_count": 60}]
     # A specialist that answered with a heading still gives the root its numbers.
     (shown,) = _collected_previews(results, tables, room=100_000)
-    assert shown["rows"] == rows[:_PREVIEW_ROWS] and shown["truncated"] is True
+    assert shown["rows"] == rows[:_COLLECTED_PREVIEW_ROWS] and shown["truncated"] is True
     (small,) = _collected_previews(
         [{**results[0], "row_count": 5}], {"ev_1": {"rows": rows[:5]}}, room=100_000,
     )
     assert small["rows"] == rows[:5] and small["truncated"] is False
     # A tight budget keeps fewer rows, and none at all when even one does not fit.
-    (tight,) = _collected_previews(results, tables, room=200)
-    assert 0 < len(tight["rows"]) < _PREVIEW_ROWS and tight["truncated"] is True
+    (tight,) = _collected_previews(results, tables, room=300)
+    assert 0 < len(tight["rows"]) < _COLLECTED_PREVIEW_ROWS and tight["truncated"] is True
     assert _collected_previews(results, tables, room=10) == results
+
+
+def test_a_compound_request_is_complete_when_each_part_is_answered():
+    from app.modules.assistant.data_evidence import incomplete_metrics
+    from app.modules.assistant.intelligence import EvidenceTracker
+
+    owner = {"agent_id": "sales", "dimension_matches": ["city", "outlet_name"],
+             "semantic_matches": [{"metric": "net_revenue", "matched_alias": "omzet"}]}
+
+    def tracker(*results):
+        evidence = EvidenceTracker()
+        evidence.add("discover_agents", "owners", metadata={"agents": [owner]})
+        for metric, dimension in results:
+            evidence.add("semantic_query", "result", metadata={
+                "source_agent_id": "sales", "metrics": [metric], "dimensions": [dimension],
+            }, table={"columns": [dimension, metric], "rows": [["x", 1]]})
+        return evidence
+
+    # "Omzet per kota, and which store is busiest": two results, both parts answered.
+    both = tracker(("net_revenue", "city"), ("order_count", "outlet_name"))
+    # A second owner of the same data that was not asked does not need to answer.
+    risk = {**owner, "agent_id": "risk"}
+    both.add("discover_agents", "owners", metadata={"agents": [owner, risk]})
+    assert incomplete_metrics(both, "omzet per kota dan toko paling ramai") == []
+    # The store part was never answered.
+    assert incomplete_metrics(tracker(("net_revenue", "city")), "q") == ["by outlet name"]
+    # Omzet itself was never grouped by anything asked.
+    assert incomplete_metrics(tracker(("order_count", "outlet_name")), "q") == [
+        "omzet", "by city",
+    ]
+
+
+def test_a_daily_series_answers_a_request_grouped_by_its_date():
+    from app.modules.assistant.data_evidence import incomplete_metrics
+    from app.modules.assistant.intelligence import EvidenceTracker
+
+    owner = {"agent_id": "sales", "dimension_matches": ["order_date"],
+             "semantic_matches": [{"metric": "units_sold", "matched_alias": "unit"}]}
+    evidence = EvidenceTracker()
+    evidence.add("discover_agents", "owners", metadata={"agents": [owner]})
+    evidence.add("semantic_query", "result", metadata={
+        "source_agent_id": "sales", "metrics": ["units_sold"], "dimensions": [],
+        "semantic_plan": {"time": {"dimension": "sales_orders.order_date", "grain": "day"}},
+    }, table={"columns": ["sales_orders.order_date", "units_sold"], "rows": [["d", 1]]})
+    assert incomplete_metrics(evidence, "unit harian") == []
+
+
+def test_the_smart_root_allowance_grows_with_the_specialists_it_coordinates():
+    from app.modules.agents.harness_worker import (
+        SMART_ROOT_TOKENS,
+        SMART_ROOT_TOKENS_MAX,
+        smart_root_token_limit,
+    )
+
+    assert smart_root_token_limit(0) == smart_root_token_limit(1) == SMART_ROOT_TOKENS
+    assert smart_root_token_limit(3) == SMART_ROOT_TOKENS + 60_000
+    assert smart_root_token_limit(12) == SMART_ROOT_TOKENS_MAX
+
+
+def test_a_delegated_specialist_is_never_planned_as_a_clarification():
+    import pytest
+
+    from app.modules.assistant.planning import TurnPlanningError, validate_turn_plan
+
+    clarify = {"intent": "clarification", "tools": [], "required_tools": [], "ml_task": None}
+    # The user's own turn may ask back; a specialist has no user to ask.
+    assert validate_turn_plan(clarify, {"semantic_query"}).route.clarification_required
+    with pytest.raises(TurnPlanningError, match="no user to ask"):
+        validate_turn_plan(clarify, {"semantic_query"}, delegated=True)
+
+
+def test_a_delegated_specialist_works_its_own_data_not_only_coordination():
+    import pytest
+
+    from app.modules.assistant.planning import TurnPlanningError, validate_turn_plan
+
+    tools = {"semantic_query", "ml_execute", "discover_agents", "send_message"}
+    coordinate = {"intent": "compound_analytics", "tools": ["discover_agents"],
+                  "required_tools": ["discover_agents"], "ml_task": "clustering"}
+    with pytest.raises(TurnPlanningError, match="works its own data"):
+        validate_turn_plan(coordinate, tools, delegated=True)
+    own = {"intent": "machine_learning", "tools": ["semantic_query", "ml_execute"],
+           "required_tools": ["semantic_query", "ml_execute"], "ml_task": "route_optimization"}
+    assert validate_turn_plan(own, tools, delegated=True).route.needs_ml

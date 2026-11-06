@@ -247,7 +247,8 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     "analyze_documents": (ANALYZE_DESCRIPTION, ANALYZE_PARAMETERS),
     "ml_execute": (
         "Run Nova's bounded ML runtime for forecast, classification, regression, anomaly "
-        "detection, or clustering over caller-authorized SQL features. Do not approximate "
+        "detection, clustering, or route_optimization (shortest stop order per driver or "
+        "cluster) over caller-authorized SQL features. Do not approximate "
         "these tasks with prose or arbitrary SQL. Returns a verified result/artifact.",
         {
             "type": "object",
@@ -260,10 +261,14 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                         "forecast",
                         "anomaly_detection",
                         "clustering",
+                        "route_optimization",
                     ],
                 },
                 "input_sql": {"type": "string"},
                 "evidence_id": {"type": "string"},
+                "row_identifier": {"type": "string"},
+                "latitude": {"type": "string"},
+                "longitude": {"type": "string"},
                 "feature_columns": {"type": "array", "items": {"type": "string"}},
                 "target": {"type": "string"},
                 "timestamp": {"type": "string"},

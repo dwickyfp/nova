@@ -105,6 +105,16 @@ def next_collaboration_tool(evidence: Any) -> str | None:
     return None
 
 
+def _grouped_by(metadata: dict) -> set[str]:
+    """Dimensions a result is grouped by, including its time axis ("per day")."""
+    grouped = set(metadata.get("dimensions") or [])
+    time = (metadata.get("semantic_plan") or {}).get("time") or {}
+    if time.get("grain") and time.get("dimension"):
+        dimension = str(time["dimension"])
+        grouped |= {dimension, dimension.rsplit(".", 1)[-1]}
+    return grouped
+
+
 def incomplete_metrics(evidence: Any, question: str, frame: Any = None) -> list[str]:
     owners = metric_owners(evidence)
     requirements: dict[str, list[tuple[dict, dict]]] = {}
@@ -128,8 +138,13 @@ def incomplete_metrics(evidence: Any, question: str, frame: Any = None) -> list[
                     continue
                 if match["metric"] not in metadata.get("metrics", []):
                     continue
-                dimensions = set(agent.get("dimension_matches", []))
-                if not dimensions <= set(metadata.get("dimensions", [])):
+                # A compound request can group one measure by one requested dimension
+                # and answer another requested dimension with a different measure
+                # ("revenue by city, and which store is busiest"). The measure is
+                # covered by a result grouped by any requested dimension; every
+                # requested dimension must still be answered (checked below).
+                dimensions = set(agent.get("dimension_matches", [])) & _grouped_by(metadata)
+                if agent.get("dimension_matches") and not dimensions:
                     continue
                 plan = metadata.get("semantic_plan") or {}
                 if year and str((plan.get("time") or {}).get("range")) != year:
@@ -137,7 +152,8 @@ def incomplete_metrics(evidence: Any, question: str, frame: Any = None) -> list[
                 grain = (plan.get("time") or {}).get("grain")
                 if year and grain and not asks_series:
                     continue
-                if not {match["metric"], *dimensions} <= set(table["columns"]):
+                columns = {str(column).rsplit(".", 1)[-1] for column in table["columns"]}
+                if not {match["metric"], *dimensions} <= set(table["columns"]) | columns:
                     continue
                 covered = True
                 break
@@ -145,4 +161,20 @@ def incomplete_metrics(evidence: Any, question: str, frame: Any = None) -> list[
                 break
         if not covered:
             missing.append(alias)
+    # Any owner may answer a requested grouping, as any owner may answer a measure.
+    owner_ids = {agent["agent_id"] for agent in owners}
+    answered = {
+        dimension
+        for item in evidence.items
+        if item.metadata.get("source_agent_id") in owner_ids
+        and evidence.business_tables.get(item.evidence_id)
+        for dimension in _grouped_by(item.metadata)
+    }
+    requested_dimensions = dict.fromkeys(
+        dimension for agent in owners for dimension in agent.get("dimension_matches", [])
+    )
+    missing.extend(
+        f"by {dimension.replace('_', ' ')}"
+        for dimension in requested_dimensions if dimension not in answered
+    )
     return missing

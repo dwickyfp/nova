@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
-import { VizView, formatMeasure } from "./viz-view";
+import { VizView, dateTick, formatMeasure } from "./viz-view";
 import type { PresModel } from "./types";
 
 function presmodel(overrides: Partial<PresModel> = {}): PresModel {
@@ -9,8 +9,24 @@ function presmodel(overrides: Partial<PresModel> = {}): PresModel {
     title: "Revenue by region",
     mark: "bar",
     columns: [
-      { name: "region", field: "region", field_type: "nominal", role: "dimension", aggregation: null, discrete: true, label: "region" },
-      { name: "sum(revenue)", field: "revenue", field_type: "quantitative", role: "measure", aggregation: "sum", discrete: false, label: "sum(revenue)" },
+      {
+        name: "region",
+        field: "region",
+        field_type: "nominal",
+        role: "dimension",
+        aggregation: null,
+        discrete: true,
+        label: "region",
+      },
+      {
+        name: "sum(revenue)",
+        field: "revenue",
+        field_type: "quantitative",
+        role: "measure",
+        aggregation: "sum",
+        discrete: false,
+        label: "sum(revenue)",
+      },
     ],
     rows: [
       ["East", 391],
@@ -18,8 +34,18 @@ function presmodel(overrides: Partial<PresModel> = {}): PresModel {
     ],
     row_count: 2,
     axes: {
-      x: { field: "region", label: "region", field_type: "nominal", discrete: true },
-      y: { field: "sum(revenue)", label: "sum(revenue)", field_type: "quantitative", discrete: false },
+      x: {
+        field: "region",
+        label: "region",
+        field_type: "nominal",
+        discrete: true,
+      },
+      y: {
+        field: "sum(revenue)",
+        label: "sum(revenue)",
+        field_type: "quantitative",
+        discrete: false,
+      },
     },
     legend: { color: null },
     totals: { "sum(revenue)": 601.5 },
@@ -42,7 +68,13 @@ describe("VizView", () => {
       <VizView
         presmodel={presmodel({
           mark: "text",
-          legend: { color: { field: "sum(revenue)", kind: "quantitative", domain: [210.5, 391] } },
+          legend: {
+            color: {
+              field: "sum(revenue)",
+              kind: "quantitative",
+              domain: [210.5, 391],
+            },
+          },
         })}
       />,
     );
@@ -51,9 +83,70 @@ describe("VizView", () => {
     await expect.element(screen.getByText("391")).toBeVisible();
   });
 
+  it("draws a forecast and its bounds in one pane with a legend", async () => {
+    const measure = (name: string) => ({
+      name: `avg(${name})`,
+      field: name,
+      field_type: "quantitative" as const,
+      role: "measure" as const,
+      aggregation: "avg" as const,
+      discrete: false,
+      label: `avg(${name})`,
+    });
+    const screen = await render(
+      <VizView
+        presmodel={presmodel({
+          title: "Forecast",
+          mark: "line",
+          columns: [
+            {
+              name: "timestamp",
+              field: "timestamp",
+              field_type: "temporal",
+              role: "dimension",
+              aggregation: null,
+              discrete: true,
+              label: "timestamp",
+            },
+            measure("prediction"),
+            measure("lower_bound"),
+            measure("upper_bound"),
+          ],
+          rows: [
+            ["2026-11-05T00:00:00+00:00", 344, 255, 433],
+            ["2026-11-06T00:00:00+00:00", 300, 220, 390],
+          ],
+          row_count: 2,
+          axes: {
+            x: {
+              field: "timestamp",
+              label: "timestamp",
+              field_type: "temporal",
+              discrete: true,
+            },
+            y: {
+              field: "avg(prediction)",
+              label: "avg(prediction)",
+              field_type: "quantitative",
+              discrete: false,
+            },
+          },
+          totals: {},
+        })}
+      />,
+    );
+    await expect.element(screen.getByRole("listitem").first()).toBeVisible();
+    expect(screen.container.querySelectorAll("li")).toHaveLength(3);
+    expect(screen.container.textContent).not.toContain("AVG(");
+  });
+
   it("explains itself when the worksheet returned no marks", async () => {
-    const screen = await render(<VizView presmodel={presmodel({ rows: [], row_count: 0 })} />);
-    await expect.element(screen.getByText("The worksheet returned no marks.")).toBeVisible();
+    const screen = await render(
+      <VizView presmodel={presmodel({ rows: [], row_count: 0 })} />,
+    );
+    await expect
+      .element(screen.getByText("The worksheet returned no marks."))
+      .toBeVisible();
   });
 });
 
@@ -69,5 +162,14 @@ describe("formatMeasure", () => {
     expect(formatMeasure(2_400_000)).toBe("2.4M");
     expect(formatMeasure(5_100_000_000)).toBe("5.1B");
     expect(formatMeasure(null)).toBe("–");
+  });
+});
+
+describe("dateTick", () => {
+  it("reads a timestamp as a date", () => {
+    expect(dateTick("2026-11-09T00:00:00+00:00")).toBe("9 Nov 2026");
+    expect(dateTick("2026-11")).toBe("Nov 2026");
+    expect(dateTick("2026-11-09 14:30:00")).toBe("9 Nov 2026 14:30");
+    expect(dateTick("East")).toBe("East");
   });
 });

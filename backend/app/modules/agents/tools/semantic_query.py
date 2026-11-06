@@ -32,6 +32,7 @@ import logging
 import re
 import time
 from dataclasses import replace
+from dataclasses import replace as dataclass_replace
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -84,7 +85,8 @@ _PARAMETERS = {
             "description": (
                 "The business question to answer from the semantic model, in "
                 "natural language. Example: 'revenue by region in the previous quarter'. "
-                "Keep the user's limits, thresholds, and periods. Ask for every metric "
+                "Keep the user's limits, thresholds, and periods, and add none they did "
+                "not state (no 'today' or 'this month' of your own). Ask for every metric "
                 "in one question ('marketing spend and revenue by channel this month'): "
                 "Nova joins metrics from different facts on their shared dimensions."
             ),
@@ -153,6 +155,32 @@ class SemanticQueryTool:
         return attach_evidence_health(
             outcome, assess_evidence(facts, assessed_at=datetime.now(UTC))
         )
+
+    async def primary_plan_usable(self, context: Any) -> bool:
+        """Whether the turn planner's plan for the first query passes validation.
+
+        Studio runs the first query before the model's first call only from such a
+        plan; otherwise the model writes its own data question. A rejected plan
+        would otherwise be planned again from the whole request (steps, maps and
+        all), which the catalog cannot answer.
+        """
+        from app.modules.agents.semantic.model_planner import primary_plan_from
+
+        primary = getattr(context, "primary_plan", None)
+        if not isinstance(primary, dict) or not isinstance(primary.get("plan"), dict):
+            return False
+        # The same view the query itself would use: the planner's, by name.
+        model = await self._resolve_model(context, "")
+        if model is None or (
+            primary.get("view") not in {None, str(model.get("semantic_model_id") or "")}
+            and primary.get("view") != model.get("name")
+        ):
+            return False
+        definition = model.get("definition") or {}
+        if not isinstance(definition, dict) or not definition.get("datasets"):
+            return False
+        semantic_ir = model.get("_scoped_ir") or SemanticModelIR.from_ossie(definition)
+        return primary_plan_from(primary["plan"], semantic_ir) is not None
 
     async def _run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         question = _question_from(invocation)
@@ -265,8 +293,17 @@ class SemanticQueryTool:
                     business_concepts=grounding.planner_hints(),
                 )
             material = [item.text for item in plan.unresolved_concepts if item.material]
-            if material:
-                return _clarification(semantic_ir, material)
+            uncovered: list[str] = []
+            if material and plan.metrics and _multi_step(context):
+                # A turn with steps after its query (a model, a chart, a comparison)
+                # asks with all of them in it. The data part that resolved runs; the
+                # rest is named, for the agent's other tools or another query.
+                uncovered = material
+                plan = dataclass_replace(plan, unresolved_concepts=tuple(
+                    item for item in plan.unresolved_concepts if not item.material
+                ))
+            elif material:
+                return _clarification(semantic_ir, material, specialist=_specialist(context))
             notes: list[str] = []
             if first_query and frame is not None:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
@@ -313,7 +350,7 @@ class SemanticQueryTool:
                 error="The semantic plan could not be compiled safely.",
                 error_class="INVALID_SEMANTIC_PLAN",
                 recoverable=True,
-                safe_detail=str(exc),
+                safe_detail=str(exc) + (" " + _SPECIALIST_RETRY if _specialist(context) else ""),
                 repair_context={
                     "available_metrics": [item.name for item in semantic_ir.metrics],
                     "available_dimensions": [
@@ -336,6 +373,12 @@ class SemanticQueryTool:
 
         sql = compiled.sql
         explanation = "Compiled from governed semantic metrics and dimensions."
+        if uncovered:
+            explanation += (
+                " This query answers the data part only. Not covered by it: "
+                + "; ".join(uncovered)[:600]
+                + ". Run those steps with your other tools, or ask another query per part."
+            )
         # Where the plan came from, not a model's opinion of itself: a verified
         # query is exact, a validated plan is the model's reading of the question.
         plan_source: PlanSource = "verified_query" if verified_hit else (
@@ -636,13 +679,40 @@ class SemanticQueryTool:
         # The view is chosen by name: the turn planner's primary view, or the one
         # the loop model names. Word overlap with the question is not a choice.
         primary = getattr(context, "primary_plan", None) or {}
-        wanted = getattr(context, "requested_semantic_view", None) or primary.get("view")
-        chosen = next(
-            (model for model in models
-             if wanted and wanted in {str(model["semantic_model_id"]), str(model.get("name"))}),
-            None,
-        )
-        return chosen or (models[0] if models else None)
+        # In order: the view the loop model named (when it exists), the one view whose
+        # declared metrics the question names ("planned vs actual distance"), and the
+        # turn planner's view. A made-up view name falls through to the next.
+        for wanted in (
+            getattr(context, "requested_semantic_view", None),
+            _view_naming_metric(models, question),
+            primary.get("view"),
+        ):
+            chosen = next(
+                (model for model in models
+                 if wanted and wanted in {str(model["semantic_model_id"]), str(model.get("name"))}),
+                None,
+            )
+            if chosen is not None:
+                return chosen
+        return models[0] if models else None
+
+
+def _view_naming_metric(models: list[dict[str, Any]], question: str) -> str | None:
+    """The one view whose declared metric names or synonyms the question uses."""
+    from app.modules.agents.auto_planner import matched_alias
+
+    hits = []
+    for model in models:
+        definition = model.get("definition")
+        if isinstance(definition, str):
+            try:
+                definition = json.loads(definition)
+            except ValueError:
+                continue
+        metrics = (definition or {}).get("metrics") or []
+        if any(isinstance(metric, dict) and matched_alias(question, metric) for metric in metrics):
+            hits.append(str(model["semantic_model_id"]))
+    return hits[0] if len(hits) == 1 else None
 
 
 def reconcile_with_frame(
@@ -794,7 +864,40 @@ def _prior_plan(model: SemanticModelIR, context: Any) -> SemanticPlan | None:
     return None if validate_plan(model, plan) else plan
 
 
-def _clarification(model: SemanticModelIR, unresolved: list[str]) -> ToolOutcome:
+#: A Smart specialist works on a teammate's task: there is no user to ask.
+_SPECIALIST_RETRY = (
+    "You work on a teammate's task, so there is no user to ask. Call semantic_query "
+    "again with only the data the task needs: the named measures by the fields of what "
+    "is analysed (for outlets: name, latitude, longitude), filtered by the place or "
+    "period named, without analysis steps. Run clustering, forecasts or "
+    "route_optimization with ml_execute and charts with data_to_chart. Report a limit "
+    "only when that data is not in the catalog."
+)
+
+
+#: Tools that work on a query's result: a turn that selected one has steps after it.
+_RESULT_STEPS = frozenset({"ml_execute", "data_to_chart", "compute_metrics", "diagnose_change"})
+
+
+def _multi_step(context: Any) -> bool:
+    """Whether this turn does more than one query: a model, chart or comparison after it."""
+    route = getattr(context, "route", None) or {}
+    return bool(
+        route.get("intent") in {"machine_learning", "compound_analytics"}
+        or route.get("ml_task") or route.get("needs_ml") or route.get("needs_chart")
+        or _RESULT_STEPS & set(getattr(context, "selected_tools", None) or ())
+    )
+
+
+def _specialist(context: Any) -> bool:
+    return bool(getattr(context, "collaboration_tools", None)) and not getattr(
+        context, "collaboration_root", False
+    )
+
+
+def _clarification(
+    model: SemanticModelIR, unresolved: list[str], *, specialist: bool = False
+) -> ToolOutcome:
     """A request the catalog cannot express is a question back, not a failure."""
     return ToolOutcome(
         ok=False,
@@ -805,8 +908,12 @@ def _clarification(model: SemanticModelIR, unresolved: list[str]) -> ToolOutcome
         safe_detail=(
             "These parts of the request are not covered by the Semantic View: "
             + ", ".join(unresolved)
-            + ". Ask the user one short question in their language, naming what "
-            "is available instead. Do not guess a value."
+            + ". "
+            + (
+                _SPECIALIST_RETRY if specialist else
+                "Ask the user one short question in their language, naming what "
+                "is available instead. Do not guess a value."
+            )
         ),
         repair_context={
             "unresolved": unresolved,

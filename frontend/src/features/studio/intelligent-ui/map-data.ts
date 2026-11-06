@@ -1,5 +1,6 @@
 import { geoFeatures, parseGeometry } from "./geometry";
 import type { MapOptions } from "./map-options";
+import { stopOrder } from "./route-data";
 
 export function mapData(
   rows: Record<string, unknown>[],
@@ -15,8 +16,11 @@ export function mapData(
   data.collection.features = data.collection.features.filter((feature) => {
     const row = rows[Number(feature.id)];
     let valid = true;
+    // A route is a supplied line, or located stops joined in their stated order.
     if (options.layer === "route")
-      valid = feature.geometry.type === "LineString";
+      valid = options.sequence
+        ? feature.geometry.type === "Point" && stopOrder(row[options.sequence]) !== null
+        : feature.geometry.type === "LineString";
     if (options.layer === "arc") {
       const destination = geoFeatures([row], {
         longitude: options.toLongitude,

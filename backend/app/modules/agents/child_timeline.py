@@ -12,7 +12,8 @@ from app.modules.assistant.tools.redaction import is_credential_value
 
 def safe_public_text(value: Any, limit: int) -> str:
     try:
-        safe = redact_sql_credentials(str(value or ""))
+        # Only a missing value is empty: a 0 or False cell is data.
+        safe = redact_sql_credentials("" if value is None else str(value))
     except CredentialsRedactionError:
         return "[redacted]"
     if contains_credential_shape(safe) or is_credential_value(safe):

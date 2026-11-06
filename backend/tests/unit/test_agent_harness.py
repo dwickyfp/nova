@@ -295,6 +295,57 @@ async def test_ml_tool_redacts_table_and_provider_data(monkeypatch) -> None:
     assert "sk-abcdefghijklmnopqrst" not in envelope
 
 
+@pytest.mark.asyncio
+async def test_ml_tool_maps_the_models_column_names_to_the_governed_result(monkeypatch) -> None:
+    from app.modules.agents.tools import ml_execute as ml_module
+
+    execute = AsyncMock(return_value=SimpleNamespace(
+        run_id="ml-run", task="forecast", mode="balanced", selected_algorithm="AutoETS",
+        selected_engine="statsforecast", training_rows=90, cache_hit=False, results=[],
+    ))
+    monkeypatch.setattr(ml_module, "decrypt_password", lambda _value: "decrypted")
+    monkeypatch.setattr(ml_module.ml_engine_service, "execute", execute)
+    context = SimpleNamespace(
+        user={"username": "alice", "encrypted_password": "encrypted"},
+        evidence_sql={"evidence_1": "SELECT 1"},
+        evidence_tables={"evidence_1": {"columns": ["sales_orders.order_date", "units_sold"]}},
+    )
+    arguments = {"task": "forecast", "evidence_id": "evidence_1", "timestamp": "order_date",
+                 "target": "units_sold", "horizon": 30}
+    outcome = await ml_module.MLExecuteTool().run(
+        ToolInvocation("call", "ml_execute", arguments), context,
+    )
+    assert outcome.ok, outcome.error
+    spec = execute.await_args.args[0]
+    assert spec.timestamp_column == "sales_orders.order_date"
+    assert spec.target_column == "units_sold"
+
+    missing = await ml_module.MLExecuteTool().run(
+        ToolInvocation("call", "ml_execute", {**arguments, "target": "net_revenue"}), context,
+    )
+    assert not missing.ok and missing.recoverable
+    assert missing.repair_context == {"columns": ["sales_orders.order_date", "units_sold"]}
+    assert "net_revenue" in missing.safe_detail
+
+    routes = await ml_module.MLExecuteTool().run(
+        ToolInvocation("call", "ml_execute", {
+            "task": "route_optimization", "evidence_id": "evidence_1", "series": "cluster",
+            "latitude": "units_sold", "longitude": "units_sold",
+        }), context,
+    )
+    # A route request names the cluster it wants as a column: the repair says how.
+    assert not routes.ok and "parameters.clusters" in routes.safe_detail
+
+    from app.modules.ml_engine.spec import InvalidMLSpec
+
+    execute.side_effect = InvalidMLSpec("clusters must be between 2 and 8 for these stops")
+    failed = await ml_module.MLExecuteTool().run(
+        ToolInvocation("call", "ml_execute", arguments), context,
+    )
+    # Nova's own ML errors reach the model with what to change.
+    assert failed.recoverable and "clusters must be between 2 and 8" in failed.safe_detail
+
+
 def test_semantic_resolution_uses_declared_alias_and_ownership() -> None:
     finance = _candidate("finance", "finance", "recognized_revenue", ["omzet"])
     marketing = _candidate("marketing", "marketing", "attributed_revenue", ["campaign revenue"])
@@ -306,6 +357,15 @@ def test_semantic_resolution_uses_declared_alias_and_ownership() -> None:
         *semantic_matches("omzet", [finance]),
         *semantic_matches("campaign revenue", [marketing]),
     ]
+
+
+def test_semantic_resolution_prefers_the_longest_alias() -> None:
+    amount = _candidate("sales", "sales", "discount_amount", ["diskon"])
+    average = _candidate("sales", "sales", "avg_discount_pct", ["rata-rata diskon"])
+    matches = semantic_matches("Salesman dengan rata-rata diskon tinggi", [amount, average])
+    assert [m["metric"] for m in matches] == ["avg_discount_pct"]
+    both = semantic_matches("Total diskon dan rata-rata diskon", [amount, average])
+    assert [m["metric"] for m in both] == ["discount_amount", "avg_discount_pct"]
 
 
 def test_ossie_preserves_metric_business_ownership() -> None:
@@ -2209,6 +2269,32 @@ async def test_stale_recovery_skips_a_run_whose_write_lock_is_held(monkeypatch) 
     repo.get = AsyncMock(side_effect=lambda run_id: _run(run_id, depth=0))
     # A lock left by a worker that died mid-write must not stop recovery or the worker.
     assert await repo.recover_stale() == ["free"]
+
+
+@pytest.mark.asyncio
+async def test_stale_recovery_survives_a_held_event_lock(monkeypatch) -> None:
+    from redis.exceptions import LockError
+
+    from app.modules.agents import harness_repository as module
+
+    async def execute(sql: str, params=None):
+        return {"rows": [["root", None], ["other", None]]}
+
+    monkeypatch.setattr(module.db, "execute_system", execute)
+    monkeypatch.setattr(module, "_update_run", AsyncMock(return_value={"affected": 1}))
+    repo = HarnessRepository()
+
+    async def event(root_run_id, run_id, *_args):
+        if run_id == "root":
+            raise LockError("Unable to acquire lock within the time specified")
+        return "0"
+
+    repo.event = event
+    repo.wake_parent = AsyncMock(return_value=True)
+    repo.get = AsyncMock(side_effect=lambda run_id: _run(run_id, depth=0))
+    # A worker killed mid-event leaves the root's event lock held: the run is still
+    # requeued and the next run is recovered, instead of the worker exiting.
+    assert await repo.recover_stale() == ["root", "other"]
 
 
 @pytest.mark.asyncio

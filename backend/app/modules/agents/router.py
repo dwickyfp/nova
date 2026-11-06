@@ -1604,9 +1604,11 @@ async def update_agent(
     await validate_resources(fields, user)
     await _normalize_view_binding(fields, provided=body.model_fields_set, user=user)
     fields["harness_mode"] = "auto"
-    fields["default_tools"] = [
-        tool for tool in fields.get("default_tools") or [] if tool not in RETIRED_TOOLS
-    ]
+    # A partial update keeps the tools it does not mention.
+    if "default_tools" in fields:
+        fields["default_tools"] = [
+            tool for tool in fields.get("default_tools") or [] if tool not in RETIRED_TOOLS
+        ]
     unknown = _unknown_tools(fields.get("default_tools") or [])
     if unknown:
         raise HTTPException(

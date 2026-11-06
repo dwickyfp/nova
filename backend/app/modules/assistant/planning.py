@@ -69,6 +69,7 @@ _PLAN_SCHEMA: dict[str, Any] = {
                 "anomaly_detection",
                 "classification",
                 "regression",
+                "route_optimization",
             ],
         },
     },
@@ -79,12 +80,15 @@ _PLAN_SCHEMA: dict[str, Any] = {
 
 _PRIMARY_PLAN_RULES = (
     "semantic_context lists the Semantic Views this agent may query, with their "
-    "catalogs and the planning rules. When the intent is semantic_analytics or "
-    "compound_analytics and semantic_query is required, also write primary_plan: the "
-    "SemanticPlan for the first query that answers the user as asked, following "
-    "semantic_context.rules and using only names from the chosen view's catalog, and "
-    "set primary_view to that view. Leave both null otherwise, and when the question "
-    "cannot be expressed with the catalog."
+    "catalogs and the planning rules. When the intent is semantic_analytics, "
+    "compound_analytics or machine_learning and semantic_query is required, also write "
+    "primary_plan: the SemanticPlan for the first query that answers the user as asked "
+    "(for machine_learning, the data its model step needs: the things analysed, one row "
+    "each, with their measure, location or time, e.g. each outlet's name, latitude, "
+    "longitude and purchase volume for a route), following semantic_context.rules and "
+    "using only names from the chosen view's catalog, and set primary_view to that "
+    "view. Leave both null otherwise, and when the question cannot be expressed with "
+    "the catalog."
 )
 
 
@@ -130,7 +134,9 @@ def _output_instructions(schema: dict[str, Any]) -> str:
         elif name == "ml_task":
             values = [value for value in definition["enum"] if value is not None]
             rules.append("ml_task: " + ", ".join(values)
-                         + ("; null when unnecessary." if None in definition["enum"] else "."))
+                         + ("; null when unnecessary." if None in definition["enum"] else ".")
+                         + " route_optimization is the best visiting order or delivery route"
+                         " (it can group stops into areas first).")
         elif name == "intent_frame":
             rules.append(INTENT_FRAME_RULES)
         elif name == "primary_plan":
@@ -149,12 +155,20 @@ def _output_instructions(schema: dict[str, Any]) -> str:
     return "\n".join(rules)
 
 
+#: Tools that coordinate other agents; they never answer a data task themselves.
+_COORDINATION_TOOLS = frozenset({
+    "discover_agents", "spawn_agent", "wait_agent", "list_agents", "send_message",
+    "followup_task", "interrupt_agent",
+})
+
+
 def validate_turn_plan(
     value: Any,
     available_tools: set[str],
     available_skills: set[str] | None = None,
     *,
     studio: bool = False,
+    delegated: bool = False,
 ) -> TurnPlan:
     if not isinstance(value, dict):
         raise TurnPlanningError("The provider did not return a turn plan.")
@@ -213,6 +227,19 @@ def validate_turn_plan(
         raise TurnPlanningError("An action request needs a required action tool.")
     if intent == TurnIntent.CLARIFICATION and tools:
         raise TurnPlanningError("A clarification turn cannot run tools.")
+    if (
+        delegated and intent in _DATA_INTENTS and "semantic_query" in available_tools
+        and not set(required) - _COORDINATION_TOOLS
+    ):
+        raise TurnPlanningError(
+            "A delegated specialist works its own data: require semantic_query (and "
+            "ml_execute or data_to_chart for the steps it names), not only coordination tools."
+        )
+    if intent == TurnIntent.CLARIFICATION and delegated:
+        raise TurnPlanningError(
+            "This is a task delegated by another agent: there is no user to ask. Plan the "
+            "data work it can do with the listed tools."
+        )
     ml_task = value.get("ml_task")
     if ml_task not in {
         None,
@@ -221,6 +248,7 @@ def validate_turn_plan(
         "anomaly_detection",
         "classification",
         "regression",
+        "route_optimization",
     }:
         raise TurnPlanningError("The provider returned an unknown ML task.")
     primary_plan = value.get("primary_plan")
@@ -297,14 +325,20 @@ _STUDIO_INSTRUCTIONS = (
     "compound_analytics: several analyses in one request ('why did revenue drop?' needs "
     "the change and its breakdown). Require the data tool; allow compute_metrics, "
     "diagnose_change, and data_to_chart.\n"
-    "machine_learning: an actual forecast, anomaly, clustering or classification run; "
-    "require ml_execute. A request to forecast, predict, project, or find anomalies is "
-    "machine_learning whenever ml_execute is in the catalog, even when it also asks for "
-    "the history it is based on; it is never semantic_analytics.\n"
+    "machine_learning: an actual forecast, anomaly, clustering, classification or "
+    "route_optimization run; require the data tool and ml_execute. A request to "
+    "forecast, predict, project, or find anomalies is machine_learning whenever "
+    "ml_execute is in the catalog, even when it also asks for the history it is based "
+    "on; it is never semantic_analytics. A best delivery route, visit order, or "
+    "grouping stops into delivery areas ('rute terbaik', 'urutan kunjungan') is "
+    "machine_learning with ml_task route_optimization, also when it asks for a map or "
+    "other figures beside it.\n"
     "semantic_search: finding documents or entity names through ai_search or "
     "semantic_search.\n"
     "clarification: an essential target cannot be identified from the request or the "
-    "recent conversation. If the requested business data is outside the agent's scope, "
+    "recent conversation. A detailed request with several parts is never a "
+    "clarification: plan the parts the tools can do. If the requested business data "
+    "is outside the agent's scope, "
     "prefer semantic_analytics so the governed tool can state what is missing, unless "
     "no data tool exists.\n"
     "ui_operation: the user asks to schedule a recurring report or an alert ('jadikan "
@@ -457,6 +491,7 @@ async def plan_turn(
     conversation_context: list[dict[str, str]] | None = None,
     agent_scope: dict[str, Any] | None = None,
     semantic_context: dict[str, Any] | None = None,
+    delegated: bool = False,
 ) -> TurnPlan:
     available = registry.names()
     skill_names = set(registry.discoverable_skills)
@@ -464,7 +499,8 @@ async def plan_turn(
     if callable(scripted_plan):
         value = await scripted_plan(user_content=user_content, available_tools=available)
         plan = validate_turn_plan(
-            value, set(available), skill_names, studio=agent_scope is not None
+            value, set(available), skill_names, studio=agent_scope is not None,
+            delegated=delegated,
         )
         return plan
     catalog = [
@@ -477,6 +513,12 @@ async def plan_turn(
     instructions = _STUDIO_INSTRUCTIONS if agent_scope is not None else _nove_instructions()
     if agent_scope is not None and agent_scope.get("smart"):
         instructions += _SMART_INSTRUCTIONS
+    if delegated:
+        instructions += (
+            "\nThis request is a task another agent delegated to this specialist. There is "
+            "no user to ask, so never choose clarification: plan the data work its tools can "
+            "do (query the data, then run any ML or chart step it names)."
+        )
     schema = _plan_schema(semantic_context)
     instructions += "\n" + _output_instructions(schema)
     messages = [
@@ -521,7 +563,7 @@ async def plan_turn(
         try:
             return validate_turn_plan(
                 _read_json(message.get("content")), set(available), skill_names,
-                studio=agent_scope is not None,
+                studio=agent_scope is not None, delegated=delegated,
             )
         except TurnPlanningError as exc:
             if attempt:

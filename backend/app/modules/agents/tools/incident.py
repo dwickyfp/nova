@@ -40,7 +40,11 @@ def _incident_id(context, requested: str | None) -> str:
 
 
 def _failure(exc: Exception) -> ToolOutcome:
-    return ToolOutcome(ok=False, summary="", error=str(getattr(exc, "detail", exc)))
+    detail = str(getattr(exc, "detail", exc))
+    # A missing incident is the model's choice of tool, not a fault of the turn.
+    return ToolOutcome(ok=False, summary="", error=detail,
+                       recoverable=detail.startswith("No incident is attached"),
+                       safe_detail=detail if detail.startswith("No incident") else None)
 
 
 class IncidentContextTool:

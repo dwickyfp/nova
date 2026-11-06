@@ -81,3 +81,29 @@ it("binds a stored Auto turn to its own root instead of the latest root", () => 
   expect(rootRunForTurn({ id: "turn-3", question: "Compare 2024", state: "done" }, runs, [...turns, { id: "turn-3", question: "Compare 2024" }], "active")).toBe("active");
   expect(rootRunForTurn({ id: "other", question: "Different question", state: "done" }, runs, [{ id: "other", question: "Different question" }], null)).toBeNull();
 });
+
+it("leaves Main's own lifecycle and setup to the header, so no row spins beside its steps", () => {
+  const rows = autoRunSteps([
+    event(1, "root", "agent_queued"),
+    event(2, "root", "agent_started"),
+    event(3, "root", "child_activity", {
+      event_type: "thinking", phase: "plan", text: "Access verified. Specialist run prepared",
+    }),
+    event(4, "root", "child_activity", { event_type: "tool_call", tool_name: "discover_agents" }),
+    event(5, "route", "agent_queued", { agent_name: "Route Planner", objective: "Order visits" }),
+    event(6, "route", "agent_started"),
+  ], "root", []);
+  expect(rows.map((row) => row.text)).toEqual([
+    "Main called discover_agents", "Called Route Planner", "Route Planner started working",
+  ]);
+  expect(rows.some((row) => row.text.includes("Access verified"))).toBe(false);
+});
+
+it("a wait ends when Main resumes, so it does not spin beside later steps", () => {
+  const rows = autoRunSteps([
+    event(1, "root", "agent_waiting"),
+    event(2, "root", "agent_resumed"),
+    event(3, "root", "child_activity", { event_type: "tool_call", tool_name: "list_agents" }),
+  ], "root", []);
+  expect(rows.find((row) => row.label === "waiting")?.status).toBe("done");
+});

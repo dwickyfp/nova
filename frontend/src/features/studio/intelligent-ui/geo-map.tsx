@@ -20,9 +20,20 @@ import { MapSurface } from "./map-surface";
 import { NodeArtifactButton } from "./artifact-button";
 import { UiRuntimeContext } from "./runtime-context";
 import LegacyGeoMap from "./geo-map-legacy";
+import RouteStopsMap from "./route-stops-map";
 
 export default function GeoMap({ p }: { p: Record<string, unknown> }) {
   if (!MAPCN_ENABLED) return <LegacyGeoMap p={p} />;
+  const options = mapOptionsSchema.safeParse(p.options ?? {});
+  // Ordered stops are drawn as routes: one line per route, numbered stops.
+  if (options.success && options.data.layer === "route" && options.data.sequence && !p.geometry)
+    return (
+      <RouteStopsMap
+        p={p}
+        rows={Array.isArray(p.data) ? (p.data as Record<string, unknown>[]) : []}
+        options={{ ...options.data, sequence: options.data.sequence }}
+      />
+    );
   return <MapcnGeoMap p={p} />;
 }
 
@@ -98,7 +109,9 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
       aria-label={String(p.title ?? "Business map")}
     >
       <div className="flex min-h-7 items-center gap-2">
-        <p className="min-w-0 flex-1 text-sm font-medium">{String(p.title ?? "Business map")}</p>
+        <p className="min-w-0 flex-1 text-sm font-medium">
+          {String(p.title ?? "Business map")}
+        </p>
         <NodeArtifactButton
           data={p.data}
           noun="map"
@@ -235,8 +248,7 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
             ? "Loading map. "
             : ""}
         {data.collection.features.length} mapped; {data.invalid} invalid;{" "}
-        {data.omitted} omitted by display limits. Overview basemap. Locations
-        stay in Nova.
+        {data.omitted} omitted by display limits.
       </p>
       {options.layer === "arc" && (
         <p className="text-xs text-muted-foreground">

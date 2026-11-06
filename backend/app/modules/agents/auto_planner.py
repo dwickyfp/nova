@@ -87,10 +87,12 @@ def _terms(text: str) -> set[str]:
     return set(re.findall(r"\w+", text.casefold(), flags=re.UNICODE))
 
 
-def matched_alias(question: str, field: dict[str, Any]) -> str | None:
-    def normalize(value: str) -> str:
-        return " ".join(re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE))
+def _normalize(value: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE))
 
+
+def matched_alias(question: str, field: dict[str, Any]) -> str | None:
+    normalize = _normalize
     normalized = " " + normalize(question) + " "
     return next((alias for alias in [field.get("name"), *(field.get("synonyms") or [])]
                  if isinstance(alias, str) and normalize(alias)
@@ -113,7 +115,26 @@ def semantic_matches(question: str, candidates: list[Candidate]) -> list[dict[st
                     "supporting_domains": metric.get("supporting_domains") or [],
                     "authority": metric.get("authority"),
                 }
-    return list(matches.values())[:32]
+    return _longest_aliases(question, list(matches.values()))[:32]
+
+
+def _longest_aliases(question: str, matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop a match whose alias appears only inside a longer matched alias.
+
+    "rata-rata diskon" names the average discount; the bare "diskon" inside it
+    does not also ask for the discount amount.
+    """
+    aliases = {_normalize(str(match["matched_alias"])) for match in matches}
+    kept = []
+    for match in matches:
+        alias = _normalize(str(match["matched_alias"]))
+        remaining = " " + _normalize(question) + " "
+        for longer in sorted(aliases, key=len, reverse=True):
+            if len(longer) > len(alias) and f" {alias} " in f" {longer} ":
+                remaining = remaining.replace(f" {longer} ", " | ")
+        if f" {alias} " in remaining:
+            kept.append(match)
+    return kept
 
 
 def rank_candidates(

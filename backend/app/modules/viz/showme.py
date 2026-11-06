@@ -212,7 +212,11 @@ def _is_date_like(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     return bool(
-        re.match(r"^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2}(:\d{2})?)?$", value.strip())
+        re.match(
+            r"^\d{4}-\d{2}(-\d{2})?"
+            r"([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$",
+            value.strip(),
+        )
         and value.strip()[:2] in _DATE_PREFIXES
     )
 
