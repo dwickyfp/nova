@@ -3159,6 +3159,11 @@ def _verify_tool_outcome(tool_name: str, outcome: Any) -> str | None:
         data = outcome.data if isinstance(outcome.data, dict) else {}
         if not data.get("semantic_plan") or not data.get("sql"):
             return "The semantic query returned no validated plan or compiled SQL."
+    elif tool_name == "knowledge_propose":
+        data = outcome.data if isinstance(outcome.data, dict) else {}
+        recorded = {"PENDING", "APPROVED", "APPLIED"}
+        if not data.get("proposal_id") or data.get("status") not in recorded:
+            return "The proposal was not recorded for steward review."
     elif tool_name == "data_to_chart" and not outcome.chart:
         return "The chart tool returned no chart artifact."
     elif tool_name == "ml_execute":

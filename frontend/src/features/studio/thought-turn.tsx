@@ -1,6 +1,7 @@
 import { processSummary } from "./process-summary";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { highlightExplorerSql as highlightSql } from "@/features/database-explorer/sql-highlighter";
+import { isSqlPreview } from "./tool-preview";
 import { formatArtifactSql } from "./artifact-source";
 import {
   BookOpen,
@@ -590,7 +591,7 @@ function StepRow({ step, text, span, now, quietLive = false, onOpenChild }: {
             {step.kind === "tool" ? (
               <p className="font-mono text-xs text-muted-foreground">{step.label}</p>
             ) : null}
-            {step.preview ? <SqlDisclosure preview={step.preview} /> : null}
+            {step.preview ? <ToolPreview preview={step.preview} /> : null}
             {detail ? <ReasoningBody text={detail} /> : null}
             {body ? <ReasoningBody text={body} /> : null}
           </div>
@@ -609,6 +610,17 @@ export function ReasoningBody({ text }: { text: string }) {
     <p className="border-l border-border pl-3 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
       {text}
     </p>
+  );
+}
+
+/**
+ * What a tool step will do or did: its statement when it ran SQL, otherwise the
+ * tool's own sentence, which is not code and must not be highlighted as SQL.
+ */
+export function ToolPreview({ preview }: { preview: string }) {
+  if (isSqlPreview(preview)) return <SqlDisclosure preview={preview} />;
+  return (
+    <p className="text-sm leading-relaxed break-words text-muted-foreground">{preview}</p>
   );
 }
 

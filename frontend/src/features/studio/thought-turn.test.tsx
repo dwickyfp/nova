@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { page } from "vitest/browser";
-import { ProcessRail, SqlDisclosure, type RailStep } from "./thought-turn";
+import { ProcessRail, SqlDisclosure, ToolPreview, type RailStep } from "./thought-turn";
+import { isSqlPreview } from "./tool-preview";
 
 describe("SQL disclosure", () => {
   const preview =
@@ -28,6 +29,27 @@ describe("SQL disclosure", () => {
 
     await getByRole("button", { name: "Copy SQL" }).click();
     expect(writeText).toHaveBeenCalledWith(preview);
+  });
+});
+
+describe("tool preview", () => {
+  it("highlights only previews that are SQL statements", () => {
+    expect(isSqlPreview("SELECT 1")).toBe(true);
+    expect(isSqlPreview("  (select 1) union all (select 2)")).toBe(true);
+    expect(isSqlPreview("-- revenue\nwith t as (select 1) select * from t")).toBe(true);
+    expect(isSqlPreview("Propose a change to a business definition for steward review")).toBe(false);
+    expect(isSqlPreview("semantic_query: Berapa omzet per region?")).toBe(false);
+    expect(isSqlPreview("Look up approved business definitions")).toBe(false);
+  });
+
+  it("shows a tool sentence as text without a SQL label", async () => {
+    const { container } = await render(
+      <ToolPreview preview="Propose a change to a business definition for steward review" />,
+    );
+    const root = container as HTMLElement;
+    expect(root.querySelector("pre")).toBeNull();
+    expect(root.textContent).toBe("Propose a change to a business definition for steward review");
+    expect(root.querySelector('[aria-label="Copy SQL"]')).toBeNull();
   });
 });
 

@@ -3,6 +3,7 @@ import { Loader2, ShieldQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ToolCallView } from "@/features/assistant/types";
+import { isSqlPreview } from "./tool-preview";
 
 /**
  * The approval card for a tool call that needs consent.
@@ -58,10 +59,14 @@ export function ConsentCard({
             <span className="font-mono text-xs">{call.tool_name}</span>
             {destructive ? " which changes data." : "."}
           </p>
-          {call.sql_preview ? (
+          {call.sql_preview && isSqlPreview(call.sql_preview) ? (
             <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/40 p-2 text-xs leading-relaxed">
               <code className="font-mono">{call.sql_preview}</code>
             </pre>
+          ) : call.sql_preview ? (
+            <p className="mt-1 text-sm break-words text-muted-foreground">
+              {call.sql_preview}
+            </p>
           ) : null}
 
           <div className="mt-3 flex flex-wrap gap-2">

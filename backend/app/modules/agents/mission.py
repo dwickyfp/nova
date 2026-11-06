@@ -208,6 +208,43 @@ def default_steps(intent: WorkIntent) -> builtins.list[StageKind]:
     }[intent]
 
 
+#: Tool classifications whose successful call is the work an ACT mission asked for.
+CHANGING_TOOL_CLASSES = frozenset({"session_change", "destructive"})
+
+
+#: Changing tools whose success the shared loop checks against a persisted record
+#: before it reports ``done`` (``_verify_tool_outcome``), so that report also
+#: verifies the change. A filed ontology proposal is read back with its id and its
+#: in-review status; it waits for a steward, which is the expected next step.
+VERIFIED_CHANGE_TOOLS = frozenset({"knowledge_propose"})
+
+
+def _add_refs(stage: MissionStage, *refs: str | None) -> None:
+    for ref in refs:
+        if ref and ref not in stage.source_refs and len(stage.source_refs) < 100:
+            stage.source_refs.append(ref)
+
+
+def _touch_stage(
+    mission: Mission, kind: StageKind, status: MissionStageStatus, *refs: str | None
+) -> None:
+    stage = next((s for s in mission.stages if s.kind == kind), None)
+    if stage is None:
+        stage = MissionStage(kind=kind, label=STAGE_LABELS[kind])
+        mission.stages.append(stage)
+    if stage.status != "completed":
+        stage.status = status
+    _add_refs(stage, *refs)
+
+
+def _call_ref(run_id: str, payload: dict) -> str | None:
+    call_id = payload.get("tool_call_id")
+    if not isinstance(call_id, str) or not call_id:
+        return None
+    ref = f"call:{run_id}:{call_id}"
+    return ref if len(ref) <= 256 else None
+
+
 def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> None:
     """Copy only code-owned stage transitions and identifiers, never journal prose."""
     if kind == "child_activity":
@@ -236,17 +273,22 @@ def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> No
         stage_kind = StageKind.INVESTIGATE
     elif kind in {"approval_request", "consent_request"}:
         stage_kind = StageKind.APPROVE
+    elif kind == "tool_call" and payload.get("classification") in CHANGING_TOOL_CLASSES:
+        # A tool that files or changes something is the mission's execution step.
+        # Its call id is remembered so only that call's success can complete it.
+        change_ref = _call_ref(run_id, payload)
+        _touch_stage(mission, StageKind.EXECUTE, "running", run_id, change_ref)
+        if change_ref and payload.get("tool_name") in VERIFIED_CHANGE_TOOLS:
+            _touch_stage(mission, StageKind.VERIFY, "running", run_id, change_ref)
+    elif kind == "tool_status" and payload.get("status") == "done":
+        ref = _call_ref(run_id, payload)
+        for stage in mission.stages:
+            if stage.kind in {StageKind.EXECUTE, StageKind.VERIFY} and ref in stage.source_refs:
+                stage.status = "completed"
     elif kind in {"error", "agent_failed"}:
         mission.status = "blocked"
     if stage_kind is not None:
-        stage = next((s for s in mission.stages if s.kind == stage_kind), None)
-        if stage is None:
-            stage = MissionStage(kind=stage_kind, label=STAGE_LABELS[stage_kind])
-            mission.stages.append(stage)
-        if stage.status != "completed":
-            stage.status = stage_status
-        if run_id not in stage.source_refs:
-            stage.source_refs.append(run_id)
+        _touch_stage(mission, stage_kind, stage_status, run_id)
 
 
 async def canonical_payload(

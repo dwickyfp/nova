@@ -1555,3 +1555,66 @@ async def test_oversized_deliverable_source_returns_bounded_error(mission_io, mo
     assert refused.value.status_code == 422
     assert refused.value.detail == {"code": "deliverable_source_bound_exceeded"}
     assert not io.deliverables
+
+
+def _call(call_id, classification, status="pending", tool="knowledge_propose"):
+    return {"tool_call_id": call_id, "tool_name": tool,
+            "classification": classification, "status": status}
+
+
+async def test_a_successful_changing_tool_completes_the_execute_stage(mission_io):
+    _, service = mission_io
+    mission = await create(
+        service, work_intent=WorkIntent.ACT, public_work_steps=[StageKind.EXECUTE]
+    )
+    project_event(mission, "run", "tool_call", _call("read", "read_only"))
+    project_event(mission, "run", "tool_status", {"tool_call_id": "read", "status": "done"})
+    (execute,) = mission.stages
+    assert execute.status == "planned"  # a read is not the change the user asked for
+
+    project_event(mission, "run", "tool_call", _call("schedule", "session_change", tool="x"))
+    project_event(mission, "run", "tool_status", {"tool_call_id": "schedule", "status": "done"})
+    # A change without a capability check completes execution but verifies nothing.
+    assert [(s.kind, s.status) for s in mission.stages] == [(StageKind.EXECUTE, "completed")]
+
+
+async def test_a_filed_proposal_completes_and_verifies_the_change(mission_io):
+    _, service = mission_io
+    mission = await create(
+        service, work_intent=WorkIntent.ACT,
+        public_work_steps=[StageKind.EXECUTE, StageKind.VERIFY],
+    )
+    project_event(mission, "run", "tool_call", _call("propose", "session_change"))
+    assert [s.status for s in mission.stages] == ["running", "running"]
+    project_event(mission, "other", "tool_status", {"tool_call_id": "propose", "status": "done"})
+    assert [s.status for s in mission.stages] == ["running", "running"]  # another run's call
+    project_event(mission, "run", "tool_status", {"tool_call_id": "propose", "status": "done"})
+    assert [(s.kind, s.status) for s in mission.stages] == [
+        (StageKind.EXECUTE, "completed"), (StageKind.VERIFY, "completed"),
+    ]
+    assert mission.stages[0].source_refs == ["run", "call:run:propose"]
+
+
+def test_the_loop_verifies_that_a_proposal_was_recorded():
+    from app.modules.agents.mission import VERIFIED_CHANGE_TOOLS
+    from app.modules.assistant.service import _verify_tool_outcome
+
+    for tool in VERIFIED_CHANGE_TOOLS:
+        empty = SimpleNamespace(ok=True, data={})
+        assert _verify_tool_outcome(tool, empty)
+    filed = SimpleNamespace(ok=True, data={"proposal_id": "p1", "status": "PENDING"})
+    assert _verify_tool_outcome("knowledge_propose", filed) is None
+
+
+async def test_a_denied_or_failed_change_leaves_the_execute_stage_open(mission_io):
+    _, service = mission_io
+    for status in ("denied", "failed", "cancelled"):
+        mission = await service.create(
+            "thread",
+            MissionCreate(objective=f"File {status}", operation_id=f"request-{status}",
+                          work_intent=WorkIntent.ACT, public_work_steps=[StageKind.EXECUTE]),
+            USER,
+        )
+        project_event(mission, "run", "tool_call", _call("propose", "destructive"))
+        project_event(mission, "run", "tool_status", {"tool_call_id": "propose", "status": status})
+        assert {s.status for s in mission.stages} == {"running"}, status
