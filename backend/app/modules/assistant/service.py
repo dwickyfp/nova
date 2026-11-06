@@ -52,13 +52,7 @@ from app.modules.assistant.context import (
     estimate_messages_tokens,
     summary_cache,
 )
-from app.modules.assistant.data_evidence import (
-    incomplete_metrics,
-    metric_owners,
-    next_collaboration_tool,
-    no_semantic_owner,
-    sql_evidence_kind,
-)
+from app.modules.assistant.data_evidence import sql_evidence_kind
 from app.modules.assistant.intelligence import (
     ActiveConversationState,
     CapabilityRegistry,
@@ -170,8 +164,6 @@ class LoopContext:
     """
 
     user_name: str
-    collaboration_tools: tuple[str, ...] = ()
-    collaboration_root: bool = False
     intelligent_ui: bool = False
     ui_action_accepted: bool = False
     ui_prompt: str = ""
@@ -217,15 +209,6 @@ class LoopContext:
     #: Model id -> logical dataset names the caller may expose to a provider.
     authorized_semantic_datasets: dict[str, list[str]] | None = None
     authorized_semantic_models: list[dict[str, Any]] | None = None
-    #: A recurring report or alert Smart drafted this turn for the user to confirm.
-    automation_proposal: dict[str, Any] | None = None
-    #: Changes Smart prepared this turn for the user to submit (see tools/drafts.py).
-    smart_drafts: list[dict[str, Any]] = field(default_factory=list)
-    #: Smart root only: every participant of the run with its results, so an answer
-    #: is checked against all finished work, not only the specialists a wait named.
-    collect_results: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None
-    #: Smart root only: the combined specialist catalog, read once per turn.
-    collaboration_catalog: dict[str, Any] | None = None
     agent_scope: dict[str, Any] | None = None
     release_manifest: dict[str, Any] | None = None
     quality_facts: dict[str, Any] | None = None
@@ -315,22 +298,10 @@ class LoopContext:
 #: Repairs per kind of mistake in one turn. Separate budgets stop an early
 #: argument slip from ending the turn at a later, unrelated error.
 #: Tools that work on results already gathered and read no data themselves.
-#: Smart root tools that prepare something for the user to confirm, never write.
-SMART_DRAFT_TOOLS = (
-    "propose_automation", "draft_knowledge_proposal", "draft_investigation_update",
-)
 _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
-#: Tools that present a result to the user, which in Smart only the root does.
-_ROOT_PRESENTATION_TOOLS = frozenset({"data_to_chart", "dashboard_build"})
 #: The part of a result table the model is shown with the tool result.
 _PREVIEW_ROWS = 40
 _PREVIEW_COLUMNS = 12
-#: A specialist result stays in every later root prompt, so the root reads a
-#: smaller slice: enough to write the answer; charts use the full evidence.
-_COLLECTED_PREVIEW_ROWS = 12
-_COLLECTED_PREVIEW_COLUMNS = 8
-#: How long the root waits for its specialists when it starts waiting on its own.
-_AUTO_WAIT_SECONDS = 60
 #: Read-only analysis an owner can enable on a Studio agent, usable after its query.
 _ANALYSIS_TOOLS = ("compute_metrics", "data_to_chart", "diagnose_change", "ml_execute")
 #: Tool-call syntax some providers leak into the text channel.
@@ -724,10 +695,7 @@ class AssistantLoop:
 
         context.quality_measurements = (
             _QualityMeasurements(
-                collaborative=bool(
-                    context.collaboration_root or context.collaboration_tools
-                    or on_checkpoint or save_state or before_final
-                ),
+                collaborative=bool(on_checkpoint or save_state or before_final),
                 resumed=resume_state is not None,
             )
             if self._spend_limit is not None or context.agent_id else None
@@ -774,9 +742,7 @@ class AssistantLoop:
                         from app.observability.metrics import STUDIO_FIRST_USEFUL_RESPONSE
 
                         elapsed = max(0.0, time.monotonic() - response_started)
-                        STUDIO_FIRST_USEFUL_RESPONSE.labels(
-                            "smart" if context.collaboration_root else "direct"
-                        ).observe(elapsed)
+                        STUDIO_FIRST_USEFUL_RESPONSE.labels("direct").observe(elapsed)
                         context.quality_facts = context.quality_facts or {}
                         context.quality_facts["presentation"] = {
                             "first_useful_response_ms": round(elapsed * 1000),
@@ -922,10 +888,6 @@ class AssistantLoop:
         #: them serially, preserving the bounded single-tool-at-a-time rule
         #: without silently discarding calls after the first.
         deferred_calls: list[dict[str, Any]] = []
-        spawned: dict[str, list[str]] = {}
-        # Smart: every started teammate has finished its turn (last wait or list).
-        team_settled = False
-        charts_made = 0
         pending_artifacts: list[PendingArtifact] = []
         context.pending_output = []
 
@@ -1012,7 +974,6 @@ class AssistantLoop:
                 has_semantic_model=_has_semantic_binding(context),
                 agent_scope=context.agent_scope,
                 semantic_context=semantic_context,
-                delegated=bool(context.collaboration_tools) and not context.collaboration_root,
                 conversation_context=_planning_history(thread, user_content),
                 application_context=(
                     {
@@ -1094,45 +1055,10 @@ class AssistantLoop:
                         "arguments": json.dumps({"question": user_content}, ensure_ascii=False),
                     },
                 })
-        if (
-            context.collaboration_root and route.needs_data
-            and route.intent != TurnIntent.AGENT_CATALOG
-            and self._registry.get("discover_agents") is not None
-        ):
-            # Every Smart data turn starts by finding who owns what was asked. Doing it
-            # before the first model call saves that call; the result is the same.
-            deferred_calls.append({
-                "id": f"primary-{uuid4()}",
-                "type": "function",
-                "function": {
-                    "name": "discover_agents",
-                    "arguments": json.dumps({"capability": user_content}, ensure_ascii=False),
-                },
-            })
         context.selected_tools = list(turn_plan.selected_tools)
         context.selected_skills = list(turn_plan.selected_skills)
         selected_tools = turn_plan.selected_tools
-        if context.collaboration_tools and route.intent != TurnIntent.AGENT_CATALOG:
-            selected_tools = tuple(dict.fromkeys((*selected_tools, *context.collaboration_tools)))
-            if context.collaboration_root:
-                # The root computes and charts over what its specialists returned.
-                selected_tools = tuple(dict.fromkeys((
-                    *selected_tools,
-                    *(name for name in (*_RESULT_TOOLS, *SMART_DRAFT_TOOLS)
-                      if self._registry.get(name) is not None
-                      # A finding is drafted only for the News incident under investigation.
-                      and (name != "draft_investigation_update" or context.incident_id)),
-                )))
-            else:
-                # Only the root's charts reach the answer; a specialist returns data.
-                selected_tools = tuple(
-                    name for name in selected_tools if name not in _ROOT_PRESENTATION_TOOLS
-                )
-            context.selected_tools = list(selected_tools)
-        if (
-            self._iterative and context.agent_scope is not None and route.needs_data
-            and not context.collaboration_root
-        ):
+        if self._iterative and context.agent_scope is not None and route.needs_data:
             # An analyst turn may go from its query to a forecast, a diagnosis, a
             # computation or a chart. The owner enabled these; the planner's choice
             # only orders them, it does not take them away.
@@ -1168,15 +1094,7 @@ class AssistantLoop:
         context.ui_prompt = composer_prompt(
             enabled=context.intelligent_ui, presentation=turn_plan.presentation,
         )
-        # On a data turn the Smart root spends its first calls finding, starting and
-        # waiting for specialists; none of them writes the answer. The catalog joins
-        # once a verified business result is in, before the calls that compose from
-        # it. Other turns (greetings, public places) keep it from the start.
-        deferred_ui = bool(
-            context.ui_prompt and turn_plan.presentation != "interactive"
-            and context.collaboration_root and route.needs_data
-        )
-        if context.ui_prompt and turn_plan.presentation != "interactive" and not deferred_ui:
+        if context.ui_prompt and turn_plan.presentation != "interactive":
             leading = next(
                 (index for index, item in enumerate(messages) if item.get("role") != "system"),
                 len(messages),
@@ -1234,12 +1152,6 @@ class AssistantLoop:
         )
         if _has_semantic_binding(context):
             required_capabilities = route.required_capabilities
-        if context.collaboration_root and route.intent != TurnIntent.AGENT_CATALOG:
-            required_capabilities = ("discover_agents",) if route.needs_data else ()
-        elif context.collaboration_tools:
-            required_capabilities = tuple(
-                name for name in required_capabilities if name not in _ROOT_PRESENTATION_TOOLS
-            )
         unavailable =[name for name in required_capabilities if name not in selected_tools]
         if unavailable:
             detail = (
@@ -1301,16 +1213,6 @@ class AssistantLoop:
             first_iteration = int(resume_state.get("iteration", 0))
 
         for _iteration in range(first_iteration, self._max_iterations):
-            if deferred_ui and evidence.business_tables:
-                deferred_ui = False
-                catalog_message = {"role": "system", "content": "\n" + context.ui_prompt}
-                if catalog_message not in messages:
-                    leading = next(
-                        (index for index, item in enumerate(messages)
-                         if item.get("role") != "system"),
-                        len(messages),
-                    )
-                    messages.insert(leading, catalog_message)
             if on_checkpoint is not None:
                 for incoming in await on_checkpoint():
                     messages.append({
@@ -1424,14 +1326,6 @@ class AssistantLoop:
                         ),
                         None,
                     )
-                    if context.collaboration_root and route.needs_data:
-                        next_required = next_collaboration_tool(evidence)
-                        if next_required == "discover_agents":
-                            current_schemas = [schema for schema in current_schemas
-                                               if schema["function"]["name"] == next_required]
-                        elif metric_owners(evidence):
-                            current_schemas = [schema for schema in current_schemas
-                                               if schema["function"]["name"] != "query_execute"]
                     tool_choice = None
                     if context.harness_mode == "strict" and next_required:
                         current_schemas = [
@@ -1548,14 +1442,11 @@ class AssistantLoop:
                         "is needed, write the answer."
                     )})
                     continue
-                if _returns_results(context, evidence):
-                    buffered_text = [say("loop.results_attached", _turn_language(context))]
-                else:
-                    yield events.error(
-                        "unexpected_tool_call", "The response contained a tool call as text."
-                    )
-                    yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
-                    return
+                yield events.error(
+                    "unexpected_tool_call", "The response contained a tool call as text."
+                )
+                yield events.done(str(uuid4()), finish_reason="unexpected_tool_call")
+                return
             if composing_final and tool_calls:
                 if repairs.take("composer_tool_call"):
                     messages.append(
@@ -1572,10 +1463,6 @@ class AssistantLoop:
                     # The question back is the answer and no tool may run: the calls
                     # are dropped and the turn ends as that clarification.
                     tool_calls = []
-                elif _returns_results(context, evidence):
-                    tool_calls = []
-                    if not "".join(buffered_text).strip():
-                        buffered_text = [say("loop.results_attached", _turn_language(context))]
                 else:
                     yield events.error(
                         "unexpected_tool_call", "The final response cannot execute tools."
@@ -1619,11 +1506,6 @@ class AssistantLoop:
                             for update in updates
                         )
                         continue
-                if context.collaboration_root and context.collect_results is not None:
-                    for participant in await context.collect_results():
-                        for item in evidence.import_results(participant):
-                            table = evidence.tables.get(item.evidence_id) or {}
-                            context.last_result = {**table, "title": display_title(item.summary)}
                 if (
                     context.ui_prompt and turn_plan.presentation == "interactive"
                     and not composing_final
@@ -1658,11 +1540,6 @@ class AssistantLoop:
                         str(uuid4()), finish_reason="clarification", usage=context.usage
                     )
                     return
-                # Smart discovered no owner and ran nothing else: the same limit applies.
-                uncovered = bool(
-                    context.collaboration_root and not evidence.tables
-                    and no_semantic_owner(evidence)
-                )
                 if (
                     context.agent_scope is not None
                     and governed_attempted and not evidence.business_tables
@@ -1677,7 +1554,7 @@ class AssistantLoop:
                     continue
                 if (
                     context.agent_scope is not None
-                    and (governed_attempted or uncovered)
+                    and governed_attempted
                     and not evidence.business_tables
                     and _is_scope_answer("".join(buffered_text))
                 ):
@@ -1725,20 +1602,16 @@ class AssistantLoop:
                             },
                         })
                         continue
-                    if not _returns_results(context, evidence):
-                        yield events.error(
-                            "required_capability_incomplete",
-                            "The required capability was not executed, so Nova cannot "
-                            "claim the task was completed.",
-                        )
-                        _transition(context, TurnState.FAILED)
-                        yield events.done(
-                            str(uuid4()), finish_reason="required_capability_incomplete"
-                        )
-                        return
-                    # A Smart specialist holding verified results returns them: its
-                    # requester composes the answer and checks it covers the request.
-                    context.quality_facts["required_capability_skipped"] = missing_required
+                    yield events.error(
+                        "required_capability_incomplete",
+                        "The required capability was not executed, so Nova cannot "
+                        "claim the task was completed.",
+                    )
+                    _transition(context, TurnState.FAILED)
+                    yield events.done(
+                        str(uuid4()), finish_reason="required_capability_incomplete"
+                    )
+                    return
                 business_request = (
                     route.intent in {TurnIntent.SEMANTIC_ANALYTICS, TurnIntent.COMPOUND_ANALYTICS}
                     and (
@@ -1750,26 +1623,16 @@ class AssistantLoop:
                         # the planner chose: web or connector text never answers it.
                         or context.agent_scope is not None
                     )
-                ) or bool(context.collaboration_root and metric_owners(evidence))
-                missing_metrics = (
-                    incomplete_metrics(evidence, user_content, context.intent_frame)
-                    if business_request else []
                 )
-                if business_request and not denials and (
-                    not evidence.business_tables or missing_metrics
-                ):
+                if business_request and not denials and not evidence.business_tables:
                     detail = (
-                        "Missing verified business results for the requested metrics, grouping, "
-                        "and period: " + ", ".join(missing_metrics)
-                        if missing_metrics else
-                        "No business query result is available. Catalog listings and "
-                        "coordination messages do not answer this data question."
+                        "No business query result is available. Catalog listings do not "
+                        "answer this data question."
                     )
                     if repairs.take("business_evidence"):
                         composing_final = False
                         messages.append({"role": "system", "content": detail + " Complete the "
-                                         "missing query, or follow up with the owning specialist. "
-                                         "Collect its results with wait_agent/list_agents."})
+                                         "missing query."})
                         continue
                     yield events.error("data_evidence_incomplete", detail)
                     _transition(context, TurnState.FAILED)
@@ -1898,10 +1761,9 @@ class AssistantLoop:
                         }
                     answer_text = verified_answer.text
                 context.quality_facts["task_completeness"] = {
-                    "completed": not denials and not missing_metrics,
+                    "completed": not denials,
                     "required_capabilities": sorted(required_capabilities),
                     "completed_capabilities": sorted(completed_capabilities),
-                    "missing_metrics": missing_metrics,
                 }
                 context.verified_evidence = evidence.snapshot()
                 ui_unavailable = False
@@ -2034,19 +1896,6 @@ class AssistantLoop:
 
             _transition(context, TurnState.VALIDATING_ACTION)
 
-            if context.collaboration_root and route.needs_data:
-                routing_action = next_collaboration_tool(evidence)
-                if (routing_action == "discover_agents" and invocation.tool_name != routing_action
-                        or metric_owners(evidence) and invocation.tool_name == "query_execute"):
-                    messages.append(_tool_message(
-                        provider_capabilities.supports_tool_role_messages, invocation,
-                        {"ok": False, "error_class": "SPECIALIST_ROUTING_REQUIRED",
-                         "recoverable": True, "safe_detail":
-                         "Discover authorized specialists first, then delegate governed metrics "
-                         "to the matching owner. Preserve the full question and collect results."},
-                    ))
-                    continue
-
             tool = self._registry.get(invocation.tool_name)
             next_capability = next(
                 (name for name in required_capabilities if name not in completed_capabilities), None
@@ -2158,10 +2007,7 @@ class AssistantLoop:
             # A repeated identical call is answered from the previous result
             # instead of running again (no second engine query for the same rows).
             fingerprint = self._call_fingerprint(invocation)
-            if fingerprint in seen_calls and invocation.tool_name not in {
-                "wait_agent",
-                "list_agents",
-            }:
+            if fingerprint in seen_calls:
                 yield events.tool_status(invocation.tool_call_id, "done")
                 messages.append(
                     _tool_message(
@@ -2190,7 +2036,7 @@ class AssistantLoop:
             ) == "catalog":
                 usage_key += ":catalog"
             call_limit = (
-                16 if invocation.tool_name in context.collaboration_tools else SQL_WRITE_MAX_CALLS
+                SQL_WRITE_MAX_CALLS
                 if invocation.tool_name == "query_mutate"
                 else self._max_calls_per_tool
             )
@@ -2464,11 +2310,10 @@ class AssistantLoop:
             if (
                 not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED"
                 and (
-                    (context.collaboration_tools and not context.collaboration_root)
                     # A turn with steps after its query (a model, a chart, a computation)
                     # or with several analyses asks its first query with all of them in
                     # it; the steps are not the data.
-                    or route.needs_ml or bool(route.ml_task) or route.needs_chart
+                    route.needs_ml or bool(route.ml_task) or route.needs_chart
                     or route.intent == TurnIntent.COMPOUND_ANALYTICS
                     or bool({"ml_execute", "data_to_chart", "compute_metrics",
                              "diagnose_change"} & set(selected_tools))
@@ -2478,10 +2323,9 @@ class AssistantLoop:
                 and (outcome.repair_context or {}).get("unresolved")
                 and repairs.take("split_request")
             ):
-                # A specialist answers Smart, not a person; an ML or chart turn's first
-                # query carries steps that are not data. A task with parts one query
-                # cannot cover together is asked again part by part, once, before it
-                # becomes a question back.
+                # An ML or chart turn's first query carries steps that are not data.
+                # A task with parts one query cannot cover together is asked again
+                # part by part, once, before it becomes a question back.
                 yield events.tool_status(invocation.tool_call_id, "done")
                 _finish_tool_step(context, "done", None)
                 messages.append(
@@ -2599,7 +2443,6 @@ class AssistantLoop:
                 context.pending_output = []
                 context.steps = []
                 context.authorized_semantic_models = None
-                context.collaboration_catalog = None
                 context.authorized_semantic_datasets = None
                 context.semantic_routing_terms = None
                 yield events.format_sse(
@@ -2695,10 +2538,6 @@ class AssistantLoop:
                 evidence_metadata["evidence_kind"] = sql_evidence_kind(
                     str(invocation.arguments.get("sql") or "")
                 )
-            if invocation.tool_name == "discover_agents":
-                evidence_metadata.update(outcome.data or {})
-            elif invocation.tool_name == "spawn_agent":
-                evidence_metadata["agent_id"] = (outcome.data or {}).get("agent_id")
             if invocation.tool_name == "semantic_query":
                 provenance = outcome.evidence or {}
                 evidence_metadata.update({
@@ -2741,20 +2580,6 @@ class AssistantLoop:
                     context.evidence_sql = {
                         **(context.evidence_sql or {}), evidence_item.evidence_id: compiled,
                     }
-            charted = context.last_result or {}
-            if (
-                context.collaboration_root and invocation.tool_name == "data_to_chart"
-                and charted.get("source") == "previous_turn" and charted.get("rows")
-                and not evidence.business_tables
-            ):
-                # "Chart that": the rows are the verified result of the turn before,
-                # kept with its answer. They are this turn's evidence too.
-                evidence.add(
-                    "previous_result", str(charted.get("title") or "previous result"),
-                    table={"columns": list(charted.get("columns") or []),
-                           "rows": list(charted["rows"])},
-                    metadata={**(charted.get("metadata") or {}), "source": "previous_turn"},
-                )
             if (
                 invocation.tool_name == "semantic_query" and route.needs_diagnosis
                 and not deferred_calls and not tool_uses.get("diagnose_change")
@@ -2774,91 +2599,6 @@ class AssistantLoop:
                             "name": "diagnose_change", "arguments": json.dumps(diagnosis),
                         },
                     })
-            if (
-                context.collaboration_root and invocation.tool_name == "spawn_agent"
-                and isinstance(outcome.data, dict) and outcome.data.get("agent_path")
-            ):
-                spawned.setdefault(str(outcome.data.get("agent_id") or ""), []).append(
-                    str(outcome.data["agent_path"])
-                )
-                team_settled = False
-                owners = {str(agent["agent_id"]) for agent in metric_owners(evidence)}
-                if (
-                    (not owners or owners <= set(spawned)) and not deferred_calls
-                    and self._registry.get("wait_agent") is not None
-                    and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
-                ):
-                    # The batch of specialists has started (all owners of a requested
-                    # measure, when discovery named them). Waiting for them is not a
-                    # decision the model has to spend a call on.
-                    deferred_calls.append({
-                        "id": f"primary-{uuid4()}",
-                        "type": "function",
-                        "function": {
-                            "name": "wait_agent",
-                            "arguments": json.dumps({
-                                "targets": [path for paths in spawned.values() for path in paths],
-                                "condition": "all", "timeout": _AUTO_WAIT_SECONDS,
-                            }),
-                        },
-                    })
-            collected_results: list[dict[str, Any]] = []
-            if invocation.tool_name in {"list_agents", "wait_agent"} and isinstance(
-                outcome.data, dict
-            ):
-                for participant in outcome.data.get("agents", []):
-                    for item in evidence.import_results(participant):
-                        table = evidence.tables.get(item.evidence_id) or {}
-                        # The result tools (compute_metrics, data_to_chart) address a
-                        # specialist's table by the id it has in this turn.
-                        collected_results.append({
-                            "evidence_id": item.evidence_id,
-                            "columns": list(table.get("columns") or [])[:24],
-                            "row_count": len(table.get("rows") or []),
-                        })
-                        context.last_result = {**table, "title": display_title(item.summary)}
-            if (
-                context.collaboration_root and invocation.tool_name in {"list_agents", "wait_agent"}
-                and isinstance(outcome.data, dict) and outcome.data.get("agents")
-            ):
-                team_settled = all(
-                    str(agent.get("status")) in _SETTLED for agent in outcome.data["agents"]
-                    if isinstance(agent, dict)
-                )
-            if (
-                context.collaboration_root and invocation.tool_name == "data_to_chart"
-                and outcome.ok
-            ):
-                charts_made += 1
-                chartable = sum(
-                    len(table.get("rows") or []) >= 2
-                    for table in evidence.latest_results().values()
-                )
-                if (
-                    (route.needs_chart or _asks_for_charts(context.user_question))
-                    and team_settled and chartable
-                    and charts_made >= chartable and not deferred_calls and not composing_final
-                ):
-                    # Every teammate is done and every result asked for is charted:
-                    # what is left is the answer, not more steps.
-                    composing_final = True
-                    messages.append(composer_message())
-            if (
-                context.collaboration_root and invocation.tool_name == "wait_agent"
-                and isinstance(outcome.data, dict) and outcome.data.get("reason") == "timeout"
-                and outcome.data.get("agents") and not collected_results and not deferred_calls
-                and deadline - _budget_time() > _AUTO_WAIT_SECONDS + 30
-            ):
-                # Nobody finished and nobody wrote: waiting again is not a decision the
-                # model has to spend a whole-context call on.
-                deferred_calls.append({
-                    "id": f"primary-{uuid4()}",
-                    "type": "function",
-                    "function": {
-                        "name": "wait_agent",
-                        "arguments": json.dumps(invocation.arguments),
-                    },
-                })
             context.quality_facts.setdefault("evidence", []).append(
                 {
                     "id": evidence_item.evidence_id,
@@ -2899,15 +2639,6 @@ class AssistantLoop:
                 tool_name=invocation.tool_name,
                 evidence_id=evidence_item.evidence_id,
             )
-            if collected_results:
-                envelope["collected_results"] = collected_results
-                envelope["collected_results"] = _collected_previews(
-                    collected_results,
-                    evidence.tables,
-                    self._context_manager.token_budget - estimate_messages_tokens(messages),
-                )
-            if invocation.tool_name in {"wait_agent", "list_agents"}:
-                envelope["data"] = _collaboration_view(envelope.get("data"))
             shown = evidence.tables.get(evidence_item.evidence_id)
             if shown and shown.get("rows") and not isinstance(
                 (envelope.get("data") or {}).get("rows"), list
@@ -2944,7 +2675,6 @@ class AssistantLoop:
             required_done = (
                 not deferred_calls
                 and required_available
-                and not context.collaboration_root
                 and route.intent != TurnIntent.SQL_AUTHORING
                 and required_available != {"query_execute"}
                 and "query_mutate" not in required_available
@@ -2966,15 +2696,12 @@ class AssistantLoop:
                 # now, rather than spend the rest on a call that ends the turn empty.
                 composing_final = True
                 messages.append(composer_message())
-            elif self._iterative and not context.collaboration_root:
+            elif self._iterative:
                 remaining_steps = self._max_iterations - _iteration - 1
                 remaining_time = deadline - _budget_time()
                 if required_done and not analysis_noted:
                     analysis_noted = True
-                    messages.append({"role": "system", "content": (
-                        _DELEGATED_ANALYSIS_PROMPT if context.collaboration_tools
-                        else _ANALYSIS_PROMPT
-                    )})
+                    messages.append({"role": "system", "content": _ANALYSIS_PROMPT})
                 # Another query takes as long as the slowest one so far: answer now
                 # rather than start one that ends the turn past its deadline.
                 slowest_query = max(
@@ -3422,88 +3149,6 @@ def _asked(thread: Any, user_content: str) -> str:
 _ASKED_LOOKBACK = 6
 #: Kept for the final answer near the limits: one step to answer, one to repair
 #: a last tool proposal.
-#: A request that asks for charts or a dashboard, in English or Indonesian.
-_CHART_REQUEST = re.compile(
-    r"\b(?:charts?|grafik|diagram|dashboards?|dasbor|plots?|visuali[sz]\w*)\b", re.I
-)
-
-
-def _asks_for_charts(question: str | None) -> bool:
-    """The request itself asks for charts: charting its results is the deliverable."""
-    return bool(question and _CHART_REQUEST.search(question))
-
-
-#: Teammate statuses that mean its turn is over.
-_SETTLED = frozenset({"idle", "completed", "failed", "cancelled", "interrupted"})
-
-#: Characters of a teammate's summary the model reads in a collaboration result.
-_TEAMMATE_SUMMARY_CHARS = 600
-
-
-def _collected_previews(
-    results: list[dict[str, Any]], tables: dict[str, dict[str, Any]], room: int,
-) -> list[dict[str, Any]]:
-    """Specialist results with their rows, as many as fit the context budget.
-
-    A specialist may answer with a heading and leave its numbers to its table. The
-    root writes the answer, so it reads each result's rows, bounded like any other
-    result preview; when even one row does not fit, it keeps the columns and count.
-    """
-    limit = _COLLECTED_PREVIEW_ROWS
-    while limit:
-        previews = [
-            {
-                **item,
-                "rows": [
-                    list(row)[:_COLLECTED_PREVIEW_COLUMNS]
-                    for row in (tables.get(item["evidence_id"]) or {}).get("rows", [])[:limit]
-                ],
-                "truncated": item["row_count"] > limit,
-            }
-            for item in results
-        ]
-        if len(json.dumps(previews, default=str)) // 3 * 4 <= room:
-            return previews
-        limit //= 2
-    return results
-
-
-def _collaboration_view(data: Any) -> Any:
-    """What the model reads of a wait or list: who is doing what, and how far.
-
-    A teammate's results reach this turn as evidence (``collected_results``) and
-    its full answer stays in the run; repeating both in every later prompt is
-    what filled Smart's context.
-    """
-    if not isinstance(data, dict) or not isinstance(data.get("agents"), list):
-        return data
-    agents = []
-    for agent in data["agents"]:
-        if not isinstance(agent, dict):
-            continue
-        summary = str(agent.get("summary") or "")
-        agents.append({
-            key: agent[key]
-            for key in ("agent_session_id", "agent_path", "agent_name", "status", "turn_count")
-            if key in agent
-        } | ({"summary": summary[:_TEAMMATE_SUMMARY_CHARS]
-              + ("…" if len(summary) > _TEAMMATE_SUMMARY_CHARS else "")} if summary else {}))
-    return {**{key: value for key, value in data.items() if key != "agents"}, "agents": agents}
-
-
-def _returns_results(context: LoopContext, evidence: EvidenceTracker) -> bool:
-    """A Smart specialist holding verified results returns them rather than failing.
-
-    Smart reads a specialist's tables, not its prose, so a composition that keeps
-    asking for tools still has its result. The root's answer is the user's and
-    gets no such way out.
-    """
-    return bool(
-        context.collaboration_tools and not context.collaboration_root
-        and evidence.business_tables
-    )
-
-
 def _missing_required_prompt(missing: list[str], evidence: EvidenceTracker) -> str:
     """The repair for a turn that answered before its required tools ran.
 
@@ -3526,7 +3171,7 @@ def _missing_required_prompt(missing: list[str], evidence: EvidenceTracker) -> s
 
 def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
     """The question back when the model wrote none: what the governed data lacks
-    and what it has, so whoever asked (a person or Smart) can narrow the request."""
+    and what it has, so the user can narrow the request."""
     uncovered = [str(item) for item in repair_context.get("unresolved") or [] if item][:4]
     available = [str(item) for item in repair_context.get("available_metrics") or [] if item][:8]
     if not uncovered or not available:
@@ -3547,14 +3192,6 @@ _ANALYSIS_PROMPT = (
     "improve the answer (a breakdown that explains the number, compute_metrics for "
     "growth, share or rank, a chart the user asked for), take it now. Otherwise "
     "answer. Do not repeat a query that already ran."
-)
-
-#: A specialist working for Smart finishes its task; the requester adds the rest.
-_DELEGATED_ANALYSIS_PROMPT = (
-    "The required evidence is in. If the delegated task itself needs one more step you "
-    "have a tool for (a forecast, an explanation of a change), take it now. Otherwise "
-    "answer. Do not add charts, totals, or breakdowns the task did not ask for, and do "
-    "not repeat a query that already ran."
 )
 
 _SPLIT_REQUEST_PROMPT = (
@@ -4154,7 +3791,7 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
         if message.role != "assistant":
             continue
         for step in reversed(message.steps or []):
-            # ``result`` is a table a Smart answer kept without displaying it.
+            # ``result`` is a table an earlier answer kept without displaying it.
             if step.get("kind") not in {"table", "result"}:
                 continue
             raw_columns = step.get("columns")
@@ -4174,7 +3811,7 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
                 "columns": columns,
                 "rows": rows,
                 "source": "previous_turn",
-                # What a kept Smart result measures, when it was recorded.
+                # What a kept result measures, when it was recorded.
                 **({"metadata": step["metadata"]}
                    if isinstance(step.get("metadata"), dict) and step["metadata"] else {}),
             }

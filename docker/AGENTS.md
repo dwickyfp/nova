@@ -58,7 +58,7 @@ start another stack next to them.
   them without teardown. Unreachable default ports do not prove no stack exists.
 - Match the stack to the work. The `docker/docker-compose-engine.yml` project is
   the governed development stack and holds development data: use it for live
-  Studio/Smart, Ranger, and UI checks, never for suites that drop or reseed
+  Studio, Ranger, and UI checks, never for suites that drop or reseed
   data. The `backend/docker-compose.test.yml` project is the unpatched test
   stack: reuse it when already running, with its host ports set through the
   `NOVA_TEST_*` and endpoint variables in [HOW_TO_RUN.md](../HOW_TO_RUN.md).

@@ -202,11 +202,3 @@ def test_tool_is_read_only_and_offered_to_every_composition():
     assert "catalog_search" in _TOOL_DESCRIPTIONS
     preview = tool.preview(_call({"tag": "pii"}))
     assert "pii" in preview
-
-
-def test_the_smart_root_can_search_the_catalog():
-    from app.modules.agents import registry as agent_registry
-    from app.modules.agents.harness_worker import SMART_ROOT_TOOLS
-
-    names = agent_registry.build_registry({"default_tools": list(SMART_ROOT_TOOLS)}).names()
-    assert "catalog_search" in names and "load_skill" in names

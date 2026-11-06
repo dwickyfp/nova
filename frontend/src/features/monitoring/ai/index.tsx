@@ -394,7 +394,7 @@ export function AIUsageDashboard({
       </div>
       <Panel
         title="Usage by action"
-        description="An activity is a saved assistant turn, a Smart run, or an AI SQL statement. It can contain several provider calls."
+        description="An activity is a saved assistant turn or an AI SQL statement. It can contain several provider calls."
       >
         {data.actions.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -547,12 +547,6 @@ export function AIUsageDashboard({
             that metadata. Failed SQL can stop before a provider call.
           </p>
           <p>
-            Smart coordinator and specialist runs are counted separately; the
-            final message total is excluded to prevent duplicates. Smart tokens
-            use the run start date. In-progress counters can increase, and model
-            attribution is unavailable.
-          </p>
-          <p>
             Assistant totals come from retained messages. Deleted history is no
             longer included. Model names reflect the saved turn and may not
             describe every nested call. AI Search embeddings, decision routing,
@@ -633,7 +627,7 @@ export function MonitoringAI() {
     >
       <PageHeader
         title="AI Monitoring"
-        description="Track token usage across Nova Studio, assistant turns, Smart Mode, and AI Functions."
+        description="Track token usage across Nova Studio, assistant turns, and AI Functions."
         actions={
           <Button
             variant="outline"
@@ -775,7 +769,7 @@ export function MonitoringAI() {
               description={
                 filtered
                   ? "Clear the filters or choose a longer period."
-                  : "Saved assistant turns, Smart runs, and audited AI SQL will appear here as you use Nova."
+                  : "Saved assistant turns and audited AI SQL will appear here as you use Nova."
               }
             />
           )}

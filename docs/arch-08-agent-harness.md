@@ -1,5 +1,11 @@
 # Architecture 8: Legacy Studio Auto Agent Harness
 
+> **Status: retired.** The Auto and Smart agent harness, including the
+> `nova-agent-worker` process, was removed from the product on 2026-11-07. This
+> document is kept as a historical record. Studio now chats with one selected
+> agent through the direct agent loop; see
+> [Architecture 15: Governed Studio](arch-15-governed-studio.md#studio-chat).
+
 > A durable coordinator runs authorized specialists in parallel while direct agent chat keeps its existing path.
 
 This describes persisted `__auto__` runs. New conversations use Smart and the

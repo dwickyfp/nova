@@ -30,7 +30,7 @@ AgentToolName = str
 AgentPolicy = Literal["auto_read_only", "ask_every_tool"]
 
 #: Loop limits. ``analyst`` lets an agent drill down after its first result;
-#: ``deep`` runs only as an asynchronous Smart/Deep Research run.
+#: ``deep`` runs only as an asynchronous Deep Research run.
 BudgetProfile = Literal["fast", "analyst", "deep"]
 
 Visibility = Literal["private", "shared"]

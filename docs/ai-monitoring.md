@@ -1,6 +1,6 @@
 # AI Monitoring
 
-> Usage accounting for persisted assistant turns, Smart runs, and audited AI SQL.
+> Usage accounting for persisted assistant turns and audited AI SQL.
 
 ## Concept
 
@@ -31,27 +31,21 @@ The endpoint accepts `days` from 1 through 30, `source`, `model`, `user_name`,
 | Average tokens | Reported tokens divided by activities with a reported total |
 | Daily trend | One row per UTC date, including dates with no activity |
 | Period change | Percentage change from the matching previous window; unavailable when the prior total is zero or a source is incomplete |
-| Actions | Counts and tokens grouped by workspace assistant, Studio/assistant, Smart coordinator, Smart specialist, or SQL function combination |
+| Actions | Counts and tokens grouped by workspace assistant, Studio/assistant, or SQL function combination |
 | Top models | Groups ordered by reported tokens, with missing model names in an explicit unattributed group |
 | Top users | Groups ordered by reported tokens |
-| Failed activities | Explicit failed Smart runs and errored SQL statements; persisted assistant messages have unknown outcome |
-| Duration | Available SQL execution durations only; assistant and Smart latency is not inferred |
+| Failed activities | Errored SQL statements; persisted assistant messages have unknown outcome |
+| Duration | Available SQL execution durations only; assistant latency is not inferred |
 
 ## Accounting boundaries
 
 - A conversation activity is a persisted assistant turn, potentially containing
   several provider calls. It is not a single provider request.
-- Smart coordinator and specialist counters are counted separately. Smart final
-  messages already aggregate these counters and are excluded to avoid counting
-  them twice. Regular agent turns remain in assistant history.
-- Smart run tokens are attributed to the run's start date. In-flight values can
-  increase as checkpoints are saved. A run spanning the window boundary belongs
-  to the window where it started.
-- A Smart zero counter is unknown usage: the stored default cannot distinguish
-  a provider that reported zero from a provider that omitted usage.
-- Existing Smart records do not reliably record per-model token splits. Their
-  tokens remain unattributed. Existing assistant model names are the names saved
-  with the turn; current provider configuration is never used to rewrite history.
+- Usage has two sources: `assistant` (persisted assistant turns) and `functions`
+  (audited AI SQL). Final answers saved by the retired Smart mode (`__smart__`,
+  legacy `__auto__`) are excluded; Smart run counters are no longer read.
+- Existing assistant model names are the names saved with the turn; current
+  provider configuration is never used to rewrite history.
 - SQL activities count statements with executable AI function syntax, not input
   rows or provider calls. A statement containing multiple functions has a combined
   action label and counts once. Comments, quoted strings, EXPLAIN, and function
@@ -59,7 +53,7 @@ The endpoint accepts `days` from 1 through 30, `source`, `model`, `user_name`,
 - Audit timestamps use Nova's configured database timezone. The reader converts
   these timestamps and the query bounds with
   [StarRocks CONVERT_TZ](https://docs.starrocks.io/docs/sql-reference/sql-functions/date-time-functions/convert_tz/)
-  so SQL dates align with assistant and Smart timestamps, which are stored in UTC.
+  so SQL dates align with assistant timestamps, which are stored in UTC.
 - AI SQL wrappers currently return their result without token metadata to Nova.
   SQL activity therefore has unavailable tokens and model, never an estimated
   count or a false zero. Failed statements may have failed before any AI call.
@@ -106,8 +100,7 @@ validation includes the generated `/monitoring/ai` route.
 
 Backend tests cover token arithmetic, null versus zero, current/previous periods,
 source failures, row limits, filters, pagination, AI SQL detection, UTC conversion
-parameters, Smart root inclusion, exclusion of duplicate Smart final messages,
-and the active administrator role boundary. The API only reads existing tables.
+parameters, and the active administrator role boundary. The API only reads existing tables.
 
 Browser tests render the real dashboard with controlled API fixtures. They cover
 all filters, rankings, refresh, auto-refresh toggle, pagination, expandable daily

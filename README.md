@@ -52,7 +52,7 @@ below; the loop is the product model, not a claim of unattended execution.
 | Surface | Role |
 | --- | --- |
 | **Nova Console** | The data and control foundation: SQL Workspace, catalog and Database Explorer, stages, ingestion/export, ML, tasks, security, Semantic Views, Intelligence objects, and monitoring. |
-| **Nova Studio** | The intelligence workspace: agents and Smart collaboration, Missions, investigations, evidence, scenarios, Decisions, governed Actions, Outcomes, artifacts, dashboards, skills, and connectors. |
+| **Nova Studio** | The intelligence workspace: agents, Missions, investigations, evidence, scenarios, Decisions, governed Actions, Outcomes, artifacts, dashboards, skills, and connectors. |
 
 Both surfaces operate on the same governed enterprise foundation and authenticated
 StarRocks identity with one active role. Studio is where people and agents
@@ -104,7 +104,7 @@ reviewed shared definitions.
 
 ### Intelligence runtime
 
-Agents and Smart specialists use the shared bounded assistant engine. Tools,
+Agents use the shared bounded assistant engine. Tools,
 personal skills, scoped memory, artifacts, dashboards, and explicitly selected
 MCP connectors support their work. Data tools retain the signed-in user's active
 role; external tool calls retain per-call consent. Missions persist business
@@ -150,7 +150,7 @@ they do not represent separate physical services.
 | Layer | Capabilities |
 | --- | --- |
 | Nova Studio | Missions, investigations, Decisions, Actions, Outcomes, artifacts |
-| Intelligence runtime | Agents, Smart collaboration, skills, tools, memory |
+| Intelligence runtime | Agents, skills, tools, memory |
 | Business context | Context Graph, knowledge, business policies |
 | Semantic layer | Semantic Views, metrics, relationships, verified queries |
 | Data foundation | SQL, warehouse, catalog, stages, ML, StarRocks |
@@ -161,8 +161,7 @@ Nova Console exposes the data and control foundation across these layers.
 ## The Nova app
 
 These images are captures of a local development instance running demo sales
-data. The Studio workspace shows a saved conversation in which Smart delegated
-the question to a Sales Agent.
+data. The Studio workspace shows a saved conversation with a Sales Agent.
 
 ### SQL Workspace
 
@@ -174,13 +173,7 @@ the question to a Sales Agent.
 
 ### Nova Studio: governed intelligence workspace
 
-![Nova Studio answering a revenue question through a Sales Agent](docs/assets/readme/nova-studio-smart-revenue-preview.png)
-
-Smart mode answers across agents as one analyst. In this recording, shown at four
-times speed, it describes the data it can reach, combines expense from a Finance
-agent with headcount from an HR agent, and charts the result.
-
-![Nova Studio in Smart mode answering three questions: what data it has, expense and active employees by department, and a chart of expense by department](docs/assets/readme/nova-studio-smart-chat.gif)
+![Nova Studio comparing recognized revenue, gross margin, and order count by sales channel](docs/assets/readme/nova-studio-smart-revenue-preview.png)
 
 ### Nova Studio capabilities
 
@@ -331,7 +324,7 @@ nova/
 | Platform overview | [Product model, principles, and terminology](docs/01-overview.md) |
 | Data and SQL | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md) |
 | Semantics and business context | [Intelligence foundation](docs/28-intelligence-foundation.md) |
-| Studio and agents | [Smart collaboration](docs/arch-11-smart-collaboration.md) |
+| Studio and agents | [Governed Studio](docs/arch-15-governed-studio.md) |
 | Decisions and governed workflows | [Governed Studio](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md) |
 | Security and governance | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md) |
 | ML | [Native ML runtime](docs/28-native-ml-runtime.md) |

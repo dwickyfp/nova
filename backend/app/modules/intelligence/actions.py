@@ -750,15 +750,6 @@ class BusinessActionTool:
         )
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
-        if getattr(context, "collaboration_root", False) or getattr(
-            context, "collaboration_tools", ()
-        ):
-            return ToolOutcome(
-                ok=False,
-                summary="",
-                error_class="POLICY_DENIED",
-                error="Smart participants cannot execute business actions.",
-            )
         try:
             arguments = dict(invocation.arguments)
             action_id = arguments.pop("action_id")

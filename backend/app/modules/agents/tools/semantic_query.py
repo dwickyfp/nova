@@ -77,6 +77,18 @@ from app.modules.assistant.tools.query_execute import (
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_terms(value: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE))
+
+
+def matched_alias(question: str, field: dict[str, Any]) -> str | None:
+    """The metric's name or synonym that the question names as whole words."""
+    normalized = " " + _normalize_terms(question) + " "
+    return next((alias for alias in [field.get("name"), *(field.get("synonyms") or [])]
+                 if isinstance(alias, str) and _normalize_terms(alias)
+                 and " " + _normalize_terms(alias) + " " in normalized), None)
+
 _PARAMETERS = {
     "type": "object",
     "properties": {
@@ -303,7 +315,7 @@ class SemanticQueryTool:
                     item for item in plan.unresolved_concepts if not item.material
                 ))
             elif material:
-                return _clarification(semantic_ir, material, specialist=_specialist(context))
+                return _clarification(semantic_ir, material)
             notes: list[str] = []
             if first_query and frame is not None:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
@@ -350,7 +362,7 @@ class SemanticQueryTool:
                 error="The semantic plan could not be compiled safely.",
                 error_class="INVALID_SEMANTIC_PLAN",
                 recoverable=True,
-                safe_detail=str(exc) + (" " + _SPECIALIST_RETRY if _specialist(context) else ""),
+                safe_detail=str(exc),
                 repair_context={
                     "available_metrics": [item.name for item in semantic_ir.metrics],
                     "available_dimensions": [
@@ -699,8 +711,6 @@ class SemanticQueryTool:
 
 def _view_naming_metric(models: list[dict[str, Any]], question: str) -> str | None:
     """The one view whose declared metric names or synonyms the question uses."""
-    from app.modules.agents.auto_planner import matched_alias
-
     hits = []
     for model in models:
         definition = model.get("definition")
@@ -864,17 +874,6 @@ def _prior_plan(model: SemanticModelIR, context: Any) -> SemanticPlan | None:
     return None if validate_plan(model, plan) else plan
 
 
-#: A Smart specialist works on a teammate's task: there is no user to ask.
-_SPECIALIST_RETRY = (
-    "You work on a teammate's task, so there is no user to ask. Call semantic_query "
-    "again with only the data the task needs: the named measures by the fields of what "
-    "is analysed (for outlets: name, latitude, longitude), filtered by the place or "
-    "period named, without analysis steps. Run clustering, forecasts or "
-    "route_optimization with ml_execute and charts with data_to_chart. Report a limit "
-    "only when that data is not in the catalog."
-)
-
-
 #: Tools that work on a query's result: a turn that selected one has steps after it.
 _RESULT_STEPS = frozenset({"ml_execute", "data_to_chart", "compute_metrics", "diagnose_change"})
 
@@ -889,15 +888,7 @@ def _multi_step(context: Any) -> bool:
     )
 
 
-def _specialist(context: Any) -> bool:
-    return bool(getattr(context, "collaboration_tools", None)) and not getattr(
-        context, "collaboration_root", False
-    )
-
-
-def _clarification(
-    model: SemanticModelIR, unresolved: list[str], *, specialist: bool = False
-) -> ToolOutcome:
+def _clarification(model: SemanticModelIR, unresolved: list[str]) -> ToolOutcome:
     """A request the catalog cannot express is a question back, not a failure."""
     return ToolOutcome(
         ok=False,
@@ -908,12 +899,8 @@ def _clarification(
         safe_detail=(
             "These parts of the request are not covered by the Semantic View: "
             + ", ".join(unresolved)
-            + ". "
-            + (
-                _SPECIALIST_RETRY if specialist else
-                "Ask the user one short question in their language, naming what "
-                "is available instead. Do not guess a value."
-            )
+            + ". Ask the user one short question in their language, naming what "
+            "is available instead. Do not guess a value."
         ),
         repair_context={
             "unresolved": unresolved,

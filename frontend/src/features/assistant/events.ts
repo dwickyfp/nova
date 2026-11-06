@@ -2,7 +2,6 @@ import type {
   ChartBlock,
   AssistantEvent,
   PlanStep,
-  SmartDraft,
   ThinkingPhase,
   ThinkingStatus,
   ToolCallStatus,
@@ -183,49 +182,6 @@ export function parseAssistantEvent(
         return parseChart(record);
       case "citation":
         return parseCitation(record);
-      case "smart_draft": {
-        const draft = parseSmartDraft(record);
-        return draft ? { type: "smart_draft", draft } : null;
-      }
-      case "automation_proposal": {
-        const {
-          title,
-          prompt,
-          schedule_kind: kind,
-          schedule_expr: expr,
-          timezone,
-        } = record;
-        if (
-          typeof title !== "string" ||
-          typeof prompt !== "string" ||
-          typeof expr !== "string" ||
-          typeof timezone !== "string" ||
-          (kind !== "cron" && kind !== "interval")
-        )
-          return null;
-        const raw = record.condition as
-          Record<string, unknown> | null | undefined;
-        const condition =
-          raw &&
-          typeof raw.metric === "string" &&
-          typeof raw.operator === "string" &&
-          typeof raw.value === "number"
-            ? { metric: raw.metric, operator: raw.operator, value: raw.value }
-            : null;
-        return {
-          type: "automation_proposal",
-          proposal: {
-            title,
-            prompt,
-            schedule_kind: kind,
-            schedule_expr: expr,
-            timezone,
-            condition,
-            next_run:
-              typeof record.next_run === "string" ? record.next_run : undefined,
-          },
-        };
-      }
       case "suggestions": {
         const items = Array.isArray(record.suggestions)
           ? record.suggestions
@@ -575,17 +531,4 @@ export async function* readSseFrames(
   } finally {
     reader.releaseLock();
   }
-}
-
-/** A Smart draft from a frame or a stored step; anything malformed is dropped. */
-export function parseSmartDraft(record: Record<string, unknown>): SmartDraft | null {
-  const { draft_kind: kind, title, detail, payload } = record;
-  if (typeof title !== "string" || typeof detail !== "string") return null;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  if (kind === "knowledge_proposal")
-    return { draft_kind: kind, title, detail, payload: payload as Record<string, unknown> };
-  const draft = (payload as Record<string, unknown>).draft;
-  if (kind === "investigation_update" && typeof record.incident_id === "string" && typeof draft === "string")
-    return { draft_kind: kind, title, detail, incident_id: record.incident_id, payload: { draft } };
-  return null;
 }

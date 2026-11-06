@@ -1,5 +1,5 @@
 import { processSummary } from "./process-summary";
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { highlightExplorerSql as highlightSql } from "@/features/database-explorer/sql-highlighter";
 import { isSqlPreview } from "./tool-preview";
 import { formatArtifactSql } from "./artifact-source";
@@ -15,7 +15,6 @@ import {
   Search,
   ShieldQuestion,
   Square,
-  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,25 +25,13 @@ import {
 } from "@/components/ui/collapsible";
 import type { ThinkingPhase, ToolCallStatus } from "@/features/assistant/types";
 import { TextShimmer } from "./text-shimmer";
-import {
-  branchStepText,
-  formatSpan,
-  groupRailSteps,
-  isFailedStatus,
-  isLiveStatus,
-  recordedSpan,
-  resultLine,
-  type BranchStatus,
-  type RailItem,
-} from "./rail-model";
+import { formatSpan, isFailedStatus, isLiveStatus, recordedSpan } from "./rail-model";
 
 /**
  * The agentic process, rendered as one collapsible run per turn.
  *
  * A live run opens onto a tree: each recorded step hangs off the rail on its
- * own elbow, the rail grows as steps arrive, and a specialist Smart called
- * becomes a branch with its own steps and, once it finishes, its result line.
- * When the answer is done the run folds back into one summary line, so the
+ * own elbow and the rail grows as steps arrive. When the answer is done the run folds back into one summary line, so the
  * answer stays the thing a reader sees first.
  *
  * Every row is a real event Nova recorded. There is no invented chain-of-
@@ -56,7 +43,7 @@ import {
 /** One row on the rail. */
 export type RailStep = {
   id: string;
-  kind: "thinking" | "tool" | "consent" | "note" | "delegate";
+  kind: "thinking" | "tool" | "consent" | "note";
   /** Phase label, tool name, or note kind, used for the icon and the verb. */
   label: string;
   /** Name of a loaded skill, when this is a skill tool row. */
@@ -72,10 +59,6 @@ export type RailStep = {
   body?: string;
   /** A tool result summary, shown when the row is open. */
   detail?: string;
-  /** Open this specialist's own work timeline. */
-  childRunId?: string;
-  /** The specialist this row belongs to, when it is not the main agent. */
-  actor?: string;
   /** When the run journal recorded this row. */
   at?: string;
 };
@@ -99,7 +82,6 @@ const TOOL_ICON: Record<string, LucideIcon> = {
 };
 
 function stepIcon(step: RailStep): LucideIcon {
-  if (step.kind === "delegate") return Workflow;
   if (step.kind === "consent") return ShieldQuestion;
   if (step.kind === "tool") return TOOL_ICON[step.label] ?? Database;
   if (step.kind === "note") return CircleAlert;
@@ -164,12 +146,12 @@ function spanLabel(span: Span | undefined, now: number, recorded?: number): stri
   return ms !== undefined && ms >= MIN_SPAN_MS ? formatSpan(ms) : undefined;
 }
 
-type MarkState = "running" | "live" | "done" | "failed" | "stopped";
+type MarkState = "running" | "live" | "done" | "failed";
 
 /**
  * The status mark, Nova's signature on the rail: a ring whose arc turns while
  * a step works and which fills into a check when it finishes. `strong` marks a
- * result (a whole run, a specialist) in the success colour; ordinary steps
+ * result (a whole run) in the success colour; ordinary steps
  * settle into a quiet check. `settle` plays the fill once, only for a step the
  * reader watched finish.
  */
@@ -188,15 +170,6 @@ function StatusMark({ state, strong = false, settle = false }: { state: MarkStat
     return (
       <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
         <span className="nova-live-dot relative size-2 rounded-full bg-primary" />
-      </span>
-    );
-  }
-  if (state === "stopped") {
-    return (
-      <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
-        <svg viewBox="0 0 16 16" className="size-4 text-muted-foreground">
-          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2.6" />
-        </svg>
       </span>
     );
   }
@@ -230,13 +203,9 @@ function StatusMark({ state, strong = false, settle = false }: { state: MarkStat
   );
 }
 
-function stepMark(step: RailStep, quietLive: boolean): MarkState {
-  if (isLiveStatus(step.status)) return quietLive ? "live" : "running";
+function stepMark(step: RailStep): MarkState {
+  if (isLiveStatus(step.status)) return "running";
   return isFailedStatus(step.status) ? "failed" : "done";
-}
-
-function branchMark(status: BranchStatus): MarkState {
-  return status === "running" ? "running" : status;
 }
 
 function plural(count: number, noun: string): string {
@@ -252,13 +221,11 @@ export function ProcessRail({
   defaultOpen = false,
   /** Bumped by the parent to force the rail open, e.g. after a decision. */
   revealKey = 0,
-  onOpenChild,
 }: {
   steps: RailStep[];
   running: boolean;
   defaultOpen?: boolean;
   revealKey?: number;
-  onOpenChild?: (childRunId: string) => void;
 }) {
   // A live run opens so the work is visible while it happens; a replayed one
   // starts as its summary line.
@@ -297,30 +264,23 @@ export function ProcessRail({
     setOpen(true);
   }, [revealKey]);
 
-  const items = useMemo(() => groupRailSteps(steps, running), [steps, running]);
-  const spanKeys = useMemo(() => {
-    const keys = [{ id: RUN_KEY, live: running }];
-    for (const item of items) {
-      if (item.type === "step") {
-        keys.push({ id: item.id, live: isLiveStatus(item.step.status) });
-      } else {
-        keys.push({ id: item.id, live: item.status === "running" });
-        for (const step of item.steps) keys.push({ id: step.id, live: isLiveStatus(step.status) });
-      }
-    }
-    return keys;
-  }, [items, running]);
+  const spanKeys = useMemo(
+    () => [
+      { id: RUN_KEY, live: running },
+      ...steps.map((step) => ({ id: step.id, live: isLiveStatus(step.status) })),
+    ],
+    [steps, running],
+  );
   const spans = useObservedSpans(spanKeys);
   const now = useNow(running);
 
   if (!steps.length) return null;
 
   const failed = steps.some((step) => isFailedStatus(step.status));
-  const branches = items.filter((item) => item.type === "branch").length;
   const runSpan = spans.get(RUN_KEY);
   const recordedRun = recordedSpan(steps.find((step) => step.at)?.at, [...steps].reverse().find((step) => step.at)?.at);
   const duration = spanLabel(runSpan, now, running ? undefined : recordedRun);
-  const scope = branches ? plural(branches, "specialist") : plural(steps.length, "step");
+  const scope = plural(steps.length, "step");
 
   return (
     <Collapsible
@@ -375,15 +335,15 @@ export function ProcessRail({
 
       <CollapsibleContent className="CollapsibleContent">
         <ul aria-label="Run steps" className="nova-rail mt-1 ml-[7px]">
-          {items.map((item, index) => (
-            <RailEntry
-              key={item.id}
-              item={item}
-              index={index}
-              spans={spans}
-              now={now}
-              onOpenChild={onOpenChild}
-            />
+          {steps.map((step, index) => (
+            <li
+              key={step.id}
+              className="nova-rail-item"
+              data-live={isLiveStatus(step.status) || undefined}
+              style={{ "--i": Math.min(index, 8) } as CSSProperties}
+            >
+              <StepRow step={step} span={spans.get(step.id)} now={now} />
+            </li>
           ))}
         </ul>
       </CollapsibleContent>
@@ -392,128 +352,16 @@ export function ProcessRail({
 }
 
 
-function RailEntry({ item, index, spans, now, onOpenChild }: {
-  item: RailItem;
-  index: number;
-  spans: Spans;
-  now: number;
-  onOpenChild?: (childRunId: string) => void;
-}) {
-  const style = { "--i": Math.min(index, 8) } as CSSProperties;
-  if (item.type === "branch") {
-    return <BranchEntry branch={item} style={style} spans={spans} now={now} onOpenChild={onOpenChild} />;
-  }
-  return (
-    <li className="nova-rail-item" data-live={isLiveStatus(item.step.status) || undefined} style={style}>
-      <StepRow step={item.step} text={item.step.text} span={spans.get(item.id)} now={now} onOpenChild={onOpenChild} />
-    </li>
-  );
-}
-
-/**
- * A specialist Smart called. While it works its own steps hang under it; when
- * it finishes they fold away behind a result line, and the head opens the
- * specialist's full conversation.
- */
-function BranchEntry({ branch, style, spans, now, onOpenChild }: {
-  branch: Extract<RailItem, { type: "branch" }>;
-  style: CSSProperties;
-  spans: Spans;
-  now: number;
-  onOpenChild?: (childRunId: string) => void;
-}) {
-  const [showSteps, setShowSteps] = useState(false);
-  const { head, end, status } = branch;
-  const span = spans.get(branch.id);
-  const duration = spanLabel(span, now, status === "running" ? undefined : recordedSpan(head.at, end?.at));
-  const title = resultLine(head.body) ?? head.text;
-  const name = head.actor;
-  const working = status === "running";
-  const stepsOpen = working || showSteps;
-  const result =
-    status === "done"
-      ? resultLine(end?.detail) ?? `${name ?? "Specialist"} finished`
-      : status === "failed"
-        ? end?.text ?? "Stopped with an error"
-        : undefined;
-  const mark = <StatusMark state={branchMark(status)} strong settle={span?.end !== undefined} />;
-  const label = (
-    <>
-      {mark}
-      <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
-        <span className={cn("truncate text-foreground", status === "failed" && "text-destructive")}>{title}</span>
-        {name && name !== title ? <span className="truncate text-xs text-muted-foreground">{name}</span> : null}
-      </span>
-      {duration ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{duration}</span> : null}
-    </>
-  );
-
-  return (
-    <li className="nova-rail-item" data-branch="" data-live={working || undefined} style={style}>
-      {head.childRunId && onOpenChild ? (
-        <button
-          type="button"
-          onClick={() => onOpenChild(head.childRunId as string)}
-          aria-label={`${head.text}. Open subagent conversation`}
-          className="group flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md text-left text-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-8"
-        >
-          {label}
-          <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
-        </button>
-      ) : (
-        <div className="flex min-h-11 min-w-0 items-center gap-2 text-sm sm:min-h-8">{label}</div>
-      )}
-
-      {branch.steps.length ? (
-        <Collapsible open={stepsOpen} onOpenChange={setShowSteps}>
-          <CollapsibleContent className="CollapsibleContent">
-            <ul aria-label={`${name ?? "Specialist"} steps`} className="nova-rail ml-[7px]">
-              {branch.steps.map((step, index) => (
-                <li key={step.id} className="nova-rail-item" data-live={isLiveStatus(step.status) || undefined} style={{ "--i": Math.min(index, 8) } as CSSProperties}>
-                  <StepRow step={step} text={branchStepText(step)} span={spans.get(step.id)} now={now} quietLive />
-                </li>
-              ))}
-            </ul>
-          </CollapsibleContent>
-          {result ? (
-            <ResultLine status={status} text={result}>
-              {!working ? (
-                <CollapsibleTrigger className="ml-auto shrink-0 rounded px-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                  {showSteps ? "Hide steps" : plural(branch.steps.length, "step")}
-                </CollapsibleTrigger>
-              ) : null}
-            </ResultLine>
-          ) : null}
-        </Collapsible>
-      ) : result ? (
-        <ResultLine status={status} text={result} />
-      ) : null}
-    </li>
-  );
-}
-
-function ResultLine({ status, text, children }: { status: BranchStatus; text: string; children?: ReactNode }) {
-  return (
-    <div className="nova-rail-result flex min-h-8 min-w-0 items-center gap-2 text-sm">
-      <StatusMark state={status === "failed" ? "failed" : "done"} strong />
-      <span className={cn("min-w-0 truncate", status === "failed" ? "text-destructive" : "text-success-strong")}>{text}</span>
-      {children}
-    </div>
-  );
-}
-
-function StepRow({ step, text, span, now, quietLive = false, onOpenChild }: {
+function StepRow({ step, span, now }: {
   step: RailStep;
-  text: string;
   span?: Span;
   now: number;
-  quietLive?: boolean;
-  onOpenChild?: (childRunId: string) => void;
 }) {
+  const text = step.text;
   const Icon = stepIcon(step);
   const live = isLiveStatus(step.status);
   const failed = isFailedStatus(step.status);
-  const mark = <StatusMark state={stepMark(step, quietLive)} settle={span?.end !== undefined} />;
+  const mark = <StatusMark state={stepMark(step)} settle={span?.end !== undefined} />;
   const duration = spanLabel(span, now);
   // Rows with a statement or result can be opened for more detail.
   const [open, setOpen] = useState(false);
@@ -539,23 +387,6 @@ function StepRow({ step, text, span, now, quietLive = false, onOpenChild }: {
   const meta = duration ? (
     <span className="ml-auto shrink-0 pl-2 font-mono text-xs tabular-nums text-muted-foreground">{duration}</span>
   ) : null;
-
-  if (step.childRunId && onOpenChild) {
-    return (
-      <button
-        type="button"
-        onClick={() => onOpenChild(step.childRunId as string)}
-        aria-label={`${step.text}. Open subagent conversation`}
-        className="group flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md text-left text-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-8"
-      >
-        {mark}
-        <Icon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-        {words}
-        {meta}
-        <ChevronRight aria-hidden="true" className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none", !meta && "ml-auto")} />
-      </button>
-    );
-  }
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>

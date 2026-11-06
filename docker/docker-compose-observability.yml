@@ -131,11 +131,6 @@ services:
     networks:
       - nova
 
-  # Defined in docker-compose-engine.yml; expose its metrics to Prometheus here.
-  nova-agent-worker:
-    environment:
-      NOVA_METRICS_HOST: 0.0.0.0
-
 volumes:
   prometheus_data:
   grafana_data:

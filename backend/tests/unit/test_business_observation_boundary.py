@@ -37,27 +37,6 @@ def test_canonical_contributions_are_numbers_for_final_verification_and_replay()
     assert restored.snapshot() == snapshot
 
 
-def test_authorized_specialist_facts_keep_provenance_and_remap_numeric_references():
-    child, root = EvidenceTracker(), EvidenceTracker()
-    child.add_business_result(observation(), workflow={"mission_id": "revenue",
-                              "run_id": "child-turn", "root_run_id": "root"})
-    root.add("search_knowledge", "Packaged documentation")
-    participant = {"status": "completed", "depth": 1, "agent_id": "finance",
-                   "current_turn_id": "child-turn", "evidence": child.snapshot()}
-    root.import_results(participant)
-    canonical = next(item for item in root.items if item.tool == "canonical_investigation")
-    assert canonical.metadata["workflow"]["run_id"] == "child-turn"
-    assert canonical.metadata["canonical_business_result"]["numeric_evidence_refs"] == {
-        "comparison": "evidence_2", "hypotheses": "evidence_3",
-    }
-    snapshot = root.snapshot()
-    root.import_results(participant)
-    assert root.snapshot() == snapshot
-    untrusted = {**participant, "current_turn_id": "untrusted", "status": "running"}
-    root.import_results(untrusted)
-    assert root.snapshot() == snapshot
-
-
 def test_provider_channels_exclude_internal_trace_and_legacy_confidence():
     result = BusinessResultHookResult(
         public_event={"mission_id": "mission"}, provider_observation=observation(),

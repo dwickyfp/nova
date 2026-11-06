@@ -17,7 +17,7 @@ export type UsageStats = {
 };
 
 export type UsageGroup = UsageStats & { name: string | null };
-export type UsageSource = "assistant" | "smart" | "functions" | "function_tokens";
+export type UsageSource = "assistant" | "functions" | "function_tokens";
 export type UsageActivity = {
   id: string;
   at: string;
@@ -83,7 +83,6 @@ export function fetchAIUsage(filters: UsageFilters, signal?: AbortSignal) {
 
 export const sourceLabels: Record<UsageSource, string> = {
   assistant: "Nova Studio / Assistant",
-  smart: "Smart Mode",
   functions: "AI Functions",
   function_tokens: "Measured AI function tokens",
 };

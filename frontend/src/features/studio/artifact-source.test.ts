@@ -139,7 +139,7 @@ describe("artifact SQL provenance", () => {
     );
   });
 
-  it("uses the statement a Smart chart carries from a specialist's rows", () => {
+  it("uses the source statement a chart carries", () => {
     const item: SavableContent = {
       id: "chart-1",
       index: 0,

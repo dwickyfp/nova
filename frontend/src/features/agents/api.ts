@@ -4,7 +4,7 @@ import {
   parseAssistantEvent,
   readSseFrames,
 } from "@/features/assistant/events";
-import type { AssistantEvent, AutomationProposal, SmartDraft, WorkflowProvenance } from "@/features/assistant/types";
+import type { AssistantEvent, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
 import type { DashboardComputeResponse } from "@/features/viz/types";
 
@@ -80,66 +80,6 @@ export const agentVersionsApi = {
     `/agents/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/publish`, {
       expected_revision: revision,
     }),
-};
-
-export const SMART_AGENT_ID = "__smart__";
-export const AUTO_AGENT_ID = SMART_AGENT_ID;
-export const isSmartAgent = (id: string) => id === SMART_AGENT_ID || id === "__auto__";
-
-export type AutoRun = {
-  agent_session_id?: string;
-  parent_agent_session_id?: string | null;
-  agent_path?: string;
-  turn_number?: number;
-  run_id: string;
-  root_run_id: string;
-  parent_run_id: string | null;
-  agent_id: string;
-  agent_name?: string;
-  objective: string;
-  status: string;
-  depth: number;
-  summary: string | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  started_at: string;
-  updated_at: string;
-  error_class: string | null;
-};
-
-export type AutoRunEvent = {
-  event_id: number;
-  run_id: string;
-  type: string;
-  payload: Record<string, unknown>;
-  created_at: string;
-};
-
-export type AutoChildTimeline = {
-  run: {
-    run_id: string;
-    root_run_id: string;
-    agent_id: string;
-    agent_name: string;
-    objective: string;
-    status: string;
-    result_summary: string | null;
-    error_class: string | null;
-    prompt_tokens: number | null;
-    completion_tokens: number | null;
-  };
-  events: AutoRunEvent[];
-  next_cursor: number;
-  has_more: boolean;
-};
-
-export type AutoThreadRun = {
-  run_id: string;
-  status: string;
-  objective: string;
-  started_at: string;
-  final_message_id?: string;
-  user_message_id?: string | null;
 };
 
 export type AgentMemory = {
@@ -250,41 +190,6 @@ export const agentsApi = {
     api.get<{ agents: Agent[]; count: number; needs_access?: { agent_id: string; name: string }[] }>(
       "/agents?studio=true",
     ),
-  getAutoRunTree: (rootRunId: string) =>
-    api.get<{ runs: AutoRun[] }>(`/agents/smart/runs/${encodeURIComponent(rootRunId)}`),
-  getAutoRunEvents: (rootRunId: string, after = -1) =>
-    api.get<{ events: AutoRunEvent[] }>(
-      `/agents/smart/runs/${encodeURIComponent(rootRunId)}/events?after=${after}`,
-    ),
-  getAutoChildTimeline: (rootRunId: string, childRunId: string, after = -1) =>
-    api.get<AutoChildTimeline>(
-      `/agents/smart/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/timeline?after=${after}&limit=100`,
-    ),
-  listAutoThreadRuns: (threadId: string) =>
-    api.get<{ runs: AutoThreadRun[] }>(
-      `/agents/smart/threads/${encodeURIComponent(threadId)}/runs`,
-    ),
-  cancelAutoRun: (rootRunId: string) =>
-    api.post<{ status: string }>(`/agents/smart/runs/${encodeURIComponent(rootRunId)}/cancel`, {}),
-  cancelAutoChild: (rootRunId: string, childRunId: string) =>
-    api.post<{ status: string }>(
-      `/agents/smart/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/cancel`, {},
-    ),
-  sendAutoChildMessage: (rootRunId: string, childRunId: string, body: {
-    operation_id: string;
-    content: string;
-    correlation_id?: string;
-    reply_to?: string;
-  }) => api.post<{ message_id: string; status: string }>(
-    `/agents/smart/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/messages`, body,
-  ),
-  interruptSmartAgent: (rootRunId: string, target: string) => api.post(
-    `/agents/smart/runs/${encodeURIComponent(rootRunId)}/participants/${encodeURIComponent(target)}/interrupt`, {},
-  ),
-  followupSmartAgent: (rootRunId: string, target: string, content: string, operationId: string, resourceRefs?: string[]) => api.post(
-    `/agents/smart/runs/${encodeURIComponent(rootRunId)}/participants/${encodeURIComponent(target)}/followup`,
-    { content, operation_id: operationId, resource_refs: resourceRefs },
-  ),
   get: (id: string) => api.get<Agent>(`/agents/${encodeURIComponent(id)}`),
   create: (body: AgentCreateInput) => api.post<Agent>("/agents", body),
   update: (id: string, body: Partial<AgentCreateInput>) =>
@@ -1010,10 +915,6 @@ export type TraceStep =
     }
   /** A dashboard artifact the turn created, replayable from Artifacts. */
   | ({ kind: "dashboard"; content_index: number; content_id: string } & import("../viz/types").DashboardArtifactBlock)
-  /** A schedule Smart drafted for the user to confirm. */
-  | ({ kind: "automation_proposal" } & AutomationProposal)
-  /** A proposal or finding Smart prepared for the user to submit. */
-  | ({ kind: "smart_draft" } & SmartDraft)
   /** Sources a semantic search cited. */
   | {
       kind: "citation";

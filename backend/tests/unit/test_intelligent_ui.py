@@ -150,40 +150,6 @@ async def test_evidence_transport_reports_omitted_rows(count):
     assert block["provenance"]["omitted_rows"] == max(0, count - 200)
 
 
-async def test_smart_preserves_sealed_ui_and_assigns_distinct_resume_cursors(monkeypatch):
-    from app.modules.agents import router
-    from app.modules.agents.harness_worker import _root_artifacts
-
-    context = LoopContext(user_name="alice", steps=[])
-    block = await ui.compose_block(
-        CALCULATOR, "100 units at 20 each totals 2000.",
-        tables={}, business=False, question="Assumption calculator", claims=None, language="en",
-    )
-    _ordered_output_frames("Adjust the assumptions.", [PendingArtifact("ui", block)], context)
-    artifacts = _root_artifacts(context.steps)
-    assert [item["kind"] for item in artifacts] == ["text", "ui"]
-    assert artifacts[1]["program_sha256"] == block["program_sha256"]
-    assert artifacts[1]["content_id"] == "content-1"
-    monkeypatch.setattr(router.harness_repository, "events_page", AsyncMock(return_value=[{
-        "event_id": 1_792_512_000_000_00, "run_id": "run", "type": "agent_completed",
-        "payload": {"answer": "Adjust the assumptions.", "artifacts": artifacts},
-    }]))
-
-    async def collect(after):
-        return [frame async for frame in router._stream_auto_events("run", after)]
-
-    frames = await collect(-1)
-    decoded = [(frame.splitlines()[0], json.loads(frame.split("data: ", 1)[1]))
-               for frame in frames]
-    assert all(isinstance(value["sequence"], str) for _, value in decoded)
-    cursors = [int(value["sequence"]) for _, value in decoded]
-    assert cursors == sorted(set(cursors))
-    assert any(kind == "event: ui" for kind, _ in decoded)
-    assert any(kind == "event: content_block_done" for kind, _ in decoded)
-    for index, cursor in enumerate(cursors[:-1]):
-        assert await collect(cursor) == frames[index + 1:]
-
-
 async def test_official_parser_validates_functional_programs_and_bound_evidence():
     result = await ui.parse_program(CALCULATOR)
     assert result["state"] == {"$units": 5}

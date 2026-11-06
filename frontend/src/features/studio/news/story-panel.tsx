@@ -44,13 +44,15 @@ function Body({
   story,
   epoch,
   onInvestigate,
+  investigateAgentId,
 }: {
   story: StoryDetail;
   epoch: number;
   onInvestigate: (handoff: InvestigationHandoff) => void;
+  investigateAgentId?: string | null;
 }) {
   const investigate = useMutation({
-    mutationFn: () => newspaperApi.investigate(story.id),
+    mutationFn: (agentId: string) => newspaperApi.investigate(story.id, agentId),
     onSuccess: onInvestigate,
     onError: (error: Error) => toast.error(error.message),
   });
@@ -122,9 +124,18 @@ function Body({
         <IncidentSection storyId={story.id} epoch={epoch} />
       </Section>
       <div className="border-t pt-5">
-        <Button disabled={investigate.isPending} onClick={() => investigate.mutate()}>
+        <Button
+          disabled={investigate.isPending || !investigateAgentId}
+          aria-describedby={investigateAgentId === null ? "investigate-needs-agent" : undefined}
+          onClick={() => investigateAgentId && investigate.mutate(investigateAgentId)}
+        >
           {investigate.isPending ? "Opening Studio" : "Investigate in Studio"}
         </Button>
+        {investigateAgentId === null ? (
+          <p id="investigate-needs-agent" className="mt-2 text-xs text-muted-foreground">
+            Create an agent to investigate
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-muted-foreground">
           Opens your own Studio Mission for this story. Studio checks your access again and
           reads the figures itself; the headline is not passed on as fact.
@@ -143,6 +154,7 @@ export function StoryPanel({
   onOpen,
   onReact,
   onInvestigate,
+  investigateAgentId,
 }: {
   /** The reader's reaction as the edition page holds it. */
   reaction: Reaction | null | undefined;
@@ -153,6 +165,7 @@ export function StoryPanel({
   epoch: number;
   onOpen: (id?: string) => void;
   onInvestigate: (handoff: InvestigationHandoff) => void;
+  investigateAgentId?: string | null;
 }) {
   const story = useQuery({
     queryKey: ["newspaper", epoch, "story", id],
@@ -208,7 +221,12 @@ export function StoryPanel({
               <LoadingLines />
             </>
           ) : (
-            <Body story={story.data} epoch={epoch} onInvestigate={onInvestigate} />
+            <Body
+              story={story.data}
+              epoch={epoch}
+              onInvestigate={onInvestigate}
+              investigateAgentId={investigateAgentId}
+            />
           )}
         </div>
       </SheetContent>

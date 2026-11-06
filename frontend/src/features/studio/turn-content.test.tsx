@@ -208,7 +208,7 @@ describe("one table per query result", () => {
       .toBeVisible();
   });
 
-  it("keeps a standalone Smart answer that has no interactive result", async () => {
+  it("keeps a standalone answer that has no interactive result", async () => {
     const standalone = turn(answers.en);
     standalone.content = [];
     const screen = await render(<TurnContent turn={standalone} />);

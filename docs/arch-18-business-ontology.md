@@ -246,14 +246,18 @@ are accepted. Every read and move is audited, refusals included.
 ## News to Studio investigation
 
 **Handoff.** In a News story, **Investigate in Studio** calls
-`POST /intelligence/stories/{id}/investigate`
-(`backend/app/modules/intelligence/investigations.py`). The server:
+`POST /intelligence/stories/{id}/investigate` with the reader's default agent as
+`{"agent_id": "..."}`
+(`backend/app/modules/intelligence/investigations.py`). The caller must own the
+agent, or it must be shared with their active role, and pass the agent access
+check. Without an agent the button is disabled ("Create an agent to
+investigate"). The server:
 1. proves the story again for the caller;
 2. records its signal and incident;
-3. creates, or finds again, a Smart thread and an investigating Mission. Their
-   ids derive from the story, its proof digest and the caller's principal and
-   role, so a second click or a retry opens the same Mission, and each reader
-   gets their own;
+3. creates, or finds again, a thread with that agent and an investigating
+   Mission. Their ids derive from the story, its proof digest, the caller's
+   principal and role, and the agent, so a second click or a retry opens the
+   same Mission, and each reader gets their own;
 4. anchors the Mission to the incident by reference (`Mission.incident_anchor`).
    The headline is never passed on as trusted context;
 5. moves an `OPEN` or `TRIAGED` incident to `INVESTIGATING`.
@@ -273,16 +277,6 @@ access cannot continue.
 
 Both need consent. The update tool writes a reviewable proposal
 (`session_change`), never a published fact.
-
-**In Smart.** A Smart turn runs unattended and cannot ask for consent, so its
-root reads the incident with `incident_context` and drafts findings with
-`draft_investigation_update`, which writes nothing. It checks the citations
-against the run's verified tables and signs the checked draft with HMAC over
-`SECRET_KEY`, bound to the caller's principal, active role and security-context
-version, valid for 24 hours. Studio shows the draft as a card; **Post for
-review** sends it to `POST /intelligence/incidents/{id}/updates`, which accepts
-only an intact, unexpired draft for the same caller and then posts it as
-`investigation_update` would. Refusals are audited.
 
 **Review and timeline.** Findings are stored in
 `CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES` as `PENDING_REVIEW`. Their figures
@@ -310,11 +304,7 @@ into an ontology proposal with source `AGENT`, submitted for the caller. It can:
 - revise a definition;
 - propose a new concept in a domain the caller can see.
 
-It needs consent (`session_change`) and is bundleable. In Smart, which cannot
-ask consent, the root uses `draft_knowledge_proposal` instead: it validates the
-change and leaves a draft card; **Submit for review** files it through
-`POST /ontology/proposals` as the user. Smart also reads approved meaning itself
-with `ontology_resolve` and `ontology_explain` rather than delegating it.
+It needs consent (`session_change`) and is bundleable.
 Nothing changes until a steward of the domain approves the proposal and a
 release is published. The caller can never approve it, because the caller is
 the submitter. Agents are told never to claim the definition already changed.

@@ -84,6 +84,11 @@ def studio(monkeypatch, hub):
     monkeypatch.setattr(thread_store, "register", lambda **_: None)
     monkeypatch.setattr(mission_service, "create", create_mission)
     monkeypatch.setattr(mission_service, "record_incident_anchor", anchor)
+
+    async def usable_agent(agent_id, caller):
+        return {"agent_id": agent_id} if agent_id == "sales" else None
+
+    monkeypatch.setattr(investigations, "_usable_agent", usable_agent)
     return SimpleNamespace(stories=stories, threads=threads, missions=missions, anchors=anchors)
 
 
@@ -92,10 +97,10 @@ def studio(monkeypatch, hub):
 
 async def test_investigating_twice_opens_the_same_thread_and_mission(hub, studio):
     hub.share("story_rev", ANALYST)
-    first = await investigations.investigate("story_rev", ANALYST)
-    again = await investigations.investigate("story_rev", ANALYST)
+    first = await investigations.investigate("story_rev", "sales", ANALYST)
+    again = await investigations.investigate("story_rev", "sales", ANALYST)
     assert first == again
-    assert first["handoff_status"] == "READY" and first["agent_id"] == "__smart__"
+    assert first["handoff_status"] == "READY" and first["agent_id"] == "sales"
     assert len(studio.threads) == 1 and len(studio.missions) == 1
     (mission,) = studio.missions.values()
     assert "Revenue fell" not in mission.body.objective  # references, not the headline
@@ -107,17 +112,25 @@ async def test_investigating_twice_opens_the_same_thread_and_mission(hub, studio
     assert len(incident.transitions) == 1  # the second click did not move it again
 
 
+async def test_an_agent_the_reader_cannot_use_opens_nothing(hub, studio):
+    hub.share("story_rev", ANALYST)
+    with pytest.raises(HTTPException) as denied:
+        await investigations.investigate("story_rev", "someone_elses_agent", ANALYST)
+    assert denied.value.status_code == 404
+    assert not studio.threads and not studio.missions
+
+
 async def test_each_reader_gets_their_own_mission(hub, studio):
     hub.share("story_rev", ANALYST, FINANCE_STEWARD)
-    mine = await investigations.investigate("story_rev", ANALYST)
-    theirs = await investigations.investigate("story_rev", FINANCE_STEWARD)
+    mine = await investigations.investigate("story_rev", "sales", ANALYST)
+    theirs = await investigations.investigate("story_rev", "sales", FINANCE_STEWARD)
     assert mine["thread_id"] != theirs["thread_id"]
     assert mine["incident_id"] == theirs["incident_id"]
 
 
 async def test_a_reader_without_the_story_gets_a_generic_not_found(hub, studio):
     with pytest.raises(HTTPException) as hidden:
-        await investigations.investigate("story_rev", OUTSIDER)
+        await investigations.investigate("story_rev", "sales", OUTSIDER)
     assert hidden.value.status_code == 404
     assert hidden.value.detail == business_events.UNAVAILABLE
     assert hub.audits[-1]["status"] == "DENIED"
@@ -127,7 +140,7 @@ async def test_a_reader_without_the_story_gets_a_generic_not_found(hub, studio):
 async def test_the_story_incident_is_read_through_the_story_proof(hub, studio):
     hub.share("story_rev", ANALYST)
     assert await hub.service.incident_for_story("story_rev", ANALYST) is None
-    await investigations.investigate("story_rev", ANALYST)
+    await investigations.investigate("story_rev", "sales", ANALYST)
     incident = await hub.service.incident_for_story("story_rev", ANALYST)
     assert incident["status"] == "INVESTIGATING"
     with pytest.raises(HTTPException):
@@ -290,21 +303,13 @@ async def test_investigation_update_tool_rejects_invented_evidence(hub, monkeypa
     assert not invalid.ok
 
 
-def test_the_incident_tools_are_registered_for_agents_and_smart():
-    from app.modules.agents.harness_worker import SMART_ROOT_TOOLS
+def test_the_incident_tools_are_registered_for_agents():
     from app.modules.agents.registry import KNOWN_TOOLS, build_registry
     from app.modules.agents.tool_catalog import AGENT_BUNDLEABLE_TOOLS, BUILTIN_TOOLS
-    from app.modules.assistant.service import SMART_DRAFT_TOOLS
 
     for name in ("incident_context", "investigation_update"):
         assert name in KNOWN_TOOLS and name in AGENT_BUNDLEABLE_TOOLS
         assert name in BUILTIN_TOOLS
-    # Smart reads the incident itself and drafts findings, since it cannot ask consent.
-    assert "incident_context" in SMART_ROOT_TOOLS
-    assert "investigation_update" not in SMART_ROOT_TOOLS
-    assert "draft_investigation_update" in SMART_DRAFT_TOOLS
-    draft_tool = incident_tools.draft_investigation_update_tool
-    assert draft_tool.classification == "read_only" and not draft_tool.requires_consent
     registry = build_registry({"default_tools": ["incident_context", "investigation_update"]})
     assert {"incident_context", "investigation_update"} <= set(registry.names())
     assert incident_tools.investigation_update_tool.classification == "session_change"
@@ -373,13 +378,18 @@ def test_incident_routes_for_review_and_handoff(monkeypatch):
     service = business_events_router.business_event_service
     monkeypatch.setattr(service, "review_update", AsyncMock(return_value={"id": "inc_1"}))
     monkeypatch.setattr(service, "incident_for_story", AsyncMock(return_value=None))
-    monkeypatch.setattr(investigations, "investigate", AsyncMock(return_value={"mission_id": "m"}))
+    investigate = AsyncMock(return_value={"mission_id": "m"})
+    monkeypatch.setattr(investigations, "investigate", investigate)
     app = FastAPI()
     app.include_router(business_events_router.router, prefix="/intelligence")
     app.dependency_overrides[_news_user] = lambda: ANALYST
     client = TestClient(app)
     assert client.get("/intelligence/stories/s/incident").json() == {"incident": None}
-    assert client.post("/intelligence/stories/s/investigate").json() == {"mission_id": "m"}
+    # The reader names the agent that takes the story; there is no default to fall to.
+    assert client.post("/intelligence/stories/s/investigate").status_code == 422
+    handed = client.post("/intelligence/stories/s/investigate", json={"agent_id": "sales"})
+    assert handed.json() == {"mission_id": "m"}
+    investigate.assert_awaited_once_with("s", "sales", ANALYST)
     reviewed = client.post(
         "/intelligence/incidents/inc_1/updates/upd_1/review",
         json={"decision": "APPROVE", "rationale": "ok", "operation_id": "rev-00001"},
@@ -390,70 +400,9 @@ def test_incident_routes_for_review_and_handoff(monkeypatch):
 async def test_a_concurrent_incident_move_does_not_fail_the_handoff(hub, studio, monkeypatch):
     hub.share("story_rev", ANALYST)
     monkeypatch.setattr(hub.service, "transition", AsyncMock(side_effect=HTTPException(409)))
-    assert (await investigations.investigate("story_rev", ANALYST))["handoff_status"] == "READY"
+    handoff = await investigations.investigate("story_rev", "sales", ANALYST)
+    assert handoff["handoff_status"] == "READY"
     monkeypatch.setattr(hub.service, "transition", AsyncMock(side_effect=HTTPException(500)))
     hub.readable["story_rev"].add(FINANCE_STEWARD["username"])
     with pytest.raises(HTTPException):
-        await investigations.investigate("story_rev", FINANCE_STEWARD)
-
-
-async def test_smart_drafts_a_finding_and_the_user_posts_it(hub, monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from app.common import news_entitlement
-    from app.common.news_entitlement import _news_user
-    from app.modules.intelligence import business_events_router, update_drafts
-
-    monkeypatch.setattr(news_entitlement, "is_news_enabled", AsyncMock(return_value=True))
-    incident = await opened_incident(hub)
-    context = tool_context(
-        incident_id=incident.id, mission_id="mission-1",
-        evidence_tables={"ev_1": {"columns": ["x"], "rows": [[1]]}},
-    )
-    args = {"summary": "Refund driven", "claims": [{
-        "statement": "Refunds rose", "causal_status": "association",
-        "supporting_evidence_ids": ["ev_made_up"],
-    }]}
-    tool = incident_tools.draft_investigation_update_tool
-    rejected = await tool.run(ToolInvocation("d1", "draft_investigation_update", args), context)
-    assert rejected.error_class == "UNVERIFIED_EVIDENCE" and not context.smart_drafts
-    args["claims"][0]["supporting_evidence_ids"] = ["ev_1"]
-    drafted = await tool.run(ToolInvocation("d1", "draft_investigation_update", args), context)
-    assert drafted.ok and drafted.data == {"incident_id": incident.id, "posted": False}
-    # Drafting writes nothing.
-    assert await hub.repository.current("updates", InvestigationUpdate) == []
-    (draft,) = context.smart_drafts
-    assert draft["draft_kind"] == "investigation_update" and draft["detail"] == "Refund driven"
-    token = draft["payload"]["draft"]
-
-    reader = {"user": ANALYST}
-    app = FastAPI()
-    app.include_router(business_events_router.router, prefix="/intelligence")
-    app.dependency_overrides[_news_user] = lambda: reader["user"]
-    monkeypatch.setattr(business_events_router, "business_event_service", hub.service)
-    client = TestClient(app)
-    path = f"/intelligence/incidents/{incident.id}/updates"
-    encoded, mac = token.rsplit(".", 1)
-    tampered = encoded[:-4] + ("AAAA" if not encoded.endswith("AAAA") else "BBBB")
-    for bad in (tampered + "." + mac, token + "0", "not-a-draft"):
-        assert client.post(path, json={"draft": bad}).status_code == 403
-    assert client.post("/intelligence/incidents/inc_other/updates",
-                       json={"draft": token}).status_code == 403
-    reader["user"] = OUTSIDER
-    assert client.post(path, json={"draft": token}).status_code == 403
-    reader["user"] = ANALYST
-    monkeypatch.setattr(update_drafts, "DRAFT_TTL", -update_drafts.DRAFT_TTL)
-    stale = tool_context(incident_id=incident.id, evidence_tables=context.evidence_tables)
-    assert (await tool.run(ToolInvocation("d2", "draft_investigation_update", args), stale)).ok
-    assert client.post(path, json={"draft": stale.smart_drafts[0]["payload"]["draft"]}
-                       ).status_code == 410
-    created = client.post(path, json={"draft": token})
-    assert created.status_code == 201 and created.json()["status"] == "PENDING_REVIEW"
-    posted = await hub.repository.current("updates", InvestigationUpdate)
-    (update,) = posted
-    assert update.status == "PENDING_REVIEW" and update.mission_id == "mission-1"
-    assert [item.id for item in update.evidence] == ["ev_1"]
-    refusals = [item for item in hub.audits
-                if item["action"] == "POST_INVESTIGATION_UPDATE" and item["status"] == "DENIED"]
-    assert len(refusals) == 6
+        await investigations.investigate("story_rev", "sales", FINANCE_STEWARD)

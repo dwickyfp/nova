@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
 }));
 vi.mock("@/features/agents/api", () => ({
-  AUTO_AGENT_ID: "__smart__",
   skillsApi: mocks,
   studioApi: mocks,
 }));

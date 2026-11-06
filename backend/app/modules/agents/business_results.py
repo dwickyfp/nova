@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException
 
-from app.modules.agents.child_timeline import safe_public_text
+from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.modules.agents.mission import mission_service
 from app.modules.agents.mission_schema import ObjectRef, SemanticAnchor
 from app.modules.agents.semantic.planning import SemanticPlan
@@ -15,9 +16,23 @@ from app.modules.assistant.business_observation import (
     MAX_BUSINESS_OBSERVATION_BYTES,
     BusinessResultHookResult,
 )
+from app.modules.assistant.skills import contains_credential_shape
+from app.modules.assistant.tools.redaction import is_credential_value
 from app.modules.intelligence.contracts import SemanticRef
 from app.modules.intelligence.engine import CanonicalizationCollector, intelligence_service
 from app.modules.intelligence.evidence import semantic_population_fingerprint
+
+
+def safe_public_text(value: Any, limit: int) -> str:
+    """A bounded value safe to show: credential-shaped text is redacted."""
+    try:
+        # Only a missing value is empty: a 0 or False cell is data.
+        safe = redact_sql_credentials("" if value is None else str(value))
+    except CredentialsRedactionError:
+        return "[redacted]"
+    if contains_credential_shape(safe) or is_credential_value(safe):
+        return "[redacted]"
+    return safe[:limit]
 
 
 def planner_target(plan, context) -> SemanticAnchor | None:

@@ -27,9 +27,9 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import AsyncGenerator, AsyncIterator, Coroutine
 from typing import Annotated
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -39,26 +39,7 @@ from app.common.audit import write_audit_log
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
 from app.modules.agents.access import has_verified_access
-from app.modules.agents.agent_control import AgentControl, session_views
-from app.modules.agents.auto_planner import (
-    AgentDiscoveryUnavailable,
-    authorized_candidates,
-    rank_candidates,
-    semantic_matches,
-)
 from app.modules.agents.automations import AutomationCreate, AutomationUpdate
-from app.modules.agents.capabilities import CapabilityManifest, capability_repository
-from app.modules.agents.harness_repository import (
-    TERMINAL,
-    AutoAdmissionUnavailable,
-    harness_repository,
-)
-from app.modules.agents.identity import (
-    SMART_AGENT_ID,
-    SMART_AGENT_IDS,
-    participant_id,
-    participant_path,
-)
 from app.modules.agents.instructions import (
     InstructionCompilationError,
     compile_agent_instructions,
@@ -168,33 +149,6 @@ _active_run_tasks: set[asyncio.Task[None]] = set()
 
 router = APIRouter()
 
-AUTO_AGENT_ID = SMART_AGENT_ID
-#: Half-second checks before a new Smart message is refused as a concurrent run.
-SMART_SETTLE_ATTEMPTS = 6
-
-
-class AutoMessageRequest(BaseModel):
-    resource_refs: list[str] | None = Field(default=None, max_length=3)
-    operation_id: str = Field(min_length=1, max_length=123)
-    content: str = Field(min_length=1, max_length=4000)
-    correlation_id: str | None = Field(default=None, max_length=64)
-    reply_to: str | None = Field(default=None, max_length=64)
-
-
-def _auto_agent(owner_name: str) -> dict:
-    from datetime import UTC, datetime
-
-    now = datetime.now(UTC)
-    return {
-        "agent_id": AUTO_AGENT_ID,
-        "owner_name": owner_name,
-        "name": "Smart",
-        "description": "Solve a request with tools and governed specialists.",
-        "created_at": now,
-        "updated_at": now,
-    }
-
-
 #: The v1 tool surface an agent may bundle. A name outside this set is rejected
 #: before storage so a typo cannot silently grant nothing. Mirrors
 #: ``agents.registry.KNOWN_TOOLS``; the two lists change together.
@@ -285,8 +239,6 @@ def _skill_view(row: dict) -> SkillView:
 
 async def _require_agent(agent_id: str, user: dict | str) -> dict:
     user_name = user if isinstance(user, str) else user["username"]
-    if agent_id in SMART_AGENT_IDS and isinstance(user, dict):
-        return _auto_agent(user_name)
     if agent_id == SKILL_AUTHOR_ID:
         return skill_author_config(user_name)
     try:
@@ -363,10 +315,7 @@ async def _require_agent_thread(thread_id: str, agent_id: str, user_name: str) -
     path, so a run cannot be pointed at a different agent's conversation.
     """
     thread = await assistant_repository.get_thread(thread_id, user_name=user_name)
-    matches = thread and (thread.get("agent_id") == agent_id or (
-        agent_id in SMART_AGENT_IDS and thread.get("agent_id") in SMART_AGENT_IDS
-    ))
-    if thread is None or not matches:
+    if thread is None or thread.get("agent_id") != agent_id:
         raise HTTPException(status_code=404, detail="Thread not found")
     return thread
 
@@ -501,134 +450,6 @@ def _text_from_frame(frame: str) -> str:
     return ""
 
 
-def _auto_frame(kind: str, payload: dict) -> str:
-    from app.modules.agents.public_projections import sanitize_workflow_payload
-
-    payload = sanitize_workflow_payload(payload)
-    return f"event: {kind}\ndata: {json.dumps(payload, default=str)}\n\n"
-
-
-def _smart_final_frames(payload: dict, message_id: str) -> list[tuple[str, dict]]:
-    """Each terminal fragment gets its own reconnect cursor, including sealed UI."""
-    frames: list[tuple[str, dict]] = []
-    ordered_text = False
-    for artifact in payload.get("artifacts") or []:
-        kind = artifact.get("kind")
-        identity = {key: artifact[key] for key in ("content_id", "content_index")
-                    if key in artifact}
-        if kind == "ui":
-            block = {key: value for key, value in artifact.items()
-                     if key not in {"kind", "content_id", "content_index", "program"}}
-            frames.append(("ui", {**identity, "payload": block}))
-            program = str(artifact.get("program") or "")
-            for offset in range(0, len(program), 4096):
-                frames.append(("ui_delta", {**identity, "text": program[offset:offset + 4096]}))
-            frames.append(("content_block_done", identity))
-        elif kind == "text":
-            ordered_text = True
-            frames.append(("text_delta", {**identity, "text": artifact.get("text", "")}))
-            frames.append(("content_block_done", identity))
-        elif kind in {"table", "chart", "automation_proposal", "smart_draft"}:
-            frames.append((kind, {key: value for key, value in artifact.items() if key != "kind"}))
-    if not ordered_text:
-        frames.append(("text_delta", {"text": str(payload.get("answer") or "")}))
-    frames.append(("done", {"message_id": message_id, "finish_reason": "stop"}))
-    if len(frames) >= 1024:
-        raise ValueError("Smart answer exceeds its event frame budget")
-    return frames
-
-
-async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str]:
-    """Replay a unified tree in session order; the worker never waits on SSE."""
-    cursor = max(-1, after // 1024 - 1) if after >= 0 else -1
-    deadline = asyncio.get_running_loop().time() + 3690
-    final_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root_run_id}"))
-    while asyncio.get_running_loop().time() < deadline:
-        batch = await harness_repository.events_page(
-            root_run_id, cursor, ensure_complete=True
-        )
-        for item in batch:
-            cursor = int(item["event_id"])
-            base = cursor * 1024
-            payload = {
-                **item["payload"],
-                "run_id": root_run_id,
-                "sequence": str(base),
-                "child_run_id": item["run_id"],
-            }
-            if base > after:
-                yield _auto_frame(item["type"], payload)
-            if item["run_id"] == root_run_id and item["type"] == "agent_completed":
-                terminal = _smart_final_frames(item["payload"], final_id)
-                for offset, (kind, payload) in enumerate(terminal, 1):
-                    if base + offset > after:
-                        yield _auto_frame(kind, {
-                            **payload, "run_id": root_run_id, "sequence": str(base + offset),
-                        })
-                return
-            if item["run_id"] == root_run_id and item["type"] in {
-                "agent_failed",
-                "agent_cancelled",
-                "agent_interrupted",
-            }:
-                if base + 1 > after and item["type"] != "agent_cancelled":
-                    yield _auto_frame(
-                        "error",
-                        {
-                            "code": item["type"],
-                            "message": "The Smart run did not complete.",
-                            "run_id": root_run_id,
-                            "sequence": str(base + 1),
-                        },
-                    )
-                if base + 2 > after:
-                    yield _auto_frame(
-                        "done",
-                        {
-                            "message_id": final_id,
-                            "finish_reason": (
-                                "cancelled" if item["type"] == "agent_cancelled" else "error"
-                            ),
-                            "run_id": root_run_id,
-                            "sequence": str(base + 2),
-                        },
-                    )
-                return
-        if not batch:
-            yield "event: ping\ndata: {}\n\n"
-        await asyncio.sleep(0.5)
-
-
-async def _scoped_auto_root(root_run_id: str, user: dict) -> dict:
-    root = await harness_repository.get(root_run_id)
-    security = session_security(user)
-    invalid = (
-        not root
-        or root["depth"] != 0
-        or root["agent_id"] not in SMART_AGENT_IDS
-        or root["owner_name"] != user["username"]
-        or root["role_name"] != security.active_role
-        or root.get("security_version") != security.security_context_version
-    )
-    if root is None or invalid:
-        raise HTTPException(status_code=404, detail="Run not found in this role")
-    await _require_agent_thread(root["thread_id"], AUTO_AGENT_ID, user["username"])
-    return root
-
-
-@contextlib.asynccontextmanager
-async def _auto_admission(
-    thread_id: str, owner_name: str
-) -> AsyncIterator[Callable[[], Awaitable[None]]]:
-    try:
-        async with harness_repository.admission_lock(thread_id, owner_name) as assert_owned:
-            yield assert_owned
-    except AutoAdmissionUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Smart admission is temporarily unavailable"
-        ) from exc
-
-
 # ── Agents ─────────────────────────────────────────────────────
 
 
@@ -661,57 +482,13 @@ async def list_agents(
                 elif agent["owner_name"] == user["username"]:
                     # Only its owner can verify access, so only its owner is told.
                     gaps.append(AgentAccessGap(agent_id=agent["agent_id"], name=agent["name"]))
-            agents = [_auto_agent(user["username"]), *usable]
+            agents = usable
     except AgentMetadataUnavailable:
         raise HTTPException(
             status_code=503, detail="Agent metadata is temporarily unavailable"
         ) from None
     views = [_agent_view(a) for a in agents]
     return AgentListResponse(agents=views, count=len(views), needs_access=gaps)
-
-
-@router.get("/capabilities")
-async def discover_agent_capabilities(query: str = "", user: dict = Depends(get_current_user)):
-    """Compact manifests only for agents the current role can execute."""
-    try:
-        candidates = await authorized_candidates(user)
-    except AgentDiscoveryUnavailable:
-        raise HTTPException(
-            status_code=503, detail="Agent discovery is temporarily unavailable"
-        ) from None
-    ranked = rank_candidates(query[:400], candidates, semantic_matches(query[:400], candidates))
-    return {
-        "agents": [
-            {"agent_id": item.agent_id, "name": item.name, "manifest": item.manifest.model_dump()}
-            for item in ranked[:32]
-        ]
-    }
-
-
-@router.put("/capabilities/{agent_id}")
-async def update_agent_capabilities(
-    agent_id: str,
-    body: CapabilityManifest,
-    user: dict = Depends(get_current_user),
-):
-    agent = await agent_repository.get_agent(agent_id, owner_name=user["username"])
-    if agent is None:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    try:
-        await capability_repository.put(agent, body)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    await write_audit_log(
-        event_type="AGENT_CAPABILITY",
-        user_name=user["username"],
-        action="UPDATE",
-        object_type="AGENT",
-        object_name=agent_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-        active_role=session_security(user).active_role,
-    )
-    return body
 
 
 @router.post("", response_model=AgentView, status_code=201)
@@ -1259,285 +1036,6 @@ async def delete_skill(skill_id: str, user: dict = Depends(get_current_user)):
 # captured as an agent id.
 
 
-@router.get("/auto/runs/{root_run_id}")
-@router.get("/smart/runs/{root_run_id}")
-async def get_auto_run_tree(root_run_id: str, user: dict = Depends(get_current_user)):
-    root = await _scoped_auto_root(root_run_id, user)
-    tree = await harness_repository.tree(
-        root_run_id, owner_name=user["username"], role_name=root["role_name"]
-    )
-    sessions = session_views(tree)
-    cancelled_sessions = {
-        item["agent_session_id"] for item in sessions if item["status"] == "cancelled"
-    }
-    return {
-        "sessions": sessions,
-        "runs": [
-            {
-                "agent_session_id": participant_id(item),
-                "agent_path": participant_path(item).value,
-                "parent_agent_session_id": item.get("payload", {}).get("parent_agent_session_id")
-                or item["parent_run_id"],
-                "turn_number": item.get("payload", {}).get("turn_number", 1),
-                "run_id": item["run_id"],
-                "root_run_id": root_run_id,
-                "parent_run_id": item["parent_run_id"],
-                "agent_id": item["agent_id"],
-                "agent_name": str((item.get("payload") or {}).get("agent_name") or ""),
-                "objective": item["objective"],
-                "status": "cancelled"
-                if participant_id(item) in cancelled_sessions
-                else "waiting_for_agent"
-                if item["status"] == "running" and item.get("checkpoint", {}).get("waiting")
-                else item["status"],
-                "depth": item["depth"],
-                "summary": item["result_summary"],
-                "prompt_tokens": item["prompt_tokens"],
-                "completion_tokens": item["completion_tokens"],
-                "started_at": item["started_at"],
-                "updated_at": item["updated_at"],
-                "error_class": item["error_class"],
-            }
-            for item in tree
-        ],
-    }
-
-
-@router.get("/auto/threads/{thread_id}/runs")
-@router.get("/smart/threads/{thread_id}/runs")
-async def list_auto_thread_runs(thread_id: str, user: dict = Depends(get_current_user)):
-    await _require_agent_thread(thread_id, AUTO_AGENT_ID, user["username"])
-    roots = await harness_repository.roots_for_thread(
-        thread_id,
-        owner_name=user["username"],
-        role_name=session_security(user).active_role,
-    )
-    return {
-        "runs": [
-            {
-                "run_id": item["run_id"],
-                "status": item["status"],
-                "objective": item["objective"],
-                "started_at": item["started_at"],
-                "user_message_id": (item.get("payload") or {}).get("user_message_id"),
-                "final_message_id": str(
-                    uuid5(NAMESPACE_URL, f"nova:auto:final:{item['run_id']}")
-                ),
-            }
-            for item in roots
-        ]
-    }
-
-
-@router.get("/auto/runs/{root_run_id}/messages")
-@router.get("/smart/runs/{root_run_id}/messages")
-async def get_auto_messages(root_run_id: str, user: dict = Depends(get_current_user)):
-    await _scoped_auto_root(root_run_id, user)
-    return {"messages": await harness_repository.messages_for_tree(root_run_id)}
-
-
-@router.get("/auto/runs/{root_run_id}/children/{child_run_id}/timeline")
-@router.get("/smart/runs/{root_run_id}/children/{child_run_id}/timeline")
-async def get_auto_child_timeline(
-    root_run_id: str,
-    child_run_id: str,
-    after: int = Query(default=-1, ge=-1, le=2**53 - 1),
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(get_current_user),
-):
-    root = await _scoped_auto_root(root_run_id, user)
-    child = await harness_repository.get(child_run_id)
-    if (
-        not child
-        or child["run_id"] != child_run_id
-        or (child["root_run_id"] or child["run_id"]) != root_run_id
-        or child["owner_name"] != root["owner_name"]
-        or child["role_name"] != root["role_name"]
-        or child["thread_id"] != root["thread_id"]
-    ):
-        raise HTTPException(status_code=404, detail="Child run not found in this role")
-    if child["status"] in TERMINAL and child["depth"] > 0:
-        await harness_repository.ensure_terminal_event(root_run_id, child)
-    try:
-        agent = await agent_repository.get_agent(
-            child["agent_id"], owner_name=user["username"]
-        )
-        if agent is None:
-            agent = await agent_repository.get_shared_agent(
-                child["agent_id"], role_name=root["role_name"]
-            )
-    except AgentMetadataUnavailable:
-        agent = None
-    timeline_options = {}
-    if child.get("payload", {}).get("agent_session_id"):
-        tree = await harness_repository.tree(
-            root_run_id, owner_name=root["owner_name"], role_name=root["role_name"]
-        )
-        timeline_options["turn_ids"] = {
-            item["run_id"] for item in tree if participant_id(item) == participant_id(child)
-        }
-    events_page, next_cursor, has_more = await harness_repository.child_events_page(
-        root_run_id, child_run_id, after, limit=limit, **timeline_options
-    )
-    return {
-        "run": {
-            "run_id": child_run_id,
-            "root_run_id": root_run_id,
-            "agent_id": child["agent_id"],
-            "agent_name": str((child.get("payload") or {}).get("agent_name") or "")
-            or (agent["name"] if agent else "Specialist"),
-            "objective": child["objective"],
-            "status": child["status"],
-            "result_summary": child["result_summary"],
-            "error_class": child["error_class"],
-            "prompt_tokens": child["prompt_tokens"],
-            "completion_tokens": child["completion_tokens"],
-        },
-        "events": events_page,
-        "next_cursor": next_cursor,
-        "has_more": has_more,
-    }
-
-
-@router.post("/auto/runs/{root_run_id}/children/{child_run_id}/messages")
-@router.post("/smart/runs/{root_run_id}/children/{child_run_id}/messages")
-@router.post("/smart/runs/{root_run_id}/participants/{child_run_id}/messages")
-async def send_auto_child_message(
-    root_run_id: str,
-    child_run_id: str,
-    body: AutoMessageRequest,
-    user: dict = Depends(get_current_user),
-):
-    root = await _scoped_auto_root(root_run_id, user)
-    if root["agent_id"] == SMART_AGENT_ID:
-        try:
-            result = await AgentControl(harness_repository, root, user).send_message(
-                target=child_run_id, content=body.content, operation_id=f"user:{body.operation_id}",
-                origin="user", correlation_id=body.correlation_id, reply_to=body.reply_to,
-            )
-            return {**result, "status": "queued"}
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    child = await harness_repository.get(child_run_id)
-    if (
-        not child
-        or (child["root_run_id"] or child["run_id"]) != root_run_id
-        or child["status"] == "cancelled"
-    ):
-        raise HTTPException(status_code=404, detail="Active child not found")
-    try:
-        message_id = await harness_repository.send(
-            sender=root,
-            recipient={**child, "run_id": participant_id(child)},
-            operation_id=f"user:{body.operation_id}",
-            message_type="message",
-            content=body.content,
-            correlation_id=body.correlation_id,
-            reply_to=body.reply_to,
-            origin="user",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"message_id": message_id, "status": "queued"}
-
-
-@router.get("/auto/runs/{root_run_id}/events")
-@router.get("/smart/runs/{root_run_id}/events")
-async def get_auto_events(
-    root_run_id: str,
-    after: str = "",
-    user: dict = Depends(get_current_user),
-):
-    await _scoped_auto_root(root_run_id, user)
-    return {
-        "events": await harness_repository.events_after(
-            root_run_id, after, ensure_complete=True
-        )
-    }
-
-
-@router.post("/auto/runs/{root_run_id}/cancel")
-@router.post("/smart/runs/{root_run_id}/cancel")
-async def cancel_auto_run(root_run_id: str, user: dict = Depends(get_current_user)):
-    await _scoped_auto_root(root_run_id, user)
-    if not await harness_repository.cancel_tree(root_run_id):
-        raise HTTPException(status_code=409, detail="Smart run is already terminal")
-    await harness_repository.reconcile_cancelled_children(root_run_id)
-    await harness_repository.event(root_run_id, root_run_id, "agent_cancelled", {})
-    await write_audit_log(
-        event_type="AGENT_RUN",
-        user_name=user["username"],
-        action="CANCEL",
-        object_type="AGENT_RUN",
-        object_name=root_run_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-        active_role=session_security(user).active_role,
-    )
-    return {"status": "cancelled"}
-
-
-@router.post("/auto/runs/{root_run_id}/children/{child_run_id}/cancel")
-@router.post("/smart/runs/{root_run_id}/children/{child_run_id}/cancel")
-async def cancel_auto_child(
-    root_run_id: str,
-    child_run_id: str,
-    user: dict = Depends(get_current_user),
-):
-    root = await _scoped_auto_root(root_run_id, user)
-    if root["agent_id"] == SMART_AGENT_ID:
-        try:
-            return await AgentControl(harness_repository, root, user).interrupt_agent(
-                target=child_run_id, cancel=True
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if not await harness_repository.cancel_child(root_run_id, child_run_id):
-        raise HTTPException(status_code=404, detail="Active child not found")
-    await harness_repository.event(root_run_id, child_run_id, "agent_cancelled", {})
-    await harness_repository.wake_parent(root_run_id)
-    await write_audit_log(
-        event_type="AGENT_RUN",
-        user_name=user["username"],
-        action="CANCEL",
-        object_type="AGENT_RUN",
-        object_name=child_run_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-        active_role=session_security(user).active_role,
-    )
-    return {"status": "cancelled"}
-
-
-@router.post("/smart/runs/{root_run_id}/participants/{target}/followup")
-async def followup_smart_agent(
-    root_run_id: str, target: str, body: AutoMessageRequest,
-    user: dict = Depends(get_current_user),
-):
-    root = await _scoped_auto_root(root_run_id, user)
-    try:
-        return await AgentControl(harness_repository, root, user).followup_task(
-            target=target, task=body.content, operation_id=f"user:{body.operation_id}",
-            resource_refs=body.resource_refs,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.post("/smart/runs/{root_run_id}/participants/{target}/interrupt")
-async def interrupt_smart_agent(
-    root_run_id: str, target: str, subtree: bool = False, cancel: bool = False,
-    user: dict = Depends(get_current_user),
-):
-    root = await _scoped_auto_root(root_run_id, user)
-    try:
-        return await AgentControl(harness_repository, root, user).interrupt_agent(
-            target=target, subtree=subtree, cancel=cancel
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_studio_threads(
     user: dict = Depends(get_current_user),
@@ -1785,7 +1283,6 @@ async def publish_agent_version(
 async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
     if not await agent_repository.delete_agent(agent_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="Agent not found")
-    await capability_repository.delete(agent_id, user["username"])
     await memory_repository.delete_agent(user_name=user["username"], agent_id=agent_id)
     await write_audit_log(
         event_type="AGENT_MEMORY",
@@ -1868,9 +1365,9 @@ async def list_agent_threads(
     await _require_agent(agent_id, user)
     try:
         if limit is not None or cursor is not None:
-            agent_ids = ("__auto__", SMART_AGENT_ID) if agent_id in SMART_AGENT_IDS else (agent_id,)
             threads, next_cursor = await history_repository.threads(
-                user_name=user["username"], agent_ids=agent_ids, limit=limit or 50, cursor=cursor,
+                user_name=user["username"], agent_ids=(agent_id,), limit=limit or 50,
+                cursor=cursor,
             )
             return ThreadListResponse(
                 threads=[_thread_view(t) for t in threads], count=len(threads),
@@ -1879,12 +1376,6 @@ async def list_agent_threads(
         threads = await assistant_repository.list_threads(
             user_name=user["username"], agent_id=agent_id
         )
-        if agent_id in SMART_AGENT_IDS:
-            other = "__auto__" if agent_id == SMART_AGENT_ID else SMART_AGENT_ID
-            historical = await assistant_repository.list_threads(
-                user_name=user["username"], agent_id=other
-            )
-            threads = list({row["thread_id"]: row for row in [*threads, *historical]}.values())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except AssistantThreadListUnavailable as exc:
@@ -1902,8 +1393,6 @@ async def create_agent_thread(
     user: dict = Depends(get_current_user),
 ):
     await _require_agent(agent_id, user)
-    if agent_id in SMART_AGENT_IDS:
-        agent_id = SMART_AGENT_ID
     thread = await assistant_repository.create_thread(
         user_name=user["username"],
         title=body.title,
@@ -1935,7 +1424,6 @@ async def get_agent_thread(
         try:
             messages, next_cursor = await history_repository.messages(
                 thread_id, user_name=user["username"], limit=limit or 50, cursor=cursor,
-                synchronize=agent_id in SMART_AGENT_IDS,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1947,11 +1435,7 @@ async def get_agent_thread(
             thread=_thread_view(thread), messages=[_message_view(m, user) for m in messages],
             next_cursor=next_cursor,
         )
-    messages = await assistant_repository.list_messages(
-        thread_id,
-        user_name=user["username"],
-        synchronize=agent_id in SMART_AGENT_IDS,
-    )
+    messages = await assistant_repository.list_messages(thread_id, user_name=user["username"])
     return ThreadDetailResponse(
         thread=_thread_view(thread),
         messages=[_message_view(m, user) for m in messages],
@@ -2042,11 +1526,7 @@ async def _require_owned_agent(agent_id: str, user: dict) -> dict:
 
 
 async def _require_automation_agent(agent_id: str, user: dict) -> dict:
-    """An agent whose schedules the caller manages: one they own, or their own Smart."""
-    if agent_id == SMART_AGENT_ID:
-        # Smart has no stored record; every user schedules their own.
-        session_security(user)
-        return _auto_agent(user["username"])
+    """An agent whose schedules the caller manages: one they own."""
     return await _require_owned_agent(agent_id, user)
 
 
@@ -2314,17 +1794,7 @@ async def delete_agent_thread(
 ):
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
-    if agent_id in SMART_AGENT_IDS:
-        async with _auto_admission(thread_id, user["username"]) as assert_owned:
-            await _require_agent_thread(thread_id, agent_id, user["username"])
-            if await harness_repository.active_for_thread(thread_id, user["username"]):
-                raise HTTPException(status_code=409, detail="Cancel the active Smart run first")
-            await assert_owned()
-            await harness_repository.delete_thread(thread_id, owner_name=user["username"])
-            await assert_owned()
-            if not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
-                raise HTTPException(status_code=404, detail="Thread not found")
-    elif not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
+    if not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
         raise HTTPException(status_code=404, detail="Thread not found")
     await run_journal.delete_thread(thread_id, owner_name=user["username"])
     thread_store.remove(thread_id, user_name=user["username"])
@@ -2408,15 +1878,6 @@ async def replay_agent_run(
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     role = session_security(user).active_role
-    if agent_id in SMART_AGENT_IDS:
-        root = await _scoped_auto_root(run_id, user)
-        if root["thread_id"] != thread_id:
-            raise HTTPException(status_code=404, detail="Run not found in this role")
-        return StreamingResponse(
-            _stream_auto_events(run_id, after),
-            media_type=events.SSE_MEDIA_TYPE,
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
     scope = dict(
         owner_name=user["username"],
         agent_id=agent_id,
@@ -2657,85 +2118,6 @@ async def send_agent_message(
         prompt = attachment_prompt(body.content, attachments)
     learning_enabled = agent_id != SKILL_AUTHOR_ID and await assistant_repository.learning_enabled(
         thread_id, user_name=user_name)
-    if agent_id in SMART_AGENT_IDS:
-        from app.modules.assistant.skills import contains_credential_shape
-
-        if (not body.content.strip() and not attachments) or contains_credential_shape(
-            body.content
-        ):
-            raise HTTPException(status_code=422, detail="Invalid Smart message")
-        async with _auto_admission(thread_id, user_name) as assert_owned:
-            thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
-            # A follow-up sent the moment an answer lands can still see the finished
-            # run as active; give it a moment to settle before refusing.
-            for attempt in range(SMART_SETTLE_ATTEMPTS):
-                if not await harness_repository.active_for_thread(thread_id, user_name):
-                    break
-                if attempt + 1 < SMART_SETTLE_ATTEMPTS:
-                    await asyncio.sleep(0.5)
-            else:
-                raise HTTPException(status_code=409, detail="A Smart run is already active")
-            await assert_owned()
-            user_message = await assistant_repository.append_message(
-                thread_id,
-                user_name=user_name,
-                role="user",
-                steps=ui_trace,
-                content=body.content,
-                attachments=attachments,
-                security_context=stamp,
-                agent_id=agent_id,
-                learning_enabled=learning_enabled,
-            )
-            if thread_row["title"] in {"New chat", "New conversation"}:
-                await assistant_repository.rename_thread(
-                    thread_id, _thread_title(body.content), user_name=user_name
-                )
-            await assert_owned()
-            root = await harness_repository.create_root(
-                owner_name=user_name,
-                thread_id=thread_id,
-                role_name=security.active_role,
-                session_id=user["session_id"],
-                security_version=int(user.get("security_context_version") or 1),
-                objective=body.content or "Review the attached files.",
-                provider_id=body.provider_id,
-                model=body.model,
-                user_message_id=user_message["message_id"],
-                ui_action_accepted=body.ui_action is not None,
-                work_intent=body.work_intent,
-                new_mission=body.new_mission,
-                continue_mission_id=getattr(body, "continue_mission_id", None),
-            )
-            await assert_owned()
-        from app.modules.agents.mission import mission_service
-        from app.modules.agents.mission_schema import WorkIntent
-        from app.modules.agents.resource_delegation import resource_delegation
-
-        if attachments:
-            await resource_delegation.register_root(root, user)
-        mission = await mission_service.for_turn(
-            thread_id,
-            user,
-            operation_id=root["run_id"],
-            objective=body.content or "Review attached files",
-            work_intent=WorkIntent(body.work_intent) if body.work_intent else None,
-            explicit=body.work_intent is not None,
-            new_mission=body.new_mission,
-            continue_mission_id=getattr(body, "continue_mission_id", None),
-        )
-        if mission:
-            await mission_service.attach_run(mission.mission_id, root["run_id"], user)
-        return StreamingResponse(
-            _stream_auto_events(root["run_id"], -1),
-            media_type=events.SSE_MEDIA_TYPE,
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "X-Nova-Run-ID": root["run_id"],
-            },
-        )
-
     registry, system_prompt, budget, token_budget = await agent_service.build_loop_inputs(agent)
 
     runtime = thread_store.register(

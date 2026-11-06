@@ -154,15 +154,11 @@ export const newspaperApi = {
       `/intelligence/stories/${encodeURIComponent(storyId)}/incident`,
       signal,
     ),
-  investigate: (storyId: string) =>
+  /** Open a Studio Mission for a story with the given agent. */
+  investigate: (storyId: string, agentId: string) =>
     api.post<InvestigationHandoff>(
       `/intelligence/stories/${encodeURIComponent(storyId)}/investigate`,
-    ),
-  /** Post a finding Smart prepared; the server checks the signed draft. */
-  submitFinding: (incidentId: string, draft: string) =>
-    api.post<{ update_id: string; status: string }>(
-      `/intelligence/incidents/${encodeURIComponent(incidentId)}/updates`,
-      { draft },
+      { agent_id: agentId },
     ),
   reviewUpdate: (
     incidentId: string,

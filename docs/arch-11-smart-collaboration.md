@@ -1,5 +1,10 @@
 # Architecture 11: Smart Collaboration
 
+> **Status: retired.** Smart collaboration was removed from the product on
+> 2026-11-07. This document is kept as a historical record. Studio now chats with
+> one selected agent through the direct agent loop; see
+> [Architecture 15: Governed Studio](arch-15-governed-studio.md#studio-chat).
+
 The additive [governed Studio workflow](arch-15-governed-studio.md) documents
 release pins, Missions, Evidence Health, and selective attachment grants over
 these participants and journals. See its [operator guide](governed-studio-operations.md)

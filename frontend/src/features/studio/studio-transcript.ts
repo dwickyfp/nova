@@ -1,14 +1,11 @@
 import type {
   AssistantEvent,
-  AutomationProposal,
-  SmartDraft,
   ChartBlock as ChartBlockType,
   CitationBlock,
   TableBlock,
   ToolCallView,
 } from "@/features/assistant/types";
 import type { AgentMessage } from "@/features/agents/api";
-import { parseSmartDraft } from "@/features/assistant/events";
 import type { RailStep } from "./thought-turn";
 import type { AnswerFeedback } from "./answer-footer";
 import type { SentAttachment } from "./studio-attachments";
@@ -97,10 +94,6 @@ export type TranscriptTurn = {
   stopReason?: string;
   /** Follow-up questions the agent's catalog can answer next. */
   suggestions?: string[];
-  /** A schedule Smart drafted with this answer, waiting for the user to confirm. */
-  automationProposal?: AutomationProposal;
-  /** Proposals and findings Smart prepared with this answer for the user to submit. */
-  smartDrafts?: SmartDraft[];
   error?: string;
   /**
    * A Nova-initiated turn (the reconsider pass), not something the user asked.
@@ -336,18 +329,6 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               block,
               complete: true,
             });
-          }
-          break;
-        case "automation_proposal":
-          {
-            const { kind: _kind, ...proposal } = step;
-            open.automationProposal = proposal;
-          }
-          break;
-        case "smart_draft":
-          {
-            const draft = parseSmartDraft(step as unknown as Record<string, unknown>);
-            if (draft) open.smartDrafts = [...(open.smartDrafts ?? []), draft];
           }
           break;
         case "citation":
@@ -897,12 +878,6 @@ export function applyEvent(
 
       case "suggestions":
         return { ...turn, suggestions: event.suggestions };
-
-      case "automation_proposal":
-        return { ...turn, automationProposal: event.proposal };
-
-      case "smart_draft":
-        return { ...turn, smartDrafts: [...(turn.smartDrafts ?? []), event.draft] };
 
       case "done":
         return {

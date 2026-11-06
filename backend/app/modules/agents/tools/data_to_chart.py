@@ -111,22 +111,7 @@ class DataToChartTool:
                 "There is no recent data to chart in this conversation. Fetch "
                 "the data first (a query or semantic_query), then chart it."
             )
-            # Smart holds no data of its own: it can ask the specialist that owns
-            # it and chart the result, so the turn goes on.
-            smart = bool(getattr(context, "collaboration_root", False))
-            return ToolOutcome(
-                ok=False,
-                summary="",
-                error=detail,
-                recoverable=smart,
-                error_class="INVALID_TOOL_ARGUMENTS" if smart else None,
-                safe_detail=(
-                    "No data is held yet. Ask the specialist that owns it, then chart "
-                    "the result by its evidence_id."
-                )
-                if smart
-                else None,
-            )
+            return ToolOutcome(ok=False, summary="", error=detail)
 
         columns: list[str] = list(last.get("columns") or [])
         rows: list[list] = list(last.get("rows") or [])

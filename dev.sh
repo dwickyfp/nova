@@ -2,13 +2,12 @@
 #
 # dev.sh — run every Nova process on the local machine with one command.
 #
-# Starts the five host-side processes (nothing that belongs in Docker). The
+# Starts the four host-side processes (nothing that belongs in Docker). The
 # backend and the workers reload on Python edits; Vite hot-reloads the UI.
 #   backend    FastAPI web + embedded MySQL proxy (port 8000, 4406)
 #              (--split: web 8000, query tier 8001, standalone proxy 4406)
 #   scheduler  nova-scheduler (cron/interval tick -> Redis Streams)
 #   worker     nova-worker (runs task graphs and migration jobs)
-#   agent-worker  Studio Smart coordinator and specialist runs
 #   frontend   Vite dev server (port 5173)
 #
 # Docker infrastructure (StarRocks, Ranger, MinIO, Redis) is NOT managed here.
@@ -372,10 +371,6 @@ run scheduler "$C_CYAN" "$BACKEND_DIR" \
 run worker "$C_CYAN" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" \
   "${WATCH[@]}" "python -m app.worker" app
-
-run agent-worker "$C_CYAN" "$BACKEND_DIR" \
-  "${BACKEND_ENV[@]}" \
-  "${WATCH[@]}" "python -m app.agent_worker" app
 
 if [[ "$RUN_FRONTEND" -eq 1 ]]; then
   # `pnpm dev` in package.json already passes `--port 5173`; use this to

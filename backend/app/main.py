@@ -221,9 +221,6 @@ async def _bootstrap_control_plane() -> None:
 
         await mission_service.ensure_schema()
         await resource_delegation.ensure_schema()
-        from app.modules.agents.capabilities import capability_repository
-
-        await capability_repository.ensure_schema()
         await memory_repository.ensure_schema()
         await rule_proposal_repository.ensure_schema()
         await run_journal.ensure_schema()

@@ -28,18 +28,6 @@ def test_filtered_page_keeps_cursor_to_next_accessible_page(client, monkeypatch)
     listing.assert_awaited_once_with(user_name="alice", all_agents=True, limit=2, cursor=None)
 
 
-@pytest.mark.parametrize("agent_id", ["__auto__", "__smart__"])
-def test_smart_aliases_share_one_ordered_page(client, monkeypatch, agent_id):
-    listing = AsyncMock(return_value=([], None))
-    monkeypatch.setattr(agents.history_repository, "threads", listing)
-    monkeypatch.setattr(agents, "_require_agent", AsyncMock(return_value={}))
-    result = client.get(f"/agents/{agent_id}/threads?limit=3")
-    assert result.status_code == 200
-    listing.assert_awaited_once_with(
-        user_name="alice", agent_ids=("__auto__", "__smart__"), limit=3, cursor=None
-    )
-
-
 @pytest.mark.parametrize("path", ["/assistant/threads", "/agents/threads"])
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "cursor=invalid"])
 def test_invalid_pagination_is_rejected(client, monkeypatch, path, query):

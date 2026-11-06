@@ -11,9 +11,8 @@ from tests.benchmark.harness import ScriptedProvider, allow, text_frame
 from tests.unit.test_intelligent_ui import CALCULATOR
 
 
-@pytest.mark.parametrize("root", [False, True])
 @pytest.mark.parametrize("table_conflict", [False, True])
-async def test_simulation_prose_and_ui_share_checked_values(root, table_conflict):
+async def test_simulation_prose_and_ui_share_checked_values(table_conflict):
     program = ('root=Col([Chart([{name:"Venue",amount:20},'
                '{name:"Catering",amount:16}],"name","amount","bar")])')
     draft = ("| name | amount |\n| --- | --- |\n| Catering | 999 |" if table_conflict
@@ -25,7 +24,7 @@ async def test_simulation_prose_and_ui_share_checked_values(root, table_conflict
         turn_plan={"intent": "direct_answer", "tools": [], "required_tools": [],
                    "skills": [], "ml_task": None, "presentation": "interactive"},
     )
-    context = LoopContext(user_name="alice", intelligent_ui=True, collaboration_root=root)
+    context = LoopContext(user_name="alice", intelligent_ui=True)
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=ToolRegistry(),
     ).run(thread=AssistantThread(thread_id="simulation", user_name="alice", title="Simulation"),
@@ -49,30 +48,29 @@ async def test_simulation_prose_and_ui_share_checked_values(root, table_conflict
 
 
 @pytest.mark.parametrize("presentation", ["interactive", "text", None])
-async def test_interactive_direct_and_smart_root_use_verified_final_composer(presentation):
-    for root in (False, True):
-        provider = ScriptedProvider(
-            script=([text_frame("Draft.")] if presentation == "interactive" else []) + [
-                text_frame("Adjust the assumptions.\n```openui\n" + CALCULATOR + "\n```")
-            ],
-            turn_plan={"intent": "direct_answer", "tools": [], "required_tools": [],
-                       "skills": [], "ml_task": None,
-                       **({"presentation": presentation} if presentation else {})},
-        )
-        context = LoopContext(user_name="alice", intelligent_ui=True, collaboration_root=root)
-        frames = [frame async for frame in AssistantLoop(
-            provider=provider, registry=ToolRegistry(),
-        ).run(thread=AssistantThread(thread_id="ui-eval", user_name="alice", title="UI"),
-              user_content="Build a calculator", context=context, resolve_consent=allow)]
-        assert any(frame.startswith("event: ui\n") for frame in frames)
-        assert "```openui" not in "".join(frame for frame in frames
-                                        if frame.startswith("event: text_delta\n"))
-        assert provider.calls == (2 if presentation == "interactive" else 1)
-        assert context.quality_facts["ui_validity"] == {"valid": True}
-        assert not any(frame.startswith("event: tool_call\n") for frame in frames)
+async def test_interactive_answers_use_the_verified_final_composer(presentation):
+    provider = ScriptedProvider(
+        script=([text_frame("Draft.")] if presentation == "interactive" else []) + [
+            text_frame("Adjust the assumptions.\n```openui\n" + CALCULATOR + "\n```")
+        ],
+        turn_plan={"intent": "direct_answer", "tools": [], "required_tools": [],
+                   "skills": [], "ml_task": None,
+                   **({"presentation": presentation} if presentation else {})},
+    )
+    context = LoopContext(user_name="alice", intelligent_ui=True)
+    frames = [frame async for frame in AssistantLoop(
+        provider=provider, registry=ToolRegistry(),
+    ).run(thread=AssistantThread(thread_id="ui-eval", user_name="alice", title="UI"),
+          user_content="Build a calculator", context=context, resolve_consent=allow)]
+    assert any(frame.startswith("event: ui\n") for frame in frames)
+    assert "```openui" not in "".join(frame for frame in frames
+                                    if frame.startswith("event: text_delta\n"))
+    assert provider.calls == (2 if presentation == "interactive" else 1)
+    assert context.quality_facts["ui_validity"] == {"valid": True}
+    assert not any(frame.startswith("event: tool_call\n") for frame in frames)
 
 
-async def test_specialist_does_not_receive_ui_catalog():
+async def test_a_turn_without_intelligent_ui_gets_no_ui_catalog():
     provider = ScriptedProvider(script=[text_frame("Hello.")])
     context = LoopContext(user_name="alice", intelligent_ui=False)
     frames = [frame async for frame in AssistantLoop(
@@ -83,12 +81,11 @@ async def test_specialist_does_not_receive_ui_catalog():
     assert not any(frame.startswith("event: ui\n") for frame in frames)
 
 
-@pytest.mark.parametrize("root", [False, True])
-async def test_default_ui_keeps_plain_answers_in_one_provider_call(root):
+async def test_default_ui_keeps_plain_answers_in_one_provider_call():
     from tests.unit.test_assistant_stage_b import FakeProvider
 
     provider = FakeProvider([text_frame("Hello.")])
-    context = LoopContext(user_name="alice", intelligent_ui=True, collaboration_root=root)
+    context = LoopContext(user_name="alice", intelligent_ui=True)
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=ToolRegistry(),
     ).run(thread=AssistantThread(thread_id="greeting", user_name="alice", title="Hello"),

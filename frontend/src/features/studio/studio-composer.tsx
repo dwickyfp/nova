@@ -1,10 +1,9 @@
-import { Fragment, useRef } from "react";
-import { ArrowUp, Brain, ChevronDown, FileText, ImageIcon, Plus, Square, Telescope, X } from "lucide-react";
+import { useRef } from "react";
+import { ArrowUp, ChevronDown, FileText, ImageIcon, Plus, Square, Telescope, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
+import type { Agent } from "@/features/agents/api";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 import { ACCEPTED_EXTENSIONS, MAX_FILES, type PendingAttachment } from "./studio-attachments";
 
@@ -41,12 +40,9 @@ function AgentPicker({
           <DropdownMenuItem disabled>No agents available</DropdownMenuItem>
         ) : (
           agents.map((a) => (
-            <Fragment key={a.agent_id}>
-              <DropdownMenuItem onSelect={() => onSelectAgent(a.agent_id)}>
-                {a.agent_id === AUTO_AGENT_ID ? "Smart" : a.name}
-              </DropdownMenuItem>
-              {a.agent_id === AUTO_AGENT_ID ? <DropdownMenuSeparator /> : null}
-            </Fragment>
+            <DropdownMenuItem key={a.agent_id} onSelect={() => onSelectAgent(a.agent_id)}>
+              {a.name}
+            </DropdownMenuItem>
           ))
         )}
       </DropdownMenuContent>
@@ -72,13 +68,9 @@ export const Composer = ({
   agent,
   agents,
   onSelectAgent,
-  smartEnabled = agent?.agent_id === AUTO_AGENT_ID,
-  onToggleSmart,
   sendDisabled = false,
 }: {
   sendDisabled?: boolean;
-  smartEnabled?: boolean;
-  onToggleSmart?: () => void;
   ref: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
   onChange: (v: string) => void;
@@ -170,24 +162,9 @@ export const Composer = ({
             <Plus aria-hidden="true" className="size-4" strokeWidth={1} />
           </Button>
 
-          {agent?.agent_id !== SKILL_AUTHOR_ID && onToggleSmart ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" aria-label="Smart mode" aria-pressed={smartEnabled}
-                  disabled={streaming || readingFiles}
-                  onClick={onToggleSmart}
-                  className={cn("flex size-8 items-center justify-center rounded-full border transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40", smartEnabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:bg-accent")}>
-                  <Brain aria-hidden="true" className="size-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{smartEnabled ? "Smart chooses the right agents" : "Turn on Smart"}</TooltipContent>
-            </Tooltip>
-          ) : null}
-          {!smartEnabled || agent?.agent_id === SKILL_AUTHOR_ID ? (
-            <AgentPicker agent={agent} agents={agents.filter((item) => item.agent_id !== AUTO_AGENT_ID)}
-              disabled={streaming || readingFiles}
-              onSelectAgent={onSelectAgent} />
-          ) : null}
+          <AgentPicker agent={agent} agents={agents}
+            disabled={streaming || readingFiles}
+            onSelectAgent={onSelectAgent} />
 
           <div className="flex-1" />
           {onResearch ? (

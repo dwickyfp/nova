@@ -41,21 +41,21 @@ async def test_studio_list_and_runtime_follow_active_role(monkeypatch) -> None:
     monkeypatch.setattr(agent_repository, "list_agent_roles", grants)
 
     studio_agents = await router.list_agents(studio=True, user=_user("ACCOUNTADMIN"))
-    assert [agent.agent_id for agent in studio_agents.agents] == ["__smart__"]
+    assert [agent.agent_id for agent in studio_agents.agents] == []
     with pytest.raises(HTTPException) as denied:
         await router._require_agent("sales", _user("ACCOUNTADMIN"))
     assert denied.value.status_code == 404
     assert (await router.list_agents(studio=False, user=_user("ACCOUNTADMIN"))).count == 1
 
     grants.return_value = [{"role_name": "analyst", "verified_fingerprint": None}]
-    assert (await router.list_agents(studio=True, user=_user("analyst"))).count == 1
+    assert (await router.list_agents(studio=True, user=_user("analyst"))).count == 0
     grants.return_value = [{"role_name": "analyst", "verified_fingerprint": "current"}]
-    assert (await router.list_agents(studio=True, user=_user("analyst"))).count == 2
+    assert (await router.list_agents(studio=True, user=_user("analyst"))).count == 1
     assert (await router._require_agent("sales", _user("analyst")))["agent_id"] == "sales"
-    assert (await router.list_agents(studio=True, user=_user("ACCOUNTADMIN"))).count == 1
+    assert (await router.list_agents(studio=True, user=_user("ACCOUNTADMIN"))).count == 0
 
     access.verify_access.return_value = [AccessItem("table", "sales.orders", False)]
-    assert (await router.list_agents(studio=True, user=_user("analyst"))).count == 1
+    assert (await router.list_agents(studio=True, user=_user("analyst"))).count == 0
     grants.return_value = []
     with pytest.raises(HTTPException):
         await router._require_agent("sales", _user("analyst"))
@@ -158,10 +158,10 @@ def test_http_studio_and_thread_access_after_switching_roles(monkeypatch) -> Non
     app.dependency_overrides[get_current_user] = lambda: _user(role["active"])
     client = TestClient(app)
 
-    assert client.get("/agents?studio=true").json()["count"] == 1
+    assert client.get("/agents?studio=true").json()["count"] == 0
     assert client.get("/agents/sales/threads").status_code == 404
     role["active"] = "analyst"
-    assert client.get("/agents?studio=true").json()["count"] == 2
+    assert client.get("/agents?studio=true").json()["count"] == 1
     assert client.get("/agents/sales/threads").status_code == 200
     role["active"] = "ACCOUNTADMIN"
     assert client.get("/agents/sales/threads").status_code == 404
@@ -179,7 +179,7 @@ async def test_studio_tells_an_owner_which_of_their_agents_wait_for_access(monke
     monkeypatch.setattr(agent_repository, "list_agent_roles", grants)
 
     listed = await router.list_agents(studio=True, user=_user("analyst"))
-    assert [agent.agent_id for agent in listed.agents] == ["__smart__"]
+    assert [agent.agent_id for agent in listed.agents] == []
     # Another owner's agent is left out without comment: this user cannot fix it.
     assert [(gap.agent_id, gap.name) for gap in listed.needs_access] == [("sales", "Sales Agent")]
     assert (await router.list_agents(studio=False, user=_user("analyst"))).needs_access == []

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
 from app.modules.agents.tools.analyze_documents_spec import DESCRIPTION as ANALYZE_DESCRIPTION
 from app.modules.agents.tools.analyze_documents_spec import PARAMETERS as ANALYZE_PARAMETERS
 from app.modules.agents.tools.compute_metrics import PARAMETERS as COMPUTE_PARAMETERS
@@ -30,9 +29,6 @@ from app.modules.agents.tools.ontology import (
     ontology_explain_tool,
     ontology_resolve_tool,
 )
-from app.modules.agents.tools.propose_automation import (
-    DESCRIPTION as PROPOSE_AUTOMATION_DESCRIPTION,
-)
 from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 from app.modules.assistant.analysis_workspace import analysis_workspace_tool
@@ -45,7 +41,6 @@ from app.modules.intelligence.action_contracts import (
 
 COMPUTE_DESCRIPTION = ComputeMetricsTool.description
 SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
-PROPOSE_DESCRIPTION = PROPOSE_AUTOMATION_DESCRIPTION
 
 #: name -> (description, input_schema)
 
@@ -63,32 +58,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     "investigation_update": (
         investigation_update_tool.description, investigation_update_tool.parameters,
     ),
-    **COLLABORATION_TOOLS,
     "describe_agent": (DESCRIPTION, PARAMETERS),
-    "send_agent_message": (
-        "Send a finding or question to Auto during a specialist run.",
-        {
-            "type": "object",
-            "properties": {
-                "message_type": {"type": "string", "enum": ["finding", "question"]},
-                "content": {"type": "string"},
-            },
-            "required": ["message_type", "content"],
-            "additionalProperties": False,
-        },
-    ),
-    "request_specialist": (
-        "Ask Auto to discover an additional specialist by capability.",
-        {
-            "type": "object",
-            "properties": {
-                "capability": {"type": "string"},
-                "reason": {"type": "string"},
-            },
-            "required": ["capability", "reason"],
-            "additionalProperties": False,
-        },
-    ),
     "search_knowledge": (
         "Search packaged Nova product guidance and playbooks with source revisions; "
         "documentation does not establish runtime database facts.",
@@ -243,7 +213,6 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     "diagnose_change": (DIAGNOSE_DESCRIPTION, DIAGNOSE_PARAMETERS),
     "compute_metrics": (COMPUTE_DESCRIPTION, COMPUTE_PARAMETERS),
     "schedule_automation": (SCHEDULE_DESCRIPTION, SCHEDULE_PARAMETERS),
-    "propose_automation": (PROPOSE_DESCRIPTION, SCHEDULE_PARAMETERS),
     "analyze_documents": (ANALYZE_DESCRIPTION, ANALYZE_PARAMETERS),
     "ml_execute": (
         "Run Nova's bounded ML runtime for forecast, classification, regression, anomaly "

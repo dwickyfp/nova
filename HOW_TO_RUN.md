@@ -794,18 +794,18 @@ diganti ketika diminta.
 ## Mode Development Cepat (hot reload)
 
 Selama development, hanya infrastruktur (StarRocks, Ranger, Redis, MinIO) yang
-berjalan di Docker. Backend, scheduler, worker, Smart agent worker, dan Vite
+berjalan di Docker. Backend, scheduler, worker, dan Vite
 berjalan di host lewat satu perintah, sehingga perubahan kode langsung berlaku
 tanpa rebuild image:
 
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova
-docker stop nova-backend nova-worker nova-agent-worker   # sekali, jika profil app pernah dijalankan
+docker stop nova-backend nova-worker   # sekali, jika profil app pernah dijalankan
 UV_NO_SYNC=1 ./dev.sh
 ```
 
 - Backend memakai `uvicorn --reload` yang mengawasi `backend/app`.
-- Scheduler, `nova-worker`, dan `nova-agent-worker` dijalankan lewat
+- Scheduler dan `nova-worker` dijalankan lewat
   `watchfiles` dan restart sendiri saat file Python di `backend/app` berubah.
 - Vite me-reload UI seperti biasa.
 - `UV_NO_SYNC=1` menjaga venv host apa adanya. Di macOS yang tidak bisa memuat
@@ -870,34 +870,19 @@ dan akses ke penyedia secret yang sama dengan backend. Worker membuka koneksi
 ke cluster sumber dan menyelesaikan referensi secret saat job berjalan.
 
 Untuk deployment Compose dengan profil `app`, `docker-compose-engine.yml`
-menjalankan `nova-worker` dan `nova-agent-worker` (Studio Smart) bersama backend. Isi kredensial akun worker khusus
+menjalankan `nova-worker` bersama backend. Isi kredensial akun worker khusus
 (`WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD`, dan, jika Ranger
 aktif, `WORKER_IMPERSONATION_ROLE`) di `docker/.env` sebelum mengaktifkan profil
 tersebut. Jangan gunakan akun `root` atau `nova_admin`.
 
-### Terminal 6 — Studio Smart agent worker
-
-Studio Smart requires a separate worker process. It claims queued runs from
-`NOVA_SYSTEM`, checks the originating session and active role in Redis, and
-executes specialist runs independently of the API process. The Compose `app`
-profile runs it as `nova-agent-worker`; start it by hand only for a host backend.
+Otomasi agen terjadwal di Studio juga berjalan di `nova-worker`, sebagai pemilik
+jadwal. Berikan akun worker impersonation terbatas untuk setiap pemilik yang
+jadwalnya perlu berjalan:
 
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
-uv run python -m app.agent_worker
-```
-
-Scheduled internal work also runs in this worker, as the owner of the schedule.
-Give it the same `WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD` and
-`WORKER_IMPERSONATION_ROLE` as `nova-worker`, and grant that account scoped
-impersonation of each owner whose schedules should run:
-
-```bash
 uv run python scripts/provision_task_worker_access.py --owner <username>
 ```
-
-Without it a scheduled Smart run ends as `scheduled_run_unauthorized`. The
-`nova-worker` process (Terminal 5) fires the schedules.
 
 Studio's Mission workflow, Actions, quality monitoring, and analysis workspace
 are always on; there are no rollout flags. The analysis workspace still needs

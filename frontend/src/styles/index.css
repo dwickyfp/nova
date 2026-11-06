@@ -401,7 +401,6 @@ input:-webkit-autofill:active {
 }
 
 @media (max-width: 39.99rem) {
-  .nova-rail-item[data-branch],
   .nova-rail-item:has(> button) {
     --rail-mid: 22px;
   }
@@ -435,10 +434,6 @@ input:-webkit-autofill:active {
   border-left: 1px solid var(--border);
   transform-origin: top;
   animation: nova-rail-grow 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.nova-rail-result {
-  animation: nova-rail-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes nova-rail-in {
@@ -529,21 +524,6 @@ input:-webkit-autofill:active {
    a few pixels so the transcript reads as settling, not jumping. */
 .nova-chat-item {
   animation: nova-chat-in 0.22s ease-out both;
-}
-
-.nova-subagent-panel {
-  animation: nova-subagent-open 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes nova-subagent-open {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
 }
 
 /* Observability keeps three equally useful panes visible at once. Compact the
@@ -674,12 +654,10 @@ input:-webkit-autofill:active {
 @media (prefers-reduced-motion: reduce) {
   .nova-shimmer,
   .nova-chat-item,
-  .nova-subagent-panel,
   .nova-rail-body,
   .nova-rail-item,
   .nova-rail-item::before,
   .nova-rail-item::after,
-  .nova-rail-result,
   .nova-live-dot::after,
   .nova-mark-settle .nova-mark-disc,
   .nova-mark-settle .nova-mark-ink {

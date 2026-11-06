@@ -1,5 +1,8 @@
 # Intelligent UI v2 acceptance record
 
+> Note: Smart mode and its agent worker were removed from Studio on 2026-11-07.
+> Results below that mention Smart record the product as tested on these dates.
+
 Implementation and applicable local acceptance gates passed on 20–21 October 2026 (Asia/Jakarta). Results below include every failed attempt and its resolution. These are local results; no GitHub Actions run or production deployment is claimed.
 
 Baseline: `main` / `d068264f`. Branch: `feat/intelligent-studio-harness-v2`. Local checks below are not GitHub Actions results. Research and contracts: [architecture document](../../architecture/studio-intelligent-ui-v2.md).

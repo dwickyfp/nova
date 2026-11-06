@@ -606,9 +606,7 @@ class AssistantRepository:
 
     # ── Messages ───────────────────────────────────────────────
 
-    async def list_messages(
-        self, thread_id: str, *, user_name: str, synchronize: bool = False
-    ) -> list[dict]:
+    async def list_messages(self, thread_id: str, *, user_name: str) -> list[dict]:
         """Every message on a thread, oldest first, with its trace.
 
         ``steps`` is the assistant turn's recorded trace. It is returned so a
@@ -624,15 +622,7 @@ class AssistantRepository:
         )
         params = [thread_id, user_name]
         for attempt in range(5):
-            if synchronize:
-                # SYNC and SELECT must share a connection for a cross-session write
-                # to be visible before Auto reports its final answer as complete.
-                async with db.system_conn() as conn, conn.cursor() as cursor:
-                    await cursor.execute("SYNC")
-                    await cursor.execute(sql, params)
-                    rows = [list(row) for row in await cursor.fetchall()]
-            else:
-                rows = (await db.execute_system(sql, params))["rows"]
+            rows = (await db.execute_system(sql, params))["rows"]
             if all(
                 4 <= len(row) <= 12
                 and row[1] in {"user", "assistant", "tool"}

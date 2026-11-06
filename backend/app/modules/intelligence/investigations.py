@@ -4,8 +4,9 @@ The handoff carries references, never the headline as trusted context:
 
 1. the story is proven again for the caller now;
 2. its signal and incident are recorded (idempotent);
-3. a Studio thread and an investigating Mission are created, or found again,
-   under ids derived from the story, its proof digest and the caller's role;
+3. a Studio thread with the agent the reader picked and an investigating Mission
+   are created, or found again, under ids derived from the story, its proof
+   digest, the caller's role and that agent;
 4. the Mission is anchored to the incident by reference, and the incident
    moves to INVESTIGATING if nobody had started.
 
@@ -34,8 +35,23 @@ INVESTIGATE_PROMPT = (
 )
 
 
-async def investigate(story_id: str, user: dict) -> dict:
-    from app.modules.agents.identity import SMART_AGENT_ID
+async def _usable_agent(agent_id: str, user: dict) -> dict | None:
+    """The agent the caller picked, when they own it or it is shared with their role
+    and its access checks pass now."""
+    from app.modules.agents.access import has_verified_access
+    from app.modules.agents.repository import agent_repository
+    from app.modules.assistant.security import session_security
+
+    role = session_security(user).active_role
+    agent = await agent_repository.get_agent(agent_id, owner_name=user["username"])
+    if agent is None:
+        agent = await agent_repository.get_shared_agent(agent_id, role_name=role)
+    if agent is None or not await has_verified_access(agent, role_name=role, user=user):
+        return None
+    return agent
+
+
+async def investigate(story_id: str, agent_id: str, user: dict) -> dict:
     from app.modules.agents.mission import mission_service
     from app.modules.agents.mission_schema import IncidentAnchor, MissionCreate, WorkIntent
     from app.modules.assistant.repository import assistant_repository
@@ -47,17 +63,23 @@ async def investigate(story_id: str, user: dict) -> dict:
     if story is None:
         await events._audit(user, "INVESTIGATE_STORY", story_id, "DENIED", "DENY")
         raise HTTPException(status_code=404, detail=UNAVAILABLE)
+    agent = await _usable_agent(agent_id, user)
+    if agent is None:
+        await events._audit(user, "INVESTIGATE_STORY", story_id, "DENIED", "DENY")
+        raise HTTPException(status_code=404, detail="Agent not found")
     actor = Actor.from_user(user)
     (signal,) = await events.record_stories([story], actor)
     if not signal.incident_id:
         raise HTTPException(status_code=409, detail="The story is not linked to an incident yet")
 
-    key = fingerprint([story.id, signal.source.digest, actor.principal, actor.active_role])
+    key = fingerprint([
+        story.id, signal.source.digest, actor.principal, actor.active_role, agent["agent_id"],
+    ])
     thread_id = str(uuid5(NAMESPACE_URL, f"nova:news-handoff:{key}"))
     thread = await assistant_repository.create_thread(
         user_name=actor.principal,
         title=story.narrative.headline[:200],
-        agent_id=SMART_AGENT_ID,
+        agent_id=agent["agent_id"],
         thread_id=thread_id,
     )
     thread_store.register(
@@ -110,7 +132,7 @@ async def investigate(story_id: str, user: dict) -> dict:
         "incident_id": signal.incident_id,
         "mission_id": mission.mission_id,
         "thread_id": thread_id,
-        "agent_id": SMART_AGENT_ID,
+        "agent_id": agent["agent_id"],
         "source_revision": story.revision,
         "ontology_release_id": signal.concept.release_id if signal.concept else None,
         "prompt": INVESTIGATE_PROMPT,

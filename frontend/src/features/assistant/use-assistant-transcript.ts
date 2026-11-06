@@ -284,9 +284,7 @@ function applyEvent(
     case "citation":
       return appendBlock(state, { kind: "citation", block: event.payload });
     case "suggestions":
-    case "automation_proposal":
-    case "smart_draft":
-      // Nove's panel offers neither catalog follow-ups nor Smart schedules; Studio does.
+      // Nove's panel offers no catalog follow-ups; Studio does.
       return state;
     case "tool_detail":
       // What a tool did, for the reader who opens its step. Recorded on the

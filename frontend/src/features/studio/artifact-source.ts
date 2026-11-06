@@ -38,7 +38,7 @@ export function findArtifactSql(
         && step.status === "done" && isReusableSql(step.preview),
     );
     if (source?.preview) return source.preview.trim();
-    // A specialist's result: the statement recorded with those exact rows.
+    // Otherwise the statement the block itself recorded with those exact rows.
     return isReusableSql(item.request.sql) ? item.request.sql!.trim() : null;
   }
   if (toolCallId) {
@@ -48,8 +48,8 @@ export function findArtifactSql(
     if (exact?.preview) return exact.preview.trim();
   }
   if (item.type === "chart") {
-    // A chart Smart built from a specialist's rows carries their statement;
-    // the query that produced them ran in the specialist's own steps.
+    // A chart that carries its source statement uses it: the query that
+    // produced its rows may not be among this turn's steps.
     const source = item.block.viz_spec?.source as { sql?: unknown } | undefined;
     if (typeof source?.sql === "string" && isReusableSql(source.sql)) {
       return source.sql.trim();

@@ -174,13 +174,6 @@ class Evidence:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-#: Smart's collaboration tools: they move work between participants, not facts.
-COORDINATION_TOOLS = frozenset({
-    "discover_agents", "spawn_agent", "send_message", "followup_task", "wait_agent",
-    "list_agents", "interrupt_agent",
-})
-
-
 #: ml_execute summaries read "<task> completed with <algorithm>; N rows processed (run ...)".
 _ML_SUMMARY = re.compile(r"^([a-z_]+) completed with ")
 _ML_TITLES = {
@@ -333,71 +326,9 @@ class EvidenceTracker:
         return {key: table for key, table in self._tables.items()
                 if key not in catalog_ids and not catalog_table(table)}
 
-    def import_results(self, participant: dict[str, Any]) -> list[Evidence]:
-        """Take a finished specialist's results as this turn's evidence, once each."""
-        if participant.get("status") not in {"idle", "completed"} or not participant.get("depth"):
-            return []
-        source = participant.get("evidence") or {}
-        tables = source.get("tables") or {}
-        imported = {}
-        for item in source.get("items", [])[-8:]:
-            table = tables.get(item["evidence_id"])
-            source_key = f"{participant['current_turn_id']}:{item['evidence_id']}"
-            if table is None or any(
-                e.metadata.get("source_key") == source_key for e in self._items
-            ):
-                continue
-            imported[item["evidence_id"]] = self.add(
-                item["tool"], item["summary"], table=table,
-                metadata={**item.get("metadata", {}), "source_key": source_key,
-                          "source_turn_id": participant["current_turn_id"],
-                          "source_agent_id": participant["agent_id"],
-                          "source_participant": participant.get("agent_session_id")
-                          or participant["current_turn_id"]},
-            )
-        for item in imported.values():
-            canonical = item.metadata.get("canonical_business_result")
-            if not isinstance(canonical, dict):
-                continue
-            refs = {name: imported[identifier].evidence_id
-                    for name, identifier in canonical.get("numeric_evidence_refs", {}).items()
-                    if identifier in imported}
-            item.metadata["canonical_business_result"] = {
-                **canonical, "numeric_evidence_refs": refs,
-            }
-        return list(imported.values())
-
-    def latest_results(self) -> dict[str, dict[str, Any]]:
-        """Business tables, keeping only a teammate's latest turn.
-
-        A follow-up turn of the same teammate restates or replaces its earlier
-        result; counting both would ask for a chart the answer does not need.
-        """
-        tables = self.business_tables
-        latest: dict[str, str] = {}
-        for item in self._items:
-            participant = item.metadata.get("source_participant")
-            if participant and item.evidence_id in tables:
-                latest[participant] = str(item.metadata.get("source_turn_id"))
-        return {
-            item.evidence_id: tables[item.evidence_id]
-            for item in self._items
-            if item.evidence_id in tables
-            and latest.get(str(item.metadata.get("source_participant") or ""))
-            in (None, str(item.metadata.get("source_turn_id")))
-        }
-
     def composer_context(self) -> str:
-        """The evidence the final answer may draw on, as JSON for the composer prompt.
-
-        Coordination steps (starting, waiting for, messaging a teammate) state no
-        fact; a teammate's results are their own items once collected. Discovery
-        stays while no result is in: it is what says nobody covers the request.
-        """
-        skipped = COORDINATION_TOOLS if self.business_tables else (
-            COORDINATION_TOOLS - {"discover_agents"}
-        )
-        payload = [asdict(item) for item in self._items if item.tool not in skipped]
+        """The evidence the final answer may draw on, as JSON for the composer prompt."""
+        payload = [asdict(item) for item in self._items]
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 

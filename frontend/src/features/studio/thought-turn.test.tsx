@@ -89,25 +89,12 @@ describe("process rail", () => {
     expect(document.body.textContent).not.toMatch(/\d+\.\ds/);
   });
 
-  it("shows a finished specialist as one branch with its result and recorded time", async () => {
-    const onOpenChild = vi.fn();
+  it("shows the run time the journal recorded for a replayed run", async () => {
     const steps: RailStep[] = [
-      { id: "called", kind: "delegate", label: "queued", text: "Called Finance", childRunId: "fin", actor: "Finance", body: "Quantify revenue by channel", at: "2026-09-25T00:00:01", status: "done" },
-      { id: "tool", kind: "tool", label: "semantic_query", text: "Finance called semantic_query", childRunId: "fin", actor: "Finance", status: "done" },
-      { id: "end", kind: "delegate", label: "completed", text: "Finance finished", childRunId: "fin", actor: "Finance", detail: "Revenue grew 12% vs last month", at: "2026-09-25T00:00:05", status: "done" },
+      { ...plan, id: "first", status: "done", at: "2026-09-25T00:00:01" },
+      { ...query, id: "last", status: "done", at: "2026-09-25T00:00:05" },
     ];
-    await render(<ProcessRail steps={steps} running={false} onOpenChild={onOpenChild} />);
-    await page.getByTestId("process-rail-toggle").click();
-
-    await expect.element(page.getByText("Quantify revenue by channel")).toBeVisible();
-    await expect.element(page.getByText("Revenue grew 12% vs last month")).toBeVisible();
-    await expect.element(page.getByLabelText("Run steps").getByText("4.0s")).toBeVisible();
-    // The specialist's own steps fold behind the result until asked for.
-    await expect.element(page.getByText("Finance called semantic_query")).not.toBeInTheDocument();
-    await page.getByRole("button", { name: "1 step" }).click();
-    await expect.element(page.getByText("Finance called semantic_query")).toBeVisible();
-
-    await page.getByRole("button", { name: "Called Finance. Open subagent conversation" }).click();
-    expect(onOpenChild).toHaveBeenCalledWith("fin");
+    await render(<ProcessRail steps={steps} running={false} />);
+    await expect.element(page.getByTestId("process-rail-toggle")).toHaveTextContent("4.0s");
   });
 });

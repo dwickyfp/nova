@@ -8,8 +8,8 @@ Paths below are repository-relative; commands run from `backend/`.
 
 ## Shared engine
 
-- `AssistantLoop` owns provider/tool iteration. Nove, direct agents, and Smart
-  participants compose this engine with their own context and registries.
+- `AssistantLoop` owns provider/tool iteration. Nove and Studio agents compose
+  this engine with their own context and registries.
   Studio orchestration belongs in the sibling agents module; do not fork a loop
   for a new mode, tool, or domain.
 - Keep provider behavior behind existing provider/capability interfaces. A
@@ -38,8 +38,8 @@ Paths below are repository-relative; commands run from `backend/`.
   artifact, and run journals. Do not introduce another persistence path or leak
   secret-bearing context into snapshots/public trace projections.
 
-Read the [agents guide](../agents/AGENTS.md) for Smart checkpoints, participant
-identity, and delegation.
+Read the [agents guide](../agents/AGENTS.md) for Studio agents, Missions, and
+automations.
 
 ## Behavior validation
 
