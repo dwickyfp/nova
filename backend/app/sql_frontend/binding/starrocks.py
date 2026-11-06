@@ -134,18 +134,30 @@ class StarRocksCatalogProvider:
                     or None
                 )
             if kind == "ColumnDescContext":
+                default = node.defaultDesc()
                 attributes[node.identifier().getText().strip("`").casefold()] = (
                     any(
                         child.getText().upper() == "AUTO_INCREMENT" for child in node.children or []
                     ),
-                    node.generatedColumnDesc().getText() if node.generatedColumnDesc() else None,
+                    parsed.normalized_sql[
+                        generated.expression().start.start : generated.expression().stop.stop + 1
+                    ]
+                    if (generated := node.generatedColumnDesc()) is not None
+                    else None,
+                    parsed.normalized_sql[
+                        parsed.tokens.get(default.start.tokenIndex + 1).start : default.stop.stop
+                        + 1
+                    ].strip()
+                    if default is not None and default.stop.tokenIndex > default.start.tokenIndex
+                    else None,
                 )
         columns = tuple(
             replace(
                 column,
-                auto_increment=attributes.get(column.name.casefold(), (None, None))[0],
-                generated_expression=attributes.get(column.name.casefold(), (None, None))[1]
+                auto_increment=attributes.get(column.name.casefold(), (None, None, None))[0],
+                generated_expression=attributes.get(column.name.casefold(), (None, None, None))[1]
                 or column.generated_expression,
+                default_sql=attributes.get(column.name.casefold(), (None, None, None))[2],
                 key_column=column.name.casefold() in {key.casefold() for key in key_columns}
                 if key_columns is not None
                 else None,

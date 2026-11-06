@@ -256,6 +256,16 @@ masks.
   StarRocks, so the connection's account should be read-only and as narrow as
   possible.
 
+- **Writing into Nova.** A foreign catalog is a read-only source. Copy or
+  synchronise its data into Nova Primary Key tables with `INSERT ... SELECT`,
+  `CREATE TABLE ... AS SELECT`, or `MERGE INTO nova_table USING catalog.schema.table
+  ON ... WHEN [NOT] MATCHED ...` ([MERGE INTO](02-sql-worksheet.md#merge-into)).
+  A MERGE reads the source through the caller's Ranger policies like any query;
+  lineage records the external table as the source of the Nova table.
+- **Catalog metadata.** Foreign-catalog tables, views, and materialized views
+  are Nova catalog objects: they can be described, owned, tagged, classified,
+  searched, and appear in lineage, the same as Nova tables.
+
 ## Credential security
 
 The invariant (AGENTS.md §2) is that storage credentials never appear in an API

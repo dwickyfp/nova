@@ -71,6 +71,24 @@ def _decode_result_rows(cursor, raw_rows):
     return rows
 
 
+def _text_value(value):
+    """A binary cell as text: UTF-8 when it is, else ``0x`` hex like the MySQL client."""
+    if not isinstance(value, (bytes, bytearray)):
+        return value
+    try:
+        return bytes(value).decode("utf-8")
+    except UnicodeDecodeError:
+        return "0x" + bytes(value).hex().upper()
+
+
+def _text_rows(raw_rows) -> list[list]:
+    """Rows for a JSON response: ``VARBINARY`` values become text, never raw bytes."""
+    return [
+        [_text_value(value) for value in (row.values() if isinstance(row, Mapping) else row)]
+        for row in raw_rows
+    ]
+
+
 #: Rows fetched per round trip when a result is streamed to a row sink.
 _STREAM_BATCH_ROWS = 1000
 
@@ -365,10 +383,7 @@ class QueryRepository:
                                 rows = (
                                     _decode_result_rows(cur, batch)
                                     if raw_text
-                                    else [
-                                        list(r.values()) if isinstance(r, Mapping) else list(r)
-                                        for r in batch
-                                    ]
+                                    else _text_rows(batch)
                                 )
                                 result.row_count += len(rows)
                                 await row_sink.rows(rows)
@@ -385,10 +400,9 @@ class QueryRepository:
                             if max_rows:
                                 raw_rows = raw_rows[:max_rows]
                             result.rows = (
-                                _decode_result_rows(cur, raw_rows) if raw_text else [
-                                    list(r.values()) if isinstance(r, Mapping) else list(r)
-                                    for r in raw_rows
-                                ]
+                                _decode_result_rows(cur, raw_rows)
+                                if raw_text
+                                else _text_rows(raw_rows)
                             )
                             result.row_count = len(result.rows)
                     else:

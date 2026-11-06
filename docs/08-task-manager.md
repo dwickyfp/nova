@@ -525,7 +525,7 @@ Headers and toolbars remain outside the page's content scrollers.
 - **Native engine has no task dependencies/DAG** — Nova implements the scheduler and graph worker over one-shot engine tasks.
 - **No callback/trigger** on completion — progress must be observed by polling `information_schema.task_runs`
 - **No conditional branching** (if A fails, run C)
-- `MERGE` is not a supported task body on the tested engine. Use Primary Key `INSERT` for upsert, or `INSERT OVERWRITE` for replacement.
+- `MERGE INTO` runs in the Workspace and SQL API ([MERGE INTO](02-sql-worksheet.md#merge-into)) but is not a task body. In a task, use Primary Key `INSERT` for upsert, or `INSERT OVERWRITE` for replacement.
 - Manual execution needs the triggering session to remain valid when each node starts.
 - Native task bodies containing `@stage` references are rejected because expanded credentials would persist in engine task metadata.
 

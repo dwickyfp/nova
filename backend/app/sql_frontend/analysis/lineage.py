@@ -2,7 +2,8 @@
 
 Only statements that write one named relation from a query have lineage:
 ``INSERT [OVERWRITE] INTO t SELECT ...``, ``CREATE TABLE t AS SELECT ...``,
-``CREATE [OR REPLACE] VIEW t AS ...`` and ``CREATE MATERIALIZED VIEW t AS ...``.
+``CREATE [OR REPLACE] VIEW t AS ...``, ``CREATE MATERIALIZED VIEW t AS ...`` and
+``MERGE INTO t USING ...``.
 The sources are the named relations the query reads, minus common table
 expressions the statement defines. ``EXPLAIN`` forms, ``INSERT ... VALUES`` and
 writes to ``FILES()`` have none.
@@ -26,6 +27,7 @@ _WRITES = {
     "CreateTableAsSelectStatementContext": "create_table_as_select",
     "CreateViewStatementContext": "create_view",
     "CreateMaterializedViewStatementContext": "create_materialized_view",
+    "NovaMergeStatementContext": "merge",
 }
 
 
@@ -74,15 +76,26 @@ def statement_lineage(sql: str, *, database: str | None = None) -> StatementLine
     explain = getattr(node, "explainDesc", None)
     if explain is not None and explain() is not None:
         return None
-    target_node = node.qualifiedName()
-    if isinstance(target_node, list):
-        target_node = target_node[0] if target_node else None
-    if target_node is None or node.queryStatement() is None:
+    if kind == "merge":
+        target_node, query = node.target, node.novaMergeSource()
+    else:
+        target_node = node.qualifiedName()
+        if isinstance(target_node, list):
+            target_node = target_node[0] if target_node else None
+        query = node.queryStatement()
+    if target_node is None or query is None:
         return None
     target = _ref(target_node, database)
     if target is None:
         return None
-    nodes = list(walk_nodes(node.queryStatement()))
+    nodes = list(walk_nodes(query))
+    if kind == "merge" and type(query).__name__ == "NovaMergeSourceTableContext":
+        source = _ref(query.qualifiedName(), database)
+        return (
+            StatementLineage(kind=kind, target=target, sources=(source,))
+            if source is not None and source != target
+            else None
+        )
     ctes = {
         identifier(child.identifier()).casefold()
         for child in nodes

@@ -79,3 +79,36 @@ class SecurityStatement(Statement):
 @dataclass(frozen=True, slots=True)
 class ForcePasswordChangeStatement(Statement):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class MergeClause:
+    """One ``WHEN [NOT] MATCHED`` clause; expressions are SQL sliced from the source.
+
+    ``kind`` is ``update``, ``delete`` or ``insert``. A ``None`` value or
+    assignment means ``DEFAULT``.
+    """
+
+    kind: str
+    condition: str | None = None
+    assignments: tuple[tuple[str, str | None], ...] = ()
+    columns: tuple[str, ...] | None = None
+    values: tuple[str | None, ...] = ()
+    reads_target: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MergeStatement(Statement):
+    """``MERGE INTO``. ``keys`` pairs each target column the ``ON`` condition
+    equates with the source SQL it equals; ``None`` when ``ON`` is not a
+    conjunction of such equalities."""
+
+    target: tuple[str, ...] = ()
+    target_sql: str = ""
+    target_alias: str | None = None
+    source_sql: str = ""
+    source_alias: str | None = None
+    source_name: tuple[str, ...] = ()
+    on_sql: str = ""
+    keys: tuple[tuple[str, str], ...] | None = None
+    clauses: tuple[MergeClause, ...] = ()
