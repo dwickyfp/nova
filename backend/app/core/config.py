@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     #: an internal address: the route is not meant for the public gateway.
     LLM_GATEWAY_URL: str = "http://host.docker.internal:8000"
     LLM_GATEWAY_TIMEOUT_SECONDS: float = 60.0
+    #: Where an AI provider endpoint on ``localhost`` is reached. Empty when the
+    #: backend runs on the host; a container sets ``host.docker.internal`` so a
+    #: model served on the host machine is reachable at ``http://localhost:…``.
+    AI_PROVIDER_LOOPBACK_HOST: str = ""
     #: Provider requests this process forwards at once; the rest wait.
     LLM_GATEWAY_MAX_CONCURRENCY: int = Field(default=32, ge=1)
     LLM_USAGE_FLUSH_SECONDS: float = 30.0

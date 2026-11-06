@@ -39,6 +39,7 @@ from app.common.ssrf_guard import (
     guarded_async_client,
     resolve_and_validate_url,
 )
+from app.core.config import settings
 from app.core.exceptions import NovaException
 from app.modules.ai_ml.service import ai_service
 from app.modules.assistant.measurements import (
@@ -412,7 +413,9 @@ class AssistantProviderClient:
             try:
                 async with (
                     guarded_async_client(
-                        timeout=self._timeout, allow_private_network=True
+                        timeout=self._timeout,
+                        allow_private_network=True,
+                        loopback_host=settings.AI_PROVIDER_LOOPBACK_HOST,
                     ) as client,
                     observe_http_dispatches(client),
                 ):
@@ -514,7 +517,9 @@ class AssistantProviderClient:
             try:
                 async with (
                     guarded_async_client(
-                        timeout=self._timeout, allow_private_network=True
+                        timeout=self._timeout,
+                        allow_private_network=True,
+                        loopback_host=settings.AI_PROVIDER_LOOPBACK_HOST,
                     ) as client,
                     observe_http_dispatches(client),
                     client.stream(

@@ -72,6 +72,8 @@ services:
       PROXY_ENABLED: "true"
       # Where the engine's backends reach the AI_* gateway.
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-http://nova-backend:8000}
+      # A provider endpoint on localhost means the host machine, not this container.
+      AI_PROVIDER_LOOPBACK_HOST: ${AI_PROVIDER_LOOPBACK_HOST:-host.docker.internal}
       # Shared with Superset for /api/v1/internal/superset (docs/arch-17-superset.md).
       SUPERSET_SERVICE_TOKEN: ${NOVA_SUPERSET_SERVICE_TOKEN:?set NOVA_SUPERSET_SERVICE_TOKEN in docker/.env}
       SUPERSET_INTERNAL_URL: http://superset:8088
@@ -125,6 +127,8 @@ services:
       WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
       WORKER_IMPERSONATION_PASSWORD: ${WORKER_IMPERSONATION_PASSWORD:-}
       WORKER_IMPERSONATION_ROLE: ${WORKER_IMPERSONATION_ROLE:-}
+      # A provider endpoint on localhost means the host machine, not this container.
+      AI_PROVIDER_LOOPBACK_HOST: ${AI_PROVIDER_LOOPBACK_HOST:-host.docker.internal}
     volumes:
       - ./nova.yaml:/opt/nova/config/nova.yaml:ro
     restart: unless-stopped
