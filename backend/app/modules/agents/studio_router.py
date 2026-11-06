@@ -28,6 +28,7 @@ catalog is seeded on first read so the Tools page is never empty.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -289,15 +290,20 @@ def _bi_http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=422, detail=detail)
 
 
-def _chart_plan(body_viz: dict | None, body_chart: dict | None):
-    """The Superset chart a save request describes, or None for a table."""
-    from app.modules.superset.charts import plan_from_vega, plan_from_worksheet
+def _chart_plan(body_viz: dict | None, body_chart: dict | None, sql_text: str = ""):
+    """The Superset chart a save request describes, or None for a table.
+
+    An axis chart that names no category order takes its query's ``ORDER BY``.
+    """
+    from app.modules.superset.charts import plan_from_vega, plan_from_worksheet, with_sql_order
 
     if body_viz:
-        return plan_from_worksheet(body_viz)
-    if body_chart:
-        return plan_from_vega(body_chart)
-    return None
+        plan = plan_from_worksheet(body_viz)
+    elif body_chart:
+        plan = plan_from_vega(body_chart)
+    else:
+        return None
+    return with_sql_order(plan, sql_text)
 
 
 @router.post(
@@ -345,7 +351,7 @@ async def create_artifact(
                 user,
                 title=title,
                 sql_text=sql_text,
-                plan=_chart_plan(body.viz_spec, body.chart_spec),
+                plan=_chart_plan(body.viz_spec, body.chart_spec, sql_text),
                 database_name=body.database_name,
                 schema_name=body.schema_name,
                 agent_id=body.agent_id,
@@ -500,6 +506,8 @@ async def edit_artifact(
         proposal = await propose_artifact_edit(artifact, body, user)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if proposal.draft is not None and artifact.get("bi_kind") == "chart":
+        proposal.preview_path = await _bi_draft_preview(artifact, proposal.draft, user)
     await write_audit_log(
         event_type="ARTIFACT",
         user_name=user["username"],
@@ -529,19 +537,68 @@ async def apply_artifact_edit(
     return await _apply_bi_edit(artifact, body, user)
 
 
-async def _apply_bi_edit(artifact: dict, body: ArtifactApplyRequest, user: dict):
-    """Apply a reviewed draft to a BI chart: new dataset SQL, chart redrawn."""
+async def _bi_draft_preview(artifact: dict, draft, user: dict) -> str | None:
+    """Superset's view of a proposed edit, or None when BI cannot draw it.
+
+    Without one the edit is still reviewed from its rows and applied as usual.
+    """
     from app.modules.superset import artifacts as bi_artifacts
     from app.modules.superset.client import BiError
 
     try:
-        result = await run_artifact_draft(body.draft, artifact, user)
-        updated = await bi_artifacts.update_chart_source(
+        return await bi_artifacts.preview_chart_draft(
             user,
             artifact,
-            sql_text=body.draft.sql_text,
-            plan=_chart_plan(body.draft.viz_spec, body.draft.chart_spec),
-            expected_updated_at=body.expected_updated_at,
+            sql_text=draft.sql_text,
+            plan=_chart_plan(draft.viz_spec, draft.chart_spec, draft.sql_text),
+        )
+    except (ValueError, BiError) as exc:
+        logger.info("BI preview of %s unavailable: %s", artifact["artifact_id"], exc)
+        return None
+
+
+@router.delete("/studio/artifacts/{artifact_id}/draft", status_code=204)
+async def discard_artifact_draft(
+    artifact_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Drop the BI objects behind an unsaved edit; the saved chart is unchanged."""
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    if artifact.get("bi_kind") == "chart":
+        from app.modules.superset.artifacts import discard_chart_drafts
+
+        await discard_chart_drafts(user, artifact)
+    await write_audit_log(
+        event_type="ARTIFACT",
+        user_name=user["username"],
+        action="discard_edit",
+        object_type="ARTIFACT",
+        object_name=artifact_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+    )
+    return None
+
+
+async def _apply_bi_edit(artifact: dict, body: ArtifactApplyRequest, user: dict):
+    """Apply a reviewed draft to a BI chart: new dataset SQL, chart redrawn.
+
+    The draft's rows (for Studio's table) and the Superset update run side by
+    side; each runs as the caller.
+    """
+    from app.modules.superset import artifacts as bi_artifacts
+    from app.modules.superset.client import BiError
+
+    try:
+        result, updated = await asyncio.gather(
+            run_artifact_draft(body.draft, artifact, user),
+            bi_artifacts.update_chart_source(
+                user,
+                artifact,
+                sql_text=body.draft.sql_text,
+                plan=_chart_plan(body.draft.viz_spec, body.draft.chart_spec, body.draft.sql_text),
+                expected_updated_at=body.expected_updated_at,
+            ),
         )
     except (ValueError, BiError) as exc:
         raise _bi_http_error(exc) from exc

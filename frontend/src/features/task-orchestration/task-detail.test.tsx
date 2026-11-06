@@ -152,7 +152,15 @@ describe("TaskDetail", () => {
   it("shows the persisted execution identity when a run is expanded", async () => {
     totalRuns = 2;
     const screen = await renderDetail();
-    await userEvent.click(screen.getByRole("row").filter({ hasText: "success" }));
+    // The table scrolls sideways inside a narrow drawer, so the row's center
+    // can sit outside the visible area. Click its first cell, as a user would.
+    await userEvent.click(
+      screen
+        .getByRole("row")
+        .filter({ hasText: "success" })
+        .getByRole("cell")
+        .first(),
+    );
     await expect
       .element(screen.getByText("Executed as dwicky.f.putra · ACCOUNTADMIN"))
       .toBeVisible();

@@ -279,9 +279,9 @@ describe("AssistantDock", () => {
     }
   });
 
-  it("ladders the panel inline at 768px and as a Sheet just below it", async () => {
+  it("ladders the panel inline at 1024px and as a Sheet just below it", async () => {
     try {
-      await page.viewport(768, 900);
+      await page.viewport(1024, 900);
       const wide = await renderLayout(
         makeTree({ assistant_collapsed: false }),
         "database-explorer",
@@ -295,14 +295,14 @@ describe("AssistantDock", () => {
         .toBeInTheDocument();
       wide.unmount();
 
-      await page.viewport(767, 900);
+      await page.viewport(1023, 900);
       const narrow = await renderLayout(
         makeTree({ assistant_collapsed: false }),
         "database-explorer",
       );
       await expect.element(narrow.getByRole("dialog")).not.toBeInTheDocument();
       await narrow.getByRole("button", { name: "Ask Nove" }).click();
-      // Below md the panel is a Sheet overlay with its own close control; the
+      // Below lg the panel is a Sheet overlay with its own close control; the
       // FAB is the trigger that opened it and is inert behind the overlay.
       const dialog = narrow.getByRole("dialog");
       await expect.element(dialog).toBeInTheDocument();

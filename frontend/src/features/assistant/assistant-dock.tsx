@@ -5,8 +5,8 @@ import { useAssistant, useAssistantPanelProps } from "./assistant-provider";
 /**
  * The global assistant surface: the panel plus its persistent toggle. Mounted
  * once in the authenticated layout so every route shares one conversation and
- * one open/closed state. On `md` and up the panel is an inline flex sibling of
- * the page content; below `md` it becomes a `Sheet` while the same toggle stays
+ * one open/closed state. On `lg` and up the panel is an inline flex sibling of
+ * the page content; below `lg` it becomes a `Sheet` while the same toggle stays
  * as the trigger.
  */
 export function AssistantDock() {

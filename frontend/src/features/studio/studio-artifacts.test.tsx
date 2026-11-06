@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   editArtifact: vi.fn(),
   applyArtifactEdit: vi.fn(),
   deleteArtifact: vi.fn(),
+  discardArtifactDraft: vi.fn(),
 }));
 
 const artifactMeta = {
@@ -45,6 +46,8 @@ describe("Studio artifacts", () => {
     mocks.editArtifact.mockReset();
     mocks.applyArtifactEdit.mockReset();
     mocks.deleteArtifact.mockReset();
+    mocks.discardArtifactDraft.mockReset();
+    mocks.discardArtifactDraft.mockResolvedValue(undefined);
     mocks.getArtifact.mockResolvedValue(artifactMeta);
     mocks.listArtifacts.mockResolvedValue({
       count: 1,
@@ -202,7 +205,9 @@ describe("Studio artifacts", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Send artifact edit" }),
     );
-    await expect.element(screen.getByText("Draft preview")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("group", { name: "Unsaved change" }))
+      .toBeInTheDocument();
     await expect
       .element(screen.getByText("profit").first())
       .toBeInTheDocument();
@@ -212,7 +217,7 @@ describe("Studio artifacts", () => {
       screen.getByRole("button", { name: "Apply changes" }),
     );
     await expect
-      .element(screen.getByText("Draft preview"))
+      .element(screen.getByRole("group", { name: "Unsaved change" }))
       .not.toBeInTheDocument();
     expect(mocks.applyArtifactEdit).toHaveBeenCalledWith("artifact-1", {
       draft: {
@@ -224,7 +229,7 @@ describe("Studio artifacts", () => {
     });
   });
 
-  it("shows activity on the preview border without rendering chat bubbles", async () => {
+  it("shows what Nova is changing while the chart rests, without chat bubbles", async () => {
     let finishEdit: (value: unknown) => void = () => undefined;
     mocks.editArtifact.mockImplementation(
       () =>
@@ -251,7 +256,9 @@ describe("Studio artifacts", () => {
     );
     const preview = screen.getByRole("region", { name: "Artifact preview" });
     await expect.element(preview).toHaveAttribute("aria-busy", "true");
-    await expect.element(preview).toHaveClass("artifact-ai-active");
+    await expect
+      .element(screen.getByText("Changing the chart: “Rename region”"))
+      .toBeInTheDocument();
     await expect
       .element(screen.getByRole("region", { name: "Artifact chat" }))
       .not.toBeInTheDocument();
@@ -265,7 +272,9 @@ describe("Studio artifacts", () => {
       elapsed_ms: 0,
     });
     await expect.element(preview).toHaveAttribute("aria-busy", "false");
-    await expect.element(preview).not.toHaveClass("artifact-ai-active");
+    await expect
+      .element(screen.getByText("Changing the chart: “Rename region”"))
+      .not.toBeInTheDocument();
     await expect
       .element(screen.getByText("Which source column should I rename?"))
       .toBeInTheDocument();
@@ -366,7 +375,9 @@ describe("Studio artifacts", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Send artifact edit" }));
 
-    await expect.element(screen.getByText("Draft preview")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("group", { name: "Unsaved change" }))
+      .toBeInTheDocument();
     await expect
       .element(screen.getByTitle("Edit Revenue by region"))
       .not.toBeInTheDocument();
@@ -425,5 +436,55 @@ describe("Studio artifacts", () => {
     } finally {
       fetchMock.mockRestore();
     }
+  });
+
+  it("shows a BI draft in Superset's own frame and returns to the saved chart", async () => {
+    biSession.post.mockResolvedValue({ path: "/bi/", superset_role: "NovaAuthor" });
+    const bi = {
+      bi_kind: "chart",
+      bi_object_id: 21,
+      bi_view_path: "/bi/explore/?slice_id=21&standalone=1",
+      bi_edit_path: "/bi/explore/?slice_id=21&uiConfig=4",
+    };
+    mocks.getArtifact.mockResolvedValue({ ...artifactMeta, ...bi });
+    const refreshed = await mocks.refreshArtifact();
+    mocks.refreshArtifact.mockResolvedValue({ ...refreshed, artifact: { ...refreshed.artifact, ...bi } });
+    mocks.editArtifact.mockResolvedValue({
+      message: "Made it a line chart, largest first.",
+      draft: { sql_text: artifactMeta.sql_text, artifact_type: "chart", chart_spec: { mark: "line" } },
+      columns: ["region", "revenue"],
+      rows: [["West", 120]],
+      row_count: 1,
+      elapsed_ms: 10,
+      preview_path: "/bi/explore/?form_data_key=K1&standalone=1",
+    });
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <StudioArtifacts onSelectAgent={() => undefined} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByText("Revenue by region"));
+    await expect
+      .element(screen.getByTitle("Chart Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21&standalone=1");
+    await userEvent.fill(screen.getByRole("textbox", { name: "Edit artifact with Nova" }), "Line, largest first");
+    await userEvent.click(screen.getByRole("button", { name: "Send artifact edit" }));
+
+    // The draft is Superset's own view, in the same frame; nothing moves.
+    await expect
+      .element(screen.getByTitle("Draft of Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?form_data_key=K1&standalone=1");
+    await expect
+      .element(screen.getByText("Made it a line chart, largest first."))
+      .toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "Edit chart" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(mocks.discardArtifactDraft).toHaveBeenCalledWith("artifact-1");
+    await expect
+      .element(screen.getByTitle("Chart Revenue by region"))
+      .toHaveAttribute("src", "/bi/explore/?slice_id=21&standalone=1");
+    await expect.element(screen.getByRole("button", { name: "Edit chart" })).toBeEnabled();
   });
 });

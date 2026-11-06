@@ -11,6 +11,7 @@ columns before anything is saved.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +20,9 @@ ChartKind = Literal[
     "table", "bar", "bar_stacked", "line", "area", "scatter", "pie", "big_number", "heatmap"
 ]
 Aggregate = Literal["SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"]
+#: How an axis chart orders its categories: by the category itself or by the
+#: first measure's value.
+AxisOrder = Literal["x_asc", "x_desc", "value_asc", "value_desc"]
 
 DEFAULT_ROW_LIMIT = 10_000
 
@@ -117,6 +121,8 @@ class ChartPlan(BaseModel):
     columns: list[str] = Field(default_factory=list, max_length=64)
     limit: int = Field(default=DEFAULT_ROW_LIMIT, ge=1, le=100_000)
     filters: list[RowFilter] = Field(default_factory=list, max_length=32)
+    #: Category order on an axis chart; Superset's own (by category) when None.
+    order: AxisOrder | None = None
 
     def referenced(self) -> set[str]:
         names = {measure.column for measure in self.measures} | set(self.columns)
@@ -204,7 +210,64 @@ def plan_from_vega(spec: dict[str, Any], columns: list[str] | None = None) -> Ch
     series = field("color")
     if kind == "bar" and series:
         kind = "bar_stacked"
-    return ChartPlan(kind=kind, x=x, series=series, measures=[Measure(column=y)])
+    return ChartPlan(
+        kind=kind, x=x, series=series, measures=[Measure(column=y)], order=_vega_order(encoding)
+    )
+
+
+def _vega_order(encoding: dict[str, Any]) -> AxisOrder | None:
+    """The category order a Vega-Lite x channel asks for (``sort``)."""
+    channel = encoding.get("x")
+    sort = channel.get("sort") if isinstance(channel, dict) else None
+    named: dict[str, AxisOrder] = {
+        "-y": "value_desc",
+        "y": "value_asc",
+        "descending": "x_desc",
+        "ascending": "x_asc",
+    }
+    if isinstance(sort, str):
+        return named.get(sort)
+    if isinstance(sort, dict):
+        descending = sort.get("order") == "descending"
+        y = encoding.get("y")
+        y_field = y.get("field") if isinstance(y, dict) else None
+        if sort.get("encoding") == "y" or (y_field and sort.get("field") == y_field):
+            return "value_desc" if descending else "value_asc"
+        return "x_desc" if descending else "x_asc"
+    return None
+
+
+_ORDER_BY = re.compile(
+    r"\bORDER\s+BY\s+(`[^`]+`|\"[^\"]+\"|[A-Za-z_][\w.]*(?:\([^()]*\))?)\s*(ASC|DESC)?",
+    re.IGNORECASE,
+)
+
+
+def with_sql_order(plan: ChartPlan | None, sql: str) -> ChartPlan | None:
+    """Carry the query's ``ORDER BY`` onto an axis chart that names no order.
+
+    Superset orders an axis by category unless told otherwise, which would undo
+    a request such as "largest first" that the query already expresses. Only a
+    first sort key naming the plan's category or its measure (by column or by
+    aggregate) is carried; anything else keeps Superset's order.
+    """
+    if plan is None or plan.order is not None or plan.kind not in _AXIS_KINDS or not plan.x:
+        return plan
+    matches = list(_ORDER_BY.finditer(sql))
+    if not matches:
+        return plan
+    key, direction = matches[-1].group(1), (matches[-1].group(2) or "ASC").upper()
+    name = key.strip('`"').split(".")[-1].lower()
+    ascending = direction == "ASC"
+    measures = {measure.column.lower() for measure in plan.measures}
+    aggregated = re.fullmatch(r"\w+\((.+)\)", name)
+    if name == plan.x.lower():
+        order: AxisOrder = "x_asc" if ascending else "x_desc"
+    elif name in measures or (aggregated and aggregated.group(1).strip('`" ') in measures):
+        order = "value_asc" if ascending else "value_desc"
+    else:
+        return plan
+    return plan.model_copy(update={"order": order})
 
 
 def to_superset(
@@ -277,6 +340,13 @@ def to_superset(
             "x_axis_sort_asc": True,
             "show_legend": bool(series),
         }
+        # A time axis always runs in time order; categories follow the plan.
+        if plan.order and not grain and plan.x not in temporal:
+            by_value = plan.order.startswith("value")
+            form |= {
+                "x_axis_sort": metrics[0]["label"] if by_value and metrics else plan.x,
+                "x_axis_sort_asc": plan.order.endswith("asc"),
+            }
         if plan.kind == "bar_stacked":
             form["stack"] = "Stack"
         query |= {"columns": [axis, *series]}

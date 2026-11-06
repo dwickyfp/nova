@@ -161,6 +161,28 @@ const workspacesRoute = getRouteApi("/_authenticated/workspaces/");
 let activeSqlEditorInstance: MonacoEditorInstance | null = null;
 let activeSqlSelection: import("monaco-editor").Selection | null = null;
 
+// Below this width the file panel and the editor no longer fit side by side,
+// so the panel opens over the editor instead of pushing it to zero width.
+const FILE_PANEL_OVERLAY_BELOW = 672;
+// Wider bodies get the roomier file panel.
+const FILE_PANEL_WIDE_FROM = 1024;
+// The editor keeps at least this much height when the results panel is tall.
+const EDITOR_MIN_HEIGHT = 160;
+
+function useElementSize(element: HTMLElement | null) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setSize({ width, height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return size;
+}
+
 function getSqlForExecution(fallbackSql: string) {
   const editor = activeSqlEditorInstance;
   const liveSelection = editor?.getSelection();
@@ -660,6 +682,21 @@ export function WorkspacesPage() {
     "workspaces",
   );
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false);
+  // Overlay state for narrow bodies. Kept apart from secondaryCollapsed so a
+  // narrow window never overwrites the persisted desktop preference.
+  const [overlayPanelOpen, setOverlayPanelOpen] = useState(false);
+  const [workspaceBody, setWorkspaceBody] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [editorGrid, setEditorGrid] = useState<HTMLDivElement | null>(null);
+  const workspaceBodySize = useElementSize(workspaceBody);
+  const editorGridSize = useElementSize(editorGrid);
+  const filePanelOverlay =
+    workspaceBodySize.width > 0 &&
+    workspaceBodySize.width < FILE_PANEL_OVERLAY_BELOW;
+  const filePanelOpen = filePanelOverlay
+    ? overlayPanelOpen
+    : !secondaryCollapsed;
   const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [databaseSearch, setDatabaseSearch] = useState("");
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({});
@@ -750,6 +787,24 @@ export function WorkspacesPage() {
   const deferredWorkspaceSearch = useDeferredValue(workspaceSearch);
   const deferredDatabaseSearch = useDeferredValue(databaseSearch);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  // Short windows cap the results panel so the editor stays usable; the
+  // stored height comes back once there is room again.
+  const visibleResultsHeight =
+    editorGridSize.height > 0
+      ? Math.max(
+          120,
+          Math.min(resultsHeight, editorGridSize.height - EDITOR_MIN_HEIGHT),
+        )
+      : resultsHeight;
+
+  useEffect(() => {
+    if (!filePanelOverlay) setOverlayPanelOpen(false);
+  }, [filePanelOverlay]);
+
+  function toggleFilePanel() {
+    if (filePanelOverlay) setOverlayPanelOpen((prev) => !prev);
+    else setSecondaryCollapsed((prev) => !prev);
+  }
   const saveTimerRef = useRef<number | null>(null);
   const stateSaveTimerRef = useRef<number | null>(null);
   const editorContentRef = useRef("");
@@ -2068,7 +2123,7 @@ export function WorkspacesPage() {
     event.preventDefault();
     dragRef.current = {
       startY: event.clientY,
-      startHeight: resultsHeight,
+      startHeight: visibleResultsHeight,
     };
     setIsResizingResults(true);
     document.body.style.cursor = "row-resize";
@@ -2081,51 +2136,83 @@ export function WorkspacesPage() {
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-lg font-heading">Workspaces</h1>
-            <p className="text-sm text-muted-foreground">
-              Write SQL against governed data, with each tab keeping its own role, database, and schema
+            <p
+              className="truncate text-sm text-muted-foreground"
+              title="Write SQL against governed data, with each tab keeping its own role, database, and schema"
+            >
+              Write SQL against governed data, with each tab keeping its own
+              role, database, and schema
             </p>
           </div>
         </div>
       </Header>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden border-t">
+      <div
+        ref={setWorkspaceBody}
+        className="@container relative flex min-h-0 flex-1 overflow-hidden border-t"
+      >
         <aside
           className={cn(
-            "border-r bg-muted/20 transition-[width] duration-200",
-            secondaryCollapsed ? "w-14" : "w-80",
+            "relative shrink-0 border-r bg-muted/20 transition-[width] duration-200",
+            !filePanelOpen || filePanelOverlay
+              ? "w-14"
+              : workspaceBodySize.width >= FILE_PANEL_WIDE_FROM
+                ? "w-80"
+                : "w-72",
           )}
         >
-          <div className="flex h-full min-h-0 flex-col">
+          <div
+            className={cn(
+              "flex h-full min-h-0 flex-col",
+              filePanelOverlay &&
+                filePanelOpen &&
+                "absolute inset-y-0 left-0 z-30 w-72 max-w-[calc(100cqw-1rem)] border-r bg-background shadow-lg",
+            )}
+            onKeyDown={(event) => {
+              if (filePanelOverlay && event.key === "Escape") {
+                setOverlayPanelOpen(false);
+              }
+            }}
+          >
             <div className="border-b px-3 py-3">
               <div className="flex items-center justify-between gap-2">
-                {!secondaryCollapsed && (
+                {filePanelOpen && (
                   <Tabs
                     value={sidebarTab}
                     onValueChange={(value) =>
                       setSidebarTab(value as "workspaces" | "databases")
                     }
-                    className="w-full"
+                    className="w-full min-w-0"
                   >
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-                      <TabsTrigger value="databases">Databases</TabsTrigger>
+                    <TabsList className="grid w-full min-w-0 grid-cols-2">
+                      <TabsTrigger value="workspaces" className="min-w-0">
+                        <span className="truncate">Workspaces</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="databases" className="min-w-0">
+                        <span className="truncate">Databases</span>
+                      </TabsTrigger>
                     </TabsList>
                   </Tabs>
                 )}
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => setSecondaryCollapsed((prev) => !prev)}
+                  className="shrink-0"
+                  aria-label={
+                    filePanelOpen ? "Collapse file panel" : "Expand file panel"
+                  }
+                  aria-expanded={filePanelOpen}
+                  onClick={toggleFilePanel}
                 >
                   <ChevronRight
                     className={cn(
                       "size-4 transition-transform",
-                      !secondaryCollapsed && "rotate-180",
+                      filePanelOpen && "rotate-180",
                     )}
                   />
                 </Button>
               </div>
-              {!secondaryCollapsed && sidebarTab === "workspaces" && (
+              {filePanelOpen && sidebarTab === "workspaces" && (
                 <div className="mt-3">
                   <Button
                     size="sm"
@@ -2140,7 +2227,7 @@ export function WorkspacesPage() {
               )}
             </div>
 
-            {!secondaryCollapsed && (
+            {filePanelOpen && (
               <>
                 <div className="border-b px-3 py-3">
                   <div className="flex items-center gap-1.5">
@@ -2212,6 +2299,7 @@ export function WorkspacesPage() {
                       }
                       onOpen={(entry) => {
                         if (entry.entry_type !== "file") return;
+                        if (filePanelOverlay) setOverlayPanelOpen(false);
                         setOpenTabIds((prev) => [
                           ...new Set([...prev, entry.id]),
                         ]);
@@ -2273,7 +2361,16 @@ export function WorkspacesPage() {
           </div>
         </aside>
 
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+        {filePanelOverlay && filePanelOpen && (
+          <button
+            type="button"
+            aria-label="Close file panel"
+            className="absolute inset-0 z-20 bg-foreground/10"
+            onClick={() => setOverlayPanelOpen(false)}
+          />
+        )}
+
+        <section className="@container/editor flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           <div className="flex items-end border-b border-border px-2 pt-2">
             <WorkspaceTabStrip
               tabs={tabs}
@@ -2289,55 +2386,58 @@ export function WorkspacesPage() {
 
           {activeTab ? (
             <>
-              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                {running ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                <div className="flex shrink-0 items-center gap-2">
+                  {running ? (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => abortRef.current?.abort()}
+                    >
+                      <Square className="size-4" />
+                      Cancel {(elapsedMs / 1000).toFixed(1)}s
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => runQuery()}>
+                      <Play className="size-4" />
+                      Run
+                    </Button>
+                  )}
                   <Button
                     size="sm"
-                    variant="destructive"
-                    onClick={() => abortRef.current?.abort()}
+                    variant="outline"
+                    title="Format SQL (Ctrl+Shift+F)"
+                    aria-label="Format SQL"
+                    onClick={() => {
+                      activeSqlEditorInstance
+                        ?.getAction("editor.action.formatDocument")
+                        ?.run();
+                    }}
                   >
-                    <Square className="size-4" />
-                    Cancel {(elapsedMs / 1000).toFixed(1)}s
+                    <Braces className="size-4" />
+                    <span className="hidden @md/editor:inline">Format</span>
                   </Button>
-                ) : (
-                  <Button size="sm" onClick={() => runQuery()}>
-                    <Play className="size-4" />
-                    Run
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      askAboutWorkspaceQuery(
+                        "Explain the selected SQL, or the current query if nothing is selected.",
+                      )
+                    }
+                  >
+                    Explain SQL
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  title="Format SQL (Ctrl+Shift+F)"
-                  onClick={() => {
-                    activeSqlEditorInstance
-                      ?.getAction("editor.action.formatDocument")
-                      ?.run();
-                  }}
-                >
-                  <Braces className="size-4" />
-                  Format
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    askAboutWorkspaceQuery(
-                      "Explain the selected SQL, or the current query if nothing is selected.",
-                    )
-                  }
-                >
-                  Explain SQL
-                </Button>
-                <button
-                  type="button"
-                  aria-label="Version history"
-                  title="Version history"
-                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setHistoryOpen(true)}
-                >
-                  <History className="size-4" />
-                </button>
+                  <button
+                    type="button"
+                    aria-label="Version history"
+                    title="Version history"
+                    className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setHistoryOpen(true)}
+                  >
+                    <History className="size-4" />
+                  </button>
+                </div>
                 <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
                   {/*
                     Read-only mirror of the session role. The active role is
@@ -2392,7 +2492,10 @@ export function WorkspacesPage() {
                 </div>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-rows-[1fr_auto] overflow-hidden">
+              <div
+                ref={setEditorGrid}
+                className="grid min-h-0 flex-1 grid-rows-[1fr_auto] overflow-hidden"
+              >
                 <div className="min-h-0 overflow-hidden pt-3">
                   <MonacoSqlEditor
                     key={activeTab.id}
@@ -2429,7 +2532,7 @@ export function WorkspacesPage() {
                 <div
                   style={
                     {
-                      height: `${resultsCollapsed ? 44 : resultsHeight}px`,
+                      height: `${resultsCollapsed ? 44 : visibleResultsHeight}px`,
                     } satisfies CSSProperties
                   }
                   className={cn(
