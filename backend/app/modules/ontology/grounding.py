@@ -47,6 +47,8 @@ class Grounding:
     detail: str | None = None
     repair: dict[str, Any] = field(default_factory=dict)
     user_message: str = "The business metric cannot be answered here."
+    #: The question as asked; a mention's neighbouring words can explain it.
+    question: str = ""
 
     @property
     def blocking(self) -> bool:
@@ -216,7 +218,8 @@ async def ground(
         if item["id"] not in {chosen["id"] for chosen in required.values()}:
             required[metric] = item
     return Grounding(
-        status="grounded", resolution=resolution, view_id=view_id, required=required
+        status="grounded", resolution=resolution, view_id=view_id, required=required,
+        question=question
     )
 
 
@@ -292,4 +295,26 @@ def _explained(
         hit = next((term for term in sorted(terms) if f" {term} " in text), None)
         if hit:
             return f"'{hit}' describes planned metric {name}"
+        unit = _unit_of(terms, grounding.question, planned.description or "")
+        if unit:
+            return f"'per {unit}' is the unit of planned metric {name}"
+    return None
+
+
+def _unit_of(terms: set[str], question: str, description: str) -> str | None:
+    """A mention after 'per' that the planned metric's own definition also counts per.
+
+    "rata-rata persentase diskon *per baris pesanan*" names Order lines, but the
+    average discount is defined "per baris order": the words give the unit of the asked
+    measure, not a second measure. It needs both the question's 'per' and the
+    definition's 'per' followed by a word of the mention.
+    """
+    from app.modules.ontology.resolver import normalise
+
+    asked = f" {normalise(question)} "
+    defined = normalise(description).split()
+    units = {defined[i + 1] for i, word in enumerate(defined[:-1]) if word == "per"}
+    for term in sorted(terms):
+        if f" per {term} " in asked and units & {word for word in term.split() if len(word) > 3}:
+            return term
     return None

@@ -457,6 +457,33 @@ def test_an_input_of_the_planned_metric_is_explained_by_its_formula():
     assert explained == ["Penjualan.SalesBeforeReturns: an input of planned metric net_revenue"]
 
 
+def test_a_mention_after_per_that_the_planned_metric_counts_by_is_its_unit():
+    from dataclasses import replace as copy
+
+    from app.modules.ontology.grounding import grounding_gaps
+
+    ir = _retail_ir()
+    question = "Berapa rata-rata persentase diskon per baris pesanan setiap bulan?"
+    # Average discount is defined "per baris order": the words are its unit.
+    grounding = copy(_required(order_lines=("OrderLines", ["baris pesanan"])),
+                     question=question)
+    missing, explained = grounding_gaps(grounding, ("avg_discount_pct",), ir)
+    assert missing == []
+    assert explained == [
+        "Penjualan.OrderLines: 'per baris pesanan' is the unit of planned metric "
+        "avg_discount_pct"
+    ]
+    # Without 'per' in the question the mention asks for the metric itself.
+    asked = copy(grounding, question="Berapa baris pesanan dan rata-rata diskon?")
+    assert grounding_gaps(asked, ("avg_discount_pct",), ir)[0] == [
+        "Penjualan.OrderLines must use metric order_lines"
+    ]
+    # A planned metric not defined per that unit does not explain it.
+    assert grounding_gaps(grounding, ("net_revenue",), ir)[0] == [
+        "Penjualan.OrderLines must use metric order_lines"
+    ]
+
+
 def test_substitution_is_still_refused():
     from app.modules.ontology.grounding import grounding_gaps
 

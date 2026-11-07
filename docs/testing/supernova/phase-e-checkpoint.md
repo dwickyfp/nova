@@ -115,3 +115,37 @@ Dari 28 jawaban answerable yang salah di run final, ada empat pola. Masing-masin
 - Dimensi bare `plan_id` yang tidak dikenali (1).
 
 Perluasan aturan F1 untuk "baris pesanan" ditolak, karena hanya menambal satu kasus.
+
+## Uji live Studio, satu thread, dinilai dengan SQL independen (8 November 2026)
+
+Uji ini memakai agent `SerbaData`, release `ont_rel_0007`, dan `retail_sales` v18. Setiap pertanyaan diketik di Studio, lalu setiap angka dibandingkan dengan SQL independen yang ditulis judge dari rumus resmi view.
+
+| # | Pertanyaan | Yang diuji | Hasil akhir | Verifikasi |
+|---|---|---|---|---|
+| 1 | Penjualan bersih per merek Desember 2026 | Periode belum berjalan | "Data Desember 2026 belum tersedia karena periode tersebut masih di masa depan" | Benar, tanpa query |
+| 2 | Omzet bersih Januari 2026 | Sebelum data dimulai | "Data metrik ini mencakup 1 Mei hingga 4 November 2026, sehingga Januari berada di luar cakupan" | Benar |
+| 3 | Total retur per merek September 2026 | Kata samar | "nilai retur (returned_value) atau jumlah unit yang diretur (returned_units)?" | Benar; nama teknis ikut tampil |
+| 4 | "Nilai retur." (jawaban klarifikasi) | Lanjutan percakapan | Tabel 9 merek | **9/9 angka cocok** |
+| 5 | Baris order wilayah Jawa Barat & DKI, September 2026 | Nilai filter utuh | 5.597 | **Cocok** |
+| 6 | Penjualan bruto untuk Salesman, September 2026 | Nilai di field peran, tanpa breakdown | 1.577.346.350, satu angka | **Cocok** |
+| 7 | Harga jual rata-rata per unit per kota, Oktober 2026 | Metrik dari siklus belajar F | Tabel 5 kota | **5/5 cocok** |
+| 8 | Unit tercatat terkirim oleh driver per bulan, Mei–Oktober 2026 | F4, tanpa breakdown driver | 6 baris per bulan | **6/6 cocok** |
+
+**Cacat yang ditemukan uji live, semuanya diperbaiki dan dikunci dengan uji** (commit `c34d04c5`):
+
+1. **Periode tanpa data berakhir sebagai error mentah berbahasa Inggris**, lalu "required capability was not executed".
+   - Sekarang penolakan ini melewati jalur klarifikasi harness: model menjawab dalam bahasa pengguna dari detail aman.
+   - Teks cadangan yang dilokalkan menyebut rentang data.
+   - Dikunci oleh `tests/eval/test_data_window_trajectory.py`.
+2. **Plan dari turn planner melewati pemeriksaan nilai filter**, sehingga "Jawa Barat & DKI" kembali dipecah dan dijawab **0**.
+   - Run evaluasi tidak bisa melihatnya, karena selalu memakai `generate_plan`.
+   - Pemeriksaan kini juga berjalan di jalur turn planner.
+3. **Metrik rasio dari siklus belajar tidak bisa dikelompokkan per kota**, karena `allowed_dimensions` kosong.
+   - Usulan kini mewarisi dimensi metrik non-aditif di dataset yang sama, dan harus juga terkompilasi dengan satu dimensi.
+   - View diterbitkan ulang sebagai v18.
+
+**Catatan operasional:** menerbitkan versi Semantic View mengubah fingerprint akses agent. Pemilik harus memverifikasi ulang akses (`POST /agents/{id}/access/verify`) sebelum Studio menampilkan agent itu lagi. Ini perilaku yang dirancang.
+
+## Benchmark akhir
+
+Run konfirmasi setelah aturan satuan "per" menjawab 120/123 kasus berkosakata view dengan benar. Metode, hasil, analisis judge dan hal yang belum terbukti ada di [benchmark.md](benchmark.md).

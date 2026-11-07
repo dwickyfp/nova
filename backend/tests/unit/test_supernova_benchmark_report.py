@@ -19,8 +19,8 @@ def fake_api():
         for mode in outcome
     ] + [
         {"id": "evn_claims", "kind": "claims", "status": "COMPLETED", "set_name": "claims",
-         "summary": {"claim_accuracy": {"value": 1.0, "successes": 2, "n": 2,
-                                        "interval_95": [0.3, 1.0]}}},
+         "summary": {"claim_accuracy": {"value": 0.9, "n": 166,
+                                        "interval_95": [0.85, 0.95]}}},
         {"id": "evn_judge", "kind": "judge", "status": "COMPLETED", "set_name": "s",
          "version": 1, "summary": {"rubric": "rubric-4"}},
         {"id": "evn_joins", "kind": "joins", "status": "COMPLETED", "set_name": "joins",
@@ -57,6 +57,8 @@ def test_the_report_states_rates_paired_effects_kappa_and_joins():
     assert "| s | with_ontology |" in text and "2 fixed, 0 broken" in text
     assert "## Join discovery" in text and "F1 1.0" in text
     assert "Rubric rubric-4" in text
+    # A stratified claim estimate has no count of successes.
+    assert "Accuracy by consensus: 90.0% (85.0–95.0%), n=166" in text
 
 
 def test_kappa_is_reported_per_deterministic_half():

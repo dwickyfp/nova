@@ -135,8 +135,13 @@ async def test_profiles_and_sketches_see_only_the_callers_rows():
             return parse_table_profile(database, "sales", COLUMNS, found[0])
 
         async def filtered() -> bool:
-            jakarta = await profile(await _session_user(clients[0]))
-            return jakarta[0].rows == 60
+            # Ranger syncs new policies to the FE after a delay; until then the query is
+            # refused or unfiltered, so wait for the filtered count rather than assert.
+            columns = [name for name, _ in COLUMNS]
+            _names, found, error = await service._execute(
+                table_profile_sql(database, "sales", columns), model,
+                await _session_user(clients[0]))
+            return error is None and bool(found) and int(found[0][0]) == 60
 
         async with asyncio.timeout(90):
             while not await filtered():

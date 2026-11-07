@@ -48,7 +48,11 @@ def pct(measured: dict | None) -> str:
         return "–"
     low, high = measured.get("interval_95") or (None, None)
     interval = f" ({low * 100:.1f}–{high * 100:.1f}%)" if low is not None else ""
-    return f"{measured['successes']}/{measured['n']} = {measured['value'] * 100:.1f}%{interval}"
+    value = f"{measured['value'] * 100:.1f}%{interval}"
+    # A stratified estimate has a weighted value and n but no single count of successes.
+    if "successes" not in measured:
+        return f"{value}, n={measured.get('n')}"
+    return f"{measured['successes']}/{measured['n']} = {value}"
 
 
 def kind_rates(cases: dict[str, dict], results: dict[str, dict]) -> dict[str, dict]:

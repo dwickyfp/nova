@@ -439,6 +439,11 @@ asking for Gross revenue. The resolver records which words named each concept.
 - those words appear, as whole words, in the planned metric's description,
   synonyms, name or official definition.
 
+A mention right after "per" is also explained when the planned metric's own
+definition counts per a word of it: "rata-rata persentase diskon *per baris
+pesanan*" names Order lines, but the average discount is defined "per baris
+order", so the words are its unit.
+
 Substitution stays refused, because a different metric's own words do not name
 the concept asked for. A question that asks for two metrics still needs both.
 Measured on the SerbaData gold set, this raised accuracy with the ontology from
@@ -464,7 +469,10 @@ day with data for the plan's metric are read through two governed plans as the
 caller (`agents/semantic/coverage.py`). A requested or comparison period
 wholly outside that window ends the turn with `OUTSIDE_DATA_WINDOW` and the
 covered range, instead of an empty answer. A period that starts after today is
-refused before any query. A normal answer costs no extra query.
+refused before any query. A normal answer costs no extra query. The turn ends
+like a clarification: the agent tells the user in their language that the period
+has no data and which range exists (a localized fallback names the range when
+the model writes nothing), and no other data path is tried.
 
 **Filter values.** A filter value the field never holds is checked against
 the data: a searchable field without samples is searched as the caller, and a
