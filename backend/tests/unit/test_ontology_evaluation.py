@@ -166,6 +166,8 @@ class FakeModel:
             items = [{"id": item["id"], "verdict": self.verdicts.get(item["id"], "yes"),
                       "reason": "checked"} for item in payload["items"]]
             return {"content": json.dumps({"items": items})}
+        if name == "view_route":
+            return {"content": json.dumps({"reason": "stock words", "view_id": "outlet_stock"})}
         if name == "evaluation_negatives":
             view = payload["catalog"][0]["view_id"]
             return {"content": json.dumps({
@@ -613,3 +615,26 @@ async def test_a_question_without_its_business_words_never_enters_the_set(lab, m
     answerable = [c for c in await lab.service.cases("vocab") if c.kind == "answerable"]
     assert answerable and all(c.status == "REJECTED" for c in answerable)
     assert all(any(r.reviewer == "nova:vocabulary" for r in c.reviews) for c in answerable)
+
+
+async def test_without_a_view_hint_the_run_routes_and_reports_view_accuracy(lab, monkeypatch):
+    await lab.compile()
+    await lab.finish(await lab.service.start_gold(GoldRequest(
+        set_name="routing", view_ids=["retail_sales", "outlet_stock"], per_metric=1), ADMIN))
+    cases = [c for c in await lab.service.cases("routing") if c.status == "ACTIVE"]
+    PLANS.clear()
+    PLANS.update({c.question: c.plan for c in cases if c.kind == "answerable"})
+    fake_planner(monkeypatch, set())
+    run = await lab.finish(await lab.service.start_answers(AnswerRunRequest(
+        set_name="routing", mode="without_ontology", view_hint=False), ADMIN))
+    assert run.status == "COMPLETED" and run.summary["view_hint"] is False
+    results = await lab.service.results(run.id)
+    answerable = [r for r in results if r.detail["kind"] == "answerable"]
+    assert {r.detail["routed_by"] for r in answerable} <= {"metric name", "model"}
+    stock = [r for r in answerable if r.detail["view"] == "outlet_stock"]
+    assert stock, "the scripted router sends unnamed questions to outlet_stock"
+    view = run.summary["view_accuracy"]
+    assert view["n"] == len(answerable)
+    assert view["successes"] == sum(r.detail["view_correct"] for r in answerable)
+    # A question routed to the wrong view is not answered from the right one.
+    assert all(r.outcome != "correct" for r in answerable if not r.detail["view_correct"])

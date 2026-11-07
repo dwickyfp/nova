@@ -68,6 +68,9 @@ class AnswerRunRequest(Contract):
     version: int | None = Field(default=None, ge=1)
     mode: Mode
     release_id: str | None = Field(default=None, max_length=64)
+    #: False hides the case's view: the run must choose among every published view,
+    #: as Studio does for an agent with several views.
+    view_hint: bool = True
 
 
 class ClaimRunRequest(Contract):
@@ -238,7 +241,7 @@ class EvaluationService:
             id=_new_id("evn_", body.set_name, body.mode), actor=Actor.from_user(user),
             kind="answers", set_name=body.set_name, version=cases[0].version, mode=body.mode,
             release_id=release_id, manifest_hash=manifest, stage="answers",
-            items=[case.id for case in cases],
+            items=[case.id for case in cases], summary={"view_hint": body.view_hint},
         )
         await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
         return await self.repository.save("eval_runs", run)
@@ -746,15 +749,18 @@ class EvaluationService:
         from app.modules.agents.semantic.planning import SemanticPlanError, validate_plan
         from app.modules.ontology.grounding import ground, grounding_gaps
 
+        hinted = run.summary.get("view_hint", True) is not False
         context = SimpleNamespace(
-            user=user, ontology_release_id=run.release_id, requested_semantic_view=case.view_id,
+            user=user, ontology_release_id=run.release_id,
+            requested_semantic_view=case.view_id if hinted else None,
             authorized_semantic_models=list(models.values()), quality_facts={}, usage=None,
             model_provider_id=None, model_name=None, agent_id=None,
         )
         detail: dict[str, Any] = {"kind": case.kind, "expected": case.expected}
         hints = None
         grounding = None
-        view_id = case.view_id
+        view_id: str | None = case.view_id if hinted else None
+        routed_by = "hint" if hinted else ""
         if run.mode == "with_ontology":
             grounding = await ground(case.question, context,
                                      lambda: load_authorized_models(context))
@@ -768,8 +774,17 @@ class EvaluationService:
                     else "abstained")
                 return self._score(case, detail)
             hints = grounding.planner_hints()
-            view_id = grounding.view_id or case.view_id
-        model = models.get(view_id) or models.get(case.view_id)
+            if grounding.view_id and not hinted:
+                view_id, routed_by = grounding.view_id, "ontology"
+            elif grounding.view_id:
+                view_id = grounding.view_id
+        if view_id is None:
+            view_id, routed_by = await self._route(case.question, models)
+        detail["view"] = view_id
+        detail["routed_by"] = routed_by
+        if case.kind == "answerable":
+            detail["view_correct"] = view_id == case.view_id
+        model = models.get(view_id or "")
         if model is None:
             detail["outcome"] = "failed"
             detail["error"] = "view unavailable"
@@ -846,10 +861,44 @@ class EvaluationService:
                 -1 if outcome in {"answered", "correct", "wrong"} else 0)
         return detail
 
+    async def _route(self, question: str, models: dict[str, dict]) -> tuple[str | None, str]:
+        """Choose a view the way Studio does without the ontology.
+
+        Studio first takes the one view whose declared metric names or synonyms the
+        question uses, then the view the agent model names. The agent model is
+        stood in for by one structured call over the same catalog.
+        """
+        from app.modules.agents.semantic.ir import SemanticModelIR
+        from app.modules.agents.tools.semantic_query import _view_naming_metric
+
+        named = _view_naming_metric(list(models.values()), question)
+        if named:
+            return named, "metric name"
+        catalog = []
+        for view_id, model in sorted(models.items()):
+            ir = SemanticModelIR.from_ossie(model["definition"])
+            catalog.append({
+                "view_id": view_id, "name": model.get("name"),
+                "description": ir.description[:300],
+                "measures": [f"{m.name}: {m.description}"[:120] for m in ir.metrics][:40],
+            })
+        answer = await ask(
+            self.client(),
+            "You route a business question to the one Semantic View that can answer it, as a "
+            "data assistant does before querying. Choose the view whose measures compute what "
+            "the question asks; answer 'none' only when no view can.",
+            {"question": question, "views": catalog},
+            {"type": "object", "additionalProperties": False, "required": ["reason", "view_id"],
+             "properties": {"reason": TEXT, "view_id": TEXT}},
+            "view_route",
+        )
+        chosen = str(answer.get("view_id") or "")
+        return (chosen, "model") if chosen in models else (None, "model")
+
     async def _finish_answers(self, run: EvalRun) -> EvalRun:
         results = await self.results(run.id)
         return await self._save_run(run, status="COMPLETED", stage="done",
-                                    summary=summarise_answers(results))
+                                    summary={**run.summary, **summarise_answers(results)})
 
     # --- claims -------------------------------------------------------------------------
 
@@ -1071,8 +1120,11 @@ def summarise_answers(results: list[EvalResult]) -> dict:
     correct = sum(1 for item in answerable if item.outcome == "correct")
     reliability = [int(item.detail.get("reliability") or 0) for item in results]
     wrong = sum(1 for item in results if int(item.detail.get("reliability") or 0) < 0)
+    routed = [item for item in answerable if "view_correct" in item.detail]
     return {
         "answer_accuracy": proportion(correct, len(answerable)),
+        "view_accuracy": proportion(
+            sum(1 for item in routed if item.detail["view_correct"]), len(routed)),
         "reliability": {"value": sum(reliability) / len(reliability) if reliability else None,
                         "n": len(reliability)},
         "wrong_answers": proportion(wrong, len(results)),

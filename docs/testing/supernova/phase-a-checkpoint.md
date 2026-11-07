@@ -276,6 +276,42 @@ Reliabilitas naik dari 0,59 menjadi 0,69. Kasus `failed` turun dari 19 menjadi 2
 2. konflik definisi, yaitu ketika view mendefinisikan istilah berbeda dari definisi resmi;
 3. model yang lebih kecil atau lokal, tempat konteks biasanya paling berpengaruh (arXiv 2604.25149 menemukan efek konteks tidak bergantung model pada model frontier).
 
+## Pemilihan view tanpa petunjuk (8 November 2026)
+
+**Pertanyaan.** Di Studio, agent punya beberapa view dan harus memilih sendiri. Apakah ontology membantu memilih view, lalu menjawab benar?
+
+**Desain** (`AnswerRunRequest.view_hint = false`):
+
+- Kasus tidak memberi view. Semua view yang dipublikasikan menjadi kandidat, termasuk `nova_business_360` sebagai pengecoh.
+- **Tanpa ontology:** view dipilih seperti di Studio. Pertama dicari satu view yang nama atau sinonim metriknya disebut di pertanyaan (`_view_naming_metric`). Bila tidak ada, satu panggilan model memilih dari katalog view, menggantikan model agent.
+- **Dengan ontology:** view dari binding resmi didahulukan, lalu jalur yang sama.
+- Yang diukur: ketepatan view terhadap view kasus gold, dan akurasi jawaban.
+
+**Hasil** (release `ont_rel_0005`, dua judge, kasus berpasangan):
+
+| Gold set | Ukuran | Tanpa ontology | Dengan ontology | McNemar |
+|---|---|---|---|---|
+| `serbadata` v2, kata view (123) | Jawaban benar | 95,9% | 95,1% | 1 diperbaiki, 2 dirusak, p = 1,0 |
+| | View tepat | 99,2% | 99,2% | – |
+| `serbadata_business`, kata bisnis (134) | Jawaban benar | 89,6% (83,2–93,7%) | **97,0%** (92,6–98,8%) | **11 diperbaiki, 1 dirusak, p = 0,006** |
+| | View tepat | 94,8% | **100%** | **7 vs 0, p = 0,016** |
+| | Reliabilitas (173) | 0,64 | 0,69 | |
+
+Run: `evn_b10c…` dan `evn_c428…` untuk `serbadata`; `evn_1628…` dan `evn_f42d…` untuk `serbadata_business`.
+
+**Penilaian judge.** Ke-11 perbaikan sah dan mekanismenya jelas:
+
+- **Rute (6).** Tanpa ontology, model router tidak menemukan view untuk kata bisnis seperti "planned quantity", "untung kotor" atau "baris produk berulang" (5 kasus menjawab "none"). Satu kasus lain salah view: "barang tidak sampai" dikirim ke `outlet_stock`, padahal seharusnya `delivery_routes`. Ontology mengarahkan 100% kasus lewat binding.
+- **Pemilihan metrik (5).** View sudah benar, tetapi tanpa ontology planner memilih metrik lain atau meminta klarifikasi ("kunjungan gagal", "nilai pengembalian", "ending inventory per outlet"). Dengan ontology, planner menerima metrik resmi sebagai petunjuk.
+- **Satu kasus memburuk** ("5 karyawan dengan persentase retur tertinggi") karena variasi planner.
+- Variasi antar run sekitar ±2–4 kasus, sedangkan selisih 11 lawan 1 jauh di atasnya.
+
+**Kesimpulan yang didukung data:**
+
+- **Ontology menambah akurasi ketika dua hal terjadi bersamaan:** pertanyaan memakai kosakata bisnis, dan view harus dipilih sendiri. Kenaikannya +7,4 poin jawaban dan +5,2 poin ketepatan view, signifikan.
+- **Bila pertanyaan memakai kata view sendiri, atau view sudah diberikan,** efeknya nol.
+- **Nilai ontology ada pada pemetaan bahasa bisnis ke data yang benar.** Ia tidak menambah kecerdasan pada pertanyaan yang sudah memakai kata data.
+
 ## Prioritas berikutnya
 
 Prioritas ini diputuskan oleh data:

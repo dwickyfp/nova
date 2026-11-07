@@ -269,7 +269,7 @@ cases the way Studio does:
 - `missing_metrics` and `validate_plan`;
 - compile, then execute as the caller.
 
-Mode `without_ontology` skips grounding and the hints. This is the baseline, and
+Mode `without_ontology` skips grounding and the hints. With `view_hint: false` the case's view is hidden and the run chooses among every published view the way Studio does: the ontology's bound view first (with the ontology), then the one view whose metric names the question uses, then one model call over the view catalog standing in for the agent model; each result records the view, how it was chosen and whether it was the gold view (`view_accuracy`). This is the baseline, and
 it adds no branch to production code. Results match Genie benchmarks: order-free
 unless the plan orders, numbers to 4 significant digits, extra columns allowed,
 an empty result never matches.
