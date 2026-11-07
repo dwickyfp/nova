@@ -437,12 +437,12 @@ async def test_the_overview_shows_only_what_was_measured(lab):
     await lab.compile()
     empty = await overview(ADMIN, lab.service)
     assert empty["measured"]["answers"] is None and empty["measured"]["claims"] is None
-    assert len(empty["not_measured"]) == 3
+    assert len(empty["not_measured"]) == 4 and empty["measured"]["joins"] is None
     assert empty["live"]["metric_coverage"]["n"] > 0
     await lab.finish(await lab.service.start_claims(ClaimRunRequest(per_stratum=5), ADMIN))
     measured = await overview(ADMIN, lab.service)
     assert measured["measured"]["claims"]["claim_accuracy"]["value"] == pytest.approx(1.0)
-    assert len(measured["not_measured"]) == 2
+    assert len(measured["not_measured"]) == 3
 
 
 async def test_a_case_that_breaks_is_recorded_not_fatal(lab, monkeypatch):
@@ -638,3 +638,43 @@ async def test_without_a_view_hint_the_run_routes_and_reports_view_accuracy(lab,
     assert view["successes"] == sum(r.detail["view_correct"] for r in answerable)
     # A question routed to the wrong view is not answered from the right one.
     assert all(r.outcome != "correct" for r in answerable if not r.detail["view_correct"])
+    # When no view computes the question, the router's 'none' is an abstention.
+    # When the router finds no view that computes the question, that is an abstention.
+
+    async def nowhere(_question, _models):
+        return None, "model"
+
+    monkeypatch.setattr(lab.service, "_route", nowhere)
+    run = await lab.finish(await lab.service.start_answers(AnswerRunRequest(
+        set_name="routing", mode="without_ontology", view_hint=False), ADMIN))
+    unrouted = [r for r in await lab.service.results(run.id) if r.detail["routed_by"] == "model"]
+    assert unrouted and all(r.outcome == "abstained" for r in unrouted)
+    assert all(r.detail["error"] == "no view answers the question" for r in unrouted)
+
+
+async def test_a_period_outside_the_data_is_scored_as_an_abstention(lab, monkeypatch):
+    from datetime import date
+
+    from app.modules.agents.semantic.coverage import CoverageGap, DataWindow
+    from app.modules.ontology.evaluation import service as evaluation
+
+    await lab.compile()
+    await lab.finish(await lab.service.start_gold(GoldRequest(
+        set_name="window", view_ids=["retail_sales"], per_metric=1), ADMIN))
+    cases = [c for c in await lab.service.cases("window") if c.status == "ACTIVE"]
+    PLANS.clear()
+    PLANS.update({c.question: c.plan for c in cases if c.kind == "answerable"})
+    fake_planner(monkeypatch, set())
+    window = DataWindow(first=date(2026, 5, 1), last=date(2026, 11, 4))
+
+    async def outside(*_args):
+        return CoverageGap(window=window, period="requested",
+                           start=date(2026, 12, 1), end=date(2026, 12, 31))
+
+    monkeypatch.setattr(evaluation, "period_without_data", outside)
+    run = await lab.finish(await lab.service.start_answers(AnswerRunRequest(
+        set_name="window", mode="without_ontology"), ADMIN))
+    answered = [r for r in await lab.service.results(run.id)
+                if r.detail.get("data_window")]
+    assert answered and all(r.outcome == "abstained" for r in answered)
+    assert answered[0].detail["data_window"] == ["2026-05-01", "2026-11-04"]

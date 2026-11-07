@@ -274,6 +274,10 @@ it adds no branch to production code. Results match Genie benchmarks: order-free
 unless the plan orders, numbers to 4 significant digits, extra columns allowed,
 an empty result never matches.
 
+When the router finds no view whose measures compute the question, the case is
+`abstained`, as Studio tells the user. A run applies the same data-window check
+as Studio (below).
+
 Each case records its outcome (`correct`, `wrong`, `answered`, `abstained`,
 `clarified`, `failed`), a TrustSQL reliability score, grounding status, plan,
 SQL fingerprint, row counts, tokens and latency. Result rows and measure values
@@ -311,6 +315,40 @@ counts, each a proportion with its Wilson interval:
   proposals, the gold set, and judge agreement.
 
 Anything not yet measured is listed as such, never shown as a default.
+
+## Join evidence
+
+Code: `backend/app/modules/ontology/evidence/` (`profiling.py`, `joins.py`,
+`calibration.py`, `discovery.py`). API: `POST /ontology/evaluation/joins`, then
+the usual run steps, results and reviews. Measured in the
+[B/C/D checkpoint](testing/supernova/phase-bcd-checkpoint.md); method in
+[research 05](research/supernova-ontology/05-join-evidence.md).
+
+A join run reads which joins the data supports, as the person who starts it.
+
+1. **Profile.** For every table of the chosen databases (by default those behind
+   the caller's published views), one scan counts rows, distinct values (HLL),
+   non-null values and value lengths per column, through `query_service` with
+   the caller's session and active role.
+2. **Sketch and verify.** Key-like columns (whole numbers or text) get a
+   bottom-256 KMV sketch of hashed distinct values, held only in memory. Pairs
+   whose sketch inclusion is at least 0.3 are verified exactly: distinct source
+   values found in the target, and the target's exact uniqueness.
+3. **Decide.** A pair is a join when nearly every source value is in a key that
+   identifies its table, and names agree (or a text role has full inclusion).
+   Each source column keeps one target.
+4. **Score and calibrate.** Gold joins are the many-to-one relationships the
+   caller's published views declare between stored columns; reviewers confirm
+   or reject the rest. Each candidate gets the measured precision of its
+   evidence class as its probability, measured leave-one-database-out (ECE,
+   Brier, AUC), and a decision: accept alone at ≥ 0.97, reject alone at ≤ 0.01,
+   review otherwise.
+
+Profiles and candidates describe what one principal could see, so a join run,
+its summary and its results are shown only to the same principal in the same
+role. Sketches are never stored. The Overview shows the latest join run of the
+viewer's own context: precision and recall with intervals, the share decided
+without a person, and the probability's reliability diagram.
 
 ## Studio grounding
 
@@ -366,6 +404,22 @@ published, so nothing changes.
 manifest hash, concept ids and revisions, metric, binding) in its evidence. It
 also records the `concept_grounding` Quality Lab fact, and a
 `BusinessContextAnchor` on the Mission.
+
+**Periods without data.** When a dated `semantic_query` result is empty, or
+has a column with no value (an empty comparison baseline), the first and last
+day with data for the plan's metric are read through two governed plans as the
+caller (`agents/semantic/coverage.py`). A requested or comparison period
+wholly outside that window ends the turn with `OUTSIDE_DATA_WINDOW` and the
+covered range, instead of an empty answer. A period that starts after today is
+refused before any query. A normal answer costs no extra query.
+
+**Vague measures.** The planner treats a measure word that several catalog
+metrics fit about equally ("sales" with net, gross and before-returns sales) as
+unresolved and lists the candidates, so the turn becomes a clarification. A
+measure a metric names, or that an approved definition names, is resolved: an
+approved alias is a business decision and outranks vagueness. A plan that names
+nothing at all is a clarification too, never an execution error. Measured
+effect: [Phase E checkpoint](testing/supernova/phase-e-checkpoint.md).
 
 ## Release pins
 

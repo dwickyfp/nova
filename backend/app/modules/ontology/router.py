@@ -20,6 +20,7 @@ from app.modules.ontology.evaluation.service import (
     GoldRequest,
     ReviewBatch,
 )
+from app.modules.ontology.evidence.discovery import JoinRunRequest
 from app.modules.ontology.promotion import PromotionRequest, propose_from_derived
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_service
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
@@ -172,8 +173,12 @@ async def evaluation_runs(user: CurrentUser):
     from app.modules.ontology.evaluation.service import evaluation_service
 
     await access.require_admin("READ", "ONTOLOGY_EVALUATION", "runs", user)
+    from app.modules.ontology.evidence.discovery import same_context
+
+    # A join run describes the tables one principal could see; others do not list it.
     return [run.model_dump(mode="json", exclude={"items"}) | {"total": len(run.items)}
-            for run in await evaluation_service.runs()]
+            for run in await evaluation_service.runs()
+            if run.kind != "joins" or same_context(run, user)]
 
 
 @router.post("/evaluation/gold", status_code=201)
@@ -197,6 +202,13 @@ async def evaluation_claims(body: ClaimRunRequest, user: CurrentUser):
     return _run_view(await evaluation_service.start_claims(body, user))
 
 
+@router.post("/evaluation/joins", status_code=201)
+async def evaluation_joins(body: JoinRunRequest, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.start_joins(body, user))
+
+
 @router.post("/evaluation/runs/{run_id}/step")
 async def evaluation_step(run_id: str, user: CurrentUser):
     from app.modules.ontology.evaluation.service import evaluation_service
@@ -217,7 +229,7 @@ async def evaluation_results(run_id: str, user: CurrentUser):
 
     await access.require_admin("READ", "ONTOLOGY_EVALUATION", run_id, user)
     return [item.model_dump(mode="json", exclude={"actor"})
-            for item in await evaluation_service.results(run_id)]
+            for item in await evaluation_service.visible_results(run_id, user)]
 
 
 @router.post("/evaluation/runs/{run_id}/reviews")

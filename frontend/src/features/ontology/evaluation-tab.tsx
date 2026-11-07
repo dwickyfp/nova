@@ -21,13 +21,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ontologyApi, type EvaluationCase, type EvaluationRun } from './api'
+import { ontologyApi, type EvaluationCase, type EvaluationResult, type EvaluationRun } from './api'
 import { formatDate, useIsAdmin, useOntologyKey } from './model'
 
 const KIND_LABEL: Record<EvaluationRun['kind'], string> = {
   gold: 'Gold set',
   answers: 'Answers',
   claims: 'Claim audit',
+  joins: 'Join discovery',
 }
 
 const OUTCOME_TONE: Record<string, 'success' | 'danger' | 'info' | 'warning' | 'neutral'> = {
@@ -52,6 +53,10 @@ function headline(run: EvaluationRun): string {
     return `${Math.round((pick('claim_accuracy')?.value ?? 0) * 100)}% of ${pick('claim_accuracy')?.n} claims`
   }
   if (run.kind === 'gold' && typeof summary.active === 'number') return `${summary.active} active cases`
+  if (run.kind === 'joins' && run.status === 'COMPLETED') {
+    const joins = (run.summary.joins_reviewed ?? run.summary.joins) as { f1?: number; predicted?: number } | null
+    return joins ? `${joins.predicted} joins · F1 ${(joins.f1 ?? 0).toFixed(2)}` : '–'
+  }
   return run.status === 'RUNNING' ? `${run.done}/${run.total || '…'} · ${run.stage}` : '–'
 }
 
@@ -91,9 +96,10 @@ export function EvaluationTab() {
     },
   })
   const start = useMutation({
-    mutationFn: (kind: 'with_ontology' | 'without_ontology' | 'claims') => {
+    mutationFn: (kind: 'with_ontology' | 'without_ontology' | 'claims' | 'joins') => {
       const setName = latestSet(runs.data ?? [])
       if (kind === 'claims') return ontologyApi.startClaims()
+      if (kind === 'joins') return ontologyApi.startJoins()
       if (!setName) throw new Error('Build a gold set first')
       return ontologyApi.startAnswers({ set_name: setName, mode: kind })
     },
@@ -115,8 +121,9 @@ export function EvaluationTab() {
     <div className='flex flex-col gap-4'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <p className='max-w-2xl text-sm text-muted-foreground'>
-          Each run answers the gold set the way Studio does, or audits a sample of what the
-          ontology claims. Results are stored per question; data rows never are.
+          Each run answers the gold set the way Studio does, audits a sample of what the
+          ontology claims, or profiles the data to find joins. Results are stored per question
+          or per column pair; data rows never are.
         </p>
         <div className='flex flex-wrap gap-2'>
           <Button size='sm' variant='outline' disabled={busy} onClick={() => start.mutate('without_ontology')}>
@@ -124,6 +131,9 @@ export function EvaluationTab() {
           </Button>
           <Button size='sm' variant='outline' disabled={busy} onClick={() => start.mutate('claims')}>
             Audit claims
+          </Button>
+          <Button size='sm' variant='outline' disabled={busy} onClick={() => start.mutate('joins')}>
+            Find joins
           </Button>
           <Button size='sm' disabled={busy} onClick={() => start.mutate('with_ontology')}>
             <Play className='size-3.5' />
@@ -219,7 +229,7 @@ function RunDetail({ run }: { run: EvaluationRun }) {
   const cases = useQuery({
     queryKey: useOntologyKey('evaluation', 'cases', run.set_name),
     queryFn: () => ontologyApi.evaluationCases(run.set_name),
-    enabled: run.kind !== 'claims',
+    enabled: run.kind !== 'claims' && run.kind !== 'joins',
   })
   const [outcome, setOutcome] = useState('all')
   const byCase = useMemo(
@@ -227,6 +237,7 @@ function RunDetail({ run }: { run: EvaluationRun }) {
     [cases.data]
   )
   if (run.kind === 'gold') return <GoldCases cases={cases.data ?? []} loading={cases.isLoading} />
+  if (run.kind === 'joins') return <JoinCandidates results={results.data ?? []} loading={results.isLoading} />
   const rows = (results.data ?? []).filter((item) => outcome === 'all' || item.outcome === outcome)
   const outcomes = [...new Set((results.data ?? []).map((item) => item.outcome))].sort()
   return (
@@ -316,5 +327,95 @@ function GoldCases({ cases, loading }: { cases: EvaluationCase[]; loading: boole
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+const DECISION_TONE: Record<string, 'success' | 'danger' | 'info' | 'neutral'> = {
+  accept: 'success',
+  review: 'info',
+  reject: 'neutral',
+}
+
+function column(key: unknown) {
+  return String(key ?? '').split('.').slice(1).join('.')
+}
+
+/** Joins the data supports, the ones Nova left for review first, then everything else. */
+function JoinCandidates({ results, loading }: { results: EvaluationResult[]; loading: boolean }) {
+  const [decision, setDecision] = useState('proposed')
+  if (loading) return <LoadingLines rows={4} />
+  const joins = results.filter((item) => item.item.startsWith('join:'))
+  const order = { review: 0, accept: 1, reject: 2 } as Record<string, number>
+  const rows = joins
+    .filter((item) =>
+      decision === 'proposed' ? item.outcome === 'proposed' : decision === 'all' || item.detail.decision === decision
+    )
+    .sort(
+      (a, b) =>
+        (order[String(a.detail.decision)] ?? 3) - (order[String(b.detail.decision)] ?? 3) ||
+        Number(b.detail.probability ?? 0) - Number(a.detail.probability ?? 0)
+    )
+  return (
+    <section className='flex flex-col gap-3'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <h3 className='text-sm font-medium'>
+          Join discovery · {joins.filter((item) => item.outcome === 'proposed').length} joins proposed from {joins.length} column pairs
+        </h3>
+        <Select value={decision} onValueChange={setDecision}>
+          <SelectTrigger aria-label='Filter join candidates' className='w-48'>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value='proposed'>Proposed joins</SelectItem>
+            <SelectItem value='review'>Needs review</SelectItem>
+            <SelectItem value='accept'>Accepted by Nova</SelectItem>
+            <SelectItem value='reject'>Rejected by Nova</SelectItem>
+            <SelectItem value='all'>Every pair</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className='overflow-x-auto rounded-lg border'>
+        <Table className='min-w-[52rem]'>
+          <TableHeader>
+            <TableRow>
+              <TableHead>From</TableHead>
+              <TableHead>To</TableHead>
+              <TableHead className='text-right'>Values found</TableHead>
+              <TableHead className='text-right'>Probability</TableHead>
+              <TableHead>Decision</TableHead>
+              <TableHead>Evidence</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.slice(0, 200).map((item) => {
+              const detail = item.detail
+              const explanation = detail.explanation as { evidence?: string; right?: number; labelled?: number } | undefined
+              const review = item.reviews[item.reviews.length - 1]
+              return (
+                <TableRow key={item.id}>
+                  <TableCell className='font-mono text-xs'>{column(detail.source)}</TableCell>
+                  <TableCell className='font-mono text-xs'>{column(detail.target)}</TableCell>
+                  <TableCell className='text-right tabular-nums'>{Math.round(Number(detail.containment ?? 0) * 100)}%</TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {detail.probability == null ? '–' : `${Math.round(Number(detail.probability) * 100)}%`}
+                  </TableCell>
+                  <TableCell>
+                    {detail.decision ? (
+                      <StatusBadge tone={DECISION_TONE[String(detail.decision)] ?? 'neutral'}>{String(detail.decision)}</StatusBadge>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className='max-w-sm whitespace-normal text-xs text-muted-foreground'>
+                    {explanation?.evidence ? `${explanation.evidence}: ${explanation.right} of ${explanation.labelled} like it were right` : ''}
+                    {detail.declared ? ' · declared in a Semantic View' : ''}
+                    {review ? ` · ${review.reviewer}: ${review.verdict}` : ''}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      {rows.length > 200 ? <p className='text-xs text-muted-foreground'>Showing the first 200 of {rows.length}.</p> : null}
+    </section>
   )
 }

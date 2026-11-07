@@ -511,6 +511,7 @@ function metrics(overrides: Partial<OntologyMetrics['measured']> = {}): Ontology
       effect: null,
       claims: null,
       gold: null,
+      joins: null,
       history: [],
       ...overrides,
     },
@@ -576,6 +577,55 @@ it('shows measured accuracy with its interval, n and the ontology effect', async
   await expect.element(screen.getByText('Wrong answer')).toBeVisible()
 })
 
+it('shows the joins found in the data, what Nova decided and how honest its probability is', async () => {
+  const measured = (successes: number, n: number) => ({
+    value: n ? successes / n : null,
+    successes,
+    n,
+    interval_95: [Math.max(0, successes / n - 0.08), Math.min(1, successes / n + 0.02)] as [number, number],
+  })
+  vi.spyOn(ontologyApi, 'metrics').mockResolvedValue(
+    metrics({
+      joins: {
+        run_id: 'evn_j',
+        at: '2026-11-08T00:00:00Z',
+        databases: ['NOVA_RETAIL_FIELD'],
+        profiled_columns: 227,
+        profile_seconds: 6.4,
+        discover_seconds: 37.6,
+        candidates: 583,
+        joins: { precision: measured(34, 41), recall: measured(34, 34), f1: 0.91, predicted: 41, gold: 34 },
+        joins_reviewed: { precision: measured(41, 41), recall: measured(41, 41), f1: 1, predicted: 41, gold: 41 },
+        undeclared_reviewed: 7,
+        calibration: {
+          ece: 0.0325,
+          brier: 0.0168,
+          auc: 0.998,
+          n: 583,
+          positives: 41,
+          bins: [
+            { low: 0, high: 0.1, n: 540, confidence: 0.002, accuracy: 0 },
+            { low: 0.9, high: 1, n: 43, confidence: 0.96, accuracy: 1 },
+          ],
+        },
+        decisions: {
+          labelled: 583,
+          automatic: measured(519, 583),
+          accepted_precision: measured(13, 13),
+          rejected_misses: measured(0, 506),
+          review_queue: 39,
+        },
+      },
+    })
+  )
+  const screen = await mount(<OverviewTab />)
+  await expect.element(screen.getByRole('heading', { name: 'Joins found in the data' })).toBeVisible()
+  await expect.element(screen.getByText('227 columns profiled in 44 s')).toBeVisible()
+  await expect.element(screen.getByText(/F1 1.00 against declared and reviewer-confirmed joins/)).toBeVisible()
+  await expect.element(screen.getByText('0 of 506 rejected pairs were real joins · 39 left for review')).toBeVisible()
+  await expect.element(screen.getByText('ECE 0.033 · AUC 0.998 · n=583')).toBeVisible()
+})
+
 it('keeps evaluation runs to ACCOUNTADMIN and lists them for an administrator', async () => {
   signIn('ana', 'finance_analyst')
   const runs = vi.spyOn(ontologyApi, 'evaluationRuns').mockResolvedValue([])
@@ -608,3 +658,55 @@ it('keeps evaluation runs to ACCOUNTADMIN and lists them for an administrator', 
   await expect.element(second.getByText('86% correct of 109')).toBeVisible()
   await expect.element(second.getByRole('button', { name: 'Answers · with ontology' })).toBeVisible()
 })
+
+it('lists the joins found in the data with probability, decision and evidence', async () => {
+  signIn('nova_admin', 'ACCOUNTADMIN')
+  vi.spyOn(ontologyApi, 'evaluationRuns').mockResolvedValue([
+    {
+      id: 'evn_j',
+      kind: 'joins',
+      set_name: 'joins',
+      version: 1,
+      mode: null,
+      release_id: null,
+      status: 'COMPLETED',
+      stage: 'done',
+      done: 33,
+      total: 33,
+      summary: { joins: { f1: 0.91, predicted: 41 }, joins_reviewed: { f1: 1, predicted: 41 } },
+      error: null,
+      created_at: '2026-11-08T00:00:00Z',
+      updated_at: '2026-11-08T00:10:00Z',
+      actor: { principal: 'nova_admin' },
+    },
+  ])
+  const join = (source: string, target: string, outcome: string, decision: string, probability: number) => ({
+    id: `evr_${source}`,
+    run_id: 'evn_j',
+    item: `join:${source}->${target}`,
+    outcome,
+    detail: {
+      source,
+      target,
+      containment: 1,
+      probability,
+      decision,
+      declared: outcome === 'proposed',
+      explanation: { evidence: 'chosen by the rule, column names the target table, same id-like name', right: 38, labelled: 38 },
+    },
+    reviews: [],
+  })
+  vi.spyOn(ontologyApi, 'evaluationResults').mockResolvedValue([
+    join('LAB.sales.outlet_id', 'LAB.outlets.outlet_id', 'proposed', 'accept', 0.987),
+    join('LAB.sales.quantity', 'LAB.products.product_id', 'rejected', 'reject', 0.001),
+  ])
+  const screen = await mount(<EvaluationTab />)
+  await expect.element(screen.getByText('41 joins · F1 1.00')).toBeVisible()
+  await screen.getByRole('button', { name: /Join discovery/ }).click()
+  await expect.element(screen.getByText('sales.outlet_id')).toBeVisible()
+  await expect.element(screen.getByText('99%')).toBeVisible()
+  await expect.element(screen.getByText(/38 of 38 like it were right/)).toBeVisible()
+  // Rejected pairs stay out of the default list of proposed joins.
+  await expect.element(screen.getByText('sales.quantity')).not.toBeInTheDocument()
+})
+

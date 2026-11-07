@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { ontologyApi, type CalibrationBin, type Measured, type OntologyMetrics } from './api'
+import { ontologyApi, type CalibrationBin, type JoinSummary, type Measured, type OntologyMetrics } from './api'
 import { formatDate, useOntologyKey } from './model'
 
 type Open = (tab: 'evaluation' | 'checks' | 'proposals' | 'concepts') => void
@@ -80,7 +80,7 @@ export function OverviewTab({ onOpen }: { onOpen?: Open }) {
 }
 
 function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
-  const { answers, baseline, effect, claims, gold } = data.measured
+  const { answers, baseline, effect, claims, gold, joins } = data.measured
   const live = data.live
   return (
     <div className='flex flex-col gap-4'>
@@ -172,6 +172,8 @@ function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
         </Panel>
       </div>
 
+      <JoinPanels joins={joins ?? null} onOpen={onOpen} />
+
       <div className='grid gap-4 xl:grid-cols-3'>
         <Panel title='Claim accuracy by kind' subtitle='Lowest first, with 95% intervals'>
           {claims ? (
@@ -245,6 +247,73 @@ function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
       {data.not_measured.length ? (
         <p className='text-xs text-muted-foreground'>Not measured yet: {data.not_measured.join('; ')}.</p>
       ) : null}
+    </div>
+  )
+}
+
+/** What Nova learned from the data itself: joins, their probabilities, and what it decided. */
+function JoinPanels({ joins, onOpen }: { joins: JoinSummary | null; onOpen?: Open }) {
+  const score = joins?.joins_reviewed ?? joins?.joins
+  const reviewed = Boolean(joins?.joins_reviewed)
+  return (
+    <div className='grid gap-4 xl:grid-cols-3'>
+      <Panel
+        title='Joins found in the data'
+        subtitle={
+          joins
+            ? `${joins.profiled_columns} columns profiled in ${Math.round(joins.profile_seconds + joins.discover_seconds)} s`
+            : undefined
+        }
+      >
+        {joins && score ? (
+          <div className='flex flex-col gap-4 py-2'>
+            <IntervalBar label='Precision' measured={score.precision} color='var(--chart-4)' />
+            <IntervalBar label='Recall' measured={score.recall} color='var(--chart-4)' />
+            <p className='text-xs text-muted-foreground'>
+              F1 {score.f1.toFixed(2)} against {reviewed ? 'declared and reviewer-confirmed joins' : 'the joins the views declare'}
+              {reviewed ? ` (${joins.undeclared_reviewed} undeclared joins reviewed)` : ''}. Recall counts only joins someone has declared or confirmed.
+            </p>
+            {onOpen ? (
+              <Button variant='link' size='sm' className='self-start px-0' onClick={() => onOpen('evaluation')}>
+                See every join <ArrowRight className='size-3.5' />
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <NotMeasured text='Run "Find joins" in Evaluation to measure it.' />
+        )}
+      </Panel>
+      <Panel
+        title='Decided by Nova'
+        subtitle={joins?.decisions ? `${joins.decisions.labelled} labelled column pairs, judged on unseen databases` : undefined}
+      >
+        {joins?.decisions ? (
+          <div className='flex flex-col gap-4 py-2'>
+            <IntervalBar label='Decided without a person' measured={joins.decisions.automatic} color='var(--chart-2)' />
+            <IntervalBar label='Accepted and right' measured={joins.decisions.accepted_precision} color='var(--chart-4)' />
+            <p className='text-xs text-muted-foreground'>
+              {joins.decisions.rejected_misses.successes} of {joins.decisions.rejected_misses.n} rejected pairs were real joins ·{' '}
+              {joins.decisions.review_queue} left for review
+            </p>
+          </div>
+        ) : (
+          <NotMeasured text='Needs at least ten labelled joins in two databases.' />
+        )}
+      </Panel>
+      <Panel
+        title='Is the join probability honest?'
+        subtitle={
+          joins?.calibration
+            ? `ECE ${joins.calibration.ece.toFixed(3)} · AUC ${joins.calibration.auc?.toFixed(3) ?? '–'} · n=${joins.calibration.n}`
+            : undefined
+        }
+      >
+        {joins?.calibration?.bins.length ? (
+          <Reliability bins={joins.calibration.bins} />
+        ) : (
+          <NotMeasured text='Measured with the join discovery.' />
+        )}
+      </Panel>
     </div>
   )
 }

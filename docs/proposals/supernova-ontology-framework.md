@@ -309,6 +309,17 @@ Setiap fase diuji di SerbaData dan minimal satu skema umum (TPC-H/TPC-DS) supaya
 
 Fase A didahulukan karena tanpa alat ukur, klaim "akurat" adalah asumsi lagi.
 
+**Status per 8 November 2026** (angka di checkpoint):
+
+| Fase | Status | Bukti |
+|---|---|---|
+| A | Selesai | [Checkpoint A](../testing/supernova/phase-a-checkpoint.md). κ judge belum mencapai 0,8. |
+| E | Sebagian | [Checkpoint E](../testing/supernova/phase-e-checkpoint.md). Sudah ada: F1 (grounding), F2 (ukuran samar), F3 (jendela data). Belum: F4 (breakdown yang tidak diminta) dan indeks nilai. |
+| B | Join selesai untuk dua database lab | [Checkpoint B/C/D](../testing/supernova/phase-bcd-checkpoint.md). F1 1,00 setelah review; skema umum belum diuji. Penambangan riwayat query belum dibangun. |
+| C | Join selesai; klaim derived sudah terkalibrasi | ECE 0,033 (join), 0,027 (klaim) |
+| D | Keputusan join selesai | 89% diputuskan mesin. Diterima 13/13 benar, tetapi n masih kecil untuk membuktikan 97%. Aksi ke Semantic View belum ada. |
+| F | Belum | |
+
 ## 10. Keputusan yang perlu diambil
 
 1. **Principal untuk profiling.**

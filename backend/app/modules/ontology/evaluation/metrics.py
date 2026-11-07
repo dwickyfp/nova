@@ -14,6 +14,13 @@ from app.modules.ontology import access
 from app.modules.ontology.contracts import Concept, Domain, Proposal, Representation
 from app.modules.ontology.evaluation.contracts import EvalCase, EvalRun
 from app.modules.ontology.evaluation.service import EvaluationService, agreement, compare
+from app.modules.ontology.evidence.discovery import same_context
+
+#: What the Overview shows of a join run: scores, timing, calibration and decisions.
+JOIN_FIELDS = (
+    "databases", "profiled_columns", "profile_seconds", "discover_seconds", "candidates",
+    "joins", "joins_reviewed", "undeclared_reviewed", "calibration", "decisions",
+)
 
 
 def _when(run: EvalRun | None) -> str | None:
@@ -35,6 +42,8 @@ async def overview(user: dict, service: EvaluationService) -> dict:
         None,
     )
     claims = next((run for run in runs if run.kind == "claims"), None)
+    # A join run describes what one principal could see: only that context sees it here.
+    joins = next((run for run in runs if run.kind == "joins" and same_context(run, user)), None)
 
     effect = None
     grounded = None
@@ -101,6 +110,9 @@ async def overview(user: dict, service: EvaluationService) -> dict:
             "claims": {"run_id": claims.id, "at": _when(claims), **claims.summary}
             if claims else None,
             "gold": gold,
+            "joins": {"run_id": joins.id, "at": _when(joins),
+                      **{key: joins.summary.get(key) for key in JOIN_FIELDS}}
+            if joins else None,
             "history": history,
         },
         "live": {
@@ -121,6 +133,8 @@ async def overview(user: dict, service: EvaluationService) -> dict:
                 ("The ontology's effect needs a run without it on the same gold set",
                  baseline is None),
                 ("Claim accuracy and calibration need a completed claim audit", claims is None),
+                ("Join precision and automatic decisions need a completed join discovery",
+                 joins is None),
             ) if missing
         ],
     }

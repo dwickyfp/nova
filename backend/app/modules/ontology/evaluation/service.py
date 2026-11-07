@@ -20,6 +20,7 @@ from fastapi import HTTPException
 from pydantic import Field
 
 from app.common.statistics import calibration, cohen_kappa, mcnemar, proportion, stratified
+from app.modules.agents.semantic.coverage import period_without_data
 from app.modules.assistant.provider import AssistantProviderError
 from app.modules.intelligence.contracts import Contract, fingerprint
 from app.modules.ontology import access
@@ -195,6 +196,20 @@ class EvaluationService:
         return sorted(await self.repository.current("eval_runs", EvalRun),
                       key=lambda run: run.created_at, reverse=True)
 
+    async def visible_results(self, run_id: str, user: dict) -> list[EvalResult]:
+        """A run's results; a join run's profiles only for the context that profiled."""
+        from app.modules.ontology.evidence.discovery import same_context
+
+        run = await self.repository.latest("eval_runs", run_id, EvalRun)
+        if run is not None and run.kind == "joins" and not same_context(run, user):
+            raise HTTPException(status_code=404, detail=access.NOT_FOUND)
+        return await self.results(run_id)
+
+    async def start_joins(self, body: Any, user: dict) -> EvalRun:
+        from app.modules.ontology.evidence import discovery
+
+        return await discovery.start(self, body, user)
+
     async def results(self, run_id: str) -> list[EvalResult]:
         return [item for item in await self.repository.current("eval_results", EvalResult)
                 if item.run_id == run_id]
@@ -278,6 +293,10 @@ class EvaluationService:
                 return await self._gold_step(run, user)
             if run.kind == "answers":
                 return await self._answers_step(run, user)
+            if run.kind == "joins":
+                from app.modules.ontology.evidence import discovery
+
+                return await discovery.step(self, run, user)
             return await self._claims_step(run, user)
         except HTTPException:
             raise
@@ -785,6 +804,11 @@ class EvaluationService:
         if case.kind == "answerable":
             detail["view_correct"] = view_id == case.view_id
         model = models.get(view_id or "")
+        if model is None and view_id is None and routed_by == "model":
+            # The router found no view whose measures compute the question: Studio says so.
+            detail["outcome"] = "abstained"
+            detail["error"] = "no view answers the question"
+            return self._score(case, detail)
         if model is None:
             detail["outcome"] = "failed"
             detail["error"] = "view unavailable"
@@ -818,12 +842,25 @@ class EvaluationService:
             detail["error"] = "; ".join(errors)[:300]
             return self._score(case, detail)
         detail["tokens"] = (getattr(context, "usage", None) or {}).get("total_tokens")
+        time_context, not_yet = _time_context(plan)
+        if not_yet:
+            detail["outcome"] = "abstained"
+            detail["error"] = not_yet[:300]
+            return self._score(case, detail)
         sql = SemanticCompiler().compile(ir, plan).sql
         detail["sql_fingerprint"] = fingerprint(sql)[:16]
         columns, rows, error = await self._execute(sql, model, user)
         if error:
             detail["outcome"] = "failed"
             detail["error"] = error
+            return self._score(case, detail)
+        gap = await period_without_data(
+            plan, columns, rows, time_context,
+            lambda window_plan: self._run_plan(window_plan, model, user),
+        )
+        if gap is not None:
+            detail["outcome"] = "abstained"
+            detail["data_window"] = [gap.window.first.isoformat(), gap.window.last.isoformat()]
             return self._score(case, detail)
         if case.kind != "answerable" or case.plan is None:
             detail["outcome"] = "answered"
@@ -1075,6 +1112,18 @@ class EvaluationService:
         await access.audit("REVIEW", "ONTOLOGY_EVALUATION", run_id, user)
         reviewed = await self.results(run_id)
         run = await self.repository.latest("eval_runs", run_id, EvalRun)
+        if run is not None and run.kind == "joins" and run.status == "COMPLETED":
+            from app.modules.ontology.evidence.discovery import assess
+
+            gold = {tuple(pair) for pair in run.summary.get("gold") or []}
+            joins, assessed = assess(reviewed, gold)
+            changed = [(item, item.revision) for item, old in zip(joins, reviewed, strict=True)
+                       if item.detail != old.detail]
+            if changed:
+                await self.repository.save_many("eval_results", [
+                    (item.model_copy(update={"revision": revision + 1}), revision)
+                    for item, revision in changed])
+            await self._save_run(run, summary={**run.summary, **assessed})
         if run is not None and run.kind == "claims" and run.status == "COMPLETED":
             # A new reviewer changes the consensus; the stored summary follows it.
             await self._save_run(run, summary={
@@ -1109,6 +1158,29 @@ class EvaluationService:
 
 
 # --- summaries --------------------------------------------------------------------------
+
+def _time_context(plan: Any) -> tuple[Any, str | None]:
+    """The plan's period pinned to now as Studio pins it, or why it has no data yet."""
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    from app.core.database import configured_timezone
+    from app.modules.agents.semantic.coverage import future_period
+    from app.modules.agents.semantic.time_ranges import resolve_execution_time
+
+    if plan.time is None or not plan.time.range:
+        return None, None
+    now = datetime.now(UTC)
+    zone = configured_timezone()
+    not_yet = future_period(plan, now.astimezone(ZoneInfo(zone)).date())
+    if not_yet:
+        return None, not_yet
+    try:
+        return resolve_execution_time(plan.time.range, plan.time.compare,
+                                      now=now, timezone=zone), None
+    except Exception:  # noqa: BLE001 - an unpinnable period makes no window claim
+        return None, None
+
 
 def summarise_answers(results: list[EvalResult]) -> dict:
     by_kind: dict[str, list[EvalResult]] = {}

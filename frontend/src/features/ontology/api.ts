@@ -319,6 +319,43 @@ export type ClaimSummary = {
   population?: Record<string, number>
 }
 
+export type JoinScore = {
+  precision: Measured
+  recall: Measured
+  f1: number
+  predicted: number
+  gold: number
+}
+
+/** What the latest join discovery found and how well its own probabilities held up. */
+export type JoinSummary = {
+  run_id: string
+  at: string | null
+  databases: string[]
+  profiled_columns: number
+  profile_seconds: number
+  discover_seconds: number
+  candidates: number
+  joins: JoinScore
+  joins_reviewed: JoinScore | null
+  undeclared_reviewed: number
+  calibration: {
+    ece: number
+    brier: number
+    auc: number | null
+    n: number
+    positives: number
+    bins: CalibrationBin[]
+  } | null
+  decisions: {
+    labelled: number
+    automatic: Measured
+    accepted_precision: Measured
+    rejected_misses: Measured
+    review_queue: number
+  } | null
+}
+
 export type OntologyMetrics = {
   measured: {
     answers: AnswerSummary | null
@@ -338,6 +375,7 @@ export type OntologyMetrics = {
       rejected: number
       agreement: Record<string, Kappa>
     } | null
+    joins: JoinSummary | null
     history: {
       run_id: string
       release_id: string | null
@@ -360,7 +398,7 @@ export type OntologyMetrics = {
 
 export type EvaluationRun = {
   id: string
-  kind: 'gold' | 'answers' | 'claims'
+  kind: 'gold' | 'answers' | 'claims' | 'joins'
   set_name: string
   version: number
   mode: 'with_ontology' | 'without_ontology' | null
@@ -462,6 +500,7 @@ export const ontologyApi = {
   startAnswers: (body: { set_name: string; mode: 'with_ontology' | 'without_ontology' }) =>
     api.post<EvaluationRun>('/ontology/evaluation/answers', body),
   startClaims: () => api.post<EvaluationRun>('/ontology/evaluation/claims', {}),
+  startJoins: () => api.post<EvaluationRun>('/ontology/evaluation/joins', {}),
   startGold: (body: { set_name: string; view_ids: string[]; per_metric?: number }) =>
     api.post<EvaluationRun>('/ontology/evaluation/gold', body),
   stepRun: (runId: string) =>

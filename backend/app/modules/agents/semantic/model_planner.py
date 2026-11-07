@@ -31,7 +31,13 @@ PLANNER_RULES = (
     "and map named values to exact catalog sample values (ジャカルタ and Yakarta are "
     "Jakarta). Do not write SQL, joins, tables, or columns. Preserve every material user "
     "constraint; if one cannot be resolved, list it in unresolved_concepts instead of "
-    "guessing. A judgement with no stated threshold ('unusual', 'suspicious', "
+    "guessing. A measure word that two or more catalog metrics fit about equally, with "
+    "nothing in the question telling them apart ('sales' when net, gross and "
+    "before-returns sales all exist; 'returns' when returned units and returned value "
+    "both exist), is unresolved too: list it with type_hint 'metric' and the fitting "
+    "metric names in its text, and do not pick one. A measure the question names by a "
+    "metric's name or synonym, or one a supplied business definition names, is "
+    "resolved. A judgement with no stated threshold ('unusual', 'suspicious', "
     "'tidak wajar') is not an unresolved constraint: plan the named metrics by the "
     "requested grouping, ordered by the first metric descending, so the values can be "
     "judged. A step done with the result (clustering, a forecast, a model, a chart or a "
@@ -276,6 +282,13 @@ async def generate_plan(
         try:
             parsed = parse_json_object(content)
             validate_generated_plan(parsed)
+            if (isinstance(parsed, dict) and not parsed.get("metrics")
+                    and not parsed.get("dimensions") and not parsed.get("unresolved_concepts")):
+                # A plan that names nothing found no measure for the question: ask, do not fail.
+                parsed = {**parsed, "unresolved_concepts": [{
+                    "text": "the measure the question asks for", "type_hint": "metric",
+                    "material": True,
+                }]}
             plan = SemanticPlan.from_dict(parsed)
             # Unresolved concepts are a clarification, not a repair target.
             errors = [

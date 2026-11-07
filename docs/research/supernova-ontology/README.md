@@ -7,6 +7,8 @@ Research that backs the [Supernova Ontology Framework](../../proposals/supernova
 | [01-market-landscape.md](01-market-landscape.md) | What Snowflake, Databricks, Palantir, Fabric IQ, dbt, AtScale and others ship to ground agents, and what accuracy they claim |
 | [02-ml-methods.md](02-ml-methods.md) | Which machine learning and statistical methods can build and link an ontology automatically, with evidence, cost and a recommendation |
 | [03-measurement.md](03-measurement.md) | How ontology quality, agent answers, calibration and LLM judges are measured, and which metrics and protocol to use |
+| [04-ambiguity-and-coverage.md](04-ambiguity-and-coverage.md) | Phase E: detecting vague questions and periods without data; lexical rule measured and rejected, candidate-aware planner and data-window check chosen |
+| [05-join-evidence.md](05-join-evidence.md) | Phases B–D: join discovery (Auto-BI rules, KMV filter then exact verify), evidence-class calibration measured against logistic regression, fixed decision thresholds |
 
 ## Conclusions that drive the design
 
