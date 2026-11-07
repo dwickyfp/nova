@@ -33,6 +33,8 @@ QUALITY_TABLES = {
     "runs": "CONFIG_AGENT_QUALITY_RUNS",
     "monitoring": "CONFIG_AGENT_QUALITY_MONITORING",
     "proposals": "CONFIG_AGENT_IMPROVEMENT_PROPOSALS",
+    #: The agent's harness lesson library, written by harness experiments.
+    "lessons": "CONFIG_AGENT_HARNESS_LESSONS",
 }
 QUALITY_DDL = tuple(
     f"""
@@ -239,6 +241,8 @@ def evaluation_registry(registry):
     bounded.skill_definitions = deepcopy(registry.skill_definitions)
     if hasattr(registry, "release_manifest"):
         bounded.release_manifest = registry.release_manifest
+    # Offline evaluation runs the same harness guards as a live turn.
+    bounded.harness_policy = dict(getattr(registry, "harness_policy", None) or {})
     for name in registry.names():
         tool = registry.get(name)
         if getattr(tool, "classification", None) == "read_only":
@@ -298,6 +302,17 @@ def case_result(case: dict, trace: dict, trace_id: str | None, gates: PromotionG
     }
 
 
+def accounting_gaps(measured) -> list[str]:
+    """Why a run's token usage is incomplete, in fixed words (no provider payloads)."""
+    if measured is None:
+        return ["not_measured"]
+    return [
+        *(["provider_usage_missing"] if measured.missing_usage else []),
+        *(["provider_usage_pending"] if measured.pending_usage else []),
+        *sorted(measured.provider_unavailable),
+    ]
+
+
 async def evaluate(
     agent: dict,
     manifest: dict,
@@ -326,6 +341,7 @@ async def _evaluate(
 ) -> dict:
     from app.modules.agents.service import agent_service, loop_limits
     from app.modules.assistant.context import ContextManager
+    from app.modules.assistant.guards import GuardChain
     from app.modules.assistant.provider import assistant_provider
     from app.modules.assistant.service import AssistantLoop, LoopContext
     from app.modules.assistant.state import AssistantThread
@@ -410,6 +426,7 @@ async def _evaluate(
                     context_manager=ContextManager(token_budget=token_budget)
                     if token_budget
                     else None,
+                    guards=GuardChain.from_policy(registry.harness_policy),
                 )
                 thread = AssistantThread(
                     thread_id=str(uuid4()), user_name=user["username"], title="Quality evaluation"
@@ -442,6 +459,7 @@ async def _evaluate(
                     or measured.provider_unavailable
                 ):
                     run["token_usage_complete"] = False
+                    run["accounting_gaps"] = accounting_gaps(measured)
                     raise ValueError("Evaluation token accounting is unavailable")
                 if token_limit is not None and run["total_tokens"] > token_limit:
                     raise ValueError("Evaluation token budget exhausted")

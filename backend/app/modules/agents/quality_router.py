@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
-from app.modules.agents import quality
-from app.modules.agents.harness_experiments import ExperimentRequest, experiment
+from app.modules.agents import harness_experiments, quality
+from app.modules.agents.harness_experiments import ExperimentRequest
 from app.modules.agents.releases import capture_manifest, get_manifest
 from app.modules.agents.versions import agent_versions
 
@@ -281,8 +281,53 @@ async def review_proposal(
 
 @router.post("/{agent_id}/quality/harness-experiments")
 async def run_harness_experiment(agent_id: str, body: ExperimentRequest, user: CurrentUser):
+    """Start (or resume) a harness experiment; it runs in the background."""
     agent = await owned_agent(agent_id, user)
     await audit(agent_id, user, "START_HARNESS_EXPERIMENT")
-    result = await experiment(agent, body, user)
-    await audit(agent_id, user, "COMPLETE_HARNESS_EXPERIMENT")
-    return result
+
+    async def finished(record: dict) -> None:
+        await audit(
+            agent_id, user, "COMPLETE_HARNESS_EXPERIMENT",
+            status="SUCCESS" if record.get("status") == "passed" else "INCOMPLETE",
+        )
+
+    return await harness_experiments.start(agent, body, user, on_finish=finished)
+
+
+@router.get("/{agent_id}/quality/harness-experiments")
+async def list_harness_experiments(agent_id: str, user: CurrentUser):
+    await owned_agent(agent_id, user)
+    return {"experiments": await harness_experiments.list_experiments(agent_id, user)}
+
+
+@router.get("/{agent_id}/quality/harness-experiments/{experiment_id}")
+async def get_harness_experiment(agent_id: str, experiment_id: str, user: CurrentUser):
+    await owned_agent(agent_id, user)
+    for item in await harness_experiments.list_experiments(agent_id, user):
+        if item["id"] == experiment_id:
+            return item
+    raise HTTPException(404, "Experiment not found")
+
+
+@router.get("/{agent_id}/quality/harness-lessons")
+async def list_harness_lessons(agent_id: str, user: CurrentUser):
+    await owned_agent(agent_id, user)
+    return {"lessons": await harness_experiments.lessons(agent_id, user, include_retired=True)}
+
+
+@router.post("/{agent_id}/quality/harness-lessons/{lesson_id}/retire")
+async def retire_harness_lesson(agent_id: str, lesson_id: str, user: CurrentUser):
+    """Keep a lesson on record but stop feeding it to later experiments."""
+    await owned_agent(agent_id, user)
+    record = await harness_experiments.retire_lesson(agent_id, lesson_id, user)
+    await audit(agent_id, user, "RETIRE_HARNESS_LESSON")
+    return record
+
+
+@router.get("/{agent_id}/harness")
+async def harness_surface(agent_id: str, user: CurrentUser):
+    """Every harness component, its load cost, and the validation report."""
+    from app.modules.agents.harness import harness_surface as surface
+
+    agent = await owned_agent(agent_id, user)
+    return surface(agent)

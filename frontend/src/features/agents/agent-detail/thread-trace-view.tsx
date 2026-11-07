@@ -17,6 +17,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Route,
+  ShieldAlert,
   Sparkles,
   X,
 } from "lucide-react";
@@ -56,7 +57,8 @@ type DetailKind =
   | "tool"
   | "response"
   | "context"
-  | "reasoning";
+  | "reasoning"
+  | "guard";
 
 type TraceNode = {
   id: string;
@@ -672,6 +674,28 @@ function StepDetailPane({
           {node.detailKind === "active-state" ? (
             <ActiveStateDetail step={node.step} />
           ) : null}
+          {node.detailKind === "guard" && node.step?.kind === "guard" ? (
+            <Panel title="Guard decision">
+              <dl className="space-y-3 text-xs">
+                <DetailField label="Rule">
+                  {node.step.rule_id} ({node.step.source})
+                </DetailField>
+                <DetailField label="Action">{node.step.action}</DetailField>
+                <DetailField label="Message">{node.step.message}</DetailField>
+                {node.step.locations?.length ? (
+                  <DetailField label="Where">
+                    {node.step.locations
+                      .map((item) =>
+                        item.column !== undefined
+                          ? `Row ${(item.row ?? 0) + 1}, ${item.column}`
+                          : (item.field ?? ""),
+                      )
+                      .join("; ")}
+                  </DetailField>
+                ) : null}
+              </dl>
+            </Panel>
+          ) : null}
           {node.detailKind === "tool" || node.detailKind === "chart" ? (
             <ToolDetail step={node.step} />
           ) : null}
@@ -1227,6 +1251,20 @@ function buildGroup(
       });
       continue;
     }
+    if (step.kind === "guard") {
+      nodes.push({
+        id: `${baseId}:guard:${stepIndex}`,
+        turnId: assistant.message_id,
+        label: `Guard: ${step.rule_id}`,
+        description: `${step.action}${step.tool_name ? ` · ${step.tool_name}` : ""}`,
+        status: step.action === "blocked" ? "failed" : "done",
+        depth: 1,
+        detailKind: "guard",
+        step,
+        toolCallId: step.tool_call_id,
+      });
+      continue;
+    }
     if (step.kind === "active_state") {
       nodes.push({
         id: baseId,
@@ -1470,6 +1508,7 @@ function nodeIcon(node: TraceNode) {
   if (node.detailKind === "provider") return Sparkles;
   if (node.detailKind === "context") return Clock3;
   if (node.detailKind === "active-state") return FileJson;
+  if (node.detailKind === "guard") return ShieldAlert;
   return Route;
 }
 

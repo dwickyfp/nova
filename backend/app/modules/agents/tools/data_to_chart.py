@@ -81,6 +81,10 @@ _NOTIONAL_SYSTEM = (
 class DataToChartTool:
     """Turns the conversation's latest result into a viz worksheet."""
 
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
+
     name = "data_to_chart"
     description = (
         "Build a chart from the latest data already fetched in this "

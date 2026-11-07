@@ -388,6 +388,9 @@ def _compute(
 
 
 class ComputeMetricsTool:
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
     name = "compute_metrics"
     description = (
         "Compute growth (pct_change), difference, share_of_total, sum/avg/min/max, rank, CAGR, "

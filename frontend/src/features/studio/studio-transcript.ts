@@ -5,7 +5,7 @@ import type {
   TableBlock,
   ToolCallView,
 } from "@/features/assistant/types";
-import type { AgentMessage } from "@/features/agents/api";
+import type { AgentMessage, GuardDecision } from "@/features/agents/api";
 import type { RailStep } from "./thought-turn";
 import type { AnswerFeedback } from "./answer-footer";
 import type { SentAttachment } from "./studio-attachments";
@@ -227,6 +227,9 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
             complete: true,
           });
           break;
+        case "guard":
+          open.steps.push(guardStep(open.steps, step));
+          break;
         case "reasoning":
           open.steps.push({
             id: uniqueStepId(open.steps, `think-${step.phase}`),
@@ -407,6 +410,35 @@ function uniqueStepId(steps: RailStep[], base: string): string {
   return candidate;
 }
 
+const GUARD_VERB: Record<GuardDecision["action"], string> = {
+  blocked: "Guard blocked a call",
+  hinted: "Guard added a hint",
+  flagged: "Guard flagged instructions inside the data",
+  redacted: "Guard removed a credential from the answer",
+};
+
+/** A rail row for one harness guard decision, live or replayed. */
+function guardStep(steps: RailStep[], decision: GuardDecision): RailStep {
+  const where = (decision.locations ?? [])
+    .map((item) =>
+      item.column !== undefined
+        ? `row ${(item.row ?? 0) + 1}, ${item.column}`
+        : (item.field ?? ""),
+    )
+    .filter(Boolean)
+    .join("; ");
+  return {
+    id: uniqueStepId(steps, `guard-${decision.rule_id}`),
+    kind: "note",
+    label: "guard",
+    text: GUARD_VERB[decision.action] ?? "Guard decision",
+    status: decision.action === "blocked" ? "denied" : "done",
+    body: [decision.message, where ? `Where: ${where}` : "", `Rule: ${decision.rule_id}`]
+      .filter(Boolean)
+      .join("\n"),
+  };
+}
+
 function nextLegacyArtifactIndex(content: OrderedContent[]): number {
   const highestArtifact = content.reduce(
     (highest, item) =>
@@ -489,6 +521,8 @@ export function applyEvent(
           }),
         };
       }
+      case "guard":
+        return { ...turn, steps: [...turn.steps, guardStep(turn.steps, event)] };
       case "plan": {
         const plan: RailStep = {
           id: "execution-plan",
@@ -573,8 +607,10 @@ export function applyEvent(
           kind: "tool",
           label: payload.tool_name,
           skillName: payload.skill_name || undefined,
+          // A call refused before it ran (consent or an agent guard) never
+          // queried anything, so its row says so instead of naming the work.
           text:
-            payload.tool_name === "load_skill"
+            payload.tool_name === "load_skill" || payload.status === "denied"
               ? describeStatus(
                   payload.tool_name,
                   payload.status,

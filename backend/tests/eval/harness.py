@@ -36,6 +36,7 @@ from typing import Any
 
 from app.modules.assistant.app_context import NoveAppContext
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.guards import GuardChain
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantMessage, AssistantThread
 from app.modules.assistant.tools import (
@@ -200,6 +201,8 @@ class Scenario:
     context_manager: ContextManager | None = None
     max_iterations: int = 8
     time_budget_seconds: float = 60.0
+    #: An agent harness policy; its guards run inside the loop for this scenario.
+    harness_policy: dict[str, Any] | None = None
 
 
 def _event_name(frame: str) -> str:
@@ -262,6 +265,7 @@ async def run_scenario(scenario: Scenario) -> TurnResult:
         time_budget_seconds=scenario.time_budget_seconds,
         system_prompt=scenario.system_prompt,
         context_manager=scenario.context_manager,
+        guards=GuardChain.from_policy(scenario.harness_policy),
     )
     context = LoopContext(
         user_name="eval", thread_id="eval", attachments=scenario.attachments,

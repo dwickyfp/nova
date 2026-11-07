@@ -39,6 +39,8 @@ const assertionHints: Record<string, string> = {
     "Use expected clarification fields recorded by the runtime.",
   action_verification:
     "Use expected verification fields recorded by the runtime.",
+  guard_compliance:
+    'Expected object: {"fired":["untrusted-instructions-in-data"],"not_fired":[],"max_blocked":0}. Use guard rule ids from the Harness tab.',
 };
 
 export function QualityCaseEditor({

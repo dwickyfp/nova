@@ -228,6 +228,8 @@ class ToolRegistry:
         self.discoverable_skills: tuple[str, ...] = ()
         self.skill_definitions: dict[str, Any] = {}
         self.release_manifest: dict[str, Any] | None = None
+        #: The agent's validated harness policy; its guards run inside the loop.
+        self.harness_policy: dict[str, Any] = {}
 
     def register(self, tool: AssistantTool) -> None:
         self._tools[tool.name] = tool

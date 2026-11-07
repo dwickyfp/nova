@@ -18,6 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.modules.agents.harness import HarnessPolicy
 from app.modules.agents.resources import ResourceBindings
 
 #: Which tools an agent bundles. A tool not in this set is never registered for
@@ -70,6 +71,7 @@ class AgentView(BaseModel):
     resource_bindings: ResourceBindings = Field(default_factory=ResourceBindings)
     config_revision: str | None = None
     release_manifest_id: str | None = None
+    harness_policy: HarnessPolicy = Field(default_factory=HarnessPolicy)
     evaluation_status: str = "unevaluated"
 
 
@@ -112,6 +114,7 @@ class AgentCreateRequest(BaseModel):
     semantic_model_ids: list[str] = Field(default_factory=list)
     semantic_view_ids: list[str] = Field(default_factory=list)
     visibility: Visibility = "private"
+    harness_policy: HarnessPolicy = Field(default_factory=HarnessPolicy)
 
 
 class AgentUpdateRequest(BaseModel):
@@ -144,6 +147,7 @@ class AgentUpdateRequest(BaseModel):
     semantic_model_ids: list[str] | None = None
     semantic_view_ids: list[str] | None = None
     visibility: Visibility | None = None
+    harness_policy: HarnessPolicy | None = None
 
 
 class SemanticModelView(BaseModel):

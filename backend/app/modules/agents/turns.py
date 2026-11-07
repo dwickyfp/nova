@@ -45,6 +45,7 @@ async def run_agent_turn(
     from app.modules.agents.semantic.access import bound_view_ids
     from app.modules.agents.service import agent_service, loop_limits
     from app.modules.assistant.context import ContextManager
+    from app.modules.assistant.guards import GuardChain
     from app.modules.assistant.provider import assistant_provider
     from app.modules.assistant.service import AssistantLoop, LoopContext
     from app.modules.assistant.state import AssistantThread
@@ -75,6 +76,8 @@ async def run_agent_turn(
         context_manager=ContextManager(token_budget=token_budget) if token_budget else None,
         max_calls_per_tool=limits.max_calls_per_tool,
         iterative=True,
+        spend_limit=limits.spend_tokens,
+        guards=GuardChain.from_policy(registry.harness_policy),
     )
     thread = AssistantThread(thread_id=thread_id, user_name=user["username"], title=title)
     thread.consent.always_allow_read_only = True

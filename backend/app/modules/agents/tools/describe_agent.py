@@ -76,6 +76,9 @@ def _shared_dimensions(model: Any) -> list[list[str]]:
 
 
 class DescribeAgentTool:
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
     name = "describe_agent"
     description = DESCRIPTION
     parameters = PARAMETERS

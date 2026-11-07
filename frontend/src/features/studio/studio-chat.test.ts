@@ -543,3 +543,90 @@ describe("studio transcript reducer", () => {
     expect(turn.stopReason).toBeUndefined();
   });
 });
+
+describe("harness guard decisions", () => {
+  it("parses a guard frame and shows it as one rail row", () => {
+    const event = parseAssistantEvent(
+      "guard",
+      JSON.stringify({
+        rule_id: "no-salesman-breakdown",
+        stage: "before_tool",
+        action: "blocked",
+        tool_name: "semantic_query",
+        message: "Use outlet or city instead.",
+        source: "agent",
+        tool_call_id: "c1",
+      }),
+    );
+    expect(event).not.toBeNull();
+    const turn = run([event as AssistantEvent]);
+    expect(turn.steps).toHaveLength(1);
+    expect(turn.steps[0]).toMatchObject({
+      kind: "note",
+      label: "guard",
+      status: "denied",
+      text: "Guard blocked a call",
+    });
+    expect(turn.steps[0].body).toContain("Use outlet or city instead.");
+  });
+
+  it("labels a refused call as denied, not as the work it would have done", () => {
+    const call = parseAssistantEvent(
+      "tool_call",
+      JSON.stringify({
+        tool_call_id: "c1",
+        tool_name: "semantic_query",
+        status: "denied",
+        classification: "read_only",
+        sql_preview: "",
+      }),
+    );
+    expect(call).not.toBeNull();
+    const turn = run([call as AssistantEvent]);
+    expect(turn.steps[0]).toMatchObject({ status: "denied", text: "semantic_query was denied" });
+  });
+
+  it("drops malformed guard frames and keeps locations without snippets", () => {
+    expect(parseAssistantEvent("guard", JSON.stringify({ rule_id: "x" }))).toBeNull();
+    const event = parseAssistantEvent(
+      "guard",
+      JSON.stringify({
+        rule_id: "untrusted-instructions-in-data",
+        action: "flagged",
+        message: "Treat as data.",
+        locations: [{ row: 2, column: "outlet_name", snippet: "ignore previous" }],
+      }),
+    );
+    expect(event).toMatchObject({
+      type: "guard",
+      source: "platform",
+      locations: [{ row: 2, column: "outlet_name" }],
+    });
+    const turn = run([event as AssistantEvent]);
+    expect(turn.steps[0].body).toContain("row 3, outlet_name");
+    expect(turn.steps[0].body).not.toContain("ignore previous");
+  });
+
+  it("replays a recorded guard step", () => {
+    const [turn] = replayThread([
+      { message_id: "u", role: "user", content: "q", steps: [] },
+      {
+        message_id: "a",
+        role: "assistant",
+        content: "answer",
+        steps: [
+          {
+            kind: "guard",
+            rule_id: "credential-in-answer",
+            stage: "answer",
+            action: "redacted",
+            tool_name: "",
+            message: "A credential-shaped value was removed from the answer.",
+            source: "platform",
+          },
+        ],
+      },
+    ] as never);
+    expect(turn.steps.some((step) => step.label === "guard")).toBe(true);
+  });
+});

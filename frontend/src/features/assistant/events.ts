@@ -201,6 +201,39 @@ export function parseAssistantEvent(
           ? { type: "content_block_done", content_index: index, content_id: id }
           : null;
       }
+      case "guard": {
+        const actions = ["blocked", "hinted", "flagged", "redacted"];
+        if (
+          typeof record.rule_id !== "string" ||
+          typeof record.message !== "string" ||
+          typeof record.action !== "string" ||
+          !actions.includes(record.action)
+        )
+          return null;
+        const locations = Array.isArray(record.locations)
+          ? record.locations.filter(
+              (item): item is Record<string, unknown> =>
+                !!item && typeof item === "object" && !Array.isArray(item),
+            ).map((item) => ({
+              ...(typeof item.row === "number" ? { row: item.row } : {}),
+              ...(typeof item.column === "string" ? { column: item.column } : {}),
+              ...(typeof item.field === "string" ? { field: item.field } : {}),
+            }))
+          : undefined;
+        return {
+          type: "guard",
+          rule_id: record.rule_id,
+          stage: typeof record.stage === "string" ? record.stage : "",
+          action: record.action as "blocked" | "hinted" | "flagged" | "redacted",
+          tool_name: typeof record.tool_name === "string" ? record.tool_name : "",
+          message: record.message,
+          source: record.source === "agent" ? "agent" : "platform",
+          ...(typeof record.tool_call_id === "string"
+            ? { tool_call_id: record.tool_call_id }
+            : {}),
+          ...(locations?.length ? { locations } : {}),
+        };
+      }
       case "tool_detail": {
         const id = record.tool_call_id;
         const text = record.text;

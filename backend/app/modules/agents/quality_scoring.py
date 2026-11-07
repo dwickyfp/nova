@@ -25,6 +25,7 @@ SCORERS = frozenset(
         "ui_validity",
         "ui_evidence",
         "ui_action_success",
+        "guard_compliance",
         "latency",
         "efficiency",
     }
@@ -55,6 +56,7 @@ FAILURES = {
     "ui_validity": "INVALID_UI",
     "ui_evidence": "UNGROUNDED_UI",
     "ui_action_success": "UI_ACTION_INCOMPLETE",
+    "guard_compliance": "GUARD_EXPECTATION_UNMET",
     "latency": "TOO_SLOW",
     "efficiency": "INEFFICIENT_EXECUTION",
 }
@@ -113,6 +115,22 @@ class Assertion(Contract):
             or ("complete" in expected and type(expected["complete"]) is not bool)
         ):
             raise ValueError("Invalid evidence coverage assertion")
+        elif self.scorer == "guard_compliance" and (
+            set(expected) - {"fired", "not_fired", "max_blocked"}
+            or any(
+                not isinstance(expected.get(key, []), list)
+                or any(not isinstance(rule, str) or not rule for rule in expected.get(key, []))
+                for key in ("fired", "not_fired")
+            )
+            or set(expected.get("fired", [])) & set(expected.get("not_fired", []))
+            or (
+                "max_blocked" in expected
+                and (type(expected["max_blocked"]) is not int or expected["max_blocked"] < 0)
+            )
+        ):
+            raise ValueError(
+                "Guard compliance takes fired/not_fired rule id lists and a max_blocked count"
+            )
         return self
 
 
@@ -268,6 +286,20 @@ def _score_assertion(assertion: Assertion, trace: dict) -> Score:
                     passed = all(item["complete"] is expected["complete"] for item in evidence)
             if passed is not None:
                 detail = "Recorded distinct evidence coverage and health checked"
+    elif name == "guard_compliance":
+        if isinstance(facts, dict):
+            # The loop records an empty list when no guard fired; a trace without
+            # the fact predates guards and cannot show compliance.
+            events = facts.get("guard_events")
+            if isinstance(events, list) and all(isinstance(item, dict) for item in events):
+                fired = {str(item.get("rule_id")) for item in events}
+                blocked = sum(1 for item in events if item.get("action") == "blocked")
+                passed = (
+                    set(expected.get("fired", [])) <= fired
+                    and not set(expected.get("not_fired", [])) & fired
+                    and blocked <= expected.get("max_blocked", blocked)
+                )
+                detail = "Recorded guard decisions checked against the expected rules"
     elif name == "latency":
         elapsed = trace.get("duration_ms")
         if _measurement(elapsed):

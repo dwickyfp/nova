@@ -120,6 +120,10 @@ _SEMANTIC_QUERY_PROMPT_VERSION = "v1"
 class SemanticQueryTool:
     """Compiles SQL from an active Semantic View and runs it, delegate-first."""
 
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
+
     name = "semantic_query"
     description = (
         "Answer a governed business metric question. Nova selects a published "

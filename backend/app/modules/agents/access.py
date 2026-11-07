@@ -275,11 +275,16 @@ async def access_fingerprint(agent: dict) -> str:
         )
         versions.append((view_id, active_version, version.get("fingerprint") if version else None))
     # Loop limits (``budget_profile``) change cost, not what the agent can read,
-    # so they do not invalidate a verified grant.
+    # so they do not invalidate a verified grant. Neither does the harness policy:
+    # its guards only refuse calls and its prose cannot widen data access. Edit
+    # timestamps are left out too: every field an edit can change is hashed itself.
     configured = {
         key: value
         for key, value in agent.items()
-        if key not in {"created_at", "config_revision", "resource_bindings", "budget_profile"}
+        if key not in {
+            "created_at", "updated_at", "config_revision", "resource_bindings",
+            "budget_profile", "harness_policy",
+        }
     }
     resources = agent.get("resource_bindings") or {}
     if resources.get("search_indexes") or resources.get("feature_groups"):

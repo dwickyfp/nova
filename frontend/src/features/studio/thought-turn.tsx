@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Route,
   Search,
+  ShieldAlert,
   ShieldQuestion,
   Square,
   type LucideIcon,
@@ -84,7 +85,7 @@ const TOOL_ICON: Record<string, LucideIcon> = {
 function stepIcon(step: RailStep): LucideIcon {
   if (step.kind === "consent") return ShieldQuestion;
   if (step.kind === "tool") return TOOL_ICON[step.label] ?? Database;
-  if (step.kind === "note") return CircleAlert;
+  if (step.kind === "note") return step.label === "guard" ? ShieldAlert : CircleAlert;
   return PHASE_ICON[step.label as ThinkingPhase] ?? Route;
 }
 

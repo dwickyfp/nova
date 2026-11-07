@@ -76,6 +76,9 @@ _PARAMETERS = {
 
 
 class DashboardBuildTool:
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
     name = "dashboard_build"
     description = (
         "Compose a BI dashboard from the latest verified result in this "

@@ -226,6 +226,46 @@ async def test_tool_dispatch_counts_exclude_denials_and_do_not_guess_nested_cost
         assert budget(record, participants=1) == "unavailable"
 
 
+async def test_a_tool_whose_model_calls_are_in_process_keeps_usage_measured():
+    """Only a declared tool keeps tokens measurable; an undeclared one stays unmeasured."""
+    measured_tool = EvalTool("semantic_query")
+    measured_tool.nested_requests_measured = True
+    registry = ToolRegistry()
+    registry.register(measured_tool)
+    provider = ScriptedProvider([
+        tool_call_frame("q", name="semantic_query", sql="SELECT 1"),
+        text_frame("Ready."),
+    ])
+    context, _ = await run(provider, registry=registry)
+    record = observation(context)
+    assert record["counts"]["tool_calls"] == 1
+    assert "nested_tool_requests_unmeasured" not in record["measurement"]["unavailable"].get(
+        "provider_calls", []
+    )
+
+
+def test_tools_that_declare_measured_model_calls_use_the_native_client():
+    from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
+    from app.modules.agents.tools.dashboard_build import DashboardBuildTool
+    from app.modules.agents.tools.data_to_chart import DataToChartTool
+    from app.modules.agents.tools.describe_agent import DescribeAgentTool
+    from app.modules.agents.tools.diagnose_change import DiagnoseChangeTool
+    from app.modules.agents.tools.ml_execute import MLExecuteTool
+    from app.modules.agents.tools.semantic_query import SemanticQueryTool
+    from app.modules.agents.tools.semantic_search import SemanticSearchTool
+    from app.modules.assistant.tools.load_skill import LoadSkillTool
+    from app.modules.assistant.tools.query_execute import QueryExecuteTool
+
+    declared = [
+        ComputeMetricsTool, DashboardBuildTool, DataToChartTool, DescribeAgentTool,
+        DiagnoseChangeTool, MLExecuteTool, SemanticQueryTool, SemanticSearchTool,
+        LoadSkillTool,
+    ]
+    assert all(tool.nested_requests_measured is True for tool in declared)
+    # SQL can call AI functions through a separate gateway, so it stays unmeasured.
+    assert getattr(QueryExecuteTool, "nested_requests_measured", False) is False
+
+
 async def test_a_checkpointed_turn_does_not_guess_participant_count():
     context, _ = await run(ScriptedProvider([text_frame("Ready.")]), save_state=AsyncMock())
     assert budget(observation(context), participants=1) == "unavailable"

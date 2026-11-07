@@ -94,6 +94,7 @@ from app.modules.assistant import events
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.guards import GuardChain
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.repository import (
@@ -2328,6 +2329,8 @@ async def send_agent_message(
         max_calls_per_tool=limits.max_calls_per_tool,
         iterative=limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
         summarize_history=True,
+        spend_limit=limits.spend_tokens,
+        guards=GuardChain.from_policy(registry.harness_policy),
     )
 
     async def resolve_consent(

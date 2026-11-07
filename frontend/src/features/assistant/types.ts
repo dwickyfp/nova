@@ -148,6 +148,7 @@ export type AssistantEvent = (
       content_index: number;
       content_id: string;
     }
+  | ({ type: "guard" } & import("../agents/api").GuardDecision)
   | {
       type: "tool_detail";
       tool_call_id: string;

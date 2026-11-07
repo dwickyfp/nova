@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/auth-store";
 import { AgentQualityTab, QualitySuggestions } from "./quality-tab";
+import { AgentHarnessTab } from "./harness-tab";
 import { AgentMemoryDialog } from "@/features/studio/agent-memory-dialog";
 import { api } from "@/lib/api-client";
 import {
@@ -63,6 +64,9 @@ function ImproveWorkspace({
         <TabsTrigger value="quality" className="min-h-11">
           Quality
         </TabsTrigger>
+        <TabsTrigger value="harness" className="min-h-11">
+          Harness
+        </TabsTrigger>
         <TabsTrigger value="knowledge" className="min-h-11">
           Knowledge
         </TabsTrigger>
@@ -73,6 +77,9 @@ function ImproveWorkspace({
       <TabsContent value="quality" className="min-w-0 space-y-8">
         <AgentQualityTab agentId={agentId} onInspectTrace={onInspectTrace} />
         <Readiness agentId={agentId} />
+      </TabsContent>
+      <TabsContent value="harness" className="min-w-0">
+        <AgentHarnessTab agentId={agentId} />
       </TabsContent>
       <TabsContent value="knowledge" className="min-w-0 space-y-8">
         <section className="space-y-3">

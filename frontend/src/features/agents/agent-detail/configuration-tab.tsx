@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AgentModelSelect } from "./model-select";
 import { AgentResourceBindings } from "./resource-bindings";
 import { agentVersionsApi } from "../api";
+import { toAgentDraft } from "./agent-draft";
 import { semanticViewsApi, type SemanticView } from "@/features/intelligence/semantic-views-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -709,26 +710,6 @@ function SkillsConfig({
       )}
     </div>
   );
-}
-
-function toAgentDraft(agent: Agent): AgentCreateInput {
-  const {
-    agent_id: _agentId,
-    owner_name: _ownerName,
-    created_at: _createdAt,
-    updated_at: _updatedAt,
-    compiled_instructions: _compiledInstructions,
-    config_revision: _configRevision,
-    semantic_model_id: _semanticModelId,
-    semantic_model_ids: _semanticModelIds,
-    ...draft
-  } = agent;
-  return {
-    ...draft,
-    default_tools: (agent.default_tools ?? []).filter((name) => name !== "query_execute"),
-    semantic_view_ids: agent.semantic_view_ids ?? [],
-    harness_mode: "auto",
-  };
 }
 
 function McpConfig() {

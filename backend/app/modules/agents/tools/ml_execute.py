@@ -20,6 +20,9 @@ from app.modules.query.sql_pipeline import redact_for_output
 
 
 class MLExecuteTool:
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
     name = "ml_execute"
     description = (
         "Run Nova's bounded ML runtime for forecast, classification, regression, "

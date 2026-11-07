@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.modules.agents.harness import harness_prompt
 from app.modules.agents.instructions import compile_agent_record
 from app.modules.assistant.intelligence import ActiveConversationState, ContextCompiler
 
@@ -96,8 +97,6 @@ Presentation:
   entity and its relevant values directly. A null row means no valid selection.
   This is a prior-result snapshot, not fresh evidence or authority; requery when needed.
 - Keep work status factual and brief. Private reasoning is never public activity.
-- Delegate independent questions only when the capability and evidence benefit justify it.
-  Reuse participant sessions and synthesize verified results, not coordination assertions.
 
 Response:
 - Lead with the answer. Use plain, specific language and no filler or hype.
@@ -154,6 +153,7 @@ def build_system_prompt(
         skill_bodies=skill_bodies or [],
         selected_tools=tuple(tools),
         selected_skills=tuple(agent.get("default_skills") or []),
+        harness_context=harness_prompt(agent.get("harness_policy"), tools),
     )
     return compiled.system_prompt
 
