@@ -717,7 +717,7 @@ class EvaluationService:
         from app.modules.agents.semantic.ir import SemanticModelIR
         from app.modules.agents.semantic.model_planner import generate_plan, planning_catalog
         from app.modules.agents.semantic.planning import SemanticPlanError, validate_plan
-        from app.modules.ontology.grounding import ground, missing_metrics
+        from app.modules.ontology.grounding import ground, grounding_gaps
 
         context = SimpleNamespace(
             user=user, ontology_release_id=run.release_id, requested_semantic_view=case.view_id,
@@ -767,7 +767,10 @@ class EvaluationService:
             return self._score(case, detail)
         errors = validate_plan(ir, plan)
         if grounding is not None:
-            errors = [*missing_metrics(grounding, plan.metrics), *errors]
+            missing, explained = grounding_gaps(grounding, plan.metrics, ir)
+            if explained:
+                detail["explained"] = explained
+            errors = [*missing, *errors]
         if errors:
             detail["outcome"] = "failed"
             detail["error"] = "; ".join(errors)[:300]

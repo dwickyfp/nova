@@ -58,6 +58,8 @@ class Resolution:
     concepts: list[dict[str, Any]] = field(default_factory=list)
     ambiguities: list[Ambiguity] = field(default_factory=list)
     bindings: dict[str, list[Representation]] = field(default_factory=dict)
+    #: The words in the question that named each resolved concept.
+    terms: dict[str, list[str]] = field(default_factory=dict)
 
     def public(self) -> dict[str, Any]:
         """A JSON-ready projection for tools, clarifications and the API."""
@@ -163,6 +165,7 @@ class ConceptResolver:
                 candidates = hinted or candidates
             if len(candidates) == 1:
                 selected.setdefault(candidates[0], None)
+                resolution.terms.setdefault(candidates[0], []).append(term)
             else:
                 resolution.ambiguities.append(
                     Ambiguity(

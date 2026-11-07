@@ -135,6 +135,48 @@ async def test_a_grounded_question_is_answered_with_the_official_metric(world, m
     assert context.quality_facts["semantic_selection"]["metrics"] == ["total_revenue"]
 
 
+async def test_a_word_describing_the_asked_metric_does_not_block_the_answer(world, monkeypatch):
+    # "completed order" names OrderCount, but here it only describes the revenue asked for.
+    await bind(world, world.finance, "NetRevenue", "total_revenue", None, aliases=["omzet"])
+    await bind(world, world.finance, "OrderCount", "order_count", None,
+               aliases=["completed order"])
+    await world.release()
+    tool, planner, execute = setup_tool(monkeypatch, world, _plan(dimensions=["city"]))
+    registry = ToolRegistry()
+    registry.register(tool)
+    question = "omzet dari completed order per kota"
+    provider = ScriptedProvider(script=[
+        tool_call_frame("s1", name="semantic_query", arguments={"question": question}),
+        text_frame("Omzet (Finance.NetRevenue) Jakarta: 100."),
+    ])
+    joined, context = await run(provider, registry, question)
+    assert '"finish_reason":"stop"' in joined
+    execute.assert_awaited_once()
+    grounding = context.quality_facts["concept_grounding"]
+    assert grounding["status"] == "grounded"
+    assert grounding["concepts"] == ["Finance.NetRevenue", "Finance.OrderCount"]
+    assert context.quality_facts["semantic_selection"]["metrics"] == ["total_revenue"]
+
+
+async def test_a_second_metric_the_question_asks_for_is_still_required(world, monkeypatch):
+    await bind(world, world.finance, "NetRevenue", "total_revenue", None, aliases=["omzet"])
+    await bind(world, world.finance, "OrderCount", "order_count", None, aliases=["jumlah order"])
+    await world.release()
+    tool, planner, execute = setup_tool(
+        monkeypatch, world, _plan(dimensions=["city"]), _plan(dimensions=["city"]))
+    registry = ToolRegistry()
+    registry.register(tool)
+    question = "omzet dan jumlah order per kota"
+    provider = ScriptedProvider(script=[
+        tool_call_frame("s1", name="semantic_query", arguments={"question": question}),
+        text_frame("Order count could not be planned."),
+    ])
+    joined, _context = await run(provider, registry, question)
+    # The plan left out a metric the question asked for: no data is returned.
+    execute.assert_not_awaited()
+    assert '"finish_reason":"required_capability_incomplete"' in joined
+
+
 async def test_the_explain_tool_stays_behind_consent(world):
     await bind(world, world.finance, "NetRevenue", "total_revenue", None)
     await world.release()

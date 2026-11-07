@@ -191,11 +191,49 @@ Setiap perbaikan berikut ditemukan saat pengukuran nyata, punya uji, dan sudah m
 - **Domain uji terbatas:** satu domain bisnis nyata (SerbaData) dan satu domain sintetis (`nova_business_360`).
 - **Profil data dan jendela data belum dipakai sebagai bukti.** Itu fase B.
 
+## Tindak lanjut F1: grounding yang menjelaskan sebutan (7 November 2026)
+
+**Aturan baru** (`grounding_gaps` di `ontology/grounding.py`, dipakai Studio `semantic_query` dan evaluasi). Konsep yang ter-resolve tetap wajib, kecuali sebutannya dijelaskan oleh metrik yang memang direncanakan:
+
+- metriknya adalah input dari metrik yang direncanakan, dibuktikan pada ekspresi yang di-parse; atau
+- kata yang menyebut konsep itu muncul utuh dalam deskripsi, sinonim, nama, atau definisi resmi metrik yang direncanakan.
+
+Substitusi tetap ditolak. "Omzet" dengan rencana penjualan kotor tidak dijelaskan, karena deskripsi penjualan kotor tidak menyebut omzet. Pertanyaan yang meminta dua metrik juga tetap mewajibkan keduanya. Resolver kini mencatat kata yang cocok per konsep.
+
+**Hasil.** Gold v2, release `ont_rel_0005`, run `evn_29ba…`, dibandingkan per kasus:
+
+| Pembanding | Sebelum | Sesudah | Diperbaiki / dirusak | McNemar p |
+|---|---|---|---|---|
+| Dengan ontology, aturan lama | 80,5% | **93,5%** (87,7–96,7%) | 18 / 2 | **0,0004** |
+| Tanpa ontology | 95,1% | 93,5% | 0 / 2 | 0,5 (tidak berbeda) |
+
+Reliabilitas naik dari 0,59 menjadi 0,69. Kasus `failed` turun dari 19 menjadi 2.
+
+**Penilaian judge:**
+
+- **Penjelasan.** Ke-18 penjelasan yang dipakai sah. Setiap sebutan memang menerangkan metrik yang direncanakan ("penjualan kotor sebelum **diskon**") atau menjadi inputnya (jarak aktual → selisih jarak, omzet bersih → margin kotor). Tidak ada substitusi.
+- **Regresi.** Dua kasus yang memburuk berasal dari variasi planner, bukan grounding: breakdown karyawan yang tidak diminta, dan klarifikasi untuk nilai "Jawa Barat & DKI".
+- **Sisa over-grounding: 1 kasus.** "Per **baris pesanan**" adalah kata breakdown yang menyebut OrderLines. Aturan ini sengaja tidak melepaskannya, karena kata itu tidak ada dalam deskripsi metrik yang direncanakan.
+
+**Status target:**
+
+- Target "dengan ontology ≥ tanpa ontology" belum terbukti, karena selisihnya tidak signifikan. Ontology tidak lagi merugikan, tetapi pada gold set ini juga belum terbukti membantu.
+- Gold set ini condong ke baseline: pertanyaannya dirumuskan dari deskripsi view sendiri.
+- Bukti nilai tambah ontology butuh pertanyaan dengan kosakata bisnis yang tidak ada di view, misalnya "omzet", "sopir" atau "toko". Itu menjadi bagian revisi gold set berikutnya.
+
+**Kegagalan yang tersisa** (8 dari 123) berasal dari planner dan perumusan gold, bukan grounding:
+
+- breakdown yang tidak diminta, karena "oleh driver" dibaca sebagai pemecahan per karyawan (3 kasus);
+- grain harian karena frasa definisi "per hari" (1 kasus);
+- nilai literal yang memuat "&" (2 kasus);
+- dimensi tidak valid (1 kasus);
+- sisa over-grounding (1 kasus).
+
 ## Prioritas berikutnya
 
 Prioritas ini diputuskan oleh data:
 
-1. **Perbaiki F1.** Grounding hanya mewajibkan konsep yang diminta sebagai ukuran, dan alias umum diturunkan. Target: akurasi dengan ontology ≥ tanpa ontology pada gold v2, diuji McNemar.
+1. ~~Perbaiki F1~~: **selesai** (lihat tindak lanjut di atas). Tersisa: menurunkan alias umum ('diskon', 'retur') lewat usulan steward, dan gold set dengan kosakata bisnis di luar view untuk membuktikan nilai tambah ontology.
 2. **Revisi rubrik judge:**
    - definisi "per role tanpa jalur";
    - sumber ganda;

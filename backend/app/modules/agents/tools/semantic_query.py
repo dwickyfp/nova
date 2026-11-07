@@ -295,7 +295,7 @@ class SemanticQueryTool:
                 # The turn planner already read the question; its plan is checked,
                 # never trusted, and a rejected one is simply planned again here.
                 plan = primary_plan_from(primary.get("plan"), semantic_ir)
-                if plan is not None and missing_metrics(grounding, plan.metrics):
+                if plan is not None and missing_metrics(grounding, plan.metrics, semantic_ir):
                     plan = None  # it missed an official metric; plan with the concepts
                 plan_from_turn = plan is not None
             if plan is None:
@@ -325,7 +325,10 @@ class SemanticQueryTool:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
             period_note = "; ".join(notes) or None
             verified_hit = _verified_match(definition, model_id, semantic_ir, plan)
-            errors = [*missing_metrics(grounding, plan.metrics), *validate_plan(semantic_ir, plan)]
+            errors = [
+                *missing_metrics(grounding, plan.metrics, semantic_ir),
+                *validate_plan(semantic_ir, plan),
+            ]
             if errors:
                 raise SemanticPlanError("; ".join(errors))
             time_context = None

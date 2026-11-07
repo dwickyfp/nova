@@ -336,7 +336,23 @@ language matches through aliases, which stewards add.
 | A name belongs to visible concepts in several domains, and the question names none of their domains | `CLARIFICATION_REQUIRED`: the turn ends as a question naming each choice; nothing is planned or run |
 | An approved concept has no binding the user and agent can use | The turn stops with `NO_AUTHORIZED_REPRESENTATION` and names the concept. It is never answered with a metric of a similar name |
 | The named metrics are computed in different views | `CLARIFICATION_REQUIRED`: ask for them one at a time |
-| Grounded | The binding's view is used, the planner receives the concepts and their metrics, and a plan that omits a required metric is rejected |
+| Grounded | The binding's view is used, the planner receives the concepts and their metrics, and a plan that omits a required metric is rejected unless a planned metric explains the mention (below) |
+
+**Mentions a planned metric explains.** A word can name a concept without
+asking for it: "gross sales before *discount*" names Discount amount while
+asking for Gross revenue. The resolver records which words named each concept.
+`grounding_gaps` releases a required concept when either:
+
+- its metric is an input of a planned metric, proven on the parsed expressions;
+  or
+- those words appear, as whole words, in the planned metric's description,
+  synonyms, name or official definition.
+
+Substitution stays refused, because a different metric's own words do not name
+the concept asked for. A question that asks for two metrics still needs both.
+Measured on the SerbaData gold set, this raised accuracy with the ontology from
+80.5% to 93.5% (McNemar p=0.0004); see the
+[Phase A checkpoint](testing/supernova/phase-a-checkpoint.md).
 
 A binding fits an agent's loaded view only when the metric's claim fingerprint
 there equals the validated one. An agent pinned to an older view version
