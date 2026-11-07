@@ -15,7 +15,7 @@ from typing import Literal, Protocol
 
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.intelligence.context_graph import _claim_fingerprint
-from app.modules.intelligence.contracts import SemanticRef, utc_now
+from app.modules.intelligence.contracts import SemanticRef, fingerprint, utc_now
 from app.modules.ontology.contracts import (
     Actor,
     Concept,
@@ -45,6 +45,8 @@ class SemanticCatalog(Protocol):
 
     async def published_ids(self, user: dict) -> list[str]: ...
 
+    async def version(self, view_id: str, version: int) -> PublishedView | None: ...
+
 
 class SemanticViewCatalog:
     """Published Semantic Views, read through their owning service."""
@@ -70,6 +72,19 @@ class SemanticViewCatalog:
         from app.modules.intelligence.semantic_views import semantic_view_service
 
         return await semantic_view_service.is_visible(view_id, user)
+
+    async def version(self, view_id: str, version: int) -> PublishedView | None:
+        """One version of a view, published now or before."""
+        from app.modules.intelligence.semantic_views import semantic_view_service
+
+        view = await semantic_view_service._get(view_id)
+        row = await semantic_view_service._version(view_id, version) if view else None
+        if not view or not row:
+            return None
+        return PublishedView(
+            view_id=view_id, name=view["name"], version=row["version"],
+            fingerprint=row["fingerprint"], definition=row["definition"],
+        )
 
     async def published_ids(self, user: dict) -> list[str]:
         """Ids of the published views ``user`` can see."""
@@ -104,6 +119,58 @@ def public_metrics(definition: dict) -> dict[str, Claim]:
         for metric in model.metrics
         if metric.visibility == "public"
     }
+
+
+def meaning_fingerprint(definition: dict, metric_name: str) -> str | None:
+    """What a metric computes, with every name resolved to physical tables and columns.
+
+    A claim fingerprint changes when a dataset, field or time dimension is only
+    renamed (``route_date`` exposing ``plan_date``). This one does not: it reads
+    the base table, the expression, the time column, the filter, the unit and
+    the type after resolving field aliases. ``None`` when it cannot be resolved,
+    which callers treat as a real change.
+    """
+    from app.modules.agents.semantic.expressions import qualify_expression
+
+    try:
+        model = SemanticModelIR.from_ossie(definition)
+        metric = model.metric(metric_name)
+        raw = next(
+            (item for item in definition.get("metrics") or []
+             if isinstance(item, dict) and item.get("name") == metric_name),
+            None,
+        )
+        base = model.dataset(metric.base_dataset) if metric else None
+        if metric is None or raw is None or base is None:
+            return None
+        sources = {item.name: (item.source or item.name).casefold() for item in model.datasets}
+
+        def physical(expression: str, dataset: str) -> str:
+            text = qualify_expression(expression, dataset, model)
+            for name, source in sorted(sources.items(), key=lambda pair: -len(pair[0])):
+                text = text.replace(f"`{name}`.", f"{source}.")
+            return text.replace("`", "").replace(" ", "").casefold()
+
+        time = None
+        if metric.default_time_dimension:
+            dataset_name, _, field_name = metric.default_time_dimension.rpartition(".")
+            dataset = model.dataset(dataset_name or base.name)
+            field = dataset.field(field_name) if dataset else None
+            if dataset is None or field is None:
+                return None
+            time = physical(field.expression, dataset.name)
+        raw_filter = raw.get("filter")
+        return fingerprint({
+            "source": sources[base.name],
+            "expression": physical(metric.expression, base.name),
+            "time": time,
+            "filter": physical(raw_filter, base.name) if isinstance(raw_filter, str)
+            and raw_filter.strip() else raw_filter,
+            "unit": metric.unit,
+            "type": raw.get("type"),
+        })
+    except Exception:  # noqa: BLE001 - unresolvable meaning is never treated as unchanged
+        return None
 
 
 def _units_compatible(concept_unit: str | None, metric_unit: str | None) -> bool:
@@ -170,20 +237,66 @@ async def freshness(
     if claim is None:
         return "stale", view, f"Version {view.version} no longer publishes {representation.metric}"
     if claim.fingerprint != representation.claim_fingerprint:
+        if await _same_meaning(representation, view, catalog):
+            return (
+                "repin", view,
+                f"Version {view.version} renamed or redescribed {representation.metric}; "
+                "it computes the same thing",
+            )
         return (
             "stale", view,
             f"Version {view.version} changed the definition of {representation.metric}",
         )
+    # The claim names fields; a field kept under its name can still read another column.
+    if await _same_meaning(representation, view, catalog, unknown=True) is False:
+        return (
+            "stale", view,
+            f"Version {view.version} changed what {representation.metric} computes",
+        )
     return "repin", view, None
 
 
-def repinned(representation: Representation, view: PublishedView, actor: Actor) -> Representation:
+async def _same_meaning(
+    representation: Representation,
+    view: PublishedView,
+    catalog: SemanticCatalog,
+    *,
+    unknown: bool = False,
+) -> bool:
+    """Whether the validated version and ``view`` compute the metric identically.
+
+    ``unknown`` is returned when either side cannot be resolved.
+    """
+    reader = getattr(catalog, "version", None)
+    validated = (
+        await reader(representation.semantic.view_id, representation.semantic.version)
+        if reader is not None else None
+    )
+    if validated is None:
+        return unknown
+    before = meaning_fingerprint(validated.definition, representation.metric)
+    after = meaning_fingerprint(view.definition, representation.metric)
+    if before is None or after is None:
+        return unknown
+    return before == after
+
+
+def repinned(
+    representation: Representation,
+    view: PublishedView,
+    actor: Actor,
+    reason: str | None = None,
+) -> Representation:
+    """Pin the binding to ``view``; a cosmetic change also takes the new claim."""
+    claim = public_metrics(view.definition).get(representation.metric)
     return representation.model_copy(
         update={
             "actor": actor,
             "semantic": SemanticRef(
                 view_id=view.view_id, version=view.version, fingerprint=view.fingerprint
             ),
+            "claim_fingerprint": claim.fingerprint if claim else representation.claim_fingerprint,
+            "status_reason": reason,
             "validated_at": utc_now(),
         }
     )
@@ -206,7 +319,7 @@ async def refresh_view(
 
     catalog = catalog or SemanticViewCatalog()
     repository = repository or ontology_repository
-    counts = {"repinned": 0, "stale": 0}
+    counts = {"repinned": 0, "stale": 0, "cosmetic": 0}
     for representation in await repository.current("representations", Representation):
         if representation.semantic.view_id != view_id or representation.status != "VALIDATED":
             continue
@@ -214,10 +327,11 @@ async def refresh_view(
         if state == "repin" and view is not None:
             await repository.save(
                 "representations",
-                repinned(representation, view, actor),
+                repinned(representation, view, actor, reason),
                 expected_revision=representation.revision,
             )
             counts["repinned"] += 1
+            counts["cosmetic"] += reason is not None
         elif state == "stale":
             await repository.save(
                 "representations",
@@ -241,6 +355,13 @@ async def refresh_after_publish(view_id: str, user: dict) -> None:
         return
     if counts["repinned"] or counts["stale"]:
         logger.info("Ontology bindings after publishing %s: %s", view_id, counts)
+    if counts["cosmetic"]:
+        from app.modules.ontology import access
+
+        await access.audit(
+            "REPIN", "ONTOLOGY_REPRESENTATION", view_id, user,
+            error=f"{counts['cosmetic']} binding(s) kept: the metric computes the same thing",
+        )
     from app.modules.ontology.derived import compile_after_publish
 
     await compile_after_publish(view_id, user)

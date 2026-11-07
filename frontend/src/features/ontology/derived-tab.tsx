@@ -1,11 +1,27 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Network, RefreshCw, Search as SearchIcon } from 'lucide-react'
+import { Network, RefreshCw, Search as SearchIcon, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { LoadingLines } from '@/components/ui/loading-overlay'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -22,8 +38,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ontologyApi, type DerivedItem } from './api'
-import { useOntologyKey } from './model'
+import { ontologyApi, operationId, type DerivedItem, type DerivedPromotion } from './api'
+import { useDomains, useOntologyKey } from './model'
 
 const METHOD_LABELS: Record<string, string> = {
   dataset: 'Dataset with a grain',
@@ -46,7 +62,17 @@ function useGraph(items: DerivedItem[]) {
       relations.filter((item) => item.relation_type === type && item.target_key === key)
     const from = (key: string, type: string) =>
       relations.filter((item) => item.relation_type === type && item.source_key === key)
-    return { byKey, entities, into, from }
+    const kind = (key: string | null) => (key ? byKey.get(key)?.concept_kind : undefined)
+    /** Dimensions point at the entity they describe with RELATED_TO. */
+    const dimensionsOf = (key: string) =>
+      into(key, 'RELATED_TO').filter((item) => kind(item.source_key) === 'DIMENSION')
+    /** Entity-to-entity references, as opposed to the dimensions above. */
+    const links = (relations: DerivedItem[]) =>
+      relations.filter(
+        (item) =>
+          kind(item.source_key) === 'BUSINESS_ENTITY' && kind(item.target_key) === 'BUSINESS_ENTITY'
+      )
+    return { byKey, entities, into, from, dimensionsOf, links }
   }, [items])
 }
 
@@ -69,6 +95,7 @@ export function DerivedTab() {
   const layer = useQuery({ queryKey: key, queryFn: ontologyApi.derived })
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
+  const [proposing, setProposing] = useState(false)
   const query = useDeferredValue(search.trim().toLowerCase())
   const items = layer.data?.items ?? []
   const graph = useGraph(items)
@@ -106,15 +133,21 @@ export function DerivedTab() {
           approves it.
         </p>
         {items.length ? (
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={compile.isPending}
-            onClick={() => compile.mutate()}
-          >
-            <RefreshCw className='size-3.5' />
-            {compile.isPending ? 'Compiling…' : 'Compile now'}
-          </Button>
+          <div className='flex flex-wrap gap-2'>
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={compile.isPending}
+              onClick={() => compile.mutate()}
+            >
+              <RefreshCw className='size-3.5' />
+              {compile.isPending ? 'Compiling…' : 'Compile now'}
+            </Button>
+            <Button size='sm' onClick={() => setProposing(true)}>
+              <Send className='size-3.5' />
+              Propose to stewards
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -207,7 +240,7 @@ export function DerivedTab() {
                         {entity.roles.length ? entity.roles.join(', ') : '—'}
                       </TableCell>
                       <TableCell className='text-right tabular-nums'>
-                        {graph.into(entity.key, 'APPLIES_TO').length}
+                        {graph.dimensionsOf(entity.key).length}
                       </TableCell>
                       <TableCell className='text-right tabular-nums'>
                         {graph.into(entity.key, 'MEASURES').length}
@@ -224,6 +257,8 @@ export function DerivedTab() {
           )}
         </>
       )}
+
+      <PromoteDialog open={proposing} onOpenChange={setProposing} />
 
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className='w-full gap-0 overflow-y-auto sm:max-w-xl'>
@@ -260,15 +295,15 @@ function EntityDetail({
 }) {
   const label = (key: string | null) => (key ? graph.byKey.get(key)?.label ?? key : '')
   const dimensions = graph
-    .into(entity.key, 'APPLIES_TO')
+    .dimensionsOf(entity.key)
     .map((relation) => graph.byKey.get(relation.source_key ?? ''))
     .filter((item): item is DerivedItem => Boolean(item))
   const metrics = graph
     .into(entity.key, 'MEASURES')
     .map((relation) => graph.byKey.get(relation.source_key ?? ''))
     .filter((item): item is DerivedItem => Boolean(item))
-  const outgoing = graph.from(entity.key, 'RELATED_TO')
-  const incoming = graph.into(entity.key, 'RELATED_TO')
+  const outgoing = graph.links(graph.from(entity.key, 'RELATED_TO'))
+  const incoming = graph.links(graph.into(entity.key, 'RELATED_TO'))
 
   return (
     <>
@@ -316,7 +351,7 @@ function EntityDetail({
         {metrics.length ? (
           <ul className='flex flex-col gap-2'>
             {metrics.map((metric) => {
-              const parts = graph.from(metric.key, 'DERIVES')
+              const parts = graph.into(metric.key, 'DERIVES')
               return (
                 <li key={metric.key} className='text-sm'>
                   <div className='flex flex-wrap items-center gap-2'>
@@ -333,7 +368,7 @@ function EntityDetail({
                   ) : null}
                   {parts.length ? (
                     <p className='text-muted-foreground'>
-                      Built from {parts.map((part) => label(part.target_key)).join(' and ')}
+                      Built from {parts.map((part) => label(part.source_key)).join(' and ')}
                     </p>
                   ) : null}
                 </li>
@@ -392,6 +427,136 @@ function EntityDetail({
           ))}
         </ul>
       </Section>
+    </>
+  )
+}
+
+const NO_HOME = 'none'
+
+function PromoteDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className='max-h-[85dvh] overflow-y-auto sm:max-w-lg'>
+        {open ? <PromoteForm onOpenChange={onOpenChange} /> : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function PromoteForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+  const client = useQueryClient()
+  const prefix = useOntologyKey()
+  const domains = useDomains()
+  const [home, setHome] = useState(NO_HOME)
+  const [key] = useState(operationId)
+  const [result, setResult] = useState<DerivedPromotion | null>(null)
+  const propose = useMutation({
+    mutationFn: () =>
+      ontologyApi.proposeDerived({
+        operation_id: key,
+        shared_domain_id: home === NO_HOME ? null : home,
+      }),
+    onSuccess: (value) => {
+      setResult(value)
+      void client.invalidateQueries({ queryKey: prefix })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  if (result) {
+    const reasons = new Map<string, string[]>()
+    for (const item of result.skipped) {
+      reasons.set(item.reason, [...(reasons.get(item.reason) ?? []), item.label])
+    }
+    return (
+      <>
+        <DialogHeader>
+          <DialogTitle>
+            {result.proposals.length
+              ? `${result.proposals.length} proposal${result.proposals.length === 1 ? '' : 's'} sent for review`
+              : 'Nothing new to propose'}
+          </DialogTitle>
+          <DialogDescription>
+            {result.proposals.length
+              ? 'Each domain steward reviews the proposal for their domain under Proposals.'
+              : 'Everything Nova derived is already official or waiting for review.'}
+          </DialogDescription>
+        </DialogHeader>
+        {result.proposals.length ? (
+          <ul className='grid gap-1 text-sm'>
+            {result.proposals.map((proposal) => (
+              <li key={proposal.id}>
+                <span className='font-medium'>{proposal.title}</span>{' '}
+                <span className='text-muted-foreground'>
+                  · {proposal.changes.length} change{proposal.changes.length === 1 ? '' : 's'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {reasons.size ? (
+          <section className='grid gap-2 border-t pt-3 text-sm'>
+            <h3 className='font-medium'>Left out</h3>
+            {[...reasons].map(([reason, labels]) => (
+              <div key={reason}>
+                <p className='text-muted-foreground'>{reason}</p>
+                <p>{labels.join(', ')}</p>
+              </div>
+            ))}
+          </section>
+        ) : null}
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        </DialogFooter>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Propose to stewards</DialogTitle>
+        <DialogDescription>
+          Nova drafts one proposal per domain with the metrics, entities and links it proved,
+          each with its evidence. A Semantic View belongs to the domain whose approved concepts
+          it computes. Stewards approve or reject; nothing becomes official before that.
+        </DialogDescription>
+      </DialogHeader>
+      <div className='grid gap-1.5'>
+        <Label htmlFor='derived-home'>Domain for shared entities</Label>
+        <Select value={home} onValueChange={setHome}>
+          <SelectTrigger id='derived-home' className='w-full'>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_HOME}>Leave shared entities out</SelectItem>
+            {(domains.data ?? [])
+              .filter((item) => item.status === 'ACTIVE')
+              .map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.qualified_path}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        <p className='text-xs text-muted-foreground'>
+          An entity several domains use, such as Outlet, needs one home domain.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant='outline' onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button disabled={propose.isPending} onClick={() => propose.mutate()}>
+          {propose.isPending ? 'Drafting…' : 'Draft proposals'}
+        </Button>
+      </DialogFooter>
     </>
   )
 }

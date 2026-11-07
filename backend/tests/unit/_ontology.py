@@ -125,6 +125,7 @@ def definition(*, revenue_expression: str = "SUM(sales.revenue)", drop_revenue: 
 class FakeCatalog:
     def __init__(self) -> None:
         self.views: dict[str, PublishedView] = {}
+        self.history: dict[tuple[str, int], PublishedView] = {}
         self.hidden: dict[str, set[str]] = {}
         self.publish("sales_sv", definition())
 
@@ -138,6 +139,7 @@ class FakeCatalog:
             definition=value,
         )
         self.views[view_id] = view
+        self.history[(view_id, view.version)] = view
         return view
 
     def unpublish(self, view_id: str) -> None:
@@ -148,6 +150,9 @@ class FakeCatalog:
 
     async def visible(self, view_id, user):
         return view_id in self.views and user["username"] not in self.hidden.get(view_id, set())
+
+    async def version(self, view_id, version):
+        return self.history.get((view_id, version))
 
     async def published_ids(self, user):
         return [view_id for view_id in sorted(self.views) if await self.visible(view_id, user)]

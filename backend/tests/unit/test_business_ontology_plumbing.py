@@ -228,7 +228,7 @@ async def test_publish_hook_never_undoes_a_publication(monkeypatch, caplog):
     assert "drift check failed" in caplog.text
 
     async def counted(view_id, actor):
-        return {"repinned": 1, "stale": 0}
+        return {"repinned": 1, "stale": 0, "cosmetic": 0}
 
     monkeypatch.setattr(representations, "refresh_view", counted)
     await representations.refresh_after_publish("sales_sv", ADMIN)

@@ -19,7 +19,7 @@ import {
   useOntologyKey,
   useWorkingConcepts,
 } from './model'
-import { ReviewDialog } from './proposal-forms'
+import { ReviewDialog, usePublishedViews } from './proposal-forms'
 
 type Filter = 'review' | 'approved' | 'applied' | 'closed'
 
@@ -60,6 +60,7 @@ const SOURCE_LABEL: Record<Proposal['source'], string> = {
   AGENT: 'Suggested by an agent',
   AUTOPILOT: 'Suggested by Autopilot',
   NEWS: 'Suggested from News',
+  ENGINE: 'Derived by Nova, sent',
 }
 
 export function ProposalsTab() {
@@ -73,6 +74,7 @@ export function ProposalsTab() {
     queryFn: () => ontologyApi.proposals(),
   })
   const domains = useDomains()
+  const views = usePublishedViews()
   const concepts = useWorkingConcepts()
   const domainMap = useMemo(
     () => new Map((domains.data ?? []).map((item) => [item.id, item])),
@@ -117,7 +119,12 @@ export function ProposalsTab() {
               <ProposalCard
                 proposal={proposal}
                 domains={domainMap}
-                names={conceptNames(proposal.changes, concepts.data?.concepts ?? [], domainMap)}
+                names={conceptNames(
+                  proposal.changes,
+                  concepts.data?.concepts ?? [],
+                  domainMap,
+                  views.data ?? []
+                )}
                 onReview={(decision) => setReviewing({ proposal, decision })}
               />
             </li>
@@ -192,6 +199,9 @@ function ProposalCard({
         {proposal.changes.map((change, index) => (
           <li key={index} className='break-words'>
             {describeChange(change, names)}
+            {change.target === 'relation' && change.justification ? (
+              <p className='text-xs text-muted-foreground'>{change.justification}</p>
+            ) : null}
           </li>
         ))}
       </ul>

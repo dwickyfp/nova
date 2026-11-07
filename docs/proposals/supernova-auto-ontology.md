@@ -1,6 +1,6 @@
 # Proposal: Supernova Auto-Ontology
 
-Status: Fase 1 diimplementasikan 7 November 2026 ([derived layer](../arch-18-business-ontology.md#derived-layer)); fase 2–5 belum.
+Status: Fase 1 dan 2 diimplementasikan 7 November 2026 ([derived layer](../arch-18-business-ontology.md#derived-layer), [drift](../arch-18-business-ontology.md#drift), [promosi](../arch-18-business-ontology.md#promotion)); fase 3–5 belum.
 
 Tujuan: business ontology yang dibangun dan dirawat oleh engine Nova, bukan diketik manusia: lapisan semantik berbasis graf di atas data yang membuat query lebih deterministik, konteks untuk agent lebih baik, dan jawaban bisa dijelaskan. Manusia tetap memutuskan *makna resmi*, tapi pekerjaannya berubah dari menulis menjadi meninjau bukti.
 

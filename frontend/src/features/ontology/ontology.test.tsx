@@ -117,6 +117,7 @@ function mount(node: React.ReactNode) {
 
 beforeEach(() => {
   vi.spyOn(ontologyApi, 'domains').mockResolvedValue([finance])
+  vi.spyOn(semanticViewsApi, 'list').mockResolvedValue([])
 })
 
 afterEach(async () => {
@@ -391,7 +392,9 @@ it('shows derived entities with roles, official links and how metrics are built'
     derived({ key: 'metric:v.net_revenue', concept_kind: 'METRIC', label: 'Net revenue', unit: 'IDR', official_concept: 'Penjualan.NetRevenue' }),
     derived({ key: 'metric:v.returned_value', concept_kind: 'METRIC', label: 'Returned value' }),
     derived({ key: 'rel:m', item_type: 'relation', relation_type: 'MEASURES', source_key: 'metric:v.net_revenue', target_key: 'entity:retail.sales_orders' }),
-    derived({ key: 'rel:d', item_type: 'relation', relation_type: 'DERIVES', source_key: 'metric:v.net_revenue', target_key: 'metric:v.returned_value' }),
+    derived({ key: 'rel:d', item_type: 'relation', relation_type: 'DERIVES', source_key: 'metric:v.returned_value', target_key: 'metric:v.net_revenue' }),
+    derived({ key: 'dimension:retail.employees.city', concept_kind: 'DIMENSION', label: 'City' }),
+    derived({ key: 'rel:c', item_type: 'relation', relation_type: 'RELATED_TO', source_key: 'dimension:retail.employees.city', target_key: 'entity:retail.employees' }),
     derived({ key: 'rel:r', item_type: 'relation', relation_type: 'RELATED_TO', source_key: 'entity:retail.sales_orders', target_key: 'entity:retail.employees', role: 'salesman' }),
   ]
   vi.spyOn(ontologyApi, 'derived').mockResolvedValue({ items, compilations: [], compiler_version: 'nova-derived:1' })
@@ -411,4 +414,45 @@ it('offers to compile when nothing is derived yet', async () => {
   await expect.element(screen.getByText('Nothing derived yet')).toBeVisible()
   await screen.getByRole('button', { name: 'Compile now' }).click()
   expect(compile).toHaveBeenCalledOnce()
+})
+
+it('drafts proposals per domain from the derived layer and says what it left out', async () => {
+  const items: DerivedItem[] = [
+    derived({ key: 'entity:retail.outlets', concept_kind: 'BUSINESS_ENTITY', label: 'Outlet' }),
+  ]
+  vi.spyOn(ontologyApi, 'derived').mockResolvedValue({ items, compilations: [], compiler_version: 'nova-derived:2' })
+  const propose = vi.spyOn(ontologyApi, 'proposeDerived').mockResolvedValue({
+    proposals: [proposal({ id: 'prp_e', title: 'Derived meaning for Finance', source: 'ENGINE' })],
+    skipped: [{ key: 'entity:retail.outlets', label: 'Outlet', reason: 'Several domains use this entity; choose a domain for shared entities' }],
+  })
+  const screen = await mount(<DerivedTab />)
+  await screen.getByRole('button', { name: 'Propose to stewards' }).click()
+  await screen.getByRole('button', { name: 'Draft proposals' }).click()
+  expect(propose).toHaveBeenCalledWith(expect.objectContaining({ shared_domain_id: null }))
+  await expect.element(screen.getByText('1 proposal sent for review')).toBeVisible()
+  await expect.element(screen.getByText('Derived meaning for Finance')).toBeVisible()
+  await expect.element(screen.getByText(/Several domains use this entity/)).toBeVisible()
+})
+
+it('labels engine proposals and shows why each link was proposed', async () => {
+  signIn('sam', 'finance_steward')
+  vi.spyOn(ontologyApi, 'concepts').mockResolvedValue(list('working', [revenue], null))
+  vi.spyOn(ontologyApi, 'proposals').mockResolvedValue([
+    proposal({
+      source: 'ENGINE',
+      changes: [
+        { target: 'relation', op: 'create', source_id: 'con_rev', type: 'DERIVES', target_id: 'con_rev', justification: 'Derived by Nova (95%) from retail_sales v3 metric:net_revenue' },
+      ],
+    }),
+  ])
+  const screen = await mount(<ProposalsTab />)
+  await expect.element(screen.getByText(/Derived by Nova, sent by ana/)).toBeVisible()
+  await expect.element(screen.getByText(/from retail_sales v3 metric:net_revenue/)).toBeVisible()
+})
+
+it('names the Semantic View a proposed binding uses', () => {
+  const names = conceptNames([], [revenue], new Map(), [{ id: 'v-uuid', name: 'retail_sales' }])
+  expect(
+    describeChange({ target: 'representation', op: 'create', concept_id: 'con_rev', view_id: 'v-uuid', metric: 'net_revenue' }, names)
+  ).toBe('Compute Finance.NetRevenue with retail_sales metric net_revenue')
 })

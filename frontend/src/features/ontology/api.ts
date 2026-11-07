@@ -156,7 +156,7 @@ export type Proposal = {
   revision: number
   title: string
   rationale: string
-  source: 'USER' | 'BOOTSTRAP' | 'AGENT' | 'AUTOPILOT' | 'NEWS'
+  source: 'USER' | 'BOOTSTRAP' | 'AGENT' | 'AUTOPILOT' | 'NEWS' | 'ENGINE'
   base_release_id: string | null
   changes: Change[]
   domain_ids: string[]
@@ -254,6 +254,12 @@ export type DerivedLayer = {
   compiler_version: string
 }
 
+/** Proposals Nova drafted from the derived layer, and what it left for a person. */
+export type DerivedPromotion = {
+  proposals: Proposal[]
+  skipped: { key: string; label: string; reason: string }[]
+}
+
 const id = encodeURIComponent
 
 /** A fresh idempotency key; a retried request reuses the one it was sent with. */
@@ -308,6 +314,8 @@ export const ontologyApi = {
       '/ontology/derived/compile',
       viewId ? { view_id: viewId } : {}
     ),
+  proposeDerived: (body: { operation_id: string; shared_domain_id?: string | null }) =>
+    api.post<DerivedPromotion>('/ontology/derived/propose', body),
 
   releases: () => api.get<ReleaseSummary[]>('/ontology/releases'),
   currentRelease: () => api.get<CurrentRelease>('/ontology/releases/current'),

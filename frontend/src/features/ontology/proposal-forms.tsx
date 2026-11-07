@@ -109,7 +109,7 @@ function useMetricOptions(viewId: string) {
   })
 }
 
-function usePublishedViews() {
+export function usePublishedViews() {
   return useQuery({
     queryKey: useOntologyKey('semantic-views'),
     queryFn: async () =>

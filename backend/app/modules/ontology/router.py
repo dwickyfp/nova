@@ -13,6 +13,7 @@ from app.modules.ontology import access
 from app.modules.ontology.bootstrap import BootstrapRequest, bootstrap
 from app.modules.ontology.contracts import Actor, Proposal, Release
 from app.modules.ontology.derived import compile_view, visible_layer
+from app.modules.ontology.promotion import PromotionRequest, propose_from_derived
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_service
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
 from app.modules.ontology.stewardship import ProposalCreate, ReviewRequest, stewardship_service
@@ -149,6 +150,12 @@ async def compile_derived(body: DerivedCompile, user: CurrentUser):
     return {
         "compilations": [item.model_dump(mode="json", exclude={"actor"}) for item in compilations]
     }
+
+
+@router.post("/derived/propose", status_code=201)
+async def propose_derived(body: PromotionRequest, user: CurrentUser):
+    """One proposal per domain for what Nova derived but no steward approved yet."""
+    return await propose_from_derived(body, user, stewardship_service)
 
 
 @router.post("/bootstrap", status_code=201)

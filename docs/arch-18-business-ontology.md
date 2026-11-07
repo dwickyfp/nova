@@ -92,7 +92,19 @@ Publishing a Semantic View version re-checks every validated binding to that
 view:
 - If the metric's claim fingerprint is unchanged (dataset, expression, unit,
   time dimension, filter, type), the binding is re-pinned to the new version.
-- If the claim changed or the metric is gone, the binding becomes `STALE`.
+- If the claim changed only cosmetically, the binding is re-pinned with a
+  reason ("Version N renamed or redescribed M; it computes the same thing") and
+  its claim fingerprint moves to the new claim. Cosmetic means the meaning
+  fingerprint is equal: names are resolved to what they read, so the dataset
+  becomes its physical source, the default time dimension becomes its column,
+  and expressions are qualified with sources instead of dataset names. A
+  renamed time dimension or dataset is cosmetic; a different column, source,
+  filter, unit or type is not. Publication audits these re-pins as `REPIN`.
+- If the claim changed otherwise, or the metric is gone, the binding becomes
+  `STALE`.
+- If the claim is unchanged but its meaning is not (the same dataset name now
+  reads another table, or the time dimension another column), the binding also
+  becomes `STALE`: "Version N changed what M computes".
 
 A stale binding is never usable. Release preparation and publication re-check
 freshness themselves, so the result does not depend on the drift hook having
@@ -109,10 +121,10 @@ deterministic graph. It never needs a person to type it:
 | Item | Rule | Base confidence |
 |---|---|---|
 | `BUSINESS_ENTITY` | A dataset, keyed by its physical table, so `outlets` in three views is one Outlet | 0.9 with a grain, 0.7 without |
-| `DIMENSION` that `APPLIES_TO` its entity | A categorical or date field. Grain keys, join keys, identifier-named fields and numeric amounts are left out | 0.9 |
+| `DIMENSION` `RELATED_TO` its entity | A categorical or date field. Grain keys, join keys, identifier-named fields and numeric amounts are left out | 0.9 |
 | `METRIC` that `MEASURES` its base entity | A public metric, with its claim fingerprint | 1.0 |
 | `RELATED_TO` between entities, with a role | A many-to-one relationship. The key column names the role (`salesman_id` is the salesman role of Employee) unless it names the target (`outlet_id`) | 0.95, 0.6 if the cardinality is unknown |
-| `DERIVES` between metrics | Proven on the parsed expression: `SUM(a)/SUM(b)` is built from the metrics `SUM(a)` and `SUM(b)`; `SUM(a - b)` from `SUM(a)` and `SUM(b)`. Only aggregates over the same base dataset match | 0.95 |
+| `DERIVES` from an input metric to the metric built from it | Proven on the parsed expression: `SUM(a)/SUM(b)` is built from the metrics `SUM(a)` and `SUM(b)`; `SUM(a - b)` from `SUM(a)` and `SUM(b)`. Only aggregates over the same base dataset match | 0.95 |
 | `EQUIVALENT_TO` between metrics | The same claim fingerprint in two views | 0.9 |
 
 Each further view that proves an item adds 0.05, up to 1.0. Every item keeps
@@ -136,10 +148,39 @@ a relation is shown only when both ends are. A derived metric links to the
 approved concept with a validated binding to it, when the reader can see that
 concept's domain.
 
+`APPLIES_TO` stays reserved for policies, as the relation rules require.
+
 **Authority.** Derived items are context and candidates. They are never
-released, never bound and never override an approved concept. Promotion to
-official meaning, use in Studio retrieval, and LLM enrichment are later phases
-of the [auto-ontology proposal](proposals/supernova-auto-ontology.md).
+released, never bound and never override an approved concept. Use in Studio
+retrieval and LLM enrichment are later phases of the
+[auto-ontology proposal](proposals/supernova-auto-ontology.md).
+
+### Promotion
+
+Code: `backend/app/modules/ontology/promotion.py`. API:
+`POST /ontology/derived/propose {operation_id, shared_domain_id?}`. Console:
+**Propose to stewards** on the Derived tab.
+
+Nova turns what it derived into ordinary proposals with `source=ENGINE`, one
+per domain, submitted by the caller. Stewards review them like any proposal,
+and the caller can never review their own.
+
+- A view belongs to the domain that holds most approved concepts bound to it.
+  A view with no such concept is left out, with a reason ("bootstrap it once").
+- Each visible metric that is neither official nor already in an open
+  proposal becomes a `METRIC` concept with a binding to its view.
+- An entity goes to the one domain whose metrics or related entities use it.
+  An entity several domains use goes to `shared_domain_id`, or is left out
+  with a reason. An approved entity with the same label is reused.
+- `MEASURES`, `DERIVES` and entity-to-entity `RELATED_TO` links are proposed
+  when both ends are official or created in the same draft. Each carries a
+  justification with its confidence, view, version and source, and the role
+  when there is one. A link whose end is approved later is proposed on a later
+  run.
+- Names never collide with a domain's slugs, labels or aliases, and a draft
+  holds at most 200 changes. Rerunning drafts nothing already open, and the
+  operation id is derived from the request, domain and content, so a retry
+  creates nothing twice. Every run is audited as `PROPOSE_DERIVED`.
 
 ## Studio grounding
 
@@ -206,7 +247,7 @@ limited to the agent's Semantic Views and to views the caller can see.
 ## Console page
 
 Console → AI & ML → **Business Ontology** (`/business-ontology`,
-`frontend/src/features/ontology/`). The page has four tabs:
+`frontend/src/features/ontology/`). The page has five tabs:
 
 - **Concepts.** Shows the published release by default, or the latest
   approved definitions. Opening a concept shows:
@@ -218,8 +259,13 @@ Console → AI & ML → **Business Ontology** (`/business-ontology`,
   published metric), a revision, a link or a deprecation. A deprecation also
   retires the concept's links and revokes its bindings. **Draft from a
   Semantic View** runs the bootstrap.
+- **Derived.** The entities Nova derived, with their roles, dimensions,
+  metrics, related entities and evidence. **Compile now** recompiles the
+  visible views; **Propose to stewards** drafts the per-domain proposals
+  described under [Promotion](#promotion) and lists what it left out and why.
 - **Proposals.** Grouped as in review, approved, applied and closed. Each
-  proposal shows its changes in words, the domains it touches, which domains
+  proposal shows who or what drafted it, its changes in words (with each
+  link's justification and each binding's view name), the domains it touches, which domains
   still wait for a steward, and its reviews. A steward of an affected domain
   approves or rejects with a rationale. The submitter can withdraw but never
   review. An approved proposal whose application stopped can be finished.

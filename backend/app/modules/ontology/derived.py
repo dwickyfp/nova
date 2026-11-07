@@ -5,12 +5,13 @@ Semantic View already proves, so the graph is never empty:
 
 - a dataset with a grain is a business entity (one per physical table, merged
   across views);
-- a categorical or time field is a dimension that applies to its entity;
+- a categorical or time field is a dimension related to its entity;
 - a public metric is a metric that measures its base entity;
 - a many-to-one relationship links two entities, named by the role its key
   plays (``salesman_id`` makes the salesman role of Employee);
-- a metric whose expression is built from other metrics derives from them,
-  proven on the parsed expression, never guessed from names;
+- a metric built from other metrics is derived from them (``DERIVES`` points
+  from each input to the result, as in the official rules), proven on the
+  parsed expression, never guessed from names;
 - metrics with the same claim fingerprint in different views are equivalent.
 
 Every item records the evidence it came from and a rule-based confidence. The
@@ -34,7 +35,7 @@ from app.modules.ontology.contracts import Actor, ConceptKind, OntologyRecord, R
 
 logger = logging.getLogger(__name__)
 
-COMPILER_VERSION = "nova-derived:1"
+COMPILER_VERSION = "nova-derived:2"
 #: Field types that hold amounts and counts; they feed metrics, not breakdowns.
 NUMERIC = frozenset(
     {"integer", "int", "bigint", "smallint", "tinyint", "decimal", "double", "float",
@@ -142,8 +143,8 @@ def singular(name: str) -> str:
     lower = last.lower()
     if lower.endswith("ies") and len(lower) > 4:
         last = last[:-3] + "y"
-    elif lower.endswith(("ses", "xes", "ches", "shes")):
-        last = last[:-2]
+    elif lower.endswith(("sses", "xes", "ches", "shes", "statuses", "buses")):
+        last = last[:-2]  # addresses, boxes, batches; not warehouses or purchases
     elif lower.endswith("s") and not lower.endswith(("ss", "us", "is")) and len(lower) > 3:
         last = last[:-1]
     return " ".join([*words[:-1], last])
@@ -313,8 +314,8 @@ def derive(view) -> list[Draft]:
             ))
             drafts.append(Draft(
                 item_type="relation",
-                key=relation_key(RelationType.APPLIES_TO, dimension, key),
-                relation_type=RelationType.APPLIES_TO, source_key=dimension, target_key=key,
+                key=relation_key(RelationType.RELATED_TO, dimension, key),
+                relation_type=RelationType.RELATED_TO, source_key=dimension, target_key=key,
                 evidence=evidence("field", f"field:{dataset.name}.{item.name}"),
             ))
 
@@ -395,10 +396,10 @@ def derive(view) -> list[Draft]:
         for dependency in sorted(dependencies - {metric.name}):
             if dependency not in claims:
                 continue
-            target = metric_key(view.view_id, dependency)
+            source = metric_key(view.view_id, dependency)
             drafts.append(Draft(
-                item_type="relation", key=relation_key(RelationType.DERIVES, key, target),
-                relation_type=RelationType.DERIVES, source_key=key, target_key=target,
+                item_type="relation", key=relation_key(RelationType.DERIVES, source, key),
+                relation_type=RelationType.DERIVES, source_key=source, target_key=key,
                 evidence=evidence("metric_expression", f"metric:{metric.name}"),
             ))
     return drafts

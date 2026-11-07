@@ -68,6 +68,10 @@ def test_naming_rules():
     assert singular("Route stop items") == "Route stop item"
     assert singular("Categories") == "Category"
     assert singular("Status") == "Status"
+    assert singular("Warehouses") == "Warehouse"
+    assert singular("Purchases") == "Purchase"
+    assert singular("Addresses") == "Address"
+    assert singular("Order statuses") == "Order status"
     assert role_name("salesman_id") == "salesman"
     assert role_name("driver_id") == "driver"
 
@@ -108,13 +112,15 @@ async def test_three_lab_views_give_a_traversable_graph_without_human_input():
     assert ("sales_orders", "outlets", None) in related
 
     derives = relations(found, "DERIVES")
-    assert {("net_revenue", "sales_before_returns", None),
-            ("net_revenue", "returned_value", None),
-            ("return_rate", "returned_units", None),
-            ("return_rate", "units_sold", None)} <= derives
+    # DERIVES points from each input to the metric built from it.
+    assert {("sales_before_returns", "net_revenue", None),
+            ("returned_value", "net_revenue", None),
+            ("returned_units", "return_rate", None),
+            ("units_sold", "return_rate", None)} <= derives
     # COUNT(*) of routes is not COUNT(*) of stops.
-    assert ("avg_distance_gap_km", "route_count", None) in derives
-    assert ("avg_distance_gap_km", "stop_count", None) not in derives
+    assert ("route_count", "avg_distance_gap_km", None) in derives
+    assert ("stop_count", "avg_distance_gap_km", None) not in derives
+    assert not relations(found, "APPLIES_TO")  # reserved for policies
 
     dimensions = {
         item.label for item in found.values()
@@ -191,7 +197,7 @@ async def test_publishing_a_view_compiles_it(monkeypatch):
         calls.append(view_id)
 
     async def refresh_view(view_id, actor, catalog=None, repository=None):
-        return {"repinned": 0, "stale": 0}
+        return {"repinned": 0, "stale": 0, "cosmetic": 0}
 
     monkeypatch.setattr(representations, "refresh_view", refresh_view)
     monkeypatch.setattr(

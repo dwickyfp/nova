@@ -273,7 +273,7 @@ class Review(Contract):
 class Proposal(OntologyRecord):
     title: str = Field(min_length=1, max_length=200)
     rationale: str = Field(min_length=1, max_length=4000)
-    source: Literal["USER", "BOOTSTRAP", "AGENT", "AUTOPILOT", "NEWS"] = "USER"
+    source: Literal["USER", "BOOTSTRAP", "AGENT", "AUTOPILOT", "NEWS", "ENGINE"] = "USER"
     base_release_id: str | None = Field(default=None, max_length=64)
     changes: list[Change] = Field(min_length=1, max_length=200)
     domain_ids: list[str] = Field(min_length=1, max_length=32)
