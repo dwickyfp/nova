@@ -18,9 +18,12 @@ from app.modules.ontology.evaluation.service import (
     AnswerRunRequest,
     ClaimRunRequest,
     GoldRequest,
+    JudgeRunRequest,
     ReviewBatch,
 )
 from app.modules.ontology.evidence.discovery import JoinRunRequest
+from app.modules.ontology.learning import LearnRequest
+from app.modules.ontology.osi import OsiImport
 from app.modules.ontology.promotion import PromotionRequest, propose_from_derived
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_service
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
@@ -200,6 +203,39 @@ async def evaluation_claims(body: ClaimRunRequest, user: CurrentUser):
     from app.modules.ontology.evaluation.service import evaluation_service
 
     return _run_view(await evaluation_service.start_claims(body, user))
+
+
+@router.post("/learn", status_code=201)
+async def learn_from_evidence(body: LearnRequest, user: CurrentUser):
+    """Steward proposals from the claim audit and from failed and refused gold questions."""
+    from app.modules.ontology.evaluation.service import evaluation_service
+    from app.modules.ontology.learning import learn
+
+    return await learn(body, user, evaluation_service, stewardship_service)
+
+
+@router.get("/osi/export")
+async def osi_export(user: CurrentUser, release_id: str | None = None):
+    """The release as Ossie 0.1.1 documents, one per bound Semantic View the caller may see."""
+    from app.modules.ontology.osi import export_release
+
+    return await export_release(user, release_id)
+
+
+@router.post("/osi/import")
+async def osi_import(body: OsiImport, user: CurrentUser):
+    """Read exported documents back and prove whether the release survived intact."""
+    from app.modules.ontology.osi import read_documents
+
+    await access.require_admin("READ", "ONTOLOGY_RELEASE", "osi", user)
+    return read_documents(body.documents)
+
+
+@router.post("/evaluation/judge", status_code=201)
+async def evaluation_judge(body: JudgeRunRequest, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.start_judge(body, user))
 
 
 @router.post("/evaluation/joins", status_code=201)

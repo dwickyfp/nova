@@ -319,6 +319,25 @@ export type ClaimSummary = {
   population?: Record<string, number>
 }
 
+export type DriftFinding = {
+  column: string
+  rule: 'key_no_longer_unique' | 'null_rate_rose' | 'distinct_values_shifted' | 'join_lost_integrity'
+  before: number
+  after: number
+}
+
+export type OsiExport = {
+  release_id: string
+  manifest_hash: string
+  complete: boolean
+  documents: { view_id: string; name: string; document: Record<string, unknown> }[]
+}
+
+export type LearnReport = {
+  proposals: { id: string; title: string; changes: number; question?: string }[]
+  skipped: Record<string, string>[]
+}
+
 export type JoinScore = {
   precision: Measured
   recall: Measured
@@ -347,6 +366,8 @@ export type JoinSummary = {
     positives: number
     bins: CalibrationBin[]
   } | null
+  drift: { compared_with: string; findings: DriftFinding[] } | null
+  history: { families: number; pairs: number } | null
   decisions: {
     labelled: number
     automatic: Measured
@@ -398,7 +419,7 @@ export type OntologyMetrics = {
 
 export type EvaluationRun = {
   id: string
-  kind: 'gold' | 'answers' | 'claims' | 'joins'
+  kind: 'gold' | 'answers' | 'claims' | 'joins' | 'judge'
   set_name: string
   version: number
   mode: 'with_ontology' | 'without_ontology' | null
@@ -501,6 +522,10 @@ export const ontologyApi = {
     api.post<EvaluationRun>('/ontology/evaluation/answers', body),
   startClaims: () => api.post<EvaluationRun>('/ontology/evaluation/claims', {}),
   startJoins: () => api.post<EvaluationRun>('/ontology/evaluation/joins', {}),
+  startJudge: (setName: string) =>
+    api.post<EvaluationRun>('/ontology/evaluation/judge', { set_name: setName }),
+  learn: () => api.post<LearnReport>('/ontology/learn', { operation_id: operationId() }),
+  exportOsi: () => api.get<OsiExport>('/ontology/osi/export'),
   startGold: (body: { set_name: string; view_ids: string[]; per_metric?: number }) =>
     api.post<EvaluationRun>('/ontology/evaluation/gold', body),
   stepRun: (runId: string) =>

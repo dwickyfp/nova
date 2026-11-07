@@ -55,6 +55,23 @@ export function ReleasesTab() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: prefix })
   const onError = (error: Error) => toast.error(error.message)
 
+  // The release as Ossie 0.1.1 documents: any OSI reader sees official meanings, Nova reads it
+  // back without loss.
+  const exportOsi = useMutation({
+    mutationFn: ontologyApi.exportOsi,
+    onSuccess: (exported) => {
+      const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `${exported.release_id}-osi.json`
+      link.click()
+      URL.revokeObjectURL(link.href)
+      toast.success(
+        `${exported.documents.length} OSI document${exported.documents.length === 1 ? '' : 's'} exported${exported.complete ? '' : ' (only what you can see)'}`
+      )
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
   const prepare = useMutation({
     mutationFn: () => ontologyApi.prepareRelease(note.trim()),
     onSuccess: (release) => {
@@ -119,6 +136,9 @@ export function ReleasesTab() {
           </div>
           <Button disabled={prepare.isPending} onClick={() => prepare.mutate()}>
             {prepare.isPending ? 'Preparing' : 'Prepare a release'}
+          </Button>
+          <Button variant='outline' disabled={exportOsi.isPending} onClick={() => exportOsi.mutate()}>
+            {exportOsi.isPending ? 'Exporting' : 'Export as OSI'}
           </Button>
         </div>
       ) : (

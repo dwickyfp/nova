@@ -136,8 +136,62 @@ Overview mendapat baris baru "Joins found in the data", "Decided by Nova", dan "
 
 Tab Evaluation mendapat tombol **Find joins** dan tabel kandidat. Defaultnya menampilkan join yang diusulkan, dengan filter "Needs review", "Accepted by Nova", "Rejected by Nova", dan "Every pair".
 
-## Berikutnya
+## Tindak lanjut: sisa B dan D dituntaskan (8 November 2026)
 
-1. Skema umum (TPC-H berbentuk lab) untuk membuktikan generalitas, sebagai database ketiga untuk validasi silang.
-2. Menyambungkan join yang diterima ke Semantic View sebagai usulan relasi bagi pemilik view (Phase D, langkah aksi).
-3. Penambangan riwayat query sebagai detektor kedua (Phase B, sisa).
+### Generalitas pada skema umum (TPC-H)
+
+- **Database lab.** `NOVA_TPCH_LAB` dibuat dengan bentuk TPC-H: 8 tabel, sekitar SF 0,01, 59.864 lineitem, dan 9 FK satu kolom sebagai gold. Generatornya deterministik, di `tests/benchmark/tpch_lab/seed.py`.
+- **Baseline jujur.** Aturan Phase B sebelumnya mendapat **F1 0,00**. Aturan itu overfit pada konvensi `*_id`.
+- **Generalisasi aturan nama.** Empat konvensi TPC-H kini dikenali:
+  - kata kunci yang menempel (`custkey` = `cust` + `key`);
+  - prefiks tabel pendek (`o_`, `ps_`);
+  - singkatan (`cust` → `customer`, `supp` → `supplier`);
+  - nama yang sama setelah prefiks dibuang (`o_custkey` = `c_custkey`).
+- **Hasil di TPC-H:** **9/9 FK ditemukan, tanpa positif palsu.**
+- **Hasil tiga database** (`evn_cbb2…`, lalu `evn_e145…` setelah data dipulihkan; 285 kolom, sekitar 2,7 menit):
+
+  | Ukuran | Hasil |
+  |---|---|
+  | Terhadap deklarasi | presisi 43/50, recall 43/43 |
+  | Setelah review judge | presisi dan recall **50/50** (CI bawah 0,929) |
+  | Kalibrasi kelas bukti, leave-one-database-out pada 3 database | **ECE 0,015**, Brier 0,0075, AUC 0,999, n=1.065 |
+  | Keputusan otomatis | **94,9%** diputuskan mesin (93,4–96,1%) |
+  | Diterima otomatis | 47/47 benar (CI bawah 0,924) |
+  | Ditolak otomatis | 0/964 keliru (CI atas 0,4%) |
+
+  Presisi ≥ 97% butuh sekitar 120 penerimaan tanpa salah untuk terbukti, jadi itu belum.
+
+### Uji penerimaan row filter Ranger
+
+Uji ini ada di `tests/integration/test_ontology_evidence_ranger.py` (opt-in `NOVA_ONTOLOGY_EVIDENCE_RANGER_ACCEPTANCE=1`), dijalankan di FE terpatch dev, dan **lolos**.
+
+- **Penyiapan:** dua principal dengan satu role. Row filter Ranger memperlihatkan Jakarta kepada satu principal dan Bandung kepada yang lain.
+- **Hasil:** profil, sketch dan verifikasi inklusi masing-masing hanya mencerminkan baris kotanya (60 lawan 30 baris, 10 lawan 5 outlet). Sketch kedua principal **tidak berbagi satu nilai pun**.
+- **Pembersihan:** user, role, database dan policy dihapus. Sisa objek terverifikasi 0.
+
+### Penambangan riwayat query
+
+- **Analisis join** (`sql_frontend/analysis/joins.py`) membaca kesamaan kolom dari parse tree SQL Nova sendiri (JOIN ON dan WHERE implisit), tanpa parser baru.
+- **Sumber:** keluarga query Query Autopilot. Hanya keluarga milik principal, role dan versi konteks yang sama yang dihitung, sesuai aturan cohort Autopilot.
+- **Hasil:** 1.789 keluarga milik pemanggil memuat 6 pasangan join, dengan **presisi 6/6** dan recall 6/43.
+  - Riwayat di stack ini tipis. Detektor ini melengkapi bukti data (`history_families` per kandidat) dan dilaporkan terpisah.
+
+### Phase D: aksi ke pemilik Semantic View
+
+Discovery Semantic View (`POST /semantic-views/autopilot/discover`) sebelumnya hanya berhipotesis dari kesamaan nama kunci primer. Kini discovery memakai run join pemanggil sendiri:
+
+- relasi yang diterima menjadi kandidat `DATA_EVIDENCE`, lengkap dengan probabilitas dan buktinya;
+- relasi yang perlu review menjadi `DATA_REVIEW`.
+
+Pemilik view tetap mengusulkan, mempreview dan menyetujui lewat alur Autopilot yang ada.
+
+Diukur live pada 8 tabel TPC-H:
+
+| Cara | Relasi benar yang ditemukan |
+|---|---|
+| Hipotesis nama (lama) | **0 dari 9** |
+| Bukti data | **9 dari 9**, semuanya diterima otomatis |
+
+### Drift (dipakai Phase F)
+
+Setiap run join membandingkan profilnya dengan run sebelumnya dalam konteks yang sama. Lihat [checkpoint F](phase-f-checkpoint.md).

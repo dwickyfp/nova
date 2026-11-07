@@ -11,7 +11,7 @@ from app.modules.ontology.contracts import OntologyRecord
 
 CaseKind = Literal["answerable", "unanswerable", "ambiguous"]
 Behaviour = Literal["answer", "abstain", "clarify"]
-RunKind = Literal["gold", "answers", "claims", "joins"]
+RunKind = Literal["gold", "answers", "claims", "joins", "judge"]
 Mode = Literal["with_ontology", "without_ontology"]
 Outcome = Literal["correct", "wrong", "answered", "abstained", "clarified", "failed"]
 Verdict = Literal["yes", "no", "unsure"]

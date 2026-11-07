@@ -29,6 +29,7 @@ const KIND_LABEL: Record<EvaluationRun['kind'], string> = {
   answers: 'Answers',
   claims: 'Claim audit',
   joins: 'Join discovery',
+  judge: 'Judge again',
 }
 
 const OUTCOME_TONE: Record<string, 'success' | 'danger' | 'info' | 'warning' | 'neutral'> = {
@@ -53,6 +54,11 @@ function headline(run: EvaluationRun): string {
     return `${Math.round((pick('claim_accuracy')?.value ?? 0) * 100)}% of ${pick('claim_accuracy')?.n} claims`
   }
   if (run.kind === 'gold' && typeof summary.active === 'number') return `${summary.active} active cases`
+  if (run.kind === 'judge' && run.status === 'COMPLETED') {
+    const agreement = run.summary.agreement as Record<string, { kappa: number | null }> | undefined
+    const kappa = Object.values(agreement ?? {})[0]?.kappa
+    return kappa == null ? `${run.summary.judged ?? 0} judged` : `κ ${kappa.toFixed(2)} with reviewers`
+  }
   if (run.kind === 'joins' && run.status === 'COMPLETED') {
     const joins = (run.summary.joins_reviewed ?? run.summary.joins) as { f1?: number; predicted?: number } | null
     return joins ? `${joins.predicted} joins · F1 ${(joins.f1 ?? 0).toFixed(2)}` : '–'
@@ -96,10 +102,14 @@ export function EvaluationTab() {
     },
   })
   const start = useMutation({
-    mutationFn: (kind: 'with_ontology' | 'without_ontology' | 'claims' | 'joins') => {
+    mutationFn: (kind: 'with_ontology' | 'without_ontology' | 'claims' | 'joins' | 'judge') => {
       const setName = latestSet(runs.data ?? [])
       if (kind === 'claims') return ontologyApi.startClaims()
       if (kind === 'joins') return ontologyApi.startJoins()
+      if (kind === 'judge') {
+        if (!setName) throw new Error('Build a gold set first')
+        return ontologyApi.startJudge(setName)
+      }
       if (!setName) throw new Error('Build a gold set first')
       return ontologyApi.startAnswers({ set_name: setName, mode: kind })
     },
@@ -107,6 +117,18 @@ export function EvaluationTab() {
     onError: (error: Error) => toast.error(error.message),
   })
 
+  const learn = useMutation({
+    mutationFn: ontologyApi.learn,
+    onSuccess: (report) => {
+      toast.success(
+        report.proposals.length
+          ? `${report.proposals.length} proposal${report.proposals.length === 1 ? '' : 's'} sent to the stewards`
+          : 'Nothing new to propose'
+      )
+      void client.invalidateQueries({ queryKey: prefix })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
   if (!isAdmin) {
     return (
       <EmptyState
@@ -116,7 +138,7 @@ export function EvaluationTab() {
       />
     )
   }
-  const busy = advance.isPending || start.isPending
+  const busy = advance.isPending || start.isPending || learn.isPending
   return (
     <div className='flex flex-col gap-4'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -134,6 +156,12 @@ export function EvaluationTab() {
           </Button>
           <Button size='sm' variant='outline' disabled={busy} onClick={() => start.mutate('joins')}>
             Find joins
+          </Button>
+          <Button size='sm' variant='outline' disabled={busy} onClick={() => start.mutate('judge')}>
+            Judge again
+          </Button>
+          <Button size='sm' variant='outline' disabled={busy} onClick={() => learn.mutate()}>
+            Learn from failures
           </Button>
           <Button size='sm' disabled={busy} onClick={() => start.mutate('with_ontology')}>
             <Play className='size-3.5' />

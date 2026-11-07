@@ -597,6 +597,11 @@ it('shows the joins found in the data, what Nova decided and how honest its prob
         joins: { precision: measured(34, 41), recall: measured(34, 34), f1: 0.91, predicted: 41, gold: 34 },
         joins_reviewed: { precision: measured(41, 41), recall: measured(41, 41), f1: 1, predicted: 41, gold: 41 },
         undeclared_reviewed: 7,
+        drift: {
+          compared_with: 'evn_prev',
+          findings: [{ column: 'LAB.orders.o_custkey', rule: 'null_rate_rose', before: 0, after: 0.2 }],
+        },
+        history: { families: 1789, pairs: 6 },
         calibration: {
           ece: 0.0325,
           brier: 0.0168,
@@ -624,6 +629,7 @@ it('shows the joins found in the data, what Nova decided and how honest its prob
   await expect.element(screen.getByText(/F1 1.00 against declared and reviewer-confirmed joins/)).toBeVisible()
   await expect.element(screen.getByText('0 of 506 rejected pairs were real joins · 39 left for review')).toBeVisible()
   await expect.element(screen.getByText('ECE 0.033 · AUC 0.998 · n=583')).toBeVisible()
+  await expect.element(screen.getByText('1 change since the last profile')).toBeVisible()
 })
 
 it('keeps evaluation runs to ACCOUNTADMIN and lists them for an administrator', async () => {
@@ -708,5 +714,20 @@ it('lists the joins found in the data with probability, decision and evidence', 
   await expect.element(screen.getByText(/38 of 38 like it were right/)).toBeVisible()
   // Rejected pairs stay out of the default list of proposed joins.
   await expect.element(screen.getByText('sales.quantity')).not.toBeInTheDocument()
+})
+
+it('turns measured failures into steward proposals on request', async () => {
+  signIn('nova_admin', 'ACCOUNTADMIN')
+  vi.spyOn(ontologyApi, 'evaluationRuns').mockResolvedValue([])
+  const learn = vi.spyOn(ontologyApi, 'learn').mockResolvedValue({
+    proposals: [{ id: 'prp_1', title: 'Remove names the claim audit found misleading', changes: 2 }],
+    skipped: [],
+  })
+  const { toast } = await import('sonner')
+  const success = vi.spyOn(toast, 'success')
+  const screen = await mount(<EvaluationTab />)
+  await screen.getByRole('button', { name: 'Learn from failures' }).click()
+  await vi.waitFor(() => expect(success).toHaveBeenCalledWith('1 proposal sent to the stewards'))
+  expect(learn).toHaveBeenCalledOnce()
 })
 

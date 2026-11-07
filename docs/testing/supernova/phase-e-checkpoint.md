@@ -85,3 +85,33 @@ Run antara (`evn_c955…`, `evn_218f…`, `evn_82b1…`, `evn_96de…`) dijalank
 2. **Alias generik.** Usulan steward untuk mengganti 'retur', 'diskon' dan 'omzet' dengan alias spesifik, atau menandai bahwa kata itu perlu ditanyakan. Ini masuk fase F (belajar dari definisi yang bertentangan).
 3. **Router.** Pengganti model agent sesekali menyatakan tidak ada view. Studio memakai model agent sendiri, jadi angka ini batas bawah.
 4. **Rubrik judge** belum direvisi (κ < 0,8, checkpoint A).
+
+
+## Tindak lanjut: F4, nilai filter dan router (8 November 2026)
+
+Dari 28 jawaban answerable yang salah di run final, ada empat pola. Masing-masing diperbaiki di pemilik yang ada:
+
+| Pola | Contoh | Perbaikan |
+|---|---|---|
+| **F4.** Breakdown yang tidak diminta (8) | "untuk Salesman" ditambah dimensi nama karyawan; "hari outlet-produk" ditambah dimensi outlet dan produk | Aturan planner: dimensi hanya untuk *per / setiap / by*. Kata yang menerangkan ukuran atau nilai filter bukan pengelompokan |
+| Nilai filter dipecah (5) | "Jawa Barat & DKI" menjadi `IN ('Jawa Barat','DKI')` | Nilai yang tidak dikenal dicari di data sebagai pemanggil (`literals.field_values`, row filter berlaku). Nilai yang disebut utuh di pertanyaan menggantikan tafsiran model |
+| Nilai di field yang salah | `employee_name = 'Salesman'` | Bila field tidak memuat nilainya dan tepat satu dimensi lain memuatnya persis, filter dipindah ke dimensi itu (maksimal 8 pencarian) |
+| Router pengganti "tidak ada view" (5) | "jarak rencana per peran" | Katalog router kini memuat breakdown setiap view |
+
+**Hasil berpasangan** terhadap run final Phase E, empat run tanpa petunjuk view (`evn_1f71…`, `evn_1e9e…`, `evn_8064…`, `evn_e9a7…`):
+
+| Ukuran | Sebelum | Sesudah | McNemar |
+|---|---|---|---|
+| Answerable benar (gabungan) | 486/514 = 94,6% | **505/514 = 98,2%** | 24 bertambah, 5 hilang, **p ≈ 0,0007** |
+| Unanswerable ditolak | 84/90 | 86/90 | |
+| Ambigu diklarifikasi | 30/56 | 28/56 | dalam variasi |
+| Reliabilitas (TrustSQL) | 0,815–0,861 | **0,873–0,892** | naik di keempat run |
+
+**Sisa kegagalan, 9 dari 514:**
+
+- "units sold" (4), yang bisa berarti ke outlet atau ke konsumen. Rubrik judge v4 menilai kasus seperti ini memang ambigu.
+- "item order count" dan "staf lapangan" (3), yaitu kosakata dan dimensi.
+- "per baris pesanan" (1), mention yang tidak dijelaskan definisi.
+- Dimensi bare `plan_id` yang tidak dikenali (1).
+
+Perluasan aturan F1 untuk "baris pesanan" ditolak, karena hanya menambal satu kasus.

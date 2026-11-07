@@ -52,8 +52,25 @@ _SPLIT = re.compile(r"[_\W]+|(?<=[a-z0-9])(?=[A-Z])")
 _KEY_WORDS = {"id", "key", "code", "no", "nr", "num", "number", "sk", "fk", "pk"}
 
 
+_COMPOUND_KEY = re.compile(r"^([a-z]{2,}?)(key|id|code|no|num|nr)$")
+
+
+def _parts(name: str) -> list[str]:
+    """Name words in order, with a key word glued to its subject split off (``custkey``)
+    and short table prefixes (``o_``, ``ps_``) dropped, as TPC-H and many warehouses
+    name columns."""
+    words = [part.lower() for part in _SPLIT.split(name) if part]
+    out: list[str] = []
+    for index, word in enumerate(words):
+        if index == 0 and len(words) > 1 and len(word) <= 2:
+            continue  # a table prefix such as o_ or ps_
+        match = _COMPOUND_KEY.match(word)
+        out += [match[1], match[2]] if match and word not in _KEY_WORDS else [word]
+    return out
+
+
 def tokens(name: str) -> set[str]:
-    return {part.lower() for part in _SPLIT.split(name) if part}
+    return set(_parts(name))
 
 
 def _singular(word: str) -> str:
@@ -65,30 +82,47 @@ def _singular(word: str) -> str:
 
 
 def _subject(name: str) -> set[str]:
-    """What a column or table name is about, without key words or plurals."""
+    """What a column name is about, without key words or plurals."""
     return {_singular(word) for word in tokens(name)} - _KEY_WORDS
+
+
+def _names(word: str, table_word: str) -> bool:
+    """``outlet`` names ``outlet``; ``cust`` and ``supp`` abbreviate customer and supplier."""
+    return word == table_word or (len(word) >= 3 and table_word.startswith(word))
 
 
 def is_key_named(column: str) -> bool:
     return bool(tokens(column) & _KEY_WORDS)
 
 
+def _table_words(table: str) -> list[str]:
+    return [_singular(word.lower()) for word in _SPLIT.split(table)
+            if word and word.lower() not in _KEY_WORDS]
+
+
 def names_table(column: str, table: str) -> bool:
-    """``outlet_id`` names ``outlets``; ``plan_id`` names ``route_plans``."""
-    subject, table_subject = _subject(column), _subject(table)
-    return bool(subject) and is_key_named(column) and subject <= table_subject
+    """``outlet_id`` names ``outlets``; ``plan_id`` names ``route_plans``; ``o_custkey``
+    names ``customer``."""
+    subject, words = _subject(column), _table_words(table)
+    return bool(subject) and is_key_named(column) and all(
+        any(_names(part, word) for word in words) for part in subject)
+
+
+def same_column_name(left: str, right: str) -> bool:
+    """Both name the same key once table prefixes are dropped (``o_custkey``, ``c_custkey``)."""
+    return is_key_named(left) and _parts(left) == _parts(right)
 
 
 def identifies_table(column: str, table: str) -> bool:
-    """``event_id`` identifies ``fulfillment_events``: it names the table's head noun (English
-    table names end with it) or the whole table. ``customer_id`` in ``customer_health_events``
-    names a modifier, so it refers to customers rather than identifying health events."""
+    """``event_id`` identifies ``fulfillment_events`` and ``c_custkey`` identifies
+    ``customer``: it names the table's head noun (English names end with it).
+    ``customer_id`` in ``customer_health_events`` names a modifier, so it refers to
+    customers rather than identifying health events."""
     subject = _subject(column)
-    words = [_singular(word) for word in _SPLIT.split(table) if word]
-    words = [word.lower() for word in words if word.lower() not in _KEY_WORDS]
+    words = _table_words(table)
     if not subject or not is_key_named(column) or not words:
         return False
-    return subject == {words[-1]} or subject == set(words)
+    return all(_names(part, words[-1]) for part in subject) or subject == set(words)
 
 
 @dataclass(frozen=True)
@@ -193,8 +227,7 @@ def candidates(
                 target_uniqueness=round(target.uniqueness, 4),
                 source_uniqueness=round(source.uniqueness, 4),
                 source_ndv=source.ndv, target_ndv=target.ndv, family=str(source.family),
-                same_name=source.column.lower() == target.column.lower()
-                and is_key_named(source.column),
+                same_name=same_column_name(source.column, target.column),
                 names_target_table=names_table(source.column, target.table),
                 name_similarity=round(len(a & b) / len(union), 3) if union else 0.0,
                 lengths_overlap=overlap,

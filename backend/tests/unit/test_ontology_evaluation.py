@@ -402,7 +402,9 @@ async def test_claims_are_audited_by_stratum_with_calibration_and_kappa(monkeypa
     run = await lab.repository.latest("eval_runs", run.id, type(run))
     assert run.summary["by_stratum"]["entity"]["value"] < 1.0
     assert run.summary["model_only"]["value"] > run.summary["claim_accuracy"]["value"]
-    assert run.summary["reviewers"] == ["claude-opus-5.5", "fake-judge", "steward"]
+    from app.modules.ontology.evaluation.service import RUBRIC
+
+    assert run.summary["reviewers"] == ["claude-opus-5.5", f"fake-judge@{RUBRIC}", "steward"]
 
 
 async def test_only_administrators_start_runs_and_only_the_starter_advances(lab):
@@ -678,3 +680,44 @@ async def test_a_period_outside_the_data_is_scored_as_an_abstention(lab, monkeyp
                 if r.detail.get("data_window")]
     assert answered and all(r.outcome == "abstained" for r in answered)
     assert answered[0].detail["data_window"] == ["2026-05-01", "2026-11-04"]
+
+
+async def test_a_gold_set_is_judged_again_under_the_current_rubric(lab):
+    from app.modules.ontology.evaluation.service import RUBRIC, JudgeRunRequest, ReviewBatch
+    from app.modules.ontology.evaluation.service import ReviewItem as Item
+
+    await lab.compile()
+    await lab.finish(await lab.service.start_gold(GoldRequest(
+        set_name="rejudge", view_ids=["retail_sales"], per_metric=1), ADMIN))
+    cases = [case for case in await lab.service.cases("rejudge") if case.status != "DRAFT"]
+    await lab.service.review_cases("rejudge", ReviewBatch(
+        reviewer="claude", kind="external",
+        items=[Item(item=case.id, verdict="yes") for case in cases]), ADMIN)
+    before = {case.id: case.status for case in await lab.service.cases("rejudge")}
+    run = await lab.finish(await lab.service.start_judge(JudgeRunRequest(set_name="rejudge"),
+                                                         ADMIN))
+    assert run.status == "COMPLETED" and run.summary["rubric"] == RUBRIC
+    assert run.summary["judged"] == len([c for c in cases if c.question])
+    after = await lab.service.cases("rejudge")
+    # Judging again measures the judge; it never changes which cases are in the set.
+    assert {case.id: case.status for case in after} == before
+    assert all(case.reviews[-1].reviewer == f"fake-judge@{RUBRIC}" for case in after
+               if case.status != "DRAFT" and case.question)
+    assert "claude" in run.summary["agreement"]
+
+
+def test_alias_claims_see_the_concepts_that_share_their_words():
+    from app.modules.ontology.evaluation.service import competitors
+
+    def alias(name, alias, label):
+        return {"stratum": "alias", "item": {"qualified_name": name, "alias": alias,
+                                             "label": label, "definition": f"{label} def"}}
+
+    population = {
+        "a": alias("Sales.ReturnedUnits", "retur", "Returned units"),
+        "b": alias("Sales.ReturnedValue", "nilai retur", "Returned value"),
+        "c": alias("Sales.NetRevenue", "omzet", "Omzet"),
+    }
+    found = competitors(population["a"], population)
+    assert found == ["Sales.ReturnedValue (Returned value): Returned value def"]
+    assert competitors({"stratum": "metric", "item": {}}, population) == []

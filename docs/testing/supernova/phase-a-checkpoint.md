@@ -326,3 +326,53 @@ Prioritas ini diputuskan oleh data:
    Target κ ≥ 0,8 pada sampel baru.
 3. **F2 dan F3 sebagai bagian Phase E** (grounding): deteksi ambiguitas dari kata umum, dan kesadaran jendela data.
 4. **Fase B** (profil data) **dan fase C** (kalibrasi), sesuai rencana framework.
+
+
+## Tindak lanjut: revisi rubrik judge (8 November 2026)
+
+Rubrik judge direvisi tiga kali (rubric-2 sampai rubric-4).
+
+**Metode.**
+
+- **Pemisahan dev/test.** Item dibagi dua secara deterministik (SHA-256 id, genap/ganjil). Revisi hanya memakai ketidaksepakatan di paruh *dev*. κ akhir dilaporkan dari paruh *test*.
+- **Vonis pembanding.** Vonis buta Claude dari Phase A dipakai apa adanya, tidak diubah setelah melihat alasan model.
+- **Penilaian ulang tanpa mengubah set.** Run baru `judge` menilai ulang kasus gold tanpa mengubah status kasus. Audit klaim diulang dengan seed yang sama, sehingga itemnya identik.
+
+**Perubahan rubrik**, semuanya di `evaluation/service.py`:
+
+- **Gold:**
+  - Kasus answerable sudah dieksekusi, jadi judge hanya menilai apakah pertanyaannya meminta tepat makna itu.
+  - Ukuran bernama sama di dua view harus disebut view-nya.
+  - "Per peran tanpa jalur governed" berarti unanswerable.
+  - Sinonim view menyelesaikan sebuah kata, kecuali ada ukuran lain yang sama wajarnya: 'retur' bisa unit atau nilai, sedangkan 'transaksi' adalah jumlah order.
+- **Klaim:**
+  - Judge kini diberi *konsep pesaing* yang berbagi kata dengan alias.
+  - Label yang menamai hal lain dari definisinya dihitung salah.
+  - 'net sales' berarti setelah retur.
+  - Frasa sehari-hari dan nama peran boleh.
+  - Hanya klaim yang dinyatakan yang dinilai.
+- **Alat:**
+  - Item yang terlewat ditanyakan ulang sekali (`ask_items`).
+  - Potongan bukti metrik kini memuat definisinya. Sebelumnya `allowed_dimensions` mendorong definisi keluar dari batas 900 karakter, sehingga judge menjawab "unsure".
+  - κ memakai vonis model terbaru.
+
+| Rubrik | Gold κ (dev / test) | Klaim κ (dev / test) | Klaim κ semua |
+|---|---|---|---|
+| Phase A | 0,35 (semua) | 0,08 (semua) | 0,08 |
+| rubric-2 | 0,59 / 0,38 | 0,17 / 0,34 | 0,26 |
+| rubric-3 | 0,84 / 0,47 | 0,58 / 0,42 | 0,51 |
+| **rubric-4** | 0,80 / **0,59** | 0,58 / **0,79** | **0,65** |
+
+Paruh test rubric-4, dengan bootstrap 95%:
+
+- **Gold:** κ 0,59 (0,22–0,85), kesepakatan 93,8%, PABAK 0,875, n=96.
+- **Klaim:** κ 0,79 (0,0–1,0), kesepakatan 98,6%, PABAK 0,97, n=72.
+
+**Penilaian.**
+
+- **Target κ ≥ 0,8 belum tercapai di gold.** Di klaim, nilainya tepat di ambang, tetapi CI-nya sangat lebar.
+- **Penyebab utamanya kelangkaan vonis "no".** Hanya beberapa item yang ditolak, sehingga satu ketidaksepakatan menggeser κ jauh. Inilah paradoks kappa (Feinstein dan Cicchetti 1990), dan PABAK yang tinggi menunjukkannya.
+- **Jarak dev–test** (0,80 vs 0,59) menunjukkan revisi berikutnya harus diuji pada sampel baru, bukan pada paruh test ini.
+- **Langkah berikutnya:** sampel baru yang diperkaya kasus sulit (stratified, lebih banyak "no"), dinilai steward manusia. Endpoint review `kind: person` sudah ada.
+
+**Efek sampingan yang berguna.** Judge yang lebih ketat menurunkan akurasi klaim versi model dari 99,2% menjadi sekitar 88–91%, dan menemukan sendiri alias 'retur', 'diskon' dan 'net sales before returns', yang di Phase A hanya ditemukan Claude. Ketiganya dipakai siklus belajar Phase F ([checkpoint F](phase-f-checkpoint.md)).

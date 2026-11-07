@@ -313,12 +313,12 @@ Fase A didahulukan karena tanpa alat ukur, klaim "akurat" adalah asumsi lagi.
 
 | Fase | Status | Bukti |
 |---|---|---|
-| A | Selesai | [Checkpoint A](../testing/supernova/phase-a-checkpoint.md). κ judge belum mencapai 0,8. |
-| E | Sebagian | [Checkpoint E](../testing/supernova/phase-e-checkpoint.md). Sudah ada: F1 (grounding), F2 (ukuran samar), F3 (jendela data). Belum: F4 (breakdown yang tidak diminta) dan indeks nilai. |
-| B | Join selesai untuk dua database lab | [Checkpoint B/C/D](../testing/supernova/phase-bcd-checkpoint.md). F1 1,00 setelah review; skema umum belum diuji. Penambangan riwayat query belum dibangun. |
-| C | Join selesai; klaim derived sudah terkalibrasi | ECE 0,033 (join), 0,027 (klaim) |
-| D | Keputusan join selesai | 89% diputuskan mesin. Diterima 13/13 benar, tetapi n masih kecil untuk membuktikan 97%. Aksi ke Semantic View belum ada. |
-| F | Belum | |
+| A | Selesai; κ belum mencapai target | [Checkpoint A](../testing/supernova/phase-a-checkpoint.md). Rubrik direvisi tiga kali, dengan κ dilaporkan di paruh test: gold 0,59, klaim 0,79 (CI lebar). Butuh label manusia pada sampel baru. |
+| B | Selesai | [Checkpoint B/C/D](../testing/supernova/phase-bcd-checkpoint.md). Tiga database termasuk TPC-H, F1 1,00 setelah review. Uji row filter Ranger lolos. Penambangan riwayat query: presisi 6/6. |
+| C | Selesai | ECE join 0,015 (3 database); klaim derived 0,027 |
+| D | Selesai; presisi 97% belum terbukti | 94,9% diputuskan mesin, diterima 47/47 benar (CI bawah 0,924). Relasi berbukti data masuk discovery Semantic View: TPC-H 9/9, sebelumnya 0/9. |
+| E | Selesai | [Checkpoint E](../testing/supernova/phase-e-checkpoint.md). Answerable 98,2%; ambigu 11 → 28–30 dari 56; periode di luar data 18/18. |
+| F | Selesai | [Checkpoint F](../testing/supernova/phase-f-checkpoint.md). Siklus belajar sampai release `ont_rel_0006`, penolakan menjadi usulan metrik, drift, OSI tanpa kehilangan informasi. |
 
 ## 10. Keputusan yang perlu diambil
 

@@ -22,6 +22,7 @@ bound, and never override an approved concept.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -565,7 +566,9 @@ async def visible_layer(user: dict, catalog, repository) -> dict:
     items = [item for item in await repository.current("derived", DerivedItem)
              if item.status == "ACTIVE"]
     views = sorted({e.semantic.view_id for item in items for e in item.evidence})
-    allowed = {view for view in views if await catalog.visible(view, user)}
+    # Each view's check is independent; asked together they cost one round trip, not four.
+    checks = await asyncio.gather(*(catalog.visible(view, user) for view in views))
+    allowed = {view for view, visible in zip(views, checks, strict=True) if visible}
     shown: dict[str, dict] = {}
     for item in items:
         evidence = [e for e in item.evidence if e.semantic.view_id in allowed]

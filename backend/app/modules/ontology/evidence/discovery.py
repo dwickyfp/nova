@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
@@ -27,6 +28,7 @@ from app.modules.ontology.evaluation.contracts import EvalResult, EvalRun, resul
 from app.modules.ontology.evidence.joins import (
     JoinCandidate,
     candidates,
+    is_key_named,
     score,
     select,
     verify,
@@ -49,6 +51,8 @@ if TYPE_CHECKING:
 
 TABLES_PER_STEP = 6
 SKETCH_PARALLEL = 4
+#: Query Autopilot families read per run, in pages of 1000.
+HISTORY_PAGES = 20
 
 
 class JoinRunRequest(Contract):
@@ -217,6 +221,45 @@ async def _verified(
     return [verified.get((item.source, item.target), item) for item in found]
 
 
+async def history_joins(
+    user: dict, tables: set[str], repository: Any = None,
+) -> tuple[Counter[tuple[str, str]], int]:
+    """How many of the caller's own query families join two profiled columns, per pair.
+
+    Families come from Query Autopilot and keep their scope: only those of the same
+    principal, active role and security-context version count, so one person's
+    queries never become evidence for another. Pairs are sorted ``db.table.column``.
+    """
+    from app.modules.query_autopilot.repository import AutopilotRepository
+    from app.sql_frontend.analysis.joins import join_pairs
+
+    repository = repository or AutopilotRepository()
+    actor = Actor.from_user(user)
+    mine = (actor.principal, actor.active_role, actor.security_context_version)
+    counts: Counter[tuple[str, str]] = Counter()
+    read = 0
+    after = ""
+    for _ in range(HISTORY_PAGES):
+        page = await repository.page("families", after=after, limit=1000)
+        if not page:
+            break
+        after = str(page[-1].get("id") or "")
+        for family in page:
+            scope = family.get("scope") or {}
+            if (scope.get("principal"), scope.get("active_role"),
+                    int(scope.get("security_context_version") or 0)) != mine:
+                continue
+            read += 1
+            for pair in join_pairs(str(family.get("canonical") or ""),
+                                   database=scope.get("database")):
+                left, right = pair.ordered()
+                if left.rsplit(".", 1)[0] in tables and right.rsplit(".", 1)[0] in tables:
+                    counts[(left, right)] += 1
+        if not after or len(page) < 1000:
+            break
+    return counts, read
+
+
 async def _discover(service: EvaluationService, run: EvalRun, user: dict) -> EvalRun:
     started = time.perf_counter()
     stored = [item for item in await service.results(run.id) if item.item.startswith("profile:")]
@@ -227,6 +270,8 @@ async def _discover(service: EvaluationService, run: EvalRun, user: dict) -> Eva
     found = await _verified(service, candidates(profiles, sketches), profiles, user)
     chosen = {(item.source, item.target) for item in select(found)}
     physical = {item.key for item in profiles}
+    history, families = await history_joins(
+        user, {f"{item.database}.{item.table}" for item in profiles}, service.autopilot)
     declared = {tuple(pair) for pair in run.summary.get("gold") or []}
     # A view may join on a field it derives; only joins between stored columns are findable.
     gold = {pair for pair in declared if pair[0] in physical and pair[1] in physical}
@@ -238,11 +283,14 @@ async def _discover(service: EvaluationService, run: EvalRun, user: dict) -> Eva
             detail={**item.as_dict(),
                     "declared": (item.source, item.target) in gold
                     or (item.target, item.source) in gold,
-                    "declared_direction": (item.source, item.target) in gold},
+                    "declared_direction": (item.source, item.target) in gold,
+                    "history_families": history.get(
+                        (min(item.source, item.target), max(item.source, item.target)), 0)},
         )
         for item in found
     ]
     results, assessed = assess(results, gold)
+    drift = await _drift(service, run, user, profiles, results)
     if results:
         await service.repository.save_many("eval_results", [(item, 0) for item in results])
     return await service._save_run(run, status="COMPLETED", stage="done", summary={
@@ -255,8 +303,78 @@ async def _discover(service: EvaluationService, run: EvalRun, user: dict) -> Eva
         "sketched_columns": len(sketches),
         "candidates": len(found),
         "verified": sum(1 for item in found if item.verified),
+        # Query history as a second, independent detector, scored on its own.
+        "history": {"families": families, "pairs": len(history),
+                    "score": score(list(history), gold) if history else None},
         "discover_seconds": round(time.perf_counter() - started, 1),
+        "drift": drift,
     })
+
+
+#: A key may repeat at most this share of its values before it is no longer a key.
+DRIFT_KEY = 0.98
+#: Absolute rise of a column's null rate that is drift.
+DRIFT_NULLS = 0.05
+#: Relative change of distinct values, with rows within ``DRIFT_ROWS``, that is drift.
+DRIFT_NDV = 0.3
+DRIFT_ROWS = 0.1
+
+
+def profile_drift(
+    before: list[ColumnProfile], after: list[ColumnProfile],
+    joins_before: dict[tuple[str, str], float], joins_after: dict[tuple[str, str], float],
+) -> list[dict[str, Any]]:
+    """What changed in the data since the previous run, in four measured rules."""
+    old = {item.key: item for item in before}
+    found: list[dict[str, Any]] = []
+    for item in after:
+        prior = old.get(item.key)
+        if prior is None or not prior.rows or not item.rows:
+            continue
+        # Only a key column losing uniqueness matters; a name that was unique by chance is not.
+        if (prior.uniqueness >= DRIFT_KEY > item.uniqueness and prior.ndv > 1
+                and is_key_named(item.column)):
+            found.append({"column": item.key, "rule": "key_no_longer_unique",
+                          "before": round(prior.uniqueness, 4), "after": round(item.uniqueness, 4)})
+        if item.null_rate - prior.null_rate >= DRIFT_NULLS:
+            found.append({"column": item.key, "rule": "null_rate_rose",
+                          "before": round(prior.null_rate, 4), "after": round(item.null_rate, 4)})
+        rows = abs(item.rows - prior.rows) / prior.rows
+        ndv = abs(item.ndv - prior.ndv) / max(prior.ndv, 1)
+        if rows <= DRIFT_ROWS and ndv >= DRIFT_NDV and prior.ndv >= 10:
+            found.append({"column": item.key, "rule": "distinct_values_shifted",
+                          "before": prior.ndv, "after": item.ndv})
+    for pair, share in joins_before.items():
+        now = joins_after.get(pair)
+        # A join that is gone (its key no longer a key) lost its integrity too.
+        if share >= 0.99 and (now is None or now < 0.99):
+            found.append({"column": f"{pair[0]} -> {pair[1]}", "rule": "join_lost_integrity",
+                          "before": share, "after": now})
+    return found
+
+
+async def _drift(service, run: EvalRun, user: dict, profiles: list[ColumnProfile],
+                 results: list[EvalResult]) -> dict[str, Any] | None:
+    """Drift against the previous completed join run of the same principal and role."""
+    previous = next((item for item in await service.runs()
+                     if item.kind == "joins" and item.status == "COMPLETED" and item.id != run.id
+                     and same_context(item, user) and item.created_at < run.created_at), None)
+    if previous is None:
+        return None
+    stored = await service.results(previous.id)
+    before = [ColumnProfile(**column) for item in stored if item.item.startswith("profile:")
+              for column in item.detail.get("columns") or []]
+
+    def accepted(items: list[EvalResult]) -> dict[tuple[str, str], float]:
+        return {(str(item.detail["source"]), str(item.detail["target"])):
+                float(item.detail.get("containment") or 0)
+                for item in items if item.item.startswith("join:") and item.detail.get("verified")}
+
+    prior_joins = {pair: share for pair, share in accepted(stored).items()
+                   if any(item.item == f"join:{pair[0]}->{pair[1]}" and item.outcome == "proposed"
+                          for item in stored)}
+    return {"compared_with": previous.id,
+            "findings": profile_drift(before, profiles, prior_joins, accepted(results))}
 
 
 def assess(
@@ -299,3 +417,55 @@ def summarise_joins(results: list[EvalResult], gold: set[tuple[str, str]]) -> di
         "joins_reviewed": score(pairs, confirmed) if reviewed else None,
         "undeclared_reviewed": reviewed,
     }
+
+
+async def data_relationships(
+    user: dict, sources: dict[str, str], service: EvaluationService | None = None,
+) -> list[dict[str, Any]]:
+    """Relationship candidates the caller's latest join run supports between these datasets.
+
+    ``sources`` maps ``database.table`` to the dataset name the Semantic View uses. Only a
+    completed join run of the caller's own principal and role counts, and only pairs Nova
+    accepted or left for review. Each candidate carries its measured probability and the
+    evidence a reviewer needs; nothing is applied, the view owner proposes and approves.
+    """
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    service = service or evaluation_service
+    run = next((item for item in await service.runs()
+                if item.kind == "joins" and item.status == "COMPLETED"
+                and same_context(item, user)), None)
+    if run is None:
+        return []
+    found = []
+    for result in await service.results(run.id):
+        detail = result.detail
+        # Without a measured probability yet, a proposed join is left for review.
+        decision = detail.get("decision") or ("review" if result.outcome == "proposed" else None)
+        if not result.item.startswith("join:") or decision not in {"accept", "review"}:
+            continue
+        source, target = str(detail.get("source")), str(detail.get("target"))
+        left, right = source.rsplit(".", 1), target.rsplit(".", 1)
+        if left[0] not in sources or right[0] not in sources:
+            continue
+        found.append({
+            "kind": "relationship",
+            "name": f"{sources[left[0]]}_{sources[right[0]]}_{left[1]}",
+            "state": "DATA_EVIDENCE" if decision == "accept" else "DATA_REVIEW",
+            "definition": {
+                "from": sources[left[0]], "to": sources[right[0]],
+                "from_columns": [left[1]], "to_columns": [right[1]],
+                "cardinality": "many_to_one",
+            },
+            "evidence": {
+                "run_id": run.id,
+                "probability": detail.get("probability"),
+                "containment": detail.get("containment"),
+                "target_uniqueness": detail.get("target_uniqueness"),
+                "explanation": detail.get("explanation"),
+                "history_families": detail.get("history_families", 0),
+            },
+            "review_required": ["business_meaning"] if decision == "accept"
+            else ["key_semantics", "referential_integrity", "cardinality"],
+        })
+    return found

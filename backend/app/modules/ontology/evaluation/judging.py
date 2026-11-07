@@ -123,6 +123,27 @@ async def ask(client, system: str, payload: Any, schema: dict, name: str) -> dic
     return {"_model": getattr(config, "model", None)}
 
 
+async def ask_items(
+    client, system: str, payload: dict, items: list[dict], schema: dict, name: str,
+    *, answer_key: str = "verdict",
+) -> tuple[dict[str, dict], str]:
+    """Answers by item id; an item the model skipped is asked for once more on its own.
+
+    An item counts as answered when it carries ``answer_key`` (a ``False`` is an answer).
+    """
+    def answered(reply: dict) -> dict[str, dict]:
+        return {str(item.get("id")): item for item in reply.get("items") or []
+                if isinstance(item, dict) and item.get(answer_key) not in (None, "")}
+
+    answer = await ask(client, system, {**payload, "items": items}, schema, name)
+    found = answered(answer)
+    missing = [item for item in items if str(item["id"]) not in found]
+    if missing:
+        found.update(answered(await ask(client, system, {**payload, "items": missing},
+                                        schema, name)))
+    return found, str(answer.get("_model") or "model")
+
+
 def strict(properties: dict[str, Any]) -> dict:
     return {
         "type": "object", "additionalProperties": False,

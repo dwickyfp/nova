@@ -153,7 +153,8 @@ function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
               <IntervalBar label='Without ontology' measured={effect.without} color='var(--viz-mark)' />
               <IntervalBar label='With ontology' measured={effect.with} color='var(--chart-4)' />
               <p className='text-xs text-muted-foreground'>
-                {effect.mcnemar.gained} questions fixed, {effect.mcnemar.lost} broken by the ontology
+                {effect.mcnemar.gained} {effect.mcnemar.gained === 1 ? 'question' : 'questions'} fixed,{' '}
+                {effect.mcnemar.lost} broken by the ontology
               </p>
             </div>
           ) : (
@@ -236,6 +237,16 @@ function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
             <Fact
               label='Judge agreement'
               value={judgeAgreement(gold?.agreement, claims?.agreement)}
+            />
+            <Fact
+              label='Data drift'
+              value={
+                data.measured.joins?.drift
+                  ? `${data.measured.joins.drift.findings.length} change${data.measured.joins.drift.findings.length === 1 ? '' : 's'} since the last profile`
+                  : 'one profile so far'
+              }
+              warn={(data.measured.joins?.drift?.findings.length ?? 0) > 0}
+              onClick={onOpen ? () => onOpen('evaluation') : undefined}
             />
             <Fact
               label='Without-ontology baseline'

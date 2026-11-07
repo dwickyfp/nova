@@ -19,8 +19,31 @@ from app.modules.ontology.evidence.discovery import same_context
 #: What the Overview shows of a join run: scores, timing, calibration and decisions.
 JOIN_FIELDS = (
     "databases", "profiled_columns", "profile_seconds", "discover_seconds", "candidates",
-    "joins", "joins_reviewed", "undeclared_reviewed", "calibration", "decisions",
+    "joins", "joins_reviewed", "undeclared_reviewed", "calibration", "decisions", "drift",
+    "history",
 )
+
+
+class _OnceCatalog:
+    """The view catalog for one Overview request: each view's visibility is checked once.
+
+    The derived layer and the meaning checks both ask whether the caller may see the same
+    views, and each check reads source privileges. Within one request, for one caller, the
+    answer cannot change, so it is asked once per view.
+    """
+
+    def __init__(self, catalog) -> None:
+        self._catalog = catalog
+        self._visible: dict[tuple[str, str], bool] = {}
+
+    async def visible(self, view_id: str, user: dict) -> bool:
+        key = (view_id, str(user.get("session_id") or user.get("username")))
+        if key not in self._visible:
+            self._visible[key] = await self._catalog.visible(view_id, user)
+        return self._visible[key]
+
+    def __getattr__(self, name: str):
+        return getattr(self._catalog, name)
 
 
 def _when(run: EvalRun | None) -> str | None:
@@ -66,7 +89,8 @@ async def overview(user: dict, service: EvaluationService) -> dict:
             "agreement": agreement(cases),
         }
 
-    layer = await visible_layer(user, service.catalog, repository)
+    catalog = _OnceCatalog(service.catalog)
+    layer = await visible_layer(user, catalog, repository)
     derived_metrics = [item for item in layer["items"] if item["concept_kind"] == "METRIC"]
     domains = {item.id: item for item in await repository.current("domains", Domain)}
     concepts = {
@@ -85,7 +109,7 @@ async def overview(user: dict, service: EvaluationService) -> dict:
             counts["metrics"] += 1
             if any(b.concept_id == concept.id and b.status == "VALIDATED" for b in bindings):
                 counts["bound"] += 1
-    findings = await lint(user, service.catalog, repository)
+    findings = await lint(user, catalog, repository)
     proposals = [item for item in await repository.current("proposals", Proposal)
                  if item.source == "ENGINE"]
     decided = Counter(item.status for item in proposals)

@@ -40,6 +40,7 @@ from app.modules.ontology.evaluation.judging import (
     TEXT,
     VERDICT,
     ask,
+    ask_items,
     items_schema,
     same_result,
 )
@@ -74,6 +75,13 @@ class AnswerRunRequest(Contract):
     view_hint: bool = True
 
 
+class JudgeRunRequest(Contract):
+    """Judge an existing gold set again with the current rubric; case status is unchanged."""
+
+    set_name: str = Field(min_length=1, max_length=64)
+    version: int | None = Field(default=None, ge=1)
+
+
 class ClaimRunRequest(Contract):
     set_name: str = Field(default="claims", min_length=1, max_length=64)
     per_stratum: int = Field(default=CLAIMS_PER_STRATUM, ge=5, le=100)
@@ -100,6 +108,90 @@ def _verdict(value: Any) -> Verdict:
     return "unsure"
 
 
+#: Upper bound of results one run stores (a join run keeps one per column pair).
+RESULTS_PER_RUN = 20000
+
+#: Version of the judge instructions; every model verdict names the rubric it used.
+RUBRIC = "rubric-4"
+
+GOLD_RUBRIC = (
+    "You are a strict reviewer of an evaluation set for a business analytics assistant. "
+    "For each item answer 'yes' only when the item is valid, by these rules. "
+    "'answerable': a correct answer to the question is exactly the stated meaning (same "
+    "measure, breakdown, period, filter value and top-N; nothing broader, narrower or extra). "
+    "Its meaning has already been executed on the data, so it is computable even when a "
+    "breakdown is not listed: judge only whether the question asks exactly that meaning. "
+    "Before answering, check the catalog for a measure with the same name in another view: "
+    "when two views both have it and the question names neither view nor a breakdown only "
+    "one has, an answerable item is 'no', even when the question quotes the measure's "
+    "description. "
+    "A word that is a measure's name or specific synonym names that measure ('jumlah order' "
+    "is the order count, not order lines); every measure can be grouped by the listed time "
+    "grains of its time field. "
+    "'unanswerable': the question truly cannot be answered exactly from the catalog: a "
+    "measure, breakdown or period outside its data window that it does not have. A measure "
+    "asked per a role (per salesman) when the catalog links that measure to the entity only "
+    "through another role (driver) has no governed path, so it is unanswerable; filtering "
+    "by the role would answer a different question. "
+    "'ambiguous': valid when two or more listed measures or fields fit the question about "
+    "equally and nothing in the question picks one. A view synonym resolves the word unless "
+    "another listed measure is an equally natural reading of it: 'retur' can be counted in "
+    "units or valued in money, so it stays ambiguous; 'transaksi' as the order count is "
+    "resolved, because order lines are not what people call transactions. "
+    "Write the reason first, then a verdict that agrees with it: 'no' when the rule is not "
+    "met, 'unsure' only when the catalog cannot decide it."
+)
+
+CLAIMS_RUBRIC = (
+    "You audit an automatically built business ontology. For each claim decide whether it "
+    "is correct given its evidence (the published Semantic View definition excerpt) and "
+    "ordinary business meaning. Judge only the claim stated: a problem with another name "
+    "or synonym of the same concept belongs to that name's own claim. A claim that a metric "
+    "or field exists, shown by the excerpt, is 'yes' even without a description. Answer "
+    "'no' when any of these holds: wrong entity, wrong "
+    "direction or wrong role; a definition that contradicts the formula; a label that names "
+    "something other than its definition ('Plan date' for a delivery date); a label or "
+    "definition that describes only one of the views in the evidence when the same field "
+    "means more in the others (a name defined as 'the driver' that the sales view uses for "
+    "the salesman); an alias (official name) that people would at least as naturally use "
+    "for one of the competing concepts listed with it, or that ordinary usage gives another "
+    "meaning, even when a qualifier follows ('net sales before returns' names a value "
+    "before returns, but 'net sales' means after returns). A generic word attached to one "
+    "of several concepts that share it ('retur' for returned units when returned value "
+    "also exists) is 'no'. Do not reject an everyday phrase for the concept ('nilai order', "
+    "'baris pesanan') or the name of one of its roles ('sopir' for an employee entity that "
+    "includes drivers) unless one listed competing concept of the same kind (a metric for a "
+    "metric's name) is what the word ordinarily means. Answer "
+    "'yes' when the claim is true, stated the right way round and not taken by a competing "
+    "concept; 'unsure' only when the evidence cannot decide it. Write the reason first, then "
+    "a verdict that agrees with it."
+)
+
+
+def competitors(claim: dict, population: dict[str, dict], limit: int = 6) -> list[str]:
+    """Other approved concepts sharing a content word with an alias claim's alias or label."""
+    from app.modules.ontology.resolver import normalise
+
+    if claim.get("stratum") != "alias":
+        return []
+    item = claim["item"]
+    words = {word for word in normalise(f"{item['alias']} {item['label']}").split()
+             if len(word) >= 3}
+    found: dict[str, str] = {}
+    for other in population.values():
+        if other.get("stratum") != "alias":
+            continue
+        concept = other["item"]
+        if concept["qualified_name"] == item["qualified_name"]:
+            continue
+        names = normalise(f"{concept['alias']} {concept['label']}").split()
+        if words & set(names):
+            found.setdefault(concept["qualified_name"],
+                             f"{concept['qualified_name']} ({concept['label']}): "
+                             f"{(concept.get('definition') or '')[:160]}")
+    return sorted(found.values())[:limit]
+
+
 def _new_id(prefix: str, *parts: Any) -> str:
     return prefix + fingerprint([*parts, time.time_ns()])[:32]
 
@@ -107,6 +199,7 @@ def _new_id(prefix: str, *parts: Any) -> str:
 class EvaluationService:
     def __init__(
         self, repository=None, catalog=None, client_factory=None, executor=None, models=None,
+        autopilot=None,
     ) -> None:
         from app.modules.ontology.repository import ontology_repository
         from app.modules.ontology.representations import SemanticViewCatalog
@@ -116,6 +209,8 @@ class EvaluationService:
         self._client_factory = client_factory
         self._executor = executor
         self._models_loader = models
+        #: Query Autopilot families, read for join evidence; the shared repository by default.
+        self.autopilot = autopilot
 
     # --- plumbing -------------------------------------------------------------------
 
@@ -211,8 +306,10 @@ class EvaluationService:
         return await discovery.start(self, body, user)
 
     async def results(self, run_id: str) -> list[EvalResult]:
-        return [item for item in await self.repository.current("eval_results", EvalResult)
-                if item.run_id == run_id]
+        # Filtered in the engine: reading every run's results to keep one made the
+        # Overview take seconds once a few thousand results existed.
+        return await self.repository.current_matching(
+            "eval_results", EvalResult, "run_id", run_id, limit=RESULTS_PER_RUN)
 
     # --- starting runs ----------------------------------------------------------------
 
@@ -261,6 +358,35 @@ class EvaluationService:
         await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
         return await self.repository.save("eval_runs", run)
 
+    async def start_judge(self, body: JudgeRunRequest, user: dict) -> EvalRun:
+        await access.require_admin("EVALUATE", "ONTOLOGY_EVALUATION", body.set_name, user)
+        cases = [case for case in await self.cases(body.set_name, body.version)
+                 if case.status != "DRAFT" and case.question]
+        if not cases:
+            raise HTTPException(status_code=404, detail=access.NOT_FOUND)
+        version = cases[0].version
+        gold = next((run for run in await self.runs() if run.kind == "gold"
+                     and run.set_name == body.set_name and run.version == version), None)
+        run = EvalRun(
+            id=_new_id("evn_", "judge"), actor=Actor.from_user(user), kind="judge",
+            set_name=body.set_name, version=version, stage="judge",
+            items=sorted(case.id for case in cases),
+            summary={"rubric": RUBRIC, "windows": (gold.summary.get("windows") if gold else {})},
+        )
+        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+        return await self.repository.save("eval_runs", run)
+
+    async def _judge_step(self, run: EvalRun, user: dict) -> EvalRun:
+        batch = run.items[run.done:run.done + JUDGE_BATCH]
+        cases = {case.id: case for case in await self.cases(run.set_name, run.version)}
+        if not batch:
+            judged = [cases[key] for key in run.items if key in cases]
+            return await self._save_run(run, status="COMPLETED", stage="done", summary={
+                **run.summary, "judged": len(judged), "agreement": agreement(judged)})
+        await self._review_cases([cases[key] for key in batch if key in cases], user,
+                                 run.summary.get("windows") or {})
+        return await self._save_run(run, done=run.done + len(batch))
+
     async def start_claims(self, body: ClaimRunRequest, user: dict) -> EvalRun:
         await access.require_admin("EVALUATE", "ONTOLOGY_EVALUATION", body.set_name, user)
         population = await self._claims(user)
@@ -293,6 +419,8 @@ class EvaluationService:
                 return await self._gold_step(run, user)
             if run.kind == "answers":
                 return await self._answers_step(run, user)
+            if run.kind == "judge":
+                return await self._judge_step(run, user)
             if run.kind == "joins":
                 from app.modules.ontology.evidence import discovery
 
@@ -675,26 +803,15 @@ class EvaluationService:
     ) -> None:
         models = await self._models(user)
         catalog = self._catalog_text(models, sorted({case.view_id for case in cases}), windows)
-        answer = await ask(
+        by_id, model_name = await ask_items(
             self.client(),
-            "You are a strict reviewer of an evaluation set for a business analytics assistant. "
-            "For each item answer 'yes' only when the item is valid: for 'answerable', a correct "
-            "answer to the question is exactly the stated meaning (same measure, breakdown, "
-            "period, filter value and top-N; nothing broader, narrower or extra); for "
-            "'unanswerable', the question truly cannot be answered exactly from the catalog (a "
-            "measure, breakdown, role or period outside its data window that it does not have); "
-            "for 'ambiguous', a careful analyst would have to ask which of two or more meanings "
-            "is intended. Every measure can be grouped by the listed time grains of its time "
-            "field. Write the reason first, then a verdict that agrees with it: 'no' otherwise, "
-            "'unsure' when you cannot tell.",
-            {"catalog": catalog, "items": [
-                {"id": case.id, "kind": case.kind, "question": case.question,
-                 "meaning": case.meaning} for case in cases]},
+            GOLD_RUBRIC,
+            {"catalog": catalog},
+            [{"id": case.id, "kind": case.kind, "question": case.question,
+              "meaning": case.meaning} for case in cases],
             items_schema({"id": TEXT, "reason": TEXT, "verdict": VERDICT}), "evaluation_review",
         )
-        model_name = str(answer.get("_model") or "model")
-        by_id = {str(item.get("id")): item for item in answer.get("items") or []
-                 if isinstance(item, dict)}
+        model_name = f"{model_name}@{RUBRIC}"
         updated = []
         for case in cases:
             item = by_id.get(case.id) or {}
@@ -918,6 +1035,12 @@ class EvaluationService:
                 "view_id": view_id, "name": model.get("name"),
                 "description": ir.description[:300],
                 "measures": [f"{m.name}: {m.description}"[:120] for m in ir.metrics][:40],
+                # What a measure can be broken down or filtered by (role, payment method):
+                # without it a question per role looked unanswerable to the router.
+                "breakdowns": sorted({
+                    field.name for dataset in ir.datasets for field in dataset.fields
+                    if field.kind.value == "dimension"
+                })[:60],
             })
         answer = await ask(
             self.client(),
@@ -1014,22 +1137,15 @@ class EvaluationService:
                  if claim["item"].get("key")}
         present = [key for key in batch if key in population]
         evidence = await self._claim_evidence(present, population, user)
-        answer = await ask(
-            self.client(),
-            "You audit an automatically built business ontology. For each claim decide whether "
-            "it is correct given its evidence (the published Semantic View definition excerpt) "
-            "and ordinary business meaning: 'yes' if the claim is true and stated the right way "
-            "round, 'no' if it is wrong (wrong entity, wrong direction, wrong role, a name that "
-            "means something else, a definition that contradicts the formula), 'unsure' if the "
-            "evidence does not decide it. Write the reason first, then a verdict that agrees "
-            "with it.",
-            {"items": [{"id": key, "claim": self._describe(key, population[key], items),
-                        "definition_excerpt": evidence.get(key, "")} for key in present]},
+        by_id, model_name = await ask_items(
+            self.client(), CLAIMS_RUBRIC, {},
+            [{"id": key, "claim": self._describe(key, population[key], items),
+              "definition_excerpt": evidence.get(key, ""),
+              "competing_concepts": competitors(population[key], population)}
+             for key in present],
             items_schema({"id": TEXT, "reason": TEXT, "verdict": VERDICT}), "ontology_claims",
         )
-        model_name = str(answer.get("_model") or "model")
-        by_id = {str(item.get("id")): item for item in answer.get("items") or []
-                 if isinstance(item, dict)}
+        model_name = f"{model_name}@{RUBRIC}"
         results = []
         for key in batch:
             claim = population.get(key)
@@ -1079,9 +1195,17 @@ class EvaluationService:
                         if d.get("name") == dataset:
                             excerpt = next((f for f in d.get("fields", [])
                                             if f.get("name") == field_name), None)
+                    if excerpt:
+                        excerpt = {k: excerpt.get(k) for k in (
+                            "name", "description", "expression", "datatype", "synonyms")}
                 elif kind in {"metric", "claim"}:
                     excerpt = next((m for m in definition.get("metrics", [])
                                     if m.get("name") == name), None)
+                    if excerpt:
+                        # The meaning first: a long dimension list must not push it out.
+                        excerpt = {k: excerpt.get(k) for k in (
+                            "name", "description", "expression", "base_dataset", "synonyms",
+                            "unit", "additivity", "default_time_dimension")}
                 elif kind == "relationship":
                     excerpt = next((r for r in definition.get("relationships", [])
                                     if r.get("name") == name), None)
@@ -1263,7 +1387,8 @@ def agreement(results: list) -> dict:
     for item in results:
         reviews = list(getattr(item, "reviews", []) or [])
         # Deterministic checks (``nova:*``) are not a judge; agreement is between judges.
-        model = next((r for r in reviews
+        # The newest model verdict: a re-judged item is compared under the current rubric.
+        model = next((r for r in reversed(reviews)
                       if r.kind == "model" and not r.reviewer.startswith("nova:")), None)
         if model is None:
             continue

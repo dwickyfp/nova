@@ -344,11 +344,64 @@ A join run reads which joins the data supports, as the person who starts it.
    Brier, AUC), and a decision: accept alone at ≥ 0.97, reject alone at ≤ 0.01,
    review otherwise.
 
+Join names follow common warehouse conventions: `outlet_id` names `outlets`,
+`o_custkey` names `customer` (a glued key word, a short table prefix and an
+abbreviation), and a column that identifies its own table's head noun
+(`event_id` in `fulfillment_events`) is not a reference.
+
+The caller's own Query Autopilot families are a second detector: their
+`JOIN … ON a.x = b.y` and implicit `WHERE` equalities, read by
+`sql_frontend/analysis/joins.py`, count per candidate (`history_families`) and
+are scored on their own. Only families of the same principal, active role and
+security-context version count.
+
+Each run compares its profiles with the caller's previous join run: a key that
+is no longer unique, a null rate up by 5 points, distinct values shifted by
+30% without row growth, and an accepted join that lost its integrity are
+reported as `drift`.
+
+**Relationships for view owners.** `POST /semantic-views/autopilot/discover`
+offers the joins the caller's latest join run accepted as `DATA_EVIDENCE`
+relationship candidates (and those left for review as `DATA_REVIEW`), with
+probability and evidence, in place of name-only guesses. The owner still
+proposes, previews and approves them through the existing Autopilot flow.
+
 Profiles and candidates describe what one principal could see, so a join run,
 its summary and its results are shown only to the same principal in the same
 role. Sketches are never stored. The Overview shows the latest join run of the
 viewer's own context: precision and recall with intervals, the share decided
 without a person, and the probability's reliability diagram.
+
+## Learning from measured failures
+
+Code: `backend/app/modules/ontology/learning.py`. API: `POST /ontology/learn`
+(ACCOUNTADMIN). Every result is an `ENGINE` proposal; stewards decide.
+
+- **Misleading names:** an official alias every reviewer of the latest claim
+  audit rejected (at least two) is proposed for removal, with their reasons.
+- **Words people used:** the recorded measure term of a gold question that
+  failed becomes an alias proposal for the metric it asked for, through the
+  enrichment validator.
+- **Metrics a refusal asked for:** a refused question goes to a model with the
+  view's measures, columns and relationships. A proposed formula is added to a
+  copy of the view, validated, compiled and executed once as the caller; only a
+  formula that returns a value becomes a new metric concept proposal carrying
+  the formula for the view owner.
+
+The claim audit and gold judges follow a versioned rubric (`RUBRIC`); every
+model verdict names it, and `POST /evaluation/judge` re-judges an existing gold
+set under the current rubric without changing which cases are in it.
+
+## Exchange as Open Semantic Interchange
+
+`GET /ontology/osi/export` returns one Ossie 0.1.1 document per Semantic View
+the release binds and the caller may see. Bound metrics carry their official
+definition (`description`), the concept's aliases (`synonyms`) and the concept
+(`ai_context.nova_concept`); the document's `ai_context.nova_ontology` holds the
+caller-visible release records. `POST /ontology/osi/import` reads documents back,
+recomputes every record fingerprint and the manifest hash, and reports whether
+it equals the exported release (`lossless`). An export limited by visibility
+says `complete: false`.
 
 ## Studio grounding
 
@@ -412,6 +465,13 @@ caller (`agents/semantic/coverage.py`). A requested or comparison period
 wholly outside that window ends the turn with `OUTSIDE_DATA_WINDOW` and the
 covered range, instead of an empty answer. A period that starts after today is
 refused before any query. A normal answer costs no extra query.
+
+**Filter values.** A filter value the field never holds is checked against
+the data: a searchable field without samples is searched as the caller, and a
+value the question names verbatim ("Jawa Barat & DKI") replaces the model's
+split reading; a value only one other searchable dimension holds moves the
+filter there ("Salesman" is a role, not an employee name). The planner adds a
+dimension only for a grouping the question asks for.
 
 **Vague measures.** The planner treats a measure word that several catalog
 metrics fit about equally ("sales" with net, gross and before-returns sales) as
