@@ -533,3 +533,83 @@ async def test_a_plan_the_compiler_refuses_is_dropped_not_fatal(lab, monkeypatch
     assert 0 < kept["kept"] < kept["planned"]
     assert not any(case.plan and case.plan.get("dimensions")
                    for case in await lab.service.cases("additive"))
+
+
+# --- business vocabulary --------------------------------------------------------------
+
+def _release(*rows):
+    """Concepts and validated bindings, shaped like a release snapshot."""
+    from app.modules.ontology.contracts import ConceptKind
+
+    concepts, bindings = {}, []
+    for index, (kind, label, aliases, metric) in enumerate(rows):
+        concepts[f"c{index}"] = SimpleNamespace(
+            id=f"c{index}", kind=ConceptKind(kind), label=label, aliases=aliases)
+        if metric:
+            bindings.append(SimpleNamespace(
+                concept_id=f"c{index}", status="VALIDATED", metric=metric,
+                semantic=SimpleNamespace(view_id="retail_sales")))
+    return concepts, bindings
+
+
+def test_business_terms_are_only_words_the_view_never_uses():
+    _, ir = _model("retail_sales")
+    concepts, bindings = _release(
+        ("METRIC", "Omzet", ["penjualan bersih", "net_sales_idr", "nilai order"], "net_revenue"),
+        ("METRIC", "Gross margin", ["untung kotor"], "gross_margin"),
+        ("METRIC", "Shared", ["penjualan neto"], "units_sold"),
+        ("METRIC", "Other", ["penjualan neto"], None),
+        ("BUSINESS_ENTITY", "Employee", ["sopir", "employee"], None),
+        ("BUSINESS_ENTITY", "Outlet", ["toko"], None),
+    )
+    metrics, entities = gold.business_terms(ir, "retail_sales", concepts, bindings)
+    # 'Omzet' and 'nilai order' are view synonyms; identifiers are not business words.
+    assert metrics["net_revenue"] == ["penjualan bersih"]
+    assert metrics["gross_margin"] == ["untung kotor"]
+    # A word two concepts share is not a fair test; the unique label still is.
+    assert metrics["units_sold"] == ["Shared"]
+    # 'toko' is in the view's own field description.
+    assert entities == {"employees": ("employees.employee_name", ["sopir"])}
+
+
+def test_business_intents_carry_their_words_and_ask_per_entity():
+    _, ir = _model("retail_sales")
+    concepts, bindings = _release(
+        ("METRIC", "Omzet", ["penjualan bersih"], "net_revenue"),
+        ("BUSINESS_ENTITY", "Employee", ["sopir"], None),
+    )
+    terms = gold.business_terms(ir, "retail_sales", concepts, bindings)
+    found = gold.business_intents(ir, "retail_sales", "retail_sales", ["net_revenue", "units_sold"],
+                                  ("2026-05-01", "2026-11-04"), terms, per_metric=2, seed=3)
+    assert {intent.metric for intent in found} == {"net_revenue"}
+    assert all("penjualan bersih" in intent.terms for intent in found)
+    entity = next(intent for intent in found if intent.template == "by_entity")
+    assert entity.plan["dimensions"] == ["employees.employee_name"]
+    assert entity.terms == ["penjualan bersih", "sopir"]
+
+
+async def test_a_question_without_its_business_words_never_enters_the_set(lab, monkeypatch):
+    original = lab.model.complete
+
+    async def forgetful(**kwargs):
+        response = await original(**kwargs)
+        name = (kwargs.get("response_format") or {}).get("json_schema", {}).get("name")
+        if name == "evaluation_questions":
+            body = json.loads(response["content"])
+            for item in body["items"]:
+                item["question"] = "Berapa nilainya?"
+            response = {"content": json.dumps(body)}
+        return response
+
+    lab.model.complete = forgetful
+
+    def terms(*_args):
+        return ({"closing_stock": ["sisa barang"]}, {})
+
+    monkeypatch.setattr(gold, "business_terms", terms)
+    run = await lab.finish(await lab.service.start_gold(GoldRequest(
+        set_name="vocab", view_ids=["outlet_stock"], per_metric=1, vocabulary="business"), ADMIN))
+    assert run.status == "COMPLETED"
+    answerable = [c for c in await lab.service.cases("vocab") if c.kind == "answerable"]
+    assert answerable and all(c.status == "REJECTED" for c in answerable)
+    assert all(any(r.reviewer == "nova:vocabulary" for r in c.reviews) for c in answerable)

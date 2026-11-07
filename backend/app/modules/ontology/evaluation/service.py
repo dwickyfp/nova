@@ -14,7 +14,7 @@ import random
 import time
 from collections import Counter
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import Field
@@ -58,6 +58,9 @@ class GoldRequest(Contract):
     view_ids: list[str] = Field(min_length=1, max_length=20)
     per_metric: int = Field(default=ANSWERABLE_PER_METRIC, ge=1, le=5)
     seed: int = 20261108
+    #: ``view`` phrases questions with the view's own words; ``business`` with the
+    #: released ontology's words the view never uses, which only grounding can map.
+    vocabulary: Literal["view", "business"] = "view"
 
 
 class AnswerRunRequest(Contract):
@@ -208,7 +211,8 @@ class EvaluationService:
             id=_new_id("evn_", body.set_name, version), actor=Actor.from_user(user),
             kind="gold", set_name=body.set_name, version=version, stage="intents",
             items=list(body.view_ids),
-            summary={"per_metric": body.per_metric, "seed": body.seed},
+            summary={"per_metric": body.per_metric, "seed": body.seed,
+                     "vocabulary": body.vocabulary},
         )
         await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
         return await self.repository.save("eval_runs", run)
@@ -332,11 +336,21 @@ class EvaluationService:
         ir = SemanticModelIR.from_ossie(definition)
         metrics = [name for name in public_metrics(definition)]
         window = await self._window(ir, metrics, model, user)
-        found = gold_cases.intents(
-            ir, view_id, model["name"], metrics, window,
-            per_metric=int(run.summary.get("per_metric") or ANSWERABLE_PER_METRIC),
-            seed=int(run.summary.get("seed") or 0),
-        )
+        per_metric = int(run.summary.get("per_metric") or ANSWERABLE_PER_METRIC)
+        seed = int(run.summary.get("seed") or 0)
+        if run.summary.get("vocabulary") == "business":
+            from app.modules.ontology.service import OntologyService
+
+            reads = OntologyService(self.repository, self.catalog)
+            snapshot = await reads.snapshot("current")
+            terms = gold_cases.business_terms(
+                ir, view_id, reads.visible_concepts(snapshot, user), snapshot.representations)
+            found = gold_cases.business_intents(
+                ir, view_id, model["name"], metrics, window, terms,
+                per_metric=per_metric, seed=seed)
+        else:
+            found = gold_cases.intents(
+                ir, view_id, model["name"], metrics, window, per_metric=per_metric, seed=seed)
         rng = random.Random(f"{run.summary.get('seed')}:{view_id}:language")
         semaphore = asyncio.Semaphore(PARALLEL)
 
@@ -360,7 +374,7 @@ class EvaluationService:
                 set_name=run.set_name, version=run.version, kind="answerable",
                 intent=intent.template, language="id" if rng.random() < 0.7 else "en",
                 view_id=view_id, view_name=model["name"], plan=intent.plan,
-                meaning=intent.meaning, expected="answer",
+                meaning=intent.meaning, expected="answer", terms=intent.terms,
             )
 
         cases = [case for case in await asyncio.gather(*(check(item) for item in found)) if case]
@@ -399,18 +413,31 @@ class EvaluationService:
             "the same filter value and the same top-N. Use everyday business words, never "
             "snake_case or technical names, write the period in words and keep filter values "
             "exactly as given. Square-bracketed names are technical identifiers: never copy "
-            "them. Do not add anything the meaning does not ask for.",
+            "them. When the meaning gives a measure term or a breakdown term, use that exact "
+            "phrase for it and never the measure's own name or description. Do not add "
+            "anything the meaning does not ask for.",
             {"items": [{"id": case.id, "language": case.language, "meaning": case.meaning}
                        for case in cases]},
             items_schema({"id": TEXT, "question": TEXT}), "evaluation_questions",
         )
         by_id = {str(item.get("id")): str(item.get("question") or "").strip()
                  for item in answer.get("items") or [] if isinstance(item, dict)}
+        from app.modules.ontology.resolver import normalise
+
         updated = []
         for case in cases:
             question = by_id.get(case.id, "")[:1000]
+            reviews = list(case.reviews)
+            missing = [term for term in case.terms
+                       if f" {normalise(term)} " not in f" {normalise(question)} "]
+            if question and missing:
+                # A vocabulary case that does not use its words tests nothing.
+                reviews.append(Review(
+                    reviewer="nova:vocabulary", kind="model", verdict="no",
+                    reason="the question does not use " + ", ".join(repr(t) for t in missing),
+                ))
             updated.append((case.model_copy(update={
-                "question": question or "-", "revision": case.revision + 1,
+                "question": question or "-", "revision": case.revision + 1, "reviews": reviews,
                 "status": "DRAFT" if question else "REJECTED",
             }), case.revision))
         await self.repository.save_many("eval_cases", updated)
@@ -1111,7 +1138,9 @@ def agreement(results: list) -> dict:
     pairs: dict[str, tuple[list[str], list[str]]] = {}
     for item in results:
         reviews = list(getattr(item, "reviews", []) or [])
-        model = next((r for r in reviews if r.kind == "model"), None)
+        # Deterministic checks (``nova:*``) are not a judge; agreement is between judges.
+        model = next((r for r in reviews
+                      if r.kind == "model" and not r.reviewer.startswith("nova:")), None)
         if model is None:
             continue
         for review in reviews:

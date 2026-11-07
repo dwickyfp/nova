@@ -39,6 +39,8 @@ class EvalCase(OntologyRecord):
     #: What the plan asks, in business words; what judges compare the question with.
     meaning: str = Field(default="", max_length=2000)
     expected: Behaviour
+    #: Business words the question must use verbatim (vocabulary gold sets).
+    terms: list[str] = Field(default_factory=list, max_length=8)
     reviews: list[Review] = Field(default_factory=list)
     status: Literal["DRAFT", "ACTIVE", "REJECTED"] = "DRAFT"
 

@@ -24,10 +24,11 @@ from __future__ import annotations
 import random
 import re
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 from app.modules.agents.semantic.ir import FieldKind, SemanticModelIR
-from app.modules.ontology.derived import NUMERIC, humanize
+from app.modules.ontology.derived import NUMERIC, humanize, singular
 
 TEMPLATES = ("total", "by_dimension", "top_n", "trend", "filtered")
 _COORDINATE = re.compile(r"(^|_)(lat|latitude|lon|lng|longitude)$", re.IGNORECASE)
@@ -144,6 +145,8 @@ class Intent:
     plan: dict[str, Any]
     meaning: str
     needs_value: str | None = None  # a breakdown whose top value must be read first
+    #: Words the question must use verbatim (business vocabulary sets).
+    terms: list[str] = dataclass_field(default_factory=list)
 
 
 def _metric_words(model: SemanticModelIR, name: str) -> str:
@@ -229,8 +232,127 @@ def with_value(intent: Intent, value: Any) -> Intent:
         key=intent.key, view_id=intent.view_id, view_name=intent.view_name,
         template=intent.template, metric=intent.metric, plan=plan,
         meaning=intent.meaning.replace("{value}", str(value)), needs_value=None,
+        terms=list(intent.terms),
     )
 
 
 def ordered(plan: dict[str, Any]) -> bool:
     return bool(plan.get("order_by"))
+
+
+# --- business vocabulary -------------------------------------------------------------
+
+def view_text(model: SemanticModelIR) -> str:
+    """Every word the view itself offers a planner: names, descriptions, synonyms."""
+    from app.modules.ontology.resolver import normalise
+
+    parts: list[str] = []
+    for metric in model.metrics:
+        parts += [metric.name.replace("_", " "), metric.description or "", *metric.synonyms]
+    for dataset in model.datasets:
+        parts += [dataset.name.replace("_", " "), dataset.description or "", *dataset.synonyms]
+        for field in dataset.fields:
+            parts += [field.name.replace("_", " "), field.description or "", *field.synonyms]
+    return f" {normalise(' '.join(parts))} "
+
+
+def _terms(names: list[str], text: str, taken: dict[str, int]) -> list[str]:
+    from app.modules.ontology.resolver import normalise
+
+    found = []
+    for name in names:
+        term = normalise(name)
+        # Only words the view does not already say, that name exactly one concept,
+        # and that read as business words rather than identifiers.
+        if term and "_" not in name and f" {term} " not in text and taken.get(term) == 1:
+            found.append(name.strip())
+    return sorted(dict.fromkeys(found), key=str.casefold)
+
+
+def business_terms(
+    model: SemanticModelIR, view_id: str, concepts: dict, representations: list,
+) -> tuple[dict[str, list[str]], dict[str, tuple[str, list[str]]]]:
+    """Ontology words for this view's metrics and entities that the view never uses.
+
+    Returns ``(metric -> terms, dataset -> (name field, terms))``. A question
+    phrased with these words can only be mapped to the view through the
+    ontology, which is what a business-vocabulary gold set measures.
+    """
+    from app.modules.ontology.contracts import ConceptKind
+    from app.modules.ontology.resolver import normalise
+
+    text = view_text(model)
+    taken: dict[str, int] = {}
+    for concept in concepts.values():
+        for name in {concept.label, *concept.aliases}:
+            key = normalise(name)
+            if key:
+                taken[key] = taken.get(key, 0) + 1
+    metric_terms: dict[str, list[str]] = {}
+    for binding in representations:
+        concept = concepts.get(binding.concept_id)
+        if (
+            concept is None or binding.status != "VALIDATED"
+            or binding.semantic.view_id != view_id or model.metric(binding.metric) is None
+            or concept.kind not in {ConceptKind.METRIC, ConceptKind.MEASURE}
+        ):
+            continue
+        terms = _terms([concept.label, *concept.aliases], text, taken)
+        if terms:
+            metric_terms[binding.metric] = terms
+    entity_terms: dict[str, tuple[str, list[str]]] = {}
+    for concept in concepts.values():
+        if concept.kind != ConceptKind.BUSINESS_ENTITY:
+            continue
+        for dataset in model.datasets:
+            if singular(humanize(dataset.name)).casefold() != concept.label.casefold():
+                continue
+            name_field = next(
+                (f.name for f in dataset.fields if f.name == "name" or f.name.endswith("_name")),
+                None,
+            )
+            terms = _terms(list(concept.aliases), text, taken)
+            if name_field and terms:
+                entity_terms[dataset.name] = (f"{dataset.name}.{name_field}", terms)
+    return metric_terms, entity_terms
+
+
+def business_intents(
+    model: SemanticModelIR, view_id: str, view_name: str, metrics: list[str],
+    window: tuple[str, str], terms: tuple[dict[str, list[str]], dict[str, tuple[str, list[str]]]],
+    *, per_metric: int, seed: int,
+) -> list[Intent]:
+    """The usual templates, asked with the ontology's words instead of the view's."""
+    metric_terms, entity_terms = terms
+    rng = random.Random(f"{seed}:{view_id}:business")
+    found: list[Intent] = []
+    for intent in intents(model, view_id, view_name, [m for m in metrics if m in metric_terms],
+                          window, per_metric=per_metric, seed=seed):
+        term = rng.choice(metric_terms[intent.metric])
+        intent.meaning += f" || measure term: '{term}'"
+        intent.terms = [term]
+        found.append(intent)
+    # A breakdown named by an entity word ("per toko"), where the metric reaches it.
+    whole, _trend = periods(*window)
+    for position, metric in enumerate(sorted(m for m in metrics if m in metric_terms)):
+        reachable = {name for name, _ in breakdowns(model, metric)}
+        options = [(dataset, field, words) for dataset, (field, words) in entity_terms.items()
+                   if field in reachable]
+        if not options or not whole:
+            continue
+        dataset, field, words = options[position % len(options)]
+        metric_ir = model.metric(metric)
+        period = whole[position % len(whole)]
+        plan: dict[str, Any] = {"metrics": [metric], "dimensions": [field]}
+        if metric_ir is not None and metric_ir.default_time_dimension:
+            plan["time"] = {"dimension": metric_ir.default_time_dimension, "range": period.range}
+        measure, entity = rng.choice(metric_terms[metric]), rng.choice(words)
+        found.append(Intent(
+            key=f"{view_id}:{metric}:by_entity", view_id=view_id, view_name=view_name,
+            template="by_entity", metric=metric, plan=plan,
+            meaning=(f"{_metric_words(model, metric)}, for each {humanize(field.split('.')[1])} "
+                     f"[{field}], in {period.words_en} || measure term: '{measure}' || "
+                     f"breakdown term: '{entity}'"),
+            terms=[measure, entity],
+        ))
+    return found

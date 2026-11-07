@@ -229,6 +229,53 @@ Reliabilitas naik dari 0,59 menjadi 0,69. Kasus `failed` turun dari 19 menjadi 2
 - dimensi tidak valid (1 kasus);
 - sisa over-grounding (1 kasus).
 
+## Gold set kosakata bisnis (7 November 2026)
+
+**Pertanyaan.** Apakah ontology menambah akurasi ketika pertanyaan memakai kata bisnis yang tidak ada di view? Yang bisa memetakan kata itu ke view hanyalah ontology.
+
+**Desain yang adil** (`GoldRequest.vocabulary = "business"`):
+
+- Kata diambil dari label atau alias konsep di release yang berlaku (`ont_rel_0005`).
+- Kata hanya dipakai bila tidak muncul sama sekali dalam nama, deskripsi, atau sinonim view (metrik, dataset, field), dan hanya menamai satu konsep. Contohnya, "omzet", "toko" dan "diskon" sudah ada di view sehingga dikeluarkan.
+- Kata entitas ("sopir", "barang", "toko pelanggan") dipakai untuk breakdown per nama entitas.
+- Pertanyaan yang tidak memuat kata wajibnya ditolak secara deterministik (`nova:vocabulary`).
+- Dua judge menilai seperti biasa.
+
+**Gold set `serbadata_business` v1:**
+
+- 226 kasus; judge model menerima 182.
+- Claude menolak 24:
+  - alias menyesatkan ("net sales before returns", "retail sales" untuk jumlah unit);
+  - "per sales" pada metrik pengiriman;
+  - "status" tanpa kejelasan;
+  - 2 kasus unanswerable yang ternyata bisa dijawab;
+  - 7 kasus "ambigu" yang tidak ambigu.
+- Hasilnya 173 aktif: 134 answerable (22 per entitas), 25 unanswerable, 14 ambigu.
+- Catatan realisme: model kadang menyisipkan istilah Inggris apa adanya ke dalam kalimat Indonesia ("Berapa number of routes…").
+
+**Hasil** (run `evn_63fb…` dengan ontology, `evn_0e35…` tanpa):
+
+| Kasus | Tanpa ontology | Dengan ontology | McNemar |
+|---|---|---|---|
+| Semua answerable (134) | 97,8% (93,6–99,2%) | 97,8% (93,6–99,2%) | 1 diperbaiki, 1 dirusak, p = 1,0 |
+| Breakdown kata entitas (22) | 90,9% | 95,5% | p = 1,0 |
+| Kata metrik saja (112) | 99,1% | 98,2% | p = 1,0 |
+| Reliabilitas (173) | 0,77 | 0,79 | |
+| Penolakan yang benar (39) | 51% | 59% | |
+| Klarifikasi ambigu (14) | 21% | 29% | |
+
+**Penilaian judge:**
+
+- **Alias tidak menambah akurasi yang terukur** bila view sudah diberikan dan modelnya kuat. Planner memahami "penjualan bersih", "untung kotor" atau "sopir" dari deskripsi view dan pengetahuan bahasanya sendiri. Ontology me-resolve 100% pertanyaan, tetapi bantuannya tidak dibutuhkan untuk tugas satu view.
+- **Arah penolakan dan klarifikasi** sedikit lebih baik dengan ontology, tetapi tidak signifikan pada n ini.
+- **Gold set ini belum menguji nilai ontology yang paling mungkin:** memilih view yang benar di antara beberapa view, karena setiap kasus memberi planner view yang tepat. Juga belum menguji pertanyaan lintas domain atau menjaga definisi resmi ketika deskripsi view berbeda dari makna yang disetujui steward.
+
+**Implikasi.** Klaim "ontology meningkatkan akurasi" tidak didukung data untuk tugas satu view. Pengukuran berikutnya harus menguji:
+
+1. pemilihan view tanpa petunjuk view;
+2. konflik definisi, yaitu ketika view mendefinisikan istilah berbeda dari definisi resmi;
+3. model yang lebih kecil atau lokal, tempat konteks biasanya paling berpengaruh (arXiv 2604.25149 menemukan efek konteks tidak bergantung model pada model frontier).
+
 ## Prioritas berikutnya
 
 Prioritas ini diputuskan oleh data:
