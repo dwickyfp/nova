@@ -12,6 +12,7 @@ import {
   type Proposal,
   type ReleaseSummary,
 } from './api'
+import { ChecksTab } from './checks-tab'
 import { ConceptsTab } from './concepts-tab'
 import { DerivedTab } from './derived-tab'
 import { DomainsTab } from './domains-tab'
@@ -455,4 +456,46 @@ it('names the Semantic View a proposed binding uses', () => {
   expect(
     describeChange({ target: 'representation', op: 'create', concept_id: 'con_rev', view_id: 'v-uuid', metric: 'net_revenue' }, names)
   ).toBe('Compute Finance.NetRevenue with retail_sales metric net_revenue')
+})
+
+it('lists meaning checks with their evidence', async () => {
+  vi.spyOn(ontologyApi, 'lint').mockResolvedValue({
+    counts: { error: 1, warning: 0 },
+    findings: [
+      {
+        rule: 'definition_formula',
+        severity: 'error',
+        concept_id: 'con_gm',
+        concept: 'Penjualan.GrossMargin',
+        message: 'The definition names Net revenue, but the formula leaves out Returned value.',
+        evidence: ['definition: Omzet bersih dikurangi harga pokok.'],
+      },
+    ],
+  })
+  const screen = await mount(<ChecksTab />)
+  await expect.element(screen.getByText('Penjualan.GrossMargin')).toBeVisible()
+  await expect.element(screen.getByText('Mismatch')).toBeVisible()
+  await expect.element(screen.getByText('Definition and formula disagree')).toBeVisible()
+  await expect.element(screen.getByText(/Omzet bersih dikurangi/)).toBeVisible()
+})
+
+it('says so when every definition matches', async () => {
+  vi.spyOn(ontologyApi, 'lint').mockResolvedValue({ counts: { error: 0, warning: 0 }, findings: [] })
+  const screen = await mount(<ChecksTab />)
+  await expect.element(screen.getByText('No meaning problems found')).toBeVisible()
+})
+
+it('suggests names and shows what the validator dropped', async () => {
+  vi.spyOn(ontologyApi, 'lint').mockResolvedValue({ counts: { error: 0, warning: 0 }, findings: [] })
+  const enrich = vi.spyOn(ontologyApi, 'enrich').mockResolvedValue({
+    proposals: [proposal({ id: 'prp_n', title: 'Names and definitions for Finance', source: 'ENGINE' })],
+    rejected: [{ concept: 'Finance.NetRevenue', value: 'total', reason: 'Too generic to mean one concept' }],
+  })
+  const screen = await mount(<ChecksTab />)
+  await screen.getByRole('button', { name: 'Suggest names' }).click()
+  await screen.getByRole('dialog').getByRole('button', { name: 'Suggest names' }).click()
+  expect(enrich).toHaveBeenCalledWith(expect.objectContaining({ domain_id: null }))
+  await expect.element(screen.getByText('1 proposal sent for review')).toBeVisible()
+  await expect.element(screen.getByText('Too generic to mean one concept')).toBeVisible()
+  await expect.element(screen.getByText('total', { exact: true })).toBeVisible()
 })

@@ -152,7 +152,7 @@ concept's domain.
 
 **Authority.** Derived items are context and candidates. They are never
 released, never bound and never override an approved concept. Use in Studio
-retrieval and LLM enrichment are later phases of the
+retrieval is a later phase of the
 [auto-ontology proposal](proposals/supernova-auto-ontology.md).
 
 ### Promotion
@@ -181,6 +181,57 @@ and the caller can never review their own.
   holds at most 200 changes. Rerunning drafts nothing already open, and the
   operation id is derived from the request, domain and content, so a retry
   creates nothing twice. Every run is audited as `PROPOSE_DERIVED`.
+
+## Meaning checks
+
+Code: `backend/app/modules/ontology/lint.py`. API: `GET /ontology/lint`.
+Console: the **Checks** tab.
+
+Deterministic rules compare what stewards approved with the formula Studio
+runs. They never call a model, and only check concepts and views the caller can
+see:
+
+| Rule | Severity | Finds |
+|---|---|---|
+| `definition_formula` | error | A definition names another metric whose inputs the formula only partly uses: "Omzet bersih dikurangi harga pokok" over `SUM(net_amount)` leaves out the returned value net revenue subtracts |
+| `adjustment_ignored` | warning | A metric sums a column that another metric of the same view corrects with a returns or cancellation column, and neither its formula nor its wording mentions them |
+| `ambiguous_name` | warning | One name belongs to approved concepts in two domains, so the resolver asks |
+| `unbound_metric` | warning | An approved metric no validated binding computes |
+
+Mentions are found with the resolver's whole-word matching; inputs come from
+the derived `DERIVES` graph, and columns from the parsed expression of each
+outermost aggregate. Release preparation adds every finding as a warning
+("Meaning check (rule) concept: …"). Findings never block a release or change
+meaning: a steward decides whether the words or the formula are wrong.
+
+## Names from Nova
+
+Code: `backend/app/modules/ontology/enrichment.py`. API:
+`POST /ontology/enrich {operation_id, domain_id?}`. Console: **Suggest names**
+on the Checks tab.
+
+The resolver only matches names a concept carries, so every everyday word a
+concept lacks is a question Studio cannot ground. Nova proposes them:
+
+- Relation roles from the derived layer (`driver`, `salesman`) become aliases of
+  the entity, with no model involved.
+- One structured call per batch of 15 concepts asks the default model for
+  everyday Indonesian and English words, a definition where only a placeholder
+  exists, and current names that could mean another concept. It receives
+  names, definitions, units and formulas, never data values. Batches run three
+  at a time; unreadable output is repaired once; a batch the provider cannot
+  answer is reported, and only a run where no batch answered fails (503).
+- A validator keeps a word only if it is 1-4 words and at most 40 characters,
+  not a number or a generic word, states no cause, is not already a name of a
+  visible concept, a name an open proposal gives, or a view synonym of another
+  official metric, and was not suggested for two concepts. Validation runs in
+  batch order, so a word one batch keeps is taken for the next.
+
+What survives becomes one `ENGINE` proposal per domain of `update` changes,
+listing each word with its source and each ambiguity note. Concepts an open
+proposal already changes are left alone. Runs are audited as `ENRICH`. A
+steward still judges meaning the validator cannot, such as a related but
+different measure, and rejects or resubmits without the word.
 
 ## Studio grounding
 
@@ -247,7 +298,7 @@ limited to the agent's Semantic Views and to views the caller can see.
 ## Console page
 
 Console → AI & ML → **Business Ontology** (`/business-ontology`,
-`frontend/src/features/ontology/`). The page has five tabs:
+`frontend/src/features/ontology/`). The page has six tabs:
 
 - **Concepts.** Shows the published release by default, or the latest
   approved definitions. Opening a concept shows:
@@ -263,6 +314,9 @@ Console → AI & ML → **Business Ontology** (`/business-ontology`,
   metrics, related entities and evidence. **Compile now** recompiles the
   visible views; **Propose to stewards** drafts the per-domain proposals
   described under [Promotion](#promotion) and lists what it left out and why.
+- **Checks.** The [meaning checks](#meaning-checks) with their evidence, and
+  **Suggest names**, which runs [Names from Nova](#names-from-nova) and lists
+  the proposals sent and the words the validator dropped.
 - **Proposals.** Grouped as in review, approved, applied and closed. Each
   proposal shows who or what drafted it, its changes in words (with each
   link's justification and each binding's view name), the domains it touches, which domains

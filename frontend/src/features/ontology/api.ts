@@ -260,6 +260,27 @@ export type DerivedPromotion = {
   skipped: { key: string; label: string; reason: string }[]
 }
 
+/** One meaning check result; advice for stewards, never a block. */
+export type LintFinding = {
+  rule: 'definition_formula' | 'adjustment_ignored' | 'ambiguous_name' | 'unbound_metric'
+  severity: 'error' | 'warning'
+  concept_id: string
+  concept: string
+  message: string
+  evidence: string[]
+}
+
+export type LintReport = {
+  findings: LintFinding[]
+  counts: { error: number; warning: number }
+}
+
+/** Names Nova proposed, and what its validator dropped. */
+export type Enrichment = {
+  proposals: Proposal[]
+  rejected: { concept: string; value: string; reason: string }[]
+}
+
 const id = encodeURIComponent
 
 /** A fresh idempotency key; a retried request reuses the one it was sent with. */
@@ -314,6 +335,9 @@ export const ontologyApi = {
       '/ontology/derived/compile',
       viewId ? { view_id: viewId } : {}
     ),
+  lint: () => api.get<LintReport>('/ontology/lint'),
+  enrich: (body: { operation_id: string; domain_id?: string | null }) =>
+    api.post<Enrichment>('/ontology/enrich', body),
   proposeDerived: (body: { operation_id: string; shared_domain_id?: string | null }) =>
     api.post<DerivedPromotion>('/ontology/derived/propose', body),
 

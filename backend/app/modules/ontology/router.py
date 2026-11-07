@@ -13,6 +13,7 @@ from app.modules.ontology import access
 from app.modules.ontology.bootstrap import BootstrapRequest, bootstrap
 from app.modules.ontology.contracts import Actor, Proposal, Release
 from app.modules.ontology.derived import compile_view, visible_layer
+from app.modules.ontology.enrichment import EnrichRequest, enrich
 from app.modules.ontology.promotion import PromotionRequest, propose_from_derived
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_service
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
@@ -150,6 +151,18 @@ async def compile_derived(body: DerivedCompile, user: CurrentUser):
     return {
         "compilations": [item.model_dump(mode="json", exclude={"actor"}) for item in compilations]
     }
+
+
+@router.post("/enrich", status_code=201)
+async def suggest_names(body: EnrichRequest, user: CurrentUser):
+    return await enrich(body, user, stewardship_service)
+
+
+@router.get("/lint")
+async def meaning_checks(user: CurrentUser):
+    from app.modules.ontology.lint import lint_report
+
+    return await lint_report(user, ontology_service.catalog, ontology_service.repository)
 
 
 @router.post("/derived/propose", status_code=201)
