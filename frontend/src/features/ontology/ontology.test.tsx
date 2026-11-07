@@ -7,11 +7,13 @@ import {
   ontologyApi,
   type Concept,
   type ConceptList,
+  type DerivedItem,
   type Domain,
   type Proposal,
   type ReleaseSummary,
 } from './api'
 import { ConceptsTab } from './concepts-tab'
+import { DerivedTab } from './derived-tab'
 import { DomainsTab } from './domains-tab'
 import { conceptNames, describeChange, splitList } from './model'
 import { ProposalsTab } from './proposals-tab'
@@ -348,4 +350,65 @@ it('explains why there is nothing to draft from when no view is published', asyn
     .element(screen.getByText('No published Semantic View is available to your role', { exact: false }))
     .toBeVisible()
   await expect.element(screen.getByRole('button', { name: 'Draft concepts' })).toBeDisabled()
+})
+
+function derived(overrides: Partial<DerivedItem>): DerivedItem {
+  return {
+    id: overrides.key ?? 'drv',
+    key: 'entity:retail.employees',
+    item_type: 'concept',
+    concept_kind: null,
+    label: '',
+    definition: '',
+    aliases: [],
+    unit: null,
+    is_time: false,
+    metric: null,
+    relation_type: null,
+    source_key: null,
+    target_key: null,
+    role: null,
+    roles: [],
+    official_concept: null,
+    confidence: 0.9,
+    evidence: [
+      {
+        semantic: { view_id: 'retail_sales', version: 3, fingerprint: 'f' },
+        view_name: 'retail_sales',
+        method: 'dataset',
+        source: 'dataset:sales_orders',
+        confidence: 0.9,
+      },
+    ],
+    ...overrides,
+  }
+}
+
+it('shows derived entities with roles, official links and how metrics are built', async () => {
+  const items: DerivedItem[] = [
+    derived({ key: 'entity:retail.employees', concept_kind: 'BUSINESS_ENTITY', label: 'Employee', roles: ['driver', 'salesman'] }),
+    derived({ key: 'entity:retail.sales_orders', concept_kind: 'BUSINESS_ENTITY', label: 'Sales order' }),
+    derived({ key: 'metric:v.net_revenue', concept_kind: 'METRIC', label: 'Net revenue', unit: 'IDR', official_concept: 'Penjualan.NetRevenue' }),
+    derived({ key: 'metric:v.returned_value', concept_kind: 'METRIC', label: 'Returned value' }),
+    derived({ key: 'rel:m', item_type: 'relation', relation_type: 'MEASURES', source_key: 'metric:v.net_revenue', target_key: 'entity:retail.sales_orders' }),
+    derived({ key: 'rel:d', item_type: 'relation', relation_type: 'DERIVES', source_key: 'metric:v.net_revenue', target_key: 'metric:v.returned_value' }),
+    derived({ key: 'rel:r', item_type: 'relation', relation_type: 'RELATED_TO', source_key: 'entity:retail.sales_orders', target_key: 'entity:retail.employees', role: 'salesman' }),
+  ]
+  vi.spyOn(ontologyApi, 'derived').mockResolvedValue({ items, compilations: [], compiler_version: 'nova-derived:1' })
+  const screen = await mount(<DerivedTab />)
+
+  await expect.element(screen.getByText('driver, salesman')).toBeVisible()
+  await screen.getByRole('button', { name: 'Sales order', exact: true }).click()
+  await expect.element(screen.getByText('Official: Penjualan.NetRevenue')).toBeVisible()
+  await expect.element(screen.getByText('Built from Returned value')).toBeVisible()
+  await expect.element(screen.getByText(/as its salesman/)).toBeVisible()
+})
+
+it('offers to compile when nothing is derived yet', async () => {
+  vi.spyOn(ontologyApi, 'derived').mockResolvedValue({ items: [], compilations: [], compiler_version: 'nova-derived:1' })
+  const compile = vi.spyOn(ontologyApi, 'compileDerived').mockResolvedValue({ compilations: [] })
+  const screen = await mount(<DerivedTab />)
+  await expect.element(screen.getByText('Nothing derived yet')).toBeVisible()
+  await screen.getByRole('button', { name: 'Compile now' }).click()
+  expect(compile).toHaveBeenCalledOnce()
 })

@@ -98,6 +98,16 @@ class FakeRepository:
         return copy.deepcopy(record)
 
 
+    async def save_many(self, kind, records):
+        written = 0
+        for record, expected in records:
+            old = self._records(kind, record.id)
+            before = old[-1].revision if old else 0
+            saved = await self.save(kind, record, expected_revision=expected)
+            written += saved.revision != before
+        return written
+
+
 def definition(*, revenue_expression: str = "SUM(sales.revenue)", drop_revenue: bool = False):
     value = copy.deepcopy(warehouse.DEFINITION)
     metrics = []
@@ -138,3 +148,6 @@ class FakeCatalog:
 
     async def visible(self, view_id, user):
         return view_id in self.views and user["username"] not in self.hidden.get(view_id, set())
+
+    async def published_ids(self, user):
+        return [view_id for view_id in sorted(self.views) if await self.visible(view_id, user)]

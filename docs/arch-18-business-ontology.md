@@ -98,6 +98,49 @@ A stale binding is never usable. Release preparation and publication re-check
 freshness themselves, so the result does not depend on the drift hook having
 run.
 
+## Derived layer
+
+Code: `backend/app/modules/ontology/derived.py`. API: `GET /ontology/derived`,
+`POST /ontology/derived/compile`. Console: the **Derived** tab.
+
+Nova compiles what each published Semantic View already proves into a shared,
+deterministic graph. It never needs a person to type it:
+
+| Item | Rule | Base confidence |
+|---|---|---|
+| `BUSINESS_ENTITY` | A dataset, keyed by its physical table, so `outlets` in three views is one Outlet | 0.9 with a grain, 0.7 without |
+| `DIMENSION` that `APPLIES_TO` its entity | A categorical or date field. Grain keys, join keys, identifier-named fields and numeric amounts are left out | 0.9 |
+| `METRIC` that `MEASURES` its base entity | A public metric, with its claim fingerprint | 1.0 |
+| `RELATED_TO` between entities, with a role | A many-to-one relationship. The key column names the role (`salesman_id` is the salesman role of Employee) unless it names the target (`outlet_id`) | 0.95, 0.6 if the cardinality is unknown |
+| `DERIVES` between metrics | Proven on the parsed expression: `SUM(a)/SUM(b)` is built from the metrics `SUM(a)` and `SUM(b)`; `SUM(a - b)` from `SUM(a)` and `SUM(b)`. Only aggregates over the same base dataset match | 0.95 |
+| `EQUIVALENT_TO` between metrics | The same claim fingerprint in two views | 0.9 |
+
+Each further view that proves an item adds 0.05, up to 1.0. Every item keeps
+its evidence: view id, version and fingerprint, the method, the source object,
+and what that view calls and says the item is. Names, meaning and aliases are
+read from all evidence in view order, so the result does not depend on which
+view compiled last.
+
+**Compilation.** Publishing a view version compiles it after the drift check;
+a failure is logged and never undoes the publication. `POST /derived/compile`
+recompiles one visible view, or every published view the caller can see, and
+is audited as `DERIVE`. A compile replaces only its own view's evidence: an
+item no view proves any more becomes `RETIRED`. Writes are one batch under one
+lease (`RevisionRepository.save_many`), so a recompile with no change writes
+nothing. Records are stored append-only in `CONFIG_ONTOLOGY_DERIVED` and
+`CONFIG_ONTOLOGY_COMPILATIONS`.
+
+**Reading.** A reader sees only evidence from views they can see; an item
+left without evidence is hidden, its names come only from visible views, and
+a relation is shown only when both ends are. A derived metric links to the
+approved concept with a validated binding to it, when the reader can see that
+concept's domain.
+
+**Authority.** Derived items are context and candidates. They are never
+released, never bound and never override an approved concept. Promotion to
+official meaning, use in Studio retrieval, and LLM enrichment are later phases
+of the [auto-ontology proposal](proposals/supernova-auto-ontology.md).
+
 ## Studio grounding
 
 Every `semantic_query` resolves the business terms in its question before it

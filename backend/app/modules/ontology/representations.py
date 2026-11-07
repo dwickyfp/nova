@@ -43,6 +43,8 @@ class SemanticCatalog(Protocol):
 
     async def visible(self, view_id: str, user: dict) -> bool: ...
 
+    async def published_ids(self, user: dict) -> list[str]: ...
+
 
 class SemanticViewCatalog:
     """Published Semantic Views, read through their owning service."""
@@ -68,6 +70,15 @@ class SemanticViewCatalog:
         from app.modules.intelligence.semantic_views import semantic_view_service
 
         return await semantic_view_service.is_visible(view_id, user)
+
+    async def published_ids(self, user: dict) -> list[str]:
+        """Ids of the published views ``user`` can see."""
+        from app.modules.intelligence.semantic_views import semantic_view_service
+
+        return [
+            str(view["id"]) for view in await semantic_view_service.list(user)
+            if view.get("status") == "ACTIVE" and view.get("active_version")
+        ]
 
 
 @dataclass(frozen=True)
@@ -230,3 +241,6 @@ async def refresh_after_publish(view_id: str, user: dict) -> None:
         return
     if counts["repinned"] or counts["stale"]:
         logger.info("Ontology bindings after publishing %s: %s", view_id, counts)
+    from app.modules.ontology.derived import compile_after_publish
+
+    await compile_after_publish(view_id, user)

@@ -208,6 +208,52 @@ export type DomainUpdate = {
   expected_revision: number
 }
 
+/** One published object that proves a derived item. */
+export type DerivedEvidence = {
+  semantic: { view_id: string; version: number; fingerprint: string }
+  view_name: string
+  method: 'dataset' | 'field' | 'relationship' | 'metric' | 'metric_expression' | 'claim'
+  source: string
+  confidence: number
+}
+
+/** Meaning Nova compiled from published Semantic Views: context, never official. */
+export type DerivedItem = {
+  id: string
+  key: string
+  item_type: 'concept' | 'relation'
+  concept_kind: ConceptKind | null
+  label: string
+  definition: string
+  aliases: string[]
+  unit: string | null
+  is_time: boolean
+  metric: string | null
+  relation_type: RelationType | null
+  source_key: string | null
+  target_key: string | null
+  role: string | null
+  roles: string[]
+  official_concept: string | null
+  confidence: number
+  evidence: DerivedEvidence[]
+}
+
+export type DerivedCompilation = {
+  id: string
+  view_id: string
+  view_name: string
+  version: number
+  counts: Record<string, number>
+  updated_at: string
+}
+
+export type DerivedLayer = {
+  items: DerivedItem[]
+  compilations: DerivedCompilation[]
+  compiler_version: string
+}
+
 const id = encodeURIComponent
 
 /** A fresh idempotency key; a retried request reuses the one it was sent with. */
@@ -255,6 +301,13 @@ export const ontologyApi = {
     api.post<Proposal>(`/ontology/proposals/${id(proposalId)}/apply`),
   withdraw: (proposalId: string) =>
     api.post<Proposal>(`/ontology/proposals/${id(proposalId)}/withdraw`),
+
+  derived: () => api.get<DerivedLayer>('/ontology/derived'),
+  compileDerived: (viewId?: string) =>
+    api.post<{ compilations: DerivedCompilation[] }>(
+      '/ontology/derived/compile',
+      viewId ? { view_id: viewId } : {}
+    ),
 
   releases: () => api.get<ReleaseSummary[]>('/ontology/releases'),
   currentRelease: () => api.get<CurrentRelease>('/ontology/releases/current'),

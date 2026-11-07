@@ -177,6 +177,61 @@ class RevisionRepository:
             return record
 
 
+    async def save_many(self, kind: str, records: list[tuple[R, int]]) -> int:
+        """Append many records as their next revisions under one lease.
+
+        For writers that own a whole kind, such as the derived-layer compiler.
+        Unchanged records are skipped; any revision conflict aborts the batch
+        before anything is written. Returns how many records were written.
+        """
+        if not records:
+            return 0
+        model = type(records[0][0])
+        async with metadata_lock(f"{self.namespace}:{kind}:batch", timeout_seconds=60) as lock:
+            ids = [record.id for record, _ in records]
+            latest: dict[str, R] = {}
+            for start in range(0, len(ids), 500):
+                latest.update(await self.latest_many(kind, ids[start:start + 500], model))
+            rows = []
+            now = utc_now()
+            for record, expected in records:
+                old = latest.get(record.id)
+                if old is not None:
+                    if old.model_dump(exclude=_UNCHANGED) == record.model_dump(exclude=_UNCHANGED):
+                        continue
+                    if old.revision != expected:
+                        raise HTTPException(
+                            status_code=409, detail="Record changed; reload before editing"
+                        )
+                    record = record.model_copy(update={"created_at": old.created_at})
+                elif expected:
+                    raise HTTPException(
+                        status_code=409, detail="Record no longer matches this revision"
+                    )
+                record = record.model_copy(update={"revision": expected + 1, "updated_at": now})
+                rows.append([
+                    record.id,
+                    record.revision,
+                    fingerprint(record.model_dump(mode="json"))[:32],
+                    record.actor.principal,
+                    record.actor.active_role,
+                    record.actor.security_context_version,
+                    record.model_dump_json(),
+                ])
+            for start in range(0, len(rows), 50):
+                if not await lock.renew():
+                    raise HTTPException(status_code=409, detail="Metadata lease expired; retry")
+                chunk = rows[start:start + 50]
+                await db.execute_system(
+                    f"INSERT INTO {self._table(kind)} "
+                    "(id,revision,operation_id,actor,active_role,security_context_version,"
+                    "payload,created_at) VALUES "
+                    + ",".join(["(%s,%s,%s,%s,%s,%s,%s,NOW())"] * len(chunk)),
+                    [value for row in chunk for value in row],
+                )
+            return len(rows)
+
+
 class OntologyRepository(RevisionRepository):
     def __init__(self) -> None:
         super().__init__(ONTOLOGY_TABLES, "ontology")

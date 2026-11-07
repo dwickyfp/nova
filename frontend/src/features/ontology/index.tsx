@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { BookText, FolderTree, Inbox, PackageCheck } from 'lucide-react'
+import { BookText, FolderTree, Inbox, Network, PackageCheck } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
@@ -9,12 +9,13 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ontologyApi } from './api'
 import { ConceptsTab } from './concepts-tab'
+import { DerivedTab } from './derived-tab'
 import { DomainsTab } from './domains-tab'
 import { useOntologyKey } from './model'
 import { ProposalsTab } from './proposals-tab'
 import { ReleasesTab } from './releases-tab'
 
-export type OntologyTab = 'concepts' | 'proposals' | 'releases' | 'domains'
+export type OntologyTab = 'concepts' | 'derived' | 'proposals' | 'releases' | 'domains'
 
 const route = getRouteApi('/_authenticated/business-ontology')
 
@@ -67,6 +68,10 @@ export function BusinessOntology({
               <BookText className='size-3.5' />
               Concepts
             </TabsTrigger>
+            <TabsTrigger value='derived' className='gap-1.5'>
+              <Network className='size-3.5' />
+              Derived
+            </TabsTrigger>
             <TabsTrigger value='proposals' className='gap-1.5'>
               <Inbox className='size-3.5' />
               Proposals
@@ -85,6 +90,9 @@ export function BusinessOntology({
           </TabsList>
           <TabsContent value='concepts' className='mt-4'>
             <ConceptsTab />
+          </TabsContent>
+          <TabsContent value='derived' className='mt-4'>
+            <DerivedTab />
           </TabsContent>
           <TabsContent value='proposals' className='mt-4'>
             <ProposalsTab />

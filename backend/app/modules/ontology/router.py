@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import get_current_user
+from app.modules.intelligence.contracts import Contract
 from app.modules.ontology import access
 from app.modules.ontology.bootstrap import BootstrapRequest, bootstrap
-from app.modules.ontology.contracts import Proposal, Release
+from app.modules.ontology.contracts import Actor, Proposal, Release
+from app.modules.ontology.derived import compile_view, visible_layer
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_service
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
 from app.modules.ontology.stewardship import ProposalCreate, ReviewRequest, stewardship_service
@@ -111,6 +113,42 @@ async def list_proposals(
 @router.post("/proposals", status_code=201)
 async def create_proposal(body: ProposalCreate, user: CurrentUser):
     return _proposal(await stewardship_service.create(body, user))
+
+
+class DerivedCompile(Contract):
+    #: One published view; omitted, every published view the caller can see.
+    view_id: str | None = None
+
+
+@router.get("/derived")
+async def derived_layer(user: CurrentUser):
+    """What Nova derived from the published views the caller can see."""
+    return await visible_layer(
+        user, stewardship_service.catalog, stewardship_service.repository
+    )
+
+
+@router.post("/derived/compile")
+async def compile_derived(body: DerivedCompile, user: CurrentUser):
+    """Recompile the derived layer now; publishing a view already does this."""
+    catalog = stewardship_service.catalog
+    if body.view_id is not None:
+        if not await catalog.visible(body.view_id, user):
+            raise HTTPException(status_code=404, detail="Semantic View not found")
+        view_ids = [body.view_id]
+    else:
+        view_ids = await catalog.published_ids(user)
+    compilations = []
+    for view_id in view_ids:
+        view = await catalog.published(view_id)
+        if view is not None:
+            compilations.append(await compile_view(
+                view, Actor.from_user(user), stewardship_service.repository
+            ))
+    await access.audit("DERIVE", "ONTOLOGY_DERIVED", (body.view_id or "all")[:128], user)
+    return {
+        "compilations": [item.model_dump(mode="json", exclude={"actor"}) for item in compilations]
+    }
 
 
 @router.post("/bootstrap", status_code=201)

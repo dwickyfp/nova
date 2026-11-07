@@ -21,7 +21,7 @@ def _words(name: str) -> str:
 _IDENTIFIER = re.compile(r"(?:^|_)(?:id|uuid|no|number|key|code)$", re.IGNORECASE)
 
 
-def _identifiers(model: SemanticModelIR) -> set[tuple[str, str]]:
+def identifier_fields(model: SemanticModelIR) -> set[tuple[str, str]]:
     """Grain keys, join keys and identifier-named fields, as (dataset, field)."""
     found = {
         (dataset.name, key) for dataset in model.datasets for key in dataset.grain.keys
@@ -63,7 +63,7 @@ def suggest_follow_ups(
         )
 
     used = set(plan.dimensions) | {item.field for item in plan.filters}
-    identifiers = _identifiers(model)
+    identifiers = identifier_fields(model)
     candidates = [
         field.name
         for dataset in model.datasets

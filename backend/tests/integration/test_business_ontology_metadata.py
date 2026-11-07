@@ -71,6 +71,44 @@ async def test_bootstrap_ddl_matches_the_migration_and_is_idempotent(ontology_db
     assert bootstrap == migration.split("\n", 1)[1].strip()
 
 
+async def test_derived_layer_ddl_matches_its_migration(ontology_db):
+    migration = Path("migrations/20261107_ontology_derived_layer.sql").read_text()
+    for statement in migration.split(";"):
+        sql = "\n".join(
+            line for line in statement.splitlines() if not line.strip().startswith("--")
+        ).strip()
+        if sql:
+            await db.execute_system(sql)
+    bootstrap = (
+        Path("../docker/init-nova.sql")
+        .read_text()
+        .split("-- Supernova derived ontology layer:", 1)[1]
+        .split("\n", 1)[1]
+        .split("-- End Supernova derived ontology layer", 1)[0]
+        .strip()
+    )
+    assert bootstrap == migration.split("\n", 1)[1].strip()
+
+
+async def test_a_batch_write_appends_only_changed_records(ontology_db):
+    repository = OntologyRepository()
+    domains = [
+        Domain(id=f"{ontology_db}_{index}", actor=ACTOR, name=f"D{index}",
+               steward_roles=["finance_steward"])
+        for index in range(60)
+    ]
+    assert await repository.save_many("domains", [(item, 0) for item in domains]) == 60
+    assert await repository.save_many("domains", [(item, 1) for item in domains]) == 0
+    changed = domains[0].model_copy(update={"description": "Money"})
+    assert await repository.save_many("domains", [(changed, 1), (domains[1], 1)]) == 1
+    latest = await repository.latest_many("domains", [item.id for item in domains[:2]], Domain)
+    assert latest[changed.id].revision == 2 and latest[changed.id].description == "Money"
+    assert latest[domains[1].id].revision == 1
+    with pytest.raises(HTTPException) as stale:
+        await repository.save_many("domains", [(domains[2].model_copy(update={"name": "X"}), 0)])
+    assert stale.value.status_code == 409
+
+
 async def test_revisions_are_appended_checked_and_read_back(ontology_db):
     repository = OntologyRepository()
     domain = Domain(

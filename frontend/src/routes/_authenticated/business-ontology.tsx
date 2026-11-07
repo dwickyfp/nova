@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { BusinessOntologyPage } from '@/features/ontology'
 
 const searchSchema = z.object({
-  tab: z.enum(['concepts', 'proposals', 'releases', 'domains']).optional().catch(undefined),
+  tab: z.enum(['concepts', 'derived', 'proposals', 'releases', 'domains']).optional().catch(undefined),
 })
 
 export const Route = createFileRoute('/_authenticated/business-ontology')({
