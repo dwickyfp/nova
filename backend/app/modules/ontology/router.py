@@ -14,6 +14,12 @@ from app.modules.ontology.bootstrap import BootstrapRequest, bootstrap
 from app.modules.ontology.contracts import Actor, Proposal, Release
 from app.modules.ontology.derived import compile_view, visible_layer
 from app.modules.ontology.enrichment import EnrichRequest, enrich
+from app.modules.ontology.evaluation.service import (
+    AnswerRunRequest,
+    ClaimRunRequest,
+    GoldRequest,
+    ReviewBatch,
+)
 from app.modules.ontology.promotion import PromotionRequest, propose_from_derived
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_service
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
@@ -151,6 +157,94 @@ async def compile_derived(body: DerivedCompile, user: CurrentUser):
     return {
         "compilations": [item.model_dump(mode="json", exclude={"actor"}) for item in compilations]
     }
+
+
+@router.get("/metrics")
+async def ontology_metrics(user: CurrentUser):
+    from app.modules.ontology.evaluation.metrics import overview
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return await overview(user, evaluation_service)
+
+
+@router.get("/evaluation/runs")
+async def evaluation_runs(user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    await access.require_admin("READ", "ONTOLOGY_EVALUATION", "runs", user)
+    return [run.model_dump(mode="json", exclude={"items"}) | {"total": len(run.items)}
+            for run in await evaluation_service.runs()]
+
+
+@router.post("/evaluation/gold", status_code=201)
+async def evaluation_gold(body: GoldRequest, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.start_gold(body, user))
+
+
+@router.post("/evaluation/answers", status_code=201)
+async def evaluation_answers(body: AnswerRunRequest, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.start_answers(body, user))
+
+
+@router.post("/evaluation/claims", status_code=201)
+async def evaluation_claims(body: ClaimRunRequest, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.start_claims(body, user))
+
+
+@router.post("/evaluation/runs/{run_id}/step")
+async def evaluation_step(run_id: str, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.step(run_id, user))
+
+
+@router.post("/evaluation/runs/{run_id}/resume")
+async def evaluation_resume(run_id: str, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return _run_view(await evaluation_service.resume(run_id, user))
+
+
+@router.get("/evaluation/runs/{run_id}/results")
+async def evaluation_results(run_id: str, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    await access.require_admin("READ", "ONTOLOGY_EVALUATION", run_id, user)
+    return [item.model_dump(mode="json", exclude={"actor"})
+            for item in await evaluation_service.results(run_id)]
+
+
+@router.post("/evaluation/runs/{run_id}/reviews")
+async def evaluation_review_results(run_id: str, body: ReviewBatch, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return await evaluation_service.review_results(run_id, body, user)
+
+
+@router.get("/evaluation/cases")
+async def evaluation_cases(user: CurrentUser, set_name: str, version: int | None = None):
+    from app.modules.ontology.evaluation.metrics import cases_payload
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    await access.require_admin("READ", "ONTOLOGY_EVALUATION", set_name, user)
+    return cases_payload(await evaluation_service.cases(set_name, version))
+
+
+@router.post("/evaluation/cases/{set_name}/reviews")
+async def evaluation_review_cases(set_name: str, body: ReviewBatch, user: CurrentUser):
+    from app.modules.ontology.evaluation.service import evaluation_service
+
+    return await evaluation_service.review_cases(set_name, body, user)
+
+
+def _run_view(run) -> dict:
+    return run.model_dump(mode="json", exclude={"items"}) | {"total": len(run.items)}
 
 
 @router.post("/enrich", status_code=201)

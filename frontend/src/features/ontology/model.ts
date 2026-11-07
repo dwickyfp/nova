@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { StatusTone } from '@/components/ui/status-badge'
 import { useAuthStore } from '@/stores/auth-store'
+import { semanticViewsApi } from '@/features/intelligence/semantic-views-api'
 import {
   ontologyApi,
   type Change,
@@ -151,4 +152,13 @@ export function useConceptProposals(conceptId: string) {
       ),
     [proposals.data, conceptId]
   )
+}
+
+/** Published Semantic Views the caller can read. */
+export function usePublishedViews() {
+  return useQuery({
+    queryKey: useOntologyKey('semantic-views'),
+    queryFn: async () =>
+      (await semanticViewsApi.list()).filter((view) => view.active_version !== null),
+  })
 }

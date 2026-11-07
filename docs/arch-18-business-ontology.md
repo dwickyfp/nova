@@ -233,6 +233,85 @@ proposal already changes are left alone. Runs are audited as `ENRICH`. A
 steward still judges meaning the validator cannot, such as a related but
 different measure, and rejects or resubmits without the word.
 
+## Measured accuracy
+
+Code: `backend/app/modules/ontology/evaluation/`, `backend/app/common/statistics.py`.
+API: `GET /ontology/metrics`; `GET|POST /ontology/evaluation/…` (ACCOUNTADMIN).
+Console: the **Overview** tab, the page's default, and the **Evaluation** tab.
+Design and decisions: [Phase A](proposals/supernova-phase-a-measurement.md).
+
+**Gold sets.** `POST /evaluation/gold` builds a versioned set from published
+Semantic Views, with no domain-specific code.
+
+- **Answerable cases** are governed plans: each metric gets up to N templates
+  (total, breakdown, top 5, monthly trend, a real filter value read from the
+  data) over absolute periods inside the observed data window.
+  - The compiler that serves Studio writes their SQL. It is executed again, as
+    the evaluating user, on every run.
+  - Breakdowns skip keys, coordinates and amounts, and a count of distinct X is
+    never broken down by X.
+- **Questions.** A model writes each question in business words, without the
+  technical names.
+- **Unanswerable cases (about 15%)** are measures, breakdowns or periods outside
+  the catalog. A role a measure has no path to ("missed stops per salesman") is
+  also unanswerable.
+- **Ambiguous cases (about 10%)** are names two domains share, from the meaning
+  check, or vague words that fit several measures.
+- **Admission.** A judge model reviews every case, and any external reviewer
+  (`POST /evaluation/cases/{set}/reviews`) can add a verdict. A case is active
+  only while every reviewer says yes.
+
+**Answer runs.** `POST /evaluation/answers {set_name, mode}` answers the active
+cases the way Studio does:
+
+- `ground` with the pinned release;
+- `planning_catalog` and `generate_plan(business_concepts=…)`;
+- `missing_metrics` and `validate_plan`;
+- compile, then execute as the caller.
+
+Mode `without_ontology` skips grounding and the hints. This is the baseline, and
+it adds no branch to production code. Results match Genie benchmarks: order-free
+unless the plan orders, numbers to 4 significant digits, extra columns allowed,
+an empty result never matches.
+
+Each case records its outcome (`correct`, `wrong`, `answered`, `abstained`,
+`clarified`, `failed`), a TrustSQL reliability score, grounding status, plan,
+SQL fingerprint, row counts, tokens and latency. Result rows and measure values
+are never stored. A filtered question keeps the category value it asks about.
+
+**Claim audits.** `POST /evaluation/claims` samples up to N claims per stratum:
+
+- entity, dimension, metric;
+- metric to entity, entity link, entity role;
+- built from, same formula;
+- official alias.
+
+A judge decides each claim against the excerpt of the published definition it
+rests on. The summary is a stratified estimate weighted by stratum size, with a
+95% interval, plus the ECE, Brier and reliability bins of the stored confidence.
+
+**Runs and agreement.**
+
+- Runs advance in resumable steps (`POST /evaluation/runs/{id}/step`) in the
+  caller's live session. Only their starter can advance them.
+  - A provider timeout keeps a run open for the next step.
+  - Any other failure marks it `FAILED`, and `…/resume` reopens it where it
+    stopped.
+- External reviews of results (`…/reviews`) give Cohen's κ against the model
+  judge.
+
+**Overview.** `GET /ontology/metrics` returns only stored measurements and live
+counts, each a proportion with its Wilson interval:
+
+- answer accuracy with and without the ontology, and the paired effect
+  (McNemar);
+- reliability, wrong answers and refusals;
+- claim accuracy by kind, and calibration;
+- coverage by domain, stale bindings, meaning checks, the acceptance of Nova's
+  proposals, the gold set, and judge agreement.
+
+Anything not yet measured is listed as such, never shown as a default.
+
 ## Studio grounding
 
 Every `semantic_query` resolves the business terms in its question before it
@@ -298,8 +377,12 @@ limited to the agent's Semantic Views and to views the caller can see.
 ## Console page
 
 Console → AI & ML → **Business Ontology** (`/business-ontology`,
-`frontend/src/features/ontology/`). The page has six tabs:
+`frontend/src/features/ontology/`). The page has eight tabs; it opens on Overview:
 
+- **Overview.** The [measured accuracy](#measured-accuracy) of the ontology:
+  key numbers with their intervals and n, the effect against the baseline,
+  where answers end up, calibration, claim accuracy by kind, coverage by domain
+  and health. Unmeasured numbers say so.
 - **Concepts.** Shows the published release by default, or the latest
   approved definitions. Opening a concept shows:
   - its definition and facts;
@@ -323,6 +406,8 @@ Console → AI & ML → **Business Ontology** (`/business-ontology`,
   still wait for a steward, and its reviews. A steward of an affected domain
   approves or rejects with a rationale. The submitter can withdraw but never
   review. An approved proposal whose application stopped can be finished.
+- **Evaluation.** For ACCOUNTADMIN: the runs, their results per question or
+  claim, the gold set with its reviews, and starting or continuing a run.
 - **Releases.** Shows the release Studio uses and the release history. For
   `ACCOUNTADMIN` it also offers preparing a release (issues and warnings
   included), publishing it, and switching back to an earlier one.

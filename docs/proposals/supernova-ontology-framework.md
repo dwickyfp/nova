@@ -1,6 +1,6 @@
 # Proposal: Supernova Ontology Framework
 
-Status: konsep, 7 November 2026. Melanjutkan [auto-ontology](supernova-auto-ontology.md) (fase 1–3 sudah diimplementasikan) dan mengganti arah fase 4–5. Riset lengkap dengan sumbernya: [docs/research/supernova-ontology](../research/supernova-ontology/README.md).
+Status: konsep, 7 November 2026. Fase A selesai dan terukur: [checkpoint](../testing/supernova/phase-a-checkpoint.md). Temuan utamanya, bahwa grounding ontology saat ini menurunkan akurasi, mengubah prioritas fase berikutnya. Melanjutkan [auto-ontology](supernova-auto-ontology.md) (fase 1–3 sudah diimplementasikan) dan mengganti arah fase 4–5. Riset lengkap dengan sumbernya: [docs/research/supernova-ontology](../research/supernova-ontology/README.md).
 
 ## 1. Tujuan
 

@@ -9,6 +9,7 @@ import {
   type ConceptList,
   type DerivedItem,
   type Domain,
+  type OntologyMetrics,
   type Proposal,
   type ReleaseSummary,
 } from './api'
@@ -16,6 +17,8 @@ import { ChecksTab } from './checks-tab'
 import { ConceptsTab } from './concepts-tab'
 import { DerivedTab } from './derived-tab'
 import { DomainsTab } from './domains-tab'
+import { EvaluationTab } from './evaluation-tab'
+import { OverviewTab } from './overview-tab'
 import { conceptNames, describeChange, splitList } from './model'
 import { ProposalsTab } from './proposals-tab'
 import { ReleasesTab } from './releases-tab'
@@ -498,4 +501,110 @@ it('suggests names and shows what the validator dropped', async () => {
   await expect.element(screen.getByText('1 proposal sent for review')).toBeVisible()
   await expect.element(screen.getByText('Too generic to mean one concept')).toBeVisible()
   await expect.element(screen.getByText('total', { exact: true })).toBeVisible()
+})
+
+function metrics(overrides: Partial<OntologyMetrics['measured']> = {}): OntologyMetrics {
+  return {
+    measured: {
+      answers: null,
+      baseline: null,
+      effect: null,
+      claims: null,
+      gold: null,
+      history: [],
+      ...overrides,
+    },
+    live: {
+      metric_coverage: { value: 0.576, successes: 34, n: 59, interval_95: [0.45, 0.69] },
+      question_grounding: null,
+      domains: [{ domain: 'Penjualan', concepts: 18, metrics: 14, bound: 14 }],
+      stale_bindings: 3,
+      checks: { warning: 2 },
+      engine_proposals: { APPLIED: 9, REJECTED: 3 },
+      engine_precision: { value: 0.75, successes: 9, n: 12, interval_95: [0.47, 0.91] },
+    },
+    not_measured: ['Answer accuracy needs a completed run with the ontology'],
+  }
+}
+
+it('says what has not been measured instead of showing a number', async () => {
+  vi.spyOn(ontologyApi, 'metrics').mockResolvedValue(metrics())
+  const screen = await mount(<OverviewTab />)
+  await expect.element(screen.getByRole('heading', { name: 'Answer accuracy' })).toBeVisible()
+  await expect.element(screen.getByText('Run the gold set with the ontology to measure it.')).toBeVisible()
+  await expect.element(screen.getByText('75% of 12')).toBeVisible()
+  await expect.element(screen.getByText('14/14 metrics bound', { exact: false })).toBeVisible()
+})
+
+it('shows measured accuracy with its interval, n and the ontology effect', async () => {
+  const measured = (value: number, n: number) => ({
+    value,
+    successes: Math.round(value * n),
+    n,
+    interval_95: [value - 0.05, Math.min(1, value + 0.04)] as [number, number],
+  })
+  vi.spyOn(ontologyApi, 'metrics').mockResolvedValue(
+    metrics({
+      answers: {
+        run_id: 'r1',
+        at: '2026-11-08T00:00:00Z',
+        release_id: 'ont_rel_0005',
+        set: 'serbadata v2',
+        answer_accuracy: measured(0.86, 109),
+        reliability: { value: 0.71, n: 150 },
+        wrong_answers: measured(0.05, 150),
+        abstention: measured(0.9, 41),
+        clarification: measured(0.8, 15),
+        failed: 2,
+        outcomes: { 'answerable:correct': 94, 'answerable:wrong': 15, 'unanswerable:abstained': 26 },
+        latency_ms_p50: 4000,
+      },
+      effect: {
+        n: 109,
+        without: measured(0.62, 109),
+        with: measured(0.86, 109),
+        difference: 0.24,
+        mcnemar: { gained: 30, lost: 4, p_value: 0.00001 },
+      },
+    })
+  )
+  const screen = await mount(<OverviewTab />)
+  await expect.element(screen.getByText('86%', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('+24 pts')).toBeVisible()
+  await expect.element(screen.getByText(/n=109 questions/)).toBeVisible()
+  await expect.element(screen.getByText('30 questions fixed, 4 broken by the ontology')).toBeVisible()
+  await expect.element(screen.getByText('Wrong answer')).toBeVisible()
+})
+
+it('keeps evaluation runs to ACCOUNTADMIN and lists them for an administrator', async () => {
+  signIn('ana', 'finance_analyst')
+  const runs = vi.spyOn(ontologyApi, 'evaluationRuns').mockResolvedValue([])
+  const first = await mount(<EvaluationTab />)
+  await expect.element(first.getByText('Evaluation runs are for ACCOUNTADMIN')).toBeVisible()
+  expect(runs).not.toHaveBeenCalled()
+  await cleanup()
+
+  signIn('nova_admin', 'ACCOUNTADMIN')
+  runs.mockResolvedValue([
+    {
+      id: 'evn_1',
+      kind: 'answers',
+      set_name: 'serbadata',
+      version: 2,
+      mode: 'with_ontology',
+      release_id: 'ont_rel_0005',
+      status: 'COMPLETED',
+      stage: 'done',
+      done: 150,
+      total: 150,
+      summary: { answer_accuracy: { value: 0.86, n: 109 } },
+      error: null,
+      created_at: '2026-11-08T00:00:00Z',
+      updated_at: '2026-11-08T00:10:00Z',
+      actor: { principal: 'nova_admin' },
+    },
+  ])
+  const second = await mount(<EvaluationTab />)
+  await expect.element(second.getByText('86% correct of 109')).toBeVisible()
+  await expect.element(second.getByRole('button', { name: 'Answers · with ontology' })).toBeVisible()
 })

@@ -38,6 +38,7 @@ import {
   splitList,
   useDomains,
   useOntologyKey,
+  usePublishedViews,
   useWorkingConcepts,
 } from './model'
 
@@ -109,13 +110,6 @@ function useMetricOptions(viewId: string) {
   })
 }
 
-export function usePublishedViews() {
-  return useQuery({
-    queryKey: useOntologyKey('semantic-views'),
-    queryFn: async () =>
-      (await semanticViewsApi.list()).filter((view) => view.active_version !== null),
-  })
-}
 
 type ConceptDialogProps = {
   open: boolean

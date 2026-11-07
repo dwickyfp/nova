@@ -281,6 +281,123 @@ export type Enrichment = {
   rejected: { concept: string; value: string; reason: string }[]
 }
 
+/** A proportion with its Wilson 95% interval; ``value`` is null until measured. */
+export type Measured = {
+  value: number | null
+  successes: number
+  n: number
+  interval_95: [number, number] | null
+}
+
+export type CalibrationBin = { low: number; high: number; n: number; confidence: number; accuracy: number }
+
+export type Kappa = { kappa: number | null; agreement: number | null; n: number }
+
+export type AnswerSummary = {
+  run_id: string
+  at: string
+  release_id?: string | null
+  set?: string
+  answer_accuracy: Measured
+  reliability: { value: number | null; n: number }
+  wrong_answers: Measured
+  abstention: Measured
+  clarification: Measured
+  failed: number
+  outcomes: Record<string, number>
+  latency_ms_p50: number | null
+}
+
+export type ClaimSummary = {
+  run_id: string
+  at: string
+  claim_accuracy: { value: number | null; n: number; interval_95: [number, number] | null; unsampled: string[] }
+  by_stratum: Record<string, Measured>
+  unsure: number
+  calibration: { ece: number | null; brier: number | null; n: number; bins: CalibrationBin[] }
+  agreement: Record<string, Kappa>
+  population?: Record<string, number>
+}
+
+export type OntologyMetrics = {
+  measured: {
+    answers: AnswerSummary | null
+    baseline: AnswerSummary | null
+    effect: {
+      n: number
+      without: Measured
+      with: Measured
+      difference: number | null
+      mcnemar: { gained: number; lost: number; p_value: number }
+    } | null
+    claims: ClaimSummary | null
+    gold: {
+      set_name: string
+      version: number
+      active: Record<string, number>
+      rejected: number
+      agreement: Record<string, Kappa>
+    } | null
+    history: {
+      run_id: string
+      release_id: string | null
+      at: string | null
+      set: string
+      answer_accuracy: Measured | null
+    }[]
+  }
+  live: {
+    metric_coverage: Measured
+    question_grounding: Measured | null
+    domains: { domain: string; concepts: number; metrics: number; bound: number }[]
+    stale_bindings: number
+    checks: Record<string, number>
+    engine_proposals: Record<string, number>
+    engine_precision: Measured
+  }
+  not_measured: string[]
+}
+
+export type EvaluationRun = {
+  id: string
+  kind: 'gold' | 'answers' | 'claims'
+  set_name: string
+  version: number
+  mode: 'with_ontology' | 'without_ontology' | null
+  release_id: string | null
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  stage: string
+  done: number
+  total: number
+  summary: Record<string, unknown>
+  error: string | null
+  created_at: string
+  updated_at: string
+  actor: { principal: string }
+}
+
+export type EvaluationResult = {
+  id: string
+  run_id: string
+  item: string
+  outcome: string
+  detail: Record<string, unknown>
+  reviews: { reviewer: string; kind: string; verdict: string; reason: string }[]
+}
+
+export type EvaluationCase = {
+  id: string
+  kind: 'answerable' | 'unanswerable' | 'ambiguous'
+  intent: string
+  language: 'id' | 'en'
+  question: string
+  view_name: string
+  meaning: string
+  expected: 'answer' | 'abstain' | 'clarify'
+  status: 'DRAFT' | 'ACTIVE' | 'REJECTED'
+  reviews: { reviewer: string; kind: string; verdict: string; reason: string }[]
+}
+
 const id = encodeURIComponent
 
 /** A fresh idempotency key; a retried request reuses the one it was sent with. */
@@ -336,6 +453,19 @@ export const ontologyApi = {
       viewId ? { view_id: viewId } : {}
     ),
   lint: () => api.get<LintReport>('/ontology/lint'),
+  metrics: () => api.get<OntologyMetrics>('/ontology/metrics'),
+  evaluationRuns: () => api.get<EvaluationRun[]>('/ontology/evaluation/runs'),
+  evaluationResults: (runId: string) =>
+    api.get<EvaluationResult[]>(`/ontology/evaluation/runs/${id(runId)}/results`),
+  evaluationCases: (setName: string) =>
+    api.get<EvaluationCase[]>(`/ontology/evaluation/cases?set_name=${id(setName)}`),
+  startAnswers: (body: { set_name: string; mode: 'with_ontology' | 'without_ontology' }) =>
+    api.post<EvaluationRun>('/ontology/evaluation/answers', body),
+  startClaims: () => api.post<EvaluationRun>('/ontology/evaluation/claims', {}),
+  startGold: (body: { set_name: string; view_ids: string[]; per_metric?: number }) =>
+    api.post<EvaluationRun>('/ontology/evaluation/gold', body),
+  stepRun: (runId: string) =>
+    api.post<EvaluationRun>(`/ontology/evaluation/runs/${id(runId)}/step`),
   enrich: (body: { operation_id: string; domain_id?: string | null }) =>
     api.post<Enrichment>('/ontology/enrich', body),
   proposeDerived: (body: { operation_id: string; shared_domain_id?: string | null }) =>

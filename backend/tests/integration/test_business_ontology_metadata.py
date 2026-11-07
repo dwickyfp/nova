@@ -90,6 +90,25 @@ async def test_derived_layer_ddl_matches_its_migration(ontology_db):
     assert bootstrap == migration.split("\n", 1)[1].strip()
 
 
+async def test_evaluation_ddl_matches_its_migration(ontology_db):
+    migration = Path("migrations/20261108_ontology_evaluation.sql").read_text()
+    for statement in migration.split(";"):
+        sql = "\n".join(
+            line for line in statement.splitlines() if not line.strip().startswith("--")
+        ).strip()
+        if sql:
+            await db.execute_system(sql)
+    bootstrap = (
+        Path("../docker/init-nova.sql")
+        .read_text()
+        .split("-- Supernova ontology evaluation:", 1)[1]
+        .split("\n", 1)[1]
+        .split("-- End Supernova ontology evaluation", 1)[0]
+        .strip()
+    )
+    assert bootstrap == migration.split("\n", 1)[1].strip()
+
+
 async def test_a_batch_write_appends_only_changed_records(ontology_db):
     repository = OntologyRepository()
     domains = [

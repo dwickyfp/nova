@@ -17,9 +17,10 @@ import {
   useDomains,
   useIsAdmin,
   useOntologyKey,
+  usePublishedViews,
   useWorkingConcepts,
 } from './model'
-import { ReviewDialog, usePublishedViews } from './proposal-forms'
+import { ReviewDialog } from './proposal-forms'
 
 type Filter = 'review' | 'approved' | 'applied' | 'closed'
 
