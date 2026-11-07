@@ -127,7 +127,10 @@ async def test_semantic_query_reports_a_period_outside_the_data(monkeypatch):
         context,
     )
     assert not outcome.ok
-    assert outcome.error_class == "OUTSIDE_DATA_WINDOW" and not outcome.recoverable
+    # Recoverable like a clarification: the agent tells the user, in their words, from the
+    # detail, which forbids answering with another period.
+    assert outcome.error_class == "OUTSIDE_DATA_WINDOW" and outcome.recoverable
+    assert "Do not present an empty or zero result" in outcome.safe_detail
     assert outcome.repair_context["data_window"] == {"first": "2026-05-01", "last": "2026-11-04"}
     assert execute.await_count == 3
     # The window is read as the caller, never with another identity.

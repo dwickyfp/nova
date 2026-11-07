@@ -283,6 +283,7 @@ class SemanticQueryTool:
         try:
             from app.modules.agents.semantic.model_planner import (
                 generate_plan,
+                ground_literals,
                 planning_catalog,
                 primary_plan_from,
             )
@@ -300,6 +301,10 @@ class SemanticQueryTool:
                 if plan is not None and missing_metrics(grounding, plan.metrics, semantic_ir):
                     plan = None  # it missed an official metric; plan with the concepts
                 plan_from_turn = plan is not None
+                if plan is not None:
+                    # The turn planner's filter values get the same check as a plan made
+                    # here: a value the field never holds is looked up as the caller.
+                    plan = await ground_literals(semantic_ir, plan, question, context)
             if plan is None:
                 plan = await generate_plan(
                     self._provider,
@@ -349,7 +354,9 @@ class SemanticQueryTool:
                         summary="",
                         error="The requested period has not started yet.",
                         error_class="OUTSIDE_DATA_WINDOW",
-                        recoverable=False,
+                        # The agent answers in the user's words from the detail, as for a
+                        # clarification; the detail forbids answering another period.
+                        recoverable=True,
                         safe_detail=not_yet,
                         repair_context={"period": "future"},
                     )
@@ -589,7 +596,9 @@ class SemanticQueryTool:
                 summary="",
                 error="The requested period is outside the data.",
                 error_class="OUTSIDE_DATA_WINDOW",
-                recoverable=False,
+                # The agent answers in the user's words from the detail, as for a
+                # clarification; the detail forbids answering another period.
+                recoverable=True,
                 safe_detail=gap.detail(plan.metrics[0]),
                 repair_context={
                     "data_window": {

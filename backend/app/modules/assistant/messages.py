@@ -49,6 +49,9 @@ MESSAGES: dict[str, str] = {
         "This request was not run because this agent's rules do not allow it. {reason}"
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.no_data_window": (
+        "There is no data for that period. The governed data covers {first} to {last}."
+    ),
     "loop.clarify_uncovered": (
         "The governed data does not cover: {uncovered}. It has these measures: {available}. "
         "Which should I use?"
@@ -106,6 +109,9 @@ BUILTIN: dict[str, dict[str, str]] = {
             "{reason}"
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.no_data_window": (
+            "Tidak ada data untuk periode itu. Data terkelola mencakup {first} sampai {last}."
+        ),
         "loop.clarify_uncovered": (
             "Data terkelola tidak mencakup: {uncovered}. Ukuran yang tersedia: {available}. "
             "Mana yang sebaiknya saya pakai?"

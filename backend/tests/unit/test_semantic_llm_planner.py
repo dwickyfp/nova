@@ -182,6 +182,30 @@ async def test_the_turn_planners_plan_runs_without_another_model_call(monkeypatc
     assert outcome.metadata["plan_source"] == "turn_planner"
 
 
+async def test_the_turn_planners_filter_values_are_checked_like_any_plan(monkeypatch):
+    # Seen live: the turn planner's plan carried region IN ('Jawa Barat', 'DKI') and
+    # skipped the value check that a plan made by semantic_query gets.
+    import app.modules.agents.semantic.model_planner as planner
+    from app.modules.agents.semantic.planning import SemanticFilter
+
+    seen = []
+
+    async def ground(model, plan, question, context):
+        seen.append((plan.filters, question))
+        return plan.__class__(**{**plan.__dict__, "filters": (
+            SemanticFilter("city", "=", "Jawa Barat & DKI"),)})
+
+    monkeypatch.setattr(planner, "ground_literals", ground)
+    tool, provider, execute = setup_tool(monkeypatch)
+    primary = {"view": None, "plan": _plan(filters=[
+        {"field": "city", "operator": "IN", "value": ["Jawa Barat", "DKI"]}])}
+    outcome = await _ask(tool, _context(primary=primary), "order di Jawa Barat & DKI")
+    assert outcome.ok, outcome.safe_detail
+    assert seen and seen[0][1] == "order di Jawa Barat & DKI"
+    assert "'Jawa Barat & DKI'" in execute.call_args.kwargs["sql"]
+    provider.complete.assert_not_awaited()
+
+
 async def test_an_invalid_turn_plan_is_planned_again(monkeypatch):
     tool, provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
     context = _context(primary={"plan": _plan(metrics=["gross_merchandise"]), "view": None})

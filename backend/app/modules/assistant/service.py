@@ -2412,9 +2412,10 @@ class AssistantLoop:
                 )
                 messages.append({"role": "system", "content": _SPLIT_REQUEST_PROMPT})
                 continue
-            if not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED":
-                # The catalog cannot express the request: the model asks one
-                # question back, and no other data path is tried.
+            if not outcome.ok and outcome.error_class in ANSWERED_WITHOUT_DATA:
+                # The catalog cannot express the request, or the period has no data: the
+                # model tells the user (a question back, or the covered range), and no
+                # other data path is tried.
                 yield events.tool_status(invocation.tool_call_id, "done")
                 _finish_tool_step(context, "done", None)
                 context.quality_facts["clarification_quality"] = {
@@ -3262,9 +3263,17 @@ def _missing_required_prompt(missing: list[str], evidence: EvidenceTracker) -> s
     return prompt
 
 
+#: Tool outcomes the user is answered from without data: a question back, or a period
+#: outside the data with the range that exists.
+ANSWERED_WITHOUT_DATA = frozenset({"CLARIFICATION_REQUIRED", "OUTSIDE_DATA_WINDOW"})
+
+
 def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
     """The question back when the model wrote none: what the governed data lacks
     and what it has, so the user can narrow the request."""
+    window = repair_context.get("data_window") or {}
+    if window.get("first") and window.get("last"):
+        return say("loop.no_data_window", language, first=window["first"], last=window["last"])
     uncovered = [str(item) for item in repair_context.get("unresolved") or [] if item][:4]
     available = [str(item) for item in repair_context.get("available_metrics") or [] if item][:8]
     if not uncovered or not available:

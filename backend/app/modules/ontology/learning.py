@@ -27,7 +27,6 @@ import re
 from collections import defaultdict
 from typing import Any
 
-from fastapi import HTTPException
 from pydantic import Field
 
 from app.modules.intelligence.contracts import Contract, fingerprint
@@ -333,19 +332,31 @@ async def _metric_proposal(case, item, model, ir, existing, user, evaluation):
         return "the formula names no dataset of the view"
     time = next((m.default_time_dimension for m in ir.metrics
                  if m.base_dataset == dataset and m.default_time_dimension), None)
+    # A ratio is not additive, so the compiler groups it only by listed dimensions: take
+    # those of the dataset's widest non-additive metric, which share its grain.
+    allowed = max(
+        ([list(m.allowed_dimensions) for m in ir.metrics
+          if m.base_dataset == dataset and m.additivity == "non_additive"]),
+        key=len, default=[])
     change = SemanticChange(kind="metric", name=name, definition={
         "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": expression}]},
         "description": str(item.get("definition") or "")[:300], "datatype": "Decimal",
         "base_dataset": dataset, "additivity": "non_additive", "visibility": "public",
+        "allowed_dimensions": allowed,
         **({"default_time_dimension": time} if time else {}),
     })
     try:
         document = to_ossie_document(copy.deepcopy(model["definition"]))
         document["version"] = SUPPORTED_VERSIONS[0]
         candidate = apply_changes(document, [change])
-        sql = SemanticCompiler().compile(SemanticModelIR.from_ossie(candidate),
-                                         SemanticPlan(metrics=(name,))).sql
-    except (ValueError, HTTPException) as exc:
+        candidate_ir = SemanticModelIR.from_ossie(candidate)
+        sql = SemanticCompiler().compile(candidate_ir, SemanticPlan(metrics=(name,))).sql
+        # A measure people ask for per something must also compile per something.
+        grouped = next((field for field in allowed if candidate_ir.field(field)), None)
+        if grouped:
+            SemanticCompiler().compile(candidate_ir, SemanticPlan(metrics=(name,),
+                                                                  dimensions=(grouped,)))
+    except Exception as exc:  # noqa: BLE001 - any refusal means the formula is not proven
         return f"the formula does not validate: {str(getattr(exc, 'detail', exc))[:200]}"
     _columns, rows, error = await evaluation._execute(sql, model, user)
     if error or not rows or rows[0][0] is None:
