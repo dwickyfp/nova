@@ -103,7 +103,7 @@ CONCEPTS = {
             "GrossMargin",
             "Margin kotor",
             ["margin", "laba kotor"],
-            "Omzet dikurangi harga pokok penjualan.",
+            "Omzet bersih setelah retur dikurangi harga pokok unit yang tidak diretur.",
             "IDR",
             "retail_sales",
             "gross_margin",

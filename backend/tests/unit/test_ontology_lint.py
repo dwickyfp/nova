@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from app.modules.ontology import access
@@ -37,10 +39,29 @@ SALES = [
 ]
 
 
+OLD_GROSS_MARGIN = "SUM(sales_orders.net_amount) - SUM(sales_orders.cost_amount)"
+
+
+def with_gross_margin(definition: dict, expression: str) -> dict:
+    """The retail view with another gross margin formula, as it may have been published."""
+    changed = copy.deepcopy(definition)
+    for metric in changed["metrics"]:
+        if metric["name"] == "gross_margin":
+            metric["expression"] = expression
+            metric["description"] = "Omzet bersih dikurangi harga pokok."
+    return changed
+
+
 class Lab:
-    def __init__(self, monkeypatch) -> None:
+    def __init__(self, monkeypatch, *, gross_margin: str | None = OLD_GROSS_MARGIN) -> None:
         self.repository = FakeRepository()
         self.catalog = lab_catalog()
+        if gross_margin:
+            # The margin as it was first published: before returns, so the checks have a
+            # real mistake to find.
+            self.catalog.publish("retail_sales", with_gross_margin(
+                self.catalog.views["retail_sales"].definition, gross_margin,
+            ))
         self.reads = OntologyService(self.repository, self.catalog)
         self.stewardship = StewardshipService(self.repository, self.catalog)
         self.ops = 0
@@ -200,3 +221,17 @@ def test_lint_route(lab):
     assert {item["rule"] for item in body["findings"]} == {
         "definition_formula", "adjustment_ignored", "ambiguous_name", "unbound_metric",
     }
+
+
+async def test_the_corrected_margin_is_built_from_net_revenue(monkeypatch):
+    lab = Lab(monkeypatch, gross_margin=None)  # the formula in the lab view today
+    await lab.setup()
+    findings = await lint(ADMIN, lab.catalog, lab.repository)
+    assert "Penjualan.GrossMargin" not in by_rule(findings, "definition_formula")
+    assert "Penjualan.GrossMargin" not in by_rule(findings, "adjustment_ignored")
+    derives = {
+        (item.source_key, item.target_key)
+        for records in lab.repository.rows["derived"].values() for item in records[-1:]
+        if item.status == "ACTIVE" and item.relation_type and item.relation_type.value == "DERIVES"
+    }
+    assert ("metric:retail_sales.net_revenue", "metric:retail_sales.gross_margin") in derives

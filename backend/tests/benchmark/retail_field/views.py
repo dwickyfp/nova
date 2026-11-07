@@ -335,11 +335,18 @@ RETAIL_SALES = {
         metric(
             "gross_margin",
             "sales_orders",
-            "SUM(sales_orders.net_amount) - SUM(sales_orders.cost_amount)",
+            # Net revenue after returns, minus the cost of the units kept: a returned
+            # unit goes back to stock, so its cost is no longer a cost of sales.
+            "SUM(sales_orders.net_amount - sales_orders.net_amount * sales_orders.returned_qty"
+            " / NULLIF(sales_orders.quantity, 0))"
+            " - SUM(sales_orders.cost_amount - sales_orders.cost_amount"
+            " * sales_orders.returned_qty / NULLIF(sales_orders.quantity, 0))",
             time="sales_orders.order_date",
             unit="IDR",
             currency="IDR",
-            description="Omzet bersih dikurangi harga pokok.",
+            description=(
+                "Omzet bersih setelah retur dikurangi harga pokok unit yang tidak diretur."
+            ),
             synonyms=["margin", "laba kotor"],
         ),
         metric(
