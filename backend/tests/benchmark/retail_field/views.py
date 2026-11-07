@@ -159,8 +159,15 @@ def employees(role_label):
         "employees",
         ["employee_id"],
         [
-            field("employee_id", description=f"Kode pegawai ({role_label})."),
-            field("employee_name", description=f"Nama {role_label}."),
+            field(
+                "employee_id",
+                description=f"Kode pegawai ({role_label}); tampilkan employee_name untuk nama.",
+            ),
+            field(
+                "employee_name",
+                description=f"Nama {role_label}. Pakai ini saat menyebut {role_label}.",
+                synonyms=[f"nama {role_label}", role_label],
+            ),
             field("role", description="Jabatan: Salesman atau Driver."),
         ],
         "Pegawai lapangan: salesman dan driver.",
@@ -181,8 +188,9 @@ RETAIL_SALES = {
     "named_filters": [],
     "conformed_dimensions": [],
     "question_routing_instructions": (
-        "Omzet berarti net_revenue. Penjualan per produk, toko, kota, kecamatan, salesman, "
-        "diskon dan retur ada di sini."
+        "Omzet berarti net_revenue: setelah diskon dan setelah retur. Penjualan per produk, "
+        "toko, kota, kecamatan, salesman, diskon dan retur ada di sini. Sebut salesman "
+        "dengan employee_name, bukan kodenya."
     ),
     "query_generation_instructions": "Revenue is IDR. Use order_date for time.",
     "datasets": [
@@ -202,7 +210,10 @@ RETAIL_SALES = {
                 ),
                 field("outlet_id", description="Outlet pemesan."),
                 field("product_id", description="Produk yang dipesan."),
-                field("salesman_id", description="Salesman yang mencatat order."),
+                field(
+                    "salesman_id",
+                    description="Kode salesman yang mencatat order; namanya ada di employee_name.",
+                ),
                 field("payment_method", description="Cara bayar.", synonyms=["pembayaran"]),
                 field("status", description="Delivered atau Returned."),
                 field("discount_pct", "Integer", description="Persen diskon baris order."),
@@ -229,12 +240,37 @@ RETAIL_SALES = {
         metric(
             "net_revenue",
             "sales_orders",
+            # A returned line keeps its order value; only the returned share is taken off.
+            "SUM(sales_orders.net_amount - sales_orders.net_amount * sales_orders.returned_qty"
+            " / NULLIF(sales_orders.quantity, 0))",
+            time="sales_orders.order_date",
+            unit="IDR",
+            currency="IDR",
+            description=(
+                "Omzet bersih: nilai order setelah diskon, dikurangi nilai unit yang diretur."
+            ),
+            synonyms=["omzet", "omzet bersih", "nilai penjualan", "pendapatan bersih", "revenue"],
+        ),
+        metric(
+            "sales_before_returns",
+            "sales_orders",
             "SUM(sales_orders.net_amount)",
             time="sales_orders.order_date",
             unit="IDR",
             currency="IDR",
-            description="Omzet bersih setelah diskon (sell-in).",
-            synonyms=["omzet", "nilai penjualan", "pendapatan bersih", "revenue"],
+            description="Nilai order setelah diskon, sebelum retur dikurangkan.",
+            synonyms=["omzet sebelum retur", "nilai order"],
+        ),
+        metric(
+            "returned_value",
+            "sales_orders",
+            "SUM(sales_orders.net_amount * sales_orders.returned_qty"
+            " / NULLIF(sales_orders.quantity, 0))",
+            time="sales_orders.order_date",
+            unit="IDR",
+            currency="IDR",
+            description="Nilai unit yang diretur, setelah diskon.",
+            synonyms=["nilai retur"],
         ),
         metric(
             "gross_revenue",
@@ -662,6 +698,26 @@ DELIVERY_ROUTES = {
             unit="km",
             description="Jarak tempuh aktual.",
             synonyms=["jarak tempuh", "kilometer"],
+        ),
+        metric(
+            "distance_gap_km",
+            "route_plans",
+            "SUM(route_plans.actual_distance_km) - SUM(route_plans.planned_distance_km)",
+            time="route_plans.route_date",
+            unit="km",
+            description="Selisih jarak aktual dikurangi rencana; positif berarti lebih jauh.",
+            synonyms=["selisih jarak", "deviasi jarak", "kelebihan jarak"],
+        ),
+        metric(
+            "avg_distance_gap_km",
+            "route_plans",
+            "(SUM(route_plans.actual_distance_km) - SUM(route_plans.planned_distance_km))"
+            " / NULLIF(COUNT(*), 0)",
+            time="route_plans.route_date",
+            unit="km",
+            additivity="non_additive",
+            description="Rata-rata selisih jarak aktual vs rencana per rute.",
+            synonyms=["rata-rata selisih jarak", "rata-rata deviasi jarak"],
         ),
         metric(
             "route_count",

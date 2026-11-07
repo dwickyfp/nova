@@ -300,6 +300,7 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               title: step.title,
               columns: step.columns,
               rows: step.rows,
+              truncated: step.truncated === true || undefined,
             };
             open.blocks.tables.push({ id, block });
             open.content.push({

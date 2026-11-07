@@ -2,6 +2,19 @@ import { useAuthStore } from '@/stores/auth-store'
 
 const API_BASE = '/api/v1'
 
+/** Where an expired session goes: sign-in, then back to the page it was on. */
+export function signInUrl(location: Pick<Location, 'pathname' | 'search' | 'hash'>): string | null {
+  if (location.pathname === '/sign-in') return null
+  const back = `${location.pathname}${location.search}${location.hash}`
+  return back === '/' ? '/sign-in' : `/sign-in?redirect=${encodeURIComponent(back)}`
+}
+
+function signInAgain(): void {
+  useAuthStore.getState().auth.reset()
+  const target = signInUrl(window.location)
+  if (target) window.location.href = target
+}
+
 export function apiBase() {
   return API_BASE
 }
@@ -69,8 +82,7 @@ async function request<T>(path: string, options: RequestInit & { signal?: AbortS
     signal: options.signal,
   })
   if (res.status === 401) {
-    useAuthStore.getState().auth.reset()
-    window.location.href = '/sign-in'
+    signInAgain()
     throw new Error('Session expired')
   }
   if (!res.ok) {
@@ -127,8 +139,7 @@ export const api = {
       body: formData,
     }).then(async (res) => {
       if (res.status === 401) {
-        useAuthStore.getState().auth.reset()
-        window.location.href = '/sign-in'
+        signInAgain()
         throw new Error('Session expired')
       }
       if (!res.ok) {

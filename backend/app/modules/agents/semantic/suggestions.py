@@ -7,12 +7,34 @@ call and no data is involved.
 
 from __future__ import annotations
 
+import re
+
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticGraph, SemanticPlan, SemanticPlanError
 
 
 def _words(name: str) -> str:
     return name.replace("_", " ")
+
+
+#: Record identifiers: a breakdown by one is a row dump, not an insight.
+_IDENTIFIER = re.compile(r"(?:^|_)(?:id|uuid|no|number|key|code)$", re.IGNORECASE)
+
+
+def _identifiers(model: SemanticModelIR) -> set[tuple[str, str]]:
+    """Grain keys, join keys and identifier-named fields, as (dataset, field)."""
+    found = {
+        (dataset.name, key) for dataset in model.datasets for key in dataset.grain.keys
+    }
+    for relationship in model.relationships:
+        found |= {(relationship.from_dataset, name) for name in relationship.from_columns}
+        found |= {(relationship.to_dataset, name) for name in relationship.to_columns}
+    found |= {
+        (dataset.name, item.name)
+        for dataset in model.datasets for item in dataset.fields
+        if _IDENTIFIER.search(item.name)
+    }
+    return found
 
 
 def suggest_follow_ups(
@@ -41,12 +63,14 @@ def suggest_follow_ups(
         )
 
     used = set(plan.dimensions) | {item.field for item in plan.filters}
+    identifiers = _identifiers(model)
     candidates = [
         field.name
         for dataset in model.datasets
         for field in dataset.fields
         if field.kind.value == "dimension" and not field.is_time
         and field.name not in used and reachable(dataset.name)
+        and (dataset.name, field.name) not in identifiers
     ]
     period = plan.time.range if plan.time else None
     period_key = f"period.{period}"

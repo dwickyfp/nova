@@ -930,6 +930,7 @@ export type TraceStep =
       title?: string;
       columns: string[];
       rows: (string | number | null)[][];
+      truncated?: boolean;
     }
   /** A chart the turn rendered. `chart_spec` is Vega-Lite v5 JSON; the viz
    *  worksheet and its presentation model ride along when the viz core built it. */

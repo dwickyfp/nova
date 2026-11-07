@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api } from './api-client'
+import { ApiError, api, signInUrl } from './api-client'
 
 const fetchMock = vi.fn()
 
@@ -127,5 +127,15 @@ describe('errorDetail', () => {
     expect(errorDetail({ message: 'Denied' })).toBe('Denied')
     expect(errorDetail(undefined)).toBe('Request failed')
     expect(errorDetail([{}], 'Upload failed')).toBe('Upload failed')
+  })
+})
+
+describe('signInUrl', () => {
+  it('returns to the page the session expired on', () => {
+    expect(
+      signInUrl({ pathname: '/studio', search: '?agent=a&thread=t', hash: '' }),
+    ).toBe('/sign-in?redirect=%2Fstudio%3Fagent%3Da%26thread%3Dt')
+    expect(signInUrl({ pathname: '/', search: '', hash: '' })).toBe('/sign-in')
+    expect(signInUrl({ pathname: '/sign-in', search: '?redirect=x', hash: '' })).toBeNull()
   })
 })

@@ -462,6 +462,7 @@ function parseTable(record: Record<string, unknown>): AssistantEvent | null {
       semantic_provenance_ref: typeof record.semantic_provenance_ref === "string" ? record.semantic_provenance_ref : undefined,
       columns: columns.map((c) => String(c)),
       rows: rows as (string | number | null)[][],
+      truncated: record.truncated === true || undefined,
       tool_call_id:
         typeof record.tool_call_id === "string"
           ? record.tool_call_id

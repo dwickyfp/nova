@@ -25,8 +25,8 @@ import type { TableBlock } from "@/features/assistant/types";
  * The grid is deliberately more than a dump of rows. A reader asked a
  * question; the table is the evidence. Sort, filter, and copy-out are what let
  * them interrogate it without leaving the conversation. The footer states the
- * one limitation that is real (the engine's row cap), because pretending a
- * capped preview is the full result would be a lie the UI cannot back up.
+ * engine's row cap only when the result reports it was capped: a complete
+ * result must not look partial, and a capped one must not look complete.
  */
 
 export function SaveArtifactButton({
@@ -291,7 +291,7 @@ export const ResultTable = memo(function ResultTable({
         </table>
       </div>
 
-      {block.rows.length > 0 && note ? (
+      {block.rows.length > 0 && note && (note !== ENGINE_CAP_NOTE || block.truncated) ? (
         <p className="border-t px-3 py-2 text-xs text-muted-foreground">{note}</p>
       ) : null}
     </div>

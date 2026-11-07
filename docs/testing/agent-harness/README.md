@@ -52,3 +52,22 @@ A release manifest pins each tool's source hash. After tool code changes, an exp
 - Lessons are per agent. Harness² shares a library per domain; Nova keeps lessons inside the owner's scope so one agent's evidence never reaches another owner's agent.
 - Guards match phrases, not semantics. They are a deterministic floor; Ranger, consent and the evidence contract stay the authority.
 - One experiment cycle per run, and probes are read-only. An adopted candidate is a saved version; publishing remains a person's decision.
+
+## Single-thread judge session
+
+Eleven questions in one SerbaData thread, each answer checked against direct SQL. Six were correct, three partly correct and two wrong before the fixes below; arithmetic was never wrong.
+
+| Finding | Fix | Retest |
+| --- | --- | --- |
+| `net_revenue` counted returned lines as revenue (October Rp1.613.198.229 = delivered plus returned) | Net revenue subtracts the returned share of each line; `sales_before_returns` and `returned_value` keep the old and returned figures. Published as a new `retail_sales` version. | The ontology binding for Penjualan.NetRevenue went STALE as designed; a revision proposal waits for a steward, so omzet questions refuse until it is approved and released. Expected October after returns: Rp1.573.810.278. |
+| Average actual-vs-planned distance per driver was refused | `distance_gap_km` and `avg_distance_gap_km` on `delivery_routes` | Dewi Saputra 20,33 km, Teguh Tanjung 10,05 km, matching SQL |
+| Salesmen named by code | `employee_name` described and aliased as the name to show | Agus Rahman 10,68%, Teguh Halim 2,98%, Andi Santoso 2,93% |
+| Forecast of a shop closed on Sundays predicted Sunday sales | A weekday absent for three weeks or more is closed: learned as zero, forecast as zero, reported as a warning and in the tool summary | 8 November (Sunday) forecast 0 |
+| "Capped at the engine's row limit" under complete results | Shown only when the result reports `truncated` | Not shown on complete results |
+| Follow-up chips such as "net revenue per order line id" | Grain keys, join keys and identifier-named fields are never suggested | "per payment method", "per status" |
+| General-knowledge question answered from memory | Studio contract: world facts outside the agent's data are out of scope | Both parts refused, 4.5k tokens instead of 27k |
+| Expired session lost the page | A 401 signs in again with `redirect` set to the current page | Unit tested |
+
+Republishing `delivery_routes` also published repository changes made in commit 55b97971 (`route_date` over `plan_date`), which staled DistanceTravelled and DeliveryGap; revision proposals rebind them without changing their meaning.
+
+Still open: answers that omit the key number from prose (stockout), shallow driver analysis for a single city, recency bias in thread summaries, a planner that requires `ml_execute` for "tidak wajar" and then fails the turn, and the previous turn's suggestion chips shown under an out-of-scope answer.

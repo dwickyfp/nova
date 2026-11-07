@@ -221,6 +221,7 @@ class MLExecuteTool:
                 f"{result.task} completed with {result.selected_algorithm}; "
                 f"{result.training_rows} rows processed (run {result.run_id})"
                 + _distance_note(result)
+                + _closed_days_note(result)
             ),
             table=table,
             data={
@@ -254,6 +255,18 @@ class MLExecuteTool:
 
 
 ml_execute_tool = MLExecuteTool()
+
+
+def _closed_days_note(result: Any) -> str:
+    """Weekdays a forecast treated as closed, so a zero is explained as a closure."""
+    metrics = getattr(result, "metrics", None) or {}
+    days = [str(day) for day in metrics.get("closed_weekdays") or [] if isinstance(day, str)]
+    if not days:
+        return ""
+    return (
+        f"; the history has no rows on {', '.join(days)}, so those days are treated as "
+        "closed and forecast as zero"
+    )
 
 
 def _distance_note(result: Any) -> str:
