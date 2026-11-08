@@ -1,0 +1,186 @@
+{
+  "ran_at": "2026-11-09T03:16:00",
+  "release": "ont_rel_0009",
+  "gold": {
+    "sales_profit": [
+      [
+        620439277.5
+      ]
+    ],
+    "hr_profit": [
+      [
+        "Sales",
+        72640.0
+      ]
+    ],
+    "ops_received": [
+      [
+        307727.0
+      ]
+    ],
+    "stock_received": [
+      [
+        307727.0
+      ]
+    ]
+  },
+  "roles": {
+    "admin": {
+      "status": "ambiguous",
+      "concepts": [],
+      "candidates": [
+        "Penjualan.Profit",
+        "HR.Profit"
+      ]
+    },
+    "steward": {
+      "status": "resolved",
+      "concepts": [
+        "Penjualan.Profit"
+      ],
+      "candidates": []
+    }
+  },
+  "results": [
+    {
+      "id": "sales_profit",
+      "agent": "sales",
+      "question": "Apa arti profit di bisnis ini dan berapa profit Oktober 2026?",
+      "concept": "Penjualan.Profit",
+      "foreign": [
+        "profit sharing",
+        "bagi hasil",
+        "HR.Profit"
+      ],
+      "seconds": 21.4,
+      "answer": "Di bisnis ini, **profit** berarti laba kotor penjualan: omzet bersih setelah retur dikurangi harga pokok barang yang tidak diretur.\n\nProfit Oktober 2026 adalah **620.439.277,50**.",
+      "tools": [
+        "semantic_query"
+      ],
+      "concepts_used": {
+        "semantic_query": [
+          "Penjualan.Profit"
+        ]
+      },
+      "finish": "stop",
+      "foreign_found": []
+    },
+    {
+      "id": "hr_profit",
+      "agent": "hr",
+      "question": "Apa arti profit di bisnis ini dan berapa total profit per departemen?",
+      "concept": "HR.Profit",
+      "foreign": [
+        "laba kotor",
+        "harga pokok",
+        "Penjualan.Profit"
+      ],
+      "seconds": 21.4,
+      "answer": "Dalam bisnis ini, **profit** berarti total bagi hasil yang dibayarkan kepada karyawan, dihitung sebagai **gaji × porsi bagi hasil**.\n\nTotal profit per departemen:\n- **Sales:** 72.640\n- **Tanpa departemen tercatat:** 1.050\n- **Accounting, Marketing, IT, Finance, Purchasing, Shipping, Executive, Human Resources, Public Relations, dan Administration:** masing-masing 0\n\nData tidak menyebutkan mata uang atau periode, jadi angka ini tidak dapat ditafsirkan sebagai jumlah untuk periode atau mata uang tertentu.",
+      "tools": [
+        "semantic_query"
+      ],
+      "concepts_used": {
+        "semantic_query": [
+          "HR.Profit"
+        ]
+      },
+      "finish": "stop",
+      "foreign_found": []
+    },
+    {
+      "id": "sales_foreign_term",
+      "agent": "sales",
+      "question": "Apa itu bagi hasil karyawan?",
+      "concept": null,
+      "foreign": [
+        "HR.Profit",
+        "salary",
+        "gaji dikali"
+      ],
+      "seconds": 12.3,
+      "answer": "Saya tidak menemukan definisi resmi “bagi hasil karyawan” di glosarium bisnis yang tersedia untuk saya. Jika Anda menanyakan makna kebijakan internal perusahaan, silakan bagikan konteks atau dokumen kebijakannya agar saya bisa membantu menjelaskannya.",
+      "tools": [
+        "ontology_resolve"
+      ],
+      "concepts_used": {},
+      "finish": "stop",
+      "foreign_found": []
+    },
+    {
+      "id": "hr_foreign_term",
+      "agent": "hr",
+      "question": "Apa arti omzet bersih?",
+      "concept": null,
+      "foreign": [
+        "Penjualan.NetRevenue",
+        "setelah diskon dan retur"
+      ],
+      "seconds": 13.2,
+      "answer": "Saya tidak menemukan definisi resmi untuk **“omzet bersih”** di glosarium bisnis yang tersedia bagi saya. Jika Anda punya konteks, seperti laporan atau departemen tempat istilah itu digunakan, saya bisa membantu memperjelas maksudnya.",
+      "tools": [
+        "ontology_resolve"
+      ],
+      "concepts_used": {},
+      "finish": "stop",
+      "foreign_found": []
+    },
+    {
+      "id": "ops_received",
+      "agent": "ops",
+      "question": "Berapa received units Oktober 2026?",
+      "concept": "Operasional.ReceivedUnits",
+      "foreign": [
+        "Persediaan.ReceivedUnits"
+      ],
+      "seconds": 14.9,
+      "answer": "Received units pada Oktober 2026 adalah **307.727 unit**. Jumlah ini merujuk pada unit yang benar-benar diterima outlet.",
+      "tools": [
+        "semantic_query"
+      ],
+      "concepts_used": {
+        "semantic_query": [
+          "Operasional.ReceivedUnits"
+        ]
+      },
+      "finish": "stop",
+      "foreign_found": []
+    },
+    {
+      "id": "stock_received",
+      "agent": "stock",
+      "question": "Berapa received units Oktober 2026?",
+      "concept": "Persediaan.ReceivedUnits",
+      "foreign": [
+        "Operasional.ReceivedUnits"
+      ],
+      "seconds": 12.9,
+      "answer": "Received units Oktober 2026: **307.727 unit**.",
+      "tools": [
+        "semantic_query"
+      ],
+      "concepts_used": {
+        "semantic_query": [
+          "Persediaan.ReceivedUnits"
+        ]
+      },
+      "finish": "stop",
+      "foreign_found": []
+    },
+    {
+      "id": "serbadata_received",
+      "agent": "serbadata",
+      "question": "Berapa received units Oktober 2026?",
+      "concept": "ASK",
+      "foreign": [],
+      "seconds": 16.6,
+      "answer": "Received units Oktober 2026 yang dimaksud **Operasional.ReceivedUnits** atau **Persediaan.ReceivedUnits**? Keduanya didefinisikan sebagai unit yang benar-benar diterima outlet.",
+      "tools": [
+        "semantic_query"
+      ],
+      "concepts_used": {},
+      "finish": "clarification",
+      "foreign_found": []
+    }
+  ]
+}

@@ -119,14 +119,17 @@ async def _views_for_dashboard(user: dict[str, Any], dashboard_id: int | None) -
     return list(dict.fromkeys(str(item["view_id"]) for item in mapped.values()))
 
 
-async def _views_for_question(user: dict[str, Any], question: str) -> list[str]:
-    """Views the ontology binds to the approved concepts a question names."""
+async def _views_for_question(
+    user: dict[str, Any], question: str, scope: list[str] | None = None
+) -> list[str]:
+    """Views the ontology binds to the approved concepts a question names,
+    read in the business of ``scope`` (the open dashboard's views) when given."""
     if not question.strip():
         return []
     from app.modules.ontology.resolver import ConceptResolver
 
     try:
-        resolution = await ConceptResolver().resolve(question, user)
+        resolution = await ConceptResolver().resolve(question, user, scope_views=scope or None)
     except Exception as exc:  # noqa: BLE001 - resolution helps scope, it never grants
         logger.info("Ontology scope unavailable: %s", type(exc).__name__)
         return []
@@ -149,14 +152,16 @@ async def scope_views(
     """
     from app.modules.intelligence.semantic_views import semantic_view_service
 
-    preferred = [
-        *(await _views_for_dashboard(user, dashboard_id)),
-        *(await _views_for_question(user, question)),
-    ]
+    dashboard = await _views_for_dashboard(user, dashboard_id)
+    preferred = [*dashboard, *(await _views_for_question(user, question, dashboard))]
     readable: list[str] = []
     for view_id in dict.fromkeys(preferred):
         if await semantic_view_service.get_active_for_agent(view_id, user):
             readable.append(view_id)
+    if dashboard and readable:
+        # A dashboard on screen is the business of this turn: no other
+        # business's views (or meanings of its terms) are mixed in.
+        return readable[:MAX_VIEWS]
     if len(readable) < MAX_VIEWS:
         try:
             for record in await semantic_view_service.list_active_for_agent(user):

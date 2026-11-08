@@ -1034,6 +1034,10 @@ def test_the_assistant_asks_for_five_w_one_h_answers_and_has_no_write_tools():
     assert not {"ml_execute", "dashboard_build", "query_execute"} & set(TOOLS)
 
 
+async def _none():
+    return []
+
+
 async def test_scope_puts_the_dashboards_views_first_and_drops_unreadable(monkeypatch):
     from app.modules.agents import dataviz_assistant as assistant
     from app.modules.intelligence.semantic_views import semantic_view_service
@@ -1041,7 +1045,7 @@ async def test_scope_puts_the_dashboards_views_first_and_drops_unreadable(monkey
     async def dashboard(user, dashboard_id):
         return ["dash-view", "hidden"]
 
-    async def question(user, text):
+    async def question(user, text, scope=None):
         return ["onto-view"]
 
     async def readable(view_id, user, agent_id=None):
@@ -1055,7 +1059,13 @@ async def test_scope_puts_the_dashboards_views_first_and_drops_unreadable(monkey
     monkeypatch.setattr(semantic_view_service, "get_active_for_agent", readable)
     monkeypatch.setattr(semantic_view_service, "list_active_for_agent", everything)
     views = await assistant.scope_views(ALICE, dashboard_id=7, question="kenapa omzet turun")
-    assert views == ["dash-view", "onto-view", "other"]
+    # The dashboard is this turn's business: no other business's views join it.
+    assert views == ["dash-view", "onto-view"]
+    # Without a dashboard, the role's other readable views fill the scope.
+    monkeypatch.setattr(assistant, "_views_for_dashboard", lambda user, dashboard_id: _none())
+    assert await assistant.scope_views(ALICE, question="kenapa omzet turun") == [
+        "onto-view", "other", "dash-view",
+    ]
 
 
 async def test_the_assistants_threads_need_no_agent_grant(monkeypatch):

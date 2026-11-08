@@ -2087,6 +2087,39 @@ async def record_agent_map_metric(agent_id: str, thread_id: str, message_id: str
     return {"recorded": True}
 
 
+async def _business_terms_note(text: str, user: dict, views: list[str]) -> str:
+    """Name a term with several approved meanings in this agent's business.
+
+    Read in the agent's own Semantic Views (its business), so only meanings it
+    actually works with count. The model is told the choices and asked to let
+    the user pick before it queries; it never picks one itself.
+    """
+    if not text.strip() or not views:
+        return ""
+    from app.modules.ontology.resolver import concept_resolver
+
+    try:
+        resolution = await concept_resolver.resolve(text, user, scope_views=views)
+    except Exception as exc:  # noqa: BLE001 - a hint only; grounding still fails closed
+        logger.info("Business-term check unavailable: %s", type(exc).__name__)
+        return ""
+    if resolution.status != "ambiguous":
+        return ""
+    lines = []
+    for item in resolution.ambiguities[:4]:
+        choices = "; ".join(
+            f"{candidate['qualified_name']}: {str(candidate.get('definition') or '')[:200]}"
+            for candidate in item.candidates
+        )
+        lines.append(f"- '{item.term}' means one of: {choices}")
+    return (
+        "\n\n## Business terms with more than one meaning in this agent's business\n"
+        + "\n".join(lines)
+        + "\nAsk the user which one they mean, naming the choices, before any query. "
+        "Do not pick one and do not say you will check."
+    )
+
+
 @router.post("/{agent_id}/threads/{thread_id}/messages")
 async def send_agent_message(
     agent_id: str,
@@ -2274,6 +2307,7 @@ async def send_agent_message(
                     f"\n\nThe user is looking at Dataviz dashboard "
                     f"{body.dataviz.dashboard_id}, which could not be read right now."
                 )
+        system_prompt += await _business_terms_note(body.content, user, bound_view_ids(agent))
         try:
             memories = await memory_repository.list(
                 user_name=user_name,
