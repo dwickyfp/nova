@@ -118,6 +118,23 @@ async def test_unresolved_concept_becomes_a_clarification_not_a_query(monkeypatc
     execute.assert_not_awaited()
 
 
+async def test_a_plan_that_names_nothing_asks_instead_of_failing(monkeypatch):
+    # Seen live: for "show sales by supplier name" the model left every field empty.
+    tool, provider, execute = setup_tool(monkeypatch, _plan(metrics=[]))
+    outcome = await _run(tool, "Tampilkan penjualan berdasarkan nama pemasok.")
+    assert outcome.error_class == "CLARIFICATION_REQUIRED"
+    assert "total_revenue" in outcome.repair_context["available_metrics"]
+    provider.complete.assert_awaited_once()  # not a repair target
+    execute.assert_not_awaited()
+
+
+def test_the_planner_rules_ask_about_a_measure_word_several_metrics_fit():
+    from app.modules.agents.semantic.model_planner import PLANNER_RULES
+
+    assert "two or more catalog metrics fit about equally" in PLANNER_RULES
+    assert "a supplied business definition names, is resolved" in PLANNER_RULES
+
+
 async def test_invalid_model_plan_gets_one_internal_repair(monkeypatch):
     tool, provider, execute = setup_tool(
         monkeypatch, _plan(metrics=["gross_merchandise"]), _plan(dimensions=["city"]),
@@ -163,6 +180,30 @@ async def test_the_turn_planners_plan_runs_without_another_model_call(monkeypatc
     provider.complete.assert_not_awaited()
     assert "`orders`.`city`" in execute.call_args.kwargs["sql"]
     assert outcome.metadata["plan_source"] == "turn_planner"
+
+
+async def test_the_turn_planners_filter_values_are_checked_like_any_plan(monkeypatch):
+    # Seen live: the turn planner's plan carried region IN ('Jawa Barat', 'DKI') and
+    # skipped the value check that a plan made by semantic_query gets.
+    import app.modules.agents.semantic.model_planner as planner
+    from app.modules.agents.semantic.planning import SemanticFilter
+
+    seen = []
+
+    async def ground(model, plan, question, context):
+        seen.append((plan.filters, question))
+        return plan.__class__(**{**plan.__dict__, "filters": (
+            SemanticFilter("city", "=", "Jawa Barat & DKI"),)})
+
+    monkeypatch.setattr(planner, "ground_literals", ground)
+    tool, provider, execute = setup_tool(monkeypatch)
+    primary = {"view": None, "plan": _plan(filters=[
+        {"field": "city", "operator": "IN", "value": ["Jawa Barat", "DKI"]}])}
+    outcome = await _ask(tool, _context(primary=primary), "order di Jawa Barat & DKI")
+    assert outcome.ok, outcome.safe_detail
+    assert seen and seen[0][1] == "order di Jawa Barat & DKI"
+    assert "'Jawa Barat & DKI'" in execute.call_args.kwargs["sql"]
+    provider.complete.assert_not_awaited()
 
 
 async def test_an_invalid_turn_plan_is_planned_again(monkeypatch):
@@ -421,3 +462,124 @@ async def test_the_first_query_runs_early_only_from_a_usable_turn_plan(monkeypat
     assert not await tool.primary_plan_usable(context)
     context.primary_plan = None
     assert not await tool.primary_plan_usable(context)
+
+
+def test_a_filter_value_the_question_names_verbatim_replaces_a_split_reading():
+    from dataclasses import replace as copy
+
+    from app.modules.agents.semantic.model_planner import repair_literals
+    from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan
+
+    model = sales_model()
+    city = next(field for dataset in model.datasets for field in dataset.fields
+                if field.name == "city")
+    model = copy(model, datasets=tuple(
+        copy(dataset, fields=tuple(
+            copy(field, sample_values=("Jawa Barat & DKI", "Jawa Barat", "Bali"))
+            if field is city else field for field in dataset.fields))
+        for dataset in model.datasets))
+    split = SemanticPlan(metrics=("total_revenue",), filters=(
+        SemanticFilter("city", "IN", ["Jawa Barat", "DKI"]),))
+    repaired = repair_literals(model, split, "Berapa omzet di wilayah Jawa Barat & DKI?")
+    assert repaired.filters == (SemanticFilter("city", "=", "Jawa Barat & DKI"),)
+    # A value the field holds is the user's choice and stays.
+    kept = SemanticPlan(metrics=("total_revenue",), filters=(SemanticFilter("city", "=", "Bali"),))
+    assert repair_literals(model, kept, "omzet Bali dan Jawa Barat & DKI") == kept
+    # Nothing named verbatim: the plan is left alone.
+    assert repair_literals(model, split, "omzet di Jawa") == split
+
+
+def test_the_planner_rules_do_not_turn_a_description_into_a_grouping():
+    from app.modules.agents.semantic.model_planner import PLANNER_RULES
+
+    assert "Add a dimension only when the question asks to see the result per" in PLANNER_RULES
+
+
+async def test_a_value_the_field_has_no_samples_for_is_looked_up_as_the_caller(monkeypatch):
+    from dataclasses import replace as copy
+
+    import app.modules.agents.semantic.literals as literals
+    from app.modules.agents.semantic.model_planner import ground_literals
+    from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan
+
+    model = sales_model()
+    model = copy(model, datasets=tuple(
+        copy(dataset, fields=tuple(
+            copy(field, sample_values=(), search_strategy="exact") if field.name == "city"
+            else field for field in dataset.fields))
+        for dataset in model.datasets))
+    asked = []
+
+    async def lookup(_model, field, words, context):
+        asked.append((field, words, context))
+        return ["Jawa Barat & DKI", "Jawa Timur"]
+
+    monkeypatch.setattr(literals, "field_values", lookup)
+    split = SemanticPlan(metrics=("total_revenue",), filters=(
+        SemanticFilter("city", "IN", ["Jawa Barat", "DKI"]),))
+    context = object()
+    grounded = await ground_literals(model, split, "omzet wilayah Jawa Barat & DKI", context)
+    assert grounded.filters == (SemanticFilter("city", "=", "Jawa Barat & DKI"),)
+    assert asked == [("city", ["Jawa Barat", "DKI"], context)]
+    # A planned value the data holds is never replaced.
+    exact = SemanticPlan(metrics=("total_revenue",), filters=(
+        SemanticFilter("city", "=", "Jawa Timur"),))
+    assert await ground_literals(model, exact, "omzet Jawa Timur", context) == exact
+
+
+async def test_a_value_its_field_does_not_hold_moves_to_the_one_field_that_does(monkeypatch):
+    from dataclasses import replace as copy
+
+    import app.modules.agents.semantic.literals as literals
+    from app.modules.agents.semantic.model_planner import ground_literals
+    from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan
+
+    model = sales_model()
+    model = copy(model, datasets=tuple(
+        copy(dataset, fields=tuple(
+            copy(field, sample_values=(), search_strategy="exact")
+            if field.kind.value == "dimension" else field for field in dataset.fields))
+        for dataset in model.datasets))
+    holders = {"regions.region": ["Salesman"]}
+
+    async def lookup(_model, field, words, context):
+        return holders.get(field, [])
+
+    monkeypatch.setattr(literals, "field_values", lookup)
+    wrong = SemanticPlan(metrics=("total_revenue",), filters=(
+        SemanticFilter("city", "=", "Salesman"),))
+    moved = await ground_literals(model, wrong, "omzet untuk Salesman", object())
+    assert moved.filters == (SemanticFilter("regions.region", "=", "Salesman"),)
+    # Two fields hold the value: the model's reading stays, nothing is guessed.
+    holders["orders.order_id"] = ["Salesman"]
+    assert await ground_literals(model, wrong, "omzet untuk Salesman", object()) == wrong
+
+
+async def test_field_values_are_looked_up_as_the_caller_on_one_searchable_field(monkeypatch):
+    from dataclasses import replace as copy
+    from types import SimpleNamespace as NS
+    from unittest.mock import AsyncMock
+
+    from app.modules.agents.semantic.literals import field_values
+    from app.modules.query.service import query_service
+
+    model = sales_model()
+    model = copy(model, datasets=tuple(
+        copy(dataset, fields=tuple(
+            copy(field, search_strategy="exact") if field.name == "region" else field
+            for field in dataset.fields))
+        for dataset in model.datasets))
+    execute = AsyncMock(return_value=[NS(error=None, columns=["region"],
+                                         rows=[["Jawa Barat & DKI"], ["Jawa Timur"]])])
+    monkeypatch.setattr(query_service, "execute_statements", execute)
+    context = NS(user={**USER, "session_id": "s1"}, role=None)
+    found = await field_values(model, "region", ["Jawa Barat", "DKI"], context)
+    assert found == ["Jawa Barat & DKI", "Jawa Timur"]
+    call = execute.await_args.kwargs
+    assert call["username"] == "alice" and call["role"] == "analyst" and call["max_rows"] == 50
+    assert "LIKE '%jawa%'" in call["sql"] and "LIKE '%dki%'" in call["sql"]
+    # No search strategy, no credential, or no words: nothing is looked up.
+    assert await field_values(model, "city", ["Jakarta"], context) == []
+    assert await field_values(model, "region", ["x"], NS(user={"username": "a"})) == []
+    execute.side_effect = RuntimeError("engine down")
+    assert await field_values(model, "region", ["Jawa"], context) == []

@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENTS (
     resource_bindings          JSON,
     config_revision            VARCHAR(64),
     budget_profile             VARCHAR(16),
-    release_manifest_id        VARCHAR(64)
+    release_manifest_id        VARCHAR(64),
+    harness_policy             JSON
 ) PRIMARY KEY(agent_id)
 DISTRIBUTED BY HASH(agent_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -116,6 +117,7 @@ AGENT_INTELLIGENCE_COLUMNS = (
     ("harness_mode", "VARCHAR(16)"),
     ("budget_profile", "VARCHAR(16)"),
     ("release_manifest_id", "VARCHAR(64)"),
+    ("harness_policy", "JSON"),
 )
 
 #: One row per semantic model. ``definition`` is the *parsed* Ossie metadata
@@ -177,7 +179,7 @@ _AGENT_COLUMNS = (
     "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
     "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, visibility, "
     "created_at, updated_at, resource_bindings, config_revision, "
-    "budget_profile, release_manifest_id"
+    "budget_profile, release_manifest_id, harness_policy"
 )
 _AGENT_COLUMN_COUNT = len(_AGENT_COLUMNS.split(", "))
 
@@ -401,6 +403,7 @@ def _agent_row(row: list[Any]) -> dict:
     if len(row) == 29:
         row = [*row, None, None]
     # ``budget_profile`` is the newest column; rows read before it exist have 31.
+    harness_policy = row[33] if len(row) > 33 else None
     release_manifest_id = row[32] if len(row) > 32 else None
     budget_profile = row[31] if len(row) > 31 else None
     row = list(row[:31])
@@ -472,6 +475,7 @@ def _agent_row(row: list[Any]) -> dict:
         "resource_bindings": _as_json(resource_bindings) or {},
         "config_revision": config_revision,
         "release_manifest_id": release_manifest_id,
+        "harness_policy": _as_json(harness_policy) or {},
     }
 
 
@@ -725,8 +729,8 @@ class AgentRepository:
             "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
             "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, "
             "visibility, created_at, updated_at, resource_bindings, config_revision, "
-            "budget_profile"
-            ") VALUES (" + ", ".join(["%s"] * 32) + ")",
+            "budget_profile, harness_policy"
+            ") VALUES (" + ", ".join(["%s"] * 33) + ")",
             [
                 agent_id,
                 owner_name,
@@ -760,6 +764,7 @@ class AgentRepository:
                 _dump(fields.get("resource_bindings") or {}),
                 str(uuid4()),
                 fields.get("budget_profile", "analyst"),
+                _dump(fields.get("harness_policy") or {}),
             ],
         )
         created = await self.get_agent(agent_id, owner_name=owner_name)
@@ -880,10 +885,12 @@ class AgentRepository:
             "discoverable_skills",
             "compiled_instructions",
             "resource_bindings",
+            "harness_policy",
         ):
             if column in fields:
                 assignments.append(f"{column} = %s")
-                params.append(_dump(fields[column] or []))
+                empty: Any = {} if column == "harness_policy" else []
+                params.append(_dump(fields[column] or empty))
         if assignments:
             from app.modules.agents.versions import agent_versions, revision_id
 

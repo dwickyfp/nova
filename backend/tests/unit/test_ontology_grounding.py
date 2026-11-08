@@ -169,6 +169,7 @@ async def test_grounding_requires_the_bound_metric_in_its_view(world):
         "Finance.NetRevenue must use metric total_revenue"
     ]
     assert missing_metrics(result, ("total_revenue",)) == []
+    assert result.required["total_revenue"]["matched_terms"] == ["omzet"]
 
 
 async def test_an_agent_on_a_different_definition_cannot_compute_the_concept(world):
@@ -406,3 +407,99 @@ async def test_without_a_release_semantic_query_is_unchanged(alice_world, monkey
     assert "business_concepts" not in payload
     assert outcome.evidence["business_context"] is None
     assert ctx.quality_facts["concept_grounding"]["status"] == "no_release"
+
+
+# --- mentions a planned metric explains -------------------------------------------------
+
+
+def _retail_ir():
+    import json
+
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.ossie import parse_ossie
+    from tests.benchmark.retail_field.views import VIEWS
+
+    return SemanticModelIR.from_ossie(parse_ossie(json.dumps(VIEWS["retail_sales"])).model)
+
+
+def _required(**concepts):
+    from app.modules.ontology.grounding import Grounding
+
+    return Grounding(status="grounded", view_id="retail_sales", required={
+        metric: {"qualified_name": f"Penjualan.{name}", "label": name, "definition": "",
+                 "aliases": [], "matched_terms": terms}
+        for metric, (name, terms) in concepts.items()
+    })
+
+
+def test_a_word_that_describes_the_planned_metric_is_not_a_second_request():
+    from app.modules.ontology.grounding import grounding_gaps
+
+    ir = _retail_ir()
+    # "penjualan kotor sebelum diskon": discount describes gross revenue.
+    grounding = _required(discount_amount=("DiscountAmount", ["diskon"]))
+    missing, explained = grounding_gaps(grounding, ("gross_revenue",), ir)
+    assert missing == []
+    assert explained == [
+        "Penjualan.DiscountAmount: 'diskon' describes planned metric gross_revenue"
+    ]
+    # "margin kotor, yaitu omzet bersih ...": the margin is defined from net revenue.
+    grounding = _required(net_revenue=("NetRevenue", ["omzet bersih"]))
+    assert grounding_gaps(grounding, ("gross_margin",), ir)[0] == []
+
+
+def test_an_input_of_the_planned_metric_is_explained_by_its_formula():
+    from app.modules.ontology.grounding import grounding_gaps
+
+    grounding = _required(sales_before_returns=("SalesBeforeReturns", ["nilai order"]))
+    missing, explained = grounding_gaps(grounding, ("net_revenue",), _retail_ir())
+    assert missing == []
+    assert explained == ["Penjualan.SalesBeforeReturns: an input of planned metric net_revenue"]
+
+
+def test_a_mention_after_per_that_the_planned_metric_counts_by_is_its_unit():
+    from dataclasses import replace as copy
+
+    from app.modules.ontology.grounding import grounding_gaps
+
+    ir = _retail_ir()
+    question = "Berapa rata-rata persentase diskon per baris pesanan setiap bulan?"
+    # Average discount is defined "per baris order": the words are its unit.
+    grounding = copy(_required(order_lines=("OrderLines", ["baris pesanan"])),
+                     question=question)
+    missing, explained = grounding_gaps(grounding, ("avg_discount_pct",), ir)
+    assert missing == []
+    assert explained == [
+        "Penjualan.OrderLines: 'per baris pesanan' is the unit of planned metric "
+        "avg_discount_pct"
+    ]
+    # Without 'per' in the question the mention asks for the metric itself.
+    asked = copy(grounding, question="Berapa baris pesanan dan rata-rata diskon?")
+    assert grounding_gaps(asked, ("avg_discount_pct",), ir)[0] == [
+        "Penjualan.OrderLines must use metric order_lines"
+    ]
+    # A planned metric not defined per that unit does not explain it.
+    assert grounding_gaps(grounding, ("net_revenue",), ir)[0] == [
+        "Penjualan.OrderLines must use metric order_lines"
+    ]
+
+
+def test_substitution_is_still_refused():
+    from app.modules.ontology.grounding import grounding_gaps
+
+    ir = _retail_ir()
+    # "omzet" asked, gross revenue planned: its own words never say omzet.
+    grounding = _required(net_revenue=("NetRevenue", ["omzet"]))
+    assert grounding_gaps(grounding, ("gross_revenue",), ir)[0] == [
+        "Penjualan.NetRevenue must use metric net_revenue"
+    ]
+    # Two measures asked, one planned: the other is still required.
+    grounding = _required(order_count=("OrderCount", ["jumlah order"]))
+    assert grounding_gaps(grounding, ("net_revenue",), ir)[0] == [
+        "Penjualan.OrderCount must use metric order_count"
+    ]
+    # Without the view's model the strict rule applies.
+    grounding = _required(discount_amount=("DiscountAmount", ["diskon"]))
+    assert missing_metrics(grounding, ("gross_revenue",)) == [
+        "Penjualan.DiscountAmount must use metric discount_amount"
+    ]

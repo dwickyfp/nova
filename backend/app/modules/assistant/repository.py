@@ -303,6 +303,33 @@ class AssistantRepository:
             [thread_id, user_name],
         )
 
+    async def liked_answers(self, *, limit: int = 2000) -> list[dict]:
+        """Recent answers people liked on threads where they allowed learning.
+
+        Only the principal and the recorded steps are returned: what a liked answer
+        asked and how it was planned, never its rows. Newest first.
+        """
+        import json
+
+        result = await db.execute_system(
+            "SELECT m.message_id,m.user_name,m.steps "
+            "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES m "
+            "JOIN NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS t "
+            "ON m.thread_id=t.thread_id AND m.user_name=t.user_name "
+            "WHERE m.role='assistant' AND m.feedback='like' AND t.learning_enabled=true "
+            "ORDER BY m.created_at DESC LIMIT %s",
+            [min(max(limit, 1), 5000)],
+        )
+        answers = []
+        for message_id, user_name, steps in result["rows"]:
+            try:
+                parsed = json.loads(steps) if isinstance(steps, str) else steps
+            except ValueError:
+                continue
+            answers.append({"message_id": message_id, "user_name": user_name,
+                            "steps": parsed if isinstance(parsed, list) else []})
+        return answers
+
     async def learning_enabled(self, thread_id: str, *, user_name: str) -> bool:
         result = await db.execute_system(
             "SELECT learning_enabled FROM NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS "

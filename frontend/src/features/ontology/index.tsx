@@ -1,20 +1,41 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { BookText, FolderTree, Inbox, PackageCheck } from 'lucide-react'
+import {
+  BookText,
+  FlaskConical,
+  FolderTree,
+  Gauge,
+  Inbox,
+  ListChecks,
+  Network,
+  PackageCheck,
+} from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
 import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ontologyApi } from './api'
+import { ChecksTab } from './checks-tab'
 import { ConceptsTab } from './concepts-tab'
+import { DerivedTab } from './derived-tab'
 import { DomainsTab } from './domains-tab'
+import { EvaluationTab } from './evaluation-tab'
 import { useOntologyKey } from './model'
+import { OverviewTab } from './overview-tab'
 import { ProposalsTab } from './proposals-tab'
 import { ReleasesTab } from './releases-tab'
 
-export type OntologyTab = 'concepts' | 'proposals' | 'releases' | 'domains'
+export type OntologyTab =
+  | 'overview'
+  | 'concepts'
+  | 'derived'
+  | 'checks'
+  | 'proposals'
+  | 'evaluation'
+  | 'releases'
+  | 'domains'
 
 const route = getRouteApi('/_authenticated/business-ontology')
 
@@ -26,14 +47,14 @@ export function BusinessOntologyPage() {
     <BusinessOntology
       tab={tab}
       onTabChange={(next) =>
-        navigate({ search: { tab: next === 'concepts' ? undefined : next }, replace: true })
+        navigate({ search: { tab: next === 'overview' ? undefined : next }, replace: true })
       }
     />
   )
 }
 
 export function BusinessOntology({
-  tab: initial = 'concepts',
+  tab: initial = 'overview',
   onTabChange,
 }: {
   tab?: OntologyTab
@@ -63,9 +84,21 @@ export function BusinessOntology({
         />
         <Tabs value={tab} onValueChange={change}>
           <TabsList className='max-w-full overflow-x-auto'>
+            <TabsTrigger value='overview' className='gap-1.5'>
+              <Gauge className='size-3.5' />
+              Overview
+            </TabsTrigger>
             <TabsTrigger value='concepts' className='gap-1.5'>
               <BookText className='size-3.5' />
               Concepts
+            </TabsTrigger>
+            <TabsTrigger value='derived' className='gap-1.5'>
+              <Network className='size-3.5' />
+              Derived
+            </TabsTrigger>
+            <TabsTrigger value='checks' className='gap-1.5'>
+              <ListChecks className='size-3.5' />
+              Checks
             </TabsTrigger>
             <TabsTrigger value='proposals' className='gap-1.5'>
               <Inbox className='size-3.5' />
@@ -73,6 +106,10 @@ export function BusinessOntology({
               {inReview ? (
                 <span className='text-xs text-muted-foreground'>{inReview}</span>
               ) : null}
+            </TabsTrigger>
+            <TabsTrigger value='evaluation' className='gap-1.5'>
+              <FlaskConical className='size-3.5' />
+              Evaluation
             </TabsTrigger>
             <TabsTrigger value='releases' className='gap-1.5'>
               <PackageCheck className='size-3.5' />
@@ -83,11 +120,23 @@ export function BusinessOntology({
               Domains
             </TabsTrigger>
           </TabsList>
+          <TabsContent value='overview' className='mt-4'>
+            <OverviewTab onOpen={change} />
+          </TabsContent>
           <TabsContent value='concepts' className='mt-4'>
             <ConceptsTab />
           </TabsContent>
+          <TabsContent value='derived' className='mt-4'>
+            <DerivedTab />
+          </TabsContent>
+          <TabsContent value='checks' className='mt-4'>
+            <ChecksTab />
+          </TabsContent>
           <TabsContent value='proposals' className='mt-4'>
             <ProposalsTab />
+          </TabsContent>
+          <TabsContent value='evaluation' className='mt-4'>
+            <EvaluationTab />
           </TabsContent>
           <TabsContent value='releases' className='mt-4'>
             <ReleasesTab />

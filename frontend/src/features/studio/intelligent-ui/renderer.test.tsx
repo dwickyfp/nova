@@ -435,6 +435,32 @@ describe("Nova interactive answers", () => {
 });
 
 
+it("keeps a streamed chart mounted when its turn completes and while saved state loads", async () => {
+  const program = 'root = Col([Chart(@Evidence("e1"), "month", "revenue", "bar", "Revenue")])';
+  const evidence = { e1: [{ month: "Jan", revenue: 10 }, { month: "Feb", revenue: 30 }] };
+  const parsed = validateProgram(program, evidence, true);
+  const ui: UiBlock = { ...parsed, program, program_sha256: "c".repeat(64),
+    fallback: "Revenue by month.", state_defaults: parsed.state, evidence,
+    provenance: { scope: "verified_result_rows", assumption: false, evidence_ids: ["e1"] } };
+  let release: (value: Awaited<ReturnType<typeof uiApi.get>>) => void = () => {};
+  vi.mocked(uiApi.get).mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+  const onAction = vi.fn(async () => {});
+  // Streaming: the turn has no saved message yet, so the visual has no source.
+  const screen = await render(<IntelligentUi block={ui} complete onAction={onAction} />);
+  await expect.poll(() => document.querySelector(".recharts-surface"), { timeout: 10_000 }).not.toBeNull();
+  const drawn = document.querySelector(".recharts-surface");
+
+  // The turn completes and the visual gains its saved source.
+  await screen.rerender(<IntelligentUi block={ui} complete source={source} onAction={onAction} />);
+  expect(document.querySelector(".recharts-surface")).toBe(drawn);
+  expect(document.body.textContent).not.toContain("Revenue by month.");
+
+  release({ revision: 3, state: parsed.state, program_sha256: "c".repeat(64) });
+  await expect.poll(() => vi.mocked(uiApi.get).mock.calls.length).toBe(1);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(document.querySelector(".recharts-surface")).toBe(drawn);
+});
+
 it("routes public images to media and retains their offline fallback", async () => {
   vi.spyOn(uiApi, "media").mockRejectedValue(new Error("Offline"));
   const screen = await render(<IntelligentUi

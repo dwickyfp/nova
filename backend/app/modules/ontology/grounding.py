@@ -8,7 +8,8 @@ answer it, and in which of the agent's Semantic Views:
 * an approved concept with no binding the caller and agent can use: say it
   cannot be computed, instead of falling back to a metric with a similar name;
 * concepts computed in different views: ask for one at a time;
-* otherwise the view is chosen and the bound metrics are required in the plan.
+* otherwise the view is chosen and the bound metrics are required in the plan,
+  unless a metric the plan does use explains the mention (see ``grounding_gaps``).
 
 A binding fits a loaded view when the metric's claim fingerprint there equals
 the one the steward validated, so an agent pinned to an older view version
@@ -46,6 +47,8 @@ class Grounding:
     detail: str | None = None
     repair: dict[str, Any] = field(default_factory=dict)
     user_message: str = "The business metric cannot be answered here."
+    #: The question as asked; a mention's neighbouring words can explain it.
+    question: str = ""
 
     @property
     def blocking(self) -> bool:
@@ -164,6 +167,7 @@ async def ground(
         for binding in options:
             by_view.setdefault(binding.semantic.view_id, {})[binding.metric] = {
                 **concept, "representation_id": binding.id,
+                "matched_terms": resolution.terms.get(concept["id"], []),
             }
     if unbound:
         return Grounding(
@@ -214,13 +218,103 @@ async def ground(
         if item["id"] not in {chosen["id"] for chosen in required.values()}:
             required[metric] = item
     return Grounding(
-        status="grounded", resolution=resolution, view_id=view_id, required=required
+        status="grounded", resolution=resolution, view_id=view_id, required=required,
+        question=question
     )
 
 
-def missing_metrics(grounding: Grounding, plan_metrics: tuple[str, ...]) -> list[str]:
-    return [
-        f"{item['qualified_name']} must use metric {metric}"
-        for metric, item in grounding.required.items()
-        if metric not in plan_metrics
-    ]
+def missing_metrics(
+    grounding: Grounding, plan_metrics: tuple[str, ...], model: Any = None,
+) -> list[str]:
+    return grounding_gaps(grounding, plan_metrics, model)[0]
+
+
+def grounding_gaps(
+    grounding: Grounding, plan_metrics: tuple[str, ...], model: Any = None,
+) -> tuple[list[str], list[str]]:
+    """Required concepts the plan leaves out, and those a planned metric explains.
+
+    A word in a question can name a concept without asking for it: "gross sales
+    before *discount*" names Discount amount while asking for Gross revenue. A
+    required concept is therefore satisfied when its metric is planned, or when
+    a planned metric explains the mention:
+
+    * the concept's metric is an input of a planned metric, proven on the parsed
+      expressions (actual distance is part of the distance gap); or
+    * the words that named the concept appear, as whole words, in how a planned
+      metric describes itself (its description, synonyms, name, or the official
+      definition of the concept bound to it).
+
+    Substitution stays refused: "omzet" with gross revenue planned is not
+    explained, because gross revenue's own words do not say "omzet". Without the
+    view's model the rule is the strict one: every required metric must be planned.
+    """
+    missing: list[str] = []
+    explained: list[str] = []
+    for metric, item in grounding.required.items():
+        if metric in plan_metrics:
+            continue
+        reason = _explained(metric, item, grounding, plan_metrics, model) if model else None
+        if reason:
+            explained.append(f"{item['qualified_name']}: {reason}")
+        else:
+            missing.append(f"{item['qualified_name']} must use metric {metric}")
+    return missing, explained
+
+
+def _explained(
+    metric: str, item: dict[str, Any], grounding: Grounding,
+    plan_metrics: tuple[str, ...], model: Any,
+) -> str | None:
+    from app.modules.ontology.derived import metric_components
+    from app.modules.ontology.resolver import normalise
+
+    required = model.metric(metric)
+    if required is not None:
+        own, _parts = metric_components(required.expression)
+        for name in plan_metrics:
+            planned = model.metric(name)
+            if (
+                own and planned is not None and planned.base_dataset == required.base_dataset
+                and own in metric_components(planned.expression)[1]
+            ):
+                return f"an input of planned metric {name}"
+    terms = {normalise(term) for term in item.get("matched_terms") or []} - {""}
+    if not terms:
+        return None
+    for name in plan_metrics:
+        planned = model.metric(name)
+        if planned is None:
+            continue
+        words = [name.replace("_", " "), planned.description or "", *planned.synonyms]
+        official = grounding.required.get(name)
+        if official:
+            words += [official.get("label") or "", official.get("definition") or "",
+                      *(official.get("aliases") or [])]
+        text = f" {normalise(' '.join(words))} "
+        hit = next((term for term in sorted(terms) if f" {term} " in text), None)
+        if hit:
+            return f"'{hit}' describes planned metric {name}"
+        unit = _unit_of(terms, grounding.question, planned.description or "")
+        if unit:
+            return f"'per {unit}' is the unit of planned metric {name}"
+    return None
+
+
+def _unit_of(terms: set[str], question: str, description: str) -> str | None:
+    """A mention after 'per' that the planned metric's own definition also counts per.
+
+    "rata-rata persentase diskon *per baris pesanan*" names Order lines, but the
+    average discount is defined "per baris order": the words give the unit of the asked
+    measure, not a second measure. It needs both the question's 'per' and the
+    definition's 'per' followed by a word of the mention.
+    """
+    from app.modules.ontology.resolver import normalise
+
+    asked = f" {normalise(question)} "
+    defined = normalise(description).split()
+    units = {defined[i + 1] for i, word in enumerate(defined[:-1]) if word == "per"}
+    for term in sorted(terms):
+        if f" per {term} " in asked and units & {word for word in term.split() if len(word) > 3}:
+            return term
+    return None

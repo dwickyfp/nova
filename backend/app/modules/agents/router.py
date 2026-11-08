@@ -94,6 +94,7 @@ from app.modules.assistant import events
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.guards import GuardChain
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.repository import (
@@ -1036,6 +1037,35 @@ async def delete_skill(skill_id: str, user: dict = Depends(get_current_user)):
 # captured as an agent id.
 
 
+async def _accessible_agent_ids(agent_ids: list[str], user: dict) -> set[str]:
+    """The agents whose conversations this caller may list, each checked live.
+
+    The checks are independent, so they run together, a few at a time, and
+    share one read of Ranger's policies. A missing or unverified agent hides
+    its threads; any other failure fails the list, as a sequential check would.
+    """
+    from app.integrations.ranger.client import read_snapshot
+
+    limit = asyncio.Semaphore(3)
+
+    async def check(agent_id: str) -> None:
+        async with limit:
+            await _require_agent(agent_id, user)
+
+    async with read_snapshot():
+        results = await asyncio.gather(
+            *(check(agent_id) for agent_id in agent_ids), return_exceptions=True
+        )
+    accessible: set[str] = set()
+    for agent_id, result in zip(agent_ids, results, strict=True):
+        if isinstance(result, HTTPException) and result.status_code == 404:
+            continue
+        if isinstance(result, BaseException):
+            raise result
+        accessible.add(agent_id)
+    return accessible
+
+
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_studio_threads(
     user: dict = Depends(get_current_user),
@@ -1058,15 +1088,9 @@ async def list_studio_threads(
         raise HTTPException(
             status_code=503, detail="Conversation history is temporarily unavailable"
         ) from exc
-    accessible: set[str] = set()
-    for agent_id in dict.fromkeys(thread["agent_id"] for thread in threads):
-        try:
-            await _require_agent(agent_id, user)
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                continue
-            raise
-        accessible.add(agent_id)
+    accessible = await _accessible_agent_ids(
+        list(dict.fromkeys(thread["agent_id"] for thread in threads)), user
+    )
     views = [_thread_view(thread) for thread in threads if thread["agent_id"] in accessible]
     return ThreadListResponse(threads=views, count=len(views), next_cursor=next_cursor)
 
@@ -2328,6 +2352,8 @@ async def send_agent_message(
         max_calls_per_tool=limits.max_calls_per_tool,
         iterative=limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
         summarize_history=True,
+        spend_limit=limits.spend_tokens,
+        guards=GuardChain.from_policy(registry.harness_policy),
     )
 
     async def resolve_consent(

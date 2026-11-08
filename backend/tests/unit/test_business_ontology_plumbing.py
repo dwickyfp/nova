@@ -84,6 +84,46 @@ async def test_save_inserts_the_next_revision(sql):
     assert json.loads(params[6])["name"] == "Finance"
 
 
+async def test_save_many_writes_changed_records_in_one_insert(sql):
+    stored = _domain()
+    other = _domain("Treasury").model_copy(update={"id": "dom_2"})
+    # latest_many returns the stored domain; dom_2 and dom_3 are new.
+    fake = sql([{"rows": [[stored.model_dump_json(), 1]]}])
+    third = _domain("Ops").model_copy(update={"id": "dom_3"})
+    written = await OntologyRepository().save_many(
+        "domains", [(stored, 1), (other, 0), (third, 0)]
+    )
+    assert written == 2
+    inserts = [call for call in fake.calls if call[0].startswith("INSERT")]
+    assert len(inserts) == 1 and inserts[0][0].count("NOW()") == 2
+    assert inserts[0][1][0] == "dom_2" and inserts[0][1][7] == "dom_3"
+
+
+async def test_save_many_writes_a_large_batch_in_few_statements(sql):
+    # A join run over many databases stores tens of thousands of results; one statement
+    # per BATCH_ROWS keeps the write inside the lease's deadline.
+    from app.modules.ontology.repository import BATCH_ROWS
+
+    fake = sql([])
+    records = [(_domain().model_copy(update={"id": f"dom_{i}"}), 0)
+               for i in range(2 * BATCH_ROWS + 1)]
+    assert await OntologyRepository().save_many("domains", records) == len(records)
+    inserts = [call for call in fake.calls if call[0].startswith("INSERT")]
+    assert [call[0].count("NOW()") for call in inserts] == [BATCH_ROWS, BATCH_ROWS, 1]
+
+
+async def test_save_many_aborts_the_whole_batch_on_a_conflict(sql):
+    stored = _domain()
+    fake = sql([{"rows": [[stored.model_dump_json(), 1]]}])
+    with pytest.raises(HTTPException) as conflict:
+        await OntologyRepository().save_many(
+            "domains",
+            [(_domain("Treasury"), 0), (_domain("Ops").model_copy(update={"id": "x"}), 0)],
+        )
+    assert conflict.value.status_code == 409
+    assert not [call for call in fake.calls if call[0].startswith("INSERT")]
+
+
 async def test_saving_identical_content_is_a_no_op(sql):
     stored = _domain()
     fake = sql([{"rows": [[stored.model_dump_json(), 1]]}])
@@ -201,7 +241,7 @@ async def test_publish_hook_never_undoes_a_publication(monkeypatch, caplog):
     assert "drift check failed" in caplog.text
 
     async def counted(view_id, actor):
-        return {"repinned": 1, "stale": 0}
+        return {"repinned": 1, "stale": 0, "cosmetic": 0}
 
     monkeypatch.setattr(representations, "refresh_view", counted)
     await representations.refresh_after_publish("sales_sv", ADMIN)

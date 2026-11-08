@@ -33,14 +33,16 @@ import re
 import time
 from dataclasses import replace
 from dataclasses import replace as dataclass_replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from app.common.sql_guard import redact_sql_credentials
 from app.core.database import configured_timezone
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.compiler import SemanticCompiler
+from app.modules.agents.semantic.coverage import future_period, period_without_data
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import (
     SemanticPlan,
@@ -119,6 +121,10 @@ _SEMANTIC_QUERY_PROMPT_VERSION = "v1"
 
 class SemanticQueryTool:
     """Compiles SQL from an active Semantic View and runs it, delegate-first."""
+
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
 
     name = "semantic_query"
     description = (
@@ -277,6 +283,7 @@ class SemanticQueryTool:
         try:
             from app.modules.agents.semantic.model_planner import (
                 generate_plan,
+                ground_literals,
                 planning_catalog,
                 primary_plan_from,
             )
@@ -291,9 +298,13 @@ class SemanticQueryTool:
                 # The turn planner already read the question; its plan is checked,
                 # never trusted, and a rejected one is simply planned again here.
                 plan = primary_plan_from(primary.get("plan"), semantic_ir)
-                if plan is not None and missing_metrics(grounding, plan.metrics):
+                if plan is not None and missing_metrics(grounding, plan.metrics, semantic_ir):
                     plan = None  # it missed an official metric; plan with the concepts
                 plan_from_turn = plan is not None
+                if plan is not None:
+                    # The turn planner's filter values get the same check as a plan made
+                    # here: a value the field never holds is looked up as the caller.
+                    plan = await ground_literals(semantic_ir, plan, question, context)
             if plan is None:
                 plan = await generate_plan(
                     self._provider,
@@ -321,7 +332,10 @@ class SemanticQueryTool:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
             period_note = "; ".join(notes) or None
             verified_hit = _verified_match(definition, model_id, semantic_ir, plan)
-            errors = [*missing_metrics(grounding, plan.metrics), *validate_plan(semantic_ir, plan)]
+            errors = [
+                *missing_metrics(grounding, plan.metrics, semantic_ir),
+                *validate_plan(semantic_ir, plan),
+            ]
             if errors:
                 raise SemanticPlanError("; ".join(errors))
             time_context = None
@@ -330,6 +344,22 @@ class SemanticQueryTool:
                 if callable(getattr(context, "business_clock_hook", None)):
                     execution_now = await context.business_clock_hook(invocation, context)
                 execution_timezone = getattr(context, "execution_timezone", None)
+                not_yet = future_period(plan, _local_day(
+                    execution_now,
+                    configured_timezone() if execution_timezone is None else execution_timezone,
+                ))
+                if not_yet:
+                    return ToolOutcome(
+                        ok=False,
+                        summary="",
+                        error="The requested period has not started yet.",
+                        error_class="OUTSIDE_DATA_WINDOW",
+                        # The agent answers in the user's words from the detail, as for a
+                        # clarification; the detail forbids answering another period.
+                        recoverable=True,
+                        safe_detail=not_yet,
+                        repair_context={"period": "future"},
+                    )
                 time_context = resolve_execution_time(
                     plan.time.range, plan.time.compare,
                     now=execution_now,
@@ -546,6 +576,47 @@ class SemanticQueryTool:
                 trace_detail=trace,
             )
 
+        last = results[-1] if results else None
+        gap = await period_without_data(
+            plan,
+            list(getattr(last, "columns", None) or []),
+            list(getattr(last, "rows", None) or []),
+            time_context,
+            lambda window_plan: self._window_rows(
+                semantic_ir, window_plan, username, encrypted_password, context, security
+            ),
+        )
+        if gap is not None:
+            await _record_usage(
+                security, semantic_model, semantic_ir, plan, execution_duration_ms,
+                succeeded=True, context=context,
+            )
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error="The requested period is outside the data.",
+                error_class="OUTSIDE_DATA_WINDOW",
+                # The agent answers in the user's words from the detail, as for a
+                # clarification; the detail forbids answering another period.
+                recoverable=True,
+                safe_detail=gap.detail(plan.metrics[0]),
+                repair_context={
+                    "data_window": {
+                        "first": gap.window.first.isoformat(),
+                        "last": gap.window.last.isoformat(),
+                    },
+                    "period": gap.period,
+                },
+                trace_detail=_semantic_trace(
+                    semantic_model,
+                    question=question,
+                    generated_sql=safe_sql,
+                    confidence=confidence,
+                    generation_duration_ms=generation_duration_ms,
+                    execution_duration_ms=execution_duration_ms,
+                ),
+            )
+
         table = _table_payload(results, title=question)
         if table is not None:
             # Expose the fetched rows to ``data_to_chart`` in the same turn,
@@ -673,6 +744,41 @@ class SemanticQueryTool:
             "time_dimension": plan.time.dimension if plan.time else None,
         })
         return attach_evidence_health(outcome, health)
+
+    async def _window_rows(
+        self,
+        semantic_ir: SemanticModelIR,
+        window_plan: dict[str, Any],
+        username: str,
+        encrypted_password: str,
+        context: Any,
+        security: Any,
+    ) -> tuple[list, list, str | None]:
+        """Run one data-window plan as the caller, through the same compiler and session."""
+        from app.modules.query.service import query_service
+
+        try:
+            sql = self._compiler.compile(semantic_ir, SemanticPlan.from_dict(window_plan)).sql
+            results = await query_service.execute_statements(
+                sql=sql,
+                username=username,
+                encrypted_password=encrypted_password,
+                database=_context_value(context, "database"),
+                schema=_context_value(context, "schema_name"),
+                role=_active_role(context),
+                security_context_version=security.security_context_version,
+                max_rows=1,
+                session_id=_context_value(context, "audit_session_id"),
+                confirm_destructive=False,
+                file_id=_context_value(context, "workspace_file_id"),
+            )
+        except Exception as exc:  # noqa: BLE001 - no window means no claim about one
+            logger.info("Data window check skipped: %s", type(exc).__name__)
+            return [], [], type(exc).__name__
+        result = results[-1] if results else None
+        if result is None or result.error:
+            return [], [], "query error"
+        return list(result.columns or []), [list(row) for row in result.rows or []], None
 
     async def _resolve_model(
         self, context: Any, question: str, grounded_view: str | None = None
@@ -976,6 +1082,14 @@ def _render(
             lines.append("rows:")
             lines.append(preview)
     return _truncate("\n".join(lines), ASSISTANT_MAX_PREVIEW_CHARS)
+
+
+def _local_day(now: datetime, timezone: str) -> date | None:
+    """Today on the business calendar; an invalid zone is rejected by the time resolver."""
+    try:
+        return now.astimezone(ZoneInfo(timezone)).date()
+    except (KeyError, ValueError):
+        return None
 
 
 def _table_payload(results: list[Any], *, title: str = "") -> dict[str, Any] | None:

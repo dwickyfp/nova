@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-import math
 import random
 from collections import defaultdict
 from statistics import mean, quantiles
 
-
-def wilson(successes: int, total: int) -> list[float] | None:
-    if not total:
-        return None
-    z = 1.959963984540054
-    p, denominator = successes / total, 1 + z * z / total
-    center = (p + z * z / (2 * total)) / denominator
-    radius = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / denominator
-    return [max(0, center - radius), min(1, center + radius)]
+from app.common.statistics import wilson
 
 
 def summarize(rows: list[dict]) -> dict:

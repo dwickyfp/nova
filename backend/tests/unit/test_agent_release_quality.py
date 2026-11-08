@@ -37,6 +37,7 @@ EXPECTED = {
     "ui_validity": {"valid": True},
     "ui_evidence": {"bound": True},
     "ui_action_success": {"accepted": True, "completed": True},
+    "guard_compliance": {"max_blocked": 0},
     "latency": {"max_ms": 2000},
     "efficiency": {"tool_calls": 2},
 }

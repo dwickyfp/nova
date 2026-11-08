@@ -231,6 +231,8 @@ function applyEvent(
     case "mission_continuation":
     case "evidence_health":
     case "evidence_envelope":
+    case "guard":
+      // Guard decisions are shown in Studio's step rail and recorded on the trace.
       return state;
     case "role_changed":
       return [];

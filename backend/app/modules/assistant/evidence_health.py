@@ -238,7 +238,7 @@ def attach_execution_health(outcome: ToolOutcome, tool_name: str) -> ToolOutcome
             outcome.metadata, outcome.evidence, outcome.trace_detail, outcome.data, outcome.table,
         ) if isinstance(value, dict)
     ]
-    clarification = outcome.error_class == "CLARIFICATION_REQUIRED"
+    clarification = outcome.error_class in {"CLARIFICATION_REQUIRED", "OUTSIDE_DATA_WINDOW"}
     failed = not outcome.ok or outcome.error is not None
     partial = any(
         source.get("partial") is True or source.get("execution_status") == "partial"

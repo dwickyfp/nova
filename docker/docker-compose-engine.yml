@@ -36,9 +36,18 @@
 
 name: docker
 
+# Container stdout is rotated: at most three 10 MB files per service. Docker's
+# json-file driver otherwise keeps a container's whole output.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   nova-backend:
+    logging: *default-logging
     profiles: ["app"]
     build:
       context: ..
@@ -93,6 +102,7 @@ services:
       - nova
 
   nova-worker:
+    logging: *default-logging
     profiles: ["app"]
     build:
       context: ..
@@ -136,6 +146,7 @@ services:
       - nova
 
   ranger-solr:
+    logging: *default-logging
     image: apache/ranger-solr:${RANGER_VERSION:-2.9.0}
     container_name: nova-ranger-solr
     command: solr-precreate ranger_audits /opt/solr/server/solr/configsets/ranger_audits/
@@ -153,6 +164,7 @@ services:
       - nova
 
   ranger-db:
+    logging: *default-logging
     image: apache/ranger-db:${RANGER_VERSION:-2.9.0}
     container_name: nova-ranger-db
     environment:
@@ -170,6 +182,7 @@ services:
       - nova
 
   ranger-admin:
+    logging: *default-logging
     image: apache/ranger:${RANGER_VERSION:-2.9.0}
     container_name: nova-ranger-admin
     hostname: ranger-admin
@@ -199,6 +212,7 @@ services:
       - ranger-policy
 
   ranger-policy-proxy:
+    logging: *default-logging
     build:
       context: ..
       dockerfile: docker/ranger/policy-proxy.Dockerfile
@@ -221,6 +235,7 @@ services:
       - ranger-policy
 
   ranger-bootstrap:
+    logging: *default-logging
     build:
       context: ..
       dockerfile: docker/ranger/bootstrap.Dockerfile
@@ -239,6 +254,7 @@ services:
 
   # ── MinIO (S3-compatible object storage) ──────────────────────────
   minio:
+    logging: *default-logging
     image: ghcr.io/teableio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: nova-minio
     command: server /data --console-address ":9001"
@@ -269,6 +285,7 @@ services:
 
   # ── MinIO Init (auto-create buckets + service account) ────────────
   minio-init:
+    logging: *default-logging
     image: ghcr.io/teableio/minio-mc:RELEASE.2025-04-16T18-13-26Z
     container_name: nova-minio-init
     depends_on:
@@ -302,6 +319,7 @@ services:
   # Superset's own metadata (charts, dashboards, datasets). Users, roles,
   # passwords and data policy stay in StarRocks and Ranger.
   superset-db:
+    logging: *default-logging
     profiles: ["app"]
     image: postgres:16.10-alpine
     container_name: nova-superset-db
@@ -321,6 +339,7 @@ services:
       - nova
 
   superset-init:
+    logging: *default-logging
     profiles: ["app"]
     build:
       context: ..
@@ -352,6 +371,7 @@ services:
       - nova
 
   superset:
+    logging: *default-logging
     profiles: ["app"]
     image: nova-superset:local
     container_name: nova-superset
@@ -376,6 +396,7 @@ services:
 
   # Alerts, reports, thumbnails, cache warmup and async SQL Lab.
   superset-worker:
+    logging: *default-logging
     profiles: ["app"]
     image: nova-superset:local
     container_name: nova-superset-worker
@@ -397,6 +418,7 @@ services:
       - nova
 
   superset-beat:
+    logging: *default-logging
     profiles: ["app"]
     image: nova-superset:local
     container_name: nova-superset-beat
@@ -418,6 +440,7 @@ services:
 
   # ── Redis (session store + cache) ─────────────────────────────────
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     container_name: nova-redis
     ports:
@@ -437,6 +460,7 @@ services:
 
   # ── StarRocks FE (Frontend — query, metadata, auth) ──────────────
   starrocks-fe:
+    logging: *default-logging
     build:
       context: ..
       dockerfile: docker/ranger/starrocks-fe.Dockerfile
@@ -488,6 +512,7 @@ services:
 
   # ── StarRocks BE (Backend — storage, compute) ────────────────────
   starrocks-be:
+    logging: *default-logging
     # Upstream BE plus the bundled JDBC drivers for Nova Catalog connections.
     build:
       context: ..
@@ -536,6 +561,7 @@ services:
   # reachable only from the engine network and reseeds on every recreate.
   # The passwords are local test fixtures; override them in docker/.env.
   catalog-test-postgres:
+    logging: *default-logging
     image: postgres:16.10-alpine
     container_name: nova-catalog-test-postgres
     hostname: catalog-test-postgres
@@ -557,6 +583,7 @@ services:
 
   # ── StarRocks Init (auto-create NOVA_SYSTEM + admin) ─────────────
   starrocks-init:
+    logging: *default-logging
     image: mysql:8.0
     container_name: nova-starrocks-init
     depends_on:

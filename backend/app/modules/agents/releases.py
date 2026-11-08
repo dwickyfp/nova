@@ -52,6 +52,7 @@ RUNTIME_FIELDS = frozenset(
         "budget_seconds",
         "budget_tokens",
         "budget_profile",
+        "harness_policy",
     }
 )
 

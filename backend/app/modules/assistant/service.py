@@ -53,6 +53,12 @@ from app.modules.assistant.context import (
     summary_cache,
 )
 from app.modules.assistant.data_evidence import sql_evidence_kind
+from app.modules.assistant.guards import (
+    GuardChain,
+    GuardEvent,
+    blocked_envelope,
+    hinted_detail,
+)
 from app.modules.assistant.intelligence import (
     ActiveConversationState,
     CapabilityRegistry,
@@ -392,9 +398,12 @@ class AssistantLoop:
         iterative: bool = False,
         summarize_history: bool = False,
         spend_limit: int | None = None,
+        guards: GuardChain | None = None,
     ) -> None:
         #: Total tokens the turn may use; near it the loop composes its answer.
         self._spend_limit = spend_limit
+        #: Platform guards always run; an agent adds its declarative rules.
+        self._guards = guards or GuardChain()
         self._provider = provider
         self._registry = registry
         self._max_iterations = max_iterations
@@ -867,6 +876,10 @@ class AssistantLoop:
         clarification_context: dict[str, Any] = {}
         denials = 0
         denied_calls: set[str] = set()
+        #: Tools an agent guard refused this turn, and the last rule message: a refusal
+        #: by policy is an answer, so the tool is not demanded or forced again.
+        guard_blocked: set[str] = set()
+        guard_reason = ""
         analysis_noted = False
         forced_semantic = False
         #: The governed data tool ran this turn, whatever its result.
@@ -899,7 +912,7 @@ class AssistantLoop:
                 tool_name="invoke_client_capability",
                 arguments=fast_action,
             )
-            _measure_tool_dispatch(context)
+            _measure_tool_dispatch(context, fast_tool)
             outcome = await self._dispatch_tool(fast_tool, invocation, context)
             if outcome.error_class == "RELEASE_DRIFT":
                 yield events.error(
@@ -1512,7 +1525,8 @@ class AssistantLoop:
                     # A required tool that has not run is asked for first (below);
                     # composing now would skip that check.
                     and (denials or all(
-                        name in completed_capabilities for name in required_capabilities
+                        name in completed_capabilities or name in guard_blocked
+                        for name in required_capabilities
                     ))
                 ):
                     composing_final = True
@@ -1533,6 +1547,10 @@ class AssistantLoop:
                     answer_text = "".join(buffered_text).strip() or _clarification_text(
                         clarification_context, language
                     )
+                    answer_text, redaction = GuardChain.screen_answer(answer_text)
+                    if redaction is not None:
+                        for frame in await _guard_frames(context, redaction):
+                            yield frame
                     yield events.text_delta(answer_text)
                     _record_step(context, {"kind": "answer", "clarification": True})
                     _transition(context, TurnState.DONE)
@@ -1560,7 +1578,13 @@ class AssistantLoop:
                 ):
                     # The governed tool ran and the request is outside the catalog:
                     # stating the limit, with no numbers, is the answer.
-                    yield events.text_delta("".join(buffered_text).strip())
+                    scope_text, redaction = GuardChain.screen_answer(
+                        "".join(buffered_text).strip()
+                    )
+                    if redaction is not None:
+                        for frame in await _guard_frames(context, redaction):
+                            yield frame
+                    yield events.text_delta(scope_text)
                     _record_step(context, {"kind": "answer", "out_of_scope": True})
                     _transition(context, TurnState.DONE)
                     yield events.done(
@@ -1568,9 +1592,11 @@ class AssistantLoop:
                     )
                     return
                 missing_required = [
-                    name for name in required_capabilities if name not in completed_capabilities
+                    name for name in required_capabilities
+                    if name not in completed_capabilities and name not in guard_blocked
                 ]
-                # A required tool the user declined is not demanded again.
+                # A required tool the user declined, or a guard refused, is not
+                # demanded again.
                 if missing_required and not composing_final and not denials:
                     if repairs.take("missing_required"):
                         _transition(context, TurnState.REPAIRING)
@@ -1624,7 +1650,10 @@ class AssistantLoop:
                         or context.agent_scope is not None
                     )
                 )
-                if business_request and not denials and not evidence.business_tables:
+                if (
+                    business_request and not denials and not guard_blocked
+                    and not evidence.business_tables
+                ):
                     detail = (
                         "No business query result is available. Catalog listings do not "
                         "answer this data question."
@@ -1648,6 +1677,8 @@ class AssistantLoop:
                 )
                 if denials and route.needs_data and not evidence.items:
                     answer_text = say("loop.consent_declined", language)
+                elif guard_blocked and route.needs_data and not evidence.items:
+                    answer_text = say("loop.guard_blocked", language, reason=guard_reason)
                 if route.needs_data and answer_tables:
                     from app.modules.assistant.answer_contract import finalize_verified_answer
 
@@ -1838,6 +1869,11 @@ class AssistantLoop:
                     ).strip()
                 if not answer_text.strip():
                     answer_text = say("loop.ui_unavailable", language)
+                answer_text, redaction = GuardChain.screen_answer(answer_text)
+                if redaction is not None:
+                    buffered_text = [answer_text]
+                    for frame in await _guard_frames(context, redaction):
+                        yield frame
                 for frame in _ordered_output_frames(
                     answer_text,
                     pending_artifacts,
@@ -2060,6 +2096,27 @@ class AssistantLoop:
                 )
                 continue
 
+            # An agent rule that blocks this call runs before consent: the user is
+            # never asked to approve a call the agent's own harness refuses.
+            guard_block = self._guards.before_tool(invocation.tool_name, invocation.arguments)
+            if guard_block is not None:
+                guard_blocked.add(invocation.tool_name)
+                guard_reason = guard_block.message
+                tool_uses[usage_key] = tool_uses.get(usage_key, 0) + 1
+                view.status = "denied"
+                view.error = guard_block.message[:300]
+                yield events.tool_call(view)
+                for frame in await _guard_frames(context, guard_block, invocation.tool_call_id):
+                    yield frame
+                messages.append(
+                    _tool_message(
+                        provider_capabilities.supports_tool_role_messages,
+                        invocation,
+                        blocked_envelope(invocation.tool_name, guard_block),
+                    )
+                )
+                continue
+
             # A pure tool (``load_skill``) never prompts: it reads packaged,
             # credential-free playbooks and touches no data. Everything else —
             # ``query_execute`` — runs only when a read-only grant covers it or
@@ -2197,7 +2254,7 @@ class AssistantLoop:
             if prefetch is not None:
                 tool_task, prefetch_context = prefetch
             else:
-                _measure_tool_dispatch(context)
+                _measure_tool_dispatch(context, tool)
                 tool_task = asyncio.create_task(self._dispatch_tool(tool, invocation, context))
             try:
                 while not tool_task.done():
@@ -2276,6 +2333,24 @@ class AssistantLoop:
             from app.modules.assistant.evidence_health import attach_execution_health
 
             outcome = attach_execution_health(outcome, invocation.tool_name)
+            if not outcome.ok:
+                hints = self._guards.after_tool_error(
+                    invocation.tool_name,
+                    " ".join(
+                        str(part) for part in (
+                            outcome.error_class, outcome.safe_detail, outcome.error,
+                        ) if part
+                    ),
+                )
+                if hints:
+                    outcome = replace(outcome, safe_detail=hinted_detail(
+                        outcome.safe_detail or outcome.error or "The tool failed.", hints,
+                    ))
+                    for hint in hints:
+                        for frame in await _guard_frames(
+                            context, hint, invocation.tool_call_id, audit=False,
+                        ):
+                            yield frame
             if outcome.trace_detail:
                 _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail or {})
                 health = outcome.trace_detail.get("evidence_health")
@@ -2337,9 +2412,10 @@ class AssistantLoop:
                 )
                 messages.append({"role": "system", "content": _SPLIT_REQUEST_PROMPT})
                 continue
-            if not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED":
-                # The catalog cannot express the request: the model asks one
-                # question back, and no other data path is tried.
+            if not outcome.ok and outcome.error_class in ANSWERED_WITHOUT_DATA:
+                # The catalog cannot express the request, or the period has no data: the
+                # model tells the user (a question back, or the covered range), and no
+                # other data path is tried.
                 yield events.tool_status(invocation.tool_call_id, "done")
                 _finish_tool_step(context, "done", None)
                 context.quality_facts["clarification_quality"] = {
@@ -2663,6 +2739,22 @@ class AssistantLoop:
                 **(envelope.get("metadata") or {}),
                 "artifact_note": artifact_note,
             }
+            flagged = self._guards.inspect_result(
+                invocation.tool_name,
+                summary=outcome.summary,
+                table=outcome.table,
+                data=outcome.data,
+            )
+            if flagged is not None:
+                envelope["guard"] = {
+                    "notice": flagged.message,
+                    "locations": [
+                        {key: value for key, value in location.items() if key != "snippet"}
+                        for location in flagged.locations
+                    ],
+                }
+                for frame in await _guard_frames(context, flagged, invocation.tool_call_id):
+                    yield frame
             messages.append(
                 _tool_message(
                     provider_capabilities.supports_tool_role_messages,
@@ -2836,12 +2928,14 @@ class AssistantLoop:
         schema = getattr(tool, "parameters", None) or {}
         if validate_json_arguments(schema, invocation.arguments):
             return None
+        if self._guards.before_tool(invocation.tool_name, invocation.arguments) is not None:
+            return None
         fingerprint = self._call_fingerprint(invocation)
         if fingerprint in seen_calls or fingerprint in started:
             return None
         started.add(fingerprint)
         local = replace(context, tool_progress_sink=None, secure_input=None, file_upload=None)
-        _measure_tool_dispatch(context)
+        _measure_tool_dispatch(context, tool)
         return (
             invocation.tool_call_id,
             asyncio.create_task(self._dispatch_tool(tool, invocation, local)), local,
@@ -3169,9 +3263,17 @@ def _missing_required_prompt(missing: list[str], evidence: EvidenceTracker) -> s
     return prompt
 
 
+#: Tool outcomes the user is answered from without data: a question back, or a period
+#: outside the data with the range that exists.
+ANSWERED_WITHOUT_DATA = frozenset({"CLARIFICATION_REQUIRED", "OUTSIDE_DATA_WINDOW"})
+
+
 def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
     """The question back when the model wrote none: what the governed data lacks
     and what it has, so the user can narrow the request."""
+    window = repair_context.get("data_window") or {}
+    if window.get("first") and window.get("last"):
+        return say("loop.no_data_window", language, first=window["first"], last=window["last"])
     uncovered = [str(item) for item in repair_context.get("unresolved") or [] if item][:4]
     available = [str(item) for item in repair_context.get("available_metrics") or [] if item][:8]
     if not uncovered or not available:
@@ -3881,6 +3983,45 @@ def _finish_tool_step(context: Any, status: str, error: str | None) -> None:
             return
 
 
+async def _guard_frames(
+    context: LoopContext,
+    event: GuardEvent,
+    tool_call_id: str | None = None,
+    *,
+    audit: bool = True,
+) -> list[str]:
+    """Record one guard decision on the trace, quality facts and audit log."""
+    _record_step(context, event.as_step(tool_call_id))
+    if context.quality_facts is not None:
+        context.quality_facts.setdefault("guard_events", []).append(
+            {key: value for key, value in event.as_dict().items() if key != "locations"}
+        )
+    if audit:
+        from app.common.audit import write_audit_log
+
+        try:
+            await write_audit_log(
+                event_type="AGENT",
+                user_name=context.user_name,
+                action="GUARD",
+                object_type="AGENT_TOOL" if event.tool_name else "AGENT_ANSWER",
+                object_name=(event.tool_name or context.agent_id or "assistant")[:128],
+                status=event.action.upper(),
+                error_message=f"{event.source}:{event.rule_id}",
+                session_id=context.audit_session_id,
+                database_name=context.database,
+                schema_name=context.schema_name,
+                active_role=context.role,
+                decision=event.action,
+            )
+        except Exception:  # noqa: BLE001 - an audit outage must not hide the guard itself
+            logger.warning("Guard audit write failed for %s", event.rule_id, exc_info=True)
+    payload = event.as_dict()
+    if tool_call_id:
+        payload["tool_call_id"] = tool_call_id
+    return [events.format_sse("guard", payload)]
+
+
 def _thinking_step(context: Any, phase: str, text: str, status: str = "running") -> str:
     """Record a reasoning phase on the trace and return its SSE frame.
 
@@ -4315,13 +4456,16 @@ class _MeasuredProvider:
                 self._measurements.unavailable_provider("failed_dispatch_unmeasured")
 
 
-def _measure_tool_dispatch(context: LoopContext) -> None:
+def _measure_tool_dispatch(context: LoopContext, tool: Any) -> None:
     measured = context.quality_measurements
     if measured is not None:
         measured.increment("tool_dispatches")
-        # Tools may call another provider or delegate through their own owner.
-        # No tool protocol currently proves that these measurements are complete.
-        measured.unavailable_provider("nested_tool_requests_unmeasured")
+        # A tool may call another provider or delegate through its own owner. Only a
+        # tool that declares every model call goes through the in-process
+        # ``AssistantProviderClient`` (which records usage for this attempt) keeps
+        # the measurement complete; any other tool leaves it unmeasured.
+        if getattr(tool, "nested_requests_measured", False) is not True:
+            measured.unavailable_provider("nested_tool_requests_unmeasured")
 
 
 def _record_quality_observation(
@@ -4332,6 +4476,8 @@ def _record_quality_observation(
     if any(step.get("kind") == "quality_observation" for step in context.steps or []):
         return
     facts = dict(context.quality_facts or {})
+    # Guards run on every turn of this loop: an empty list records that none fired.
+    facts.setdefault("guard_events", [])
     if context.ui_action_accepted:
         facts["ui_action_success"] = {
             "accepted": True, "completed": finish_reason == "stop",

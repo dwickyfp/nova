@@ -1250,6 +1250,50 @@ def scenario_multiple_tool_calls_are_serialized() -> Scenario:
     )
 
 
+def scenario_harness_guard_blocks_before_consent() -> Scenario:
+    """An agent guard refuses a call before consent; the model takes a better call."""
+    tool = _query_tool(summary="1 row")
+    return Scenario(
+        name="harness_guard_blocks_before_consent",
+        script=[
+            tool_call_frame("c1", sql="SELECT * FROM orders"),
+            tool_call_frame("c2", sql="SELECT COUNT(*) FROM orders"),
+            text_frame("The orders were counted."),
+        ],
+        tools=[tool],
+        harness_policy={"guards": [{
+            "rule_id": "no-select-star", "stage": "before_tool", "tool": "query_execute",
+            "match_any": ["select *"], "message": "Name the columns or aggregate instead.",
+        }]},
+        checks=[
+            check("only the allowed call ran", lambda result: (
+                result.tool_runs == ["query_execute"] or f"ran {result.tool_runs}"
+            )),
+            check("guard decision streamed", lambda result: (
+                "guard" in result.events or f"events {result.events}"
+            )),
+            check("finished normally", finished_with("stop")),
+        ],
+    )
+
+
+def scenario_credential_shape_redacted_from_answer() -> Scenario:
+    """A credential-shaped value in the model's answer is removed before it is shown."""
+    secret = "ghp_" + "Z9y8X7w6V5u4T3s2R1q0"
+    return Scenario(
+        name="credential_shape_redacted_from_answer",
+        content="What token do we use?",
+        script=[text_frame(f"The token is {secret}.")],
+        checks=[
+            check("secret absent from answer", lambda result: (
+                secret not in result.text or "secret leaked"
+            )),
+            check("redaction marker shown", answer_contains("[redacted credential]")),
+            check("finished normally", finished_with("stop")),
+        ],
+    )
+
+
 def _frame_payload(frame: str) -> dict:
     for line in frame.splitlines():
         if line.startswith("data: "):
@@ -1435,4 +1479,6 @@ def all_scenarios() -> list[Scenario]:
         scenario_follow_up_chart_reuses_previous_table(),
         scenario_generated_sql_is_visible_during_tool_run(),
         scenario_multiple_tool_calls_are_serialized(),
+        scenario_harness_guard_blocks_before_consent(),
+        scenario_credential_shape_redacted_from_answer(),
     ]

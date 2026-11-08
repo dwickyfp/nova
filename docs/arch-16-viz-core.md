@@ -170,6 +170,11 @@ columns.
   Pills use `--pill-discrete`/`--pill-continuous`. Several dimensions on an
   axis read as combined headers; several measures on an axis mark get one pane
   each with their own axis; a thumbnail mode draws marks only.
+- `features/viz/chart-frame.tsx` sizes every chat chart (viz views and the
+  intelligent UI chart). It measures its box before paint and keeps the last
+  real size when the box briefly reads 0 wide, so a chart never draws empty
+  first or unmounts while the transcript reflows. Use it instead of a
+  percentage `ResponsiveContainer` for charts in the transcript.
 - `features/viz/insight.ts` computes a view's answer from its own rows
   (leader, share, gap, average, trend, low point) and the one mark it is
   about; `features/viz/view-answer.tsx` shows it as the headline and the view

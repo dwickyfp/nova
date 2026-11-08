@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { StatusTone } from '@/components/ui/status-badge'
 import { useAuthStore } from '@/stores/auth-store'
+import { semanticViewsApi } from '@/features/intelligence/semantic-views-api'
 import {
   ontologyApi,
   type Change,
@@ -96,9 +97,11 @@ export function formatDate(value: string | null | undefined): string {
 export function conceptNames(
   changes: Change[],
   concepts: Concept[],
-  domains: Map<string, Domain>
+  domains: Map<string, Domain>,
+  views: { id: string; name: string }[] = []
 ): Map<string, string> {
   const names = new Map(concepts.map((item) => [item.id, item.qualified_name]))
+  for (const view of views) names.set(`view:${view.id}`, view.name)
   for (const change of changes) {
     if (change.target === 'concept' && change.op === 'create' && change.body && change.concept_id) {
       const domain = domains.get(change.body.domain_id)?.qualified_path ?? 'New'
@@ -124,7 +127,8 @@ export function describeChange(change: Change, names: Map<string, string>): stri
     return change.op === 'create' ? `Link ${line}` : `Remove the link ${line}`
   }
   if (change.op === 'create') {
-    return `Compute ${name(change.concept_id)} with ${change.view_id} metric ${change.metric}`
+    const view = names.get(`view:${change.view_id}`) ?? change.view_id
+    return `Compute ${name(change.concept_id)} with ${view} metric ${change.metric}`
   }
   return `Revoke binding ${change.representation_id}`
 }
@@ -148,4 +152,13 @@ export function useConceptProposals(conceptId: string) {
       ),
     [proposals.data, conceptId]
   )
+}
+
+/** Published Semantic Views the caller can read. */
+export function usePublishedViews() {
+  return useQuery({
+    queryKey: useOntologyKey('semantic-views'),
+    queryFn: async () =>
+      (await semanticViewsApi.list()).filter((view) => view.active_version !== null),
+  })
 }

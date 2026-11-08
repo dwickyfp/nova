@@ -45,7 +45,13 @@ MESSAGES: dict[str, str] = {
         "The query did not run because the approval was declined, so there is no "
         "verified data to answer this question."
     ),
+    "loop.guard_blocked": (
+        "This request was not run because this agent's rules do not allow it. {reason}"
+    ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.no_data_window": (
+        "There is no data for that period. The governed data covers {first} to {last}."
+    ),
     "loop.clarify_uncovered": (
         "The governed data does not cover: {uncovered}. It has these measures: {available}. "
         "Which should I use?"
@@ -98,7 +104,14 @@ BUILTIN: dict[str, dict[str, str]] = {
             "Query tidak dijalankan karena persetujuan ditolak, jadi belum ada data "
             "terverifikasi untuk menjawab pertanyaan ini."
         ),
+        "loop.guard_blocked": (
+            "Permintaan ini tidak dijalankan karena aturan agent ini tidak mengizinkannya. "
+            "{reason}"
+        ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.no_data_window": (
+            "Tidak ada data untuk periode itu. Data terkelola mencakup {first} sampai {last}."
+        ),
         "loop.clarify_uncovered": (
             "Data terkelola tidak mencakup: {uncovered}. Ukuran yang tersedia: {available}. "
             "Mana yang sebaiknya saya pakai?"

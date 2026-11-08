@@ -43,14 +43,22 @@ class LoopLimits:
     max_iterations: int
     time_budget_seconds: int
     max_calls_per_tool: int
+    #: Total model tokens one turn may spend; near it the loop composes its answer.
+    spend_tokens: int
 
 
 #: ``analyst`` (the default) leaves room to drill down after the first result.
 #: ``deep`` is for asynchronous runs; an interactive turn asking for it gets ``analyst``.
 BUDGET_PROFILES = {
-    "fast": LoopLimits(max_iterations=8, time_budget_seconds=60, max_calls_per_tool=2),
-    "analyst": LoopLimits(max_iterations=16, time_budget_seconds=180, max_calls_per_tool=6),
-    "deep": LoopLimits(max_iterations=40, time_budget_seconds=1800, max_calls_per_tool=10),
+    "fast": LoopLimits(
+        max_iterations=8, time_budget_seconds=60, max_calls_per_tool=2, spend_tokens=120_000,
+    ),
+    "analyst": LoopLimits(
+        max_iterations=16, time_budget_seconds=180, max_calls_per_tool=6, spend_tokens=320_000,
+    ),
+    "deep": LoopLimits(
+        max_iterations=40, time_budget_seconds=1800, max_calls_per_tool=10, spend_tokens=1_000_000,
+    ),
 }
 
 
@@ -207,6 +215,8 @@ class AgentService:
             ]
         registry.default_skills = tuple(requested_skills)
         registry.discoverable_skills = tuple(discoverable_skills)
+        policy = agent.get("harness_policy")
+        registry.harness_policy = dict(policy) if isinstance(policy, dict) else {}
         if registry.get("load_skill") is not None:
             from app.modules.agents.tools.load_personal_skill import PersonalSkillLoader
 

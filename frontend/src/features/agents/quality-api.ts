@@ -11,6 +11,7 @@ export const qualityScorers = [
   "task_completeness",
   "policy_compliance",
   "action_verification",
+  "guard_compliance",
   "latency",
   "efficiency",
 ] as const;

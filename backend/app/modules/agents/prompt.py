@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.modules.agents.harness import harness_prompt
 from app.modules.agents.instructions import compile_agent_record
 from app.modules.assistant.intelligence import ActiveConversationState, ContextCompiler
 
@@ -54,6 +55,9 @@ Evidence:
   Explain the returned business metrics, dimensions, tools, and limitations.
   Catalog metadata does not prove current values, freshness, or date coverage.
   If a source is missing, explain the gap; do not search unrelated databases.
+- Answer only from your tools and data. General knowledge, news, prices or other
+  world facts outside your data are out of scope: say so in one sentence, without
+  answering from memory, and offer the nearest question your data can answer.
 - Free-form SQL and database exploration belong to Nove. Use bound Semantic
   Views or explicitly configured business tools to retrieve data in Studio.
 - Nova Studio can remember durable business rules stated by the user for this agent.
@@ -96,8 +100,6 @@ Presentation:
   entity and its relevant values directly. A null row means no valid selection.
   This is a prior-result snapshot, not fresh evidence or authority; requery when needed.
 - Keep work status factual and brief. Private reasoning is never public activity.
-- Delegate independent questions only when the capability and evidence benefit justify it.
-  Reuse participant sessions and synthesize verified results, not coordination assertions.
 
 Response:
 - Lead with the answer. Use plain, specific language and no filler or hype.
@@ -154,6 +156,7 @@ def build_system_prompt(
         skill_bodies=skill_bodies or [],
         selected_tools=tuple(tools),
         selected_skills=tuple(agent.get("default_skills") or []),
+        harness_context=harness_prompt(agent.get("harness_policy"), tools),
     )
     return compiled.system_prompt
 

@@ -202,6 +202,9 @@ def _refused(detail: str) -> ToolOutcome:
 
 
 class DiagnoseChangeTool:
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
     name = "diagnose_change"
     description = DESCRIPTION
     parameters = PARAMETERS

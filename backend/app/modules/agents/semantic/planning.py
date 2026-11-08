@@ -191,7 +191,10 @@ class SemanticPlan:
             week_start=value.get("week_start", 0),
             distinct=value.get("distinct", False),
         )
-        if not plan.metrics and not plan.dimensions:
+        if not plan.metrics and not plan.dimensions and not any(
+            item.material for item in plan.unresolved_concepts
+        ):
+            # A plan of only material unresolved concepts is a question back, never executed.
             raise SemanticPlanError("Semantic plan needs at least one metric or dimension.")
         return plan
 

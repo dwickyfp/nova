@@ -382,6 +382,41 @@ def test_forecast_validates_each_series_and_can_drop_with_warning():
     assert {row["series"] for row in output.results} == {"healthy"}
 
 
+def test_forecast_treats_a_never_open_weekday_as_closed_not_missing():
+    """A shop closed on Sunday must not be forecast to sell on Sunday."""
+    start = pd.Timestamp("2026-10-01")  # a Thursday
+    rows = [
+        {"date": day, "y": 100.0 + (day.weekday() * 5)}
+        for day in (start + pd.Timedelta(days=i) for i in range(35))
+        if day.weekday() != 6
+    ]
+    spec = MLExecutionSpec(
+        task=MLTask.FORECAST, input_sql="SELECT date, y FROM t", security=SECURITY,
+        target_column="y", timestamp_column="date", horizon=7, algorithm="seasonal_naive",
+        budget=BUDGET,
+    )
+    output = train_forecast(pa.Table.from_pylist(rows), spec)
+    assert output.metrics["closed_weekdays"] == ["Sunday"]
+    assert any("Sunday" in warning for warning in output.metrics["warnings"])
+    by_day = {pd.Timestamp(row["timestamp"]).weekday(): row for row in output.results}
+    assert by_day[6]["prediction"] == 0.0 and by_day[6]["upper_bound"] == 0.0
+    assert all(by_day[day]["prediction"] > 0 for day in range(6))
+
+
+def test_short_or_weekly_histories_are_not_judged_for_closed_days():
+    start = pd.Timestamp("2026-10-01")
+    rows = [
+        {"date": start + pd.Timedelta(days=i), "y": float(i)}
+        for i in range(14) if (start + pd.Timedelta(days=i)).weekday() != 6
+    ]
+    spec = MLExecutionSpec(
+        task=MLTask.FORECAST, input_sql="SELECT date, y FROM t", security=SECURITY,
+        target_column="y", timestamp_column="date", horizon=3, algorithm="naive",
+        budget=BUDGET,
+    )
+    assert train_forecast(pa.Table.from_pylist(rows), spec).metrics["closed_weekdays"] == []
+
+
 @pytest.mark.asyncio
 async def test_persisted_forecast_reloads_and_uses_forecast_semantics(monkeypatch):
     table = pa.table(
@@ -508,3 +543,12 @@ def test_a_requested_frequency_is_anchored_where_the_series_is():
         "unique_id": "all", "ds": pd.date_range("2026-01-31", periods=6, freq="ME"),
     })
     assert _aligned_frequency("MS", ends) in {"M", "ME"}
+
+
+def test_ml_execute_tells_the_model_which_days_are_closed():
+    from types import SimpleNamespace
+
+    from app.modules.agents.tools.ml_execute import _closed_days_note
+
+    assert "Sunday" in _closed_days_note(SimpleNamespace(metrics={"closed_weekdays": ["Sunday"]}))
+    assert _closed_days_note(SimpleNamespace(metrics={})) == ""

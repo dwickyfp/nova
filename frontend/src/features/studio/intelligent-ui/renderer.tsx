@@ -62,9 +62,26 @@ export function IntelligentUi({
   artifactKinds?: UiArtifactRequest["kind"][];
 }) {
   const epoch = useAuthStore((s) => s.securityEpoch);
+  const identity = `${epoch}:${block.program_sha256}`;
+  const sourceKey = source ? JSON.stringify(source) : "";
+  // A streamed answer gets its saved source only when its turn completes. That
+  // is the same visual gaining a place to save, not a new one: keep the session
+  // (and the chart it drew) instead of remounting it. A different program,
+  // security context or saved source still starts a fresh session.
+  const [session, setSession] = useState({ identity, sourceKey, generation: 0 });
+  let current = session;
+  if (
+    session.identity !== identity ||
+    (session.sourceKey !== "" && session.sourceKey !== sourceKey)
+  ) {
+    current = { identity, sourceKey, generation: session.generation + 1 };
+  } else if (session.sourceKey === "" && sourceKey !== "") {
+    current = { ...session, sourceKey };
+  }
+  if (current !== session) setSession(current);
   return (
     <UiSession
-      key={`${epoch}:${block.program_sha256}:${JSON.stringify(source)}`}
+      key={current.generation}
       block={block}
       source={source}
       complete={complete}
@@ -140,15 +157,22 @@ function UiSession({
       ),
     });
   }, [block.evidence, block.catalog_version]);
-  const [saved, setSaved] = useState<UiState | null>(
-    readOnly
-      ? {
-          revision: 0,
-          state: block.state_defaults,
-          program_sha256: block.program_sha256,
-        }
-      : null,
-  );
+  // The visual draws at once from its defaults; a saved state replaces them
+  // when it loads. Until then its controls stay read-only, so nothing the reader
+  // does can race the saved state. Showing the fallback text while loading made
+  // every reopened chart collapse and then reappear.
+  // Start loading the chart code while the answer is still streaming, so a
+  // completed chart draws at once instead of after its chunk arrives.
+  const hasChart = block.program.includes("Chart(");
+  useEffect(() => {
+    if (hasChart) void import("./data-chart");
+  }, [hasChart]);
+  const [saved, setSaved] = useState<UiState>({
+    revision: 0,
+    state: block.state_defaults,
+    program_sha256: block.program_sha256,
+  });
+  const [loadedSource, setLoadedSource] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading saved state…");
   const [renderError, setRenderError] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -166,6 +190,7 @@ function UiSession({
     () => (sourceKey ? (JSON.parse(sourceKey) as UiSource) : undefined),
     [sourceKey],
   );
+  const loaded = readOnly || loadedSource === sourceKey;
 
   useEffect(() => {
     active.current = true;
@@ -179,8 +204,11 @@ function UiSession({
           throw new Error("UI program changed.");
         if (!abort.signal.aborted) {
           revision.current = value.revision;
+          // Redraw only when the saved state differs from what is on screen.
+          if (!sameState(value.state, latestState.current)) setGeneration((v) => v + 1);
           latestState.current = value.state;
           setSaved(value);
+          setLoadedSource(sourceKey);
           setStatus("Saved");
         }
       })
@@ -194,7 +222,7 @@ function UiSession({
       active.current = false;
       abort.abort();
     };
-  }, [block, complete, readOnly, stableSource, validation]);
+  }, [block, complete, readOnly, sourceKey, stableSource, validation]);
 
   const flush = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current);
@@ -252,7 +280,7 @@ function UiSession({
 
   const update = useCallback(
     (state: Record<string, unknown>) => {
-      if (readOnly || !saved || blocked.current) return;
+      if (readOnly || !loaded || blocked.current) return;
       try {
         validateDeclarativeState(state, block.state_defaults);
       } catch {
@@ -269,7 +297,7 @@ function UiSession({
         void flush().catch(() => {});
       }, 400);
     },
-    [block.state_defaults, flush, readOnly, saved],
+    [block.state_defaults, flush, loaded, readOnly],
   );
   const act = useCallback(
     async (event: ActionEvent) => {
@@ -278,6 +306,7 @@ function UiSession({
         busy.current ||
         !stableSource ||
         !onAction ||
+        !loaded ||
         blocked.current
       )
         return;
@@ -309,7 +338,7 @@ function UiSession({
         busy.current = false;
       }
     },
-    [block, flush, onAction, saved, stableSource, validation],
+    [block, flush, loaded, onAction, stableSource, validation],
   );
 
   if (!complete)
@@ -339,6 +368,7 @@ function UiSession({
       blocked.current = false;
       revision.current = value.revision;
       setSaved(value);
+      setLoadedSource(sourceKey);
       setGeneration((v) => v + 1);
       setStatus("Saved");
     } catch {
@@ -381,37 +411,33 @@ function UiSession({
           ) : null}
         </div>
       ) : null}
-      {saved ? (
-        <UiRuntimeContext.Provider
-          value={{
-            readOnly: (readOnly && !deterministic) || blocked.current,
-            source: stableSource,
-            markAction: (id) => {
-              actionId.current = id;
-            },
-            artifacts,
+      <UiRuntimeContext.Provider
+        value={{
+          readOnly: (readOnly && !deterministic) || !loaded || blocked.current,
+          source: stableSource,
+          markAction: (id) => {
+            actionId.current = id;
+          },
+          artifacts,
+        }}
+      >
+        <Renderer
+          key={generation}
+          response={block.program}
+          library={library}
+          isStreaming={false}
+          initialState={saved.state}
+          onStateUpdate={update}
+          onAction={(event) => {
+            void act(event);
           }}
-        >
-          <Renderer
-            key={generation}
-            response={block.program}
-            library={library}
-            isStreaming={false}
-            initialState={saved.state}
-            onStateUpdate={update}
-            onAction={(event) => {
-              void act(event);
-            }}
-            onError={(errors) => {
-              if (errors.length) setRenderError(true);
-            }}
-            toolProvider={null}
-            publishObservability={false}
-          />
-        </UiRuntimeContext.Provider>
-      ) : (
-        <Markdown offline>{block.fallback}</Markdown>
-      )}
+          onError={(errors) => {
+            if (errors.length) setRenderError(true);
+          }}
+          toolProvider={null}
+          publishObservability={false}
+        />
+      </UiRuntimeContext.Provider>
       {block.provenance.composer === "deterministic" ? (
         (block.provenance.omitted_rows ?? 0) > 0 ? (
           <p className="mt-3 text-xs text-muted-foreground">

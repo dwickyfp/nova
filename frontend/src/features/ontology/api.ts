@@ -156,7 +156,7 @@ export type Proposal = {
   revision: number
   title: string
   rationale: string
-  source: 'USER' | 'BOOTSTRAP' | 'AGENT' | 'AUTOPILOT' | 'NEWS'
+  source: 'USER' | 'BOOTSTRAP' | 'AGENT' | 'AUTOPILOT' | 'NEWS' | 'ENGINE'
   base_release_id: string | null
   changes: Change[]
   domain_ids: string[]
@@ -208,6 +208,255 @@ export type DomainUpdate = {
   expected_revision: number
 }
 
+/** One published object that proves a derived item. */
+export type DerivedEvidence = {
+  semantic: { view_id: string; version: number; fingerprint: string }
+  view_name: string
+  method: 'dataset' | 'field' | 'relationship' | 'metric' | 'metric_expression' | 'claim'
+  source: string
+  confidence: number
+}
+
+/** Meaning Nova compiled from published Semantic Views: context, never official. */
+export type DerivedItem = {
+  id: string
+  key: string
+  item_type: 'concept' | 'relation'
+  concept_kind: ConceptKind | null
+  label: string
+  definition: string
+  aliases: string[]
+  unit: string | null
+  is_time: boolean
+  metric: string | null
+  relation_type: RelationType | null
+  source_key: string | null
+  target_key: string | null
+  role: string | null
+  roles: string[]
+  official_concept: string | null
+  confidence: number
+  evidence: DerivedEvidence[]
+}
+
+export type DerivedCompilation = {
+  id: string
+  view_id: string
+  view_name: string
+  version: number
+  counts: Record<string, number>
+  updated_at: string
+}
+
+export type DerivedLayer = {
+  items: DerivedItem[]
+  compilations: DerivedCompilation[]
+  compiler_version: string
+}
+
+/** Proposals Nova drafted from the derived layer, and what it left for a person. */
+export type DerivedPromotion = {
+  proposals: Proposal[]
+  skipped: { key: string; label: string; reason: string }[]
+}
+
+/** One meaning check result; advice for stewards, never a block. */
+export type LintFinding = {
+  rule: 'definition_formula' | 'adjustment_ignored' | 'ambiguous_name' | 'unbound_metric'
+  severity: 'error' | 'warning'
+  concept_id: string
+  concept: string
+  message: string
+  evidence: string[]
+}
+
+export type LintReport = {
+  findings: LintFinding[]
+  counts: { error: number; warning: number }
+}
+
+/** Names Nova proposed, and what its validator dropped. */
+export type Enrichment = {
+  proposals: Proposal[]
+  rejected: { concept: string; value: string; reason: string }[]
+}
+
+/** A proportion with its Wilson 95% interval; ``value`` is null until measured. */
+export type Measured = {
+  value: number | null
+  successes: number
+  n: number
+  interval_95: [number, number] | null
+}
+
+export type CalibrationBin = { low: number; high: number; n: number; confidence: number; accuracy: number }
+
+export type Kappa = { kappa: number | null; agreement: number | null; n: number }
+
+export type AnswerSummary = {
+  run_id: string
+  at: string
+  release_id?: string | null
+  set?: string
+  answer_accuracy: Measured
+  reliability: { value: number | null; n: number }
+  wrong_answers: Measured
+  abstention: Measured
+  clarification: Measured
+  failed: number
+  outcomes: Record<string, number>
+  latency_ms_p50: number | null
+}
+
+export type ClaimSummary = {
+  run_id: string
+  at: string
+  claim_accuracy: { value: number | null; n: number; interval_95: [number, number] | null; unsampled: string[] }
+  by_stratum: Record<string, Measured>
+  unsure: number
+  calibration: { ece: number | null; brier: number | null; n: number; bins: CalibrationBin[] }
+  agreement: Record<string, Kappa>
+  population?: Record<string, number>
+}
+
+export type DriftFinding = {
+  column: string
+  rule: 'key_no_longer_unique' | 'null_rate_rose' | 'distinct_values_shifted' | 'join_lost_integrity'
+  before: number
+  after: number
+}
+
+export type OsiExport = {
+  release_id: string
+  manifest_hash: string
+  complete: boolean
+  documents: { view_id: string; name: string; document: Record<string, unknown> }[]
+}
+
+export type LearnReport = {
+  proposals: { id: string; title: string; changes: number; question?: string }[]
+  skipped: Record<string, string>[]
+}
+
+export type JoinScore = {
+  precision: Measured
+  recall: Measured
+  f1: number
+  predicted: number
+  gold: number
+}
+
+/** What the latest join discovery found and how well its own probabilities held up. */
+export type JoinSummary = {
+  run_id: string
+  at: string | null
+  databases: string[]
+  profiled_columns: number
+  profile_seconds: number
+  discover_seconds: number
+  candidates: number
+  joins: JoinScore
+  joins_reviewed: JoinScore | null
+  undeclared_reviewed: number
+  calibration: {
+    ece: number
+    brier: number
+    auc: number | null
+    n: number
+    positives: number
+    bins: CalibrationBin[]
+  } | null
+  drift: { compared_with: string; findings: DriftFinding[] } | null
+  history: { families: number; pairs: number } | null
+  decisions: {
+    labelled: number
+    automatic: Measured
+    accepted_precision: Measured
+    rejected_misses: Measured
+    review_queue: number
+  } | null
+}
+
+export type OntologyMetrics = {
+  measured: {
+    answers: AnswerSummary | null
+    baseline: AnswerSummary | null
+    effect: {
+      n: number
+      without: Measured
+      with: Measured
+      difference: number | null
+      mcnemar: { gained: number; lost: number; p_value: number }
+    } | null
+    claims: ClaimSummary | null
+    gold: {
+      set_name: string
+      version: number
+      active: Record<string, number>
+      rejected: number
+      agreement: Record<string, Kappa>
+    } | null
+    joins: JoinSummary | null
+    history: {
+      run_id: string
+      release_id: string | null
+      at: string | null
+      set: string
+      answer_accuracy: Measured | null
+    }[]
+  }
+  live: {
+    metric_coverage: Measured
+    question_grounding: Measured | null
+    domains: { domain: string; concepts: number; metrics: number; bound: number }[]
+    stale_bindings: number
+    checks: Record<string, number>
+    engine_proposals: Record<string, number>
+    engine_precision: Measured
+  }
+  not_measured: string[]
+}
+
+export type EvaluationRun = {
+  id: string
+  kind: 'gold' | 'answers' | 'claims' | 'joins' | 'judge'
+  set_name: string
+  version: number
+  mode: 'with_ontology' | 'without_ontology' | null
+  release_id: string | null
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  stage: string
+  done: number
+  total: number
+  summary: Record<string, unknown>
+  error: string | null
+  created_at: string
+  updated_at: string
+  actor: { principal: string }
+}
+
+export type EvaluationResult = {
+  id: string
+  run_id: string
+  item: string
+  outcome: string
+  detail: Record<string, unknown>
+  reviews: { reviewer: string; kind: string; verdict: string; reason: string }[]
+}
+
+export type EvaluationCase = {
+  id: string
+  kind: 'answerable' | 'unanswerable' | 'ambiguous'
+  intent: string
+  language: 'id' | 'en'
+  question: string
+  view_name: string
+  meaning: string
+  expected: 'answer' | 'abstain' | 'clarify'
+  status: 'DRAFT' | 'ACTIVE' | 'REJECTED'
+  reviews: { reviewer: string; kind: string; verdict: string; reason: string }[]
+}
+
 const id = encodeURIComponent
 
 /** A fresh idempotency key; a retried request reuses the one it was sent with. */
@@ -255,6 +504,36 @@ export const ontologyApi = {
     api.post<Proposal>(`/ontology/proposals/${id(proposalId)}/apply`),
   withdraw: (proposalId: string) =>
     api.post<Proposal>(`/ontology/proposals/${id(proposalId)}/withdraw`),
+
+  derived: () => api.get<DerivedLayer>('/ontology/derived'),
+  compileDerived: (viewId?: string) =>
+    api.post<{ compilations: DerivedCompilation[] }>(
+      '/ontology/derived/compile',
+      viewId ? { view_id: viewId } : {}
+    ),
+  lint: () => api.get<LintReport>('/ontology/lint'),
+  metrics: () => api.get<OntologyMetrics>('/ontology/metrics'),
+  evaluationRuns: () => api.get<EvaluationRun[]>('/ontology/evaluation/runs'),
+  evaluationResults: (runId: string) =>
+    api.get<EvaluationResult[]>(`/ontology/evaluation/runs/${id(runId)}/results`),
+  evaluationCases: (setName: string) =>
+    api.get<EvaluationCase[]>(`/ontology/evaluation/cases?set_name=${id(setName)}`),
+  startAnswers: (body: { set_name: string; mode: 'with_ontology' | 'without_ontology' }) =>
+    api.post<EvaluationRun>('/ontology/evaluation/answers', body),
+  startClaims: () => api.post<EvaluationRun>('/ontology/evaluation/claims', {}),
+  startJoins: () => api.post<EvaluationRun>('/ontology/evaluation/joins', {}),
+  startJudge: (setName: string) =>
+    api.post<EvaluationRun>('/ontology/evaluation/judge', { set_name: setName }),
+  learn: () => api.post<LearnReport>('/ontology/learn', { operation_id: operationId() }),
+  exportOsi: () => api.get<OsiExport>('/ontology/osi/export'),
+  startGold: (body: { set_name: string; view_ids: string[]; per_metric?: number }) =>
+    api.post<EvaluationRun>('/ontology/evaluation/gold', body),
+  stepRun: (runId: string) =>
+    api.post<EvaluationRun>(`/ontology/evaluation/runs/${id(runId)}/step`),
+  enrich: (body: { operation_id: string; domain_id?: string | null }) =>
+    api.post<Enrichment>('/ontology/enrich', body),
+  proposeDerived: (body: { operation_id: string; shared_domain_id?: string | null }) =>
+    api.post<DerivedPromotion>('/ontology/derived/propose', body),
 
   releases: () => api.get<ReleaseSummary[]>('/ontology/releases'),
   currentRelease: () => api.get<CurrentRelease>('/ontology/releases/current'),

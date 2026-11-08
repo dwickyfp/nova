@@ -39,6 +39,10 @@ _TOOL_PARAMETERS = {
 class LoadSkillTool:
     """Loads one skill body by name. Read-only and side-effect free."""
 
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
+
     name = "load_skill"
     description = (
         "Load the full playbook for one Nova SQL skill (for example create-table, "

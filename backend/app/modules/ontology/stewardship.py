@@ -390,7 +390,7 @@ class StewardshipService:
         body: ProposalCreate,
         user: dict,
         *,
-        source: Literal["USER", "BOOTSTRAP", "AGENT", "AUTOPILOT", "NEWS"] = "USER",
+        source: Literal["USER", "BOOTSTRAP", "AGENT", "AUTOPILOT", "NEWS", "ENGINE"] = "USER",
     ) -> Proposal:
         actor = Actor.from_user(user)
         proposal_id = "prp_" + fingerprint([actor.principal, body.operation_id])[:32]

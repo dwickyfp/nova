@@ -14,6 +14,13 @@ ONTOLOGY_TABLES = {
     "proposals": "CONFIG_ONTOLOGY_PROPOSALS",
     "releases": "CONFIG_ONTOLOGY_RELEASES",
     "aliases": "CONFIG_ONTOLOGY_ALIASES",
+    # The derived layer the compiler writes from published Semantic Views.
+    "derived": "CONFIG_ONTOLOGY_DERIVED",
+    "compilations": "CONFIG_ONTOLOGY_COMPILATIONS",
+    # Measured accuracy: gold cases, evaluation runs and their per-case results.
+    "eval_cases": "CONFIG_ONTOLOGY_EVAL_CASES",
+    "eval_runs": "CONFIG_ONTOLOGY_EVAL_RUNS",
+    "eval_results": "CONFIG_ONTOLOGY_EVAL_RESULTS",
 }
 
 def revision_table_ddl(name: str) -> str:

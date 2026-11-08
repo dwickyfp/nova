@@ -60,6 +60,8 @@ export type TableBlock = {
   title?: string;
   columns: string[];
   rows: (string | number | null)[][];
+  /** True only when the engine stopped before the full result. */
+  truncated?: boolean;
 };
 
 /** A chart block. `chart_spec` is a Vega-Lite v5 JSON string. */
@@ -148,6 +150,7 @@ export type AssistantEvent = (
       content_index: number;
       content_id: string;
     }
+  | ({ type: "guard" } & import("../agents/api").GuardDecision)
   | {
       type: "tool_detail";
       tool_call_id: string;

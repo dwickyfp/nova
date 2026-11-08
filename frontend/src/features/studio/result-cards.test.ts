@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { ResultTable } from "./result-table";
 import { splitChartTitle } from "./chart-title";
@@ -59,6 +59,22 @@ describe("artifact actions", () => {
     );
     await expect.element(screen.getByText("The query returned no rows.")).toBeInTheDocument();
     await expect.element(screen.getByText(/Capped at the engine's row limit/)).not.toBeInTheDocument();
+  });
+
+  it("states the row cap only when the engine capped the result", async () => {
+    const complete = await render(
+      createElement(ResultTable, {
+        block: { title: "Revenue", columns: ["total"], rows: [[42]] },
+      }),
+    );
+    await expect.element(complete.getByText(/Capped at the engine's row limit/)).not.toBeInTheDocument();
+    await cleanup();
+    const capped = await render(
+      createElement(ResultTable, {
+        block: { title: "Revenue", columns: ["total"], rows: [[42]], truncated: true },
+      }),
+    );
+    await expect.element(capped.getByText(/Capped at the engine's row limit/)).toBeInTheDocument();
   });
 
   it("offers a real save action for result tables", async () => {

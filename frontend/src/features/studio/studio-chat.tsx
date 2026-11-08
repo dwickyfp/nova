@@ -132,6 +132,10 @@ export function StudioChat({
   const [threadId, setThreadId] = useState<string | null>(null);
   const [research, setResearch] = useState<{ agentId: string; runId: string } | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
+  const turnsRef = useRef(turns);
+  useLayoutEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
   const [followUpMissionId, setFollowUpMissionId] = useState<string>();
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
   const draftSecurityEpoch = useRef(securityEpoch);
@@ -174,6 +178,7 @@ export function StudioChat({
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   useLayoutEffect(() => {
     const previous = prependScrollRef.current;
@@ -209,7 +214,6 @@ export function StudioChat({
       if (request === historyRequestRef.current) setLoadingOlder(false);
     }
   };
-  const scrollFrameRef = useRef<number | null>(null);
   // New chat clears local state before the router necessarily removes the old
   // thread from the URL. Remember that one stale id so it cannot be reloaded.
   const staleThreadAfterNewChatRef = useRef<string | null>(null);
@@ -367,23 +371,26 @@ export function StudioChat({
     },
     [],
   );
-  useEffect(() => {
+  // Pin to the newest content before the browser paints, so an opened thread
+  // shows its end on the first frame instead of its top and then a jump.
+  useLayoutEffect(() => {
     if (!followOutputRef.current) return;
-    if (scrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(scrollFrameRef.current);
-    }
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      const el = scrollRef.current;
-      if (el && followOutputRef.current) el.scrollTop = el.scrollHeight;
-    });
-    return () => {
-      if (scrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(scrollFrameRef.current);
-        scrollFrameRef.current = null;
-      }
-    };
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [turns]);
+  // Charts, tables and maps finish laying out after the turn renders. While the
+  // reader follows the end, keep it pinned as they grow instead of leaving the
+  // view short of the bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = transcriptRef.current;
+    if (!el || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (followOutputRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -584,6 +591,22 @@ export function StudioChat({
     ],
   );
 
+  // Turns are memoized; hand them callbacks whose identity survives typing and
+  // streaming, or every keystroke and streamed token re-renders every chart.
+  const sendRef = useRef(send);
+  useLayoutEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+  const sendFromTurn = useCallback(
+    (message: string, action?: UiAction) => sendRef.current(message, action),
+    [],
+  );
+  const askFollowUp = useCallback((question: string) => void sendRef.current(question), []);
+  const uiContext = useMemo(
+    () => (threadId && agent ? { agentId: agent.agent_id, threadId, onAction: sendFromTurn } : undefined),
+    [agent, sendFromTurn, threadId],
+  );
+
   const stop = useCallback(() => {
     stopRequestedRef.current = true;
     const run = directRunRef.current;
@@ -714,7 +737,7 @@ export function StudioChat({
     async (turn: TranscriptTurn, item: SavableContent) => {
       if (!agent || savingContentId) return;
       const provenance = item.type === "table" ? item.block.semantic_provenance_ref : undefined;
-      const sql = provenance ? "" : findArtifactSql(turns, turn.id, item);
+      const sql = provenance ? "" : findArtifactSql(turnsRef.current, turn.id, item);
       if (!sql && !provenance) {
         toast.error("This result has no reusable SQL to save.");
         return;
@@ -788,7 +811,7 @@ export function StudioChat({
         setSavingContentId(null);
       }
     },
-    [activeThreadId, agent, queryClient, savingContentId, threadId, turns],
+    [activeThreadId, agent, queryClient, savingContentId, threadId],
   );
 
   // Whether an answer offers a reconsider pass is a preference, not a
@@ -851,6 +874,7 @@ export function StudioChat({
           onScroll={onTranscriptScroll}
         >
           <div
+            ref={transcriptRef}
             className={cn(
               "mx-auto w-full px-4 sm:px-6",
               'max-w-3xl',
@@ -893,8 +917,8 @@ export function StudioChat({
                   <TurnView
                     key={turn.id}
                     turn={turn}
-                    uiContext={threadId ? { agentId: agent.agent_id, threadId, onAction: send } : undefined}
-                    onAsk={index === turns.length - 1 && !streaming ? (question) => void send(question) : undefined}
+                    uiContext={uiContext}
+                    onAsk={index === turns.length - 1 && !streaming ? askFollowUp : undefined}
                     agent={agent}
                     deepenable={
                       extended && turn.state === "done" && Boolean(turn.answer)

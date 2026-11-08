@@ -75,6 +75,10 @@ _PARAMETERS = {
 class SemanticSearchTool:
     """Full-text search over an indexed column of the semantic model."""
 
+    #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
+    #: so a measured attempt counts their tokens.
+    nested_requests_measured = True
+
     name = "semantic_search"
     description = (
         "Full-text search over indexed text in the semantic model's datasets. "

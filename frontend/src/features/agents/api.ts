@@ -46,8 +46,24 @@ export type Agent = {
   /** Published Semantic Views available to this agent. */
   semantic_view_ids?: string[];
   visibility: "private" | "shared";
+  /** Standing rules, tool guidance and declarative guards around the model. */
+  harness_policy?: HarnessPolicy;
   created_at: string;
   updated_at: string;
+};
+
+export type HarnessGuardRule = {
+  rule_id: string;
+  stage: "before_tool" | "after_tool_error";
+  tool: string;
+  match_any: string[];
+  message: string;
+};
+
+export type HarnessPolicy = {
+  standing_rules: string[];
+  tool_guidance: Record<string, string>;
+  guards: HarnessGuardRule[];
 };
 
 export type ResourceBindings = {
@@ -795,6 +811,18 @@ export type SessionRow = {
 };
 
 /** One step in an assistant turn's trace, as recorded by the loop. */
+/** One harness guard decision, recorded on the trace and streamed live. */
+export type GuardDecision = {
+  rule_id: string;
+  stage: string;
+  action: "blocked" | "hinted" | "flagged" | "redacted";
+  tool_name: string;
+  message: string;
+  source: "platform" | "agent";
+  tool_call_id?: string;
+  locations?: { row?: number; column?: string; field?: string; snippet?: string }[];
+};
+
 export type TraceStep =
   | {
       kind: "reasoning";
@@ -878,6 +906,7 @@ export type TraceStep =
       kind: "turn_outcome";
       finish_reason: string;
     }
+  | ({ kind: "guard" } & GuardDecision)
   | {
       kind: "answer";
       step_id?: string;
@@ -901,6 +930,7 @@ export type TraceStep =
       title?: string;
       columns: string[];
       rows: (string | number | null)[][];
+      truncated?: boolean;
     }
   /** A chart the turn rendered. `chart_spec` is Vega-Lite v5 JSON; the viz
    *  worksheet and its presentation model ride along when the viz core built it. */

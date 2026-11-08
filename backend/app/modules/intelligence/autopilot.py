@@ -110,7 +110,8 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
     from app.modules.query.service import query_service
 
     session_security(user)
-    candidates, citations = [], []
+    candidates: list[dict[str, Any]] = []
+    citations: list[dict[str, Any]] = []
     discovered: list[dict[str, Any]] = []
     for source in dict.fromkeys(body.sources):
         if len(source.split(".")) not in (2, 3) or not all(
@@ -202,6 +203,21 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
                     "review_required": ["key_semantics", "referential_integrity", "cardinality"],
                 }
             )
+    # Joins the caller's own join run verified in the data replace name-only guesses.
+    from app.modules.ontology.evidence.discovery import data_relationships
+
+    evidenced = await data_relationships(
+        user, {item["source"].split(".", 1)[-1] if item["source"].count(".") == 2
+               else item["source"]: item["name"] for item in discovered})
+    if evidenced:
+        pairs = {(item["definition"]["from"], item["definition"]["to"]) for item in evidenced}
+        candidates = [item for item in candidates if not (
+            item["kind"] == "relationship"
+            and (item["definition"]["from"], item["definition"]["to"]) in pairs)]
+        candidates += evidenced
+        citations.append({"source": evidenced[0]["evidence"]["run_id"],
+                          "method": "governed-join-discovery-v1",
+                          "digest": fingerprint([item["name"] for item in evidenced])})
     if body.semantic:
         from app.modules.intelligence.engine import intelligence_service
 
@@ -246,8 +262,9 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
         "candidates": candidates,
         "evidence": citations,
         "message": (
-            "Review grains and business meaning before publication. "
-            "Value profiling requires a governed query."
+            "Review grains and business meaning before publication. Relationships with "
+            "DATA_EVIDENCE were verified in the data by your own join discovery; others "
+            "are name-only hypotheses."
         ),
     }
 

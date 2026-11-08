@@ -463,6 +463,7 @@ class ContextCompiler:
         self.category_caps = category_caps or {
             "platform": 1_200,
             "agent": 1_200,
+            "harness": 1_000,
             "state": 600,
             "skill": 4_000,
             "semantic": 4_000,
@@ -478,6 +479,7 @@ class ContextCompiler:
         semantic_context: str = "",
         selected_tools: tuple[str, ...] = (),
         selected_skills: tuple[str, ...] = (),
+        harness_context: str = "",
     ) -> CompiledContext:
         sections: list[tuple[str, str]] = [
             ("platform", platform_contract.strip()),
@@ -486,6 +488,10 @@ class ContextCompiler:
                 "<AGENT_CONFIGURATION>\n"
                 + json.dumps(agent_contract or {}, ensure_ascii=False, separators=(",", ":"))
                 + "\n</AGENT_CONFIGURATION>",
+            ),
+            *(
+                [("harness", "<AGENT_HARNESS>\n" + harness_context.strip() + "\n</AGENT_HARNESS>")]
+                if harness_context.strip() else []
             ),
             (
                 "state",

@@ -92,11 +92,325 @@ Publishing a Semantic View version re-checks every validated binding to that
 view:
 - If the metric's claim fingerprint is unchanged (dataset, expression, unit,
   time dimension, filter, type), the binding is re-pinned to the new version.
-- If the claim changed or the metric is gone, the binding becomes `STALE`.
+- If the claim changed only cosmetically, the binding is re-pinned with a
+  reason ("Version N renamed or redescribed M; it computes the same thing") and
+  its claim fingerprint moves to the new claim. Cosmetic means the meaning
+  fingerprint is equal: names are resolved to what they read, so the dataset
+  becomes its physical source, the default time dimension becomes its column,
+  and expressions are qualified with sources instead of dataset names. A
+  renamed time dimension or dataset is cosmetic; a different column, source,
+  filter, unit or type is not. Publication audits these re-pins as `REPIN`.
+- If the claim changed otherwise, or the metric is gone, the binding becomes
+  `STALE`.
+- If the claim is unchanged but its meaning is not (the same dataset name now
+  reads another table, or the time dimension another column), the binding also
+  becomes `STALE`: "Version N changed what M computes".
 
 A stale binding is never usable. Release preparation and publication re-check
 freshness themselves, so the result does not depend on the drift hook having
 run.
+
+## Derived layer
+
+Code: `backend/app/modules/ontology/derived.py`. API: `GET /ontology/derived`,
+`POST /ontology/derived/compile`. Console: the **Derived** tab.
+
+Nova compiles what each published Semantic View already proves into a shared,
+deterministic graph. It never needs a person to type it:
+
+| Item | Rule | Base confidence |
+|---|---|---|
+| `BUSINESS_ENTITY` | A dataset, keyed by its physical table, so `outlets` in three views is one Outlet | 0.9 with a grain, 0.7 without |
+| `DIMENSION` `RELATED_TO` its entity | A categorical or date field. Grain keys, join keys, identifier-named fields and numeric amounts are left out | 0.9 |
+| `METRIC` that `MEASURES` its base entity | A public metric, with its claim fingerprint | 1.0 |
+| `RELATED_TO` between entities, with a role | A many-to-one relationship. The key column names the role (`salesman_id` is the salesman role of Employee) unless it names the target (`outlet_id`) | 0.95, 0.6 if the cardinality is unknown |
+| `DERIVES` from an input metric to the metric built from it | Proven on the parsed expression: `SUM(a)/SUM(b)` is built from the metrics `SUM(a)` and `SUM(b)`; `SUM(a - b)` from `SUM(a)` and `SUM(b)`. Only aggregates over the same base dataset match | 0.95 |
+| `EQUIVALENT_TO` between metrics | The same claim fingerprint in two views | 0.9 |
+
+Each further view that proves an item adds 0.05, up to 1.0. Every item keeps
+its evidence: view id, version and fingerprint, the method, the source object,
+and what that view calls and says the item is. Names, meaning and aliases are
+read from all evidence in view order, so the result does not depend on which
+view compiled last.
+
+**Compilation.** Publishing a view version compiles it after the drift check;
+a failure is logged and never undoes the publication. `POST /derived/compile`
+recompiles one visible view, or every published view the caller can see, and
+is audited as `DERIVE`. A compile replaces only its own view's evidence: an
+item no view proves any more becomes `RETIRED`. Writes are one batch under one
+lease (`RevisionRepository.save_many`), so a recompile with no change writes
+nothing. Records are stored append-only in `CONFIG_ONTOLOGY_DERIVED` and
+`CONFIG_ONTOLOGY_COMPILATIONS`.
+
+**Reading.** A reader sees only evidence from views they can see; an item
+left without evidence is hidden, its names come only from visible views, and
+a relation is shown only when both ends are. A derived metric links to the
+approved concept with a validated binding to it, when the reader can see that
+concept's domain.
+
+`APPLIES_TO` stays reserved for policies, as the relation rules require.
+
+**Authority.** Derived items are context and candidates. They are never
+released, never bound and never override an approved concept. Use in Studio
+retrieval is a later phase of the
+[auto-ontology proposal](proposals/supernova-auto-ontology.md).
+
+### Promotion
+
+Code: `backend/app/modules/ontology/promotion.py`. API:
+`POST /ontology/derived/propose {operation_id, shared_domain_id?}`. Console:
+**Propose to stewards** on the Derived tab.
+
+Nova turns what it derived into ordinary proposals with `source=ENGINE`, one
+per domain, submitted by the caller. Stewards review them like any proposal,
+and the caller can never review their own.
+
+- A view belongs to the domain that holds most approved concepts bound to it.
+  A view with no such concept is left out, with a reason ("bootstrap it once").
+- Each visible metric that is neither official nor already in an open
+  proposal becomes a `METRIC` concept with a binding to its view.
+- An entity goes to the one domain whose metrics or related entities use it.
+  An entity several domains use goes to `shared_domain_id`, or is left out
+  with a reason. An approved entity with the same label is reused.
+- `MEASURES`, `DERIVES` and entity-to-entity `RELATED_TO` links are proposed
+  when both ends are official or created in the same draft. Each carries a
+  justification with its confidence, view, version and source, and the role
+  when there is one. A link whose end is approved later is proposed on a later
+  run.
+- Names never collide with a domain's slugs, labels or aliases, and a draft
+  holds at most 200 changes. Rerunning drafts nothing already open, and the
+  operation id is derived from the request, domain and content, so a retry
+  creates nothing twice. Every run is audited as `PROPOSE_DERIVED`.
+
+## Meaning checks
+
+Code: `backend/app/modules/ontology/lint.py`. API: `GET /ontology/lint`.
+Console: the **Checks** tab.
+
+Deterministic rules compare what stewards approved with the formula Studio
+runs. They never call a model, and only check concepts and views the caller can
+see:
+
+| Rule | Severity | Finds |
+|---|---|---|
+| `definition_formula` | error | A definition names another metric whose inputs the formula only partly uses: "Omzet bersih dikurangi harga pokok" over `SUM(net_amount)` leaves out the returned value net revenue subtracts |
+| `adjustment_ignored` | warning | A metric sums a column that another metric of the same view corrects with a returns or cancellation column, and neither its formula nor its wording mentions them |
+| `ambiguous_name` | warning | One name belongs to approved concepts in two domains, so the resolver asks |
+| `unbound_metric` | warning | An approved metric no validated binding computes |
+
+Mentions are found with the resolver's whole-word matching; inputs come from
+the derived `DERIVES` graph, and columns from the parsed expression of each
+outermost aggregate. Release preparation adds every finding as a warning
+("Meaning check (rule) concept: …"). Findings never block a release or change
+meaning: a steward decides whether the words or the formula are wrong.
+
+## Names from Nova
+
+Code: `backend/app/modules/ontology/enrichment.py`. API:
+`POST /ontology/enrich {operation_id, domain_id?}`. Console: **Suggest names**
+on the Checks tab.
+
+The resolver only matches names a concept carries, so every everyday word a
+concept lacks is a question Studio cannot ground. Nova proposes them:
+
+- Relation roles from the derived layer (`driver`, `salesman`) become aliases of
+  the entity, with no model involved.
+- One structured call per batch of 15 concepts asks the default model for
+  everyday Indonesian and English words, a definition where only a placeholder
+  exists, and current names that could mean another concept. It receives
+  names, definitions, units and formulas, never data values. Batches run three
+  at a time; unreadable output is repaired once; a batch the provider cannot
+  answer is reported, and only a run where no batch answered fails (503).
+- A validator keeps a word only if it is 1-4 words and at most 40 characters,
+  not a number or a generic word, states no cause, is not already a name of a
+  visible concept, a name an open proposal gives, or a view synonym of another
+  official metric, and was not suggested for two concepts. Validation runs in
+  batch order, so a word one batch keeps is taken for the next.
+
+What survives becomes one `ENGINE` proposal per domain of `update` changes,
+listing each word with its source and each ambiguity note. Concepts an open
+proposal already changes are left alone. Runs are audited as `ENRICH`. A
+steward still judges meaning the validator cannot, such as a related but
+different measure, and rejects or resubmits without the word.
+
+## Measured accuracy
+
+Code: `backend/app/modules/ontology/evaluation/`, `backend/app/common/statistics.py`.
+API: `GET /ontology/metrics`; `GET|POST /ontology/evaluation/…` (ACCOUNTADMIN).
+Console: the **Overview** tab, the page's default, and the **Evaluation** tab.
+Design and decisions: [Phase A](proposals/supernova-phase-a-measurement.md).
+
+**Gold sets.** `POST /evaluation/gold` builds a versioned set from published
+Semantic Views, with no domain-specific code.
+
+- **Answerable cases** are governed plans: each metric gets up to N templates
+  (total, breakdown, top 5, monthly trend, a real filter value read from the
+  data) over absolute periods inside the observed data window.
+  - The compiler that serves Studio writes their SQL. It is executed again, as
+    the evaluating user, on every run.
+  - Breakdowns skip keys, coordinates and amounts, and a count of distinct X is
+    never broken down by X.
+- **Questions.** A model writes each question in business words, without the
+  technical names.
+- **Unanswerable cases (about 15%)** are measures, breakdowns or periods outside
+  the catalog. A role a measure has no path to ("missed stops per salesman") is
+  also unanswerable.
+- **Ambiguous cases (about 10%)** are names two domains share, from the meaning
+  check, or vague words that fit several measures.
+- **Admission.** A judge model reviews every case, and any external reviewer
+  (`POST /evaluation/cases/{set}/reviews`) can add a verdict. A case is active
+  only while every reviewer says yes.
+
+**Answer runs.** `POST /evaluation/answers {set_name, mode}` answers the active
+cases the way Studio does:
+
+- `ground` with the pinned release;
+- `planning_catalog` and `generate_plan(business_concepts=…)`;
+- `missing_metrics` and `validate_plan`;
+- compile, then execute as the caller.
+
+Mode `without_ontology` skips grounding and the hints. With `view_hint: false` the case's view is hidden and the run chooses among every published view the way Studio does: the ontology's bound view first (with the ontology), then the one view whose metric names the question uses, then one model call over the view catalog standing in for the agent model; each result records the view, how it was chosen and whether it was the gold view (`view_accuracy`). This is the baseline, and
+it adds no branch to production code. Results match Genie benchmarks: order-free
+unless the plan orders, numbers to 4 significant digits, extra columns allowed,
+an empty result never matches.
+
+When the router finds no view whose measures compute the question, the case is
+`abstained`, as Studio tells the user. A run applies the same data-window check
+as Studio (below).
+
+Each case records its outcome (`correct`, `wrong`, `answered`, `abstained`,
+`clarified`, `failed`), a TrustSQL reliability score, grounding status, plan,
+SQL fingerprint, row counts, tokens and latency. Result rows and measure values
+are never stored. A filtered question keeps the category value it asks about.
+
+**Claim audits.** `POST /evaluation/claims` samples up to N claims per stratum:
+
+- entity, dimension, metric;
+- metric to entity, entity link, entity role;
+- built from, same formula;
+- official alias.
+
+A judge decides each claim against the excerpt of the published definition it
+rests on. The summary is a stratified estimate weighted by stratum size, with a
+95% interval, plus the ECE, Brier and reliability bins of the stored confidence.
+
+**Runs and agreement.**
+
+- Runs advance in resumable steps (`POST /evaluation/runs/{id}/step`) in the
+  caller's live session. Only their starter can advance them.
+  - A provider timeout keeps a run open for the next step.
+  - Any other failure marks it `FAILED`, and `…/resume` reopens it where it
+    stopped.
+- External reviews of results (`…/reviews`) give Cohen's κ against the model
+  judge.
+
+**Overview.** `GET /ontology/metrics` returns only stored measurements and live
+counts, each a proportion with its Wilson interval:
+
+- answer accuracy with and without the ontology, and the paired effect
+  (McNemar);
+- reliability, wrong answers and refusals;
+- claim accuracy by kind, and calibration;
+- coverage by domain, stale bindings, meaning checks, the acceptance of Nova's
+  proposals, the gold set, and judge agreement.
+
+Anything not yet measured is listed as such, never shown as a default.
+
+## Join evidence
+
+Code: `backend/app/modules/ontology/evidence/` (`profiling.py`, `joins.py`,
+`calibration.py`, `discovery.py`). API: `POST /ontology/evaluation/joins`, then
+the usual run steps, results and reviews. Measured in the
+[B/C/D checkpoint](testing/supernova/phase-bcd-checkpoint.md); method in
+[research 05](research/supernova-ontology/05-join-evidence.md).
+
+A join run reads which joins the data supports, as the person who starts it.
+
+1. **Profile.** For every table of the chosen databases (by default those behind
+   the caller's published views), one scan counts rows, distinct values (HLL),
+   non-null values and value lengths per column, through `query_service` with
+   the caller's session and active role.
+2. **Sketch and verify.** Key-like columns (whole numbers or text) get a
+   bottom-256 KMV sketch of hashed distinct values, held only in memory. Pairs
+   whose sketch inclusion is at least 0.3 are verified exactly: distinct source
+   values found in the target, and the target's exact uniqueness.
+3. **Decide.** A pair is a join when nearly every source value is in a key that
+   identifies its table, and names agree (or a text role has full inclusion).
+   Each source column keeps one target.
+4. **Score and calibrate.** Gold joins are the many-to-one relationships the
+   caller's published views declare between stored columns; reviewers confirm
+   or reject the rest. Each candidate gets the measured precision of its
+   evidence class as its probability, measured leave-one-database-out (ECE,
+   Brier, AUC), and a decision: accept alone at ≥ 0.97, reject alone at ≤ 0.01,
+   review otherwise.
+
+Join names follow common warehouse conventions: `outlet_id` names `outlets`,
+`o_custkey` names `customer` (a glued key word, a short table prefix and an
+abbreviation), and a column that identifies its own table's head noun
+(`event_id` in `fulfillment_events`) is not a reference.
+
+The caller's own Query Autopilot families are a second detector: their
+`JOIN … ON a.x = b.y` and implicit `WHERE` equalities, read by
+`sql_frontend/analysis/joins.py`, count per candidate (`history_families`) and
+are scored on their own. Only families of the same principal, active role and
+security-context version count.
+
+Each run compares its profiles with the caller's previous join run: a key that
+is no longer unique, a null rate up by 5 points, distinct values shifted by
+30% without row growth, and an accepted join that lost its integrity are
+reported as `drift`.
+
+**Relationships for view owners.** `POST /semantic-views/autopilot/discover`
+offers the joins the caller's latest join run accepted as `DATA_EVIDENCE`
+relationship candidates (and those left for review as `DATA_REVIEW`), with
+probability and evidence, in place of name-only guesses. The owner still
+proposes, previews and approves them through the existing Autopilot flow.
+
+Profiles and candidates describe what one principal could see, so a join run,
+its summary and its results are shown only to the same principal in the same
+role. Sketches are never stored. The Overview shows the latest join run of the
+viewer's own context: precision and recall with intervals, the share decided
+without a person, and the probability's reliability diagram.
+
+## Learning from measured failures
+
+Code: `backend/app/modules/ontology/learning.py`. API: `POST /ontology/learn`
+(ACCOUNTADMIN). Every result is an `ENGINE` proposal; stewards decide.
+
+- **Misleading names:** an official alias every reviewer of the latest claim
+  audit rejected (at least two) is proposed for removal, with their reasons.
+- **Words people used:** the recorded measure term of a gold question that
+  failed becomes an alias proposal for the metric it asked for, through the
+  enrichment validator.
+- **Words people used in Studio:** answers people liked, on threads where they
+  allowed learning (`CONFIG_ASSISTANT_THREADS.learning_enabled`), are read through
+  `assistant_repository.liked_answers`. Only a plan with one measure bound to an
+  approved concept counts, and a question that already names the concept is
+  skipped. A model names the words of the question that name the measure; they
+  must appear in the question verbatim. A phrase becomes an alias proposal once
+  at least `MIN_PRINCIPALS` (two) different people used it, through the same
+  validator. The proposal keeps the phrase and counts, never a question or a
+  person. Measured in `docs/testing/supernova/conversation-learning.md`.
+- **Metrics a refusal asked for:** a refused question goes to a model with the
+  view's measures, columns and relationships. A proposed formula is added to a
+  copy of the view, validated, compiled and executed once as the caller; only a
+  formula that returns a value becomes a new metric concept proposal carrying
+  the formula for the view owner.
+
+The claim audit and gold judges follow a versioned rubric (`RUBRIC`); every
+model verdict names it, and `POST /evaluation/judge` re-judges an existing gold
+set under the current rubric without changing which cases are in it.
+
+## Exchange as Open Semantic Interchange
+
+`GET /ontology/osi/export` returns one Ossie 0.1.1 document per Semantic View
+the release binds and the caller may see. Bound metrics carry their official
+definition (`description`), the concept's aliases (`synonyms`) and the concept
+(`ai_context.nova_concept`); the document's `ai_context.nova_ontology` holds the
+caller-visible release records. `POST /ontology/osi/import` reads documents back,
+recomputes every record fingerprint and the manifest hash, and reports whether
+it equals the exported release (`lossless`). An export limited by visibility
+says `complete: false`.
 
 ## Studio grounding
 
@@ -122,7 +436,28 @@ language matches through aliases, which stewards add.
 | A name belongs to visible concepts in several domains, and the question names none of their domains | `CLARIFICATION_REQUIRED`: the turn ends as a question naming each choice; nothing is planned or run |
 | An approved concept has no binding the user and agent can use | The turn stops with `NO_AUTHORIZED_REPRESENTATION` and names the concept. It is never answered with a metric of a similar name |
 | The named metrics are computed in different views | `CLARIFICATION_REQUIRED`: ask for them one at a time |
-| Grounded | The binding's view is used, the planner receives the concepts and their metrics, and a plan that omits a required metric is rejected |
+| Grounded | The binding's view is used, the planner receives the concepts and their metrics, and a plan that omits a required metric is rejected unless a planned metric explains the mention (below) |
+
+**Mentions a planned metric explains.** A word can name a concept without
+asking for it: "gross sales before *discount*" names Discount amount while
+asking for Gross revenue. The resolver records which words named each concept.
+`grounding_gaps` releases a required concept when either:
+
+- its metric is an input of a planned metric, proven on the parsed expressions;
+  or
+- those words appear, as whole words, in the planned metric's description,
+  synonyms, name or official definition.
+
+A mention right after "per" is also explained when the planned metric's own
+definition counts per a word of it: "rata-rata persentase diskon *per baris
+pesanan*" names Order lines, but the average discount is defined "per baris
+order", so the words are its unit.
+
+Substitution stays refused, because a different metric's own words do not name
+the concept asked for. A question that asks for two metrics still needs both.
+Measured on the SerbaData gold set, this raised accuracy with the ontology from
+80.5% to 93.5% (McNemar p=0.0004); see the
+[Phase A checkpoint](testing/supernova/phase-a-checkpoint.md).
 
 A binding fits an agent's loaded view only when the metric's claim fingerprint
 there equals the validated one. An agent pinned to an older view version
@@ -136,6 +471,32 @@ published, so nothing changes.
 manifest hash, concept ids and revisions, metric, binding) in its evidence. It
 also records the `concept_grounding` Quality Lab fact, and a
 `BusinessContextAnchor` on the Mission.
+
+**Periods without data.** When a dated `semantic_query` result is empty, or
+has a column with no value (an empty comparison baseline), the first and last
+day with data for the plan's metric are read through two governed plans as the
+caller (`agents/semantic/coverage.py`). A requested or comparison period
+wholly outside that window ends the turn with `OUTSIDE_DATA_WINDOW` and the
+covered range, instead of an empty answer. A period that starts after today is
+refused before any query. A normal answer costs no extra query. The turn ends
+like a clarification: the agent tells the user in their language that the period
+has no data and which range exists (a localized fallback names the range when
+the model writes nothing), and no other data path is tried.
+
+**Filter values.** A filter value the field never holds is checked against
+the data: a searchable field without samples is searched as the caller, and a
+value the question names verbatim ("Jawa Barat & DKI") replaces the model's
+split reading; a value only one other searchable dimension holds moves the
+filter there ("Salesman" is a role, not an employee name). The planner adds a
+dimension only for a grouping the question asks for.
+
+**Vague measures.** The planner treats a measure word that several catalog
+metrics fit about equally ("sales" with net, gross and before-returns sales) as
+unresolved and lists the candidates, so the turn becomes a clarification. A
+measure a metric names, or that an approved definition names, is resolved: an
+approved alias is a business decision and outranks vagueness. A plan that names
+nothing at all is a clarification too, never an execution error. Measured
+effect: [Phase E checkpoint](testing/supernova/phase-e-checkpoint.md).
 
 ## Release pins
 
@@ -163,8 +524,12 @@ limited to the agent's Semantic Views and to views the caller can see.
 ## Console page
 
 Console → AI & ML → **Business Ontology** (`/business-ontology`,
-`frontend/src/features/ontology/`). The page has four tabs:
+`frontend/src/features/ontology/`). The page has eight tabs; it opens on Overview:
 
+- **Overview.** The [measured accuracy](#measured-accuracy) of the ontology:
+  key numbers with their intervals and n, the effect against the baseline,
+  where answers end up, calibration, claim accuracy by kind, coverage by domain
+  and health. Unmeasured numbers say so.
 - **Concepts.** Shows the published release by default, or the latest
   approved definitions. Opening a concept shows:
   - its definition and facts;
@@ -175,11 +540,21 @@ Console → AI & ML → **Business Ontology** (`/business-ontology`,
   published metric), a revision, a link or a deprecation. A deprecation also
   retires the concept's links and revokes its bindings. **Draft from a
   Semantic View** runs the bootstrap.
+- **Derived.** The entities Nova derived, with their roles, dimensions,
+  metrics, related entities and evidence. **Compile now** recompiles the
+  visible views; **Propose to stewards** drafts the per-domain proposals
+  described under [Promotion](#promotion) and lists what it left out and why.
+- **Checks.** The [meaning checks](#meaning-checks) with their evidence, and
+  **Suggest names**, which runs [Names from Nova](#names-from-nova) and lists
+  the proposals sent and the words the validator dropped.
 - **Proposals.** Grouped as in review, approved, applied and closed. Each
-  proposal shows its changes in words, the domains it touches, which domains
+  proposal shows who or what drafted it, its changes in words (with each
+  link's justification and each binding's view name), the domains it touches, which domains
   still wait for a steward, and its reviews. A steward of an affected domain
   approves or rejects with a rationale. The submitter can withdraw but never
   review. An approved proposal whose application stopped can be finished.
+- **Evaluation.** For ACCOUNTADMIN: the runs, their results per question or
+  claim, the gold set with its reviews, and starting or continuing a run.
 - **Releases.** Shows the release Studio uses and the release history. For
   `ACCOUNTADMIN` it also offers preparing a release (issues and warnings
   included), publishing it, and switching back to an earlier one.

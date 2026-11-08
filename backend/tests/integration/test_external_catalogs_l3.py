@@ -264,20 +264,24 @@ async def namespace(engine):
 
 
 async def _create_catalog(namespace: dict) -> None:
-    """The suite's Iceberg catalog, made in raw SQL as root."""
+    """The suite's Iceberg catalog, made in raw SQL as root.
+
+    Raw SQL bypasses Nova's catalog service, so nothing invalidates the briefly
+    cached visibility answers; bump the epoch as a managed create would.
+    """
+    from app.modules.catalog import visibility
+
     await _admin_execute(iceberg_catalog_sql(
         namespace["catalog"], f"s3://{BUCKET}/{namespace['warehouse']}",
         comment="NOVA-62 L3 iceberg catalog",
     ))
+    await visibility.bump()
 
 
 class TestCatalogApi:
     async def test_list_get_alter_drop(self, admin_client, namespace):
         catalog = namespace["catalog"]
         await _create_catalog(namespace)
-        from app.modules.catalog import visibility
-
-        await visibility.bump()
 
         resp = await admin_client.get("/api/v1/external-catalogs")
         assert resp.status_code == 200

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+from app.modules.agents.semantic.ir import FieldKind, SemanticFieldIR
 from app.modules.agents.semantic.planning import SemanticPlan, SemanticTime
 from app.modules.agents.semantic.suggestions import suggest_follow_ups
 from app.modules.assistant import events
@@ -34,3 +37,23 @@ def test_unknown_metric_yields_nothing_and_event_is_bounded():
     assert suggest_follow_ups(SemanticPlan(metrics=("payroll",)), MODEL, language="en") == []
     frame = events.suggestions([str(index) for index in range(9)])
     assert frame.startswith("event: suggestions") and '"8"' not in frame
+
+
+def test_record_identifiers_are_never_suggested_as_a_breakdown():
+    orders = next(dataset for dataset in MODEL.datasets if dataset.name == "orders")
+    ids = tuple(
+        SemanticFieldIR(name=name, dataset="orders", expression=name,
+                        kind=FieldKind.DIMENSION)
+        for name in ("order_id", "invoice_no", "promo_code")
+    )
+    model = replace(MODEL, datasets=tuple(
+        replace(dataset, fields=ids + dataset.fields) if dataset is orders else dataset
+        for dataset in MODEL.datasets
+    ))
+    plan = SemanticPlan(metrics=("total_revenue",),
+                        time=SemanticTime("order_date", range="previous_month"))
+    suggestions = suggest_follow_ups(plan, model, language="en", limit=10)
+    assert any(" by " in item for item in suggestions)
+    assert not any(
+        word in item for item in suggestions for word in ("order id", "invoice no", "promo code")
+    )

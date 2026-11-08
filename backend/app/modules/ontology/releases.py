@@ -116,6 +116,14 @@ class ReleaseService:
                     + (reason or "the view was republished; run the drift check")
                 )
 
+        from app.modules.ontology.lint import lint
+
+        # Advice, never a block: a steward decides whether the wording or the formula is wrong.
+        warnings.extend(
+            f"Meaning check ({finding.rule}) {finding.concept}: {finding.message}"
+            for finding in await lint(user, self.catalog, self.repository)
+        )
+
         members = [
             *(_member("domain", item) for item in active_domains),
             *(_member("concept", item) for item in approved.values()),

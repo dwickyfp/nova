@@ -21,7 +21,7 @@ from app.modules.ontology.contracts import (
 )
 from app.modules.ontology.relations import neighbourhood
 from app.modules.ontology.releases import AliasMove, ReleasePrepare, ReleaseService
-from app.modules.ontology.representations import refresh_view
+from app.modules.ontology.representations import freshness, meaning_fingerprint, refresh_view
 from app.modules.ontology.service import DomainCreate, DomainUpdate, OntologyService
 from app.modules.ontology.stewardship import ProposalCreate, ReviewRequest, StewardshipService
 from tests.unit._ontology import (
@@ -545,19 +545,66 @@ async def _bound_revenue(world):
     return world.concept_id(created)
 
 
+def _renamed_time_dimension(*, column: str = "sale_date") -> dict:
+    """The sale date field renamed to ``sold_on``, reading ``column``."""
+    value = definition()
+    for field in value["datasets"][0]["fields"]:
+        if field["name"] == "sale_date":
+            field["name"], field["expression"] = "sold_on", column
+    for metric in value["metrics"]:
+        if metric.get("default_time_dimension") == "sale_date":
+            metric["default_time_dimension"] = "sold_on"
+    return value
+
+
+async def test_a_renamed_dimension_keeps_the_binding_with_a_reason(world, monkeypatch):
+    from app.modules.ontology import access
+
+    audits = []
+
+    async def audit(*args, **kwargs):
+        audits.append((args, kwargs))
+
+    monkeypatch.setattr(access, "audit", audit)
+    await _bound_revenue(world)
+    actor = Actor.from_user(ADMIN)
+    world.catalog.publish("sales_sv", _renamed_time_dimension())
+    assert await refresh_view("sales_sv", actor, world.catalog, world.repository) == {
+        "repinned": 1, "stale": 0, "cosmetic": 1,
+    }
+    binding = (await world.repository.current("representations", Representation))[0]
+    assert binding.status == "VALIDATED" and binding.semantic.version == 2
+    assert "computes the same thing" in (binding.status_reason or "")
+    # The new claim is pinned, so the next check sees the binding as current.
+    assert (await freshness(binding, world.catalog))[0] == "current"
+
+    # The same rename pointing at another column is a real change.
+    world.catalog.publish("sales_sv", _renamed_time_dimension(column="city"))
+    assert (await refresh_view("sales_sv", actor, world.catalog, world.repository))["stale"] == 1
+
+
+def test_meaning_resolves_names_but_not_computation():
+    base = meaning_fingerprint(definition(), "revenue")
+    assert base is not None
+    assert meaning_fingerprint(_renamed_time_dimension(), "revenue") == base
+    changed = definition(revenue_expression="SUM(sales.orders)")
+    assert meaning_fingerprint(changed, "revenue") != base
+    assert meaning_fingerprint(definition(), "missing") is None
+
+
 async def test_republishing_an_unchanged_metric_repins_and_a_changed_one_goes_stale(world):
     concept_id = await _bound_revenue(world)
     actor = Actor.from_user(ADMIN)
     world.catalog.publish("sales_sv", definition() | {"description": "Reworded view"})
     assert await refresh_view("sales_sv", actor, world.catalog, world.repository) == {
-        "repinned": 1, "stale": 0,
+        "repinned": 1, "stale": 0, "cosmetic": 0,
     }
     binding = (await world.repository.current("representations", Representation))[0]
     assert binding.semantic.version == 2 and binding.status == "VALIDATED"
 
     world.catalog.publish("sales_sv", definition(revenue_expression="SUM(sales.gross)"))
     assert await refresh_view("sales_sv", actor, world.catalog, world.repository) == {
-        "repinned": 0, "stale": 1,
+        "repinned": 0, "stale": 1, "cosmetic": 0,
     }
     working = await world.reads.representations(concept_id, ADMIN, scope="working")
     assert working["representations"][0]["status"] == "STALE"

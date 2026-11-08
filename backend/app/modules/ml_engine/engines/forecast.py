@@ -64,9 +64,17 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     if duplicates:
         raise ValueError(f"Forecast input contains {int(duplicates)} duplicate timestamp(s)")
     frequency = _aligned_frequency(spec.frequency, frame)
+    closed = _closed_weekdays(frame, frequency)
     frame, filled = _regular_periods(
-        frame, frequency, str(spec.parameters.get("missing_periods", "interpolate"))
+        frame, frequency, str(spec.parameters.get("missing_periods", "interpolate")),
+        closed_weekdays=closed,
     )
+    if closed:
+        names = ", ".join(_WEEKDAYS[day] for day in sorted(closed))
+        warnings.append(
+            f"No observations on {names} in the whole history: treated as closed, "
+            "learned as zero and forecast as zero"
+        )
     if filled:
         warnings.append(f"Filled {filled} missing period(s) between observations")
     if int(frame["unique_id"].nunique()) * horizon > settings.ML_RESULT_INLINE_MAX_ROWS:
@@ -96,13 +104,14 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     lower = f"{prediction_column}-lo-95"
     upper = f"{prediction_column}-hi-95"
     for record in forecast.head(1000).to_dict(orient="records"):
+        shut = pd.Timestamp(record["ds"]).weekday() in closed
         results.append(
             {
                 "series": None if record["unique_id"] == "__single__" else record["unique_id"],
                 "timestamp": record["ds"].isoformat(),
-                "prediction": float(record[prediction_column]),
-                "lower_bound": _float_or_none(record.get(lower)),
-                "upper_bound": _float_or_none(record.get(upper)),
+                "prediction": 0.0 if shut else float(record[prediction_column]),
+                "lower_bound": 0.0 if shut else _float_or_none(record.get(lower)),
+                "upper_bound": 0.0 if shut else _float_or_none(record.get(upper)),
             }
         )
     metrics = {
@@ -118,6 +127,7 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         "selected_estimator": algorithm,
         "warnings": warnings,
         "filled_periods": filled,
+        "closed_weekdays": [_WEEKDAYS[day] for day in sorted(closed)],
         "dropped_series": insufficient if warnings else [],
         "arrow_to_pandas_seconds": arrow_to_pandas_seconds,
     }
@@ -184,15 +194,36 @@ def _aligned_frequency(given: str | None, frame: pd.DataFrame) -> str:
     return observed if _unit(observed) == _unit(given) else given
 
 
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _closed_weekdays(frame: pd.DataFrame, frequency: str) -> set[int]:
+    """Weekdays a daily history never has, such as a shop closed on Sunday.
+
+    Only judged with at least three full weeks of history and while other weekdays
+    are observed; such a day is a closure, not a missing value to interpolate.
+    """
+    if _unit(frequency) != "D" or frequency.upper().startswith("B"):
+        return set()
+    span = frame["ds"].max() - frame["ds"].min()
+    if span < pd.Timedelta(days=21):
+        return set()
+    seen = set(frame["ds"].dt.weekday.unique())
+    closed = set(range(7)) - {int(day) for day in seen}
+    return closed if len(closed) < 7 else set()
+
+
 def _regular_periods(
-    frame: pd.DataFrame, frequency: str, policy: str
+    frame: pd.DataFrame, frequency: str, policy: str, *, closed_weekdays: set[int] | None = None,
 ) -> tuple[pd.DataFrame, int]:
     """Every series on one regular grid: a day with no orders is still a day.
 
     StatsForecast reads rows as consecutive periods, so a gap silently shortens the
     history and breaks seasonality. Missing periods are interpolated (a level such as
     stock or price) or set to zero (``missing_periods="zero"``, a sum such as units).
+    A closed weekday is zero whatever the policy: nothing happened, nothing is missing.
     """
+    closed_weekdays = closed_weekdays or set()
     if policy not in {"interpolate", "zero"}:
         raise ValueError("missing_periods must be 'interpolate' or 'zero'")
     parts = []
@@ -204,6 +235,9 @@ def _regular_periods(
             parts.append(group)
             continue
         regular = group.set_index("ds")[["y"]].reindex(grid)
+        if closed_weekdays:
+            shut = pd.DatetimeIndex(regular.index).weekday.isin(sorted(closed_weekdays))
+            regular.loc[shut & regular["y"].isna(), "y"] = 0.0
         missing = int(regular["y"].isna().sum())
         if missing:
             filled += missing
