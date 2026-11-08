@@ -5,59 +5,58 @@
 
 **Enterprise Intelligence OS**
 
-Turn governed enterprise data into understanding, decisions, actions, and learning.
+Turn governed enterprise data into trusted answers and shared business meaning.
 
-Nova unifies governed data, business semantics, organizational context, AI agents,
-decision intelligence, and governed execution in one platform.
+Nova unifies governed data, Semantic Views, a governed business ontology, AI agents,
+and BI in one platform, under one identity and one authorization path.
 
-[See the app](#the-nova-app) · [Architecture](#architecture) · [Run locally](#run-locally) · [Documentation](#documentation) · [Brand assets](frontend/public/images/BRAND.md)
+[Supernova Ontology](#supernova-business-ontology) · [See the app](#the-nova-app) · [Architecture](#architecture) · [Run locally](#run-locally) · [Documentation](#documentation) · [Brand assets](frontend/public/images/BRAND.md)
 </div>
 
 ## What Nova is
 
-Nova is an Enterprise Intelligence Operating System for people and agents to
-understand what is happening, investigate why, decide what to do, act under
-review, and learn from observed outcomes. It connects that work to governed
-data, shared business definitions, and organizational context.
+Nova is an Enterprise Intelligence OS where people and agents ask business
+questions of governed data and get answers they can check. Every answer runs
+through the same path: the caller's StarRocks identity and one active role,
+Apache Ranger policies, published Semantic Views, and the business meaning the
+Supernova Business Ontology records.
 
 The warehouse, SQL, stages, and ML form its data foundation. StarRocks provides
 Nova's analytical query and storage engine and authenticates users. Nova owns
-SQL semantics and execution routing, business context, and governed workflows.
+SQL semantics and execution routing, business meaning, and the agent runtime.
 Apache Ranger policies always govern user-data access through the patched
 StarRocks frontend.
 
-## The enterprise intelligence loop
+## How the pieces fit
 
 ```text
-Governed data
+Governed data (StarRocks + Ranger)
       ↓
-Business semantics
+Semantic Views: metrics, dimensions, relationships, verified queries
       ↓
-Business context
+Supernova Business Ontology: concepts, names, bindings, releases
       ↓
-Understand → Investigate → Decide → Act → Observe outcome → Learn
-     ↑                                                       │
-     └────────── Reviewed knowledge and improvements ─────────┘
+Nova Studio agents · Superset BI · SQL clients
+      ↓
+Measured learning → steward proposals → new release
 ```
 
-Semantic Views define business meaning; investigations retain evidence and
-assumptions; Decisions record options and policy review. Supported Actions
-require approval and consent. Outcomes distinguish observed results from causal
-effects, and learning produces scoped knowledge or proposals for review.
-Availability depends on deployment controls and the supported adapters described
-below; the loop is the product model, not a claim of unattended execution.
+Semantic Views define how a metric is computed. The ontology records what the
+business calls it and which view computes it. Studio grounds every metric
+question on the published ontology before it plans a query. Learning never
+edits meaning directly: it files proposals that a domain steward reviews.
 
 ## Nova Console and Nova Studio
 
 | Surface | Role |
 | --- | --- |
-| **Nova Console** | The data and control foundation: SQL Workspace, catalog and Database Explorer, stages, ingestion/export, ML, tasks, security, Semantic Views, Intelligence objects, and monitoring. |
-| **Nova Studio** | The intelligence workspace: agents, Missions, investigations, evidence, scenarios, Decisions, governed Actions, Outcomes, artifacts, dashboards, skills, and connectors. |
+| **Nova Console** | The data and control foundation: SQL Workspace, catalog and Database Explorer, stages, ingestion/export, ML, tasks, security, Semantic Views, the Business Ontology page, and monitoring. |
+| **Nova Studio** | The intelligence workspace: chat with one selected agent, inline tables and charts, artifacts and Superset dashboards, News with reviewed investigations, skills, and connectors. |
 
 Both surfaces operate on the same governed enterprise foundation and authenticated
-StarRocks identity with one active role. Studio is where people and agents
-investigate, plan, decide, and act using governed business context. Chat, process
-traces, tables, charts, and citations make that work accessible and reviewable.
+StarRocks identity with one active role. In Studio, each turn runs one selected
+agent through the shared bounded assistant engine. Process traces, tables,
+charts, and citations make every answer reviewable.
 SQL clients also use Nova's SQL path through the MySQL protocol proxy on port `4406`.
 
 ## Core capabilities
@@ -95,52 +94,28 @@ definitions through the caller's StarRocks session before publication. AI Search
 rechecks source rows under the caller's role; Feature Views provide versioned
 features for ML.
 
-### Business context
+### Studio and agents
 
-Context Graph links published semantic definitions with knowledge and decision
-revisions. Traversal checks access to each referenced object. Scoped agent
-memory preserves provenance and separates private inferred knowledge from
-reviewed shared definitions.
+Each Studio turn runs one selected agent through the shared bounded assistant
+engine. Tools, personal skills, scoped memory, artifacts, and explicitly
+selected MCP connectors support its work. Data tools keep the signed-in user's
+active role; external tool calls keep per-call consent. `semantic_query`
+answers metric questions from published Semantic Views, grounded on the
+ontology (below). An agent's harness adds rules, in-loop guards, evaluation
+cases, and measured refinement proposals.
 
-### Intelligence runtime
+### BI and charts
 
-Agents use the shared bounded assistant engine. Tools,
-personal skills, scoped memory, artifacts, dashboards, and explicitly selected
-MCP connectors support their work. Data tools retain the signed-in user's active
-role; external tool calls retain per-call consent. Missions persist business
-work and its run, evidence, and object references when the workflow is enabled.
+Answers render inline tables and charts. Saved charts and dashboards live in
+Superset, embedded at `/bi` with the caller's identity, so BI queries follow the
+same Ranger policies as everything else
+([Superset architecture](docs/arch-17-superset.md)).
 
-### Decisions and governed actions
+### News and investigations
 
-Investigations connect analytical evidence to hypotheses and registered
-scenarios. Decisions retain assumptions, uncertainty, policy, and approval.
-Current Action adapters create and verify governed monitors/schedules or internal
-Studio automations. Execution requires current authorization, reviewer approval,
-and separate consent. Inventory transfers and rollbacks remain recommendations;
-these adapters do not execute them or deliver externally.
-
-### Outcomes and learning
-
-Outcomes record observation windows, completeness, and attribution limits.
-Complete observations can produce private inferred knowledge pinned to an
-Outcome revision. Agent Quality Lab evaluates cases and regressions, and
-produces reviewable improvement proposals. Publishing shared business meaning
-or a manifested agent release still requires review and evaluation.
-
-### Availability and limits
-
-The [governed Studio workflow](docs/arch-15-governed-studio.md) adds release
-manifests, Quality Lab, Missions, evidence health, and supervised Actions.
-Workflow, Action execution, production quality scoring, and analytical workspace
-controls default to disabled. The analytical workspace remains
-`BLOCKED_BY_INFRASTRUCTURE` when enabled because no isolated executor ships.
-External model and MCP behavior remains mutable even with pinned release
-contracts. Verified Action setup does not prove a business intervention or
-causal improvement.
-
-See the [operator guide](docs/governed-studio-operations.md) for migrations,
-controls, and acceptance gates. Local deterministic checks do not establish
-patched-FE Ranger enforcement, live-provider quality, or production readiness.
+Newsroom stories and monitor alerts on governed metrics become business signals,
+bound to ontology concepts and grouped into incidents. A story can open a
+Studio investigation that records evidence and findings for review.
 
 ### The Nova platform stack
 
@@ -149,19 +124,91 @@ they do not represent separate physical services.
 
 | Layer | Capabilities |
 | --- | --- |
-| Nova Studio | Missions, investigations, Decisions, Actions, Outcomes, artifacts |
-| Intelligence runtime | Agents, skills, tools, memory |
-| Business context | Context Graph, knowledge, business policies |
+| Nova Studio and BI | Agent chat, artifacts, Superset dashboards, News investigations |
+| Intelligence runtime | Agents, skills, tools, memory, harness |
+| Business meaning | Supernova Business Ontology: concepts, names, bindings, releases, learning |
 | Semantic layer | Semantic Views, metrics, relationships, verified queries |
 | Data foundation | SQL, warehouse, catalog, stages, ML, StarRocks |
-| Control plane across the stack | Security, Ranger, Quality, audit, `NOVA_SYSTEM`, Redis runtime coordination |
+| Control plane across the stack | Security, Ranger, audit, `NOVA_SYSTEM`, Redis runtime coordination |
 
 Nova Console exposes the data and control foundation across these layers.
+
+## Supernova Business Ontology
+
+The Supernova Business Ontology is Nova's shared, governed business meaning:
+which business concepts exist, what people call them, how they relate, and
+which published Semantic View metric computes each one. It never runs SQL and
+never grants data access; Semantic Views, StarRocks, and Ranger stay the only
+computation and authorization path. Code: `backend/app/modules/ontology/`.
+Design: [architecture 18](docs/arch-18-business-ontology.md).
+
+### What it holds
+
+| Record | Meaning |
+| --- | --- |
+| Domain | An area of meaning (`Penjualan`, `Finance.Treasury`) with steward roles |
+| Concept | One business concept: label, definition, aliases, unit, grain, time semantics |
+| Relation | A typed link between concepts (`IS_A`, `HAS_PART`, `DERIVES`, `MEASURES`, ...); none asserts causation |
+| Binding | A concept bound to one public metric of a published Semantic View version, pinned by fingerprint |
+| Proposal | A set of changes and its steward reviews |
+| Release | An immutable manifest of exact revisions; readers use the published one |
+
+### How it works
+
+1. **Nova derives a first draft from the views.** The compiler turns what each
+   published Semantic View already proves into entities, dimensions, metrics,
+   role relationships, and which metric is built from which, with a confidence
+   for each item. Nobody types it in.
+2. **Stewards govern meaning.** Every change to a concept, name, or binding is
+   a proposal that a steward of its domain approves. An administrator publishes
+   a release; readers always use exactly one published release.
+3. **Studio grounds every metric question.** Before planning, `semantic_query`
+   resolves the business words in the question against the release's names.
+   - A grounded concept selects the view that computes it.
+   - A word that names several concepts makes Studio ask which one is meant.
+   - A period with no data is refused with the dates the data covers.
+   - A filter value is checked against governed values first.
+4. **Joins are learned from data.** Join discovery profiles columns as the
+   caller, filters candidates with KMV sketches, and verifies them exactly.
+   Calibrated evidence classes accept a join alone only at ≥ 0.97 measured
+   precision, reject at ≤ 0.01, and leave the rest for review.
+5. **It learns from measured failures and from Studio.** Four detectors file
+   steward proposals; none edits meaning directly.
+   - Names a claim audit found misleading.
+   - Words a failed gold question used for its metric.
+   - Metrics a refused question needed: a formula is proven by compiling and
+     running it before it is proposed.
+   - Phrases at least two people used for a metric in answers they liked, on
+     threads where they allowed learning.
+6. **It exchanges releases as Open Semantic Interchange.** Export and import
+   round-trip the release with a recomputed manifest hash.
+
+### Benchmark
+
+Measured on the local governed stack with pre-registered protocols, Wilson 95%
+intervals, and paired McNemar tests.
+Full method and raw numbers: [benchmark](docs/testing/supernova/benchmark.md).
+
+| What | Result |
+| --- | --- |
+| Answer accuracy, view vocabulary (123 cases) | 120/123 with the ontology, 122/123 without (p = 0.5, no difference) |
+| Answer accuracy, business vocabulary (134 cases) | 133/134 with the ontology, 132/134 without |
+| **Learning from Studio conversations** | New words two people used became 24 aliases, all correct. Held-out questions using them went from 46/58 to **58/58** (p = 0.0005); unlearned metrics did not change ([report](docs/testing/supernova/conversation-learning.md)) |
+| Gold-set judge agreement | κ = 0.986 (0.965–1.000) on 288 balanced items; 129/129 wrong meanings caught ([report](docs/testing/supernova/judge-agreement.md)) |
+| Claim audit | 90.6% (85.0–96.2%) of ontology claims correct by consensus |
+| Automatic join accepts, 14 unseen databases | 114/115 = 99.1% (95.2–99.8%) ([report](docs/testing/supernova/join-precision.md)) |
+| Automatic join accepts, 183 Spider databases | 322/327 = 98.5% (96.5–99.3%) ([report](docs/testing/supernova/join-precision-2.md)) |
+
+Not yet proven:
+- **Join accept precision ≥ 97%.** The lower bound is still just under 97%.
+- **Rejection of joins named by role.** Automatic rejection misses 8.1% of
+  real joins whose columns are named by role (`Shipment.Planet`).
+- **Judge agreement on naturally hard cases.** Those need human labels.
 
 ## The Nova app
 
 These images are captures of a local development instance running demo sales
-data. The Studio workspace shows a saved conversation with a Sales Agent.
+data.
 
 ### SQL Workspace
 
@@ -170,18 +217,6 @@ data. The Studio workspace shows a saved conversation with a Sales Agent.
 ### Database Explorer
 
 ![Nova Database Explorer browsing the tables of a sales database](docs/assets/readme/database-explorer.png)
-
-### Nova Studio: governed intelligence workspace
-
-![Nova Studio comparing recognized revenue, gross margin, and order count by sales channel](docs/assets/readme/nova-studio-smart-revenue-preview.png)
-
-### Nova Studio capabilities
-
-![Nova Studio personal skills view](docs/assets/readme/nova-studio-capabilities.png)
-
-### Nova Studio skill upload
-
-![Nova Studio skill upload dialog over the Capabilities view](docs/assets/readme/nova-studio-skill-upload.png)
 
 ## Architecture
 
@@ -323,9 +358,10 @@ nova/
 | --- | --- |
 | Platform overview | [Product model, principles, and terminology](docs/01-overview.md) |
 | Data and SQL | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md) |
-| Semantics and business context | [Intelligence foundation](docs/28-intelligence-foundation.md) |
-| Studio and agents | [Governed Studio](docs/arch-15-governed-studio.md) |
-| Decisions and governed workflows | [Governed Studio](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md) |
+| Semantic layer | [Intelligence foundation](docs/28-intelligence-foundation.md) |
+| Business ontology | [Supernova Business Ontology](docs/arch-18-business-ontology.md), [benchmark](docs/testing/supernova/benchmark.md) |
+| Studio and agents | [Governed Studio](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md) |
+| BI and charts | [Superset](docs/arch-17-superset.md), [viz core](docs/arch-16-viz-core.md) |
 | Security and governance | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md) |
 | ML | [Native ML runtime](docs/28-native-ml-runtime.md) |
 | Operations | [Run guide](HOW_TO_RUN.md), [task manager](docs/08-task-manager.md), [NOVA_SYSTEM architecture](docs/arch-06-nova-system-database.md) |
