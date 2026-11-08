@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import copy
 import json
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import quote
 
@@ -27,6 +31,52 @@ class RangerUnavailableError(RangerError):
 
 class RangerConflictError(RangerError):
     """Ranger rejected state that conflicts with an existing object."""
+
+
+# Reads shared inside one ``read_snapshot()`` scope: one access verification
+# asks for the same policy list and user attributes once per dependency, and
+# each fetch pages the whole policy set over REST. The scope is one request's
+# unit of work, never a cache across requests, so every verification still
+# reads Ranger's current state.
+_snapshot: contextvars.ContextVar[dict[tuple, asyncio.Future] | None] = contextvars.ContextVar(
+    "ranger_read_snapshot", default=None
+)
+
+
+@asynccontextmanager
+async def read_snapshot() -> AsyncIterator[None]:
+    """Share Ranger reads made inside this scope; a nested scope joins the outer one."""
+    if _snapshot.get() is not None:
+        yield
+        return
+    token = _snapshot.set({})
+    try:
+        yield
+    finally:
+        _snapshot.reset(token)
+
+
+async def _shared_read(key: tuple, load: Callable[[], Awaitable[Any]]) -> Any:
+    reads = _snapshot.get()
+    if reads is None:
+        return await load()
+    pending = reads.get(key)
+    if pending is None:
+        pending = asyncio.ensure_future(load())
+        reads[key] = pending
+    try:
+        return await asyncio.shield(pending)
+    except BaseException:
+        # A failed read is not remembered: the next caller asks Ranger again.
+        if reads.get(key) is pending and pending.done():
+            reads.pop(key, None)
+        raise
+
+
+def _forget_reads() -> None:
+    reads = _snapshot.get()
+    if reads:
+        reads.clear()
 
 
 class RangerClient:
@@ -63,6 +113,9 @@ class RangerClient:
         params: dict[str, Any] | None = None,
         expected: tuple[int, ...] = (200,),
     ) -> Any:
+        if method != "GET":
+            # A write inside a scope must not be followed by a stale read.
+            _forget_reads()
         attempts = max(1, settings.RANGER_MAX_RETRIES + 1)
         for attempt in range(attempts):
             owned = self._external_client is None
@@ -249,6 +302,12 @@ class RangerClient:
         )
 
     async def get_user_attributes(self, username: str) -> dict[str, str]:
+        attributes = await _shared_read(
+            ("user_attributes", id(self), username), lambda: self._user_attributes(username)
+        )
+        return dict(attributes)
+
+    async def _user_attributes(self, username: str) -> dict[str, str]:
         current = await self._get_user(username)
         attributes = current.get("otherAttrsMap") or {}
         if not attributes and current.get("otherAttributes"):
@@ -266,6 +325,14 @@ class RangerClient:
         return next((dict(item) for item in users if item.get("name") == username), {})
 
     async def list_policies(self, *, page_size: int = 100) -> list[dict[str, Any]]:
+        policies = await _shared_read(
+            ("policies", id(self), settings.RANGER_SERVICE_NAME, page_size),
+            lambda: self._list_policies(page_size),
+        )
+        # Callers may edit what they receive; the shared read stays intact.
+        return copy.deepcopy(policies)
+
+    async def _list_policies(self, page_size: int) -> list[dict[str, Any]]:
         policies: list[dict[str, Any]] = []
         start = 0
         while True:

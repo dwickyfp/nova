@@ -653,7 +653,19 @@ export function UiNode({ name, p }: { name: string; p: Props }) {
     case "Table":
       return <DataTable p={p} />;
     case "Chart":
-      return <Suspense fallback={<p role="status">Loading chart…</p>}><DataChart p={p} /></Suspense>;
+      return (
+        // The chart code loads on first use. Hold the chart's own box (title
+        // row and plot) meanwhile, so the transcript does not jump when it lands.
+        <Suspense
+          fallback={
+            <p role="status" className="h-[18.25rem] text-sm text-muted-foreground">
+              Loading chart…
+            </p>
+          }
+        >
+          <DataChart p={p} />
+        </Suspense>
+      );
     case "Flashcard":
       return <Flashcard p={p} />;
     case "Celebration":

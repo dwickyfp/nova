@@ -3,6 +3,7 @@ import { useStateField } from "@openuidev/react-lang";
 import { UiRuntimeContext } from "./runtime-context";
 import { NodeArtifactButton } from "./artifact-button";
 import { DataTable } from "./components";
+import { ChartFrame } from "@/features/viz/chart-frame";
 import {
   Area,
   AreaChart,
@@ -15,7 +16,6 @@ import {
   LineChart,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Scatter,
   ScatterChart,
   Tooltip,
@@ -93,8 +93,7 @@ export default function DataChart({ p }: { p: Props }) {
         </fieldset>
       ) : null}
       {data.length ? (
-        <div className="h-64 min-w-0 [--ui-chart-edge:var(--foreground)] dark:[--ui-chart-edge:var(--card)]">
-          <ResponsiveContainer width="100%" height="100%">
+        <ChartFrame className="h-64 [--ui-chart-edge:var(--foreground)] dark:[--ui-chart-edge:var(--card)]">
             {p.type === "scatter" ? (
               <ScatterChart {...chartProps}>
                 {axes}
@@ -193,8 +192,7 @@ export default function DataChart({ p }: { p: Props }) {
                 ))}
               </BarChart>
             )}
-          </ResponsiveContainer>
-        </div>
+          </ChartFrame>
       ) : (
         <p className="text-sm text-muted-foreground">
           No rows match these filters.

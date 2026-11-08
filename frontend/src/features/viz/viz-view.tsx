@@ -13,7 +13,6 @@ import {
   PieChart,
   ReferenceDot,
   ReferenceLine,
-  ResponsiveContainer,
   Scatter,
   ScatterChart,
   Tooltip,
@@ -22,6 +21,7 @@ import {
   ZAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { ChartFrame } from "./chart-frame";
 import { formatNumber, measureCaption, measurePhrase } from "./insight";
 import type { PresModel } from "./types";
 
@@ -370,8 +370,7 @@ function Marks({
     const valueKey = geometry.series[0]?.name ?? "value";
     const nameKey = geometry.dimensions[0]?.name ?? "name";
     return (
-      <div className={cn(height, "min-w-0")}>
-        <ResponsiveContainer width="100%" height="100%">
+      <ChartFrame className={height}>
           <PieChart>
             {tooltip}
             <Pie
@@ -398,8 +397,7 @@ function Marks({
               ))}
             </Pie>
           </PieChart>
-        </ResponsiveContainer>
-      </div>
+        </ChartFrame>
     );
   }
 
@@ -419,8 +417,7 @@ function Marks({
       fill: neutral ? "var(--viz-line)" : colorForIndex(geometry, index),
     }));
     return (
-      <div className={cn(height, "min-w-0")}>
-        <ResponsiveContainer width="100%" height="100%">
+      <ChartFrame className={height}>
           <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
             {thumbnail ? null : <CartesianGrid stroke="var(--viz-grid)" />}
             <XAxis
@@ -449,8 +446,7 @@ function Marks({
               ))}
             </Scatter>
           </ScatterChart>
-        </ResponsiveContainer>
-      </div>
+        </ChartFrame>
     );
   }
 
@@ -516,8 +512,7 @@ function Marks({
     return (
       <div className="min-w-0">
         {legend}
-        <div className={cn(height, "min-w-0")}>
-          <ResponsiveContainer width="100%" height="100%">
+        <ChartFrame className={height}>
             <Chart {...shared}>
               {grid}
               {xAxis}
@@ -561,8 +556,7 @@ function Marks({
                 />
               ) : null}
             </Chart>
-          </ResponsiveContainer>
-        </div>
+          </ChartFrame>
       </div>
     );
   }
@@ -582,11 +576,10 @@ function Marks({
       ? undefined
       : geometry.chartData.length * rowHeight + 36;
     return (
-      <div
-        className={cn("min-w-0", thumbnail && "h-full")}
+      <ChartFrame
+        className={cn(thumbnail && "h-full")}
         style={chartHeight ? { height: chartHeight } : undefined}
       >
-        <ResponsiveContainer width="100%" height="100%">
           <BarChart
             layout="vertical"
             data={geometry.chartData}
@@ -649,15 +642,13 @@ function Marks({
               )}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
-      </div>
+        </ChartFrame>
     );
   }
 
   // Columns (time on the axis, or many categories) and ticks.
   return (
-    <div className={cn(height, "min-w-0")}>
-      <ResponsiveContainer width="100%" height="100%">
+    <ChartFrame className={height}>
         <BarChart {...shared}>
           {grid}
           {xAxis}
@@ -695,8 +686,7 @@ function Marks({
             </Bar>
           ))}
         </BarChart>
-      </ResponsiveContainer>
-    </div>
+      </ChartFrame>
   );
 }
 

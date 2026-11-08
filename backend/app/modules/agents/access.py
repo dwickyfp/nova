@@ -162,12 +162,35 @@ async def verify_access(
     security_context_version: int = 1,
 ) -> list[AccessItem]:
     """Check every agent dependency against Ranger policy state."""
+    from app.integrations.ranger.client import read_snapshot
+
+    # Every dependency reads the same policy set; fetch it once per check.
+    async with read_snapshot():
+        return await _verify_access(
+            agent=agent,
+            role_name=role_name,
+            username=username,
+            encrypted_password=encrypted_password,
+            session_id=session_id,
+            security_context_version=security_context_version,
+        )
+
+
+async def _verify_access(
+    *,
+    agent: dict,
+    role_name: str,
+    username: str,
+    encrypted_password: str,
+    session_id: str | None,
+    security_context_version: int,
+) -> list[AccessItem]:
     from app.modules.access_control.service import access_control_service
 
     deps = await resolve_agent_dependencies(agent)
     pins = await _semantic_pins(agent)
-    items: list[AccessItem] = []
-    for kind, name in deps:
+
+    async def check(kind: str, name: str) -> AccessItem:
         if kind in {"search_index", "feature_group"}:
             from app.modules.agents.resources import authorized_resources
 
@@ -186,17 +209,14 @@ async def verify_access(
                 if kind == "search_index"
                 else set(resources["feature_groups"])
             )
-            items.append(
-                AccessItem(
-                    kind=kind,
-                    name=name,
-                    granted=name in available,
-                    detail="Resource is accessible"
-                    if name in available
-                    else "Resource is unavailable",
-                )
+            return AccessItem(
+                kind=kind,
+                name=name,
+                granted=name in available,
+                detail="Resource is accessible"
+                if name in available
+                else "Resource is unavailable",
             )
-            continue
         if kind == "semantic_view":
             from app.modules.intelligence.semantic_views import semantic_view_service
 
@@ -222,19 +242,16 @@ async def verify_access(
                 view = await semantic_view_service.get_active_for_agent(
                     name, user, agent_id=agent.get("agent_id"),
                 )
-            items.append(
-                AccessItem(
-                    kind=kind,
-                    name=name,
-                    granted=view is not None,
-                    detail=(
-                        "Published Semantic View is accessible"
-                        if view
-                        else "Semantic View is unavailable"
-                    ),
-                )
+            return AccessItem(
+                kind=kind,
+                name=name,
+                granted=view is not None,
+                detail=(
+                    "Published Semantic View is accessible"
+                    if view
+                    else "Semantic View is unavailable"
+                ),
             )
-            continue
         effective = await access_control_service.effective_access(
             principal=username,
             active_role=role_name,
@@ -248,8 +265,29 @@ async def verify_access(
             if granted
             else f"No Ranger permission authorizes {role_name} for {kind} {name}."
         )
-        items.append(AccessItem(kind=kind, name=name, granted=granted, detail=detail))
-    return items
+        return AccessItem(kind=kind, name=name, granted=granted, detail=detail)
+
+    from app.modules.query.service import delegated_connection_for
+
+    if delegated_connection_for(username) is not None:
+        # One delegated connection serves this caller; its statements cannot overlap.
+        return [await check(kind, name) for kind, name in deps]
+    # Dependencies are independent checks: run them together, a few at a time,
+    # since each opens its own connection.
+    limit = asyncio.Semaphore(3)
+
+    async def bounded(kind: str, name: str) -> AccessItem:
+        async with limit:
+            return await check(kind, name)
+
+    results = await asyncio.gather(
+        *(bounded(kind, name) for kind, name in deps), return_exceptions=True
+    )
+    for result in results:
+        # The first failing dependency decides, as it did when checked in order.
+        if isinstance(result, BaseException):
+            raise result
+    return [result for result in results if isinstance(result, AccessItem)]
 
 
 async def access_fingerprint(agent: dict) -> str:
