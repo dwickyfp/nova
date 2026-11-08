@@ -382,6 +382,15 @@ Code: `backend/app/modules/ontology/learning.py`. API: `POST /ontology/learn`
 - **Words people used:** the recorded measure term of a gold question that
   failed becomes an alias proposal for the metric it asked for, through the
   enrichment validator.
+- **Words people used in Studio:** answers people liked, on threads where they
+  allowed learning (`CONFIG_ASSISTANT_THREADS.learning_enabled`), are read through
+  `assistant_repository.liked_answers`. Only a plan with one measure bound to an
+  approved concept counts, and a question that already names the concept is
+  skipped. A model names the words of the question that name the measure; they
+  must appear in the question verbatim. A phrase becomes an alias proposal once
+  at least `MIN_PRINCIPALS` (two) different people used it, through the same
+  validator. The proposal keeps the phrase and counts, never a question or a
+  person. Measured in `docs/testing/supernova/conversation-learning.md`.
 - **Metrics a refusal asked for:** a refused question goes to a model with the
   view's measures, columns and relationships. A proposed formula is added to a
   copy of the view, validated, compiled and executed once as the caller; only a
