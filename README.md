@@ -207,7 +207,7 @@ Not yet proven:
 
 ## The Nova app
 
-These images are captures of a local development instance running demo sales
+These images are captures of a local development instance running demo sales and retail
 data.
 
 ### SQL Workspace
@@ -217,6 +217,19 @@ data.
 ### Database Explorer
 
 ![Nova Database Explorer browsing the tables of a sales database](docs/assets/readme/database-explorer.png)
+
+### Nova Studio
+
+![Nova Studio answering "qty terjual per merek" with a table and a bar chart from a governed Semantic View](docs/assets/readme/nova-studio-chat.png)
+
+"qty terjual" is a phrase the ontology learned from two people's liked answers
+in Studio; it now names the Units sold metric.
+
+### Business Ontology
+
+![Business Ontology overview: answer accuracy, reliability, claim accuracy, calibration, and accuracy with and without the ontology](docs/assets/readme/business-ontology-overview.png)
+
+![Business Ontology concepts in release ont_rel_0008 with their units and other names](docs/assets/readme/business-ontology-concepts.png)
 
 ## Architecture
 
