@@ -58,32 +58,26 @@ describe("StudioSidebar", () => {
     expect(retry).toHaveBeenCalledOnce();
   });
 
-  it("hides News for an account without the entitlement and keeps the rest", async () => {
-    const mount = (newsEnabled: boolean) =>
-      render(
-        <TooltipProvider>
-          <StudioSidebar
-            view="chat"
-            onView={() => {}}
-            threads={[]}
-            activeThreadId={null}
-            onOpenThread={() => {}}
-            onNewChat={() => {}}
-            newsEnabled={newsEnabled}
-            open
-            onToggle={() => {}}
-          />
-        </TooltipProvider>,
-      );
-
-    const withNews = await mount(true);
-    await expect.element(withNews.getByRole("button", { name: "News" })).toBeVisible();
-    expect(withNews.getByRole("button", { name: "Decisions" }).query()).toBeNull();
-    await withNews.unmount();
-
-    const withoutNews = await mount(false);
-    await expect.element(withoutNews.getByRole("button", { name: "Artifacts" })).toBeVisible();
-    expect(withoutNews.getByRole("button", { name: "News" }).query()).toBeNull();
+  it("always lists News and never Shared with me", async () => {
+    const screen = await render(
+      <TooltipProvider>
+        <StudioSidebar
+          view="chat"
+          onView={() => {}}
+          threads={[]}
+          activeThreadId={null}
+          onOpenThread={() => {}}
+          onNewChat={() => {}}
+          open
+          onToggle={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    await expect.element(screen.getByRole("button", { name: "News" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Artifacts" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Capabilities" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Shared with me" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "Decisions" }).query()).toBeNull();
   });
 
   it("treats New chat as an action and never as the active view", async () => {

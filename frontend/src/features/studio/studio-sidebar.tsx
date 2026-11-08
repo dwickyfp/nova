@@ -8,9 +8,7 @@ import {
   Package,
   PanelLeft,
   Pencil,
-  Share2,
   Trash2,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,7 +29,7 @@ import {
 import type { AgentThread } from "@/features/agents/api";
 import { relativeUpdatedAt } from "./thread-time";
 
-export type StudioView = "chat" | "artifacts" | "dashboards" | "shared" | "capabilities" | "news";
+export type StudioView = "chat" | "artifacts" | "dashboards" | "capabilities" | "news";
 
 const NAV: {
   id: Exclude<StudioView, "chat">;
@@ -40,7 +38,6 @@ const NAV: {
 }[] = [
   { id: "news", label: "News", icon: Newspaper },
   { id: "artifacts", label: "Artifacts", icon: Package },
-  { id: "shared", label: "Shared with me", icon: Users },
   { id: "capabilities", label: "Capabilities", icon: LayoutGrid },
 ];
 
@@ -54,7 +51,6 @@ export function StudioSidebar({
   onNewChat,
   onDeleteThread,
   onRenameThread,
-  onShareThread,
   threadsLoading = false,
   threadsError = false,
   onRetryThreads,
@@ -64,10 +60,7 @@ export function StudioSidebar({
   footer,
   open,
   onToggle,
-  newsEnabled = true,
 }: {
-  /** False hides News for an account without the entitlement. */
-  newsEnabled?: boolean;
   view: StudioView;
   onView: (view: StudioView) => void;
   /** Conversations across all accessible agents, newest first. */
@@ -79,7 +72,6 @@ export function StudioSidebar({
   onDeleteThread?: (threadId: string) => void;
   /** Renames a conversation. Omit to keep titles read-only. */
   onRenameThread?: (threadId: string, title: string) => void;
-  onShareThread?: (thread: AgentThread) => void;
   threadsLoading?: boolean;
   threadsError?: boolean;
   onRetryThreads?: () => void;
@@ -158,7 +150,7 @@ export function StudioSidebar({
           open={open}
           onClick={onNewChat}
         />
-        {NAV.filter((item) => item.id !== "news" || newsEnabled).map((item) => (
+        {NAV.map((item) => (
           <SidebarNavButton
             key={item.id}
             label={item.label}
@@ -216,7 +208,6 @@ export function StudioSidebar({
                         ? (title) => onRenameThread(thread.thread_id, title)
                         : undefined
                     }
-                    onShare={onShareThread ? () => onShareThread(thread) : undefined}
                   />
                 ))}
               </ul>
@@ -302,7 +293,6 @@ function ThreadRow({
   onOpen,
   onDelete,
   onRename,
-  onShare,
 }: {
   thread: AgentThread;
   active: boolean;
@@ -310,7 +300,6 @@ function ThreadRow({
   onOpen: () => void;
   onDelete?: () => void;
   onRename?: (title: string) => void;
-  onShare?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(thread.title);
@@ -444,12 +433,6 @@ function ThreadRow({
               >
                 <Pencil aria-hidden="true" />
                 Rename
-              </DropdownMenuItem>
-            ) : null}
-            {onShare ? (
-              <DropdownMenuItem onSelect={onShare}>
-                <Share2 aria-hidden="true" />
-                Share
               </DropdownMenuItem>
             ) : null}
             {onDelete ? (

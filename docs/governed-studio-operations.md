@@ -13,8 +13,8 @@ opt-in and an authorized role execution binding. Analytical execution stays
 blocked while no isolated executor exists.
 
 API and task-worker startup logs contain a credential-free Studio
-capability snapshot. Studio's Capabilities → Business workflow view reads the
-same additive `runtime` contract from `/api/v1/agents/studio/capabilities`.
+capability snapshot. `/api/v1/agents/studio/capabilities` returns the same
+additive `runtime` contract; Studio no longer shows it as a Capabilities view.
 `available` describes whether a capability can operate with its configured
 infrastructure. It does not promise caller permission or replace policy and
 consent checks. Analysis additionally reports `executor_available`. Without an

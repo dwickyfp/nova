@@ -12,10 +12,8 @@ import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
-import { StudioShared } from "./studio-shared";
 import { StudioIntelligence } from "./studio-intelligence";
 import { NewspaperPage } from "./news/newspaper-page";
-import { ShareDialog } from "./share-dialog";
 import { flushUiStates } from "./intelligent-ui/state";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 import { pickDefaultAgent, rememberLastAgent } from "./default-agent";
@@ -103,7 +101,6 @@ function StudioAppContent() {
   const [initialPrompt, setInitialPrompt] = useState("");
   // A News story handed to Studio: its own thread, Mission and prompt.
   const [handoff, setHandoff] = useState<StudioHandoff | null>(null);
-  const [sharing, setSharing] = useState<{ id: string; title: string } | null>(null);
   // Shared with Nova's main sidebar, so the rail remembers its state whichever
   // surface set it last.
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -294,7 +291,6 @@ function StudioAppContent() {
         }
       >
         <StudioSidebar
-          newsEnabled={settingsQuery.data?.identity.news_enabled === true}
           view={view}
           onView={async (nextView) => {
             try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
@@ -318,7 +314,6 @@ function StudioAppContent() {
           onRenameThread={(threadId, title) =>
             renameThread.mutate({ threadId, title })
           }
-          onShareThread={(thread) => setSharing({ id: thread.thread_id, title: thread.title })}
           threadsLoading={threadsQuery.isLoading}
           threadsError={threadsQuery.isError && !needsRole}
           onRetryThreads={() => void threadsQuery.refetch()}
@@ -449,8 +444,6 @@ function StudioAppContent() {
             }} />
         ) : view === "artifacts" || view === "dashboards" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />
-        ) : view === "shared" ? (
-          <StudioShared />
         ) : (
           <StudioCapabilities
             onCreateWithChat={() => {
@@ -461,12 +454,6 @@ function StudioAppContent() {
         )}
         </div>
       </main>
-      <ShareDialog
-        objectType="thread"
-        objectId={sharing?.id ?? null}
-        title={sharing?.title || "Conversation"}
-        onClose={() => setSharing(null)}
-      />
     </div>
   );
 }

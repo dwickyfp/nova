@@ -49,9 +49,6 @@ vi.mock("./studio-capabilities", () => ({
 vi.mock("./studio-dashboards", () => ({
   StudioDashboards: () => <section>Dashboard workspace</section>,
 }));
-vi.mock("./studio-shared", () => ({
-  StudioShared: () => <section>Shared workspace</section>,
-}));
 
 const clients: QueryClient[] = [];
 const views: Awaited<ReturnType<typeof render>>[] = [];
@@ -87,8 +84,9 @@ beforeEach(async () => {
       username: "studio-navigation-test",
       active_role: "ANALYST",
       roles: ["ANALYST"],
-      // News is off for an account until an administrator enables it.
-      news_enabled: true,
+      // News is listed whether or not the account has it switched on; the
+      // page explains an account without it.
+      news_enabled: false,
     },
     preferences: {},
   } as never);

@@ -31,7 +31,6 @@ import { skillsApi, studioApi, type Skill } from "@/features/agents/api";
 import { SkillEditor } from "./skill-editor";
 import { skillDocument } from "./skill-document";
 import { SkillUpload } from "./skill-upload";
-import { StudioRuntimeCapabilitiesPanel } from "./studio-runtime-capabilities";
 
 export function StudioCapabilities({
   onCreateWithChat,
@@ -94,7 +93,6 @@ export function StudioCapabilities({
             {[
               { id: "skills", label: "Skills" },
               { id: "connectors", label: "MCP Connectors" },
-              { id: "business", label: "Business workflow" },
             ].map((item) => (
               <Button
                 key={item.id}
@@ -123,11 +121,7 @@ export function StudioCapabilities({
           >
             <div>
               <h2 id="capability-heading" className="text-lg font-heading">
-                {tab === "skills"
-                  ? "Your skills"
-                  : tab === "business"
-                    ? "Business capabilities"
-                    : "MCP Connectors"}
+                {tab === "skills" ? "Your skills" : "MCP Connectors"}
               </h2>
               {tab === "connectors" ? (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -135,7 +129,7 @@ export function StudioCapabilities({
                 </p>
               ) : null}
             </div>
-            {tab !== "business" && tab !== "schedules" ? (
+            {tab !== "schedules" ? (
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 <div className="relative min-w-0 flex-1 sm:w-40">
                   <Search
@@ -250,24 +244,6 @@ export function StudioCapabilities({
                     </Button>
                   </SkillCreateMenu>
                 </div>
-              )}
-            </section>
-          ) : tab === "business" ? (
-            <section aria-labelledby="capability-heading">
-              {caps.isPending ? (
-                <p
-                  role="status"
-                  className="py-10 text-sm text-muted-foreground"
-                >
-                  Loading business capabilities…
-                </p>
-              ) : caps.isError ? (
-                <LoadError
-                  label="Business capabilities could not be loaded."
-                  retry={() => void caps.refetch()}
-                />
-              ) : (
-                <StudioRuntimeCapabilitiesPanel runtime={caps.data?.runtime} />
               )}
             </section>
           ) : (

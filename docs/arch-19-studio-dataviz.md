@@ -286,6 +286,13 @@ assistant's header (61px, the bar's height) then read as one top bar.
   sit in Studio's own 56px band above both columns, as before.
 - While Superset is still loading, the last placement is kept so the layout
   does not jump.
+- The assistant panel slides rather than appearing and disappearing. On wide
+  screens its wrapper's width animates (200ms, ease-in-out, the Console
+  assistant dock's motion) and Superset narrows with it; on phones it slides
+  over the dashboard from the right while the backdrop fades. It stays
+  mounted, so the conversation survives, and a closed panel is `inert`. The
+  transition pauses while the edge is dragged, is off under reduced motion,
+  and the docked group re-measures when it ends.
 
 ## Lean deployment
 
