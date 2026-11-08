@@ -8,21 +8,22 @@ const TABS: { id: StudioTab; label: string }[] = [
 ];
 
 /**
- * Studio's two workspaces as one segmented control: Agent (the native chat)
- * and Dataviz (Superset with Nova's assistant). Arrow keys move between them,
- * as in any tab list.
+ * Studio's two workspaces as one floating segmented control: Agent (the
+ * native chat) and Dataviz (Superset with Nova's assistant). It floats over
+ * the workspace instead of taking a header row; the selected plate slides
+ * between the two tabs. Arrow keys move between them, as in any tab list.
  */
 export function StudioTabs({ tab, onSelect }: { tab: StudioTab; onSelect: (tab: StudioTab) => void }) {
+  const index = TABS.findIndex((item) => item.id === tab);
   return (
-    <div className="flex shrink-0 justify-center px-4 pt-3 pb-2">
+    <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
       <div
         role="tablist"
         aria-label="Studio workspace"
-        className="inline-flex items-center gap-1 rounded-full border bg-card p-1 shadow-sm"
+        className="nova-mode-switch pointer-events-auto relative grid grid-cols-2 rounded-full p-1"
         onKeyDown={(event) => {
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
           event.preventDefault();
-          const index = TABS.findIndex((item) => item.id === tab);
           const next = TABS[(index + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
           onSelect(next.id);
           window.requestAnimationFrame(() =>
@@ -30,6 +31,11 @@ export function StudioTabs({ tab, onSelect }: { tab: StudioTab; onSelect: (tab: 
           );
         }}
       >
+        <span
+          aria-hidden="true"
+          className="nova-mode-plate absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full"
+          style={{ transform: `translateX(${index * 100}%)` }}
+        />
         {TABS.map((item) => {
           const selected = item.id === tab;
           return (
@@ -42,11 +48,9 @@ export function StudioTabs({ tab, onSelect }: { tab: StudioTab; onSelect: (tab: 
               tabIndex={selected ? 0 : -1}
               onClick={() => onSelect(item.id)}
               className={cn(
-                "min-h-8 min-w-24 rounded-full px-4 text-sm font-medium transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                selected
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                "relative h-8 w-24 rounded-full text-sm font-medium transition-colors duration-200",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                selected ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {item.label}

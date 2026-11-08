@@ -20,6 +20,9 @@ import {
   type ToolEvidence,
 } from "./evidence-health";
 
+/** Finish reasons that end a turn normally: an answer, or a question back. */
+const FINISHED = new Set(["stop", "clarification"]);
+
 export type StudioAssistantEvent = AssistantEvent;
 
 /** A tool call with the id this conversation uses to resolve it. */
@@ -199,9 +202,10 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
     for (const step of message.steps ?? []) {
       switch (step.kind) {
         case "turn_outcome":
-          open.stopReason = step.finish_reason === "stop" ? undefined : step.finish_reason;
+          // A question back to the user is a finished answer, not a failed run.
+          open.stopReason = FINISHED.has(step.finish_reason) ? undefined : step.finish_reason;
           if (step.finish_reason === "cancelled") open.state = "cancelled";
-          else if (step.finish_reason && step.finish_reason !== "stop")
+          else if (step.finish_reason && !FINISHED.has(step.finish_reason))
             open.state = "error";
           break;
         case "dashboard":
@@ -941,8 +945,7 @@ export function applyEvent(
               : event.finish_reason === "cancelled"
                 ? "cancelled"
                 : turn.state,
-          stopReason:
-            event.finish_reason === "stop" ? undefined : event.finish_reason,
+          stopReason: FINISHED.has(event.finish_reason) ? undefined : event.finish_reason,
           tokens: event.total_tokens ?? turn.tokens,
           messageId: event.message_id,
           inputTokens: event.prompt_tokens ?? turn.inputTokens,

@@ -1,4 +1,5 @@
 import { threadTitle } from "./thread-title";
+import { clientTimeZone, daypartAt, GREETING, hourIn, type Daypart } from "./greeting";
 import {
   memo,
   useCallback,
@@ -386,11 +387,27 @@ export function StudioChat({
     return () => observer.disconnect();
   }, []);
 
+  // Grow the composer with its text. An empty composer keeps its CSS height:
+  // measuring the placeholder before layout settles (a hidden tab, a pane
+  // still sizing) left it clipped or several lines tall. Width changes
+  // re-measure, since wrapping changes the height.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    const fit = () => {
+      el.style.height = "";
+      if (!el.value || el.clientWidth === 0) return;
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    };
+    fit();
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [input]);
 
   const ensureThread = useCallback(
@@ -794,6 +811,8 @@ export function StudioChat({
               "mx-auto w-full px-4 sm:px-6",
               variant === "panel" ? "px-3 sm:px-4" : 'max-w-3xl',
               welcome ? "my-auto shrink-0 py-6 sm:py-12" : "py-8 sm:py-10",
+              // The full Studio chat sits under the floating workspace tabs.
+              variant !== "panel" && "pt-16 sm:pt-16",
             )}
           >
             {agent && loadingThread && empty ? (
@@ -814,7 +833,10 @@ export function StudioChat({
             ) : !agent && noAgents ? (
               <NoAgentState />
             ) : variant === "panel" && (empty || !agent) ? (
-              <DatavizGreeting onPick={agent ? (text) => void send(text) : undefined} />
+              <DatavizGreeting
+                displayName={displayName}
+                onPick={agent ? (text) => void send(text) : undefined}
+              />
             ) : empty || !agent ? (
               <>
                 <Greeting displayName={displayName} />
@@ -1058,22 +1080,34 @@ const TurnView = memo(function TurnView({
 });
 
 
+/** The client's daypart, re-read each minute so an open tab crosses noon or 18:00 on time. */
+function useClientDaypart(): Daypart {
+  const read = () => daypartAt(hourIn(new Date(), clientTimeZone()));
+  const [daypart, setDaypart] = useState(read);
+  useEffect(() => {
+    const timer = window.setInterval(() => setDaypart(read()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return daypart;
+}
+
 function Greeting({ displayName }: { displayName?: string | null }) {
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const daypart = useClientDaypart();
   const name = displayName?.trim();
+  // One heading in two lines that rise a beat apart. The greeting carries the
+  // sky of its hour (sunrise, daylight, dusk); the question stays quiet.
   return (
-    <div className="text-left">
-      <h1 className="text-3xl leading-tight font-normal text-foreground sm:text-4xl">
-        {greeting}
-        {name ? `, ${name}` : ""}
-      </h1>
-      {/* Brick red stays for actions; the question reads as the greeting's quiet second line. */}
-      <p className="mt-2 text-2xl leading-tight font-normal text-muted-foreground sm:text-4xl">
+    <h1 className="text-left text-[2rem] leading-[1.15] font-normal tracking-[-0.02em] text-balance sm:text-[2.75rem]">
+      <span className="nova-welcome-line block">
+        <span className="nova-greeting-ink" data-daypart={daypart}>
+          {GREETING[daypart]}
+          {name ? `, ${name}` : ""}
+        </span>
+      </span>
+      <span className="nova-welcome-line block text-muted-foreground">
         What would you like to work on?
-      </p>
-    </div>
+      </span>
+    </h1>
   );
 }
 
@@ -1093,33 +1127,48 @@ function NoAgentState() {
   );
 }
 
-/** The Dataviz assistant's empty state: what it can answer about the dashboard. */
-function DatavizGreeting({ onPick }: { onPick?: (text: string) => void }) {
+/**
+ * The Dataviz assistant's empty state, in the Agent greeting's voice and ink,
+ * sized for the side panel: the question names what it answers about.
+ */
+function DatavizGreeting({
+  displayName,
+  onPick,
+}: {
+  displayName?: string | null;
+  onPick?: (text: string) => void;
+}) {
+  const daypart = useClientDaypart();
+  const name = displayName?.trim();
   const questions = [
     "Dashboard ini tentang apa?",
     "Data di dashboard ini dari mana?",
-    "Kenapa angkanya turun?",
+    "Kenapa angkanya berubah bulan ini?",
   ];
   return (
-    <section aria-label="Dataviz assistant" className="py-6">
-      <h2 className="text-base font-semibold">Ask about this dashboard</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Nova reads the dashboard on screen, its sources and business definitions, and
-        asks before it changes anything.
-      </p>
+    <section aria-label="Dataviz assistant" className="py-2">
+      <h1 className="text-left text-2xl leading-[1.2] font-normal tracking-[-0.01em] text-balance">
+        <span className="nova-welcome-line block">
+          <span className="nova-greeting-ink" data-daypart={daypart}>
+            {GREETING[daypart]}
+            {name ? `, ${name}` : ""}
+          </span>
+        </span>
+        <span className="nova-welcome-line block text-muted-foreground">
+          What would you like to know?
+        </span>
+      </h1>
       {onPick ? (
-        <div className="mt-4 flex flex-col items-start gap-2">
+        <div className="nova-welcome-follow mt-6 grid gap-2">
           {questions.map((question) => (
-            <Button
+            <button
               key={question}
               type="button"
-              variant="outline"
-              size="sm"
-              className="h-auto whitespace-normal py-1.5 text-left"
               onClick={() => onPick(question)}
+              className="flex min-h-12 items-center rounded-xl border bg-card px-4 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {question}
-            </Button>
+            </button>
           ))}
         </div>
       ) : null}
@@ -1142,28 +1191,26 @@ function SuggestedQuestions({
 
   return (
     <>
-      <section aria-label="Suggested questions" className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4 sm:px-6">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h2 className="text-xs font-medium text-muted-foreground">Suggested questions</h2>
-          {questions.length > 4 ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setAllOpen(true)}>
-              View all ({questions.length})
-            </Button>
-          ) : null}
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {/* Shares the greeting's left edge: no padding of its own inside the transcript column. */}
+      <section aria-label="Suggested questions" className="nova-welcome-follow mt-8 w-full sm:mt-10">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {questions.slice(0, 4).map((question) => (
             <button
               key={question}
               type="button"
               title={question}
               onClick={() => pick(question)}
-              className="rounded-lg border bg-card px-3 py-2.5 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-16 items-center rounded-xl border bg-card px-4 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="line-clamp-2">{question}</span>
             </button>
           ))}
         </div>
+        {questions.length > 4 ? (
+          <Button type="button" variant="ghost" size="sm" className="mt-2 -ml-3 text-muted-foreground" onClick={() => setAllOpen(true)}>
+            View all ({questions.length})
+          </Button>
+        ) : null}
       </section>
       {questions.length > 4 ? (
         <Dialog open={allOpen} onOpenChange={setAllOpen}>

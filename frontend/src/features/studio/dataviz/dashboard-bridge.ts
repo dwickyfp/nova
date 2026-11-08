@@ -22,9 +22,16 @@ export type DatavizFrameState = {
   path: string | null;
   dashboardId: number | null;
   nativeFiltersKey: string | null;
+  /** The open dashboard's name, as Superset titles its own page. */
+  title: string | null;
 };
 
-const EMPTY: DatavizFrameState = { path: null, dashboardId: null, nativeFiltersKey: null };
+const EMPTY: DatavizFrameState = {
+  path: null,
+  dashboardId: null,
+  nativeFiltersKey: null,
+  title: null,
+};
 const DASHBOARD = /^\/bi\/superset\/dashboard\/(\d+)\/?/;
 const FILTER_KEY = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -42,7 +49,24 @@ export function parseFramePath(path: string | null): DatavizFrameState {
     path,
     dashboardId: match ? Number(match[1]) : null,
     nativeFiltersKey: key && FILTER_KEY.test(key) ? key : null,
+    title: null,
   };
+}
+
+/** The dashboard's name from the framed page's title ("Sales | Superset"). */
+function framedTitle(node: HTMLIFrameElement | null): string | null {
+  try {
+    const raw = node?.contentDocument?.title?.trim() ?? "";
+    const title = raw.replace(/\s*\|\s*Superset$/i, "").trim();
+    return title && !/^superset$/i.test(title) ? title.slice(0, 120) : null;
+  } catch {
+    return null;
+  }
+}
+
+function read(node: HTMLIFrameElement): DatavizFrameState {
+  const next = parseFramePath(framedPath(node));
+  return next.dashboardId ? { ...next, title: framedTitle(node) } : next;
 }
 
 function framedPath(node: HTMLIFrameElement | null): string | null {
@@ -60,7 +84,8 @@ function publish(next: DatavizFrameState) {
   if (
     next.path === state.path &&
     next.dashboardId === state.dashboardId &&
-    next.nativeFiltersKey === state.nativeFiltersKey
+    next.nativeFiltersKey === state.nativeFiltersKey &&
+    next.title === state.title
   )
     return;
   state = next;
@@ -70,12 +95,12 @@ function publish(next: DatavizFrameState) {
 /** Register the Dataviz frame; ``null`` when it unmounts. */
 export function attachDatavizFrame(node: HTMLIFrameElement | null) {
   frame = node;
-  publish(node ? parseFramePath(framedPath(node)) : EMPTY);
+  publish(node ? read(node) : EMPTY);
 }
 
 /** Re-read the frame's location (Superset routes client-side without loads). */
 export function syncDatavizFrame(): DatavizFrameState {
-  if (frame) publish(parseFramePath(framedPath(frame)));
+  if (frame) publish(read(frame));
   return state;
 }
 

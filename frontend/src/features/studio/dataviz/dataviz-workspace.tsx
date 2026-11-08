@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, MessageSquareText, PanelRightClose, RotateCw } from "lucide-react";
+import { ArrowUpRight, PanelRightClose, Sparkle, SquarePen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,7 +14,6 @@ import {
   attachDatavizFrame,
   datavizFrameState,
   probeUnsavedChanges,
-  reloadDatavizFrameIfClean,
   syncDatavizFrame,
   useDatavizFrameState,
 } from "./dashboard-bridge";
@@ -141,51 +140,25 @@ export function DatavizWorkspace({
 
   const panelOpen = panel.open;
   return (
-    <div className="relative flex h-full min-h-0 w-full">
-      <section aria-label="Dataviz" className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center justify-end gap-1 px-3 pb-2 md:pb-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                aria-label="Reload Dataviz"
-                onClick={() => {
-                  if (!reloadDatavizFrameIfClean())
-                    toast.error("Save or discard your Dataviz changes before reloading.");
-                }}
-              >
-                <RotateCw aria-hidden="true" className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Reload</TooltipContent>
-          </Tooltip>
-          <Button variant="ghost" size="sm" className="h-8" asChild>
-            <a
-              href={`/bi-launch?next=${encodeURIComponent(frame.path ?? source)}`}
-              target="_blank"
-              rel="noopener"
-            >
-              <ExternalLink aria-hidden="true" className="mr-1.5 size-4" />
-              Open in new tab
-            </a>
-          </Button>
-          <Button
+    // Both columns start on one line below the floating Studio tabs, so the
+    // frame's top edge and the assistant's header share one horizontal rule.
+    <div className="relative flex h-full min-h-0 w-full pt-14">
+      {!panelOpen ? (
+        <div className="nova-mode-switch absolute top-3 right-4 z-20 rounded-full p-1">
+          <button
             type="button"
-            variant={panelOpen ? "secondary" : "outline"}
-            size="sm"
-            className="h-8"
-            aria-expanded={panelOpen}
+            aria-expanded={false}
             aria-controls="dataviz-assistant"
-            onClick={() => setPanel((current) => ({ ...current, open: !current.open }))}
+            onClick={() => setPanel((current) => ({ ...current, open: true }))}
+            className="flex h-8 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <MessageSquareText aria-hidden="true" className="mr-1.5 size-4" />
+            <Sparkle aria-hidden="true" className="size-4" strokeWidth={1.5} />
             Assistant
-          </Button>
+          </button>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-lg border-t border-l bg-background">
+      ) : null}
+      <section aria-label="Dataviz" className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t bg-background">
           <BiFrame ref={setFrame} path={source} title="Dataviz" onLoad={() => syncDatavizFrame()} holdsEdits />
         </div>
       </section>
@@ -204,7 +177,7 @@ export function DatavizWorkspace({
         hidden={!panelOpen}
         style={isMobile ? undefined : { width: panel.width }}
         className={cn(
-          "flex min-h-0 flex-col border-l bg-background",
+          "flex min-h-0 flex-col border-t border-l bg-background",
           isMobile ? "absolute inset-y-0 right-0 z-40 w-[min(100%,28rem)] shadow-lg" : "relative shrink-0",
         )}
       >
@@ -230,47 +203,56 @@ export function DatavizWorkspace({
             className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         ) : null}
-        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-          <p className="min-w-0 flex-1 truncate text-sm font-medium">Nova assistant</p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => {
-              const open = datavizFrameState();
-              onContinueInAgent(
-                open.dashboardId
-                  ? `Lanjutkan analisis dashboard Dataviz #${open.dashboardId}: `
-                  : "",
-              );
-            }}
-          >
-            Continue in Agent
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => {
-              setThreadId(null);
-              setNewChatNonce((value) => value + 1);
-            }}
-          >
-            New chat
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            aria-label="Close assistant"
-            onClick={() => setPanel((current) => ({ ...current, open: false }))}
-          >
-            <PanelRightClose aria-hidden="true" className="size-4" />
-          </Button>
-        </div>
+        {/* As tall as Superset's own header (61px with its rule), so both rules meet. */}
+        <header className="flex h-[61px] shrink-0 items-center gap-3 border-b pr-2 pl-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-medium text-foreground">Assistant</h2>
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  frame.dashboardId ? "bg-success" : "bg-muted-foreground/40",
+                )}
+              />
+              <span className="truncate">
+                {frame.dashboardId
+                  ? `Reading ${frame.title ?? `dashboard ${frame.dashboardId}`}`
+                  : "Open a dashboard to ask about it"}
+              </span>
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <HeaderAction
+              label="New chat"
+              onClick={() => {
+                setThreadId(null);
+                setNewChatNonce((value) => value + 1);
+              }}
+            >
+              <SquarePen aria-hidden="true" className="size-4" strokeWidth={1.5} />
+            </HeaderAction>
+            <HeaderAction
+              label="Continue in Agent"
+              onClick={() => {
+                const open = datavizFrameState();
+                onContinueInAgent(
+                  open.dashboardId
+                    ? `Lanjutkan analisis dashboard Dataviz #${open.dashboardId}: `
+                    : "",
+                );
+              }}
+            >
+              <ArrowUpRight aria-hidden="true" className="size-4" strokeWidth={1.5} />
+            </HeaderAction>
+            <HeaderAction
+              label="Close assistant"
+              onClick={() => setPanel((current) => ({ ...current, open: false }))}
+            >
+              <PanelRightClose aria-hidden="true" className="size-4" strokeWidth={1.5} />
+            </HeaderAction>
+          </div>
+        </header>
         <div className="flex min-h-0 flex-1 flex-col">
           <StudioChat
             variant="panel"
@@ -287,5 +269,34 @@ export function DatavizWorkspace({
         </div>
       </aside>
     </div>
+  );
+}
+
+/** A quiet icon action in the assistant's header, named by its tooltip. */
+function HeaderAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }

@@ -342,10 +342,10 @@ function StudioAppContent() {
         />
       </div>
 
-      <main aria-label={tab === "dataviz" ? "Nova Studio Dataviz" : view === "chat" ? "Nova Studio chat" : view} className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <main aria-label={tab === "dataviz" ? "Nova Studio Dataviz" : view === "chat" ? "Nova Studio chat" : view} className="shell-pane relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         <StudioTabs tab={tab} onSelect={selectTab} />
         {needsRole ? (
-          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <div role="status" className="mt-14 flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <span>Choose a role to see your data and conversations.</span>
             {roleChoices.slice(0, 4).map((role) => (
               <Button key={role} type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void chooseRole(role)}>
@@ -355,7 +355,7 @@ function StudioAppContent() {
             {roleChoices.length > 4 ? <span>More roles are in the account menu.</span> : null}
           </div>
         ) : agentsQuery.isError ? (
-          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <div role="status" className="mt-14 flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <span>Your agents could not load.</span>
             <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>
               Retry

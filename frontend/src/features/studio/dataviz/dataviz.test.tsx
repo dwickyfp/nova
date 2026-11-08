@@ -6,7 +6,12 @@ import "@/styles/index.css";
 import { ApiError } from "@/lib/api-client";
 import { StudioTabs } from "../studio-tabs";
 import { AddToDatavizButton } from "./add-to-dataviz";
-import { parseFramePath, probeUnsavedChanges } from "./dashboard-bridge";
+import {
+  attachDatavizFrame,
+  parseFramePath,
+  probeUnsavedChanges,
+  syncDatavizFrame,
+} from "./dashboard-bridge";
 
 const dataviz = vi.hoisted(() => ({ check: vi.fn(), dashboards: vi.fn(), publish: vi.fn() }));
 vi.mock("./api", async (importOriginal) => ({
@@ -167,5 +172,31 @@ describe("the Dataviz assistant composer", () => {
     await panel.unmount();
     const agentTab = await render(<Composer {...props} />);
     await expect.element(agentTab.getByText("Nova Dataviz assistant")).toBeVisible();
+  });
+});
+
+describe("the dashboard the assistant reads", () => {
+  function framed(path: string, title: string) {
+    const [pathname, search = ""] = path.split("?");
+    return {
+      contentWindow: { location: { pathname, search: search ? `?${search}` : "" } },
+      contentDocument: { title },
+    } as unknown as HTMLIFrameElement;
+  }
+
+  afterEach(() => attachDatavizFrame(null));
+
+  it("takes the open dashboard's name from Superset's page title", () => {
+    attachDatavizFrame(framed("/bi/superset/dashboard/16/", "Dataviz 5W1H eval"));
+    expect(syncDatavizFrame()).toMatchObject({ dashboardId: 16, title: "Dataviz 5W1H eval" });
+    attachDatavizFrame(framed("/bi/superset/dashboard/16/", "Sales | Superset"));
+    expect(syncDatavizFrame().title).toBe("Sales");
+  });
+
+  it("names nothing outside a dashboard or before Superset titles it", () => {
+    attachDatavizFrame(framed("/bi/explore/", "Revenue chart"));
+    expect(syncDatavizFrame().title).toBeNull();
+    attachDatavizFrame(framed("/bi/superset/dashboard/16/", "Superset"));
+    expect(syncDatavizFrame().title).toBeNull();
   });
 });
