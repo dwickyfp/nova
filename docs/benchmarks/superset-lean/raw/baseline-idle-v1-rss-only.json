@@ -1,0 +1,161 @@
+{
+  "label": "baseline-idle",
+  "started_at": "2026-11-08T11:39:12.606701+00:00",
+  "minutes": 10.0,
+  "interval_s": 5,
+  "containers": [
+    "nova-superset",
+    "nova-superset-worker",
+    "nova-superset-beat",
+    "nova-superset-db"
+  ],
+  "per_container": {
+    "nova-superset": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 2.11,
+        "p95": 7.77,
+        "max": 41.67
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 13.76,
+        "p95": 14.83,
+        "max": 23.33
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 19.98,
+        "p95": 20.28,
+        "max": 33.47
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 14.88,
+        "p95": 14.99,
+        "max": 25.61
+      }
+    },
+    "nova-superset-worker": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 37.8,
+        "p95": 118.11,
+        "max": 157.53
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 173.82,
+        "p95": 309.0,
+        "max": 423.2
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 247.34,
+        "p95": 471.42,
+        "max": 636.24
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 177.19,
+        "p95": 378.12,
+        "max": 440.67
+      }
+    },
+    "nova-superset-beat": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 0.23,
+        "p95": 0.0,
+        "max": 9.27
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 9.09,
+        "p95": 9.58,
+        "max": 9.83
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 14.65,
+        "p95": 15.18,
+        "max": 15.2
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 10.53,
+        "p95": 10.93,
+        "max": 10.96
+      }
+    },
+    "nova-superset-db": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 2.03,
+        "p95": 10.47,
+        "max": 20.07
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 8.77,
+        "p95": 11.15,
+        "max": 12.18
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 2.73,
+        "p95": 2.9,
+        "max": 5.74
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 0.8,
+        "p95": 0.84,
+        "max": 2.27
+      }
+    }
+  },
+  "total": {
+    "cpu_pct": {
+      "n": 120,
+      "mean": 42.17,
+      "p95": 136.53,
+      "max": 158.69
+    },
+    "docker_mem_mib": {
+      "n": 120,
+      "mean": 205.45,
+      "p95": 341.42,
+      "max": 454.06
+    },
+    "pss_mib": {
+      "n": 120,
+      "mean": 203.4,
+      "p95": 403.15,
+      "max": 466.55
+    }
+  },
+  "images_mib": {
+    "nova-superset:local": 1969.8,
+    "apache/superset:6.1.0": null,
+    "postgres:16.10-alpine": 254.6,
+    "redis:7-alpine": 37.6
+  },
+  "environment": {
+    "host": {
+      "platform": "macOS-27.0.1-arm64-arm-64bit",
+      "machine": "arm64",
+      "cpu": "Apple M3",
+      "host_mem_gib": 16.0
+    },
+    "docker": {
+      "server_version": "29.8.2",
+      "vm_cpus": 8,
+      "vm_mem_gib": 7.8,
+      "os": "OrbStack"
+    },
+    "image_ids": {
+      "nova-superset:local": "sha256:81a69921fb7dc5e2c9e6300b530069e87fccc8c63a93b2a59fbc4345c5ffa86b"
+    }
+  }
+}

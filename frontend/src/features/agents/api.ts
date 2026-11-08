@@ -298,8 +298,17 @@ export const agentsApi = {
     ),
 };
 
+/** The Dataviz page a turn is asked from; the server verifies every field. */
+export type DatavizTurnContext = {
+  dashboard_id: number | null;
+  native_filters_key: string | null;
+  edit_state: "clean" | "dirty" | "unknown";
+  path: string | null;
+};
+
 export type StreamAgentTurnOptions = {
   uiAction?: import('../studio/intelligent-ui/types').UiAction;
+  dataviz?: DatavizTurnContext | null;
   signal?: AbortSignal;
   onEvent: (event: AssistantEvent) => void;
   role?: string | null;
@@ -323,7 +332,7 @@ export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId, uiAction }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId, uiAction, dataviz }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -334,7 +343,8 @@ export async function streamAgentTurn(
         Accept: "text/event-stream",
       }),
       body: JSON.stringify({ content, role, model, provider_id: providerId, attachments,
-        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId, ui_action: uiAction }),
+        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId, ui_action: uiAction,
+        ...(dataviz ? { dataviz } : {}) }),
       signal,
     },
   );

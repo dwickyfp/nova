@@ -20,6 +20,16 @@ const searchSchema = z.object({
   story: z.string().max(64).optional(),
   edition: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   desk: z.enum(['alerts']).optional(),
+  // Top-level workspace. Independent of `view`, which stays the Agent tab's
+  // sidebar view, so every older Studio URL keeps its meaning.
+  tab: z.enum(['agent', 'dataviz']).optional().catch(undefined),
+  // The Superset page shown in Dataviz; only `/bi/` paths are kept.
+  bi: z
+    .string()
+    .max(512)
+    .refine((value) => value.startsWith('/bi/') && !value.startsWith('//'))
+    .optional()
+    .catch(undefined),
 })
 
 export const Route = createFileRoute('/studio')({

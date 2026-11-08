@@ -14,7 +14,7 @@ import logging
 from flask import Flask, abort, jsonify, redirect, request
 from flask_login import current_user, login_user, logout_user
 
-from nova_superset import client, context, metrics
+from nova_superset import client, context, metrics, role_scope
 from nova_superset.semantic_guard import guard as semantic_guard
 from nova_superset.security import launch_url
 
@@ -83,9 +83,10 @@ def sign_in():
 
 
 def _undo_double_logo_prefix(app: Flask) -> None:
-    """Superset 6.1.0 prefixes the theme logo with the app root on the server
-    and again in the browser, which requests ``/bi/bi/static/...``. Keep the
-    server-side value unprefixed so the browser adds the root once.
+    """Superset 6.1.0 prefixes the theme logo and its link with the app root on
+    the server and again in the browser, which requests ``/bi/bi/static/...``
+    and links to ``/bi/bi``. Keep the server-side values unprefixed so the
+    browser adds the root once.
     """
     root = app.config.get("APPLICATION_ROOT") or "/"
     if root == "/":
@@ -95,11 +96,16 @@ def _undo_double_logo_prefix(app: Flask) -> None:
         logo = token.get("brandLogoUrl", "")
         if logo.startswith(f"{root}/static/"):
             token["brandLogoUrl"] = logo[len(root) :]
+        # The logo's link target gets the same double prefix (``/bi/bi``).
+        target = token.get("brandLogoHref") or ""
+        if target == root or target.startswith(f"{root}/"):
+            token["brandLogoHref"] = target[len(root) :] or "/"
 
 
 def init_app(app: Flask) -> None:
     _undo_double_logo_prefix(app)
     metrics.init_app(app)
+    role_scope.init_app()
     app.before_request(sign_in)
     app.before_request(semantic_guard)
     app.teardown_request(lambda _exc: context.clear())

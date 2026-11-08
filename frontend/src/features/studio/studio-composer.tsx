@@ -69,8 +69,11 @@ export const Composer = ({
   agents,
   onSelectAgent,
   sendDisabled = false,
+  agentPicker = true,
 }: {
   sendDisabled?: boolean;
+  /** False where Nova picks the agent itself (the Dataviz assistant). */
+  agentPicker?: boolean;
   ref: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
   onChange: (v: string) => void;
@@ -162,9 +165,11 @@ export const Composer = ({
             <Plus aria-hidden="true" className="size-4" strokeWidth={1} />
           </Button>
 
-          <AgentPicker agent={agent} agents={agents}
-            disabled={streaming || readingFiles}
-            onSelectAgent={onSelectAgent} />
+          {agentPicker ? (
+            <AgentPicker agent={agent} agents={agents}
+              disabled={streaming || readingFiles}
+              onSelectAgent={onSelectAgent} />
+          ) : null}
 
           <div className="flex-1" />
           {onResearch ? (

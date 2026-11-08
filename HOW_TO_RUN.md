@@ -438,6 +438,36 @@ Superset tampil di dalam frame Nova. Versi layar penuh ada di
 sendiri. Role yang boleh membuat chart/dataset diatur `ACCOUNTADMIN` lewat
 `PUT /api/v1/superset/author-roles`; role lain mendapat akses lihat saja.
 
+#### Studio Dataviz
+
+Di Studio, tab **Dataviz** membuka Superset lengkap (`/bi/`) di samping panel
+**Assistant** ([arsitektur](docs/arch-19-studio-dataviz.md)). Hasil di tab
+Agent yang bisa dibuat ulang di Superset menampilkan tombol **Add to Dataviz**;
+hasil lain tidak menampilkan tombol apa pun. Asisten panel tidak memilih agent:
+ia menjawab dari dataset dashboard yang terbuka, dengan filter dashboard yang
+terverifikasi, dan meminta persetujuan sebelum mengubah dashboard.
+
+Dashboard Dataviz tidak di-share: dashboard baru menempel pada role Nova aktif
+pembuatnya dan terlihat oleh semua orang di role itu (Superset
+`DASHBOARD_RBAC`, role `Nova role <ROLE>`). Datanya tetap mengikuti Ranger
+masing-masing penonton.
+
+Bila backend berjalan di host (`./dev.sh`), `docker-compose.dev.yml` mengarahkan
+Superset ke backend host lewat `host.docker.internal`, dan `dev.sh` membaca
+`SUPERSET_SERVICE_TOKEN` dari container `nova-superset`. Image dibangun dua
+target: `web` (`nova-superset:local`, tanpa browser) untuk web dan beat, `jobs`
+(`nova-superset-jobs:local`, dengan Playwright) untuk worker:
+
+```bash
+docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml build superset-init superset-worker
+docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml up -d --no-build superset-init superset superset-worker superset-beat
+```
+
+Cek deployment: `UV_NO_SYNC=1 uv run python ../superset/bench/lean_smoke.py`
+(dari `backend/`). Uji kualitas asisten 5W+1H:
+`uv run python -m tests.benchmark.dataviz_assistant.run ask --out <file>`
+(lihat [hasilnya](docs/benchmarks/dataviz-assistant/README.md)).
+
 Pekerjaan background Superset (alert, report, thumbnail, SQL Lab async)
 berjalan di `superset-worker` dan `superset-beat`. Alert dan report berjalan
 sebagai pemiliknya lewat akun worker yang sama dengan task terjadwal

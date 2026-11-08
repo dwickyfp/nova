@@ -28,15 +28,13 @@ import {
   studioApi,
   type Agent,
   type AgentMessage,
+  type DatavizTurnContext,
 } from "@/features/agents/api";
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
 import { ConsentCard } from "./consent-card";
 import { TurnContent } from "./turn-content";
 import { flushUiStates } from './intelligent-ui/state';
 import type { UiAction } from './intelligent-ui/types';
-import { findArtifactSql, type SavableContent } from "./artifact-source";
-import { descriptorToVegaLite } from "./artifact-chart-descriptor";
-import { splitChartTitle } from "./chart-title";
 import {
   CREATE_SKILL_COMMAND,
   SKILL_AUTHOR_ID,
@@ -93,6 +91,8 @@ export function StudioChat({
   initialPrompt = "",
   handoff = null,
   noAgents = false,
+  variant = "full",
+  datavizContext,
 }: {
   agent: Agent | null;
   agents: Agent[];
@@ -111,6 +111,10 @@ export function StudioChat({
   handoff?: StudioHandoff | null;
   /** The catalog loaded and the user has no agent to chat with. */
   noAgents?: boolean;
+  /** `panel`: the Dataviz assistant beside the dashboard (narrow, no research). */
+  variant?: "full" | "panel";
+  /** Read when a message is sent: the dashboard on screen in Dataviz. */
+  datavizContext?: () => DatavizTurnContext | null;
 }) {
   const queryClient = useQueryClient();
   const selectComposerAgent = async (id: string) => {
@@ -161,10 +165,6 @@ export function StudioChat({
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
-  const [savingContentId, setSavingContentId] = useState<string | null>(null);
-  const [savedContentIds, setSavedContentIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const { abortRef, queueEvent, flushEvents, discardQueuedEvents } = useTranscriptStream(setTurns);
   const onTurnEvent = useCallback((turnId: string, event: AssistantEvent) => {
     const workflow = event as unknown as { type: string; mission?: Mission };
@@ -237,8 +237,6 @@ export function StudioChat({
     }
     preserveDraft.current = false;
     setDeepenTarget(null);
-    setSavingContentId(null);
-    setSavedContentIds(new Set());
   }, [agent?.agent_id, discardQueuedEvents]);
 
   /**
@@ -279,8 +277,6 @@ export function StudioChat({
         setTurns(restored);
         setAttachments([]);
         setDeepenTarget(null);
-        setSavingContentId(null);
-        setSavedContentIds(new Set());
         if (active?.run_id && unfinished && !unfinished.messageId) {
           const controller = new AbortController();
           abortRef.current = controller;
@@ -341,8 +337,6 @@ export function StudioChat({
     setInput("");
     setAttachments([]);
     setDeepenTarget(null);
-    setSavingContentId(null);
-    setSavedContentIds(new Set());
   }, [discardQueuedEvents, newChatNonce]);
 
   useEffect(() => {
@@ -496,7 +490,7 @@ export function StudioChat({
       setStreaming(true);
       stopRequestedRef.current = false;
       setDeepenTarget(null);
-      rememberLastAgent(agent.agent_id);
+      if (variant !== "panel") rememberLastAgent(agent.agent_id);
 
       let accepted = false;
       let submittedThread: string | null = null;
@@ -507,6 +501,7 @@ export function StudioChat({
         if (controller.signal.aborted) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
           uiAction,
+          dataviz: datavizContext?.() ?? null,
           signal: controller.signal,
           role: currentRole,
           continueMissionId: followUpMissionId,
@@ -733,86 +728,6 @@ export function StudioChat({
     }
   };
 
-  const saveArtifact = useCallback(
-    async (turn: TranscriptTurn, item: SavableContent) => {
-      if (!agent || savingContentId) return;
-      const provenance = item.type === "table" ? item.block.semantic_provenance_ref : undefined;
-      const sql = provenance ? "" : findArtifactSql(turnsRef.current, turn.id, item);
-      if (!sql && !provenance) {
-        toast.error("This result has no reusable SQL to save.");
-        return;
-      }
-
-      let chartSpec: Record<string, unknown> | null = null;
-      let vizSpec: Record<string, unknown> | null = null;
-      let saved = "Artifact saved";
-      let title =
-        item.type === "table"
-          ? item.block.title?.trim() || turn.question.trim()
-          : turn.question.trim();
-      if (item.type === "ui-node") {
-        const { request } = item;
-        title = request.title.trim() || title;
-        if (request.kind === "chart") {
-          chartSpec = request.chart
-            ? descriptorToVegaLite(request.chart, request.columns, title)
-            : null;
-          if (!chartSpec) {
-            saved = "Saved its result as a grid: this chart plots values calculated in the answer.";
-          }
-        }
-      } else if (item.type === "chart") {
-        const chartTitle = splitChartTitle(item.block.chart_spec).title;
-        title = chartTitle || turn.question.trim() || "Saved chart";
-        if (item.block.viz_spec) {
-          // A viz-core chart persists its worksheet; refresh re-compiles it.
-          vizSpec = {
-            ...item.block.viz_spec,
-            title,
-            source: { kind: "sql", sql: sql ?? "" },
-          };
-        }
-        if (!vizSpec) {
-          try {
-            chartSpec = JSON.parse(item.block.chart_spec) as Record<
-              string,
-              unknown
-            >;
-          } catch {
-            toast.error("This chart specification cannot be saved.");
-            return;
-          }
-        }
-      }
-      title = title.slice(0, 256) || "Saved result";
-
-      setSavingContentId(item.id);
-      try {
-        await studioApi.createArtifact({
-          title,
-          artifact_type: "chart",
-          sql_text: sql ?? "",
-          semantic_provenance_ref: provenance,
-          database_name: agent.database_name,
-          schema_name: agent.schema_name,
-          chart_spec: chartSpec,
-          viz_spec: vizSpec,
-          agent_id: agent.agent_id,
-          thread_id: threadId ?? activeThreadId,
-        });
-        setSavedContentIds((current) => new Set(current).add(item.id));
-        await queryClient.invalidateQueries({
-          queryKey: ["studio", "artifacts"],
-        });
-        toast.success(saved);
-      } catch (error) {
-        toast.error((error as Error).message || "Artifact could not be saved.");
-      } finally {
-        setSavingContentId(null);
-      }
-    },
-    [activeThreadId, agent, queryClient, savingContentId, threadId],
-  );
 
   // Whether an answer offers a reconsider pass is a preference, not a
   // per-message control; it is set in Settings and read here.
@@ -877,7 +792,7 @@ export function StudioChat({
             ref={transcriptRef}
             className={cn(
               "mx-auto w-full px-4 sm:px-6",
-              'max-w-3xl',
+              variant === "panel" ? "px-3 sm:px-4" : 'max-w-3xl',
               welcome ? "my-auto shrink-0 py-6 sm:py-12" : "py-8 sm:py-10",
             )}
           >
@@ -898,6 +813,8 @@ export function StudioChat({
               </div>
             ) : !agent && noAgents ? (
               <NoAgentState />
+            ) : variant === "panel" && (empty || !agent) ? (
+              <DatavizGreeting onPick={agent ? (text) => void send(text) : undefined} />
             ) : empty || !agent ? (
               <>
                 <Greeting displayName={displayName} />
@@ -928,9 +845,6 @@ export function StudioChat({
                     reconsiderDisabled={streaming}
                     onFeedback={saveFeedback}
                     onDecide={decide}
-                    onSaveArtifact={saveArtifact}
-                    savingContentId={savingContentId}
-                    savedContentIds={savedContentIds}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
                 ))}
@@ -965,7 +879,7 @@ export function StudioChat({
             onChange={setInput}
             onKeyDown={onKeyDown}
             onSend={() => void send()}
-          onResearch={researchable ? () => void startResearch() : undefined}
+          onResearch={researchable && variant === "full" ? () => void startResearch() : undefined}
           onStop={stop}
           readingFiles={readingFiles}
           attachments={attachments}
@@ -977,6 +891,7 @@ export function StudioChat({
             agent={agent}
             agents={agents}
             onSelectAgent={(id) => void selectComposerAgent(id)}
+            agentPicker={variant !== "panel"}
           />
         </div>
       </div>
@@ -1001,9 +916,6 @@ const TurnView = memo(function TurnView({
   reconsiderDisabled,
   onFeedback,
   onDecide,
-  onSaveArtifact,
-  savingContentId,
-  savedContentIds,
   onReviewSkill,
   uiContext,
 }: {
@@ -1021,9 +933,6 @@ const TurnView = memo(function TurnView({
     call: PendingCall,
     decision: "allow_once" | "allow_session" | "deny",
   ) => Promise<void>;
-  onSaveArtifact: (turn: TranscriptTurn, item: SavableContent) => Promise<void>;
-  savingContentId: string | null;
-  savedContentIds: ReadonlySet<string>;
   onReviewSkill?: (document: string) => void;
   uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
 }) {
@@ -1086,9 +995,7 @@ const TurnView = memo(function TurnView({
         uiContext={uiContext}
         runContext={runContext}
         running={running}
-        onSaveArtifact={(item) => void onSaveArtifact(turn, item)}
-        savingContentId={savingContentId}
-        savedContentIds={savedContentIds}
+        datavizThreadId={uiContext?.threadId ?? null}
       />
       {draft ? (
         <div>
@@ -1183,6 +1090,40 @@ function NoAgentState() {
         <Link to="/agents">Go to Agents</Link>
       </Button>
     </div>
+  );
+}
+
+/** The Dataviz assistant's empty state: what it can answer about the dashboard. */
+function DatavizGreeting({ onPick }: { onPick?: (text: string) => void }) {
+  const questions = [
+    "Dashboard ini tentang apa?",
+    "Data di dashboard ini dari mana?",
+    "Kenapa angkanya turun?",
+  ];
+  return (
+    <section aria-label="Dataviz assistant" className="py-6">
+      <h2 className="text-base font-semibold">Ask about this dashboard</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Nova reads the dashboard on screen, its sources and business definitions, and
+        asks before it changes anything.
+      </p>
+      {onPick ? (
+        <div className="mt-4 flex flex-col items-start gap-2">
+          {questions.map((question) => (
+            <Button
+              key={question}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-auto whitespace-normal py-1.5 text-left"
+              onClick={() => onPick(question)}
+            >
+              {question}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

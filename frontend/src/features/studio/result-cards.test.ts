@@ -1,7 +1,6 @@
 import { createElement } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
-import { userEvent } from "vitest/browser";
 import { ResultTable } from "./result-table";
 import { splitChartTitle } from "./chart-title";
 
@@ -77,18 +76,14 @@ describe("artifact actions", () => {
     await expect.element(capped.getByText(/Capped at the engine's row limit/)).toBeInTheDocument();
   });
 
-  it("offers a real save action for result tables", async () => {
-    const onSave = vi.fn();
+  it("shows the action it is given and no save control of its own", async () => {
     const screen = await render(
       createElement(ResultTable, {
         block: { title: "Revenue", columns: ["total"], rows: [[42]] },
-        onSave,
+        action: createElement("button", { type: "button" }, "Custom action"),
       }),
     );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Save table as artifact" }),
-    );
-    expect(onSave).toHaveBeenCalledOnce();
+    await expect.element(screen.getByRole("button", { name: "Custom action" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Save table as artifact/ }).query()).toBeNull();
   });
 });

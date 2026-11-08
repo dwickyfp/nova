@@ -1,7 +1,7 @@
 import { useContext, useState } from "react";
 import { useStateField } from "@openuidev/react-lang";
 import { UiRuntimeContext } from "./runtime-context";
-import { NodeArtifactButton } from "./artifact-button";
+import { NodeDatavizAction } from "./artifact-button";
 import { DataTable } from "./components";
 import { ChartFrame } from "@/features/viz/chart-frame";
 import {
@@ -68,13 +68,14 @@ export default function DataChart({ p }: { p: Props }) {
     <section className="min-w-0" aria-label={str(p, "title") || "Chart"}>
       <div className="mb-2 flex min-h-7 items-center gap-2">
         <p className="min-w-0 flex-1 text-sm font-medium">{str(p, "title")}</p>
-        <NodeArtifactButton
+        <NodeDatavizAction
           data={p.data}
-          noun="chart"
-          draft={{
-            kind: "chart",
-            title: str(p, "title") || "Saved chart",
-            chart: { type: String(p.type ?? "bar"), x, y, series },
+          target={{
+            component: "Chart",
+            x: typeof p.x === "string" ? p.x : undefined,
+            y: typeof p.y === "string" ? p.y : undefined,
+            type: typeof p.type === "string" ? p.type : undefined,
+            title: typeof p.title === "string" ? p.title : undefined,
           }}
         />
       </div>
@@ -215,7 +216,7 @@ export default function DataChart({ p }: { p: Props }) {
         </summary>
         {/* The grid is built on request, not for every chart in a long thread. */}
         {showData ? (
-          <DataTable p={{ data, columns: [x, ...series], title: "Chart data" }} />
+          <DataTable p={{ data, columns: [x, ...series], title: "Chart data", datavizAction: false }} />
         ) : null}
       </details>
     </section>

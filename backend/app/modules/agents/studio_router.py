@@ -1166,7 +1166,14 @@ async def _owned_share_object(object_type: str, object_id: str, owner: str) -> d
 async def create_share(body: ShareCreate, user: dict = Depends(get_current_user)) -> dict:
     from app.modules.agents.sharing import share_repository
 
-    await _owned_share_object(body.object_type, body.object_id, user["username"])
+    owned = await _owned_share_object(body.object_type, body.object_id, user["username"])
+    if body.object_type == "dashboard" and owned.get("bi_kind"):
+        # D8 (docs/arch-19-studio-dataviz.md): a Dataviz dashboard belongs to
+        # the Nova role it was made under; it is never shared.
+        raise HTTPException(
+            status_code=422,
+            detail="Dataviz dashboards are not shared: everyone in your role already sees them.",
+        )
     try:
         share = await share_repository.create(owner_name=user["username"], body=body)
     except ValueError as exc:

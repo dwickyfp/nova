@@ -181,6 +181,12 @@ async def require_thread(thread_id: str, user: dict) -> dict:
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     agent_id = thread.get("agent_id")
+    from app.modules.agents.dataviz_assistant import is_dataviz_assistant
+
+    if agent_id and is_dataviz_assistant(agent_id):
+        # Nova's Dataviz assistant has no agent grant to verify: the thread is
+        # the caller's own, and every query runs under the caller's role.
+        return thread
     if agent_id:
         agent = await agent_repository.get_agent(agent_id, owner_name=scope.principal)
         if agent is None:

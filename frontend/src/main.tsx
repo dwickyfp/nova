@@ -10,6 +10,7 @@ import {
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
+import { startTokenRenewal } from '@/lib/api-client'
 import { handleServerError } from '@/lib/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -92,6 +93,9 @@ declare module '@tanstack/react-router' {
 }
 
 // Render the app
+// The access token is renewed before it lapses while the Nova session lives.
+startTokenRenewal()
+
 const rootElement = document.getElementById('root')!
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)

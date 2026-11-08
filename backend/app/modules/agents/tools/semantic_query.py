@@ -127,6 +127,10 @@ class SemanticQueryTool:
     nested_requests_measured = True
 
     name = "semantic_query"
+    #: Every query resolves the question's business terms in the ontology
+    #: first (docs/arch-18-business-ontology.md); a grounded result therefore
+    #: settles a separately required ``ontology_resolve``.
+    may_settle = frozenset({"ontology_resolve"})
     description = (
         "Answer a governed business metric question. Nova selects a published "
         "Semantic View, validates a SemanticPlan, resolves joins and grain, compiles "
@@ -684,6 +688,9 @@ class SemanticQueryTool:
                 "dimensions": list(plan.dimensions),
             },
             metadata={
+                "settles_capabilities": (
+                    ["ontology_resolve"] if grounding.provenance() else []
+                ),
                 "relationship_path": list(compiled.relationship_path),
                 "plan_source": plan_source,
                 "warnings": list(compiled.warnings),

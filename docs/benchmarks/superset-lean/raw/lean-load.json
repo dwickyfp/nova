@@ -1,0 +1,267 @@
+{
+  "label": "lean",
+  "seconds_per_cell": 65.0,
+  "browser_parallel": 6,
+  "dashboards": {
+    "4": 11,
+    "12": 12,
+    "24": 13
+  },
+  "dataset_sql": "SELECT o.order_date, o.quantity, o.gross_amount, o.discount_amount, o.net_amount,\n       o.cost_amount, o.returned_qty, o.payment_method, o.status,\n       t.region, t.channel, t.tier, t.city, p.category, p.brand\nFROM NOVA_RETAIL_FIELD.sales_orders AS o\nJOIN NOVA_RETAIL_FIELD.outlets AS t ON t.outlet_id = o.outlet_id\nJOIN NOVA_RETAIL_FIELD.products AS p ON p.product_id = o.product_id",
+  "cells": [
+    {
+      "scenario": "view",
+      "charts": 4,
+      "viewers": 1,
+      "started_at": "2026-11-08T18:27:32.428343+00:00",
+      "dashboard_load": {
+        "n": 10,
+        "p50_ms": 4914.4,
+        "p95_ms": 17072.4,
+        "p99_ms": null,
+        "mean_ms": 6790.4
+      },
+      "first_load_ms": 17072.4,
+      "chart_data": {
+        "n": 40,
+        "p50_ms": 4530.9,
+        "p95_ms": 16121.1,
+        "p99_ms": null,
+        "mean_ms": 5930.6
+      },
+      "requests": 70,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.15
+    },
+    {
+      "scenario": "view",
+      "charts": 4,
+      "viewers": 5,
+      "started_at": "2026-11-08T18:28:41.862299+00:00",
+      "dashboard_load": {
+        "n": 36,
+        "p50_ms": 10087.4,
+        "p95_ms": 14232.6,
+        "p99_ms": null,
+        "mean_ms": 9881.0
+      },
+      "first_load_ms": 7999.9,
+      "chart_data": {
+        "n": 144,
+        "p50_ms": 6979.9,
+        "p95_ms": 11941.9,
+        "p99_ms": 13083.6,
+        "mean_ms": 7568.7
+      },
+      "requests": 254,
+      "errors": 2,
+      "error_rate": 0.0079,
+      "throughput_loads_per_s": 0.55
+    },
+    {
+      "scenario": "view",
+      "charts": 4,
+      "viewers": 20,
+      "started_at": "2026-11-08T18:29:57.215198+00:00",
+      "dashboard_load": {
+        "n": 47,
+        "p50_ms": 33064.0,
+        "p95_ms": 48083.2,
+        "p99_ms": null,
+        "mean_ms": 32238.8
+      },
+      "first_load_ms": 11044.2,
+      "chart_data": {
+        "n": 188,
+        "p50_ms": 16584.2,
+        "p95_ms": 31807.6,
+        "p99_ms": 32973.1,
+        "mean_ms": 17700.5
+      },
+      "requests": 329,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.72
+    },
+    {
+      "scenario": "view",
+      "charts": 12,
+      "viewers": 1,
+      "started_at": "2026-11-08T18:31:24.720889+00:00",
+      "dashboard_load": {
+        "n": 8,
+        "p50_ms": 8047.1,
+        "p95_ms": 14310.4,
+        "p99_ms": null,
+        "mean_ms": 8264.4
+      },
+      "first_load_ms": 7395.0,
+      "chart_data": {
+        "n": 96,
+        "p50_ms": 3412.8,
+        "p95_ms": 6852.1,
+        "p99_ms": null,
+        "mean_ms": 3844.5
+      },
+      "requests": 120,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.12
+    },
+    {
+      "scenario": "view",
+      "charts": 12,
+      "viewers": 5,
+      "started_at": "2026-11-08T18:32:31.274677+00:00",
+      "dashboard_load": {
+        "n": 22,
+        "p50_ms": 14306.2,
+        "p95_ms": 35862.2,
+        "p99_ms": null,
+        "mean_ms": 19321.7
+      },
+      "first_load_ms": 10337.6,
+      "chart_data": {
+        "n": 264,
+        "p50_ms": 6010.5,
+        "p95_ms": 14817.3,
+        "p99_ms": 19237.9,
+        "mean_ms": 6613.8
+      },
+      "requests": 330,
+      "errors": 13,
+      "error_rate": 0.0394,
+      "throughput_loads_per_s": 0.34
+    },
+    {
+      "scenario": "view",
+      "charts": 12,
+      "viewers": 20,
+      "started_at": "2026-11-08T18:34:01.078575+00:00",
+      "dashboard_load": {
+        "n": 21,
+        "p50_ms": 91649.3,
+        "p95_ms": 140808.5,
+        "p99_ms": null,
+        "mean_ms": 99213.8
+      },
+      "first_load_ms": 63694.2,
+      "chart_data": {
+        "n": 252,
+        "p50_ms": 50865.0,
+        "p95_ms": 76666.3,
+        "p99_ms": 82473.9,
+        "mean_ms": 41628.2
+      },
+      "requests": 315,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.32
+    },
+    {
+      "scenario": "view",
+      "charts": 24,
+      "viewers": 1,
+      "started_at": "2026-11-08T18:36:38.206520+00:00",
+      "dashboard_load": {
+        "n": 3,
+        "p50_ms": 27311.3,
+        "p95_ms": 39423.0,
+        "p99_ms": null,
+        "mean_ms": 28907.4
+      },
+      "first_load_ms": 39423.0,
+      "chart_data": {
+        "n": 72,
+        "p50_ms": 5943.0,
+        "p95_ms": 13839.4,
+        "p99_ms": null,
+        "mean_ms": 6683.4
+      },
+      "requests": 81,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.05
+    },
+    {
+      "scenario": "view",
+      "charts": 24,
+      "viewers": 5,
+      "started_at": "2026-11-08T18:38:25.086367+00:00",
+      "dashboard_load": {
+        "n": 10,
+        "p50_ms": 44906.8,
+        "p95_ms": 52928.6,
+        "p99_ms": null,
+        "mean_ms": 46679.2
+      },
+      "first_load_ms": 47194.6,
+      "chart_data": {
+        "n": 240,
+        "p50_ms": 8207.1,
+        "p95_ms": 19623.1,
+        "p99_ms": 21571.9,
+        "mean_ms": 10129.0
+      },
+      "requests": 270,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.15
+    },
+    {
+      "scenario": "view",
+      "charts": 24,
+      "viewers": 20,
+      "started_at": "2026-11-08T18:40:03.921177+00:00",
+      "dashboard_load": {
+        "n": 20,
+        "p50_ms": 143021.7,
+        "p95_ms": 153263.1,
+        "p99_ms": null,
+        "mean_ms": 141501.5
+      },
+      "first_load_ms": 128901.6,
+      "chart_data": {
+        "n": 480,
+        "p50_ms": 29572.4,
+        "p95_ms": 47451.5,
+        "p99_ms": 48625.2,
+        "mean_ms": 31576.9
+      },
+      "requests": 540,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_loads_per_s": 0.31
+    },
+    {
+      "scenario": "edit",
+      "charts": 12,
+      "authors": 1,
+      "save_reopen": {
+        "n": 165,
+        "p50_ms": 207.8,
+        "p95_ms": 428.2,
+        "p99_ms": 609.7,
+        "mean_ms": 242.5
+      },
+      "errors": 0,
+      "error_rate": 0.0
+    },
+    {
+      "scenario": "edit",
+      "charts": 12,
+      "authors": 5,
+      "save_reopen": {
+        "n": 412,
+        "p50_ms": 396.7,
+        "p95_ms": 1136.5,
+        "p99_ms": 2016.6,
+        "mean_ms": 496.0
+      },
+      "errors": 0,
+      "error_rate": 0.0
+    }
+  ],
+  "finished_at": "2026-11-08T18:44:01.545577+00:00"
+}

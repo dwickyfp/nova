@@ -163,9 +163,21 @@ class CeleryConfig:
     )
     worker_prefetch_multiplier = 1
     task_acks_late = False
+    # Each tick expires before the next one is due. With the worker down, beat
+    # would otherwise pile stale ticks into the shared Redis (measured: 1 323
+    # queued in 22 hours on 2026-11-08), and a restarted worker would replay
+    # every one of them.
     beat_schedule = {
-        "reports.scheduler": {"task": "reports.scheduler", "schedule": crontab(minute="*")},
-        "reports.prune_log": {"task": "reports.prune_log", "schedule": crontab(minute=0, hour=0)},
+        "reports.scheduler": {
+            "task": "reports.scheduler",
+            "schedule": crontab(minute="*"),
+            "options": {"expires": 55},
+        },
+        "reports.prune_log": {
+            "task": "reports.prune_log",
+            "schedule": crontab(minute=0, hour=0),
+            "options": {"expires": 3600},
+        },
     }
 
 
@@ -194,6 +206,8 @@ FEATURE_FLAGS = {
     "EMBEDDED_SUPERSET": False,
     # The Nova partition in get_rls_cache_key already covers the principal.
     "CACHE_IMPERSONATION": False,
+    # D8: a dashboard belongs to the Nova role it was made under (role_scope).
+    "DASHBOARD_RBAC": True,
 }
 
 SUPERSET_WEBSERVER_TIMEOUT = 300

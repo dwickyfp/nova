@@ -1,0 +1,26 @@
+{
+  "label": "baseline",
+  "container": "nova-superset",
+  "runs": [
+    {
+      "restart_returned_s": 11.54,
+      "health_s": 20.36,
+      "dashboard_metadata_s": 20.47,
+      "first_chart_data_s": 22.52
+    },
+    {
+      "restart_returned_s": 10.97,
+      "health_s": 17.15,
+      "dashboard_metadata_s": 17.46,
+      "first_chart_data_s": 23.14
+    },
+    {
+      "restart_returned_s": 11.28,
+      "health_s": 23.34,
+      "dashboard_metadata_s": 23.59,
+      "first_chart_data_s": 27.71
+    }
+  ],
+  "ready_median_s": 23.14,
+  "ready_max_s": 27.71
+}

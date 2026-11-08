@@ -10,6 +10,13 @@ import { flushUiStates } from "./state";
 import type { UiBlock, UiSource } from "./types";
 import "@/styles/index.css";
 import { ThemeProvider } from "@/context/theme-provider";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const dataviz = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("../dataviz/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../dataviz/api")>()),
+  datavizApi: dataviz,
+}));
 
 const source: UiSource = {
   agentId: "agent",
@@ -66,39 +73,53 @@ it("discloses result rows omitted by the server's evidence transport", async () 
   await expect.element(screen.getByText(/7 result rows were omitted from this visual/)).toBeVisible();
 });
 
-it("saves a bound chart or table with its source query and the result's own columns", async () => {
-  const program = 'root = Col([Chart(@Sort(@Evidence("e1"), "revenue", "desc"), "month", "revenue", "line", "Revenue"), Table(@Evidence("e1"), ["month"], "Months")])';
-  const evidence = { e1: [{ month: "Jan", revenue: 10 }, { month: "Feb", revenue: 30 }] };
+it("offers Add to Dataviz only on the views the server allows, and never on maps", async () => {
+  const program = '$sel = -1\nroot = Col([Chart(@Sort(@Evidence("e1"), "revenue", "desc"), "month", "revenue", "line", "Revenue"), Table(@Evidence("e1"), ["month"], "Months"), GeoMap(@Evidence("e1"), "lon", "lat", null, "month", "Where", $sel)])';
+  const evidence = { e1: [{ month: "Jan", revenue: 10, lon: 106.8, lat: -6.2 }, { month: "Feb", revenue: 30, lon: 106.9, lat: -6.1 }] };
   const parsed = validateProgram(program, evidence, true);
   const ui: UiBlock = { ...parsed, program, program_sha256: "b".repeat(64),
     fallback: "Revenue.", state_defaults: parsed.state, evidence,
     provenance: { scope: "verified_result_rows", assumption: false, evidence_ids: ["e1"],
       tool_calls: { e1: "query-1" } } };
-  const onSaveArtifact = vi.fn();
+  dataviz.check.mockImplementation(async (items: { node?: { component: string } }[]) => ({
+    results: items.map((item) => ({
+      preview_ref: "pv1.x.y",
+      status: item.node?.component === "Chart" ? "SUPPORTED" : "UNSUPPORTED",
+      reason_code: "",
+      message: "",
+      can_add: item.node?.component === "Chart",
+    })),
+  }));
   const screen = await render(
-    <IntelligentUi block={ui} complete onSaveArtifact={onSaveArtifact}
-      artifactStatus={(request) => (request.kind === "table" ? "saved" : "idle")} />,
+    <QueryClientProvider client={new QueryClient()}>
+      <IntelligentUi block={ui} complete
+        dataviz={{ threadId: "thread", messageId: "message", contentId: "content-2" }} />
+    </QueryClientProvider>,
   );
-  await screen.getByRole("button", { name: "Save chart as artifact" }).click();
-  expect(onSaveArtifact).toHaveBeenCalledWith({
-    kind: "chart",
-    title: "Revenue",
-    chart: { type: "line", x: "month", y: "revenue", series: ["revenue"] },
-    evidenceId: "e1",
-    columns: ["month", "revenue"],
-    toolCallId: "query-1",
+  await expect.element(screen.getByRole("button", { name: "Add to Dataviz" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Add to Dataviz" }).elements()).toHaveLength(1);
+  const asked = dataviz.check.mock.calls.flatMap(([items]) => items as { node?: Record<string, unknown> }[]);
+  expect(asked.map((item) => item.node?.component).sort()).toEqual(["Chart", "Table"]);
+  expect(asked.find((item) => item.node?.component === "Chart")?.node).toEqual({
+    component: "Chart", evidence_id: "e1", x: "month", y: "revenue", type: "line", title: "Revenue",
   });
-  await expect.element(screen.getByRole("button", { name: "Artifact saved" })).toBeDisabled();
+  expect(screen.container.textContent).not.toMatch(/Incompatible|Not supported|BI Ready|Save artifact/i);
   await screen.unmount();
+});
 
-  const chartsOnly = await render(
-    <IntelligentUi block={ui} complete onSaveArtifact={onSaveArtifact}
-      artifactStatus={() => "idle"} artifactKinds={["chart"]} />,
-  );
-  await expect
-    .element(chartsOnly.getByRole("button", { name: "Save chart as artifact" }))
-    .toBeVisible();
-  expect(chartsOnly.getByRole("button", { name: "Save table as artifact" }).query()).toBeNull();
+it("asks nothing and shows no Dataviz action without a stored answer", async () => {
+  dataviz.check.mockReset();
+  const program = 'root = Col([Chart(@Evidence("e1"), "month", "revenue", "line", "Revenue")])';
+  const evidence = { e1: [{ month: "Jan", revenue: 10 }] };
+  const parsed = validateProgram(program, evidence, true);
+  const ui: UiBlock = { ...parsed, program, program_sha256: "c".repeat(64), fallback: "",
+    state_defaults: parsed.state, evidence,
+    provenance: { scope: "verified_result_rows", assumption: false, evidence_ids: ["e1"] } };
+  const screen = await render(<IntelligentUi block={ui} complete />);
+  await expect.element(screen.getByText("Revenue")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Add to Dataviz" }).query()).toBeNull();
+  expect(dataviz.check).not.toHaveBeenCalled();
+  await screen.unmount();
 });
 
 describe("Nova interactive answers", () => {

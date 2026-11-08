@@ -1,15 +1,15 @@
 import { createContext } from "react";
-import type { UiArtifactDraft, UiSource } from "./types";
+import type { DatavizLocator } from "../dataviz/api";
+import type { UiSource } from "./types";
 
-export type UiArtifactTarget = UiArtifactDraft & { evidenceId: string };
+/** A data view inside an answer, named the way its program names it. */
+export type UiDatavizTarget = NonNullable<DatavizLocator["node"]>;
 
 export type UiArtifacts = {
-  /** Which visuals offer saving; all of them when omitted. */
-  kinds?: UiArtifactDraft["kind"][];
   /** The verified result a node's records come from, when it can be told. */
   evidenceFor: (data: unknown) => string | null;
-  save: (target: UiArtifactTarget) => void;
-  status: (target: UiArtifactTarget) => "idle" | "saving" | "saved";
+  /** Where this view lives in Nova's record, for the server to verify. */
+  locate: (target: UiDatavizTarget) => DatavizLocator | null;
 };
 
 export const UiRuntimeContext = createContext<{

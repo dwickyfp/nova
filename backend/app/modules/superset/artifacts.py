@@ -279,12 +279,21 @@ async def create_dashboard_object(
         body={
             "dashboard_title": title,
             "position_json": json.dumps(_position(title, placed, texts)),
-            "published": False,
         },
     )
     dashboard_id = int(dashboard["id"])
     for chart_id, _name in placed:
-        await bi.request("PUT", f"/api/v1/chart/{chart_id}", body={"dashboards": [dashboard_id]})
+        # Add the membership; a chart already on other dashboards keeps them.
+        current = (await bi.request("GET", f"/api/v1/chart/{chart_id}")).get("result") or {}
+        memberships = {
+            int(item["id"])
+            for item in current.get("dashboards") or []
+            if item.get("id") is not None
+        }
+        await bi.request(
+            "PUT", f"/api/v1/chart/{chart_id}",
+            body={"dashboards": sorted(memberships | {dashboard_id})},
+        )
     return dashboard_id
 
 

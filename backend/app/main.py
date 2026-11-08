@@ -66,6 +66,7 @@ from app.modules.query.router import router as query_router
 from app.modules.query_autopilot.router import router as query_autopilot_router
 from app.modules.resource_groups.router import router as resource_groups_router
 from app.modules.stages.router import router as stages_router
+from app.modules.superset.dataviz_router import router as dataviz_router
 from app.modules.superset.router import internal_router as superset_internal_router
 from app.modules.superset.router import router as superset_router
 from app.modules.system.router import router as system_router
@@ -229,6 +230,9 @@ async def _bootstrap_control_plane() -> None:
         await harness_repository.ensure_schema()
         await agent_repository.migrate_legacy_skill_authors()
         await artifact_repository.ensure_schema()
+        from app.modules.superset.publication import ensure_schema as ensure_dataviz_schema
+
+        await ensure_dataviz_schema()
         from app.modules.viz.migration import migrate_viz
 
         await migrate_viz()
@@ -524,6 +528,8 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(quality_router, prefix=f"{prefix}/agents", tags=["agent-quality"])
+    # Studio's one path from a result to Dataviz (docs/arch-19-studio-dataviz.md).
+    app.include_router(dataviz_router, prefix=f"{prefix}/agents/studio/dataviz", tags=["dataviz"])
     app.include_router(studio_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(agents_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(knowledge_router, prefix=f"{prefix}/agents", tags=["agent-knowledge"])

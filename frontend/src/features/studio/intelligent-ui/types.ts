@@ -22,20 +22,13 @@ export type UiBlock = {
     statements?: Record<string, string>;
   };
 };
-/** What a chart, table or map node asks to save. */
-export type UiArtifactDraft = {
-  kind: "chart" | "table";
-  title: string;
-  chart?: { type: string; x: string; y: string; series: string[] };
-};
-/** A node saved by its source query; columns are the verified result's own. */
-export type UiArtifactRequest = UiArtifactDraft & {
-  evidenceId: string;
-  columns: string[];
-  /** Tool call of the query behind the result, when Nova recorded it. */
-  toolCallId?: string;
-  /** The result's own statement, when it was fetched by another participant. */
-  sql?: string;
+/** Where a turn's interactive answer is stored, for Dataviz references. */
+export type UiDatavizSource = {
+  threadId: string;
+  messageId: string;
+  contentId: string;
+  /** The block is a whole chart (a stored chart drawn by the UI), not a node. */
+  whole?: boolean;
 };
 export type UiSource = {
   agentId: string;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -19,6 +19,8 @@ import { ShareDialog } from "./share-dialog";
 import { flushUiStates } from "./intelligent-ui/state";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 import { pickDefaultAgent, rememberLastAgent } from "./default-agent";
+import { DatavizWorkspace } from "./dataviz/dataviz-workspace";
+import { StudioTabs, type StudioTab } from "./studio-tabs";
 
 export function StudioApp() {
   return <StudioAppContent />;
@@ -66,6 +68,27 @@ function StudioAppContent() {
     requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
   ) ? requestedAgentId : defaultAgentId;
   const view: StudioView = search.view ?? "chat";
+  // Agent and Dataviz are top-level workspaces, separate from the sidebar view.
+  const tab: StudioTab = search.tab ?? "agent";
+  // Dataviz mounts on first visit and then stays mounted, so its Superset
+  // frame (and any unsaved edit in it) survives a visit to the Agent tab.
+  const [datavizMounted, setDatavizMounted] = useState(tab === "dataviz");
+  useEffect(() => {
+    if (tab === "dataviz") setDatavizMounted(true);
+  }, [tab]);
+  const selectTab = (next: StudioTab) => {
+    void navigate({
+      to: "/studio",
+      search: { ...search, tab: next === "agent" ? undefined : next },
+      replace: true,
+    });
+  };
+  const followBiPath = useCallback(
+    (bi: string) => {
+      void navigate({ from: "/studio", to: "/studio", search: (prev) => ({ ...prev, bi }), replace: true });
+    },
+    [navigate],
+  );
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
   // its thinking) look like it had vanished.
@@ -134,15 +157,24 @@ function StudioAppContent() {
       ? threads.find((thread) => thread.agent_id === requestedAgentId)
       : threads[0];
     if (!newest?.agent_id) return;
+    // The workspace tab and the Dataviz page stay: a link that opens
+    // Dataviz must not be turned into the Agent tab.
     navigate({
       to: "/studio",
-      search: { agent: newest.agent_id, thread: newest.thread_id },
+      search: {
+        agent: newest.agent_id,
+        thread: newest.thread_id,
+        tab: search.tab,
+        bi: search.bi,
+      },
       replace: true,
     });
   }, [
     freshChat,
     navigate,
     search.thread,
+    search.tab,
+    search.bi,
     requestedAgentId,
     threads,
     threadsQuery.isSuccess,
@@ -310,7 +342,8 @@ function StudioAppContent() {
         />
       </div>
 
-      <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <main aria-label={tab === "dataviz" ? "Nova Studio Dataviz" : view === "chat" ? "Nova Studio chat" : view} className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+        <StudioTabs tab={tab} onSelect={selectTab} />
         {needsRole ? (
           <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <span>Choose a role to see your data and conversations.</span>
@@ -329,6 +362,31 @@ function StudioAppContent() {
             </Button>
           </div>
         ) : null}
+        {datavizMounted ? (
+          <div className={tab === "dataviz" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+            <DatavizWorkspace
+              path={search.bi}
+              onPathChange={followBiPath}
+              onContinueInAgent={(prompt) => {
+                setInitialPrompt(prompt);
+                setFreshChat(true);
+                setNewChatNonce((value) => value + 1);
+                void navigate({
+                  to: "/studio",
+                  search: { agent: agentId ?? undefined },
+                  replace: true,
+                });
+              }}
+              currentRole={settingsQuery.data?.identity.active_role ?? null}
+              displayName={
+                settingsQuery.data?.preferences.preferred_name ||
+                settingsQuery.data?.identity.username
+              }
+              visible={tab === "dataviz"}
+            />
+          </div>
+        ) : null}
+        <div className={tab === "agent" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
         {view === "chat" ? (
           <StudioChat
             agent={agent}
@@ -399,6 +457,7 @@ function StudioAppContent() {
             creatingChat={createSkillChat.isPending}
           />
         )}
+        </div>
       </main>
       <ShareDialog
         objectType="thread"

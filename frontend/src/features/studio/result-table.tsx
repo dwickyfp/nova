@@ -1,13 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Bookmark,
-  Check,
-  Download,
-  Loader2,
-  Search,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,60 +21,20 @@ import type { TableBlock } from "@/features/assistant/types";
  * result must not look partial, and a capped one must not look complete.
  */
 
-export function SaveArtifactButton({
-  noun,
-  onSave,
-  saving = false,
-  saved = false,
-}: {
-  noun: "table" | "chart" | "map";
-  onSave: () => void;
-  saving?: boolean;
-  saved?: boolean;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          aria-label={saved ? "Artifact saved" : `Save ${noun} as artifact`}
-          disabled={saving || saved}
-          onClick={onSave}
-        >
-          {saving ? (
-            <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-          ) : saved ? (
-            <Check aria-hidden="true" className="size-3.5" />
-          ) : (
-            <Bookmark aria-hidden="true" className="size-3.5" />
-          )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{saved ? "Saved" : "Save artifact"}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 const ENGINE_CAP_NOTE =
   "Capped at the engine's row limit for this query. Run the SQL above to see the full result.";
 
 export const ResultTable = memo(function ResultTable({
   block,
-  onSave,
-  saving = false,
-  saved = false,
+  action,
   note = ENGINE_CAP_NOTE,
   emptyText = "The query returned no rows.",
   heading = true,
   filterable = true,
 }: {
   block: TableBlock;
-  onSave?: () => void;
-  saving?: boolean;
-  saved?: boolean;
+  /** A header action, such as Add to Dataviz when the server allows it. */
+  action?: React.ReactNode;
   /** Footer under a populated table; null for rows that are not a query result. */
   note?: string | null;
   emptyText?: string;
@@ -170,9 +122,7 @@ export const ResultTable = memo(function ResultTable({
         ) : (
           <span className="flex-1" />
         )}
-        {onSave ? (
-          <SaveArtifactButton noun="table" onSave={onSave} saving={saving} saved={saved} />
-        ) : null}
+        {action}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

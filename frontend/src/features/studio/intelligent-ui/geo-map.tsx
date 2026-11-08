@@ -17,7 +17,6 @@ import { mapData } from "./map-data";
 import { mapOptionsSchema } from "./map-options";
 import { MAPCN_ENABLED } from "./map-flag";
 import { MapSurface } from "./map-surface";
-import { NodeArtifactButton } from "./artifact-button";
 import { UiRuntimeContext } from "./runtime-context";
 import LegacyGeoMap from "./geo-map-legacy";
 import RouteStopsMap from "./route-stops-map";
@@ -112,11 +111,6 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
         <p className="min-w-0 flex-1 text-sm font-medium">
           {String(p.title ?? "Business map")}
         </p>
-        <NodeArtifactButton
-          data={p.data}
-          noun="map"
-          draft={{ kind: "table", title: String(p.title ?? "Business map") }}
-        />
       </div>
       <MapSurface
         bounds={bounds}

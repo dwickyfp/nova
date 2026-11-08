@@ -17,7 +17,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 ChartKind = Literal[
-    "table", "bar", "bar_stacked", "line", "area", "scatter", "pie", "big_number", "heatmap"
+    "table",
+    "bar",
+    "bar_stacked",
+    "line",
+    "area",
+    "scatter",
+    "pie",
+    "donut",
+    "big_number",
+    "heatmap",
 ]
 Aggregate = Literal["SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"]
 #: How an axis chart orders its categories: by the category itself or by the
@@ -25,6 +34,11 @@ Aggregate = Literal["SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"]
 AxisOrder = Literal["x_asc", "x_desc", "value_asc", "value_desc"]
 
 DEFAULT_ROW_LIMIT = 10_000
+
+#: The Superset release every viz type below was checked against: each key is a
+#: chart plugin registered in that release's frontend bundle
+#: (docs/arch-19-studio-dataviz.md, D2). Bump it with the image pin.
+SUPERSET_VERSION = "6.1.0"
 
 _VIZ_TYPES: dict[str, str] = {
     "table": "table",
@@ -34,6 +48,7 @@ _VIZ_TYPES: dict[str, str] = {
     "area": "echarts_area",
     "scatter": "echarts_timeseries_scatter",
     "pie": "pie",
+    "donut": "pie",
     "big_number": "big_number_total",
     "heatmap": "heatmap_v2",
 }
@@ -69,8 +84,13 @@ class Measure(BaseModel):
 
     column: str = Field(min_length=1, max_length=256)
     aggregate: Aggregate = "SUM"
+    #: A metric the dataset already defines (``column`` is its name): charted
+    #: by name, so the chart keeps the dataset's governed definition.
+    saved: bool = False
 
-    def metric(self) -> dict[str, Any]:
+    def metric(self) -> dict[str, Any] | str:
+        if self.saved:
+            return self.column
         return {
             "expressionType": "SIMPLE",
             "column": {"column_name": self.column},
@@ -85,7 +105,8 @@ class RowFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     column: str = Field(min_length=1, max_length=256)
-    operator: Literal["IN", "NOT IN", ">=", "<="]
+    #: ``TEMPORAL_RANGE`` takes one value, ``start : end`` (end excluded).
+    operator: Literal["IN", "NOT IN", ">=", "<=", "TEMPORAL_RANGE"]
     values: list[str | float] = Field(min_length=1, max_length=1000)
 
     def adhoc(self) -> dict[str, Any]:
@@ -125,7 +146,8 @@ class ChartPlan(BaseModel):
     order: AxisOrder | None = None
 
     def referenced(self) -> set[str]:
-        names = {measure.column for measure in self.measures} | set(self.columns)
+        names = {measure.column for measure in self.measures if not measure.saved}
+        names |= set(self.columns)
         names |= {item.column for item in self.filters}
         names |= {name for name in (self.x, self.series) if name}
         return names
@@ -270,6 +292,10 @@ def with_sql_order(plan: ChartPlan | None, sql: str) -> ChartPlan | None:
     return plan.model_copy(update={"order": order})
 
 
+def _label(metric: dict[str, Any] | str) -> str:
+    return metric if isinstance(metric, str) else str(metric["label"])
+
+
 def to_superset(
     plan: ChartPlan, *, dataset_id: int, columns: list[str], temporal: set[str]
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
@@ -302,6 +328,10 @@ def to_superset(
             groupby = plan.columns or [name for name in (plan.x, plan.series) if name]
             form |= {"query_mode": "aggregate", "groupby": groupby, "metrics": metrics}
             query |= {"columns": groupby, "orderby": [[metrics[0], False]]}
+            if plan.time_grain and set(groupby) & temporal:
+                # A date column in the rows is read at the answer's grain.
+                form["time_grain_sqla"] = plan.time_grain
+                query["extras"] = {"time_grain_sqla": plan.time_grain}
         else:
             raw = plan.columns or columns[:64]
             form |= {"query_mode": "raw", "all_columns": raw}
@@ -310,9 +340,11 @@ def to_superset(
     elif plan.kind == "big_number":
         form |= {"metric": metrics[0]}
         query |= {"row_limit": 1}
-    elif plan.kind == "pie":
+    elif plan.kind in ("pie", "donut"):
         assert plan.x is not None
         form |= {"groupby": [plan.x], "metric": metrics[0], "row_limit": plan.limit}
+        if plan.kind == "donut":
+            form["donut"] = True
         query |= {"columns": [plan.x], "orderby": [[metrics[0], False]]}
     elif plan.kind == "heatmap":
         assert plan.x is not None and plan.series is not None
@@ -344,7 +376,7 @@ def to_superset(
         if plan.order and not grain and plan.x not in temporal:
             by_value = plan.order.startswith("value")
             form |= {
-                "x_axis_sort": metrics[0]["label"] if by_value and metrics else plan.x,
+                "x_axis_sort": _label(metrics[0]) if by_value and metrics else plan.x,
                 "x_axis_sort_asc": plan.order.endswith("asc"),
             }
         if plan.kind == "bar_stacked":

@@ -7,8 +7,12 @@ dashboard. Every Superset call runs as the caller, so the caller's BI role
 decides whether they may author, and Ranger decides what each chart returns
 to whoever views it.
 
-The turn's verified result must carry its producing statement: a dashboard
-without provenance could show data that cannot be rebuilt.
+Each chart names the verified result it draws (``source``, an evidence id of
+this turn), so a dashboard over several questions keeps each chart on its own
+query (docs/arch-19-studio-dataviz.md). A chart may omit ``source`` only when
+exactly one result is available; with several, the call is refused rather than
+guessing. A result must carry its producing statement: a dashboard without
+provenance could show data that cannot be rebuilt.
 """
 
 from __future__ import annotations
@@ -64,6 +68,13 @@ _PARAMETERS = {
                     },
                     "color": {"type": "string"},
                     "size": {"type": "string"},
+                    "source": {
+                        "type": "string",
+                        "description": (
+                            "Evidence id of the verified result this chart draws, for example "
+                            "evidence_2. Required when this turn has more than one result."
+                        ),
+                    },
                 },
                 "required": ["title"],
                 "additionalProperties": False,
@@ -81,9 +92,10 @@ class DashboardBuildTool:
     nested_requests_measured = True
     name = "dashboard_build"
     description = (
-        "Compose a BI dashboard from the latest verified result in this "
-        "conversation: one BI chart per requested view, placed on one BI "
-        "dashboard. Call it after the data is fetched."
+        "Compose a new BI dashboard from verified results in this conversation: "
+        "one BI chart per requested view, each drawn from the result named by its "
+        "source, placed on one BI dashboard. Call it after the data is fetched. "
+        "To add one result to an existing dashboard use dataviz_plan_add."
     )
     parameters = _PARAMETERS
     classification: ToolClassification = "session_change"
@@ -117,8 +129,8 @@ class DashboardBuildTool:
             )
         requests = requests[:MAX_SHEETS]
 
-        last = getattr(context, "last_result", None)
-        if not last or not last.get("columns"):
+        sources = _sources(context)
+        if not sources:
             return ToolOutcome(
                 ok=False,
                 summary="",
@@ -127,27 +139,41 @@ class DashboardBuildTool:
                     "the data first, then compose the dashboard."
                 ),
             )
-        columns: list[str] = list(last.get("columns") or [])
-        rows: list[list] = list(last.get("rows") or [])
-        provenance_sql = str(last.get("sql") or "").strip()
-        if not provenance_sql:
-            return ToolOutcome(
-                ok=False,
-                summary="",
-                error=(
-                    "The latest result does not carry the statement that "
-                    "produced it, so its charts cannot be saved. Re-run the "
-                    "query, then build the dashboard."
-                ),
-            )
-        source = VizSourceSql(sql=provenance_sql)
-
         saved: list[dict[str, Any]] = []
         published: list[dict[str, Any]] = []
         for request in requests:
             if not isinstance(request, dict):
                 continue
             chart_title = str(request.get("title") or "Chart").strip()[:256]
+            named = request.get("source")
+            if isinstance(named, str) and named:
+                chosen = sources.get(named)
+                if chosen is None:
+                    return ToolOutcome(
+                        ok=False, summary="",
+                        error=f"No verified result {named!r} in this turn. Use an evidence id.",
+                    )
+            elif len(sources) == 1:
+                chosen = next(iter(sources.values()))
+            else:
+                return ToolOutcome(
+                    ok=False, summary="",
+                    error=(
+                        "This turn has several results; name the source evidence id of "
+                        f"each chart ({', '.join(sorted(sources))})."
+                    ),
+                )
+            columns, rows, provenance_sql = chosen
+            if not provenance_sql:
+                return ToolOutcome(
+                    ok=False,
+                    summary="",
+                    error=(
+                        "That result does not carry the statement that produced it, so "
+                        "its chart cannot be saved. Re-run the query, then build the dashboard."
+                    ),
+                )
+            source = VizSourceSql(sql=provenance_sql)
             y = request.get("y")
             try:
                 chart_intent = ChartIntent(
@@ -221,6 +247,32 @@ class DashboardBuildTool:
             data=block,
             metadata={"dashboard_artifact": block},
         )
+
+
+def _sources(context: Any) -> dict[str, tuple[list[str], list[list], str]]:
+    """Verified results by evidence id: this turn's, else the thread's latest.
+
+    Each keeps its own columns, rows and producing statement; nothing is
+    borrowed from another result.
+    """
+    out: dict[str, tuple[list[str], list[list], str]] = {}
+    statements = getattr(context, "evidence_sql", None) or {}
+    for evidence_id, table in (getattr(context, "evidence_tables", None) or {}).items():
+        if not isinstance(table, dict) or not table.get("columns"):
+            continue
+        sql = str(table.get("sql") or statements.get(evidence_id) or "").strip()
+        out[str(evidence_id)] = (
+            list(table.get("columns") or []), list(table.get("rows") or []), sql
+        )
+    if out:
+        return out
+    last = getattr(context, "last_result", None)
+    if last and last.get("columns"):
+        out["previous_result"] = (
+            list(last.get("columns") or []), list(last.get("rows") or []),
+            str(last.get("sql") or "").strip(),
+        )
+    return out
 
 
 def _str_or_none(value: Any) -> str | None:
