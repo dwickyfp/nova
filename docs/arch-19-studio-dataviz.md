@@ -269,6 +269,24 @@ working under that role sees it in Dataviz.
   keep no role: a draft stays with its owners, and a published one is visible
   to every BI user, as Superset defines for dashboards without roles.
 
+### D9. No header row: Studio's controls dock in Superset's bar
+
+Dataviz has no header row of its own on wide screens. The Agent / Dataviz
+switch and, while the panel is closed, the Assistant button dock as one group
+in the empty middle of Superset's own top bar. Superset's bar and the
+assistant's header (61px, the bar's height) then read as one top bar.
+
+- `superset-bar.ts` measures the bar in the same-origin frame: the end of the
+  brand and the `[data-test="navbar-top"]` items (Superset 6.1.0), and the
+  start of the right-hand actions. The group is centered in that stretch with
+  at least 16px clear on each side, and is re-measured every second, on
+  resize and when the panel opens, closes or resizes.
+- It never covers Superset. When the group does not fit, when Superset stacks
+  its bar (frames under about 768px wide), and always on phones, the controls
+  sit in Studio's own 56px band above both columns, as before.
+- While Superset is still loading, the last placement is kept so the layout
+  does not jump.
+
 ## Lean deployment
 
 See [operations/superset-feature-inventory.md](operations/superset-feature-inventory.md),

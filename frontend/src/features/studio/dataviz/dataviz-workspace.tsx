@@ -9,6 +9,7 @@ import type { DatavizTurnContext } from "@/features/agents/api";
 import { BiFrame } from "@/features/bi/bi-frame";
 import { safeBiTarget } from "@/features/bi/bi-target";
 import { StudioChat } from "../studio-chat";
+import { dockLeft, measureBarGap, supersetBarStacked } from "./superset-bar";
 import { DATAVIZ_ASSISTANT } from "./assistant-agent";
 import {
   attachDatavizFrame,
@@ -46,6 +47,11 @@ function writePanel(value: { open: boolean; width: number }) {
   }
 }
 
+/** Phones and narrow windows keep Studio's band: Superset stacks its bar there. */
+function isNarrow(): boolean {
+  return typeof window !== "undefined" && window.innerWidth < 768;
+}
+
 /** The dashboard on screen, read fresh when a message is sent. */
 function turnContext(): DatavizTurnContext {
   const frame = syncDatavizFrame();
@@ -72,6 +78,7 @@ export function DatavizWorkspace({
   currentRole,
   displayName,
   visible,
+  tabs,
 }: {
   path?: string;
   onPathChange: (path: string) => void;
@@ -81,6 +88,8 @@ export function DatavizWorkspace({
   displayName?: string | null;
   /** False while the Agent tab is shown; the frame keeps its state. */
   visible: boolean;
+  /** Studio's workspace switch, docked in Superset's bar when there is room. */
+  tabs?: React.ReactNode;
 }) {
   const isMobile = useIsMobile();
   const [panel, setPanel] = useState(readPanel);
@@ -89,6 +98,45 @@ export function DatavizWorkspace({
   const [newChatNonce, setNewChatNonce] = useState(0);
   const frame = useDatavizFrameState();
   const reported = useRef(path);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const clusterRef = useRef<HTMLDivElement | null>(null);
+  // Docked in Superset's own bar (no header row), or in Studio's band. A wide
+  // screen starts docked; the first measurement confirms or moves it.
+  const [dock, setDock] = useState<{ left: number; top: number } | null>(null);
+  const [docked, setDocked] = useState(() => !isNarrow());
+
+  const placeControls = useCallback(() => {
+    const root = rootRef.current;
+    const node = frameRef.current;
+    const cluster = clusterRef.current;
+    if (!root || !node || !cluster) return;
+    if (isNarrow()) {
+      setDocked(false);
+      return;
+    }
+    const gap = measureBarGap(node);
+    if (!gap) {
+      // Superset is still loading or has no bar here: keep the last placement
+      // unless its bar is there and stacked, which never leaves room.
+      if (supersetBarStacked(node)) setDocked(false);
+      return;
+    }
+    const left = dockLeft(gap, cluster.offsetWidth);
+    if (left === null) {
+      setDocked(false);
+      return;
+    }
+    const offset = node.getBoundingClientRect().left - root.getBoundingClientRect().left;
+    const next = {
+      left: Math.round(offset + left),
+      top: Math.round((gap.height - cluster.offsetHeight) / 2),
+    };
+    setDocked(true);
+    setDock((current) =>
+      current && current.left === next.left && current.top === next.top ? current : next,
+    );
+  }, []);
 
   useEffect(() => writePanel(panel), [panel]);
   useEffect(() => () => attachDatavizFrame(null), []);
@@ -96,9 +144,19 @@ export function DatavizWorkspace({
   // Superset routes client-side without load events; follow the frame while shown.
   useEffect(() => {
     if (!visible) return;
-    const timer = window.setInterval(() => syncDatavizFrame(), 1000);
-    return () => window.clearInterval(timer);
-  }, [visible]);
+    const timer = window.setInterval(() => {
+      syncDatavizFrame();
+      placeControls();
+    }, 1000);
+    const root = rootRef.current;
+    const observer = new ResizeObserver(() => placeControls());
+    if (root) observer.observe(root);
+    placeControls();
+    return () => {
+      window.clearInterval(timer);
+      observer.disconnect();
+    };
+  }, [visible, placeControls]);
 
   useEffect(() => {
     if (!frame.path || frame.path === reported.current) return;
@@ -119,8 +177,12 @@ export function DatavizWorkspace({
   }, [path]);
 
   const setFrame = useCallback((node: HTMLIFrameElement | null) => {
+    frameRef.current = node;
     if (node) attachDatavizFrame(node);
   }, []);
+
+  // Opening, closing or resizing the panel moves Superset's bar.
+  useEffect(() => placeControls(), [panel.open, panel.width, placeControls]);
 
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -140,25 +202,47 @@ export function DatavizWorkspace({
 
   const panelOpen = panel.open;
   return (
-    // Both columns start on one line below the floating Studio tabs, so the
-    // frame's top edge and the assistant's header share one horizontal rule.
-    <div className="relative flex h-full min-h-0 w-full pt-14">
-      {!panelOpen ? (
-        <div className="nova-mode-switch absolute top-3 right-4 z-20 rounded-full p-1">
-          <button
-            type="button"
-            aria-expanded={false}
-            aria-controls="dataviz-assistant"
-            onClick={() => setPanel((current) => ({ ...current, open: true }))}
-            className="flex h-8 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Sparkle aria-hidden="true" className="size-4" strokeWidth={1.5} />
-            Assistant
-          </button>
+    // With room in Superset's bar, the switch and the Assistant button dock in
+    // its empty middle and there is no header row: Superset's bar and the
+    // assistant's header form the one top bar. Without room (narrow frames,
+    // a stacked bar) they sit in Studio's own band above both columns, which
+    // still share one top rule. Superset is never covered.
+    <div
+      ref={rootRef}
+      className={cn("relative flex h-full min-h-0 w-full", !(docked && dock) && "pt-14")}
+    >
+      <div
+        className={cn(
+          "pointer-events-none absolute z-20",
+          docked && dock ? "" : "inset-x-0 top-3 flex justify-center px-4",
+        )}
+        style={docked && dock ? { left: dock.left, top: dock.top } : undefined}
+      >
+        <div ref={clusterRef} className="pointer-events-auto flex items-center gap-2">
+          {tabs}
+          {!panelOpen ? (
+            <div className="nova-mode-switch rounded-full p-1">
+              <button
+                type="button"
+                aria-expanded={false}
+                aria-controls="dataviz-assistant"
+                onClick={() => setPanel((current) => ({ ...current, open: true }))}
+                className="flex h-8 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Sparkle aria-hidden="true" className="size-4" strokeWidth={1.5} />
+                Assistant
+              </button>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
       <section aria-label="Dataviz" className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t bg-background">
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col overflow-hidden bg-background",
+            !(docked && dock) && "border-t",
+          )}
+        >
           <BiFrame ref={setFrame} path={source} title="Dataviz" onLoad={() => syncDatavizFrame()} holdsEdits />
         </div>
       </section>
@@ -177,7 +261,8 @@ export function DatavizWorkspace({
         hidden={!panelOpen}
         style={isMobile ? undefined : { width: panel.width }}
         className={cn(
-          "flex min-h-0 flex-col border-t border-l bg-background",
+          "flex min-h-0 flex-col border-l bg-background",
+          !(docked && dock) && "border-t",
           isMobile ? "absolute inset-y-0 right-0 z-40 w-[min(100%,28rem)] shadow-lg" : "relative shrink-0",
         )}
       >
