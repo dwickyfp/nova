@@ -26,6 +26,11 @@ _INTEGER = {"tinyint", "smallint", "int", "integer", "bigint", "largeint"}
 _TEXT = {"char", "varchar", "string", "text"}
 
 
+def supported(name: str) -> bool:
+    """Whether Nova can quote ``name``; anything else is left out, never escaped."""
+    return bool(_IDENTIFIER.match(name))
+
+
 def quote(name: str) -> str:
     """A safe backquoted identifier; anything unusual is refused, never escaped."""
     if not _IDENTIFIER.match(name):

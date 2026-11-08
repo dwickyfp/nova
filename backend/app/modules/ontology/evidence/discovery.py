@@ -42,6 +42,7 @@ from app.modules.ontology.evidence.profiling import (
     inclusion_sql,
     parse_table_profile,
     sketch_sql,
+    supported,
     table_profile_sql,
     uniqueness_sql,
 )
@@ -113,16 +114,24 @@ async def start(service: EvaluationService, body: JoinRunRequest, user: dict) ->
     if not databases:
         raise HTTPException(status_code=422, detail="No database to profile")
     columns: dict[str, list[list[str]]] = {}
+    # A name Nova cannot quote safely (a space, a bracket) is left out and reported,
+    # so one unusual column does not stop the whole run.
+    skipped: list[str] = [database for database in databases if not supported(database)]
     for database in databases:
+        if not supported(database):
+            continue
         names, rows, error = await service._execute(
             columns_sql(database), {"database_name": database}, user)
         if error:
             raise HTTPException(status_code=404, detail=access.NOT_FOUND)
         index = {str(name).lower(): position for position, name in enumerate(names)}
         for row in rows:
-            table = f"{database}.{row[index['table_name']]}"
-            columns.setdefault(table, []).append(
-                [str(row[index["column_name"]]), str(row[index["data_type"]])])
+            table_name, column = str(row[index["table_name"]]), str(row[index["column_name"]])
+            if not (supported(table_name) and supported(column)):
+                skipped.append(f"{database}.{table_name}.{column}")
+                continue
+            columns.setdefault(f"{database}.{table_name}", []).append(
+                [column, str(row[index["data_type"]])])
     if not columns:
         raise HTTPException(status_code=404, detail=access.NOT_FOUND)
     gold = sorted(declared_joins(models) | {tuple(pair) for pair in body.gold})
@@ -130,7 +139,8 @@ async def start(service: EvaluationService, body: JoinRunRequest, user: dict) ->
         id=_new_id("evn_", "joins"), actor=Actor.from_user(user), kind="joins",
         set_name=body.set_name, version=1, stage="profile", items=sorted(columns),
         summary={"databases": databases, "columns": columns, "gold": gold,
-                 "declared": len(declared_joins(models)), "started": time.time()},
+                 "skipped": skipped, "declared": len(declared_joins(models)),
+                 "started": time.time()},
     )
     await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
     return await service.repository.save("eval_runs", run)

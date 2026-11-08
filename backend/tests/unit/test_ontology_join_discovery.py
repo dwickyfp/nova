@@ -110,6 +110,22 @@ def test_discovery_finds_named_and_role_joins_and_rejects_chance_inclusion():
     assert set(quantity.as_dict()) >= {"containment", "target_uniqueness", "name_evidence"}
 
 
+def test_no_candidate_crosses_databases_even_when_the_values_coincide():
+    # superhero.race_id 1..61 lies inside Formula 1's races.raceId 1..976 and the name
+    # even says "race": across databases that is chance, never a join to propose.
+    races = profile("races", "race_id", "int", 976, 976, (1, 3), database="f1")
+    hero = profile("superhero", "race_id", "int", 750, 61, (1, 2), database="heroes")
+    found = candidates([races, hero], {"f1.races.race_id": sketch(range(1, 977)),
+                                       "heroes.superhero.race_id": sketch(range(1, 62))})
+    assert found == []
+    # Within one database the same pair is a candidate.
+    local = profile("races", "race_id", "int", 976, 976, (1, 3), database="heroes")
+    found = candidates([local, hero], {"heroes.races.race_id": sketch(range(1, 977)),
+                                       "heroes.superhero.race_id": sketch(range(1, 62))})
+    assert [(item.source, item.target) for item in found] == [
+        ("heroes.superhero.race_id", "heroes.races.race_id")]
+
+
 def test_each_source_column_keeps_one_target():
     profiles, sketches = lab()
     profiles.append(profile("outlets_copy", "outlet_id", "varchar", 100, 100))
@@ -248,6 +264,38 @@ async def test_a_join_run_profiles_as_the_caller_and_scores_against_known_joins(
     with pytest.raises(Exception) as denied:
         await service.visible_results(run.id, other)
     assert getattr(denied.value, "status_code", None) == 404
+
+
+async def test_names_nova_cannot_quote_are_skipped_and_reported_not_fatal(monkeypatch):
+    from app.modules.ontology import access
+    from app.modules.ontology.evaluation.service import EvaluationService
+    from app.modules.ontology.evidence.discovery import JoinRunRequest
+    from tests.unit._ontology import ADMIN, FakeRepository
+
+    async def record(**_):
+        return "audit"
+
+    async def engine(sql, model, user):
+        names, rows, error = await fake_engine(sql, model, user)
+        if "information_schema.columns" in sql:
+            rows = [*rows, ["sales_orders", "Unit Price", "varchar"],
+                    ["Order Details", "order_id", "varchar"]]
+        return names, rows, error
+
+    async def models(_user):
+        return {}
+
+    monkeypatch.setattr(access, "write_audit_log", record)
+    service = EvaluationService(FakeRepository(), executor=engine, models=models,
+                                autopilot=FakeFamilies([]))
+    run = await service.start_joins(JoinRunRequest(databases=["LAB"]), ADMIN)
+    assert run.summary["skipped"] == ["LAB.sales_orders.Unit Price", "LAB.Order Details.order_id"]
+    assert "LAB.Order Details" not in run.items
+    for _ in range(10):
+        run = await service.step(run.id, ADMIN)
+        if run.status != "RUNNING":
+            break
+    assert run.status == "COMPLETED", run.error
 
 
 async def test_the_overview_shows_a_join_run_only_to_the_context_that_ran_it(monkeypatch):

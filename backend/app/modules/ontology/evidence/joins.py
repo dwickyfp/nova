@@ -19,7 +19,10 @@ Rules that follow from the measured errors on the lab databases:
 * a role (``salesman_id`` to ``employees.employee_id``) has no name evidence,
   so text keys with full inclusion qualify on data alone, while small whole
   numbers, which collide by chance, need a name;
-* a one-row dimension (one campaign) still joins when the name says so.
+* a one-row dimension (one campaign) still joins when the name says so;
+* both columns are in the same database: across databases, small whole numbers
+  and codes collide by chance (``superhero.race_id`` and Formula 1's
+  ``races.raceId``), and a federated join is something an owner declares.
 
 Each source column keeps at most one target. Every candidate keeps its
 features so that a calibrated model can replace the rule (Phase C) and a
@@ -205,7 +208,7 @@ def candidates(
             continue
         own = source.uniqueness >= PROBABLE_KEY and identifies_table(source.column, source.table)
         for target in keys:
-            if (target.database, target.table) == (source.database, source.table):
+            if target.database != source.database or target.table == source.table:
                 continue
             if target.family != source.family:
                 continue
