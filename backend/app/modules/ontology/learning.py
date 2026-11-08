@@ -1,8 +1,7 @@
-"""Learn from measured failures: steward proposals from audits and failed questions.
+"""Learn from measured failures and from Studio: steward proposals, never direct edits.
 
-Three detectors turn evidence the evaluation already holds into ``ENGINE``
-proposals. Nothing changes until a domain steward approves and a release is
-published.
+Four detectors turn evidence Nova already holds into ``ENGINE`` proposals.
+Nothing changes until a domain steward approves and a release is published.
 
 * **Misleading names.** An official alias the latest claim audit rejected by
   consensus (one judge's "no" is enough) is proposed for removal, with the
@@ -12,6 +11,10 @@ published.
   words, for a metric bound to an official concept, proposes those words as
   that concept's aliases. The enrichment validator keeps a word only when no
   other concept uses it and it is not generic.
+* **Words people used in Studio.** An answer someone liked, on a thread where
+  they allowed learning, whose plan used one measure bound to an approved concept,
+  shows the words people use for it. A phrase used by at least two people is
+  proposed as an alias, through the same validator; no question or person is kept.
 * **Metrics a refusal asked for.** A question refused because no measure
   computes it is given, with the view's measures, to a language model that
   proposes a formula over them or says it cannot be derived. A formula becomes
@@ -24,7 +27,7 @@ from __future__ import annotations
 
 import copy
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
 
 from pydantic import Field
@@ -53,7 +56,8 @@ class LearnRequest(Contract):
     answer_run_ids: list[str] = Field(default_factory=list, max_length=8)
     #: Detectors to run; all by default.
     detectors: list[str] = Field(
-        default_factory=lambda: ["aliases", "vocabulary", "metrics"], max_length=3)
+        default_factory=lambda: ["aliases", "vocabulary", "metrics", "conversations"],
+        max_length=4)
 
 
 async def learn(body: LearnRequest, user: dict, evaluation, stewardship, client=None) -> dict:
@@ -78,6 +82,9 @@ async def learn(body: LearnRequest, user: dict, evaluation, stewardship, client=
     if "metrics" in body.detectors and answer_runs:
         await _missing_metrics(answer_runs, concepts, body, user, evaluation, stewardship,
                                report, client)
+    if "conversations" in body.detectors:
+        await _conversations(concepts, busy, body, user, evaluation, stewardship, report,
+                             client)
     await access.audit("LEARN", "ONTOLOGY_PROPOSAL",
                        ",".join(item["id"] for item in report["proposals"])[:128] or "none", user)
     return report
@@ -156,20 +163,7 @@ async def _misleading_aliases(claims: EvalRun, concepts, busy, body, user, evalu
 
 async def _vocabulary(answer_runs, concepts, busy, body, user, evaluation, stewardship,
                       report) -> None:
-    from app.modules.ontology.contracts import Domain
-    from app.modules.ontology.enrichment import validate
-
-    bindings = [item for item in await evaluation.repository.current(
-        "representations", Representation) if item.status == "VALIDATED"]
-    bound = {(item.semantic.view_id, item.metric): item.concept_id for item in bindings}
-    domains = {item.id: item for item in await evaluation.repository.current("domains", Domain)}
-    names = {cid: access.qualified_path(domains[c.domain_id], domains) + "." + c.slug
-             for cid, c in concepts.items() if c.domain_id in domains}
-    taken: dict[str, set[str]] = {}
-    for cid, concept in concepts.items():
-        if cid in names:
-            for name in names_of(concept, names[cid]):
-                taken.setdefault(name, set()).add(cid)
+    bound = await _bound(evaluation)
     wanted: dict[str, set[str]] = defaultdict(set)
     for run in answer_runs:
         cases = {case.id: case for case in await evaluation.cases(run.set_name, run.version)}
@@ -182,8 +176,42 @@ async def _vocabulary(answer_runs, concepts, busy, body, user, evaluation, stewa
                 if concept_id and concept_id not in busy:
                     for term in _metric_words(case, result):
                         wanted[concept_id].add(term)
+    await _propose_aliases(
+        wanted, {}, concepts, user, evaluation, stewardship, report,
+        "Words people used for official metrics",
+        "Gold questions asked for these metrics in these words and were not answered "
+        "correctly. Each word is used by no other concept and is not generic.",
+        f"vocabulary:{{domain}}:{body.operation_id}", busy)
+
+
+async def _bound(evaluation) -> dict[tuple[str, str], str]:
+    """Validated bindings: (view id, metric) to the concept it computes."""
+    bindings = [item for item in await evaluation.repository.current(
+        "representations", Representation) if item.status == "VALIDATED"]
+    return {(item.semantic.view_id, item.metric): item.concept_id for item in bindings}
+
+
+async def _propose_aliases(wanted: dict[str, set[str]], notes: dict[tuple[str, str], str],
+                           concepts, user, evaluation, stewardship, report, title: str,
+                           rationale: str, key: str, busy: set[str]) -> None:
+    """One steward proposal per domain adding the words the validator keeps as aliases.
+
+    A concept it changes joins ``busy``, so a later detector does not propose a
+    conflicting change to it in the same pass.
+    """
+    from app.modules.ontology.contracts import Domain
+    from app.modules.ontology.enrichment import validate
+
     if not wanted:
         return
+    domains = {item.id: item for item in await evaluation.repository.current("domains", Domain)}
+    names = {cid: access.qualified_path(domains[c.domain_id], domains) + "." + c.slug
+             for cid, c in concepts.items() if c.domain_id in domains}
+    taken: dict[str, set[str]] = {}
+    for cid, concept in concepts.items():
+        if cid in names:
+            for name in names_of(concept, names[cid]):
+                taken.setdefault(name, set()).add(cid)
     raw = {"concepts": [{"name": names[cid], "aliases": sorted(terms)}
                         for cid, terms in wanted.items() if cid in names]}
     sent = {names[cid]: concepts[cid] for cid in wanted if cid in names}
@@ -203,15 +231,15 @@ async def _vocabulary(answer_runs, concepts, busy, body, user, evaluation, stewa
         by_domain[concept.domain_id].append(ConceptChange(
             op="update", concept_id=concept.id, base_revision=concept.revision,
             body=ConceptBody(**body_now)))
-        lines[concept.domain_id].append(
-            f"- {concept.label}: + {', '.join(repr(alias) for alias in fresh)}")
+        busy.add(concept_id)
+        described = [repr(alias) + (f" ({notes[(concept_id, normalise(alias))]})"
+                                    if (concept_id, normalise(alias)) in notes else "")
+                     for alias in fresh]
+        lines[concept.domain_id].append(f"- {concept.label}: + {', '.join(described)}")
     for domain_id, changes in sorted(by_domain.items()):
         report["proposals"].append(await _submit(
-            stewardship, user, "Words people used for official metrics",
-            "Gold questions asked for these metrics in these words and were not answered "
-            "correctly. Each word is used by no other concept and is not generic.\n"
-            + "\n".join(lines[domain_id]),
-            changes, f"vocabulary:{domain_id}:{body.operation_id}"))
+            stewardship, user, title, rationale + "\n" + "\n".join(lines[domain_id]),
+            changes, key.replace("{domain}", domain_id)))
 
 
 _MEASURE_TERM = re.compile(r"measure term: '([^']+)'")
@@ -226,6 +254,95 @@ def _metric_words(case: EvalCase, result: EvalResult) -> list[str]:
     words = _MEASURE_TERM.findall(case.meaning)
     return [word for word in dict.fromkeys(words)
             if normalise(word) and normalise(word) in normalise(case.question)][:4]
+
+
+# --- words people used in Studio ---------------------------------------------------------
+
+#: Distinct people who must have used a phrase for the same metric before it is proposed.
+MIN_PRINCIPALS = 2
+#: Liked answers read per learning pass, newest first.
+LIKED_ANSWERS = 2000
+_PHRASE_RUBRIC = (
+    "Each item is a question someone asked a business analytics assistant and the measure "
+    "the assistant correctly answered it with. Return the exact words of the question that "
+    "name that measure, copied verbatim: no breakdown (per city), filter value, period, "
+    "number or question word. Return an empty phrase when the question does not name the "
+    "measure in its own words or only with a generic word such as total or data."
+)
+
+
+async def _conversations(concepts, busy, body, user, evaluation, stewardship, report,
+                         client) -> None:
+    """Phrases people used in Studio for a metric, from answers they liked.
+
+    Only threads where the person allowed learning count, and only answers whose plan
+    used one measure bound to an approved concept, so the words name that measure. A
+    question that already uses one of the concept's names teaches nothing. A phrase is
+    proposed when at least ``MIN_PRINCIPALS`` people used it; the proposal carries the
+    phrase and counts, never a question or a person.
+    """
+    from app.modules.agents.verified_candidates import candidates_from_steps
+    from app.modules.assistant.repository import assistant_repository
+    from app.modules.ontology.evaluation.judging import TEXT, ask_items, items_schema
+
+    bound = await _bound(evaluation)
+    observations: list[tuple[str, str, str]] = []
+    for answer in await assistant_repository.liked_answers(limit=LIKED_ANSWERS):
+        for candidate in candidates_from_steps(answer["steps"]):
+            metrics = (candidate.get("semantic_plan") or {}).get("metrics") or []
+            if len(metrics) != 1:
+                continue
+            concept_id = bound.get((str(candidate.get("view_id")), str(metrics[0])))
+            concept = concepts.get(concept_id or "")
+            if concept is None or concept_id in busy:
+                continue
+            question = str(candidate.get("question") or "")
+            asked = f" {normalise(question)} "
+            known = {normalise(name) for name in (concept.label, concept.slug.replace("_", " "),
+                                                  *concept.aliases)}
+            if any(name and f" {name} " in asked for name in known):
+                continue
+            observations.append((str(answer["user_name"]), question, str(concept_id)))
+    if not observations:
+        return
+    client = client or evaluation.client()
+    people: dict[tuple[str, str], set[str]] = defaultdict(set)
+    answers: Counter[tuple[str, str]] = Counter()
+    spelled: dict[tuple[str, str], str] = {}
+    for start in range(0, len(observations), METRIC_BATCH):
+        batch = observations[start:start + METRIC_BATCH]
+        found, _model = await ask_items(
+            client, _PHRASE_RUBRIC, {},
+            [{"id": str(index), "question": question,
+              "measure": f"{concepts[cid].label}: {concepts[cid].definition}"}
+             for index, (_who, question, cid) in enumerate(batch)],
+            items_schema({"id": TEXT, "phrase": TEXT}), "measure_phrase", answer_key="id")
+        for index, (who, question, cid) in enumerate(batch):
+            phrase = " ".join(str((found.get(str(index)) or {}).get("phrase") or "").split())
+            key = normalise(phrase)
+            if not key or f" {key} " not in f" {normalise(question)} ":
+                continue
+            people[(cid, key)].add(who)
+            answers[(cid, key)] += 1
+            spelled.setdefault((cid, key), phrase)
+    wanted: dict[str, set[str]] = defaultdict(set)
+    notes: dict[tuple[str, str], str] = {}
+    for (cid, key), users in people.items():
+        if len(users) < MIN_PRINCIPALS:
+            report["skipped"].append({"concept": concepts[cid].label, "value": spelled[(cid, key)],
+                                      "reason": f"Used by {len(users)} person; needs "
+                                                f"{MIN_PRINCIPALS}"})
+            continue
+        wanted[cid].add(spelled[(cid, key)])
+        notes[(cid, key)] = f"{len(users)} people, {answers[(cid, key)]} liked answers"
+    await _propose_aliases(
+        wanted, notes, concepts, user, evaluation, stewardship, report,
+        "Words people used in Studio",
+        "People asked for these metrics in these words in Studio and liked the answers, "
+        f"on threads where they allowed learning. Each phrase was used by at least "
+        f"{MIN_PRINCIPALS} people, is used by no other concept and is not generic. No "
+        "question or person is stored in this proposal.",
+        f"conversations:{{domain}}:{body.operation_id}", busy)
 
 
 # --- metrics a refusal asked for --------------------------------------------------------

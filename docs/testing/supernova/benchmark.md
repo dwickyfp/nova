@@ -54,5 +54,5 @@ Angka ketepatan jawaban di atas tidak bergantung pada judge. Hasil eksekusi agen
 ## Yang belum terbukti
 
 - **κ judge ≥ 0,8 pada kasus sulit alami.** Pada set tantangan seimbang, κ judge gold set adalah 0,986 (0,965–1,000), dan semua 129 mutan tertangkap ([judge-agreement.md](judge-agreement.md)). Klaim untuk deteksi makna yang salah sudah terbukti. Untuk kasus sulit alami, intervalnya masih lebar. Judge klaim belum diuji dengan set seimbang.
-- **Presisi keputusan otomatis ≥ 97%.** Pada 14 database baru dan 3 database lab, presisinya 114/115 = 99,1% (95,2–99,8%). Hasil ini belum cukup data. Satu-satunya kesalahan adalah join lintas database. Lihat [join-precision.md](join-precision.md).
+- **Presisi keputusan otomatis ≥ 97%.** Setelah kandidat dibatasi ke satu database, presisi terima pada 183 database Spider adalah 322/327 = 98,5% (96,5–99,3%). Hasil ini belum cukup data. Penolakan otomatis gagal untuk foreign key bernama peran (8,1% join nyata ditolak). Lihat [join-precision.md](join-precision.md) dan [join-precision-2.md](join-precision-2.md).
 - **Belajar dari percakapan Studio.** Siklus belajar sekarang memakai hasil evaluasi dan riwayat query, belum percakapan Studio.

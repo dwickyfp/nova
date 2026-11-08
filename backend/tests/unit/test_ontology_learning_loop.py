@@ -224,3 +224,88 @@ async def test_a_refused_question_becomes_a_proven_metric_proposal(world):
     created = next(item for item in await world.stewardship.list(ADMIN, None)
                    if item.id == proposal["id"])
     assert created.changes[0].op == "create" and created.changes[0].body.kind == "METRIC"
+
+
+# --- words people used in Studio ---------------------------------------------------------
+
+def liked(user_name, question, metrics=("total_revenue",), view="sales"):
+    return {"message_id": f"m-{user_name}-{len(question)}", "user_name": user_name, "steps": [{
+        "kind": "tool", "name": "semantic_query", "status": "done",
+        "trace_detail": {"question": question, "semantic_view": {"id": view, "version": 1},
+                         "semantic_plan": {"metrics": list(metrics)}}}]}
+
+
+class PhraseModel:
+    """Names, for each question, the words the test says name its measure."""
+
+    def __init__(self, phrases):
+        self.phrases, self.questions = phrases, []
+
+    async def resolve(self, **_):
+        return SimpleNamespace(model="m", capabilities=SimpleNamespace(supports_json_schema=True))
+
+    async def complete(self, *, messages, **_):
+        items = json.loads(messages[1]["content"])["items"]
+        self.questions += [item["question"] for item in items]
+        return {"content": json.dumps({"items": [
+            {"id": item["id"], "phrase": self.phrases.get(item["question"], "")}
+            for item in items]})}
+
+
+async def conversations(world, monkeypatch, answers, phrases):
+    from app.modules.assistant.repository import assistant_repository
+
+    async def liked_answers(**_):
+        return answers
+
+    monkeypatch.setattr(assistant_repository, "liked_answers", liked_answers)
+    model = PhraseModel(phrases)
+    evidence = Evidence(world.repository, [], {}, [])
+    report = await learn(LearnRequest(operation_id="op-conv-1", detectors=["conversations"]),
+                         ADMIN, evidence, world.stewardship, client=model)
+    return report, model
+
+
+async def test_a_phrase_two_people_used_in_liked_answers_is_proposed(world, monkeypatch):
+    concept = await bind(world, world.finance, "TotalRevenue", label="Total revenue")
+    answers = [liked("ani", "Berapa omzet kotor per kota bulan lalu?"),
+               liked("budi", "omzet kotor Oktober 2026"),
+               liked("budi", "Tolong omzet kotor per brand")]
+    report, _model = await conversations(world, monkeypatch, answers, {
+        "Berapa omzet kotor per kota bulan lalu?": "omzet kotor",
+        "omzet kotor Oktober 2026": "omzet kotor",
+        "Tolong omzet kotor per brand": "omzet kotor"})
+    assert len(report["proposals"]) == 1
+    proposal = (await world.stewardship.list(ADMIN, None))[0]
+    change = proposal.changes[0]
+    assert proposal.source == "ENGINE" and change.concept_id == concept
+    assert "omzet kotor" in change.body.aliases
+    assert "2 people, 3 liked answers" in proposal.rationale
+    # The proposal carries the phrase and counts, never a question or a person.
+    assert "kota bulan lalu" not in proposal.rationale and "ani" not in proposal.rationale
+
+
+async def test_one_persons_phrase_or_an_invented_one_is_not_proposed(world, monkeypatch):
+    await bind(world, world.finance, "TotalRevenue", label="Total revenue")
+    answers = [liked("ani", "Berapa duit masuk per kota?"),
+               liked("ani", "duit masuk Oktober"),
+               liked("budi", "Berapa pendapatan kotor Oktober?")]
+    report, _model = await conversations(world, monkeypatch, answers, {
+        "Berapa duit masuk per kota?": "duit masuk", "duit masuk Oktober": "duit masuk",
+        # Words the question does not contain are never learned.
+        "Berapa pendapatan kotor Oktober?": "omzet kotor"})
+    assert report["proposals"] == []
+    assert {"concept": "Total revenue", "value": "duit masuk",
+            "reason": "Used by 1 person; needs 2"} in report["skipped"]
+
+
+async def test_known_names_and_several_measures_teach_nothing_and_cost_no_model_call(
+        world, monkeypatch):
+    await bind(world, world.finance, "TotalRevenue", label="Total revenue",
+               aliases=["omzet"])
+    answers = [liked("ani", "Berapa omzet per kota?"),  # already an official name
+               liked("budi", "pendapatan dan diskon per kota",
+                     metrics=("total_revenue", "discount_amount")),  # two measures
+               liked("budi", "duit masuk per kota", view="other")]  # an unbound view
+    report, model = await conversations(world, monkeypatch, answers, {})
+    assert report["proposals"] == [] and model.questions == []
