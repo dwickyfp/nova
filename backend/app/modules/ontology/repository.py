@@ -23,6 +23,8 @@ R = TypeVar("R", bound=OntologyRecord)
 
 #: Upper bound of records of one kind read in a single request.
 MAX_CURRENT = 20000
+#: Rows per INSERT when a batch is written.
+BATCH_ROWS = 500
 _UNCHANGED = {"revision", "actor", "created_at", "updated_at"}
 
 
@@ -187,7 +189,7 @@ class RevisionRepository:
         if not records:
             return 0
         model = type(records[0][0])
-        async with metadata_lock(f"{self.namespace}:{kind}:batch", timeout_seconds=60) as lock:
+        async with metadata_lock(f"{self.namespace}:{kind}:batch", timeout_seconds=120) as lock:
             ids = [record.id for record, _ in records]
             latest: dict[str, R] = {}
             for start in range(0, len(ids), 500):
@@ -218,10 +220,12 @@ class RevisionRepository:
                     record.actor.security_context_version,
                     record.model_dump_json(),
                 ])
-            for start in range(0, len(rows), 50):
+            # A join run over many databases writes tens of thousands of results; large
+            # statements keep that within the lease's deadline.
+            for start in range(0, len(rows), BATCH_ROWS):
                 if not await lock.renew():
                     raise HTTPException(status_code=409, detail="Metadata lease expired; retry")
-                chunk = rows[start:start + 50]
+                chunk = rows[start:start + BATCH_ROWS]
                 await db.execute_system(
                     f"INSERT INTO {self._table(kind)} "
                     "(id,revision,operation_id,actor,active_role,security_context_version,"

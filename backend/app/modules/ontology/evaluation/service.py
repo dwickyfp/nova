@@ -109,7 +109,7 @@ def _verdict(value: Any) -> Verdict:
 
 
 #: Upper bound of results one run stores (a join run keeps one per column pair).
-RESULTS_PER_RUN = 20000
+RESULTS_PER_RUN = 100_000
 
 #: Version of the judge instructions; every model verdict names the rubric it used.
 RUBRIC = "rubric-4"

@@ -99,6 +99,19 @@ async def test_save_many_writes_changed_records_in_one_insert(sql):
     assert inserts[0][1][0] == "dom_2" and inserts[0][1][7] == "dom_3"
 
 
+async def test_save_many_writes_a_large_batch_in_few_statements(sql):
+    # A join run over many databases stores tens of thousands of results; one statement
+    # per BATCH_ROWS keeps the write inside the lease's deadline.
+    from app.modules.ontology.repository import BATCH_ROWS
+
+    fake = sql([])
+    records = [(_domain().model_copy(update={"id": f"dom_{i}"}), 0)
+               for i in range(2 * BATCH_ROWS + 1)]
+    assert await OntologyRepository().save_many("domains", records) == len(records)
+    inserts = [call for call in fake.calls if call[0].startswith("INSERT")]
+    assert [call[0].count("NOW()") for call in inserts] == [BATCH_ROWS, BATCH_ROWS, 1]
+
+
 async def test_save_many_aborts_the_whole_batch_on_a_conflict(sql):
     stored = _domain()
     fake = sql([{"rows": [[stored.model_dump_json(), 1]]}])

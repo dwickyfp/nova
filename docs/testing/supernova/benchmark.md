@@ -42,15 +42,17 @@ Dokumen ini menjelaskan metode, membaca hasilnya, dan menyebut apa yang belum te
 
 ## Kualitas judge
 
-| Judge | κ pada separuh test | κ pada separuh dev | Bacaan |
-|---|---|---|---|
-| Klaim | 0,79 (n = 72) | 0,58 | Mendekati, belum mencapai 0,8 |
-| Gold set, rubrik v4 | 0,59 (n = 96) | 0,80 | Rubrik disetel di dev; di data yang tidak dilihat hanya sedang |
+| Judge | Kesepakatan | κ, semua item (interval 95%) | κ separuh test | κ separuh dev |
+|---|---|---|---|---|
+| Klaim | 97,0% (n = 166) | 0,65 (0,25–0,91) | 0,79 (n = 72) | 0,58 |
+| Gold set, rubrik v4 | 95,0% (n = 181) | 0,70 (0,48–0,86) | 0,59 (n = 96) | 0,80 |
 
-Selisih dev/test pada gold set menunjukkan rubrik v4 sebagian overfit ke separuh dev. Ketidaksepakatan terbanyak ada pada kasus "units sold" dan kasus yang secara wajar bisa dibaca dua arah. **κ ≥ 0,8 pada data yang tidak dilihat belum terbukti.** Angka ketepatan jawaban di atas tidak bergantung pada judge. Hasil eksekusi agent dibandingkan baris demi baris dengan hasil gold plan yang dijalankan sebagai pemanggil yang sama. Judge hanya menentukan label kasus (answerable, ambiguous, unanswerable) dan menilai klaim.
+Kedua judge sepakat dengan reviewer eksternal pada 95–97% item. Tetapi sekitar 94% item berlabel "yes", sehingga κ ditentukan oleh segelintir item "no". Interval bootstrap 95%-nya lebar: gold 0,48–0,86, klaim 0,25–0,91. Arah selisih dev/test juga berlawanan antara klaim dan gold, jadi selisih itu derau sampel, bukan bukti rubrik overfit. **κ ≥ 0,8 belum terbukti, dan juga tidak terbantah, dengan data alami ini.** Pengujian dengan set seimbang ada di [judge-agreement.md](judge-agreement.md).
+
+Angka ketepatan jawaban di atas tidak bergantung pada judge. Hasil eksekusi agent dibandingkan baris demi baris dengan hasil gold plan yang dijalankan sebagai pemanggil yang sama. Judge hanya menentukan label kasus (answerable, ambiguous, unanswerable) dan menilai klaim.
 
 ## Yang belum terbukti
 
-- **κ judge ≥ 0,8 pada separuh test**, untuk klaim maupun gold set.
-- **Presisi keputusan otomatis ≥ 97%.** Join yang diterima 47/47, tetapi batas bawah Wilson 92,4% belum menembus 97%. Butuh sedikitnya 125 keputusan terima tanpa salah untuk itu.
+- **κ judge ≥ 0,8 pada kasus sulit alami.** Pada set tantangan seimbang, κ judge gold set adalah 0,986 (0,965–1,000), dan semua 129 mutan tertangkap ([judge-agreement.md](judge-agreement.md)). Klaim untuk deteksi makna yang salah sudah terbukti. Untuk kasus sulit alami, intervalnya masih lebar. Judge klaim belum diuji dengan set seimbang.
+- **Presisi keputusan otomatis ≥ 97%.** Pada 14 database baru dan 3 database lab, presisinya 114/115 = 99,1% (95,2–99,8%). Hasil ini belum cukup data. Satu-satunya kesalahan adalah join lintas database. Lihat [join-precision.md](join-precision.md).
 - **Belajar dari percakapan Studio.** Siklus belajar sekarang memakai hasil evaluasi dan riwayat query, belum percakapan Studio.
