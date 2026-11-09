@@ -156,7 +156,7 @@ describe("Doctor and reviewed applications", () => {
       <QualityProposalReview proposal={proposal} busy onReview={onReview} />,
     );
     await expect
-      .element(screen.getByRole("button", { name: "Applying reviewed patch…" }))
+      .element(screen.getByRole("button", { name: "Applying…" }))
       .toBeDisabled();
   });
   it("opens the exact recorded regressed trace", async () => {

@@ -22,7 +22,7 @@ import {
   type QualityCase,
   type QualityCount,
 } from "../quality-api";
-import { QualityCaseEditor } from "./quality-case-editor";
+import { QualityCaseEditor, checkLabel } from "./quality-case-editor";
 import { QualityProposalDraft } from "./quality-proposal-draft";
 import { QualityProposalReview } from "./quality-proposal-review";
 import { AgentDoctor, DoctorFindings } from "./quality-doctor";
@@ -153,7 +153,7 @@ function QualityWorkspace({
   });
   // The active revision is only a release once it is a saved version; an agent
   // that has never saved one has nothing to evaluate yet (and no manifest).
-  const savedActive = versions.data?.versions.some(
+  const savedActive = versions.data?.versions?.some(
     (item) => item.version_id === versions.data?.active_version_id,
   )
     ? versions.data?.active_version_id
@@ -247,17 +247,82 @@ function QualityWorkspace({
   );
   return (
     <div className="min-w-0 space-y-8">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-medium">Test questions</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Questions people really ask, each with what a good answer must
+              do. They are how you know a change made the agent better, not
+              worse.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            onClick={() => setEditor({})}
+          >
+            Add test question
+          </Button>
+        </div>
+        {editor && (
+          <QualityCaseEditor
+            key={`${editor.initial?.id ?? "new"}:${editor.regression}`}
+            agentId={agentId}
+            epoch={epoch}
+            initial={editor.initial}
+            regression={editor.regression}
+            onCancel={() => setEditor(null)}
+            onSaved={() => setEditor(null)}
+          />
+        )}
+        {cases.data?.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No test questions yet. Add one before testing a version.
+          </p>
+        ) : (
+          <ul className="divide-y border-y">
+            {cases.data?.items.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-medium">{item.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {item.mandatory && item.critical
+                      ? "Must pass before publishing"
+                      : item.mandatory
+                        ? "Always runs"
+                        : "Optional"}{" "}
+                    · {item.assertions.length}{" "}
+                    {item.assertions.length === 1 ? "check" : "checks"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Edit ${item.name}`}
+                  onClick={() => setEditor({ initial: item })}
+                >
+                  Edit
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <section className="space-y-4">
         <div>
-          <h2 className="text-base font-medium">Evaluate a release</h2>
+          <h2 className="text-base font-medium">Test a version</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pin dependencies and run the saved regression cases through the
-            agent. Each scorer reports its own result.
+            Run every test question on a saved version of this agent. A version
+            must pass its required tests before it can be published.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1 space-y-2">
-            <Label htmlFor={`${prefix}-version`}>Release to evaluate</Label>
+            <Label htmlFor={`${prefix}-version`}>Version to test</Label>
             <Select
               value={activeVersion}
               onValueChange={setVersionId}
@@ -291,12 +356,12 @@ function QualityWorkspace({
             }
             onClick={() => evaluate.mutate()}
           >
-            {evaluate.isPending ? "Evaluating release…" : "Evaluate release"}
+            {evaluate.isPending ? "Running tests…" : "Run tests"}
           </Button>
         </div>
         <details className="min-w-0 rounded-md border p-4">
           <summary className="min-h-11 cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            Promotion gates
+            Publishing requirements (advanced)
           </summary>
           <fieldset
             disabled={evaluate.isPending}
@@ -359,7 +424,7 @@ function QualityWorkspace({
                       }
                     />
                     <span className="min-w-0 break-words">
-                      {scorer.replace(/_/g, " ")}
+                      {checkLabel(scorer)}
                     </span>
                   </Label>
                 ))}
@@ -515,63 +580,8 @@ function QualityWorkspace({
           <ReleaseDependencies manifest={manifest.data?.manifest ?? null} />
         )}
       </section>
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-medium">Regression cases</h2>
-          <Button
-            variant="outline"
-            className="min-h-11"
-            onClick={() => setEditor({})}
-          >
-            Create case
-          </Button>
-        </div>
-        {editor && (
-          <QualityCaseEditor
-            key={`${editor.initial?.id ?? "new"}:${editor.regression}`}
-            agentId={agentId}
-            epoch={epoch}
-            initial={editor.initial}
-            regression={editor.regression}
-            onCancel={() => setEditor(null)}
-            onSaved={() => setEditor(null)}
-          />
-        )}
-        {cases.data?.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Create a case with deterministic expectations before evaluating a
-            release.
-          </p>
-        ) : (
-          <ul className="divide-y border-y">
-            {cases.data?.items.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-medium">{item.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Revision {item.revision} ·{" "}
-                    {item.critical ? "critical" : "non-critical"} ·{" "}
-                    {item.mandatory ? "mandatory" : "optional"} ·{" "}
-                    {item.assertions.length} assertions
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={() => setEditor({ initial: item })}
-                >
-                  Edit {item.name}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
       <section className="space-y-4">
-        <h2 className="text-base font-medium">Evaluation history</h2>
+        <h2 className="text-base font-medium">Test results</h2>
         {runs.isPending ? (
           <p role="status" className="text-sm">
             Loading evaluation runs…
@@ -585,15 +595,15 @@ function QualityWorkspace({
           </p>
         ) : !runs.data?.items.length ? (
           <p className="text-sm text-muted-foreground">
-            No releases have been evaluated yet.
+            No version has been tested yet.
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor={`${prefix}-run`}>Inspect run</Label>
+              <Label htmlFor={`${prefix}-run`}>Show result of</Label>
               <Select value={selectedRun} onValueChange={setSelectedRun}>
                 <SelectTrigger id={`${prefix}-run`} className="min-h-11 w-full">
-                  <SelectValue placeholder="Select an evaluation" />
+                  <SelectValue placeholder="Choose a test run" />
                 </SelectTrigger>
                 <SelectContent>
                   {runs.data.items.map((item) => (
@@ -607,7 +617,7 @@ function QualityWorkspace({
             </div>
             <div className="space-y-2">
               <Label htmlFor={`${prefix}-baseline`}>
-                Compare with baseline run
+                Compare with an earlier result
               </Label>
               <Select
                 value={baselineRun || "none"}
@@ -692,7 +702,7 @@ function QualityWorkspace({
                 disabled={analyze.isPending}
                 onClick={() => analyze.mutate()}
               >
-                {analyze.isPending ? "Analyzing failures…" : "Analyze failures"}
+                {analyze.isPending ? "Finding the cause…" : "Find the cause"}
               </Button>
             )}
           </>
@@ -704,7 +714,7 @@ function QualityWorkspace({
         )}
         {analyze.isSuccess && (
           <p role="status" className="text-sm">
-            A reviewable improvement proposal is available in Suggestions.
+            A suggested fix is ready in the Suggestions tab.
           </p>
         )}
         {comparison.isFetching && (
@@ -760,7 +770,7 @@ function QualityMonitoringSettings({
       className="space-y-3 border-t pt-4"
     >
       <summary className="min-h-11 cursor-pointer text-sm font-medium focus-visible:outline focus-visible:outline-ring">
-        Production trace scoring
+        Grade real conversations automatically (advanced)
       </summary>
       {open &&
         (query.isPending ? (
@@ -924,10 +934,10 @@ function ProposalList({ agentId, epoch }: { agentId: string; epoch: number }) {
   });
   return (
     <section className="space-y-3">
-      <h2 className="text-base font-medium">Agent improvement proposals</h2>
+      <h2 className="text-base font-medium">Suggested fixes</h2>
       <p className="text-sm text-muted-foreground">
-        Review diagnosed failures and proposed changes. Accepted proposals still
-        require draft evaluation and publication.
+        Fixes Nova worked out from failed tests. Accept one and it becomes a
+        draft version; test it before you publish.
       </p>
       {query.isPending ? (
         <p role="status" className="text-sm">
@@ -942,41 +952,58 @@ function ProposalList({ agentId, epoch }: { agentId: string; epoch: number }) {
         </p>
       ) : !query.data?.items.length ? (
         <p className="text-sm text-muted-foreground">
-          Analyze a failed evaluation to create a proposal.
+          No suggested fixes yet. When a test run fails, choose &quot;Find the cause&quot; in its results.
         </p>
       ) : (
         <ul className="divide-y border-y">
           {query.data.items.map((item) => (
             <li key={item.id} className="min-w-0 space-y-2 py-4">
               <h3 className="break-words text-sm font-medium">
-                {item.title ?? "Failure analysis"} · {item.status}
+                {item.title ?? "A failed test"}{" "}
+                <span className="font-normal text-muted-foreground">
+                  · {["pending", "proposed"].includes(item.status)
+                    ? "waiting for your review"
+                    : item.status}
+                </span>
               </h3>
               {item.diagnosis && (
                 <p className="break-words text-sm">
-                  {item.hypothesis ? "Suspected causes: " : ""}
+                  <span className="text-muted-foreground">
+                    {item.hypothesis ? "Likely cause: " : "What went wrong: "}
+                  </span>
                   {Array.isArray(item.diagnosis)
-                    ? item.diagnosis
-                        .map((value) => value.replace(/_/g, " "))
-                        .join(", ")
+                    ? item.diagnosis.map(failureText).join(" ")
                     : item.diagnosis}
                 </p>
               )}
               {item.suggestion && (
-                <p className="break-words text-sm">{item.suggestion}</p>
+                <p className="break-words text-sm">
+                  <span className="text-muted-foreground">Nova&apos;s advice: </span>
+                  {item.suggestion}
+                </p>
               )}
-              {item.failure_taxonomy?.length ? (
-                <p className="break-words text-sm text-muted-foreground">
-                  {item.failure_taxonomy
-                    .map((value) => value.replace(/_/g, " "))
-                    .join(", ")}
-                </p>
+              {item.failure_taxonomy?.length || item.changes?.length || item.doctor ? (
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Technical details
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {item.failure_taxonomy?.length ? (
+                      <p className="break-words text-muted-foreground">
+                        {item.failure_taxonomy
+                          .map((value) => value.replace(/_/g, " "))
+                          .join(", ")}
+                      </p>
+                    ) : null}
+                    {item.changes?.map((change, index) => (
+                      <p key={index} className="break-words">
+                        {change.target}: {change.description}
+                      </p>
+                    ))}
+                    {item.doctor && <DoctorFindings report={item.doctor} />}
+                  </div>
+                </details>
               ) : null}
-              {item.changes?.map((change, index) => (
-                <p key={index} className="break-words text-sm">
-                  {change.target}: {change.description}
-                </p>
-              ))}
-              {item.doctor && <DoctorFindings report={item.doctor} />}
               {(["pending", "proposed"].includes(item.status) ||
                 item.application?.status === "pending") && (
                 <QualityProposalReview
@@ -1022,3 +1049,27 @@ function ProposalList({ agentId, epoch }: { agentId: string; epoch: number }) {
     </section>
   );
 }
+
+/** A failure code in a sentence anyone can read. */
+const FAILURE_TEXT: Record<string, string> = {
+  WRONG_SEMANTIC_METRIC: "It picked the wrong number or period.",
+  WRONG_BUSINESS_CONCEPT: "It misread a business term.",
+  WRONG_TOOL: "It used the wrong tool.",
+  BAD_TOOL_ARGUMENTS: "It gave a tool the wrong inputs.",
+  UNSUPPORTED_CONCLUSION: "It stated something the data did not show.",
+  MISSING_CONTEXT: "It answered without enough evidence or should have asked first.",
+  INCOMPLETE_ANSWER: "It did not finish the task.",
+  POLICY_FAILURE: "It did not follow a permission rule.",
+  ACTION_VERIFICATION_FAILED: "It did not confirm an action it took.",
+  INVALID_UI: "Its chart or table was not valid.",
+  UNGROUNDED_UI: "Its chart or table was not backed by the data.",
+  UI_ACTION_INCOMPLETE: "An action in its answer did not complete.",
+  GUARD_EXPECTATION_UNMET: "A safety rule did not behave as expected.",
+  TOO_SLOW: "It took too long.",
+  INEFFICIENT_EXECUTION: "It used more steps than needed.",
+};
+
+function failureText(code: string): string {
+  return FAILURE_TEXT[code] ?? code.replace(/_/g, " ").toLowerCase();
+}
+

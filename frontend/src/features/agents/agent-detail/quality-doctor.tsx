@@ -19,7 +19,7 @@ export function AgentDoctor({
   });
   return (
     <section className="min-w-0 space-y-3" aria-label="Agent Doctor">
-      <h2 className="text-base font-medium">Agent Doctor</h2>
+      <h2 className="text-base font-medium">What changed between versions</h2>
       {query.isPending ? (
         <p role="status" className="text-sm">
           Loading release diagnosis…

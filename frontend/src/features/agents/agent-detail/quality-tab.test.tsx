@@ -245,7 +245,7 @@ describe("Agent Quality", () => {
     await page.viewport(1280, 800);
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
-    await screen.getByText("Promotion gates", { exact: true }).click();
+    await screen.getByText("Publishing requirements (advanced)", { exact: true }).click();
     await screen.getByLabelText("Other case gates").click();
     await screen
       .getByRole("option", { name: "Require all other cases" })
@@ -253,23 +253,23 @@ describe("Agent Quality", () => {
     await expect
       .element(screen.getByLabelText("Other case gates"))
       .toHaveFocus();
-    await screen.getByLabelText("tool selection", { exact: true }).click();
+    await screen.getByLabelText("Uses the right tools", { exact: true }).click();
     await expect
-      .element(screen.getByLabelText("tool selection", { exact: true }))
+      .element(screen.getByLabelText("Uses the right tools", { exact: true }))
       .toHaveFocus();
     await expect
-      .element(screen.getByLabelText("tool selection", { exact: true }))
+      .element(screen.getByLabelText("Uses the right tools", { exact: true }))
       .toBeChecked();
     await userEvent.keyboard(" ");
     await expect
-      .element(screen.getByLabelText("tool selection", { exact: true }))
+      .element(screen.getByLabelText("Uses the right tools", { exact: true }))
       .not.toBeChecked();
     await expect
-      .element(screen.getByLabelText("tool selection", { exact: true }))
+      .element(screen.getByLabelText("Uses the right tools", { exact: true }))
       .toHaveFocus();
     await userEvent.keyboard(" ");
     await expect
-      .element(screen.getByLabelText("tool selection", { exact: true }))
+      .element(screen.getByLabelText("Uses the right tools", { exact: true }))
       .toBeChecked();
     await screen.getByLabelText("Performance gate mode").click();
     await screen
@@ -286,7 +286,7 @@ describe("Agent Quality", () => {
     await screen.getByLabelText("Maximum participants").fill("2");
     await screen.getByLabelText("Maximum metadata reads").fill("3");
     await page.screenshot();
-    await screen.getByRole("button", { name: "Evaluate release" }).click();
+    await screen.getByRole("button", { name: "Run tests" }).click();
     await vi.waitFor(() =>
       expect(
         fetch.mock.calls.some(
@@ -323,7 +323,7 @@ describe("Agent Quality", () => {
   it("keeps performance report only and omits limits that were cleared", async () => {
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
-    await screen.getByText("Promotion gates", { exact: true }).click();
+    await screen.getByText("Publishing requirements (advanced)", { exact: true }).click();
     await screen.getByLabelText("Other case gates").click();
     await screen
       .getByRole("option", { name: "Require other mandatory cases" })
@@ -343,7 +343,7 @@ describe("Agent Quality", () => {
     }
     await screen.getByLabelText("Maximum total tokens").fill("0");
     await expect.element(screen.getByLabelText("Maximum total tokens")).toHaveValue(0);
-    await screen.getByRole("button", { name: "Evaluate release" }).click();
+    await screen.getByRole("button", { name: "Run tests" }).click();
     await vi.waitFor(() =>
       expect(
         fetch.mock.calls.some(
@@ -370,14 +370,14 @@ describe("Agent Quality", () => {
   it("blocks invalid limits before pinning a manifest or starting an evaluation", async () => {
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
-    await screen.getByText("Promotion gates", { exact: true }).click();
+    await screen.getByText("Publishing requirements (advanced)", { exact: true }).click();
     for (const value of ["-1", "1.5", "9007199254740992"]) {
       await screen.getByLabelText("Maximum tool calls").fill(value);
       await expect
         .element(screen.getByRole("alert"))
         .toHaveTextContent("Maximum tool calls must be a whole number");
       await expect
-        .element(screen.getByRole("button", { name: "Evaluate release" }))
+        .element(screen.getByRole("button", { name: "Run tests" }))
         .toBeDisabled();
     }
     await screen.getByLabelText("Maximum tool calls").fill("9007199254740991");
@@ -389,7 +389,7 @@ describe("Agent Quality", () => {
         .element(screen.getByRole("alert"))
         .toHaveTextContent("Maximum metadata reads must be a whole number");
       await expect
-        .element(screen.getByRole("button", { name: "Evaluate release" }))
+        .element(screen.getByRole("button", { name: "Run tests" }))
         .toBeDisabled();
       screen.getByRole("alert").element().scrollIntoView({ block: "nearest" });
       await expect.element(screen.getByRole("alert")).toBeVisible();
@@ -403,7 +403,7 @@ describe("Agent Quality", () => {
         .element(screen.getByRole("alert"))
         .toHaveTextContent("Maximum latency (ms) must be a finite number");
       await expect
-        .element(screen.getByRole("button", { name: "Evaluate release" }))
+        .element(screen.getByRole("button", { name: "Run tests" }))
         .toBeDisabled();
     }
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
@@ -411,7 +411,7 @@ describe("Agent Quality", () => {
     );
     await screen.getByLabelText("Maximum latency (ms)").fill("0");
     await expect
-      .element(screen.getByRole("button", { name: "Evaluate release" }))
+      .element(screen.getByRole("button", { name: "Run tests" }))
       .toBeEnabled();
   });
   it("shows critical, scorer and performance gate assessments separately without deriving passes from case status", async () => {
@@ -473,7 +473,7 @@ describe("Agent Quality", () => {
       .toBeVisible();
     await expect
       .element(
-        gates.getByText("Required in every case: numeric consistency.", {
+        gates.getByText("Required in every case: Numbers come from the data.", {
           exact: false,
         }),
       )
@@ -753,10 +753,10 @@ describe("Agent Quality", () => {
     );
     await expect
       .element(
-        screen.getByText("Legacy release: dependencies are unevaluated."),
+        screen.getByText("This version was saved before Nova recorded what it uses."),
       )
       .toBeVisible();
-    await screen.getByRole("button", { name: "Evaluate release" }).click();
+    await screen.getByRole("button", { name: "Run tests" }).click();
     await expect
       .element(screen.getByText("Unsupported numeric claim"))
       .toBeVisible();
@@ -765,11 +765,11 @@ describe("Agent Quality", () => {
       .toBeVisible();
     await screen.getByRole("button", { name: "Inspect trace" }).click();
     expect(onTrace).toHaveBeenCalledWith("trace-1");
-    await screen.getByRole("button", { name: "Analyze failures" }).click();
+    await screen.getByRole("button", { name: "Find the cause" }).click();
     await expect
       .element(
         screen.getByText(
-          "A reviewable improvement proposal is available in Suggestions.",
+          "A suggested fix is ready in the Suggestions tab.",
         ),
       )
       .toBeVisible();
@@ -784,14 +784,14 @@ describe("Agent Quality", () => {
   it("creates regression cases with reviewed assertions and does not modify the frozen run", async () => {
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
-    await screen.getByRole("button", { name: "Evaluate release" }).click();
+    await screen.getByRole("button", { name: "Run tests" }).click();
     await screen
-      .getByRole("button", { name: "Create regression case" })
+      .getByRole("button", { name: "Turn into a test question" })
       .click();
     await expect
-      .element(screen.getByLabelText("Case name"))
+      .element(screen.getByLabelText("Name"))
       .toHaveValue("Revenue evidence regression");
-    await screen.getByRole("button", { name: "Save evaluation case" }).click();
+    await screen.getByRole("button", { name: "Save test question" }).click();
     await vi.waitFor(() =>
       expect(
         fetch.mock.calls.some(
@@ -819,17 +819,17 @@ describe("Agent Quality", () => {
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
     await screen
-      .getByRole("button", { name: "Create case", exact: true })
+      .getByRole("button", { name: "Add test question", exact: true })
       .click();
-    await screen.getByLabelText("Case name").fill("New");
-    await screen.getByLabelText("User prompt").fill("Revenue?");
-    await screen.getByLabelText("Expected values (JSON)").fill("{");
-    await screen.getByRole("button", { name: "Save evaluation case" }).click();
+    await screen.getByLabelText("Name").fill("New");
+    await screen.getByLabelText("Question", { exact: true }).fill("Revenue?");
+    await screen.getByLabelText("Expected result (JSON)").fill("{");
+    await screen.getByRole("button", { name: "Save test question" }).click();
     await expect
       .element(screen.getByRole("alert"))
       .toHaveTextContent("valid JSON");
-    await screen.getByLabelText("Expected values (JSON)").fill("[]");
-    await screen.getByRole("button", { name: "Save evaluation case" }).click();
+    await screen.getByLabelText("Expected result (JSON)").fill("[]");
+    await screen.getByRole("button", { name: "Save test question" }).click();
     await expect
       .element(screen.getByRole("alert"))
       .toHaveTextContent("JSON object");
@@ -840,7 +840,7 @@ describe("Agent Quality", () => {
   it("saves monitoring with the current revision and without supplying an execution binding", async () => {
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
-    await screen.getByText("Production trace scoring", { exact: true }).click();
+    await screen.getByText("Grade real conversations automatically (advanced)", { exact: true }).click();
     await screen.getByLabelText("Enable production scoring").click();
     await screen
       .getByRole("button", { name: "Save monitoring settings" })
@@ -868,6 +868,14 @@ describe("Agent Quality", () => {
           : json({ candidates: [], feedback: [], materialized_views: [] }),
     );
     const screen = await setup(<AgentImproveTab agentId="sales" />);
+    // Improve opens on a plain-language overview of the four steps.
+    await expect
+      .element(screen.getByRole("heading", { name: "Make this agent better" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("Testing is unavailable here"))
+      .toBeVisible();
+    await screen.getByRole("tab", { name: "Tests" }).click();
     await expect
       .element(screen.getByText(/Agent Quality is unavailable/))
       .toBeVisible();
@@ -880,7 +888,7 @@ describe("Agent Quality", () => {
       .element(screen.getByRole("tab", { name: "Suggestions" }))
       .toHaveAttribute("aria-selected", "true");
     await expect
-      .element(screen.getByRole("heading", { name: "From usage" }))
+      .element(screen.getByRole("heading", { name: "Signals from real use" }))
       .toBeVisible();
   });
   it("labels diagnoses as hypotheses and sends revision-bound proposal review", async () => {
@@ -904,9 +912,9 @@ describe("Agent Quality", () => {
       );
     const screen = await setup(<QualitySuggestions agentId="sales" />);
     await expect
-      .element(screen.getByText("Suspected causes: WRONG TOOL"))
+      .element(screen.getByText("Likely cause: It used the wrong tool."))
       .toBeVisible();
-    await screen.getByRole("button", { name: "Accept for draft" }).click();
+    await screen.getByRole("button", { name: "Apply as a draft" }).click();
     const call = fetch.mock.calls.find(([, init]) => init?.method === "POST");
     expect(String(call?.[0])).toContain("/quality/proposals/proposal-1/review");
     expect(JSON.parse(call![1]!.body as string)).toEqual({
@@ -944,7 +952,7 @@ describe("Agent Quality", () => {
     const screen = await setup(
       <QualityRunComparison left={left} right={right} />,
     );
-    const row = screen.getByRole("row", { name: /numeric consistency/ });
+    const row = screen.getByRole("row", { name: /Numbers come from the data/ });
     await expect
       .element(row.getByRole("cell").nth(0))
       .toHaveTextContent("1 / 1 / 0");
@@ -971,9 +979,9 @@ describe("Agent Quality", () => {
     await page.viewport(320, 800);
     const fetch = mock();
     const screen = await setup(<AgentQualityTab agentId="sales" />);
-    await screen.getByText("Promotion gates", { exact: true }).click();
+    await screen.getByText("Publishing requirements (advanced)", { exact: true }).click();
     await screen.getByLabelText("Maximum total tokens").fill("100");
-    await screen.getByRole("button", { name: "Evaluate release" }).click();
+    await screen.getByRole("button", { name: "Run tests" }).click();
     await expect
       .element(screen.getByText("Unsupported numeric claim"))
       .toBeVisible();

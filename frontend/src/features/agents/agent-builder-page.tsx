@@ -171,7 +171,10 @@ export function AgentBuilderPage() {
             <AgentObservabilityTab agentId={agentId} />
           </TabsContent>
           <TabsContent value="improve" className={FIT}>
-            <AgentImproveTab agentId={agentId} />
+            <AgentImproveTab
+              agentId={agentId}
+              onOpenConfiguration={() => setTab("configuration")}
+            />
           </TabsContent>
         </Tabs>
       </Main>

@@ -14,34 +14,78 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { qualityApi, qualityScorers, type QualityCase } from "../quality-api";
 
-const assertionHints: Record<string, string> = {
-  numeric_consistency:
-    'Expected object: {"accepted":true,"unsupported_count":0}. The scorer needs recorded numeric facts.',
-  tool_selection:
-    'Expected object: {"required":["tool_name"],"forbidden":[]}. Choose actual registered tool names.',
-  task_completeness:
-    'Expected object: {"completed":true}. The scorer checks recorded completion.',
-  policy_compliance:
-    'Expected object: {"consent_resolved":true,"classification":"read_only"}. Match the operation being tested.',
-  evidence_coverage:
-    'Expected object: {"minimum":1,"minimum_health":"strong","complete":true}. Missing evidence remains unavailable.',
-  latency:
-    'Expected object: {"max_ms":10000}. Choose the measured latency budget for this case.',
-  efficiency:
-    'Expected object: {"tool_calls":10,"provider_calls":10}. Choose the permitted call limits.',
-  semantic_selection:
-    "Use the expected semantic fields recorded in the trace, such as the selected metric and time range.",
-  concept_grounding:
-    'Expected object: {"status":"grounded","concepts":["Finance.NetRevenue"]}. Use "ambiguous" when the question must be clarified.',
-  tool_arguments:
-    "Use expected tool arguments recorded by the runtime. Include only public values.",
-  clarification_quality:
-    "Use expected clarification fields recorded by the runtime.",
-  action_verification:
-    "Use expected verification fields recorded by the runtime.",
-  guard_compliance:
-    'Expected object: {"fired":["untrusted-instructions-in-data"],"not_fired":[],"max_blocked":0}. Use guard rule ids from the Harness tab.',
+/** Each check in plain words, with the expected result it compares against. */
+export const CHECKS: Record<string, { label: string; hint: string; example: string }> = {
+  numeric_consistency: {
+    label: "Numbers come from the data",
+    hint: "Every number in the answer must match a number the agent actually queried.",
+    example: '{"accepted":true,"unsupported_count":0}',
+  },
+  semantic_selection: {
+    label: "Picks the right metric and period",
+    hint: "The agent chooses the metric, breakdown and time range you expect.",
+    example: '{"metrics":["net_revenue"],"time_range":"last_month"}',
+  },
+  concept_grounding: {
+    label: "Understands the business term",
+    hint: 'Words like "profit" map to your business definition, or the agent asks which one you mean ("ambiguous").',
+    example: '{"status":"grounded","concepts":["Finance.NetRevenue"]}',
+  },
+  tool_selection: {
+    label: "Uses the right tools",
+    hint: "Tools the agent must use, and tools it must not use, by their names.",
+    example: '{"required":["semantic_query"],"forbidden":[]}',
+  },
+  tool_arguments: {
+    label: "Passes the right inputs to tools",
+    hint: "The inputs the agent sends to a tool, such as a filter value.",
+    example: "{}",
+  },
+  evidence_coverage: {
+    label: "Shows its evidence",
+    hint: "The answer is backed by query results, not guesses.",
+    example: '{"minimum":1,"minimum_health":"strong","complete":true}',
+  },
+  clarification_quality: {
+    label: "Asks a good question when unclear",
+    hint: "For an unclear question, the agent asks back instead of guessing.",
+    example: "{}",
+  },
+  task_completeness: {
+    label: "Finishes the task",
+    hint: "The agent completes what was asked instead of stopping halfway.",
+    example: '{"completed":true}',
+  },
+  policy_compliance: {
+    label: "Follows permission rules",
+    hint: "Anything that changes data asks for consent first; read-only questions stay read-only.",
+    example: '{"consent_resolved":true,"classification":"read_only"}',
+  },
+  action_verification: {
+    label: "Checks an action after doing it",
+    hint: "After changing something, the agent confirms the change happened.",
+    example: "{}",
+  },
+  guard_compliance: {
+    label: "Respects safety rules",
+    hint: "The safety rules (Behavior rules tab) that must, or must not, fire for this question.",
+    example: '{"fired":[],"not_fired":[],"max_blocked":0}',
+  },
+  latency: {
+    label: "Answers fast enough",
+    hint: "The longest the answer may take, in milliseconds (10000 = 10 seconds).",
+    example: '{"max_ms":10000}',
+  },
+  efficiency: {
+    label: "Does not waste steps",
+    hint: "The most tool calls and AI calls the agent may use for this question.",
+    example: '{"tool_calls":10,"provider_calls":10}',
+  },
 };
+
+export function checkLabel(scorer: string): string {
+  return CHECKS[scorer]?.label ?? scorer.replace(/_/g, " ");
+}
 
 export function QualityCaseEditor({
   agentId,
@@ -95,7 +139,7 @@ export function QualityCaseEditor({
             expected = JSON.parse(item.expected);
           } catch {
             throw new Error(
-              `${item.scorer.replace(/_/g, " ")} expectations must be valid JSON.`,
+              `"${checkLabel(item.scorer)}" needs its expected result as valid JSON.`,
             );
           }
           if (
@@ -103,12 +147,12 @@ export function QualityCaseEditor({
             typeof expected !== "object" ||
             Array.isArray(expected)
           )
-            throw new Error("Expected values must be a JSON object.");
+            throw new Error("The expected result must be a JSON object, like {\"max_ms\":10000}.");
           return { ...item, expected };
         }),
       };
       if (!body.name || !body.prompt || !body.assertions.length)
-        throw new Error("Provide a name, prompt, and at least one assertion.");
+        throw new Error("Add a name, a question, and at least one check.");
       return initial && !regression
         ? qualityApi.updateCase(agentId, initial, body)
         : qualityApi.createCase(agentId, body);
@@ -138,19 +182,19 @@ export function QualityCaseEditor({
     >
       <h3 className="text-base font-medium">
         {regression
-          ? "Create regression case"
+          ? "Turn this failure into a test"
           : initial
-            ? "Edit evaluation case"
-            : "Create evaluation case"}
+            ? "Edit test question"
+            : "New test question"}
       </h3>
       {regression && (
         <p className="text-sm text-muted-foreground">
-          Review the case expectations before saving this regression. The
-          earlier run keeps its frozen case revision.
+          Check what the test expects before saving it. The earlier result
+          keeps its own copy of this test.
         </p>
       )}
       <div className="space-y-2">
-        <Label htmlFor={`${prefix}-name`}>Case name</Label>
+        <Label htmlFor={`${prefix}-name`}>Name</Label>
         <Input
           id={`${prefix}-name`}
           className="min-h-11"
@@ -161,7 +205,7 @@ export function QualityCaseEditor({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`${prefix}-prompt`}>User prompt</Label>
+        <Label htmlFor={`${prefix}-prompt`}>Question</Label>
         <Textarea
           id={`${prefix}-prompt`}
           required
@@ -176,28 +220,38 @@ export function QualityCaseEditor({
             checked={mandatory}
             onCheckedChange={(value) => setMandatory(value === true)}
           />
-          Mandatory case
+          Always run this test
         </label>
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <Checkbox
             checked={critical}
             onCheckedChange={(value) => setCritical(value === true)}
           />
-          Critical case
+          Must pass before publishing
         </label>
       </div>
       <p className="text-sm text-muted-foreground">
-        Required assertions in mandatory critical cases must all pass before
-        promotion. Unavailable evidence cannot pass a required gate.
+        A version can be published only when every required check of a
+        must-pass test passes. A check the agent cannot show evidence for does
+        not pass.
       </p>
       {assertions.map((item, index) => (
         <fieldset key={index} className="min-w-0 space-y-3 border-t pt-3">
-          <legend className="text-sm font-medium">Assertion {index + 1}</legend>
+          <legend className="text-sm font-medium">Check {index + 1}</legend>
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-scorer-${index}`}>Scorer</Label>
+            <Label htmlFor={`${prefix}-scorer-${index}`}>What to check</Label>
             <Select
               value={item.scorer}
-              onValueChange={(value) => change(index, "scorer", value)}
+              onValueChange={(value) => {
+                // Start from a valid example for the new check, unless the
+                // expected result was already edited by hand.
+                const untouched =
+                  !item.expected.trim() ||
+                  item.expected === CHECKS[item.scorer]?.example;
+                change(index, "scorer", value);
+                if (untouched && CHECKS[value])
+                  change(index, "expected", CHECKS[value].example);
+              }}
             >
               <SelectTrigger
                 id={`${prefix}-scorer-${index}`}
@@ -208,7 +262,7 @@ export function QualityCaseEditor({
               <SelectContent>
                 {qualityScorers.map((scorer) => (
                   <SelectItem key={scorer} value={scorer}>
-                    {scorer.replace(/_/g, " ")}
+                    {checkLabel(scorer)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -216,13 +270,13 @@ export function QualityCaseEditor({
           </div>
           <div className="space-y-2">
             <Label htmlFor={`${prefix}-expected-${index}`}>
-              Expected values (JSON)
+              Expected result (JSON)
             </Label>
             <p
               id={`${prefix}-hint-${index}`}
               className="text-sm text-muted-foreground"
             >
-              {assertionHints[item.scorer]}
+              {CHECKS[item.scorer]?.hint}
             </p>
             <Textarea
               id={`${prefix}-expected-${index}`}
@@ -244,7 +298,7 @@ export function QualityCaseEditor({
                   change(index, "required", value === true)
                 }
               />
-              Required assertion
+              This check must pass
             </label>
             {assertions.length > 1 && (
               <Button
@@ -255,7 +309,7 @@ export function QualityCaseEditor({
                   setAssertions((items) => items.filter((_, i) => i !== index))
                 }
               >
-                Remove assertion {index + 1}
+                Remove check {index + 1}
               </Button>
             )}
           </div>
@@ -279,7 +333,7 @@ export function QualityCaseEditor({
             ])
           }
         >
-          Add assertion
+          Add another check
         </Button>
         <Button
           type="button"
@@ -288,10 +342,10 @@ export function QualityCaseEditor({
           disabled={save.isPending}
           onClick={onCancel}
         >
-          Cancel case edits
+          Cancel
         </Button>
         <Button type="submit" className="min-h-11" disabled={save.isPending}>
-          {save.isPending ? "Saving case…" : "Save evaluation case"}
+          {save.isPending ? "Saving…" : "Save test question"}
         </Button>
       </div>
     </form>
