@@ -18,7 +18,7 @@ NAIVE_UTC = datetime(2026, 9, 23, 1, 0, 0)
     [
         (
             ThreadView(
-                thread_id="nove",
+                thread_id="neva",
                 title="New chat",
                 created_at=NAIVE_UTC,
                 updated_at=NAIVE_UTC,
@@ -65,7 +65,7 @@ def test_naive_database_times_are_serialized_as_utc(view, fields):
 def test_aware_time_is_converted_to_utc_without_changing_the_instant():
     jakarta = timezone(timedelta(hours=7))
     view = ThreadView(
-        thread_id="nove",
+        thread_id="neva",
         title="New chat",
         created_at=NAIVE_UTC.replace(tzinfo=UTC).astimezone(jakarta),
         updated_at=NAIVE_UTC.replace(tzinfo=UTC).astimezone(jakarta),

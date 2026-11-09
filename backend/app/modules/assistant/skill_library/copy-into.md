@@ -45,7 +45,7 @@ SELECT event_id, event_time, payload FROM @stage1.events.csv;
 ## Caveats
 
 - The translator also lowers `COPY INTO @stage1.output.parquet FROM db.table`
-  and `INSERT INTO @stage1.output.parquet SELECT ...`. The ordinary SQL endpoint
+  and `INSERT INTO @stage1.output.parquet SELECT ...`. The regular SQL editor
   and assistant tools block export by default; a dedicated authorized service
   must explicitly enable it. Distinguish syntactic support from execution access.
   Never substitute raw storage paths or credentials.

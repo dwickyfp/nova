@@ -44,7 +44,7 @@ async def test_studio_reports_the_missing_governed_tool():
     assert raw.runs == []
 
 
-async def test_nove_may_still_use_read_only_sql_for_the_same_plan():
+async def test_neva_may_still_use_read_only_sql_for_the_same_plan():
     joined, raw = await run(studio=False)
     assert len(raw.runs) == 1
     assert '"finish_reason":"required_capability_unavailable"' not in joined

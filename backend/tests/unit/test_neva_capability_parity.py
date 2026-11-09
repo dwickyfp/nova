@@ -77,8 +77,8 @@ KNOWLEDGE = {
     "sql-views-catalog": "how do I create a view or use an external catalog",
     "stages-tasks-access": "how do stages and scheduled tasks work",
 }
-#: The assistant's own guide; renamed with the assistant (Nove -> Neva).
-ASSISTANT_GUIDE = {"nove-workflows", "neva-workflows"}
+#: The assistant's own guide; renamed with the assistant (Neva -> Neva).
+ASSISTANT_GUIDE = {"neva-workflows"}
 
 KNOWLEDGE_DIR = (
     Path(__file__).resolve().parents[2] / "app" / "modules" / "assistant" / "knowledge_library"

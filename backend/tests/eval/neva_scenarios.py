@@ -1,4 +1,4 @@
-"""Nove regressions for authoring, reference retrieval, and multi-step queries."""
+"""Neva regressions for authoring, reference retrieval, and multi-step queries."""
 
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.tools.search_knowledge import search_knowledge_tool
@@ -26,7 +26,7 @@ class ReferenceTool(EvalTool):
         return await search_knowledge_tool.run(invocation, context)
 
 
-def nove_scenarios() -> list[Scenario]:
+def neva_scenarios() -> list[Scenario]:
     query = EvalTool("query_execute")
     semantic_view_reference = ReferenceTool()
     create_view = EvalTool(
@@ -44,7 +44,7 @@ def nove_scenarios() -> list[Scenario]:
     )
     return [
         Scenario(
-            name="nove_creates_semantic_view_after_approval",
+            name="neva_creates_semantic_view_after_approval",
             content="Buat dan publikasikan Semantic View sales dari sales.orders",
             tools=[create_view],
             turn_plan={
@@ -77,7 +77,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_semantic_view_creation_help_does_not_require_query",
+            name="neva_semantic_view_creation_help_does_not_require_query",
             content="apakah kamu bisa bantu aku membuat semantic view atas data ku ?",
             tools=[semantic_view_reference, EvalTool("semantic_view_query")],
             script=[
@@ -105,7 +105,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_explains_ai_search_without_querying_data",
+            name="neva_explains_ai_search_without_querying_data",
             content="AI Search ini fitur untuk apa?",
             tools=[ReferenceTool(), EvalTool("ai_search")],
             script=[
@@ -125,7 +125,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_tool_result_cannot_overflow_next_provider_call",
+            name="neva_tool_result_cannot_overflow_next_provider_call",
             content="SELECT 1",
             tools=[EvalTool("query_execute", summary="x" * 8000)],
             script=[tool_call_frame("data"), text_frame("should never run")],
@@ -138,7 +138,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_concept_needs_no_database",
+            name="neva_concept_needs_no_database",
             content="Apa itu revenue?",
             tools=[EvalTool("query_execute")],
             script=[
@@ -153,7 +153,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_sql_authoring_needs_no_execution",
+            name="neva_sql_authoring_needs_no_execution",
             content="Buat SQL untuk revenue bulanan",
             tools=[EvalTool("query_execute")],
             script=[text_frame("Berikan nama tabel dan kolom pendapatan untuk menyusun SQL.")],
@@ -163,7 +163,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_schema_then_data_query",
+            name="neva_schema_then_data_query",
             content="Tampilkan jumlah transaksi bulan ini",
             tools=[query],
             read_only_grant=True,
@@ -179,7 +179,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_diagnosis_can_retrieve_documentation",
+            name="neva_diagnosis_can_retrieve_documentation",
             content="Cari penyebab query lambat",
             tools=[ReferenceTool()],
             script=[
@@ -199,7 +199,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_documentation_cannot_replace_data_evidence",
+            name="neva_documentation_cannot_replace_data_evidence",
             content="Tampilkan jumlah transaksi bulan ini",
             tools=[ReferenceTool(), EvalTool("query_execute")],
             turn_plan={
@@ -221,7 +221,7 @@ def nove_scenarios() -> list[Scenario]:
             ],
         ),
         Scenario(
-            name="nove_entity_search_falls_back_to_authorized_query",
+            name="neva_entity_search_falls_back_to_authorized_query",
             content="Cari pelanggan Sari",
             tools=[EvalTool("query_execute")],
             script=[tool_call_frame("data", sql="SELECT 1"), text_frame("Query selesai.")],

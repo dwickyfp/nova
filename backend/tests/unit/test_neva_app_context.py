@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.modules.assistant.app_context import NoveAppContext, resolve_app_references
+from app.modules.assistant.app_context import NevaAppContext, resolve_app_references
 from app.modules.assistant.application_events import ApplicationEventBroker
 from app.modules.assistant.schemas import MessageRequest
 from app.modules.assistant.service import AssistantLoop, LoopContext, _fast_client_action
@@ -14,8 +14,8 @@ from app.modules.assistant.tools import ToolInvocation, ToolRegistry
 from app.modules.assistant.tools.client_capability import invoke_client_capability_tool
 
 
-def _app(**fields) -> NoveAppContext:
-    return NoveAppContext.model_validate(
+def _app(**fields) -> NevaAppContext:
+    return NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "workspace.sql", "route": "/workspace", "title": "SQL"},
@@ -75,7 +75,7 @@ def test_context_rejects_invalid_and_oversized_payloads() -> None:
     with pytest.raises(ValidationError):
         _app(version=2)
     with pytest.raises(ValidationError):
-        NoveAppContext.model_validate({"version": 1, "capabilities": []})
+        NevaAppContext.model_validate({"version": 1, "capabilities": []})
     with pytest.raises(ValidationError):
         _app(selection={"text": "x" * 25_000})
     with pytest.raises(ValidationError):
@@ -258,24 +258,24 @@ def test_application_event_acknowledges_only_matching_owner_surface_and_capabili
             "payload": {"capability": "tab.open"},
         }
     )
-    from app.modules.assistant.app_context import NoveApplicationEvent
+    from app.modules.assistant.app_context import NevaApplicationEvent
 
     assert (
-        broker.publish("thread-1", "alice", NoveApplicationEvent.model_validate(wrong))
+        broker.publish("thread-1", "alice", NevaApplicationEvent.model_validate(wrong))
         == "unmatched"
     )
     assert broker.recent_events("thread-1", "alice", "workspace.sql") == []
     assert broker.recent_events("thread-1", "bob", "workspace.sql") == []
     forged = {**wrong, "id": "evt-forged", "payload": {"capability": "surface.set_filter"}}
     assert (
-        broker.publish("thread-1", "bob", NoveApplicationEvent.model_validate(forged))
+        broker.publish("thread-1", "bob", NevaApplicationEvent.model_validate(forged))
         == "unmatched"
     )
     assert (
         broker.publish(
             "thread-1",
             "alice",
-            NoveApplicationEvent.model_validate(
+            NevaApplicationEvent.model_validate(
                 {**forged, "id": "evt-other", "correlationId": "fake"}
             ),
         )
@@ -285,7 +285,7 @@ def test_application_event_acknowledges_only_matching_owner_surface_and_capabili
         broker.publish(
             "thread-1",
             "alice",
-            NoveApplicationEvent.model_validate(
+            NevaApplicationEvent.model_validate(
                 {**forged, "id": "evt-surface", "surfaceId": "roles.detail"}
             ),
         )
@@ -293,14 +293,14 @@ def test_application_event_acknowledges_only_matching_owner_surface_and_capabili
     )
     right = {**wrong, "id": "evt-2", "payload": {"capability": "surface.set_filter"}}
     assert (
-        broker.publish("thread-1", "alice", NoveApplicationEvent.model_validate(right))
+        broker.publish("thread-1", "alice", NevaApplicationEvent.model_validate(right))
         == "verified"
     )
     assert len(broker.recent_events("thread-1", "alice", "workspace.sql")) == 1
 
 
 def test_surface_switch_replaces_old_objective_and_evidence() -> None:
-    loop = AssistantLoop(provider=object(), registry=ToolRegistry(), system_prompt="Nove")
+    loop = AssistantLoop(provider=object(), registry=ToolRegistry(), system_prompt="Neva")
     thread = AssistantThread(thread_id="t", user_name="alice", title="T")
     thread.messages.append(
         AssistantMessage(
@@ -319,7 +319,7 @@ def test_surface_switch_replaces_old_objective_and_evidence() -> None:
             ],
         )
     )
-    role_app = NoveAppContext.model_validate(
+    role_app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "roles.detail", "route": "/roles/ANALYST"},
@@ -335,7 +335,7 @@ def test_surface_switch_replaces_old_objective_and_evidence() -> None:
 
 
 def test_client_domain_role_cannot_override_authenticated_role_in_prompt() -> None:
-    loop = AssistantLoop(provider=object(), registry=ToolRegistry(), system_prompt="Nove")
+    loop = AssistantLoop(provider=object(), registry=ToolRegistry(), system_prompt="Neva")
     app = _app(domain={"role": "ACCOUNTADMIN", "database": "sales"})
     messages = loop._build_messages(
         AssistantThread(thread_id="t", user_name="alice", title="T"),
@@ -389,7 +389,7 @@ async def test_fast_filter_emits_pending_action_without_planner_or_consent() -> 
 
     registry = ToolRegistry()
     registry.register(invoke_client_capability_tool)
-    loop = AssistantLoop(provider=ProviderMustNotRun(), registry=registry, system_prompt="Nove")
+    loop = AssistantLoop(provider=ProviderMustNotRun(), registry=registry, system_prompt="Neva")
     context = LoopContext(
         user_name="alice",
         app_context=_app(

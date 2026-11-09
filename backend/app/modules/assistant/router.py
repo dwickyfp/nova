@@ -40,10 +40,11 @@ from fastapi.responses import StreamingResponse
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
 from app.modules.assistant import events
-from app.modules.assistant.app_context import NoveApplicationEvent
+from app.modules.assistant.app_context import NevaApplicationEvent
 from app.modules.assistant.application_events import application_event_broker
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.history import history_repository
+from app.modules.assistant.plain_language import plain_frames
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.registry import tool_registry
 from app.modules.assistant.repository import (
@@ -235,7 +236,7 @@ async def get_thread(
 @router.post("/threads/{thread_id}/application-events")
 async def publish_application_event(
     thread_id: str,
-    body: NoveApplicationEvent,
+    body: NevaApplicationEvent,
     user: dict = Depends(get_current_user),
 ):
     """Acknowledge an application action and retain bounded outcome evidence."""
@@ -444,8 +445,11 @@ async def send_message(
     async def generate() -> AsyncIterator[str]:
         reply_parts: list[str] = []
         reply_stamp = stamp
+        # Neva speaks to people who look after Nova: internal names never reach
+        # the screen or the stored transcript.
+        plain = plain_frames()
         try:
-            async for frame in _loop.run(
+            async for raw in _loop.run(
                 thread=runtime,
                 user_content=body.content,
                 context=context,
@@ -456,20 +460,26 @@ async def send_message(
             ):
                 if await request.is_disconnected():
                     break
-                if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
-                    reply_parts.append(_text_from_frame(frame))
-                if frame.startswith(f"event: {events.EVENT_CLIENT_ACTION}"):
-                    application_event_broker.register_action(
-                        thread_id, user_name, _frame_data(frame)
-                    )
-                if frame.startswith("event: role_changed\n"):
-                    reply_parts.clear()
-                    reply_stamp = observation_context(session_security(context.user or {}))
+                for frame in plain(raw):
+                    if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
+                        reply_parts.append(_text_from_frame(frame))
+                    if frame.startswith(f"event: {events.EVENT_CLIENT_ACTION}"):
+                        application_event_broker.register_action(
+                            thread_id, user_name, _frame_data(frame)
+                        )
+                    if frame.startswith("event: role_changed\n"):
+                        reply_parts.clear()
+                        reply_stamp = observation_context(
+                            session_security(context.user or {})
+                        )
+                    yield frame
+            for frame in plain.flush():
+                reply_parts.append(_text_from_frame(frame))
                 yield frame
-        except Exception as exc:  # noqa: BLE001 - never leak an internal trace
+        except Exception:  # noqa: BLE001 - never leak an internal trace
             logger.exception("Assistant stream failed")
             yield events.error(
-                "internal_error", f"The assistant failed: {type(exc).__name__}"
+                "internal_error", "Neva could not finish this answer. Please try again."
             )
             yield events.done(str(uuid4()), finish_reason="error")
         finally:

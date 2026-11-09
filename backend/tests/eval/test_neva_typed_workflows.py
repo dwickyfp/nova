@@ -1,4 +1,4 @@
-"""Nove tool trajectories keep consent and postcondition claims tied to evidence."""
+"""Neva tool trajectories keep consent and postcondition claims tied to evidence."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.tools import ToolRegistry, role_access
 from app.modules.assistant.tools.inspect_agent_configuration import (
@@ -102,7 +102,7 @@ async def test_grant_without_verified_postcondition_never_composes_success(monke
         LoopContext(
             user_name="bench",
             user=_user(),
-            app_context=NoveAppContext.model_validate({
+            app_context=NevaAppContext.model_validate({
                 "version": 1,
                 "surface": {"id": "roles.detail", "route": "/roles/analyst"},
                 "entity": {"type": "role", "id": "analyst", "name": "analyst"},
@@ -121,7 +121,7 @@ async def test_grant_without_verified_postcondition_never_composes_success(monke
 
 @pytest.mark.asyncio
 async def test_current_query_error_is_inspected_without_consent() -> None:
-    app = NoveAppContext.model_validate(
+    app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "workspace.sql", "route": "/workspaces"},
@@ -163,7 +163,7 @@ async def test_current_query_error_is_inspected_without_consent() -> None:
 
 @pytest.mark.asyncio
 async def test_unlinked_query_repair_cannot_claim_success() -> None:
-    app = NoveAppContext.model_validate(
+    app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "workspace.sql", "route": "/workspaces"},
@@ -188,7 +188,7 @@ async def test_unlinked_query_repair_cannot_claim_success() -> None:
 
 @pytest.mark.asyncio
 async def test_correlated_patch_and_successful_rerun_complete_repair() -> None:
-    app = NoveAppContext.model_validate(
+    app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "workspace.sql", "route": "/workspaces"},
@@ -253,7 +253,7 @@ async def test_studio_configuration_inspection_never_uses_studio_conversation(mo
 
     monkeypatch.setattr(module, "agent_repository", Repository())
     monkeypatch.setattr(module, "write_audit_log", audit)
-    app = NoveAppContext.model_validate(
+    app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "studio.agent", "route": "/studio"},

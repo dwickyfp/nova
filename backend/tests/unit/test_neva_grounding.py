@@ -1,4 +1,4 @@
-"""Nove intent, skill discovery, and packaged reference contracts."""
+"""Neva intent, skill discovery, and packaged reference contracts."""
 
 import pytest
 
@@ -15,7 +15,7 @@ from app.modules.assistant.tools import ToolInvocation
 from app.modules.assistant.tools.search_knowledge import search_knowledge_tool, search_references
 
 
-def test_nove_registers_intelligence_tools_and_routes_explanations_to_references():
+def test_neva_registers_intelligence_tools_and_routes_explanations_to_references():
     registry = build_registry()
     for name in ("ai_search", "semantic_view_query", "feature_lookup"):
         tool = registry.get(name)
@@ -27,7 +27,7 @@ def test_nove_registers_intelligence_tools_and_routes_explanations_to_references
     assert plan.selected_tools == ("search_knowledge",)
 
 
-def test_nove_feature_help_receives_packaged_reference_without_tool_call():
+def test_neva_feature_help_receives_packaged_reference_without_tool_call():
     loop = AssistantLoop(
         provider=AssistantProviderClient(), registry=build_registry(), system_prompt="test"
     )
@@ -59,7 +59,7 @@ def test_semantic_view_creation_help_excludes_agent_studio_creation_tool():
         route=TurnRoute(TurnIntent.CAPABILITY_HELP),
     )
     joined = "\n".join(str(message["content"]) for message in messages)
-    assert "Nove can create one from named tables" in joined
+    assert "Neva can create one from named tables" in joined
     assert "create_semantic_model" not in context.selected_tools
     assert "semantic_view_query" not in context.selected_tools
 
@@ -88,7 +88,7 @@ def test_reference_results_have_bounded_content_and_revision():
         ("Dashboard sharing", "dashboards-sharing"),
     ],
 )
-def test_nove_has_grounded_reference_for_each_product_domain(question, source):
+def test_neva_has_grounded_reference_for_each_product_domain(question, source):
     assert any(
         result["source"] == f"knowledge:{source}"
         for result in search_references(question)
@@ -125,7 +125,7 @@ def test_nove_has_grounded_reference_for_each_product_domain(question, source):
         ("Production Health", "operations-monitoring"),
     ],
 )
-def test_nove_ranks_each_sidebar_feature_reference_first(menu, reference):
+def test_neva_ranks_each_sidebar_feature_reference_first(menu, reference):
     assert search_references(menu)[0]["source"] == f"knowledge:{reference}"
 
 

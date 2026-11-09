@@ -58,9 +58,8 @@ lowered to executable StarRocks SQL by the translator.
 
 `FILES('path'=…, 'format'=…)` plus CSV properties
 (`csv.column_separator`, `csv.trim_space`, `csv.skip_header`, `csv.enclose`,
-`csv.escape`) and storage credentials
-(`aws.s3.access_key`, `aws.s3.secret_key`, `aws.s3.endpoint`, …). These are added
-on the translated statement and redacted (`***`) before audit/return.
+`csv.escape`). Nova adds the stage's storage credentials itself and hides them
+(`***`) wherever they could be shown; never ask for or write credentials.
 
 ## Errors and limits
 

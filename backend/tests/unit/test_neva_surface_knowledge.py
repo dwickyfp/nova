@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.intelligence import TurnIntent, TurnRoute
 from app.modules.assistant.intent import IntentFrame
 from app.modules.assistant.provider import AssistantProviderClient
@@ -26,14 +26,14 @@ def _app(surface: str, entity_type: str | None = None, *, failed_sql: bool = Fal
         value["entity"] = {"type": entity_type}
     if failed_sql:
         value["execution"] = {"type": "sql", "status": "error"}
-    return NoveAppContext.model_validate(value)
+    return NevaAppContext.model_validate(value)
 
 
 @pytest.mark.parametrize(
     ("surface", "entity", "failed_sql", "expected"),
     [
         ("role.detail", "role", False, "security-governance"),
-        ("studio.agent", "studio_agent", False, "nove-workflows"),
+        ("studio.agent", "studio_agent", False, "neva-workflows"),
         ("workspace.sql", "workspace_file", True, "query-troubleshooting"),
         ("monitoring.query-history", "query", False, "operations-monitoring"),
         ("intelligence.semantic-view", "semantic_view", False, "intelligence-semantic-features"),

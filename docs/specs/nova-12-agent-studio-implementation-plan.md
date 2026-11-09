@@ -99,7 +99,7 @@ test. Modul `agents/` **memanggil** `AssistantLoop` (komposisi), bukan memodifik
 `AssistantLoop` (`assistant/service.py:85`) sudah menerima:
 - `provider: AssistantProviderClient` — reuse apa adanya.
 - `registry: ToolRegistry` — **di-inject per agent**, berisi default tools agent + `load_skill`.
-- `system_prompt: str` — **di-rakit per agent** dari `prompt.py` (menggantikan persona global "Nove").
+- `system_prompt: str` — **di-rakit per agent** dari `prompt.py` (menggantikan persona global "Neva").
 - `max_iterations`, `time_budget_seconds` — diambil dari `budget_seconds` agent.
 
 Alur satu turn Nova Studio:

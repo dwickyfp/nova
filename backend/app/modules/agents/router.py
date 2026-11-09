@@ -2520,8 +2520,12 @@ async def send_agent_message(
         reply_message_id = str(uuid4())
         done_frame: str | None = None
         finish_reason: str | None = None
+        # Agents answer people, not developers: no internal names on screen.
+        from app.modules.assistant.plain_language import plain_frames
+
+        plain = plain_frames()
         try:
-            async for frame in loop.run(
+            async for raw in loop.run(
                 thread=runtime,
                 user_content=prompt,
                 context=context,
@@ -2530,17 +2534,23 @@ async def send_agent_message(
                 model=body.model,
                 provider_id=body.provider_id,
             ):
-                if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
-                    reply_parts.append(_text_from_frame(frame))
-                if frame.startswith("event: role_changed\n"):
-                    reply_parts.clear()
-                    reply_stamp = observation_context(session_security(context.user or {}))
-                if frame.startswith(f"event: {events.EVENT_DONE}\n"):
-                    payload = json.loads(frame.split("data: ", 1)[1])
-                    reply_message_id = payload["message_id"]
-                    finish_reason = payload.get("finish_reason")
-                    done_frame = frame
-                    continue
+                for frame in plain(raw):
+                    if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
+                        reply_parts.append(_text_from_frame(frame))
+                    if frame.startswith("event: role_changed\n"):
+                        reply_parts.clear()
+                        reply_stamp = observation_context(
+                            session_security(context.user or {})
+                        )
+                    if frame.startswith(f"event: {events.EVENT_DONE}\n"):
+                        payload = json.loads(frame.split("data: ", 1)[1])
+                        reply_message_id = payload["message_id"]
+                        finish_reason = payload.get("finish_reason")
+                        done_frame = frame
+                        continue
+                    yield frame
+            for frame in plain.flush():
+                reply_parts.append(_text_from_frame(frame))
                 yield frame
         except asyncio.CancelledError:
             finish_reason = "cancelled"
@@ -2548,10 +2558,12 @@ async def send_agent_message(
         except GeneratorExit:
             finish_reason = "cancelled"
             raise
-        except Exception as exc:  # noqa: BLE001 - never leak an internal trace
+        except Exception:  # noqa: BLE001 - never leak an internal trace
             finish_reason = "error"
             logger.exception("Agent stream failed")
-            yield events.error("internal_error", f"The agent failed: {type(exc).__name__}")
+            yield events.error(
+                "internal_error", "The agent could not finish this answer. Please try again."
+            )
             done_frame = events.done(reply_message_id, finish_reason="error")
         finally:
             if reply_parts or context.steps or context.pending_output or finish_reason:

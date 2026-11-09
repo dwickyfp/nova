@@ -34,7 +34,7 @@ def test_agent_bundleable_tools_exclude_authoring_tools() -> None:
     # An agent must not be offered the tools that create agents or Semantic Views.
     assert "create_agent" not in tool_catalog.AGENT_BUNDLEABLE_TOOLS
     assert "create_semantic_view" not in tool_catalog.AGENT_BUNDLEABLE_TOOLS
-    # ...but they are in the registry catalog (Nove uses them).
+    # ...but they are in the registry catalog (Neva uses them).
     catalog_names = {row["name"] for row in tool_catalog.builtin_rows()}
     assert {"create_agent", "create_semantic_view"} <= catalog_names
 

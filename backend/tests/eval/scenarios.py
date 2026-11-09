@@ -30,7 +30,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.attachments import attachment_prompt, validate_attachments
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.state import AssistantMessage
@@ -69,7 +69,7 @@ def scenario_surface_filter_avoids_planner() -> Scenario:
             self.runs.append(invocation)
             return await super().run(invocation, context)
 
-    app = NoveAppContext.model_validate({
+    app = NevaAppContext.model_validate({
         "version": 1,
         "surface": {"id": "monitoring.query_history", "route": "/query-history"},
         "capabilities": ["surface.set_filter"],
@@ -1413,10 +1413,10 @@ def _two_calls_announced(result) -> bool | str:
 
 def all_scenarios() -> list[Scenario]:
     """Every golden scenario, in a stable order."""
-    from tests.eval.nove_scenarios import nove_scenarios
+    from tests.eval.neva_scenarios import neva_scenarios
 
     return [
-        *nove_scenarios(),
+        *neva_scenarios(),
         Scenario(
             name="qualitative_data_claim_requires_execution",
             content="Which revenue segment leads this month?",

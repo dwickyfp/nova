@@ -234,8 +234,8 @@ class SemanticViewService:
             try:
                 async with semaphore:
                     for source in batch:
-                        # A source this caller passed moments ago, under the
-                        # same role, session and access epoch, is not re-planned.
+                        # Parallel requests checking the same source, for the
+                        # same caller and session, share one check in flight.
                         entry = await passed_checks.key("semantic-source", user, [source])
 
                         async def check(source: str = source) -> bool:

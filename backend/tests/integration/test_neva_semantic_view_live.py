@@ -1,4 +1,4 @@
-"""Opt-in Nove tool to StarRocks Semantic View lifecycle smoke test."""
+"""Opt-in Neva tool to StarRocks Semantic View lifecycle smoke test."""
 
 from __future__ import annotations
 
@@ -24,19 +24,19 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.asyncio
-async def test_nove_creates_validates_publishes_and_cleans_up_view():
-    name = f"nove_live_{uuid4().hex[:8]}"
+async def test_neva_creates_validates_publishes_and_cleans_up_view():
+    name = f"neva_live_{uuid4().hex[:8]}"
     user = {
         "username": settings.STARROCKS_ROOT_USER,
         "encrypted_password": encrypt_password(settings.STARROCKS_ROOT_PASSWORD),
         "active_role": None,
-        "session_id": "nove-live-test",
+        "session_id": "neva-live-test",
     }
     context = SimpleNamespace(
         user_name=user["username"],
         user=user,
         active_role=None,
-        audit_session_id="nove-live-test",
+        audit_session_id="neva-live-test",
         schema_name="",
     )
     designer = SimpleNamespace(

@@ -140,28 +140,28 @@ async def test_quality_evaluation_uses_configured_timezone(
 
 
 @pytest.mark.parametrize("zone", ZONES)
-async def test_nove_stream_uses_configured_timezone(monkeypatch, observed_loops, zone):
-    from app.modules.assistant import router as nove
+async def test_neva_stream_uses_configured_timezone(monkeypatch, observed_loops, zone):
+    from app.modules.assistant import router as neva
     from app.modules.assistant.schemas import MessageRequest
     from app.modules.assistant.state import thread_store
 
     monkeypatch.setattr(settings, "NOVA_TIMEZONE", zone)
-    monkeypatch.setattr(nove, "_require_thread", AsyncMock(return_value={
-        "title": "Calendar", "thread_id": "nove-timezone",
+    monkeypatch.setattr(neva, "_require_thread", AsyncMock(return_value={
+        "title": "Calendar", "thread_id": "neva-timezone",
     }))
-    monkeypatch.setattr(nove.assistant_repository, "list_messages", AsyncMock(return_value=[]))
-    monkeypatch.setattr(nove.assistant_repository, "append_message", AsyncMock())
-    monkeypatch.setattr(nove, "_loop", assistant_service.AssistantLoop())
+    monkeypatch.setattr(neva.assistant_repository, "list_messages", AsyncMock(return_value=[]))
+    monkeypatch.setattr(neva.assistant_repository, "append_message", AsyncMock())
+    monkeypatch.setattr(neva, "_loop", assistant_service.AssistantLoop())
     request = SimpleNamespace(is_disconnected=AsyncMock(return_value=False))
     try:
-        response = await nove.send_message("nove-timezone", MessageRequest(content="Revenue today"),
+        response = await neva.send_message("neva-timezone", MessageRequest(content="Revenue today"),
                                            request, USER)
         frames = [frame async for frame in response.body_iterator]
         assert any("Calendar checked." in frame for frame in frames)
         assert observed_loops[-1].execution_timezone == zone
         assert observed_loops[-1].role == USER["active_role"]
     finally:
-        thread_store.remove("nove-timezone", user_name=USER["username"])
+        thread_store.remove("neva-timezone", user_name=USER["username"])
 
 
 @pytest.mark.parametrize("zone", ZONES)

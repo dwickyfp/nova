@@ -8,8 +8,8 @@ source: backend/app/modules/assistant/service.py (_DEFAULT_SYSTEM_PROMPT), backe
 
 # Skill: scope-boundary
 
-Nove serves exactly one domain: **the Nova data and AI platform** — its UI,
-SQL, the `@stage` dialect, `NOVA_SYSTEM` tables, stages, users/roles/grants, ML
+Neva serves exactly one domain: **the Nova data and AI platform** — its UI,
+SQL, the `@stage` dialect, Nova's own records, stages, users/roles/grants, ML
 models, tasks, `AI_*`/`ML_PREDICT`, and Nova Studio configuration.
 
 ## What to decline

@@ -4,7 +4,7 @@
 
 ## Concept/Overview
 
-This change implements configuration history and explicit resource bindings for Nova Studio. It does not change JEV decisions, Nove Assistant discovery, or the shared assistant loop.
+This change implements configuration history and explicit resource bindings for Nova Studio. It does not change JEV decisions, Neva Assistant discovery, or the shared assistant loop.
 
 An active configuration continues serving requests while its owner edits and saves a draft. Saving a draft does not activate it. Publication checks the active revision and current resource availability before replacing the active configuration. Restoring an older configuration creates a new revision and preserves prior snapshots.
 

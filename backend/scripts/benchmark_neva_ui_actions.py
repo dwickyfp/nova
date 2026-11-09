@@ -1,4 +1,4 @@
-"""Offline overhead benchmark for Nove's UI operation bridge."""
+"""Offline overhead benchmark for Neva's UI operation bridge."""
 
 from __future__ import annotations
 

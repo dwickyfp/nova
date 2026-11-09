@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.core.deps import get_current_user
-from app.modules.access_control import passed_checks
 from app.modules.access_control.service import access_control_service
 from app.modules.agents import access, router, studio_router
 from app.modules.agents.access import AccessItem
@@ -189,30 +188,14 @@ async def test_studio_tells_an_owner_which_of_their_agents_wait_for_access(monke
     assert (await router.list_agents(studio=True, user=_user("analyst"))).needs_access == []
 
 
-class _FakeRedis:
-    def __init__(self) -> None:
-        self.data: dict[str, str] = {}
-
-    async def get(self, key: str):
-        return self.data.get(key)
-
-    async def set(self, key: str, value: str, ex: int | None = None) -> None:
-        self.data[key] = value
-
-    async def incr(self, key: str) -> int:
-        self.data[key] = str(int(self.data.get(key, "0")) + 1)
-        return int(self.data[key])
-
-
 def _session_user(role: str = "analyst", **extra) -> dict:
     return {**_user(role), "session_id": "s-1", "security_context_version": 3, **extra}
 
 
 @pytest.mark.asyncio
-async def test_a_passed_access_check_is_reused_but_never_a_failed_one(monkeypatch) -> None:
-    redis = _FakeRedis()
-    monkeypatch.setattr(passed_checks, "_client", lambda: redis)
-    monkeypatch.setattr(passed_checks.session_store, "_redis", redis)
+async def test_every_request_checks_access_again(monkeypatch) -> None:
+    # Nothing is reused between requests: a grant revoked anywhere, even
+    # directly in the policy store, denies on the very next request.
     agent = _agent()
     grants = AsyncMock(return_value=[{"role_name": "analyst", "verified_fingerprint": "current"}])
     monkeypatch.setattr(agent_repository, "list_agent_roles", grants)
@@ -223,63 +206,16 @@ async def test_a_passed_access_check_is_reused_but_never_a_failed_one(monkeypatc
     user = _session_user()
     assert await access.has_verified_access(agent, role_name="analyst", user=user)
     assert await access.has_verified_access(agent, role_name="analyst", user=user)
-    assert verify.await_count == 1  # the Ranger check ran once
+    assert verify.await_count == 2
 
-    # Grants are read every time: a removed grant denies at once.
-    grants.return_value = []
-    assert not await access.has_verified_access(agent, role_name="analyst", user=user)
-    grants.return_value = [{"role_name": "analyst", "verified_fingerprint": "current"}]
-
-    # Another session, role switch (new version) or a changed agent misses.
-    for other in (
-        _session_user(session_id="s-2"),
-        _session_user(security_context_version=4),
-    ):
-        await access.has_verified_access(agent, role_name="analyst", user=other)
-    assert verify.await_count == 3
-
-    # A managed access change retires every reused check, and nothing is reused
-    # while it settles.
-    await passed_checks.retire()
-    await access.has_verified_access(agent, role_name="analyst", user=user)
-    await access.has_verified_access(agent, role_name="analyst", user=user)
-    assert verify.await_count == 5
-
-    # A failed check is never reused.
-    redis.data.clear()
-    verify.reset_mock()
     verify.return_value = [AccessItem("table", "sales.orders", False)]
     assert not await access.has_verified_access(agent, role_name="analyst", user=user)
-    assert not await access.has_verified_access(agent, role_name="analyst", user=user)
-    assert verify.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_access_checks_are_not_reused_without_a_session(monkeypatch) -> None:
-    redis = _FakeRedis()
-    monkeypatch.setattr(passed_checks, "_client", lambda: redis)
-    monkeypatch.setattr(passed_checks.session_store, "_redis", redis)
-    agent = _agent()
-    monkeypatch.setattr(
-        agent_repository,
-        "list_agent_roles",
-        AsyncMock(return_value=[{"role_name": "analyst", "verified_fingerprint": "current"}]),
-    )
-    monkeypatch.setattr(access, "access_fingerprint", AsyncMock(return_value="current"))
-    verify = AsyncMock(return_value=[])
-    monkeypatch.setattr(access, "verify_access", verify)
-    for _ in range(2):
-        await access.has_verified_access(agent, role_name="analyst", user=_user("analyst"))
-    assert verify.await_count == 2
-    assert redis.data == {}
 
 
 @pytest.mark.asyncio
 async def test_concurrent_requests_share_one_access_check(monkeypatch) -> None:
     import asyncio
 
-    redis = _FakeRedis()
-    monkeypatch.setattr(passed_checks, "_client", lambda: redis)
     agent = _agent()
     monkeypatch.setattr(
         agent_repository,

@@ -1,4 +1,4 @@
-"""Current Nova surface facts must win when a Nove conversation changes topic."""
+"""Current Nova surface facts must win when a Neva conversation changes topic."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantMessage, AssistantThread
 from app.modules.assistant.tools import ToolRegistry
@@ -83,7 +83,7 @@ async def test_role_deictic_request_after_workspace_surface_switch() -> None:
             ],
         )
     )
-    app = NoveAppContext.model_validate(
+    app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "roles.detail", "route": "/roles/ANALYST"},
@@ -98,7 +98,7 @@ async def test_role_deictic_request_after_workspace_surface_switch() -> None:
     frames = [
         frame
         async for frame in AssistantLoop(
-            provider=provider, registry=registry, system_prompt="Nove"
+            provider=provider, registry=registry, system_prompt="Neva"
         ).run(
             thread=thread,
             user_content="Why can't this role read orders?",

@@ -1,20 +1,20 @@
-# Architecture 9: Nove Application Copilot
+# Architecture 9: Neva Application Copilot
 
-> Nove uses the active Nova page, its safe actions, and recent outcomes to help users complete platform tasks.
+> Neva uses the active Nova page, its safe actions, and recent outcomes to help users complete platform tasks.
 
 ---
 
 ## Architecture
 
 ```text
-Nova page → useNoveSurface → AssistantProvider → app_context → Nove turn
+Nova page → useNevaSurface → AssistantProvider → app_context → Neva turn
    │              │                 │                             │
    │         typed actions       recent events               planner/tools
    │              ↑                 ↑                             │
    └──── action outcome ───────────┘ ← client_action SSE ←───────┘
 ```
 
-Nove is Nova's platform copilot. It helps users navigate, inspect, configure, and troubleshoot Nova. A Nova Studio agent is a user-created agent with its own domain task, configuration, and conversation. Nove can inspect the Studio configuration while the user edits it; it does not use the Studio agent as its own runtime or read its conversation.
+Neva is Nova's platform copilot. It helps users navigate, inspect, configure, and troubleshoot Nova. A Nova Studio agent is a user-created agent with its own domain task, configuration, and conversation. Neva can inspect the Studio configuration while the user edits it; it does not use the Studio agent as its own runtime or read its conversation.
 
 The existing assistant loop, provider, consent broker, SQL tools, knowledge search, and generic `list_ui_operations`/`call_ui_operation` bridge remain in place. Application context adds a current-page observation to each turn. Typed client actions serve frequent UI workflows; the generic API bridge remains available for less common supported operations.
 
@@ -24,13 +24,13 @@ The existing assistant loop, provider, consent broker, SQL tools, knowledge sear
 
 The assistant message request accepts an optional `app_context` alongside legacy `database`, `schema`, and `role` fields. Version 1 has named `surface`, `entity`, `selection`, `editor`, `execution`, `view`, `domain`, `capabilities`, and recent `events` fields. The frontend builds the envelope from the active surface immediately before a turn. Both ends bound strings, lists, metadata, and total serialized size. Free-form values containing credential markers are omitted or replaced as whole fields before they enter model context, including page search text and event payloads.
 
-Current selection, entity, and execution evidence take precedence when Nove resolves references such as “this role” or “fix it”. Events for another surface, workspace document, or entity are excluded from the current reference set. A client without `app_context` continues through the existing assistant request path.
+Current selection, entity, and execution evidence take precedence when Neva resolves references such as “this role” or “fix it”. Events for another surface, workspace document, or entity are excluded from the current reference set. A client without `app_context` continues through the existing assistant request path.
 
 The client's `domain.role` describes what the page displayed. The authenticated StarRocks session remains the authority for execution and authorization. A page cannot grant itself privileges by changing its context envelope.
 
 ### Surface registry
 
-`useNoveSurface` registers a page-owned context getter, safe capabilities, and starter actions. The registry reads the getter at turn time, so an editor selection or active tab does not depend on a stale render. Unmounting the page removes its registration and capabilities. New pages add their own registration; assistant core has no route-specific page switch.
+`useNevaSurface` registers a page-owned context getter, safe capabilities, and starter actions. The registry reads the getter at turn time, so an editor selection or active tab does not depend on a stale render. Unmounting the page removes its registration and capabilities. New pages add their own registration; assistant core has no route-specific page switch.
 
 Representative integrations cover SQL Workspace, Roles, Query History, Semantic Views, and Nova Studio. Each exposes the entity and view data relevant to that page and a small set of contextual starter actions. The SQL editor contributes its current selection, document ID, execution state, and result schema without copying result rows.
 
@@ -46,11 +46,11 @@ A capability that intentionally navigates away from its surface declares `mayCha
 
 ### Application events and SQL repair
 
-The provider keeps a bounded recent event buffer. Pages publish events such as `query_started`, `query_failed`, `query_completed`, `editor_patch_applied`, `editor_patch_rejected`, `ui_action_completed`, and `ui_action_failed`. The next Nove turn includes relevant events from the current surface. Client action outcomes are also acknowledged immediately against the originating assistant thread using its correlation ID, so a dispatched action has a recorded outcome without another planner call. The backend uses events as outcome evidence, not as user instructions.
+The provider keeps a bounded recent event buffer. Pages publish events such as `query_started`, `query_failed`, `query_completed`, `editor_patch_applied`, `editor_patch_rejected`, `ui_action_completed`, and `ui_action_failed`. The next Neva turn includes relevant events from the current surface. Client action outcomes are also acknowledged immediately against the originating assistant thread using its correlation ID, so a dispatched action has a recorded outcome without another planner call. The backend uses events as outcome evidence, not as user instructions.
 
-SQL Workspace records a generated execution ID, the active document, status, elapsed time, error, and bounded result schema. It omits result rows and credential-shaped SQL. A failed result offers **Explain** and **Fix with Nove**. Fix attaches the failed statement to the existing rewrite flow. The user reviews a diff and chooses **Apply**, **Apply & Run**, or **Cancel**. Apply publishes a patch event; Apply & Run starts a new query and publishes its result. The `inspect_query_error` tool reads the current failed execution. The `verify_query_repair` tool requires an applied patch and a successful rerun with the same correlation ID; applying a patch alone is not a verified fix.
+SQL Workspace records a generated execution ID, the active document, status, elapsed time, error, and bounded result schema. It omits result rows and credential-shaped SQL. A failed result offers **Explain** and **Fix with Neva**. Fix attaches the failed statement to the existing rewrite flow. The user reviews a diff and chooses **Apply**, **Apply & Run**, or **Cancel**. Apply publishes a patch event; Apply & Run starts a new query and publishes its result. The `inspect_query_error` tool reads the current failed execution. The `verify_query_repair` tool requires an applied patch and a successful rerun with the same correlation ID; applying a patch alone is not a verified fix.
 
-The SQL rewrite records the editor content and attached line range used to build its diff. It refuses to apply if the document changed or the target statement moved. Duplicate statements without a unique recorded location are not attached for repair. Running SQL from a Nove code card publishes an artifact run and correlated query outcome, so a subsequent “fix it” can inspect that failure even when the page has no SQL execution widget.
+The SQL rewrite records the editor content and attached line range used to build its diff. It refuses to apply if the document changed or the target statement moved. Duplicate statements without a unique recorded location are not attached for repair. Running SQL from a Neva code card publishes an artifact run and correlated query outcome, so a subsequent “fix it” can inspect that failure even when the page has no SQL execution widget.
 
 The typed Ranger `grant_role_access` workflow reads effective access after submitting grants. It marks success only when every requested permission is visible in the readback. The audit outcome records the verification result. Ranger-to-StarRocks enforcement may still have propagation delay after this readback.
 
@@ -62,7 +62,7 @@ Simple supported UI requests can use a deterministic route to avoid a planner ca
 
 ## Integration Points
 
-To make a new Nova page Nove-aware:
+To make a new Nova page Neva-aware:
 
 1. Register its stable surface ID, route, and a getter for the current entity, selection, view, and domain.
 2. Register only typed actions the page actually supports. Use a strict Zod schema and the appropriate risk class.
@@ -71,12 +71,12 @@ To make a new Nova page Nove-aware:
 5. Test context serialization, registration cleanup, action validation, events, and a representative user request.
 
 ```tsx
-const { publishEvent } = useNoveSurface({
+const { publishEvent } = useNevaSurface({
   id: "example.detail",
   route: "/example",
   context: () => ({ entity: { type: "example", id: item.id, name: item.name } }),
   capabilities: [
-    defineNoveCapability({
+    defineNevaCapability({
       name: "surface.refresh",
       risk: "safe",
       argsSchema: z.object({}).strict(),

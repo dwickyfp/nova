@@ -1,4 +1,4 @@
-"""Typed Ranger access tools for Nove, without an HTTP or API-route bridge."""
+"""Typed Ranger access tools for Neva, without an HTTP or API-route bridge."""
 
 from __future__ import annotations
 
@@ -195,7 +195,7 @@ class InspectRoleAccessTool:
     name = "inspect_role_access"
     description = (
         "Check the exact existing role's effective Ranger access on up to 16 "
-        "database or table resources. Use before granting access. No API route is exposed."
+        "database or table resources. Use before granting access."
     )
     parameters = _PARAMETERS
     classification: ToolClassification = "read_only"

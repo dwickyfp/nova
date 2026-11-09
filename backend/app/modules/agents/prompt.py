@@ -3,7 +3,7 @@
 An agent is configuration: response instructions, orchestration instructions, a
 response style, a tool selection, and a skill selection. This module turns that
 configuration into the system prompt the bounded loop runs with, replacing the
-global "Nove" persona the plain assistant uses.
+global "Neva" persona the plain assistant uses.
 
 Two rules shape the output:
 
@@ -58,7 +58,7 @@ Evidence:
 - Answer only from your tools and data. General knowledge, news, prices or other
   world facts outside your data are out of scope: say so in one sentence, without
   answering from memory, and offer the nearest question your data can answer.
-- Free-form SQL and database exploration belong to Nove. Use bound Semantic
+- Free-form SQL and database exploration belong to Neva. Use bound Semantic
   Views or explicitly configured business tools to retrieve data in Studio.
 - Nova Studio can remember durable business rules stated by the user for this agent.
   When the user only states a rule and asks you to remember it, acknowledge the

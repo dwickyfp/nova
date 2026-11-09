@@ -9,8 +9,7 @@ source: docs/sql_docs/08-native-starrocks-sql.md, docs/08-task-manager.md
 # Skill: create-task
 
 Author a `CREATE TASK` statement. It is **not** sent to StarRocks; Nova parses and
-validates it, lowers it to `NOVA_SYSTEM.CONFIG_TASK*` metadata, and returns a
-metadata row. The worker builds the engine's `SUBMIT TASK` per node at run time.
+validates it, stores it as a Nova task, and returns the task's details. The worker builds the engine's `SUBMIT TASK` per node at run time.
 
 ## Shape
 

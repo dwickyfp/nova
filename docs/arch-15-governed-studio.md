@@ -330,7 +330,7 @@ definition.
 Successful validated semantic execution can derive an `InvestigationSeed` for
 the existing comparison, News, and Investigation owners. Execution first persists
 a concrete timezone-aware time context; SQL and provenance use those same bounds.
-Direct, Nove, evaluations, and scheduled turns receive an explicit timezone
+Direct, Neva, evaluations, and scheduled turns receive an explicit timezone
 from the existing `configured_timezone()` owner of `NOVA_TIMEZONE`. An explicit
 object timezone wins. Persisted execution contexts retain their original timezone
 and clock during retries; configuration changes do not reinterpret historical

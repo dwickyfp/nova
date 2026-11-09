@@ -53,6 +53,3 @@ warehouse commands. Do not promise recursive CTE support without checking the
 installed engine. For a long query, EXPLAIN is read-only; EXPLAIN ANALYZE
 executes its supported inner statement and can be expensive.
 
-Implementation references: app/sql_dialect/grammar/StarRocks.g4;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/SELECT/;
-https://docs.starrocks.io/docs/sql-reference/sql-functions/Window_function/.

@@ -340,9 +340,9 @@ async def has_verified_access(agent: dict, *, role_name: str, user: dict) -> boo
     """A grant and a current successful permission check are both required.
 
     The grant and the agent's fingerprint are read on every call, so a removed
-    grant or a changed configuration takes effect at once. Only the expensive
-    Ranger check of every dependency is reused when it passed
-    (:mod:`app.modules.access_control.passed_checks`).
+    grant or a changed configuration takes effect at once. The Ranger check of
+    every dependency runs on every request; only identical checks running at the
+    same time share one run (:mod:`app.modules.access_control.passed_checks`).
     """
     from app.modules.access_control import passed_checks
     from app.modules.agents.repository import AgentMetadataUnavailable, agent_repository

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.modules.agents.registry import KNOWN_TOOLS
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.registry import build_registry
 from app.modules.assistant.tools import ToolInvocation, requires_consent
 from app.modules.assistant.tools import inspect_agent_configuration as module
@@ -22,7 +22,7 @@ def _context(*, username: str = "alice", agent_run: bool = False) -> SimpleNames
         },
         audit_session_id="session-1",
         agent_id="studio-run" if agent_run else None,
-        app_context=NoveAppContext.model_validate(
+        app_context=NevaAppContext.model_validate(
             {
                 "version": 1,
                 "surface": {"id": "agent-studio", "route": "/studio/agents/agent-1"},
@@ -40,7 +40,7 @@ def _invocation(agent_id: str | None = None) -> ToolInvocation:
     )
 
 
-def test_agent_configuration_is_nove_only_read_only_and_needs_no_consent() -> None:
+def test_agent_configuration_is_neva_only_read_only_and_needs_no_consent() -> None:
     names = build_registry().names()
     assert "inspect_agent_configuration" in names
     assert "inspect_agent_configuration" not in KNOWN_TOOLS
@@ -190,7 +190,7 @@ async def test_no_current_agent_does_not_guess_from_stale_context(monkeypatch) -
             raise AssertionError("No current agent should be inspected")
 
     context = _context()
-    context.app_context = NoveAppContext.model_validate(
+    context.app_context = NevaAppContext.model_validate(
         {"version": 1, "surface": {"id": "workspace", "route": "/workspace"}}
     )
     monkeypatch.setattr(module, "agent_repository", Repository())

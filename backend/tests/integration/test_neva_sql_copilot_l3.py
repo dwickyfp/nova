@@ -29,8 +29,8 @@ async def test_typed_provisioning_default_role_and_first_login(client, admin_tok
     caller = await get_current_user(
         HTTPAuthorizationCredentials(scheme="Bearer", credentials=admin_token)
     )
-    username = f"nove.audit.{uuid4().hex[:12]}"
-    role = f"nove_empty_{uuid4().hex[:12]}"
+    username = f"neva.audit.{uuid4().hex[:12]}"
+    role = f"neva_empty_{uuid4().hex[:12]}"
     await access_control_service.create_role(OPERATOR, role)
     password = uuid4().hex + "Aa1!"
     ctx = SimpleNamespace(
@@ -66,8 +66,8 @@ async def test_typed_provisioning_default_role_and_first_login(client, admin_tok
 
 
 async def test_sql_card_account_batch_redacts_password_and_stops_on_error(client, admin_token):
-    username = f"nove.sql.{uuid4().hex[:12]}"
-    role = f"nove_empty_{uuid4().hex[:12]}"
+    username = f"neva.sql.{uuid4().hex[:12]}"
+    role = f"neva_empty_{uuid4().hex[:12]}"
     await access_control_service.create_role(OPERATOR, role)
     password = uuid4().hex + "Aa1!"
     client.headers["Authorization"] = f"Bearer {admin_token}"
@@ -117,7 +117,7 @@ async def test_native_sql_families_on_disposable_data(docker_services):
         user="root",
         password=root_password(),
     )
-    database = f"nove_sql_audit_{uuid4().hex[:12]}"
+    database = f"neva_sql_audit_{uuid4().hex[:12]}"
     async with connection.cursor() as cursor:
         await cursor.execute(f"CREATE DATABASE `{database}`")
         try:

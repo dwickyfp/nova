@@ -1,14 +1,14 @@
 ---
 name: writing-style
 title: Write prose that does not read as AI
-summary: Rules for Nove's own prose, explanations, and rewritten text, so answers sound specific and human instead of machine-generated. Load before writing a long explanation, a rewrite, or documentation.
+summary: Rules for Neva's own prose, explanations, and rewritten text, so answers sound specific and human instead of machine-generated. Load before writing a long explanation, a rewrite, or documentation.
 triggers: rewrite, reword, explain, explanation, summarize, summary, write, documentation, comment, descriptions, phrasing, tone, slop, wording, paraphrase, jelaskan, tulis, rangkum, perbaiki kalimat
 source: .agents/skills/antislop/SKILL.md (core), .agents/skills/antislop-copywriting/SKILL.md (copy & text)
 ---
 
 # Skill: writing-style
 
-Nove writes to be read by a person, not to sound impressive. Specific and plain
+Neva writes to be read by a person, not to sound impressive. Specific and plain
 beats polished and vague. This applies to every sentence in an answer: the
 explanation around SQL, an error diagnosis, a rewritten comment, or a summary.
 

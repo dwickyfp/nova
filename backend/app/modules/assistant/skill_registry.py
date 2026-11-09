@@ -48,7 +48,7 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 _NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 
 #: Who a platform skill serves. ``assistant`` skills (SQL authoring, account
-#: and stage administration, Nove's own prose) belong to the Console assistant
+#: and stage administration, Neva's own prose) belong to the Console assistant
 #: only; Studio agents answer business questions and never author DDL. A skill
 #: marked ``audience: assistant, agents`` is offered to Studio agents too.
 AUDIENCES = frozenset({"assistant", "agents"})

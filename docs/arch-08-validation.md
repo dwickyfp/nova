@@ -85,7 +85,7 @@ bounded loop activity, messages in both directions, and verified answer. User
 context can be sent to an active child; cancellation and replay use the same
 durable run. The panel does not create a second agent engine or expose raw model
 drafts. Direct-agent selection remains
-available. Studio's visible top header and Nove Assistant dock were removed so
+available. Studio's visible top header and Neva Assistant dock were removed so
 the chat is the primary surface. The requested antislop guidance was applied
 during UI, copy, responsive layout, and code-comment work.
 

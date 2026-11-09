@@ -1,4 +1,4 @@
-"""Nove creates governed Semantic Views instead of returning only a draft."""
+"""Neva creates governed Semantic Views instead of returning only a draft."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def _invocation(**overrides):
     )
 
 
-def test_nove_registers_typed_creation_without_api_actions():
+def test_neva_registers_typed_creation_without_api_actions():
     names = set(build_registry().names())
     assert {"create_semantic_view", "provision_user", "query_mutate"} <= names
     assert not {"list_ui_operations", "call_ui_operation"} & names

@@ -83,22 +83,30 @@ Goal: know exactly what Nove does today and how well, before changing it.
       fix SQL 6, data 8, access 6, maintain 6), English and Indonesian, expected
       outcome and grading rubric each; stratified dev/test split 20/20 fixed
       before tuning. Runner: `backend/scripts/neva_golden_run.py`.
-- [~] 0.6 Live Nove baseline on the configured provider: success rate,
-      pass^3, technical-leak count, wrong-but-confident count, latency
-      p50/p95, tokens; judged; recorded in `phase-0-checkpoint.md`.
+- [x] 0.6 Live Nove baseline: 120 turns judged. Solved 0.21 (0.15–0.28),
+      understandable 0.41, correct 0.50, pass^3 0.075, 37% empty answers, p50
+      20 s. Details and targets: `phase-0-checkpoint.md`.
 
 Acceptance: 0.2–0.4 green on today's code; baseline recorded with n and CIs.
 
 ## Phase 1: rename to Neva
 
-- [ ] 1.1 Persona (both copies), planner text, tool descriptions, skills,
-      knowledge docs renamed; technical wording from 0.1 rewritten in plain words.
-- [ ] 1.2 Frontend strings and identifiers (`useNoveSurface` → `useNevaSurface`,
+- [x] 1.1 Persona (both copies), planner text, tool descriptions, skills,
+      knowledge docs renamed; technical wording from 0.1 rewritten in plain words;
+      "Implementation references" code paths removed from guides; persona states
+      the plain-language rule (within the 3,000-token prompt budget).
+- [x] 1.2 Frontend strings and identifiers (`useNoveSurface` → `useNevaSurface`,
       `askNove`, `NoveMark`, files) renamed.
-- [ ] 1.3 Lookup values renamed with their readers: `nove-workflows`,
+- [x] 1.3 Lookup values renamed with their readers: `nove-workflows`,
       `nove-code-`/`nove-card-`, `nove-new-user-password`.
-- [ ] 1.4 Docs: `arch-09` renamed and updated.
-- [ ] 1.5 Test: no "Nove" in user-visible strings or prompts.
+- [x] 1.4 Docs: `arch-09` renamed to `arch-09-neva-application-assistant.md`;
+      docs mentioning the assistant updated.
+- [x] 1.5 Tests: `test_neva_plain_prompts.py` (persona, knowledge, skill
+      bodies and tool descriptions carry no "Nove" and no internals).
+- [x] 1.6 Plain-language filter on every Neva and Studio stream
+      (`plain_frames`): answer text, errors, steps, tool summaries and
+      follow-ups; code blocks untouched; streaming not delayed. Provider and web
+      search errors rewritten for a lay reader.
 
 Acceptance: parity suite and leak check green; stored data untouched
 (`assistant_*` names unchanged).
@@ -177,3 +185,5 @@ latency within the bound agreed from the phase 0 baseline.
 | 2026-11-09 | – | Research, proposal and decisions recorded | `docs/research/neva-assistant-harness-research.md`, `docs/proposals/neva-assistant.md` |
 | 2026-11-09 | 0.1 | Audit started: no tool calls Nova's HTTP routes; "endpoint" wording found in 7 skill/knowledge docs and provider error texts | this file |
 | 2026-11-09 | 0.1–0.5 | Leak audit, leak finder, services-not-routes test, parity suite (52), golden set 40 with split | tests listed in phase 0 |
+| 2026-11-09 | 0.6 | Nove baseline measured and judged | `phase-0-checkpoint.md` |
+| 2026-11-09 | 1 | Neva rename and plain language (backend); passed access checks no longer reused across requests (a revocation made directly in Ranger denies at once) | unit 8,522 pass, eval scorecard 51/51, mypy 0, ruff clean; 4 `tests/eval` trajectories fail before and after (pre-existing) |

@@ -23,8 +23,8 @@ until a correlated rerun succeeds. Errors can contain secrets; redact them.
 ANALYZE TABLE analytics.orders; collects statistics (a write operation).
 SET query_timeout = 60; affects a session. SET GLOBAL ... affects the cluster
 and requires elevated privilege. Nova may use separate database connections
-for statements; do not promise arbitrary SET variables persist across HTTP
-requests. USE ROLE analyst or SET ROLE analyst is a standalone Nova session
+for statements; do not promise arbitrary SET variables persist between separate
+runs. USE ROLE analyst or SET ROLE analyst is a standalone Nova session
 role switch; the role must be granted. Never send it mixed with unrelated SQL.
 
 Nova CREATE TASK is intercepted and stored as task metadata; load create-task
@@ -36,7 +36,7 @@ Use a supplied typed task service tool or the Tasks page when no SQL is provided
 Native loading families include INSERT SELECT, BROKER LOAD and ROUTINE LOAD;
 source-specific properties require official reference and deployment checks.
 Stream Load ingestion uses a protocol; SHOW STREAM LOAD is a native inspection
-statement. Never route to a generic API tool to perform ingestion.
+statement. Load data with SQL statements like these.
 Storage/provider setup belongs to protected configuration.
 SHOW LOAD FROM analytics and SHOW ROUTINE LOAD are job inspection; submitted
 jobs are not completed until their state says so.
@@ -47,6 +47,3 @@ families with deployment prerequisites. Do not invent definitions or run them
 as query troubleshooting. In particular, Nova built-in global functions and
 ACCOUNTADMIN are protected. Explain missing typed capabilities concretely.
 
-Implementation references: app/modules/query/service.py, app/modules/tasks/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/cluster-management/plan_profile/EXPLAIN/.

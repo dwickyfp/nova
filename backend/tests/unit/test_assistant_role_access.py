@@ -39,7 +39,7 @@ def _invocation(name: str = "grant_role_access") -> ToolInvocation:
     )
 
 
-def test_default_nove_registry_keeps_typed_role_access_without_api_bridge() -> None:
+def test_default_neva_registry_keeps_typed_role_access_without_api_bridge() -> None:
     names = build_registry().names()
     assert "inspect_role_access" in names
     assert "grant_role_access" in names

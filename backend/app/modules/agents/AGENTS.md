@@ -43,8 +43,8 @@ user explicitly asks for it. Rows Smart left in `NOVA_SYSTEM` stay untouched.
 - Extend existing tool/skill/resource/memory catalogs. Keep memory and derived
   caches within owner/role scopes and current evidence/approval rules.
 - Platform skills declare their `audience` in frontmatter. The default is
-  `assistant`, meaning the Console assistant (Nove) only: SQL authoring,
-  account and stage administration, and Nove's own prose. Only skills marked
+  `assistant`, meaning the Console assistant (Neva) only: SQL authoring,
+  account and stage administration, and Neva's own prose. Only skills marked
   `audience: assistant, agents` (today `native-ml`) are offered in agent
   settings and loaded into Studio agents; older configurations that name
   others are ignored.

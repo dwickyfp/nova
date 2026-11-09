@@ -1,4 +1,4 @@
-"""Offline cost of Nove context, reference retrieval, and a verified query trajectory."""
+"""Offline cost of Neva context, reference retrieval, and a verified query trajectory."""
 
 import pytest
 
@@ -10,12 +10,12 @@ from app.modules.assistant.tools.search_knowledge import search_references
 from tests.benchmark.harness import ScriptedProvider, measure, thread
 from tests.benchmark.test_assistant_loop import _print
 from tests.eval.harness import evaluate, run_scenario
-from tests.eval.nove_scenarios import nove_scenarios
+from tests.eval.neva_scenarios import neva_scenarios
 
 pytestmark = pytest.mark.benchmark
 
 
-async def test_nove_context_and_reference_cost():
+async def test_neva_context_and_reference_cost():
     registry = build_registry()
     loop = AssistantLoop(provider=ScriptedProvider([]), registry=registry)
 
@@ -41,19 +41,19 @@ async def test_nove_context_and_reference_cost():
         assert any(item["source"] == "knowledge:query-troubleshooting" for item in result)
 
     for name, operation in [
-        ("nove_context", context),
-        ("nove_skill_plan_validation", skills),
-        ("nove_reference_search", references),
+        ("neva_context", context),
+        ("neva_skill_plan_validation", skills),
+        ("neva_reference_search", references),
     ]:
         _print(name, await measure(operation, iterations=200))
 
 
-async def test_nove_two_query_trajectory_cost():
+async def test_neva_two_query_trajectory_cost():
     async def turn():
-        scenario = next(s for s in nove_scenarios() if s.name == "nove_schema_then_data_query")
+        scenario = next(s for s in neva_scenarios() if s.name == "neva_schema_then_data_query")
         result = await run_scenario(scenario)
         assert evaluate(scenario, result).passed
         assert result.tool_runs == ["query_execute", "query_execute"]
         assert result.provider_calls == 3
 
-    _print("nove_verified_two_query_turn", await measure(turn, iterations=200))
+    _print("neva_verified_two_query_turn", await measure(turn, iterations=200))

@@ -53,8 +53,3 @@ and materialized views. create_semantic_view validates and publishes them.
 Do not invent CREATE SEMANTIC VIEW SQL or claim CREATE VIEW publishes a semantic
 model for an agent. A published view does not grant access to its source tables.
 
-Implementation references: app/modules/query/service.py;
-https://docs.starrocks.io/docs/sql-reference/information_schema/views/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/View/CREATE_VIEW/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/materialized_view/CREATE_MATERIALIZED_VIEW/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/materialized_view/REFRESH_MATERIALIZED_VIEW/.

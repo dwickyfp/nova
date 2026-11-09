@@ -23,7 +23,7 @@ exists, privileges are sufficient, or the installed engine supports it.
 
 The supported COPY form has one stage source, without Snowflake load options.
 Use INSERT INTO table SELECT ... FROM @stage for projections. Stage export
-also has translation support, but the ordinary SQL endpoint blocks it; a
+also has translation support, but the regular SQL editor blocks it; a
 dedicated authorized service must enable export explicitly.
 
 Unsupported or distinct surfaces: CREATE STAGE, CREATE SEMANTIC VIEW, CREATE AGENT,
@@ -43,6 +43,3 @@ TIMESTAMP and HORIZON. MODEL/MODEL_ID/VERSION inference forms belong to native-m
 ML_EVALUATE SQL is not an implemented query interception; use model metrics and
 the ML service. Never train or run inference merely to draft SQL.
 
-Implementation references: app/modules/query/service.py,
-app/modules/query/dialect/, app/modules/ml_engine/inference/,
-app/modules/llm_functions/service.py, app/modules/access_control/statement_router.py.

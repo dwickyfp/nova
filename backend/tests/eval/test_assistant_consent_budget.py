@@ -133,7 +133,7 @@ async def test_capability_help_cannot_execute_database_query():
         frame
         async for frame in loop.run(
             thread=thread(),
-            user_content="Show me what Nove can do",
+            user_content="Show me what Neva can do",
             context=LoopContext("bench"),
             resolve_consent=consent,
         )

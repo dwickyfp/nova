@@ -1,4 +1,4 @@
-"""Provider-led tool planning for Nove and Nova Studio turns."""
+"""Provider-led tool planning for Neva and Nova Studio turns."""
 
 from __future__ import annotations
 
@@ -286,7 +286,7 @@ def _read_json(content: Any) -> dict[str, Any]:
 
 
 #: Planner instructions for a Studio business agent. It never writes SQL, so
-#: Nove's SQL-authoring rules are left out.
+#: Neva's SQL-authoring rules are left out.
 _STUDIO_INSTRUCTIONS = (
     "Plan one turn for a scoped Nova Studio business agent. Understand the user's "
     "objective in any language, including Indonesian. Return exactly one JSON object "
@@ -334,8 +334,8 @@ _STUDIO_INSTRUCTIONS = (
     "Use only tools present in the catalog. Return JSON only."
 )
 
-def _nove_instructions() -> str:
-    """Planner instructions for Nove, the general database assistant."""
+def _neva_instructions() -> str:
+    """Planner instructions for Neva, the general database assistant."""
     return (
         "Plan one Nova Assistant turn. Understand the user's objective in any language. "
         "When agent_scope is present, you are planning for a scoped Studio business agent. "
@@ -469,7 +469,7 @@ async def plan_turn(
         }
         for name in available
     ]
-    instructions = _STUDIO_INSTRUCTIONS if agent_scope is not None else _nove_instructions()
+    instructions = _STUDIO_INSTRUCTIONS if agent_scope is not None else _neva_instructions()
     schema = _plan_schema(semantic_context)
     instructions += "\n" + _output_instructions(schema)
     messages = [

@@ -38,7 +38,7 @@ from uuid import uuid4
 from app.core.database import configured_timezone
 from app.modules.assistant import events
 from app.modules.assistant.answer_contract import CLAIMS_INSTRUCTION, split_claims
-from app.modules.assistant.app_context import NoveAppContext, resolve_app_references
+from app.modules.assistant.app_context import NevaAppContext, resolve_app_references
 from app.modules.assistant.attachments import provider_user_content
 from app.modules.assistant.business_observation import (
     BusinessResultHookResult,
@@ -208,7 +208,7 @@ class LoopContext:
     #: own dataset). Set by the router only.
     capability_aliases: dict[str, str] = field(default_factory=dict)
     user: dict[str, Any] | None = None
-    app_context: NoveAppContext | None = None
+    app_context: NevaAppContext | None = None
     secure_input: dict[str, str] | None = field(default=None, repr=False)
     file_upload: tuple[str, Any, str] | None = field(default=None, repr=False)
     attachments: list[dict[str, Any]] | None = None
@@ -552,7 +552,7 @@ class AssistantLoop:
                         "proof of live deployment state. Explain the answer in your own "
                         "words. Do not include source identifiers, file paths, or an "
                         "implementation sources section. For a broad 'what can "
-                        "Nove do?' question, answer in a short summary with only "
+                        "Neva do?' question, answer in a short summary with only "
                         "the most relevant examples for the current surface.\n"
                     )
                     + "\n".join(capabilities.prompt_lines())
@@ -1027,7 +1027,7 @@ class AssistantLoop:
             turn_plan = await asyncio.wait_for(
                 plan_with(provider), timeout=max(0.01, deadline - _budget_time()),
             )
-        except Exception as exc:  # noqa: BLE001 - Studio has a governed fallback; Nove stops
+        except Exception as exc:  # noqa: BLE001 - Studio has a governed fallback; Neva stops
             logger.warning("Assistant turn planning failed: %s", type(exc).__name__)
             fallback = (
                 _studio_fallback_plan(self._registry, context, user_content)
@@ -3177,7 +3177,7 @@ def _verify_tool_outcome(tool_name: str, outcome: Any) -> str | None:
     return None
 
 
-def _fast_client_action(request: str, app: NoveAppContext | None) -> dict[str, Any] | None:
+def _fast_client_action(request: str, app: NevaAppContext | None) -> dict[str, Any] | None:
     if app is None:
         return None
     text = request.strip().lower().rstrip(".?!")
@@ -4417,8 +4417,13 @@ def _response_composition_prompt() -> str:
 #: and evidence enforcement live in code, so the model is not asked to
 #: reconstruct Nova's runtime from an operational manual on every turn.
 _DEFAULT_SYSTEM_PROMPT = """<NOVA_PLATFORM>
-You are Nove, the built-in copilot for the Nova data and AI platform.
-Help users understand, navigate, configure, operate, troubleshoot, and use Nova.
+You are Neva, the built-in assistant for the Nova data and AI platform.
+Help people understand, navigate, configure, operate, troubleshoot, and use Nova.
+Most look after Nova and are not developers: solve the problem in plain words,
+say what you checked in everyday words (never capability names), and name
+screens and buttons, never Nova's internal names, addresses, codes or files.
+Look up tables, roles and views yourself instead of
+asking the person for technical names.
 Nova Studio agents are user-created domain agents; you assist their configuration
 without becoming or impersonating them.
 
@@ -4456,10 +4461,10 @@ Evidence and execution:
 - Use query_execute for read-only SQL and role switches, query_mutate for
   explicitly requested SQL writes, and provision_user for account creation.
   The latter collects a temporary password in protected input and requires a
-  password change at first login. Tools call internal functions or SQL, never
-  generic HTTP/API routes. Do not stop at a draft when execution was requested.
-- If an action has neither a typed tool nor supported Nova SQL, state the
-  unavailable capability plainly. Do not invent an API or a SQL dialect form.
+  password change at first login. Do not stop at a draft when execution was
+  requested.
+- If an action is neither something you can do nor supported Nova SQL, say
+  plainly that Nova cannot do it here. Do not invent a capability or SQL form.
 - Authoring SQL text is always allowed. Provide complete SQL, including CREATE USER with
   '<temporary_password>' and ALTER USER ... REQUIRE PASSWORD CHANGE. Never
   refuse drafting because a credential will be entered privately at execution.

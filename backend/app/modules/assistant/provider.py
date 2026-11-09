@@ -139,6 +139,23 @@ class ProviderSelection(TypedDict, total=False):
     provider: ProviderConfig
 
 
+def _plain_status(status: int) -> str:
+    """What a failed AI service call means for the person waiting on it."""
+    if status in (401, 403):
+        return (
+            "The AI service did not accept Nova's access key. "
+            "An administrator can update it in AI Providers."
+        )
+    if status == 429:
+        return "The AI service is busy right now. Try again in a moment."
+    if status == 404:
+        return (
+            "The AI service does not offer the selected model. "
+            "Pick another model or ask an administrator to check AI Providers."
+        )
+    return "The AI service could not answer right now. Try again in a moment."
+
+
 class AssistantProviderClient:
     """Calls an OpenAI-compatible ``/chat/completions`` endpoint.
 
@@ -249,8 +266,8 @@ class AssistantProviderClient:
                 "Pick another model or provider in the assistant panel."
             )
         raise AssistantProviderError(
-            "No active AI provider with an API key is configured. "
-            "Add one under AI Providers before using the assistant."
+            "Nova has no AI service set up yet. "
+            "An administrator can add one in AI Providers."
         )
 
     async def _resolve_model(self, provider_id: str, requested: str | None) -> str:
@@ -324,11 +341,12 @@ class AssistantProviderClient:
     def _endpoint_error(exc: BlockedEndpointError) -> AssistantProviderError:
         if exc.retryable:
             return AssistantProviderError(
-                "AI provider hostname could not be resolved. Check DNS and retry."
+                "Nova could not reach the AI service: its address could not be resolved. "
+                "Try again in a moment."
             )
         return AssistantProviderError(
-            "AI provider endpoint is not allowed: use an http(s) URL on the internet "
-            "or your local network"
+            "This AI service address is not allowed. Use an address on the internet "
+            "or your local network."
         )
 
     async def _validate_endpoint(self, config: ProviderConfig) -> None:
@@ -371,7 +389,7 @@ class AssistantProviderClient:
                 response.status_code,
                 config.provider_id,
             )
-            raise AssistantProviderError(f"AI provider returned HTTP {response.status_code}")
+            raise AssistantProviderError(_plain_status(response.status_code))
 
     async def _backoff(self, attempt: int, response: httpx.Response | None = None) -> None:
         """Bound retry delay without exposing provider response content."""

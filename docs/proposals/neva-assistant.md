@@ -2,7 +2,7 @@
 
 Status: proposal, 2026-11-09, branch `feat/dataviz`. Research and sources:
 [neva-assistant-harness-research.md](../research/neva-assistant-harness-research.md).
-Current architecture: [arch-09](../arch-09-nove-application-copilot.md).
+Current architecture: [arch-09](../arch-09-neva-application-assistant.md).
 
 ## Goal
 

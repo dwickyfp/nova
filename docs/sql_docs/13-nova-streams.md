@@ -44,7 +44,7 @@ Production provider/governance adapters, SELECT/INSERT snapshot execution,
 consumption, and REST/Explorer delivery remain unfinished. Future activation must
 satisfy the full Streams V1 acceptance gates.
 
-The packaged Nove playbook is
+The packaged Neva playbook is
 [`nova-streams.md`](../../backend/app/modules/assistant/skill_library/nova-streams.md).
 Its scripted evals prove skill discovery, real-loader delivery, and controlled loop
 behavior; they do not measure the decisions of every live language model.

@@ -169,7 +169,7 @@ class QueryExecuteTool:
             detail = (
                 "Free-form SQL is unavailable in Studio business agents. Use describe_agent "
                 "for available data, a bound Semantic View for business metrics, or a "
-                "configured business tool. Use Nove for database exploration."
+                "configured business tool. Use Neva for database exploration."
             )
             await self._audit(
                 context=context, username=username, sql=_safe_redact(sql), status="DENIED",

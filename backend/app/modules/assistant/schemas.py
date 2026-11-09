@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.attachments import validate_attachments
 
 
@@ -146,7 +146,7 @@ class MessageRequest(BaseModel):
     )
     model: str | None = Field(default=None, max_length=256)
     provider_id: str | None = Field(default=None, max_length=64)
-    app_context: NoveAppContext | None = None
+    app_context: NevaAppContext | None = None
 
     model_config = {"populate_by_name": True}
 

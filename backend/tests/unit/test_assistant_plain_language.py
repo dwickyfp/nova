@@ -40,3 +40,83 @@ def test_flags_each_kind_of_internal(text, kind):
 )
 def test_leaves_plain_answers_alone(text):
     assert find_technical_leaks(text) == []
+
+
+from app.modules.assistant import events  # noqa: E402
+from app.modules.assistant.plain_language import (  # noqa: E402
+    PlainTextStream,
+    make_plain,
+    plain_frames,
+)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Set the endpoint and API key under AI Providers, then retry.",
+        "The provider returned HTTP 503 from POST /api/v1/assistant/threads.",
+        "I used query_execute and inspect_role_access to check it.",
+        "It lives in NOVA_SYSTEM.CONFIG_TASK_RUNS (see app.modules.tasks.service).",
+        "Open http://localhost:8000/docs for details.",
+    ],
+)
+def test_make_plain_leaves_no_internals(text):
+    assert find_technical_leaks(make_plain(text)) == []
+
+
+def test_make_plain_keeps_meaning_in_plain_words():
+    assert make_plain("I ran `inspect_role_access` first.") == "I ran an access check first."
+    assert "access key" in make_plain("Add an API key")
+    assert make_plain("Net revenue per city") == "Net revenue per city"
+
+
+def test_a_term_split_across_chunks_is_still_caught():
+    stream = PlainTextStream()
+    chunks = ["The service said HT", "TP 5", "03 and the end", "point failed. Done"]
+    out = "".join(stream.feed(chunk) for chunk in chunks)
+    out += stream.flush()
+    assert find_technical_leaks(out) == []
+    assert out.startswith("The service said an error and the service address failed.")
+
+
+def test_frames_are_plain_and_keep_their_order_and_position():
+    apply = plain_frames()
+    frames = [
+        events.text_delta("Calling the ", content_index=0, content_id="c0"),
+        events.text_delta("endpoint now please", content_index=0, content_id="c0"),
+        events.thinking("act", "Running query_execute"),
+        events.error("x", "AI provider returned HTTP 502"),
+    ]
+    out = [f for frame in frames for f in apply(frame)]
+    out += apply.flush()
+    text = "".join(out)
+    assert find_technical_leaks(text.replace('"text_delta"', "")) == []
+    # Held-back answer text is released before the next kind of frame.
+    assert out[0].startswith("event: text_delta") and '"content_id":"c0"' in out[0]
+    assert "event: thinking" in out[-2] and "a query" in out[-2]
+
+
+def test_text_without_internals_streams_at_once():
+    # Scripts without spaces, and ordinary words, are not held back.
+    stream = PlainTextStream()
+    assert stream.feed("売上は") == "売上は"
+    assert stream.feed("増えました。") == "増えました。"
+    assert stream.feed("Revenue grew 12% ") == "Revenue grew 12% "
+    # Only an unfinished word that may begin an internal waits for the next chunk.
+    assert stream.feed("check the end") == "check the "
+    assert stream.feed(" of the month.") == "end of the month."
+
+
+def test_code_a_person_copies_is_left_exactly_as_written():
+    text = (
+        'Use this:\n```json\n{"endpoint": "https://models.example.com"}\n```\n'
+        'The endpoint is set.'
+    )
+    plain = make_plain(text)
+    assert '{"endpoint": "https://models.example.com"}' in plain
+    assert plain.endswith("The service address is set.")
+    stream = PlainTextStream()
+    chunks = ["Use this:\n``", '`json\n{"endpoint": 1}\n``', "`\nThe end", "point is set."]
+    out = "".join(stream.feed(chunk) for chunk in chunks) + stream.flush()
+    assert '{"endpoint": 1}' in out
+    assert out.endswith("The service address is set.")

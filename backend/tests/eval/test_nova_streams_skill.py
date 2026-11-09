@@ -38,7 +38,7 @@ from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_fram
         ),
     ],
 )
-async def test_nove_loads_stream_playbook_without_mutation(monkeypatch, prompt, answer):
+async def test_neva_loads_stream_playbook_without_mutation(monkeypatch, prompt, answer):
     from unittest.mock import AsyncMock
 
     mutation = AsyncMock(side_effect=AssertionError("Unexpected SQL or metadata access"))
@@ -95,7 +95,7 @@ async def test_nove_loads_stream_playbook_without_mutation(monkeypatch, prompt, 
         async for frame in AssistantLoop(
             provider=provider,
             registry=registry,
-            system_prompt="Nove\n" + skill_library.catalog_prompt(),
+            system_prompt="Neva\n" + skill_library.catalog_prompt(),
         ).run(
             thread=AssistantThread(thread_id="streams", user_name="alice", title="Streams"),
             user_content=prompt,

@@ -1,4 +1,4 @@
-"""Bounded application state supplied by a Nova surface for one Nove turn."""
+"""Bounded application state supplied by a Nova surface for one Neva turn."""
 
 from __future__ import annotations
 
@@ -182,7 +182,7 @@ class AppDomain(_ContextPart):
     provider_id: str | None = Field(default=None, alias="providerId", max_length=128)
 
 
-class NoveApplicationEvent(_ContextPart):
+class NevaApplicationEvent(_ContextPart):
     id: str = Field(min_length=1, max_length=128)
     timestamp: datetime
     source: Literal["assistant", "surface", "execution", "user"]
@@ -200,7 +200,7 @@ class NoveApplicationEvent(_ContextPart):
         return _safe_metadata(value)
 
 
-class NoveAppContext(_ContextPart):
+class NevaAppContext(_ContextPart):
     version: Literal[1]
     surface: AppSurface
     entity: AppEntity | None = None
@@ -210,7 +210,7 @@ class NoveAppContext(_ContextPart):
     view: AppView | None = None
     domain: AppDomain | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=32)
-    events: list[NoveApplicationEvent] = Field(default_factory=list, max_length=12)
+    events: list[NevaApplicationEvent] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="before")
     @classmethod
@@ -231,10 +231,10 @@ class NoveAppContext(_ContextPart):
             raise ValueError("Application context has an invalid capability name")
         return list(dict.fromkeys(values))
 
-    def current_events(self) -> list[NoveApplicationEvent]:
+    def current_events(self) -> list[NevaApplicationEvent]:
         current_document = self.editor.document_id if self.editor else None
         current_entity = self.entity.id if self.entity else None
-        visible: list[NoveApplicationEvent] = []
+        visible: list[NevaApplicationEvent] = []
         for event in self.events:
             if event.surface_id is not None and event.surface_id != self.surface.id:
                 continue
@@ -256,7 +256,7 @@ class NoveAppContext(_ContextPart):
         return data
 
 
-def resolve_app_references(request: str, app: NoveAppContext | None) -> dict[str, Any]:
+def resolve_app_references(request: str, app: NevaAppContext | None) -> dict[str, Any]:
     """Give the model bounded references from the current surface, not old turns.
 
     They are always offered: whether "this", "この", or "هذا" points at the screen

@@ -298,8 +298,8 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "query_mutate": (
-        "Execute approved SQL writes through the caller's query pipeline; "
-        "no credentials or HTTP routes.",
+        "Run approved SQL changes as the person, after they approve each one; "
+        "never handles credentials.",
         {
             "type": "object",
             "properties": {
@@ -364,7 +364,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         {"type": "object", "properties": {}, "additionalProperties": False},
     ),
     "verify_query_repair": (
-        "Verify a Nove editor patch against a correlated successful SQL rerun.",
+        "Verify a Neva editor patch against a correlated successful SQL rerun.",
         {
             "type": "object",
             "properties": {
@@ -377,7 +377,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
 
 
 #: Names the agent builder may bundle. Distinct from the builtin catalog: the
-#: authoring tools (create_*) are Nove-only and are not offered to a user agent.
+#: authoring tools (create_*) are Neva-only and are not offered to a user agent.
 AGENT_BUNDLEABLE_TOOLS = (
     "catalog_search",
     "semantic_query",

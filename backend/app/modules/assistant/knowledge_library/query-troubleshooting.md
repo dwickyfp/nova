@@ -21,5 +21,3 @@ metadata can guide a follow-up query, but does not establish business totals.
 If the turn budget prevents completing the investigation, state what was verified
 and what remains unknown.
 
-Implementation sources: assistant/tools/query_execute.py, assistant/tools/policy.py,
-assistant/service.py, assistant/skill_library/debug-sql.md.
