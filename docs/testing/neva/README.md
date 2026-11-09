@@ -241,9 +241,10 @@ another request.
       and repaired in the loop before it is offered.
 - [x] 5.2 Written objects read back after a change.
 - [x] 5.3 Source label in every answer; "Trusted" only for governed sources.
-- [~] 5.4 Surfaces added: Users, Database Explorer (selected object), Tasks and
-      Business Ontology (open tab), next to Workspace, Roles and Query history.
-      Access Control and Agents remain.
+- [x] 5.4 Surfaces added: Users, Data Access, Agents, Database Explorer
+      (selected object), Tasks and Business Ontology (open tab), next to
+      Workspace, Roles and Query history; filter choices and page counts reach
+      Neva.
 - [ ] 5.5 Ambiguous or unanswerable questions get a clarifying question or
       answerable alternatives instead of a guess.
 - [~] 5.6 Knowledge search finds guides from plain questions ("how do I create

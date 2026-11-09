@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { boundAppContext } from "./app-context";
-import { defineNevaCapability, NevaApplicationEvents, NevaSurfaceRegistry } from "./surface-registry";
+import {
+  choiceOf,
+  defineNevaCapability,
+  NevaApplicationEvents,
+  NevaSurfaceRegistry,
+} from "./surface-registry";
 
 describe("Neva application context", () => {
   it("bounds event evidence, redacts secrets, and keeps the active object", () => {
@@ -125,5 +130,21 @@ describe("Neva surface registry", () => {
     const context = registry.buildContext({}, events.getRecent());
     expect(context.events?.length).toBeLessThanOrEqual(8);
     expect(context.events?.every((event) => event.surfaceId === "roles.detail")).toBe(true);
+  });
+});
+
+describe("choiceOf", () => {
+  const options = ["", "Protected", "Standard"] as const;
+
+  it("returns the page's spelling whatever case Neva used", () => {
+    expect(choiceOf("protected", options, "access filter")).toBe("Protected");
+    expect(choiceOf(" STANDARD ", options, "access filter")).toBe("Standard");
+    expect(choiceOf("", options, "access filter")).toBe("");
+  });
+
+  it("refuses a value the page does not offer", () => {
+    expect(() => choiceOf("admins", options, "access filter")).toThrow(
+      "Unsupported access filter",
+    );
   });
 });

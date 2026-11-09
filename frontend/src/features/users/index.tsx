@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
-import { defineNevaCapability } from "@/features/assistant/surface-registry";
+import { choiceOf, defineNevaCapability } from "@/features/assistant/surface-registry";
 import {
   Database,
   MoreHorizontal,
@@ -338,6 +338,9 @@ function InlineCheckboxList({
   );
 }
 
+/** The access filter values; empty shows everyone. */
+const USER_ACCESS_FILTERS = ["", "Protected", "Standard"] as const;
+
 export function Users() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -524,8 +527,8 @@ export function Users() {
     context: () => ({
       view: {
         filters: { search: searchUsers, access: userAccessFilter },
-        shown: filteredUsers.length,
-        total: visibleUsersList.length,
+        filterOptions: { access: USER_ACCESS_FILTERS },
+        summary: { shown: filteredUsers.length, total: visibleUsersList.length },
       },
     }),
     capabilities: [
@@ -540,11 +543,9 @@ export function Users() {
           value: z.string().max(120),
         }),
         execute: ({ filter, value }) => {
-          if (filter === "access") {
-            if (!["", "Protected", "Standard"].includes(value))
-              throw new Error("Unsupported access filter");
-            setUserAccessFilter(value);
-          } else setSearchUsers(value);
+          if (filter === "access")
+            setUserAccessFilter(choiceOf(value, USER_ACCESS_FILTERS, "access filter"));
+          else setSearchUsers(value);
           setUsersPage(1);
         },
       }),

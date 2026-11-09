@@ -18,7 +18,8 @@ def _items(*tools, kind="data"):
 
 @pytest.mark.parametrize(("tools", "kind", "expected"), [
     (("semantic_query", "query_execute"), "data", {"kind": "semantic_view", "trusted": True}),
-    (("ontology_resolve", "query_execute"), "data", {"kind": "glossary", "trusted": True}),
+    (("ontology_resolve", "query_execute"), "data", {"kind": "query", "trusted": False}),
+    (("ontology_resolve",), "data", {"kind": "glossary", "trusted": True}),
     (("query_execute",), "data", {"kind": "query", "trusted": False}),
     (("query_execute",), "catalog", {"kind": "catalog", "trusted": False}),
     (("catalog_search", "search_knowledge"), "data", {"kind": "catalog", "trusted": False}),

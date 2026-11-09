@@ -30,19 +30,11 @@ import { OverviewTab } from './overview-tab'
 import { ProposalsTab } from './proposals-tab'
 import { ReleasesTab } from './releases-tab'
 
-export type OntologyTab =
-  | 'overview'
-  | 'concepts'
-  | 'derived'
-  | 'checks'
-  | 'proposals'
-  | 'evaluation'
-  | 'releases'
-  | 'domains'
-
 const ONTOLOGY_TABS = [
   'overview', 'concepts', 'derived', 'checks', 'proposals', 'evaluation', 'releases', 'domains',
-] as const satisfies readonly OntologyTab[]
+] as const
+
+export type OntologyTab = (typeof ONTOLOGY_TABS)[number]
 
 const route = getRouteApi('/_authenticated/business-ontology')
 

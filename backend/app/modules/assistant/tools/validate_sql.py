@@ -104,7 +104,11 @@ _READ = re.compile(r"^\s*(?:SELECT|WITH)\b", re.IGNORECASE)
 #: A table function as a source (FILES(...), TABLE(...), ...): planning it can
 #: reach outside storage, so such SQL is never planned without consent.
 _TABLE_FUNCTION = re.compile(
-    r"(?:\bFROM|\bJOIN|,)\s*(?:LATERAL\s+)?[\w.`]+\s*\(|\b(?:FILES|TABLE)\s*\(",
+    r"(?:\bFROM|\bJOIN)\s*(?:LATERAL\s+)?[\w.`]+\s*\("
+    # A comma-joined source inside the FROM clause, before WHERE and the rest.
+    r"|(?:\bFROM|\bJOIN)\b(?:(?!\b(?:WHERE|GROUP|ORDER|HAVING|LIMIT|UNION)\b)[^;])*?,"
+    r"\s*(?:LATERAL\s+)?[\w.`]+\s*\((?![^()]*\bSELECT\b)"
+    r"|\b(?:FILES|TABLE)\s*\(",
     re.IGNORECASE,
 )
 #: A planning check is bounded; a slow catalog only means "not verified".
@@ -119,6 +123,7 @@ async def _plan_as_caller(sql: str, context: Any) -> tuple[bool, str | None]:
     left out: planning them would resolve storage credentials.
     """
     from app.common.sql_guard import strip_sql_comments
+    from app.core.exceptions import StarRocksError
     from app.modules.assistant.tools.query_execute import (
         _active_role,
         _context_value,
@@ -149,13 +154,23 @@ async def _plan_as_caller(sql: str, context: Any) -> tuple[bool, str | None]:
             ),
             timeout=PLAN_TIMEOUT_SECONDS,
         )
+    except StarRocksError as exc:
+        # The engine answered and refused the plan: that is the check's result.
+        # Without an engine code the connection failed, which verifies nothing.
+        if exc.engine_code is None:
+            return False, None
+        return True, _plan_problem(exc.message, _is_privilege_error, _safe_redact)
     except Exception:  # noqa: BLE001 - an unplanned check is "not verified", not a failure
         return False, None
     if not result.error:
         return True, None
-    if _is_privilege_error(result.error):
-        return True, "the active role may not read one of these tables."
-    return True, _safe_redact(result.error)[:300]
+    return True, _plan_problem(result.error, _is_privilege_error, _safe_redact)
+
+
+def _plan_problem(message: str, denied: Any, redact: Any) -> str:
+    if denied(message):
+        return "the active role may not read one of these tables."
+    return str(redact(message))[:300]
 
 
 validate_sql_tool = ValidateSQLTool()

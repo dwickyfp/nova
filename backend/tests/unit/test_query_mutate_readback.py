@@ -65,3 +65,12 @@ async def test_rows_and_grants_need_no_object_readback(monkeypatch):
         monkeypatch, "INSERT INTO sales.daily VALUES ('2026-01-01', 1)", [])
     looked.assert_not_awaited()
     assert outcome.data["readback"] == []
+
+
+async def test_an_engine_refusal_raised_for_a_dropped_table_means_it_is_gone(monkeypatch):
+    from app.core.exceptions import StarRocksError
+
+    outcome, _ = await _write(monkeypatch, "DROP TABLE sales.daily",
+                              [StarRocksError("Unknown table 'daily'", engine_code=1146)])
+    assert outcome.data["readback"][0]["confirmed"] is True
+    assert "is gone" in outcome.summary

@@ -41,7 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api-client'
 import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
-import { defineNevaCapability } from '@/features/assistant/surface-registry'
+import { choiceOf, defineNevaCapability } from '@/features/assistant/surface-registry'
 import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -84,6 +84,8 @@ type RoleDetail = {
 // ---------------------------------------------------------------------------
 
 const PAGE_SIZE = 10
+/** Role type filter values; empty shows every role. */
+const ROLE_TYPE_FILTERS = ['', 'Built-in', 'Custom'] as const
 
 // ---------------------------------------------------------------------------
 // Main page component
@@ -123,7 +125,9 @@ export function RolesPage() {
   const roles = rolesData ?? []
   const { askNeva } = useNevaSurface({
     id: 'roles.list', route: '/roles', title: 'Roles',
-    context: () => ({ view: { filters: { type: typeFilter }, search } }),
+    context: () => ({
+      view: { filters: { type: typeFilter }, filterOptions: { type: ROLE_TYPE_FILTERS }, search },
+    }),
     capabilities: [
       defineNevaCapability({
         name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
@@ -133,10 +137,8 @@ export function RolesPage() {
         name: 'surface.set_filter', risk: 'safe',
         argsSchema: z.object({ filter: z.enum(['type', 'search']), value: z.string().max(120) }),
         execute: ({ filter, value }) => {
-          if (filter === 'type') {
-            if (!['', 'Built-in', 'Custom'].includes(value)) throw new Error('Unsupported role filter')
-            setTypeFilter(value)
-          } else setSearch(value)
+          if (filter === 'type') setTypeFilter(choiceOf(value, ROLE_TYPE_FILTERS, 'role filter'))
+          else setSearch(value)
           setPage(1)
         },
       }),

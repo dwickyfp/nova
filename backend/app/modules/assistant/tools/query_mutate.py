@@ -8,6 +8,7 @@ from typing import Any
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import redact_sql_credentials, split_sql_statements
+from app.core.exceptions import StarRocksError
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
@@ -171,6 +172,7 @@ async def _read_back(
             continue
         action, kind, name = match.group(1).upper(), " ".join(match.group(2).upper().split()), \
             match.group(3)
+        visible: bool | None
         try:
             result = await query_service.execute(
                 sql=f"DESC {name}", username=security.principal,
@@ -178,6 +180,10 @@ async def _read_back(
                 database=context.database, schema=context.schema_name, max_rows=200,
             )
             visible, columns = not result.error, (result.row_count or 0)
+        except StarRocksError as exc:
+            # The engine answered: the object is not there for this role. With
+            # no engine code the connection failed, so nothing is known.
+            visible, columns = (False if exc.engine_code is not None else None), 0
         except Exception:  # noqa: BLE001 - an unreadable object is reported as unknown
             visible, columns = None, 0
         checked.append({

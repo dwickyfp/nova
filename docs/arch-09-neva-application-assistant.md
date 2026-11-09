@@ -88,7 +88,9 @@ repair still asks on every run.
 statement as the caller with `EXPLAIN` (15 s bound, nothing runs). That
 checks that tables and columns exist and that the active role may read them.
 A failed plan sends the reason back to the loop, which repairs the draft
-before it is proposed. Statements with `@stage` references, writes and
+before it is proposed. Only SQL that passed this check in the same turn is put
+into the editor: the loop remembers each passing statement, and the page
+action refuses any other SQL so that it is checked first. Statements with `@stage` references, writes and
 several statements are not planned. After an approved write, `query_mutate`
 looks at each created, altered or dropped table or view with `DESC` as the
 caller and reports it done only if the role can see the result.
@@ -99,9 +101,14 @@ in its stored `answer` step: `semantic_view` or `glossary` (shown as
 label under the answer, also after a reload.
 
 Pages with their own context: SQL Workspace, Roles (list and detail),
-Monitoring query history, Users, Database Explorer (the selected object as
-the entity), Tasks and Business Ontology (open tab). Each offers only safe
-actions: refresh, filters, selecting an item, opening a tab.
+Monitoring query history, Users, Data Access, Agents, Database Explorer (the
+selected object as the entity), Tasks and Business Ontology (open tab). Each
+offers only safe actions: refresh, filters, selecting an item, opening a tab.
+A page's `view` may carry `filterOptions` (the values each filter accepts) and
+`summary` (small counts it shows). A filter value Neva names in any letter
+case is matched to the page's own spelling, and anything else is refused.
+After any page action the turn continues and Neva says, in the person's
+language, what it asked the page to do. The page shows the outcome itself.
 
 The provider client sends all system instructions as one leading system
 message, in their original order. Some OpenAI-compatible gateways keep only

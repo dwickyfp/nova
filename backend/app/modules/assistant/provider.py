@@ -128,8 +128,10 @@ def _one_system_message(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     Some OpenAI-compatible gateways keep only the first system message and drop
     the rest without an error, including the page context, the turn plan and
-    the loop's later corrections. One leading message, in the original order,
-    is read the same way by every provider.
+    the loop's later corrections. The system texts keep their order among
+    themselves, but a correction added mid-turn now sits before the
+    conversation rather than after it; every provider reads it, which matters
+    more than its position.
     """
     texts = [
         _system_text(message.get("content"))

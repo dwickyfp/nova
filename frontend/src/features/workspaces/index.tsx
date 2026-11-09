@@ -122,6 +122,7 @@ import {
 import { QueryHistory } from "./query-history";
 import { splitSqlStatements, statementAtOffset } from "./sql-statements";
 import {
+  editorTextForNeva,
   replaceAttachedSql,
   safeNevaSql,
   summarizeQueryForNeva,
@@ -183,6 +184,14 @@ const EDITOR_MIN_HEIGHT = 160;
 const NO_DATABASES: string[] = [];
 /** Id prefix of SQL Neva suggests for the editor, as opposed to a repair. */
 const NEVA_SUGGESTION = "neva-";
+
+/**
+ * A repair asks Neva to review every run; a suggestion only when its run
+ * fails, since a run that worked needs no follow-up turn.
+ */
+function isNevaSuggestion(id: string): boolean {
+  return id.startsWith(NEVA_SUGGESTION);
+}
 const NO_EXPANDED: Record<string, boolean> = {};
 const NO_SCHEMAS: { name: string }[] = [];
 
@@ -952,6 +961,8 @@ export function WorkspacesPage() {
           const editor = activeSqlEditorInstance;
           const selection = editor?.getSelection();
           const model = editor?.getModel();
+          // The file keeps its own ending, so a replace adds no blank line.
+          const ending = before.endsWith("\n") ? "\n" : "";
           let next: string;
           if (mode === "replace" && selection && model && !selection.isEmpty()) {
             // A selection is what the person pointed at: only it changes.
@@ -959,10 +970,11 @@ export function WorkspacesPage() {
             const end = model.getOffsetAt(selection.getEndPosition());
             next = before.slice(0, start) + sql + before.slice(end);
           } else if (mode === "insert" && before.trim()) {
-            next = `${before.trimEnd()}\n\n${sql}\n`;
+            next = `${before.trimEnd()}\n\n${sql}${ending}`;
           } else {
-            next = `${sql}\n`;
+            next = `${sql}${ending}`;
           }
+          if (next === before) throw new Error("The SQL is already in the editor.");
           const id = `${NEVA_SUGGESTION}${crypto.randomUUID()}`;
           setProposedRewrite({
             attachmentId: id,
@@ -971,7 +983,6 @@ export function WorkspacesPage() {
             sql,
             hunks: buildRewriteHunks(before, next),
             sourceMessageId: id,
-            reviewRun: "on_error",
           });
         },
       }),
@@ -1003,7 +1014,8 @@ export function WorkspacesPage() {
                   documentId: activeTab.id,
                   language: "sql",
                   selectedText,
-                  text: safeNevaSql(editor?.getModel()?.getValue() ?? activeTab.content ?? ""),
+                  // Sent as written, so the cursor's line matches the text.
+                  text: editorTextForNeva(editor?.getModel()?.getValue() ?? activeTab.content ?? ""),
                   cursor: cursor
                     ? { line: cursor.lineNumber, column: cursor.column }
                     : undefined,
@@ -2245,7 +2257,7 @@ export function WorkspacesPage() {
       );
       if (
         outcome === "error" ||
-        (outcome === "success" && rewrite.reviewRun !== "on_error")
+        (outcome === "success" && !isNevaSuggestion(rewrite.sourceMessageId))
       ) {
         await askFromWorkspace(
           "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
@@ -3075,8 +3087,7 @@ export function WorkspacesPage() {
               if (
                 pending.correlationId &&
                 (outcome === "error" ||
-                  (outcome === "success" &&
-                    !pending.correlationId.startsWith(NEVA_SUGGESTION)))
+                  (outcome === "success" && !isNevaSuggestion(pending.correlationId)))
               )
                 void askFromWorkspace(
                   "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
@@ -5563,7 +5574,15 @@ function MonacoSqlEditor({
   }
 
   return (
-    <div className="relative h-full min-h-0">
+    <div
+      className="relative h-full min-h-0"
+      onKeyDown={(event) => {
+        // Escape dismisses Neva's suggestion, unless the editor used the key
+        // itself (closing its own suggestion list).
+        if (event.key === "Escape" && proposedRewrite && !event.defaultPrevented)
+          onDenyRewrite();
+      }}
+    >
       <Editor
         height="100%"
         language="sql"

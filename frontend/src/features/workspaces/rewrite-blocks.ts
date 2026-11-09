@@ -14,10 +14,13 @@ export type DiffBlock = { key: string; line: number; rows: DiffLine[] };
 /**
  * Unified rows per change, as a code review shows them: one unchanged line
  * above, the lines it replaces, the lines it adds, one unchanged line below.
+ * An unchanged line already shown below the previous change is not repeated,
+ * and each block is labelled with its line in the suggested SQL.
  */
 export function rewriteBlocks(rewrite: ProposedRewrite): DiffBlock[] {
   const source = rewrite.sourceContent.split("\n");
   let offset = 0;
+  let lastShown = 0;
   return rewrite.hunks.map((hunk, index) => {
     const inserting = hunk.kind === "insert";
     // Last unchanged line before the change and first one after it (1-based).
@@ -35,17 +38,16 @@ export function rewriteBlocks(rewrite: ProposedRewrite): DiffBlock[] {
       new: before + 1 + offset + line,
       text,
     }));
+    const firstNew = before + 1 + offset;
     const rows: DiffLine[] = [];
-    if (before >= 1 && before <= source.length)
+    if (before >= 1 && before <= source.length && before !== lastShown)
       rows.push({ kind: "context", old: before, new: before + offset, text: source[before - 1] });
     rows.push(...removed, ...added);
     offset += added.length - removed.length;
-    if (after >= 1 && after <= source.length)
+    if (after >= 1 && after <= source.length) {
       rows.push({ kind: "context", old: after, new: after + offset, text: source[after - 1] });
-    return {
-      key: `${hunk.startLine}-${index}`,
-      line: removed[0]?.old ?? added[0]?.new ?? Math.max(1, before),
-      rows,
-    };
+      lastShown = after;
+    }
+    return { key: `${hunk.startLine}-${index}`, line: Math.max(1, firstNew), rows };
   });
 }

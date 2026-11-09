@@ -19,7 +19,7 @@ function proposal(before: string, after: string): ProposedRewrite {
 }
 
 describe("rewriteBlocks", () => {
-  it("shows the replaced lines above the new ones, between unchanged lines", () => {
+  it("shows the replaced lines above the new ones, between unchanged lines shown once", () => {
     const blocks = rewriteBlocks(
       proposal(
         "SELECT a\nFROM t\nGROUP BY a\nORDER BY a",
@@ -33,7 +33,6 @@ describe("rewriteBlocks", () => {
         { kind: "context", old: 2, new: 2, text: "FROM t" },
       ],
       [
-        { kind: "context", old: 2, new: 2, text: "FROM t" },
         { kind: "removed", old: 3, text: "GROUP BY a" },
         { kind: "added", new: 3, text: "GROUP BY a, b" },
         { kind: "context", old: 4, new: 4, text: "ORDER BY a" },
@@ -52,12 +51,12 @@ describe("rewriteBlocks", () => {
         { kind: "context", old: 2, new: 3, text: "FROM t" },
       ],
       [
-        { kind: "context", old: 2, new: 3, text: "FROM t" },
         { kind: "removed", old: 3, text: "WHERE x" },
         { kind: "added", new: 4, text: "WHERE y" },
       ],
     ]);
-    expect(blocks.map((block) => block.line)).toEqual([2, 3]);
+    // Each block is labelled with its line in the suggested SQL.
+    expect(blocks.map((block) => block.line)).toEqual([2, 4]);
   });
 });
 

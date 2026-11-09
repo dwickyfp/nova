@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Bot, BrainCircuit, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import { z } from 'zod'
+import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
+import { defineNevaCapability } from '@/features/assistant/surface-registry'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Button } from '@/components/ui/button'
@@ -62,6 +65,42 @@ export function AgentsPage() {
         a.description.toLowerCase().includes(term)
     )
   }, [agentsQuery.data, search])
+
+  useNevaSurface({
+    id: 'agents.list',
+    route: '/agents',
+    title: 'Agents',
+    context: () => ({
+      view: {
+        filters: { search },
+        summary: { shown: agents.length, total: agentsQuery.data?.agents.length ?? 0 },
+      },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
+        execute: () => agentsQuery.refetch({ throwOnError: true }),
+      }),
+      defineNevaCapability({
+        name: 'surface.set_filter', risk: 'safe',
+        argsSchema: z.object({ filter: z.enum(['search']), value: z.string().max(120) }),
+        execute: ({ value }) => setSearch(value),
+      }),
+      defineNevaCapability({
+        name: 'surface.select', risk: 'safe', mayChangeSurface: true,
+        argsSchema: z.object({ id: z.string().min(1).max(160) }),
+        execute: ({ id }) => {
+          if (!(agentsQuery.data?.agents ?? []).some((agent) => agent.agent_id === id))
+            throw new Error('Agent is not in the current list')
+          return navigate({ to: '/agents/$agentId', params: { agentId: id } })
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: 'Which agent fits', prompt: 'Which agent should I use for sales questions?' },
+      { label: 'Create an agent', prompt: 'How do I create an agent for my team?' },
+    ],
+  })
 
   return (
     <>

@@ -98,3 +98,40 @@ async def test_a_wrongly_shaped_page_action_is_explained_so_neva_can_retry():
         "capability": "surface.set_filter", "args": {"filter": "access", "value": ""},
     }), SimpleNamespace(app_context=app, user=None))
     assert cleared.ok
+
+
+def test_a_page_s_filter_choices_and_counts_reach_neva():
+    app = NevaAppContext.model_validate({
+        "version": 1, "surface": {"id": "users.list", "route": "/users"},
+        "view": {"filters": {"access": ""}, "filterOptions": {"access": ["", "Protected"]},
+                 "summary": {"shown": 3, "total": 5}, "ignored": True},
+    })
+    view = app.prompt_data()["view"]
+    assert view["filterOptions"] == {"access": ["", "Protected"]}
+    assert view["summary"] == {"shown": 3, "total": 5}
+    assert "ignored" not in view
+
+
+async def test_the_editor_only_receives_sql_that_passed_its_check():
+    app = NevaAppContext.model_validate({
+        "version": 1, "surface": {"id": "workspace.sql", "route": "/workspaces"},
+        "capabilities": ["editor.propose_sql"],
+    })
+    tool = InvokeClientCapabilityTool()
+    invocation = ToolInvocation("c1", tool.name, {
+        "capability": "editor.propose_sql", "args": {"sql": "SELECT 1;", "mode": "replace"},
+    })
+    unchecked = await tool.run(invocation, SimpleNamespace(
+        app_context=app, user=None, checked_sql=set()))
+    assert not unchecked.ok and unchecked.recoverable
+    checked = await tool.run(invocation, SimpleNamespace(
+        app_context=app, user=None, checked_sql={"SELECT 1"}))
+    assert checked.ok
+
+
+def test_only_a_bare_question_counts_as_asking_back():
+    from app.modules.assistant.service import _only_a_question
+
+    assert _only_a_question("Which date range should it cover?")
+    assert not _only_a_question("Revenue was $5M last quarter. Want a breakdown?")
+    assert not _only_a_question("Here is the total.\n\nAnything else?")

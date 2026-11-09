@@ -168,10 +168,14 @@ class AppExecution(_ContextPart):
 class AppView(_ContextPart):
     active_tab: str | None = Field(default=None, alias="activeTab", max_length=128)
     filters: dict[str, Any] = Field(default_factory=dict)
+    #: The values each filter accepts, so Neva sets one the page knows.
+    filter_options: dict[str, Any] = Field(default_factory=dict, alias="filterOptions")
+    #: Small facts the page shows, such as how many rows match.
+    summary: dict[str, Any] = Field(default_factory=dict)
     search: str | None = Field(default=None, max_length=256)
     sort: Any = None
 
-    @field_validator("filters", "sort")
+    @field_validator("filters", "filter_options", "summary", "sort")
     @classmethod
     def scrub_values(cls, value: Any) -> Any:
         return _safe_metadata(value)

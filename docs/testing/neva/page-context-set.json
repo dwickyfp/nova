@@ -10,88 +10,229 @@
   },
   "tasks": [
     {
-      "id": "PW01", "category": "page_sql", "lang": "id", "surface": "workspace.sql",
-      "capabilities": ["editor.propose_sql", "editor.focus"],
+      "id": "PW01",
+      "category": "page_sql",
+      "lang": "id",
+      "surface": "workspace.sql",
+      "capabilities": [
+        "editor.propose_sql",
+        "editor.focus"
+      ],
       "editor_text": "SELECT\n    DATE_TRUNC('month', order_date) AS bulan,\n    SUM(net_amount) AS total_penjualan\nFROM default_catalog.NOVA_RETAIL_FIELD.sales_orders\nWHERE order_date >= DATE_TRUNC('year', CURRENT_DATE())\n  AND order_date < DATE_ADD(DATE_TRUNC('year', CURRENT_DATE()), INTERVAL 1 YEAR)\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY bulan;",
       "prompt": "Jelaskan query di editor saya ini dalam satu atau dua kalimat.",
       "expect": "Explains the open SQL: net sales (net_amount) per month for the current year from sales_orders, ordered by month. Does not ask the person to paste it."
     },
     {
-      "id": "PW02", "category": "page_sql", "lang": "id", "surface": "workspace.sql",
-      "capabilities": ["editor.propose_sql", "editor.focus"],
+      "id": "PW02",
+      "category": "page_sql",
+      "lang": "id",
+      "surface": "workspace.sql",
+      "capabilities": [
+        "editor.propose_sql",
+        "editor.focus"
+      ],
       "editor_text": "SELECT\n    DATE_TRUNC('month', order_date) AS bulan,\n    SUM(net_amount) AS total_penjualan\nFROM default_catalog.NOVA_RETAIL_FIELD.sales_orders\nWHERE order_date >= DATE_TRUNC('year', CURRENT_DATE())\n  AND order_date < DATE_ADD(DATE_TRUNC('year', CURRENT_DATE()), INTERVAL 1 YEAR)\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY bulan;",
       "prompt": "Query ini rasanya lambat. Tolong optimalkan tanpa mengubah hasilnya, lalu taruh di editor.",
       "expect": "Puts an equivalent query in the editor as a suggested change (editor.propose_sql), explains what changed and is honest if the gain is uncertain; nothing runs."
     },
     {
-      "id": "PW03", "category": "page_sql", "lang": "id", "surface": "workspace.sql",
-      "capabilities": ["editor.propose_sql", "editor.focus"],
+      "id": "PW03",
+      "category": "page_sql",
+      "lang": "id",
+      "surface": "workspace.sql",
+      "capabilities": [
+        "editor.propose_sql",
+        "editor.focus"
+      ],
       "editor_text": "SELECT\n    DATE_TRUNC('month', order_date) AS bulan,\n    SUM(net_amount) AS total_penjualan\nFROM default_catalog.NOVA_RETAIL_FIELD.sales_orders\nWHERE order_date >= DATE_TRUNC('year', CURRENT_DATE())\n  AND order_date < DATE_ADD(DATE_TRUNC('year', CURRENT_DATE()), INTERVAL 1 YEAR)\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY bulan;",
       "prompt": "Ubah query di editor supaya penjualan per bulan juga dipisah per kota outlet.",
       "expect": "Joins outlets on outlet_id, adds outlets.city to SELECT and GROUP BY, keeps the year filter; proposed in the editor, explained, nothing runs."
     },
     {
-      "id": "PW04", "category": "page_sql", "lang": "en", "surface": "workspace.sql",
-      "capabilities": ["editor.propose_sql", "editor.focus"],
+      "id": "PW04",
+      "category": "page_sql",
+      "lang": "en",
+      "surface": "workspace.sql",
+      "capabilities": [
+        "editor.propose_sql",
+        "editor.focus"
+      ],
       "editor_text": "",
       "prompt": "Write a query for the top 5 outlets by net sales this year and put it in my editor.",
       "expect": "Valid SQL over sales_orders joined to outlets (outlet_name), SUM(net_amount) for the current year, ORDER BY DESC LIMIT 5, proposed in the editor (replace, since the file is empty); nothing runs."
     },
     {
-      "id": "PW05", "category": "page_sql", "lang": "en", "surface": "workspace.sql",
-      "capabilities": ["editor.propose_sql", "editor.focus"],
+      "id": "PW05",
+      "category": "page_sql",
+      "lang": "en",
+      "surface": "workspace.sql",
+      "capabilities": [
+        "editor.propose_sql",
+        "editor.focus"
+      ],
       "editor": "SELECT city, SUM(net_amount) FROM NOVA_RETAIL_FIELD.sales_orders GROUP BY city",
-      "execution": {"status": "error", "errorMessage": "Getting analyzing error. Detail message: Column 'city' cannot be resolved."},
+      "execution": {
+        "status": "error",
+        "errorMessage": "Getting analyzing error. Detail message: Column 'city' cannot be resolved."
+      },
       "prompt": "Fix this.",
       "expect": "Explains city is on outlets, not sales_orders, and proposes a join on outlet_id in the editor; nothing runs."
     },
     {
-      "id": "PU01", "category": "page_admin", "lang": "en", "surface": "users.list",
-      "capabilities": ["surface.refresh", "surface.set_filter", "surface.select"],
-      "view": {"filters": {"search": "", "access": ""}},
+      "id": "PU01",
+      "category": "page_admin",
+      "lang": "en",
+      "surface": "users.list",
+      "capabilities": [
+        "surface.refresh",
+        "surface.set_filter",
+        "surface.select"
+      ],
+      "view": {
+        "filters": {
+          "search": "",
+          "access": ""
+        },
+        "filterOptions": {
+          "access": [
+            "",
+            "Protected",
+            "Standard"
+          ]
+        },
+        "summary": {
+          "shown": 12,
+          "total": 12
+        }
+      },
       "prompt": "Show me only the protected users on this page.",
-      "expect": "Sets the page's access filter to Protected (surface.set_filter) or says plainly how; does not change any user."
+      "expect": "Sets the page's access filter to Protected (surface.set_filter) or says plainly how; does not change any user. The filter value uses the page's own spelling from filterOptions; the answer says what was set without calling it pending."
     },
     {
-      "id": "PE01", "category": "page_data", "lang": "id", "surface": "database_explorer",
-      "capabilities": ["surface.refresh", "surface.set_filter"],
-      "entity": {"type": "table", "id": "default_catalog.NOVA_RETAIL_FIELD.sales_orders", "name": "sales_orders", "metadata": {"catalog": "default_catalog", "database": "NOVA_RETAIL_FIELD"}},
+      "id": "PE01",
+      "category": "page_data",
+      "lang": "id",
+      "surface": "database_explorer",
+      "capabilities": [
+        "surface.refresh",
+        "surface.set_filter"
+      ],
+      "entity": {
+        "type": "table",
+        "id": "default_catalog.NOVA_RETAIL_FIELD.sales_orders",
+        "name": "sales_orders",
+        "metadata": {
+          "catalog": "default_catalog",
+          "database": "NOVA_RETAIL_FIELD"
+        }
+      },
       "prompt": "Tabel ini isinya apa dan kolom mana yang dipakai untuk total penjualan?",
       "expect": "Uses the selected table: one row per order line; total sales from net_amount (or gross_amount before discount), dated by order_date. Does not ask which table."
     },
     {
-      "id": "PT01", "category": "page_admin", "lang": "en", "surface": "tasks.list",
-      "capabilities": ["surface.refresh", "surface.set_filter", "surface.select"],
-      "view": {"filters": {"search": ""}},
+      "id": "PT01",
+      "category": "page_admin",
+      "lang": "en",
+      "surface": "tasks.list",
+      "capabilities": [
+        "surface.refresh",
+        "surface.set_filter",
+        "surface.select"
+      ],
+      "view": {
+        "filters": {
+          "search": ""
+        },
+        "summary": {
+          "shown": 9,
+          "failingTasks": 1
+        }
+      },
       "prompt": "Which of these tasks failed most recently, and what should I check?",
       "expect": "Looks up task runs it can read (or says plainly it found none failing) and gives plain next steps; does not change or run a task."
     },
     {
-      "id": "PO01", "category": "page_glossary", "lang": "id", "surface": "business_ontology",
-      "capabilities": ["tab.open", "surface.refresh"],
-      "view": {"activeTab": "concepts"},
+      "id": "PO01",
+      "category": "page_glossary",
+      "lang": "id",
+      "surface": "business_ontology",
+      "capabilities": [
+        "tab.open",
+        "surface.refresh"
+      ],
+      "view": {
+        "activeTab": "concepts"
+      },
       "prompt": "Apa arti resmi penjualan bersih di glosarium bisnis kita?",
       "expect": "Answers from the released business glossary (ontology_resolve/explain), quoting the official meaning, or says plainly that no such concept is released and offers to propose one; labels the source."
     },
     {
-      "id": "PO02", "category": "page_glossary", "lang": "en", "surface": "business_ontology",
-      "capabilities": ["tab.open", "surface.refresh"],
-      "view": {"activeTab": "proposals"},
+      "id": "PO02",
+      "category": "page_glossary",
+      "lang": "en",
+      "surface": "business_ontology",
+      "capabilities": [
+        "tab.open",
+        "surface.refresh"
+      ],
+      "view": {
+        "activeTab": "proposals"
+      },
       "prompt": "Did any of my definition suggestions get approved?",
       "expect": "Checks the caller's proposals and the release in use (ontology_status) and reports them plainly; changes nothing."
     },
     {
-      "id": "PR01", "category": "page_admin", "lang": "id", "surface": "roles.list",
-      "capabilities": ["surface.refresh", "surface.set_filter", "surface.select"],
-      "view": {"filters": {"type": ""}, "search": ""},
+      "id": "PR01",
+      "category": "page_admin",
+      "lang": "id",
+      "surface": "roles.list",
+      "capabilities": [
+        "surface.refresh",
+        "surface.set_filter",
+        "surface.select"
+      ],
+      "view": {
+        "filters": {
+          "type": ""
+        },
+        "filterOptions": {
+          "type": [
+            "",
+            "Built-in",
+            "Custom"
+          ]
+        },
+        "search": ""
+      },
       "prompt": "Tampilkan hanya role custom di halaman ini.",
-      "expect": "Sets the page's type filter to Custom (surface.set_filter); changes no role."
+      "expect": "Sets the page's type filter to Custom (surface.set_filter); changes no role. The filter value uses the page's own spelling from filterOptions; the answer says what was set without calling it pending."
     },
     {
-      "id": "PM01", "category": "page_admin", "lang": "en", "surface": "monitoring.query_history",
-      "capabilities": ["surface.refresh", "surface.set_filter"],
+      "id": "PM01",
+      "category": "page_admin",
+      "lang": "en",
+      "surface": "monitoring.query_history",
+      "capabilities": [
+        "surface.refresh",
+        "surface.set_filter"
+      ],
       "prompt": "Show only the failed queries here.",
-      "expect": "Filters the page to failed queries (surface.set_filter); changes nothing else."
+      "expect": "Filters the page to failed queries (surface.set_filter); changes nothing else. The filter value uses the page's own spelling from filterOptions; the answer says what was set without calling it pending.",
+      "view": {
+        "filters": {
+          "status": "",
+          "user": "",
+          "database": ""
+        },
+        "filterOptions": {
+          "status": [
+            "",
+            "SUCCESS",
+            "ERROR",
+            "FAILED"
+          ]
+        }
+      }
     }
   ]
 }

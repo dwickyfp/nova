@@ -20,6 +20,21 @@ export type NevaClientCapability = {
   invoke: (args: unknown) => Promise<unknown>;
 };
 
+/**
+ * The page's own spelling of a choice Neva named in any letter case
+ * ("protected" → "Protected"); anything else is refused.
+ */
+export function choiceOf<T extends string>(
+  value: string,
+  options: readonly T[],
+  what: string,
+): T {
+  const wanted = value.trim().toLowerCase();
+  const found = options.find((option) => option.toLowerCase() === wanted);
+  if (found === undefined) throw new Error(`Unsupported ${what}`);
+  return found;
+}
+
 export function defineNevaCapability<T extends z.ZodType>({
   name,
   risk,

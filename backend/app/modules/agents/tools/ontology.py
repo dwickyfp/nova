@@ -128,7 +128,7 @@ class OntologyExplainTool:
             release_id = _release(context)
             concept = await ontology_service.find(body.concept, context.user, release_id=release_id)
             detail = await ontology_service.get_concept(
-                concept["id"], context.user, release_id=release_id
+                concept["id"], context.user, release_id=release_id, include_history=False
             )
             bindings = await ontology_service.representations(
                 concept["id"], context.user, release_id=release_id

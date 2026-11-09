@@ -210,7 +210,7 @@ SQL_DRAFT = "Use this:\n```sql\nSELECT 1\n```"
 async def test_neva_checks_the_sql_its_draft_proposes():
     validate = EvalTool("validate_sql", parameters={
         "type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"],
-    })
+    }, data={"valid": True, "objects_verified": True})
     result = await _run_plan([validate], [
         text_frame(SQL_DRAFT), text_frame(SQL_DRAFT), text_frame(SQL_DRAFT),
     ], ["validate_sql"])
@@ -331,7 +331,7 @@ async def _run_page(tools, script, required, app):
 def _page_tools():
     validate = EvalTool("validate_sql", parameters={
         "type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"],
-    })
+    }, data={"valid": True, "objects_verified": True})
     propose = EvalTool("invoke_client_capability", parameters={
         "type": "object",
         "properties": {"capability": {"type": "string"},
@@ -404,3 +404,37 @@ async def test_a_suggested_edit_is_explained_in_the_person_s_words():
     # Neva's own instruction to the model never reaches the person.
     assert "person's language" not in text and "nothing has run" not in text
     assert result.finish_reason == "stop"
+
+
+async def test_sql_that_fails_its_check_never_reaches_the_editor():
+    from app.modules.assistant.tools.client_capability import InvokeClientCapabilityTool
+
+    validate = EvalTool("validate_sql", parameters={
+        "type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"],
+    }, data={"valid": False, "objects_verified": True})
+    propose = InvokeClientCapabilityTool()
+    draft = "Faster:\n```sql\nSELECT town FROM NOVA_RETAIL_FIELD.sales_orders\n```"
+    result = await _run_page(
+        [validate, propose, EvalTool("catalog_search")], [text_frame(draft)] * 6,
+        ["validate_sql", "invoke_client_capability"], _workspace(),
+    )
+    assert validate.runs
+    assert "event: client_action" not in "".join(result.frames)
+
+
+async def test_the_model_cannot_propose_sql_that_was_never_checked():
+    from app.modules.assistant.tools.client_capability import InvokeClientCapabilityTool
+
+    validate, _propose, catalog = _page_tools()
+    sql = "SELECT order_date FROM NOVA_RETAIL_FIELD.sales_orders LIMIT 100"
+    result = await _run_page(
+        [validate, InvokeClientCapabilityTool(), catalog],
+        [tool_call_frame("p1", name="invoke_client_capability", arguments={
+            "capability": "editor.propose_sql", "args": {"sql": sql, "mode": "insert"}}),
+         text_frame("Done.")] * 3,
+        ["invoke_client_capability"], _workspace(),
+    )
+    frames = "".join(result.frames)
+    # The editor gets this SQL only after validate_sql checked this exact text.
+    proposed = "event: client_action" in frames
+    assert not proposed or any(run.arguments["sql"] == sql for run in validate.runs)

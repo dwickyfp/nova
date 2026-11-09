@@ -96,8 +96,10 @@ export default function TaskList() {
     context: () => ({
       view: {
         filters: { search },
-        shown: filtered.length,
-        failingTasks: graphs.filter((graph) => graph.last_run?.state === "failed").length,
+        summary: {
+          shown: filtered.length,
+          failingTasks: graphs.filter((graph) => graph.last_run?.state === "failed").length,
+        },
       },
     }),
     capabilities: [

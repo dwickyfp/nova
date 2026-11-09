@@ -1,6 +1,6 @@
+import { MAX_NEVA_SQL_CHARS as MAX_SQL_CHARS } from "@/features/assistant/app-context";
 import type { QueryResponse } from "./types";
 
-const MAX_SQL_CHARS = 4_000;
 const MAX_ERROR_CHARS = 1_000;
 const MAX_RESULT_COLUMNS = 32;
 const SECRET_MARKER =
@@ -30,6 +30,11 @@ export function safeNevaSql(sql: string): string | undefined {
     return undefined;
   }
   return trimmed;
+}
+
+/** The open file as written for Neva, or nothing when it is too long or secret. */
+export function editorTextForNeva(sql: string): string | undefined {
+  return safeNevaSql(sql) === undefined ? undefined : sql;
 }
 
 /** Replace only the statement still occupying the attachment's recorded lines. */

@@ -26,9 +26,6 @@ export function RewriteReview({
   return (
     <section
       aria-label="Suggested change from Neva"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onCancel();
-      }}
       className="pointer-events-auto flex max-h-[min(60%,26rem)] flex-col overflow-hidden rounded-xl bg-background/95 supports-[backdrop-filter]:bg-background/75 shadow-[0_12px_40px_-16px_rgb(0_0_0/0.35)] backdrop-blur-xl backdrop-saturate-150"
     >
       <header className="flex items-center gap-3 px-4 pt-3 pb-2">

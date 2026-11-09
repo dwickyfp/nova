@@ -326,10 +326,15 @@ class OntologyService:
 
     async def get_concept(
         self, concept_id: str, user: dict, *, scope: Scope = "current",
-        release_id: str | None = None,
+        release_id: str | None = None, include_history: bool = True,
     ) -> dict:
         snapshot = await self.snapshot(scope, release_id=release_id)
         concept = await self._visible(concept_id, snapshot, user, scope)
+        if not include_history:
+            return {
+                **self._scope_info(snapshot, scope),
+                "concept": self.concept_view(concept, snapshot.domains),
+            }
         history = await self.repository.history("concepts", concept_id, Concept)
         steward = access.stewards_path(
             snapshot.domains.get(concept.domain_id), snapshot.domains, user

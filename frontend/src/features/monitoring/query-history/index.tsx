@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
-import { defineNevaCapability } from '@/features/assistant/surface-registry'
+import { choiceOf, defineNevaCapability } from '@/features/assistant/surface-registry'
 import { safeNevaSql } from '@/features/workspaces/neva-feedback'
 import { formatDateTime, formatDuration, formatNumber, truncate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
@@ -68,6 +68,8 @@ type QueryHistoryResponse = {
 /** Seven data columns plus the details toggle. */
 const COLUMN_COUNT = 8
 const SEARCH_DEBOUNCE_MS = 300
+/** Status values Neva may set; FAILED is shown as the page's ERROR status. */
+const QUERY_STATUS_FILTERS = ['', 'SUCCESS', 'ERROR', 'FAILED'] as const
 
 /**
  * `embedded` drops the page header when the view sits inside the Queries
@@ -144,6 +146,7 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
       } : undefined,
       view: {
         filters: { status: statusFilter, user: userFilter, database: databaseFilter },
+        filterOptions: { status: QUERY_STATUS_FILTERS },
         search: debouncedSearch,
       },
     }),
@@ -157,8 +160,8 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
         argsSchema: z.object({ filter: z.enum(['status', 'user', 'database', 'search']), value: z.string().max(160) }),
         execute: ({ filter, value }) => {
           if (filter === 'status') {
-            if (!['', 'SUCCESS', 'ERROR', 'FAILED'].includes(value)) throw new Error('Unsupported query status')
-            setStatusFilter(value === 'FAILED' ? 'ERROR' : value)
+            const status = choiceOf(value, QUERY_STATUS_FILTERS, 'query status')
+            setStatusFilter(status === 'FAILED' ? 'ERROR' : status)
           } else if (filter === 'user') setUserFilter(value)
           else if (filter === 'database') setDatabaseFilter(value)
           else setSearchQuery(value)

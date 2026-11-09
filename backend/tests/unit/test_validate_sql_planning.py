@@ -76,3 +76,24 @@ async def test_stages_writes_and_several_statements_are_never_planned(monkeypatc
 async def test_a_slow_catalog_means_not_verified_rather_than_wrong(monkeypatch):
     outcome, _ = await _check(monkeypatch, "SELECT 1", raises=TimeoutError())
     assert outcome.data["valid"] and outcome.data["objects_verified"] is False
+
+
+@pytest.mark.parametrize(("code", "message", "verified", "reason"), [
+    (5204, "Access denied; you need the ANY privilege on DATABASE sales", True,
+     "the active role may not read one of these tables."),
+    (1064, "Column 'town' cannot be resolved", True, "Column 'town' cannot be resolved"),
+    (None, "Can't connect to the database", False, None),
+])
+async def test_an_engine_refusal_raised_by_the_query_service_is_the_result(
+    monkeypatch, code, message, verified, reason
+):
+    from app.core.exceptions import StarRocksError
+
+    outcome, _ = await _check(
+        monkeypatch, "SELECT town FROM outlets",
+        raises=StarRocksError(message, engine_code=code),
+    )
+    assert outcome.data["objects_verified"] is verified
+    assert outcome.data["valid"] is (reason is None)
+    if reason:
+        assert outcome.data["statements"][0]["errors"] == [reason]

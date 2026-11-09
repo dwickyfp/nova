@@ -40,12 +40,10 @@ _SENT = {
         "beside their current text; it takes effect only if they accept it, and "
         "nothing has run. Finish with a short answer in the person's language: "
         "what you changed and why it helps, and that they can accept or dismiss "
-        "it in the editor. Do not repeat the whole SQL or the check results."
+        "it in the editor. Do not call it pending or unconfirmed, and do not repeat the "
+        "whole SQL or the check results."
     ),
 }
-#: Every page action here is safe or a draft, so the turn goes on and Neva
-#: says in the person's words what it asked the page to do.
-EXPLAINED = frozenset(_ARGUMENTS)
 #: The words a person reads when Neva acts on the page without the model.
 SENT_PLAINLY = "I asked this page to do that; it confirms when done."
 
@@ -62,6 +60,12 @@ def _valid_arguments(capability: str, args: Any) -> bool:
         and (name not in _CHOICES or args[name] in _CHOICES[name])
         for name, kind in fields.items()
     )
+
+
+def _normalize(sql: str) -> str:
+    from app.modules.assistant.service import normalize_sql
+
+    return normalize_sql(sql)
 
 
 def _shape(capability: str) -> str:
@@ -118,6 +122,18 @@ class InvokeClientCapabilityTool:
             return ToolOutcome(
                 ok=False, summary="", error="That capability is unavailable on the current surface."
             )
+        checked = getattr(context, "checked_sql", None)
+        if (
+            capability == "editor.propose_sql"
+            and isinstance(checked, set)
+            and isinstance(args, dict)
+            and _normalize(str(args.get("sql") or "")) not in checked
+        ):
+            # Only SQL that passed validate_sql in this turn reaches the editor.
+            return ToolOutcome(
+                ok=False, summary="", recoverable=True,
+                error="Check this exact SQL with validate_sql first, then propose it.",
+            )
         if not _valid_arguments(capability, args):
             # Recoverable: the model learns the expected shape and tries again.
             return ToolOutcome(
@@ -154,8 +170,9 @@ class InvokeClientCapabilityTool:
             ok=True,
             summary=_SENT.get(
                 capability,
-                "The page is applying this now. Tell the person in one short sentence, in "
-                "their language, what you asked the page to do.",
+                "The page applies this and shows its outcome to the person. Tell them in one "
+                "short sentence, in their language, what you set on the page (for example "
+                "'I set the Protected filter'); do not call it pending.",
             ),
             data={
                 "status": "pending",

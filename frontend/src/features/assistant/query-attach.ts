@@ -53,11 +53,6 @@ export type ProposedRewrite = {
   hunks: RewriteHunk[];
   /** The assistant message that produced it, for tracing. */
   sourceMessageId: string;
-  /**
-   * A fix for a failing query asks Neva to review every run; a suggested
-   * change only asks when its run fails.
-   */
-  reviewRun?: "always" | "on_error";
 };
 
 export type AttachContext = Omit<AttachedQuery, "id" | "createdAt">;

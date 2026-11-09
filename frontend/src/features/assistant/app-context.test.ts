@@ -91,3 +91,37 @@ describe("Neva app-context redaction", () => {
     expect(context.view?.filters).toEqual({ location: "[REDACTED]" });
   });
 });
+
+describe("page facts and choices", () => {
+  const base = {
+    version: 1 as const,
+    surface: { id: "users.list", route: "/users" },
+    capabilities: [],
+  };
+
+  it("keeps the page's summary and filter choices for Neva", () => {
+    const bound = boundAppContext({
+      ...base,
+      view: {
+        filters: { access: "" },
+        filterOptions: { access: ["", "Protected", "Standard"] },
+        summary: { shown: 3, total: 5 },
+      },
+    });
+    expect(bound.view?.filterOptions).toEqual({ access: ["", "Protected", "Standard"] });
+    expect(bound.view?.summary).toEqual({ shown: 3, total: 5 });
+  });
+
+  it("cuts the whole file before the part the person selected", () => {
+    const bound = boundAppContext({
+      ...base,
+      surface: { id: "workspace.sql", route: "/workspaces" },
+      // Two-byte letters push the context past its byte limit.
+      selection: { text: `SELECT '${"é".repeat(1_900)}'` },
+      editor: { text: "é".repeat(4_000), selectedText: "é".repeat(2_000) },
+      execution: { status: "error", errorMessage: "é".repeat(1_500) },
+    });
+    expect(bound.selection?.text).toBe(`SELECT '${"é".repeat(1_900)}'`);
+    expect((bound.editor?.text ?? "").length).toBeLessThan(4_000);
+  });
+});

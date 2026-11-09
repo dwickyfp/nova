@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { defineNevaCapability } from "@/features/assistant/surface-registry";
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
@@ -658,6 +661,46 @@ export function AccessControlPage() {
         .includes(query),
     );
   }, [managedPolicies, policySearch]);
+  useNevaSurface({
+    id: "access_control",
+    route: "/access-control",
+    title: "Data Access",
+    context: () => ({
+      view: {
+        filters: { roleSearch, policySearch },
+        summary: {
+          roles: filteredRoles.length,
+          policies: filteredPolicies.length,
+          healthy: health.data?.healthy ?? null,
+          changesWaitingToApply: health.data?.pending_propagation ?? null,
+          drift: health.data?.drift_count ?? null,
+        },
+      },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
+        execute: () => refreshManagedState(),
+      }),
+      defineNevaCapability({
+        name: "surface.set_filter", risk: "safe",
+        argsSchema: z.object({ filter: z.enum(["roles", "policies"]), value: z.string().max(120) }),
+        execute: ({ filter, value }) => {
+          if (filter === "roles") {
+            setRoleSearch(value);
+            setRolePage(1);
+          } else {
+            setPolicySearch(value);
+            setPolicyPage(1);
+          }
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: "Who can read a table", prompt: "Which roles can read the sales_orders table?" },
+      { label: "Hide a column", prompt: "How do I hide a column from a role?" },
+    ],
+  });
   const visiblePolicies = pageSlice(
     filteredPolicies,
     policyPage,
