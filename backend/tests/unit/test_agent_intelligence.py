@@ -322,3 +322,60 @@ async def test_ml_agent_auto_discovers_the_native_ml_platform_skill(monkeypatch)
 
     assert context.selected_skills == ["native-ml"]
     assert '<PLATFORM_SKILL name="native-ml">' in messages[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_console_assistant_skills_never_reach_a_studio_agent(monkeypatch):
+    async def list_skills(*, owner_name):
+        return []
+
+    monkeypatch.setattr("app.modules.agents.service.agent_repository.list_skills", list_skills)
+    registry, prompt, _, _ = await AgentService().build_loop_inputs(
+        {
+            "agent_id": "sales",
+            "owner_name": "alice",
+            "name": "Sales Analyst",
+            "default_tools": ["ml_execute"],
+            # An older configuration still naming Console-only skills.
+            "default_skills": ["create-table", "native-ml"],
+            "discoverable_skills": ["copy-into", "accountadmin-guardrail"],
+        }
+    )
+
+    assert registry.default_skills == ("native-ml",)
+    assert registry.discoverable_skills == ()
+    assert set(registry.skill_definitions) == {"native-ml"}
+    assert "CREATE TABLE" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_every_agent_can_load_its_skills_but_not_console_playbooks(monkeypatch):
+    from app.modules.assistant.tools import ToolInvocation
+
+    async def list_skills(*, owner_name):
+        return []
+
+    monkeypatch.setattr("app.modules.agents.service.agent_repository.list_skills", list_skills)
+    registry, _, _, _ = await AgentService().build_loop_inputs(
+        {
+            "agent_id": "sales",
+            "owner_name": "alice",
+            "name": "Sales Analyst",
+            # load_skill is not selected: it is always on.
+            "default_tools": ["semantic_query", "ml_execute"],
+            "default_skills": [],
+            "discoverable_skills": [],
+        }
+    )
+    loader = registry.get("load_skill")
+    assert loader is not None
+
+    def call(name):
+        return ToolInvocation(tool_call_id="c", tool_name="load_skill", arguments={"name": name})
+
+    context = LoopContext(user_name="alice")
+    assert (await loader.run(call("native-ml"), context)).ok
+    refused = await loader.run(call("create-table"), context)
+    assert not refused.ok
+    assert "native-ml" in (refused.error or "")
+    assert "create-table" not in (refused.error or "").split("Available skills:")[1]

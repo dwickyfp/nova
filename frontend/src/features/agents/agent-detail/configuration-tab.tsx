@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -37,9 +38,11 @@ import {
   type CustomToolDraft,
 } from "@/features/agents/agent-detail/custom-tool-editor";
 
-/** Tools a user agent may bundle; authoring tools are Nove-only. */
+/**
+ * Tools a user agent may bundle; authoring tools are Nove-only. Loading the
+ * agent's skills is always on and so is not listed.
+ */
 const BUNDLEABLE = new Set([
-  "load_skill",
   "semantic_query",
   "semantic_search",
   "data_to_chart",
@@ -621,27 +624,32 @@ function SkillsConfig({
     queryKey: ["skills"],
     queryFn: () => skillsApi.list(),
   });
-  const skills = skillsQuery.data?.skills ?? [];
+  // Platform skills written for the Console assistant (SQL authoring,
+  // administration) are not offered to Studio agents; the backend ignores
+  // them for agents too.
+  const skills = (skillsQuery.data?.skills ?? []).filter(
+    (skill) => skill.source !== "builtin" || skill.for_agents !== false,
+  );
 
-  const setMode = (name: string, mode: "off" | "default" | "discoverable") => {
-    const defaults = new Set(draft.default_skills ?? []);
-    const discoverable = new Set(draft.discoverable_skills ?? []);
-    defaults.delete(name);
-    discoverable.delete(name);
-    if (mode === "default") defaults.add(name);
-    if (mode === "discoverable") discoverable.add(name);
-    set("default_skills", Array.from(defaults));
-    set("discoverable_skills", Array.from(discoverable));
+  // A skill is either on, loaded only when a question needs it (discoverable),
+  // or off. Turning one on or off also clears an older "load every turn"
+  // (default) choice for it.
+  const toggle = (name: string, on: boolean) => {
+    const defaults = (draft.default_skills ?? []).filter((item) => item !== name);
+    const discoverable = (draft.discoverable_skills ?? []).filter(
+      (item) => item !== name,
+    );
+    set("default_skills", defaults);
+    set("discoverable_skills", on ? [...discoverable, name] : discoverable);
   };
 
   return (
     <div className="max-w-3xl space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium">Skill availability</p>
+          <p className="text-sm font-medium">Skills</p>
           <p className="text-xs text-muted-foreground">
-            Default skills load on every turn. Discoverable skills load only
-            when the router finds them relevant.
+            A skill that is on loads only when a question needs it.
           </p>
         </div>
         <Button asChild size="sm" variant="ghost">
@@ -657,21 +665,26 @@ function SkillsConfig({
       ) : (
         <div className="divide-y rounded-lg border">
           {skills.map((skill) => {
-            const mode = (draft.default_skills ?? []).includes(skill.name)
-              ? "default"
-              : (draft.discoverable_skills ?? []).includes(skill.name)
-                ? "discoverable"
-                : "off";
+            // An agent with ML tools always has the ML playbook on demand
+            // (agents.service), so its switch stays on.
+            const automatic =
+              skill.name === "native-ml" &&
+              (draft.default_tools ?? []).includes("ml_execute");
+            const on =
+              automatic ||
+              (draft.default_skills ?? []).includes(skill.name) ||
+              (draft.discoverable_skills ?? []).includes(skill.name);
+            const id = `skill-${skill.skill_id}`;
             return (
               <div
                 key={skill.skill_id}
-                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex items-start justify-between gap-4 px-4 py-3"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-medium">
+                    <label htmlFor={id} className="font-mono text-xs font-medium">
                       {skill.name}
-                    </span>
+                    </label>
                     <Badge variant="outline">
                       {skill.source === "builtin" ? "Platform" : "User"}
                     </Badge>
@@ -681,28 +694,19 @@ function SkillsConfig({
                       {skill.description}
                     </p>
                   ) : null}
+                  {automatic ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Always on for this agent because it uses ML.
+                    </p>
+                  ) : null}
                 </div>
-                <Select
-                  value={mode}
-                  onValueChange={(value) =>
-                    setMode(
-                      skill.name,
-                      value as "off" | "default" | "discoverable",
-                    )
-                  }
-                >
-                  <SelectTrigger
-                    className="w-full sm:w-40"
-                    aria-label={`${skill.name} mode`}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="off">Not available</SelectItem>
-                    <SelectItem value="default">Default</SelectItem>
-                    <SelectItem value="discoverable">Discoverable</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Switch
+                  id={id}
+                  className="mt-0.5 shrink-0"
+                  checked={on}
+                  disabled={automatic}
+                  onCheckedChange={(checked) => toggle(skill.name, checked)}
+                />
               </div>
             );
           })}

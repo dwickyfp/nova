@@ -28,6 +28,7 @@ def builtin_skill_rows() -> list[dict[str, Any]]:
             "scope": "global",
             "source": "builtin",
             "read_only": True,
+            "for_agents": skill.for_agents,
             "created_at": _PACKAGE_EPOCH,
             "updated_at": _PACKAGE_EPOCH,
         }

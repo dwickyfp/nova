@@ -39,7 +39,7 @@ export function AgentsPage() {
       agentsApi.create({
         name: draft.name.trim(),
         description: draft.description.trim(),
-        default_tools: ['load_skill', 'semantic_query', 'data_to_chart'],
+        default_tools: ['semantic_query', 'data_to_chart'],
         policy: 'auto_read_only',
       }),
     onSuccess: (agent) => {

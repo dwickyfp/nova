@@ -253,8 +253,24 @@ describe("AgentConfigurationTab", () => {
                 created_at: "2026-09-22T00:00:00Z",
                 updated_at: "2026-09-22T00:00:00Z",
               },
+              ...[
+                ["create-table", false],
+                ["native-ml", true],
+              ].map(([name, forAgents]) => ({
+                skill_id: `builtin:${name}`,
+                owner_name: "__nova__",
+                name,
+                description: "",
+                body: "",
+                scope: "global",
+                source: "builtin",
+                read_only: true,
+                for_agents: forAgents,
+                created_at: "1970-01-01T00:00:00Z",
+                updated_at: "1970-01-01T00:00:00Z",
+              })),
             ],
-            count: 1,
+            count: 3,
           });
         }
         return response(AGENT);
@@ -286,12 +302,17 @@ describe("AgentConfigurationTab", () => {
       .toBeVisible();
 
     await screen.getByRole("tab", { name: "Skills" }).click();
-    const mode = screen.getByRole("combobox", {
-      name: "revenue-analysis mode",
-    });
-    await expect.element(mode).toBeVisible();
-    await mode.click();
-    await screen.getByRole("option", { name: "Discoverable" }).click();
+    const skill = screen.getByRole("switch", { name: "revenue-analysis" });
+    await expect.element(skill).not.toBeChecked();
+    // Console-assistant skills (SQL authoring) are not offered to agents.
+    await expect
+      .element(screen.getByRole("switch", { name: "native-ml" }))
+      .toBeVisible();
+    expect(screen.getByRole("switch", { name: "create-table" }).query()).toBeNull();
+    // One switch per skill: on means it loads when a question needs it.
+    expect(screen.getByRole("combobox", { name: /mode/ }).query()).toBeNull();
+    await skill.click();
+    await expect.element(skill).toBeChecked();
     await screen.getByRole("button", { name: "Save draft" }).click();
 
     await vi.waitFor(() => {
@@ -384,6 +405,51 @@ describe("AgentConfigurationTab", () => {
     await screen.getByRole("button", { name: "Save draft" }).click();
     await vi.waitFor(() => expect(updates[0]?.semantic_view_ids).toEqual(["view-active"]));
     expect(updates[0]?.semantic_model_ids).toBeUndefined();
+  });
+
+  it("keeps the ML playbook on for an agent with ML tools", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/semantic-views")) return response([]);
+      if (url.endsWith("/ai/providers")) return response({ providers: [] });
+      if (url.endsWith("/skills")) {
+        return response({
+          skills: [
+            {
+              skill_id: "builtin:native-ml",
+              owner_name: "__nova__",
+              name: "native-ml",
+              description: "",
+              body: "",
+              scope: "global",
+              source: "builtin",
+              read_only: true,
+              for_agents: true,
+              created_at: "1970-01-01T00:00:00Z",
+              updated_at: "1970-01-01T00:00:00Z",
+            },
+          ],
+          count: 1,
+        });
+      }
+      return response(AGENT);
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <AgentConfigurationTab
+          agent={{ ...AGENT, default_tools: ["semantic_query", "ml_execute"] }}
+          onSaved={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("tab", { name: "Skills" }).click();
+    await expect
+      .element(screen.getByText("Always on for this agent because it uses ML."))
+      .toBeVisible();
+    const skill = screen.getByRole("switch", { name: "native-ml" });
+    await expect.element(skill).toBeChecked();
+    await expect.element(skill).toBeDisabled();
   });
 });
 

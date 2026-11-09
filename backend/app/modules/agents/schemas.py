@@ -320,6 +320,9 @@ class SkillView(BaseModel):
     scope: str = "user"
     source: Literal["builtin", "user"] = "user"
     read_only: bool = False
+    #: Whether Studio agents may select it; platform skills for the Console
+    #: assistant only (SQL authoring, administration) are False.
+    for_agents: bool = True
     created_at: datetime
     updated_at: datetime
 

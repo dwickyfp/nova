@@ -377,7 +377,6 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
 #: Names the agent builder may bundle. Distinct from the builtin catalog: the
 #: authoring tools (create_*) are Nove-only and are not offered to a user agent.
 AGENT_BUNDLEABLE_TOOLS = (
-    "load_skill",
     "catalog_search",
     "semantic_query",
     "semantic_search",
