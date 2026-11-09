@@ -4,6 +4,7 @@ import "@/styles/index.css";
 import {
   SemanticResultTable,
   SemanticViewGlance,
+  ValidationSummary,
   versionStatusWord,
 } from "./semantic-view-glance";
 import type { SemanticVersion, SemanticViewDetail } from "./semantic-views-api";
@@ -42,8 +43,9 @@ describe("Semantic View at a glance", () => {
     );
     await expect.element(screen.getByText("Live · version 2")).toBeVisible();
     await expect.element(screen.getByText("net revenue", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText(/also “omzet”, “penjualan”/)).toBeVisible();
-    await expect.element(screen.getByText("order date, city")).toBeVisible();
+    await expect.element(screen.getByText("Also “omzet”, “penjualan”")).toBeVisible();
+    await expect.element(screen.getByRole("listitem").filter({ hasText: /^order date$/ })).toBeVisible();
+    await expect.element(screen.getByRole("listitem").filter({ hasText: /^city$/ })).toBeVisible();
     await expect.element(screen.getByText("“net revenue by city last month”")).toBeVisible();
     expect(screen.getByText(/order id/).query()).toBeNull();
   });
@@ -67,6 +69,27 @@ describe("Semantic View at a glance", () => {
     expect(versionStatusWord("VALIDATED")).toBe("Checked");
     expect(versionStatusWord("DEPRECATED")).toBe("Replaced");
     expect(versionStatusWord("DEPRECATED", true)).toBe("Retired");
+  });
+});
+
+describe("Version check summary", () => {
+  it("folds repeated suggestions into one line with a count", async () => {
+    const screen = await render(
+      <ValidationSummary
+        validation={{ valid: true, errors: [], warnings: [
+          "Dimension has neither sample values nor a search strategy.",
+          "Dimension has neither sample values nor a search strategy.",
+          "Dimension has neither sample values nor a search strategy.",
+          "Metric has no synonyms.",
+        ] } as never}
+        acknowledged={false}
+        onAcknowledge={() => {}}
+      />,
+    );
+    await expect.element(screen.getByText("Checked: no blocking problems")).toBeVisible();
+    await screen.getByText("2 suggestions to improve").click();
+    await expect.element(screen.getByText("×3")).toBeVisible();
+    expect(screen.getByText("Dimension has neither sample values nor a search strategy.").elements()).toHaveLength(1);
   });
 });
 

@@ -1,3 +1,4 @@
+import { CircleAlert, CircleCheck, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBadge } from "@/components/ui/status-badge";
 import type { SemanticVersion, SemanticViewDetail } from "./semantic-views-api";
@@ -105,27 +106,24 @@ export function SemanticViewGlance({
       ? "active"
       : "draft";
 
+  const sentence = retired
+    ? "Agents no longer use this view"
+    : view.active_version
+      ? "Agents answer questions with this version"
+      : "Agents use this view once a version is live";
+
   return (
-    <section aria-label="At a glance" className="space-y-4 rounded-lg border bg-surface-1 p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-medium">At a glance</h2>
-            <StateBadge status={status}>
-              {retired ? "Retired" : view.active_version ? `Live · version ${view.active_version}` : "Not live yet"}
-            </StateBadge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {retired
-              ? "Agents no longer use this view."
-              : view.active_version
-                ? "Agents answer questions with the live version of these definitions."
-                : "Agents do not use this view until a version is live."}
-          </p>
-          {definition.description ? <p className="text-sm">{definition.description}</p> : null}
+    <section aria-label="At a glance" className="rounded-lg border bg-surface-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="sr-only">At a glance</h2>
+          <StateBadge status={status}>
+            {retired ? "Retired" : view.active_version ? `Live · version ${view.active_version}` : "Not live yet"}
+          </StateBadge>
+          <p className="text-sm text-muted-foreground">{sentence}</p>
         </div>
         {next ? (
-          <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-wrap items-center gap-3">
             <p className="text-sm">{next.text}</p>
             <Button size="sm" onClick={onNext}>
               {next.action}
@@ -133,54 +131,172 @@ export function SemanticViewGlance({
           </div>
         ) : null}
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="min-w-0 space-y-2">
-          <h3 className="text-sm font-medium">Numbers you can ask for</h3>
+      {definition.description ? (
+        <p className="px-4 pt-4 text-sm leading-6 sm:px-5">{definition.description}</p>
+      ) : null}
+      <dl className="divide-y px-4 sm:px-5">
+        <GlanceRow label="Numbers you can ask for">
           {metrics.length ? (
-            <ul className="space-y-1.5 text-sm">
-              {metrics.slice(0, 8).map((metric) => (
-                <li key={metric.name} className="min-w-0">
-                  <span>{words(metric.name ?? "")}</span>
-                  {list<string>(metric.synonyms).length ? (
-                    <span className="text-muted-foreground"> · also “{list<string>(metric.synonyms).slice(0, 3).join("”, “")}”</span>
-                  ) : null}
+            <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+              {metrics.slice(0, 8).map((metric) => {
+                const synonyms = list<string>(metric.synonyms).slice(0, 3);
+                return (
+                  <li key={metric.name} className="min-w-0">
+                    <span className="text-sm">{words(metric.name ?? "")}</span>
+                    {synonyms.length ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        Also “{synonyms.join("”, “")}”
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+              {metrics.length > 8 ? (
+                <li className="text-sm text-muted-foreground">and {metrics.length - 8} more</li>
+              ) : null}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No measures defined yet</p>
+          )}
+        </GlanceRow>
+        <GlanceRow label="Broken down by">
+          {breakdowns.length ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {breakdowns.slice(0, 12).map((name) => (
+                <li key={name} className="rounded-md border bg-background px-2 py-0.5 text-sm">
+                  {name}
                 </li>
               ))}
-              {metrics.length > 8 ? (
-                <li className="text-muted-foreground">and {metrics.length - 8} more</li>
+              {breakdowns.length > 12 ? (
+                <li className="px-1 py-0.5 text-sm text-muted-foreground">
+                  and {breakdowns.length - 12} more
+                </li>
               ) : null}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">No measures defined yet.</p>
+            <p className="text-sm text-muted-foreground">No breakdowns defined yet</p>
           )}
-        </div>
-        <div className="min-w-0 space-y-2">
-          <h3 className="text-sm font-medium">Broken down by</h3>
-          {breakdowns.length ? (
-            <p className="text-sm">
-              {breakdowns.slice(0, 12).join(", ")}
-              {breakdowns.length > 12 ? (
-                <span className="text-muted-foreground">, and {breakdowns.length - 12} more</span>
-              ) : null}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">No breakdowns defined yet.</p>
-          )}
-        </div>
-        <div className="min-w-0 space-y-2">
-          <h3 className="text-sm font-medium">Try asking</h3>
+        </GlanceRow>
+        <GlanceRow label="Try asking">
           {suggested.length ? (
-            <ul className="space-y-1.5 text-sm">
+            <ul className="space-y-2">
               {suggested.map((question) => (
-                <li key={question}>“{question}”</li>
+                <li key={question} className="flex items-start gap-2 text-sm">
+                  <MessageSquareText className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span>“{question}”</span>
+                </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">Add a measure first.</p>
+            <p className="text-sm text-muted-foreground">Add a measure first</p>
           )}
-        </div>
-      </div>
+        </GlanceRow>
+      </dl>
     </section>
+  );
+}
+
+function GlanceRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-2 py-4 sm:grid-cols-[176px_minmax(0,1fr)] sm:gap-6">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+/** Repeated messages, once each, with how often they occur. */
+export function groupMessages(messages: string[]): { text: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const message of messages) counts.set(message, (counts.get(message) ?? 0) + 1);
+  return [...counts].map(([text, count]) => ({ text, count }));
+}
+
+type Validation = NonNullable<SemanticVersion["validation"]>;
+
+/**
+ * A version's check result in one line, with problems listed and repeated
+ * suggestions folded into a count instead of a wall of identical lines.
+ */
+export function ValidationSummary({
+  validation,
+  acknowledged,
+  onAcknowledge,
+}: {
+  validation: Validation;
+  acknowledged: boolean;
+  onAcknowledge: (value: boolean) => void;
+}) {
+  const errors = groupMessages(validation.errors ?? []);
+  const warnings = groupMessages(validation.warnings ?? []);
+  const regression = validation.regression;
+  const changed = regression?.cases.filter((item) => item.status !== "matched") ?? [];
+  const Icon = validation.valid ? CircleCheck : CircleAlert;
+  return (
+    <div className="space-y-2 text-sm">
+      <p className="flex items-center gap-2">
+        <Icon
+          className={`size-4 shrink-0 ${validation.valid ? "text-success-strong" : "text-destructive"}`}
+          aria-hidden="true"
+        />
+        {validation.valid
+          ? "Checked: no blocking problems"
+          : "Needs fixes before it can go live"}
+      </p>
+      {errors.length ? (
+        <ul className="space-y-1 ps-6 text-destructive">
+          {errors.map((item) => (
+            <li key={item.text}>
+              {item.text}
+              {item.count > 1 ? <span className="tabular-nums"> ×{item.count}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {changed.length ? (
+        <div className="space-y-1 ps-6">
+          <p>
+            {regression?.changed ?? changed.length} approved{" "}
+            {(regression?.changed ?? changed.length) === 1 ? "example gives" : "examples give"} a
+            different answer
+          </p>
+          <ul className="space-y-1 text-muted-foreground">
+            {changed.map((item) => (
+              <li key={item.verified_query_id}>
+                {item.question}: {item.status === "result_changed" ? "answer changed" : item.status.replace(/_/g, " ")}
+              </li>
+            ))}
+          </ul>
+          {regression && regression.changed > 0 ? (
+            <label className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                checked={acknowledged}
+                onChange={(event) => onAcknowledge(event.target.checked)}
+              />
+              I reviewed the changed answers
+            </label>
+          ) : null}
+        </div>
+      ) : null}
+      {warnings.length ? (
+        <details className="ps-6">
+          <summary className="cursor-pointer text-muted-foreground">
+            {warnings.length} suggestion{warnings.length === 1 ? "" : "s"} to improve
+          </summary>
+          <ul className="mt-2 space-y-1 text-muted-foreground">
+            {warnings.map((item) => (
+              <li key={item.text} className="flex gap-2">
+                <span className="min-w-0">{item.text}</span>
+                {item.count > 1 ? (
+                  <span className="shrink-0 tabular-nums">×{item.count}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
   );
 }
 

@@ -363,11 +363,11 @@ describe("Nova Intelligence", () => {
     });
 
     const screen = await renderIntelligence("semantic", "sv1");
-    await screen.getByRole("tab", { name: "What it defines" }).click();
+    await screen.getByRole("tab", { name: "Definitions" }).click();
     await expect.element(screen.getByText("NOVA_DEMO.orders", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("Unique keys: id + region", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("location", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("Derived from: gross_revenue", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("gross_revenue", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("order_customer", { exact: true })).toBeVisible();
     await screen.getByRole("tab", { name: "Approved examples" }).click();
     await expect.element(screen.getByText("Revenue?", { exact: true })).toBeVisible();
@@ -401,7 +401,7 @@ describe("Nova Intelligence", () => {
     await page.viewport(320, 640);
     try {
       const screen = await renderIntelligence("semantic", "sv1");
-      await screen.getByRole("tab", { name: "What it defines" }).click();
+      await screen.getByRole("tab", { name: "Definitions" }).click();
       await expect.element(screen.getByText("NOVA_DEMO.orders", { exact: true })).toBeVisible();
       const surface = screen.getByRole("region", { name: "Semantic View details" }).element();
       expect(surface.getBoundingClientRect().right).toBeLessThanOrEqual(320);
@@ -432,7 +432,7 @@ describe("Nova Intelligence", () => {
       return defaultGet?.(path);
     });
     const screen = await renderIntelligence("semantic", "legacy-1");
-    await screen.getByRole("tab", { name: "What it defines" }).click();
+    await screen.getByRole("tab", { name: "Definitions" }).click();
     await expect.element(screen.getByText(/Legacy format: add a supported Ossie 0.1.1 version/).first()).toBeVisible();
     await expect.element(screen.getByText("Original imported definition")).toBeVisible();
     await expect.element(screen.getByText(/scope pending review/)).toBeVisible();

@@ -1,8 +1,8 @@
 import { useAuthStore } from '@/stores/auth-store'
-import { versionStatusWord } from './semantic-view-glance'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
@@ -32,13 +32,37 @@ function dateText(value: string | null | undefined): string {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString()
 }
 
+function Fact({ label, children }: { label: string, children: React.ReactNode }) {
+  return <div className='min-w-0'><dt className='text-muted-foreground'>{label}</dt><dd className='mt-1'>{children}</dd></div>
+}
+
+/** Only the properties a definition sets, as a quiet two-column list. */
+function Props({ items }: { items: [string, string | null | undefined][] }) {
+  const shown = items.filter(([, value]) => value)
+  if (!shown.length) return null
+  return <dl className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs'>
+    {shown.map(([label, value]) => <div key={label} className='contents'>
+      <dt className='text-muted-foreground'>{label}</dt><dd className='break-words'>{value}</dd></div>)}
+  </dl>
+}
+
+const COMPLETENESS: Record<string, string> = {
+  datasets_with_grain: 'Tables with a row grain',
+  relationships_with_cardinality: 'Joins with a known match type',
+  metrics_with_descriptions: 'Numbers with a description',
+  metrics_with_synonyms: 'Numbers with the words people use',
+  time_metrics_with_default_dimension: 'Numbers with a default date',
+}
+
+const SEVERITY: Record<string, string> = { error: 'Must fix', warning: 'Suggestion', info: 'Tip' }
+
 function DefinitionSection({ title, children, empty }: {
   title: string
   children: React.ReactNode
   empty?: boolean
 }) {
   return <section className='space-y-3 border-t pt-5' aria-label={title}>
-    <h3 className='text-sm font-semibold'>{title}</h3>
+    <h3 className='text-sm font-medium'>{title}</h3>
     {empty ? <p className='text-sm text-muted-foreground'>None defined in this version.</p> : children}
   </section>
 }
@@ -58,16 +82,11 @@ function DefinitionDetail({ view, version }: {
   const entities = Object.entries(definition.entities ?? {})
 
   return <div className='space-y-5'>
-    <dl className='grid gap-x-6 gap-y-3 rounded-lg border bg-surface-2 p-4 text-sm sm:grid-cols-2'>
-      <div><dt className='text-muted-foreground'>Where the data lives</dt>
-        <dd className='mt-1 break-all font-mono'>{[view.catalog_name, view.database_name, view.schema_name].filter(Boolean).join(' / ')}{legacyReview && view.database_name === 'NOVA_SYSTEM' ? <span className='ms-2 font-sans text-warning-strong'>(scope pending review)</span> : null}</dd></div>
-      <div><dt className='text-muted-foreground'>Owner</dt><dd className='mt-1'>{view.owner_name || 'Unknown'}</dd></div>
-      <div><dt className='text-muted-foreground'>View status</dt><dd className='mt-1'>{view.status === 'DEPRECATED' ? 'Retired' : view.active_version ? 'Live' : 'Draft'}</dd></div>
-      {view.visibility ? <div><dt className='text-muted-foreground'>Who can see it</dt><dd className='mt-1'>{view.visibility === 'PRIVATE' ? 'Only its owner' : 'Everyone with access to the data'}</dd></div> : null}
-      <div><dt className='text-muted-foreground'>Live version</dt><dd className='mt-1'>{view.active_version ? `v${view.active_version}` : 'None yet'}</dd></div>
-      <div><dt className='text-muted-foreground'>Created</dt><dd className='mt-1'>{dateText(view.created_at)}</dd></div>
-      <div><dt className='text-muted-foreground'>Last updated</dt><dd className='mt-1'>{dateText(view.updated_at)}</dd></div>
-      <div><dt className='text-muted-foreground'>Version shown</dt><dd className='mt-1'>v{version.version} · {versionStatusWord(version.status, view.status === 'DEPRECATED')}</dd></div>
+    <dl className='grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4'>
+      <Fact label='Where the data lives'><span className='break-all font-mono text-xs'>{[view.catalog_name, view.database_name, view.schema_name].filter(Boolean).join(' / ')}</span>{legacyReview && view.database_name === 'NOVA_SYSTEM' ? <span className='ms-2 text-warning-strong'>(scope pending review)</span> : null}</Fact>
+      <Fact label='Owner'>{view.owner_name || 'Unknown'}</Fact>
+      {view.visibility ? <Fact label='Who can see it'>{view.visibility === 'PRIVATE' ? 'Only its owner' : 'Everyone with access to the data'}</Fact> : null}
+      <Fact label='Last updated'>{dateText(view.updated_at ?? view.created_at)}</Fact>
     </dl>
     {definition.description ? <p className='text-sm leading-6'>{definition.description}</p> : null}
     {definition.ai_context ? <p className='text-sm'><span className='font-medium'>Business context: </span>{contextText(definition.ai_context)}</p> : null}
@@ -76,37 +95,37 @@ function DefinitionDetail({ view, version }: {
     {!legacyReview ? <>
     <DefinitionSection title='Datasets and fields' empty={datasets.length === 0}>
       <div className='space-y-4'>
-        {datasets.map((dataset) => <article key={dataset.name} className='min-w-0 rounded-lg border'>
-          <div className='flex flex-wrap items-start justify-between gap-2 border-b bg-surface-1 px-4 py-3'>
+        {datasets.map((dataset) => <details key={dataset.name} open={datasets.length === 1} className='group min-w-0 rounded-lg border'>
+          <summary className='flex cursor-pointer list-none flex-wrap items-start justify-between gap-2 bg-surface-1 px-4 py-3 group-open:border-b'>
             <div className='min-w-0'>
-              <h4 className='font-medium'>{dataset.name}</h4>
-              <p className='break-all font-mono text-xs text-muted-foreground'>{dataset.source || 'No source'}</p>
-              {dataset.description ? <p className='mt-1 text-sm text-muted-foreground'>{dataset.description}</p> : null}
-              {dataset.synonyms?.length ? <p className='mt-1 text-xs text-muted-foreground'>Also known as: {dataset.synonyms.join(', ')}</p> : null}
-              {dataset.ai_context ? <p className='mt-1 text-xs text-muted-foreground'>Context: {contextText(dataset.ai_context)}</p> : null}
+              <h4 className='flex items-center gap-2 font-medium'><ChevronRight className='size-4 text-muted-foreground transition-transform group-open:rotate-90' aria-hidden='true' />{dataset.name}
+                <span className='text-xs font-normal text-muted-foreground'>{(dataset.fields ?? []).length} fields</span></h4>
+              <p className='break-all ps-6 font-mono text-xs text-muted-foreground'>{dataset.source || 'No source'}</p>
+              {dataset.description ? <p className='mt-1 ps-6 text-sm text-muted-foreground'>{dataset.description}</p> : null}
+              {dataset.synonyms?.length ? <p className='mt-1 ps-6 text-xs text-muted-foreground'>Also known as: {dataset.synonyms.join(', ')}</p> : null}
+              {dataset.ai_context ? <p className='mt-1 ps-6 text-xs text-muted-foreground'>Context: {contextText(dataset.ai_context)}</p> : null}
             </div>
             {(dataset.grain?.keys?.length || dataset.primary_key?.length) ?
-              <span className='text-xs text-muted-foreground'>Grain: {(dataset.grain?.keys?.length ? dataset.grain.keys : dataset.primary_key)?.join(', ')}</span> : null}
-          </div>
+              <span className='text-xs text-muted-foreground'>One row per {(dataset.grain?.keys?.length ? dataset.grain.keys : dataset.primary_key)?.join(', ')}</span> : null}
+          </summary>
           {dataset.unique_keys?.length ? <p className='border-b px-4 py-2 text-xs text-muted-foreground'>Unique keys: {dataset.unique_keys.map((keys) => Array.isArray(keys) ? keys.join(' + ') : keys).join('; ')}</p> : null}
           {(dataset.fields ?? []).length ? <div className='min-w-0 overflow-x-auto'>
             <table className='w-full min-w-[520px] text-left text-xs'>
               <thead className='text-muted-foreground'><tr><th className='px-4 py-2 font-medium'>Field</th><th className='px-4 py-2 font-medium'>Type</th><th className='px-4 py-2 font-medium'>Expression</th><th className='px-4 py-2 font-medium'>Meaning</th></tr></thead>
               <tbody className='divide-y'>{dataset.fields?.map((field) => <tr key={field.name}>
-                <td className='px-4 py-2 align-top font-medium'>{field.name}{field.dimension ? <span className='ms-1 text-muted-foreground'>({field.dimension.is_time ? 'time dimension' : 'dimension'})</span> : null}</td>
+                <td className='px-4 py-2 align-top font-medium'>{field.name}{field.dimension?.is_time ? <span className='ms-1 font-normal text-muted-foreground'>(date)</span> : null}</td>
                 <td className='px-4 py-2 align-top'>{field.datatype || 'Unspecified'}</td>
                 <td className='max-w-xs break-words px-4 py-2 align-top font-mono'>{expressionText(field.expression) || 'Unspecified'}</td>
                 <td className='max-w-xs break-words px-4 py-2 align-top'>
                   {field.description || 'No description'}
                   {field.synonyms?.length ? <p className='mt-1 text-muted-foreground'>Also known as: {field.synonyms.join(', ')}</p> : null}
-                  {field.search_strategy ? <p className='mt-1 text-muted-foreground'>Search: {field.search_strategy}</p> : null}
                   {field.sample_values?.length ? <p className='mt-1 text-muted-foreground'>Examples: {field.sample_values.map(contextText).join(', ')}</p> : null}
                   {field.ai_context ? <p className='mt-1 text-muted-foreground'>Context: {contextText(field.ai_context)}</p> : null}
                 </td>
               </tr>)}</tbody>
             </table>
           </div> : <p className='px-4 py-3 text-sm text-muted-foreground'>No fields defined.</p>}
-        </article>)}
+        </details>)}
       </div>
     </DefinitionSection>
 
@@ -114,20 +133,22 @@ function DefinitionDetail({ view, version }: {
       <div className='divide-y rounded-lg border'>{metrics.map((metric) => <div key={metric.name} className='grid min-w-0 gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'>
         <div><h4 className='font-medium'>{metric.name}</h4><p className='text-xs text-muted-foreground'>{metric.datatype || 'Type unspecified'}{metric.base_dataset ? ` · ${metric.base_dataset}` : ''}</p>
           {metric.description ? <p className='mt-1 text-sm text-muted-foreground'>{metric.description}</p> : null}</div>
-        <div className='min-w-0'><pre className='overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs'>{expressionText(metric.expression) || 'No expression'}</pre>
-          {Array.isArray(metric.dependencies) && metric.dependencies.length ? <p className='mt-1 text-xs text-muted-foreground'>Derived from: {metric.dependencies.join(', ')}</p> : null}
-          {metric.additivity ? <p className='mt-1 text-xs text-muted-foreground'>Additivity: {String(metric.additivity)}</p> : null}
-          {metric.grain && Object.keys(metric.grain).length ? <p className='mt-1 text-xs text-muted-foreground'>Grain: {contextText(metric.grain)}</p> : null}
-          {metric.format || metric.currency || metric.unit ? <p className='mt-1 text-xs text-muted-foreground'>Display: {[metric.format, metric.currency, metric.unit].filter(Boolean).join(' · ')}</p> : null}
-          {metric.default_time_dimension ? <p className='mt-1 text-xs text-muted-foreground'>Time dimension: {metric.default_time_dimension}</p> : null}
-          {metric.allowed_dimensions?.length ? <p className='mt-1 text-xs text-muted-foreground'>Allowed dimensions: {metric.allowed_dimensions.join(', ')}</p> : null}
-          {metric.non_additive_dimensions?.length ? <p className='mt-1 text-xs text-muted-foreground'>Non additive dimensions: {metric.non_additive_dimensions.join(', ')}</p> : null}
-          {metric.filters?.length ? <p className='mt-1 text-xs text-muted-foreground'>Filters: {metric.filters.map(contextText).join('; ')}</p> : null}
-          {metric.preferred_relationship_path?.length ? <p className='mt-1 text-xs text-muted-foreground'>Preferred relationship path: {metric.preferred_relationship_path.join(' → ')}</p> : null}
-          {metric.visibility ? <p className='mt-1 text-xs text-muted-foreground'>Visibility: {metric.visibility}</p> : null}
-          {metric.synonyms?.length ? <p className='mt-1 text-xs text-muted-foreground'>Also known as: {metric.synonyms.join(', ')}</p> : null}
-          {metric.owner_domain || metric.authority || metric.supporting_domains?.length ? <p className='mt-1 text-xs text-muted-foreground'>Governance: {[metric.owner_domain, metric.authority, ...(metric.supporting_domains ?? [])].filter(Boolean).join(' · ')}</p> : null}
-          {metric.ai_context ? <p className='mt-1 text-xs text-muted-foreground'>Context: {contextText(metric.ai_context)}</p> : null}
+        <div className='min-w-0 space-y-2'><pre className='overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs'>{expressionText(metric.expression) || 'No expression'}</pre>
+          <Props items={[
+            ['Derived from', Array.isArray(metric.dependencies) ? metric.dependencies.join(', ') : ''],
+            ['Also known as', metric.synonyms?.join(', ')],
+            ['Default date', metric.default_time_dimension],
+            ['Display', [metric.format, metric.currency, metric.unit].filter(Boolean).join(' · ')],
+            ['Additivity', metric.additivity ? String(metric.additivity) : ''],
+            ['Grain', metric.grain && Object.keys(metric.grain).length ? contextText(metric.grain) : ''],
+            ['Allowed breakdowns', metric.allowed_dimensions?.join(', ')],
+            ['Not additive over', metric.non_additive_dimensions?.join(', ')],
+            ['Filters', metric.filters?.map(contextText).join('; ')],
+            ['Join path', metric.preferred_relationship_path?.join(' → ')],
+            ['Visibility', metric.visibility],
+            ['Governance', [metric.owner_domain, metric.authority, ...(metric.supporting_domains ?? [])].filter(Boolean).join(' · ')],
+            ['Context', metric.ai_context ? contextText(metric.ai_context) : ''],
+          ]} />
         </div>
       </div>)}</div>
     </DefinitionSection>
@@ -262,17 +283,10 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
   })
 
   return <Tabs value={activeTab} onValueChange={setActiveTab} className='min-w-0'>
-    <div className='mb-3'>
-      <h3 className='font-medium'>Try it and look inside</h3>
-      <p className='text-sm text-muted-foreground'>Ask a business question to see how this version would answer it, or look at what it defines.</p>
-    </div>
-    <TabsList className='mb-4 max-w-full justify-start overflow-x-auto'>
-      <TabsTrigger value='preview'>Try a question</TabsTrigger>
-      <TabsTrigger value='definition'>What it defines</TabsTrigger>
-      <TabsTrigger value='quality'>Health check</TabsTrigger>
-      <TabsTrigger value='verified'>Approved examples</TabsTrigger>
-      <TabsTrigger value='context'>Related concepts</TabsTrigger>
-      <TabsTrigger value='autopilot'>Suggested additions</TabsTrigger>
+    <TabsList indicatorVariant='underline' className='mb-4 h-auto w-full max-w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0'>
+      {[['preview', 'Try a question'], ['definition', 'Definitions'], ['quality', 'Health check'],
+        ['verified', 'Approved examples'], ['context', 'Concepts'], ['autopilot', 'Suggestions']].map(([value, label]) =>
+        <TabsTrigger key={value} value={value} className='flex-none rounded-none px-3 py-2'>{label}</TabsTrigger>)}
     </TabsList>
     <TabsContent value='context' className='mt-0 min-w-0'>
       <ContextInspector semantic={{ view_id: view.id, version: version.version, fingerprint: version.fingerprint }} />
@@ -285,7 +299,7 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
     </TabsContent>
     <TabsContent value='preview' className='mt-0 min-w-0 space-y-4'>
       {legacyReview ? <EmptyState title='Legacy version cannot be previewed' description='Add a supported Ossie 0.1.1 version, validate it, then preview business questions.' /> : <>
-      <p className='text-sm text-muted-foreground'>Type a question the way people ask it. Nova shows how this version would answer, without running it on the data.</p>
+      <p className='text-sm text-muted-foreground'>Nova shows how this version would answer, without running it on the data.</p>
       <form className='flex flex-col gap-2 sm:flex-row sm:items-end' onSubmit={(event) => {
         event.preventDefault()
         if (question.trim()) previewMutation.mutate()
@@ -302,25 +316,54 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
           {version.version !== latestVersion ? <p className='text-xs text-warning-strong'>Open the latest version to save an approved example.</p> : null}
           {saveVerified.isError ? <p role='alert' className='text-xs text-destructive'>Could not save this example. Try the question again, then save.</p> : null}
         </div>
-      </> : <EmptyState title='No question tried yet' description='Ask something like \u201crevenue by city last month\u201d to see which measures and breakdowns this version would use.' />}
+      </> : <EmptyState title='No question tried yet' description='Ask something like “revenue by city last month” to see which measures and breakdowns this version would use.' />}
       </>}
     </TabsContent>
     <TabsContent value='quality' className='mt-0 min-w-0 space-y-5'>
       {quality.isPending ? <LoadingOverlay label='Loading quality report' /> : quality.isError ?
         <EmptyState variant='error' title='Could not load quality report' description='Try again to inspect this version.' action={<Button variant='outline' onClick={() => void quality.refetch()}>Retry</Button>} /> :
         <>
-          <div className='flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-surface-2 p-4'>
-            <div className='flex items-center gap-2'><StatusBadge tone={quality.data.valid ? 'success' : 'danger'}>{quality.data.valid ? 'Ready to use' : 'Needs fixes'}</StatusBadge><span className='text-sm'>v{version.version}</span></div>
-            
+          <div className='flex flex-wrap items-center gap-3'>
+            <StatusBadge tone={quality.data.valid ? 'success' : 'danger'}>{quality.data.valid ? 'Ready to use' : 'Needs fixes'}</StatusBadge>
+            <span className='text-sm text-muted-foreground'>{quality.data.valid ? 'Nothing blocks this version from going live' : 'Fix the problems below before it can go live'}</span>
           </div>
-          {quality.data.errors.length ? <section><h4 className='text-sm font-medium'>Errors</h4><ul className='mt-2 list-disc space-y-1 ps-5 text-sm'>{quality.data.errors.map((error) => <li key={error}>{error}</li>)}</ul></section> : null}
-          <DefinitionSection title='Completeness' empty={!Object.keys(quality.data.quality).length}>
-            <dl className='divide-y rounded-lg border'>{Object.entries(quality.data.quality).map(([key, value]) => <div key={key} className='flex flex-wrap justify-between gap-2 px-4 py-2 text-sm'><dt>{key.replace(/_/g, ' ')}</dt><dd className='font-medium'>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></div>)}</dl>
-          </DefinitionSection>
-          <DefinitionSection title='Suggestions to improve' empty={!quality.data.findings.length}>
-            <div className='divide-y rounded-lg border'>{quality.data.findings.map((finding, index) => <div key={`${finding.code}-${index}`} className='space-y-1 px-4 py-3 text-sm'><div className='flex flex-wrap items-center gap-2'><StatusBadge tone={finding.severity === 'error' ? 'danger' : 'warning'}>{finding.severity}</StatusBadge>{finding.object_name ? <span className='text-muted-foreground'>{finding.object_name}</span> : null}</div><p>{finding.message}</p></div>)}</div>
-          </DefinitionSection>
-          {quality.data.quality_lab ? <DefinitionSection title='Approved examples still give the same answer'>
+          {quality.data.errors.length ? <section><h4 className='text-sm font-medium'>Problems</h4><ul className='mt-2 list-disc space-y-1 ps-5 text-sm text-destructive'>{quality.data.errors.map((error) => <li key={error}>{error}</li>)}</ul></section> : null}
+          {(() => {
+            const ratios = Object.entries(COMPLETENESS).filter(([key]) => typeof quality.data.quality[key] === 'number')
+            const examples = quality.data.quality.verified_query_count
+            return <DefinitionSection title='Completeness' empty={!ratios.length && typeof examples !== 'number'}>
+              <dl className='grid gap-x-8 gap-y-3 sm:grid-cols-2'>
+                {ratios.map(([key, label]) => {
+                  const percent = Math.round(Number(quality.data.quality[key]) * 100)
+                  return <div key={key} className='space-y-1.5 text-sm'>
+                    <div className='flex justify-between gap-2'><dt>{label}</dt><dd className='tabular-nums text-muted-foreground'>{percent}%</dd></div>
+                    <div className='h-1 overflow-hidden rounded-full bg-muted' aria-hidden='true'><div className={`h-full rounded-full ${percent === 100 ? 'bg-success' : 'bg-muted-foreground/60'}`} style={{ width: `${percent}%` }} /></div>
+                  </div>
+                })}
+                {typeof examples === 'number' ? <div className='flex justify-between gap-2 text-sm'><dt>Approved examples</dt><dd className='tabular-nums text-muted-foreground'>{examples}</dd></div> : null}
+              </dl>
+            </DefinitionSection>
+          })()}
+          {(() => {
+            // The same advice for many fields reads as one item with the fields named.
+            const groups = new Map<string, { severity: string, message: string, objects: string[] }>()
+            for (const finding of quality.data.findings) {
+              const key = `${finding.severity}|${finding.message}`
+              const group = groups.get(key) ?? { severity: finding.severity, message: finding.message, objects: [] }
+              if (finding.object_name) group.objects.push(finding.object_name.replace(/_/g, ' '))
+              groups.set(key, group)
+            }
+            return <DefinitionSection title='Suggestions to improve' empty={!groups.size}>
+              <ul className='divide-y rounded-lg border'>{[...groups.values()].map((group) => <li key={`${group.severity}-${group.message}`} className='space-y-1 px-4 py-3 text-sm'>
+                <div className='flex flex-wrap items-start gap-2'>
+                  <StatusBadge tone={group.severity === 'error' ? 'danger' : group.severity === 'warning' ? 'warning' : 'neutral'}>{SEVERITY[group.severity] ?? group.severity}</StatusBadge>
+                  <p className='min-w-0 flex-1'>{group.message}</p>
+                </div>
+                {group.objects.length ? <p className='text-xs text-muted-foreground'>{group.objects.length > 6 ? `${group.objects.slice(0, 6).join(', ')} and ${group.objects.length - 6} more` : group.objects.join(', ')}</p> : null}
+              </li>)}</ul>
+            </DefinitionSection>
+          })()}
+          {quality.data.quality_lab?.total ? <DefinitionSection title='Approved examples still give the same answer'>
             <p className='text-sm'>{quality.data.quality_lab.matched} of {quality.data.quality_lab.total} give the same answer; {quality.data.quality_lab.changed} changed and need a look.</p>
             {quality.data.quality_lab.unevaluated ? <p className='text-xs text-muted-foreground'>{quality.data.quality_lab.unevaluated} could not be evaluated.</p> : null}
             <div className='divide-y rounded-lg border'>{quality.data.quality_lab.cases.map((item) => <div key={item.verified_query_id} className='flex flex-wrap justify-between gap-2 px-4 py-3 text-sm'><span>{item.question}</span><StatusBadge tone={item.status === 'matched' ? 'success' : 'warning'}>{item.status === 'matched' ? 'Same answer' : 'Answer changed'}</StatusBadge></div>)}</div>
