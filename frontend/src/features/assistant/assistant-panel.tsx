@@ -25,6 +25,7 @@ import type { ThreadView } from "./thread-client";
 import type { ToolCallCardProps } from "./tool-call-card";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 import type { AttachedQuery } from "./query-attach";
+import type { SentFile } from "./stream-client";
 import { useIsNarrowForAssistant } from "./use-assistant-panel";
 
 export type AssistantPanelProps = {
@@ -32,7 +33,7 @@ export type AssistantPanelProps = {
   onOpenChange: (open: boolean) => void;
   /** Overrides the built-in transcript rendering when supplied. */
   children?: React.ReactNode;
-  onSendMessage?: (message: string) => void;
+  onSendMessage?: (message: string, files?: SentFile[]) => void;
   disabled?: boolean;
   /** Transcript state. When omitted the panel shows the empty state. */
   messages?: TranscriptMessage[];

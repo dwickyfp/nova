@@ -249,3 +249,50 @@ async def test_studio_agents_still_stop_when_a_check_is_skipped():
     ], ["validate_sql"], agent=True)
     assert validate.runs == []
     assert result.finish_reason == "required_capability_incomplete"
+
+
+# ── Budget follows the kind of turn ─────────────────────────────────────────
+
+
+async def _looping(intent, scale):
+    tool = EvalTool("search_knowledge", parameters={
+        "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"],
+    })
+    registry = ToolRegistry()
+    registry.register(tool)
+    context = LoopContext(user_name="alice")
+    context.scale_budget = scale
+    script = [tool_call_frame(f"k{index}", name="search_knowledge",
+                              arguments={"query": f"guide {index}"}) for index in range(12)]
+    frames = [frame async for frame in AssistantLoop(
+        provider=ScriptedProvider(script=script, turn_plan={
+            "intent": intent, "tools": ["search_knowledge"], "required_tools": [],
+            "skills": [], "ml_task": None,
+        }),
+        registry=registry, max_iterations=10, max_calls_per_tool=20,
+    ).run(
+        thread=AssistantThread(thread_id="budget", user_name="alice", title="Eval"),
+        user_content="Explain stages", context=context, resolve_consent=allow,
+    )]
+    return tool, TurnResult(frames=frames), context
+
+
+async def test_a_quick_turn_gets_the_smaller_ceiling():
+    from app.modules.assistant.router import _neva_budget
+
+    tool, _result, context = await _looping("capability_help", _neva_budget)
+    assert len(tool.runs) <= 8
+    assert any(step.get("budget") == "scaled" for step in context.steps or [])
+
+
+async def test_an_sql_turn_keeps_the_loop_s_own_ceiling():
+    from app.modules.assistant.router import _neva_budget
+
+    tool, _result, context = await _looping("sql_authoring", _neva_budget)
+    assert len(tool.runs) == 10
+    assert not any(step.get("budget") == "scaled" for step in context.steps or [])
+
+
+async def test_scaling_can_never_raise_a_limit():
+    tool, _result, _context = await _looping("capability_help", lambda _route: (40, 600.0))
+    assert len(tool.runs) == 10

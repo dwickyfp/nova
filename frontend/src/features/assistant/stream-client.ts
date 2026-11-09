@@ -26,7 +26,11 @@ export type TurnContext = {
   providerId?: string | null;
   /** Versioned, bounded application state for contextual references. */
   appContext?: NevaAppContext;
+  /** Files the person attached: text as text, PDFs and images as base64. */
+  files?: SentFile[];
 };
+
+export type SentFile = { name: string; content: string; mediaType: string };
 
 /**
  * Opens one assistant turn and drives the caller's reducer with typed events.
@@ -51,6 +55,7 @@ export async function streamAssistantTurn(
     model,
     providerId,
     appContext,
+    files,
   }: StreamTurnOptions & TurnContext,
 ): Promise<void> {
   const response = await fetch(
@@ -69,6 +74,15 @@ export async function streamAssistantTurn(
         model,
         provider_id: providerId,
         app_context: appContext,
+        ...(files?.length
+          ? {
+              attachments: files.map((file) => ({
+                name: file.name,
+                content: file.content,
+                media_type: file.mediaType,
+              })),
+            }
+          : {}),
       }),
       signal,
     },

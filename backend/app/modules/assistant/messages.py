@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 VERSION = 4
 
 MESSAGES: dict[str, str] = {
-    "render.lead": "Here are the figures.",
+    "render.lead": "Here is what the results show.",
     "render.heading": "Here is the breakdown:",
     "render.no_result": "No authorized query result is available.",
     "render.omitted": "Some result rows or columns were omitted from this preview.",
@@ -35,8 +35,8 @@ MESSAGES: dict[str, str] = {
     "render.unchanged": "unchanged",
     "render.extremes": "highest {high}; lowest {low}",
     "verify.cannot_verify": (
-        "I could not verify every number in the drafted answer against the authorized "
-        "query result. Review the result table below."
+        "I couldn't match every number in my answer to the results, so I won't "
+        "state them. The results are shown as found."
     ),
     "verify.is_highest": "{label} ({value}) is the highest",
     "verify.is_lowest": "{label} ({value}) is the lowest",
@@ -95,7 +95,7 @@ MESSAGES: dict[str, str] = {
 #: Translations that ship with Nova.
 BUILTIN: dict[str, dict[str, str]] = {
     "id": {
-        "render.lead": "Berikut angkanya.",
+        "render.lead": "Berikut yang ditunjukkan hasilnya.",
         "render.heading": "Berikut rinciannya:",
         "render.no_result": "Tidak ada hasil query terotorisasi yang dapat ditampilkan.",
         "render.omitted": "Sebagian baris atau kolom hasil tidak ditampilkan di pratinjau ini.",
@@ -107,8 +107,8 @@ BUILTIN: dict[str, dict[str, str]] = {
         "render.unchanged": "tetap",
         "render.extremes": "tertinggi {high}; terendah {low}",
         "verify.cannot_verify": (
-            "Saya tidak dapat memverifikasi semua angka pada jawaban terhadap hasil query. "
-            "Lihat tabel hasil di bawah."
+            "Saya belum bisa mencocokkan semua angka di jawaban dengan hasilnya, jadi tidak "
+            "saya sebutkan. Hasilnya ditampilkan apa adanya."
         ),
         "verify.is_highest": "{label} ({value}) adalah yang tertinggi",
         "verify.is_lowest": "{label} ({value}) adalah yang terendah",

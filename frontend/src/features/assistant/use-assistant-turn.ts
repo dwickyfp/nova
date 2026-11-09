@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   streamAssistantTurn,
   decideToolCall,
+  type SentFile,
   type TurnContext,
 } from "./stream-client";
 import { getThread, resetGrant, setGrant } from "./thread-client";
@@ -122,7 +123,7 @@ export function useAssistantTurn({
   const uiActionsRef = useRef(new Map<string, UiAction>());
 
   const sendMessage = useCallback(
-    async (message: string, attachments: AttachedQuery[] = []) => {
+    async (message: string, attachments: AttachedQuery[] = [], files: SentFile[] = []) => {
       if (streaming) return;
       const thread = threadId ?? (await ensureThread());
       if (!thread) {
@@ -132,7 +133,9 @@ export function useAssistantTurn({
       if (thread !== threadId) setThreadId(thread);
 
       const prompt = `${formatAttachmentsForPrompt(attachments)}${message}`;
-      transcript.addUserMessage(prompt, attachments, message);
+      transcript.addUserMessage(
+        prompt, attachments, message, files.map((file) => file.name),
+      );
       const controller = new AbortController();
       abortRef.current = controller;
       uiActionsRef.current.clear();
@@ -152,6 +155,7 @@ export function useAssistantTurn({
           model: context?.model,
            providerId: context?.providerId,
            appContext: turnAppContext,
+           files,
            onEvent: (event) => {
              transcript.applyEvent(event);
              if (event.type === "client_action") {

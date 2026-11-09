@@ -55,6 +55,9 @@ class ConsentPolicy:
     """
 
     always_allow_read_only: bool = False
+    #: The active role and security-context version the grant was given under;
+    #: a turn under any other context does not inherit it.
+    granted_under: dict | None = None
 
     def covers(self, classification: ToolClassification) -> bool:
         return self.always_allow_read_only and classification == "read_only"

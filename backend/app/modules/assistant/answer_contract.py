@@ -1208,10 +1208,28 @@ def _numeric_cell(row: list[Any], *, index: int) -> Decimal:
     return value
 
 
+_MONTHS = {
+    "en": ("January", "February", "March", "April", "May", "June", "July", "August",
+           "September", "October", "November", "December"),
+    "id": ("Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus",
+           "September", "Oktober", "November", "Desember"),
+}
+_FIRST_OF_MONTH = re.compile(r"^(\d{4})-(\d{2})-01(?:[ T]00:00(?::00(?:\.0+)?)?)?$")
+#: Longer labels (identifiers, error texts) are cut so a sentence stays readable.
+_LABEL_LIMIT = 60
+
+
 def _period_name(value: Any, language: str) -> str:
     text = str(value)
     if text in {"current_period", "previous_period"}:
         return say(f"render.{text}", language)
+    # A month bucket reads as the month, not as its first day.
+    month = _FIRST_OF_MONTH.match(text)
+    if month and 1 <= int(month.group(2)) <= 12:
+        names = _MONTHS.get(language, _MONTHS["en"])
+        return f"{names[int(month.group(2)) - 1]} {month.group(1)}"
+    if len(text) > _LABEL_LIMIT:
+        return text[: _LABEL_LIMIT - 1].rstrip() + "…"
     return text
 
 
@@ -1230,7 +1248,11 @@ def _value_text(
         return rendering.percent(points, 2, **source)
     if parsed == parsed.to_integral_value():
         return rendering.number(parsed, 0, **source)
-    exponent = max(0, -decimal_exponent(parsed))
+    # Trailing zeros are storage, not precision ("1.50000000" is 1.5); a value
+    # of one or more reads to at most two decimals.
+    exponent = max(0, -decimal_exponent(parsed.normalize()))
+    if abs(parsed) >= 1:
+        exponent = min(exponent, 2)
     if (words & _MONEY_IDENTIFIERS and exponent <= 2) or _computed(parsed):
         return rendering.number(parsed, 2, **source)
     return rendering.number(parsed, exponent, **source)

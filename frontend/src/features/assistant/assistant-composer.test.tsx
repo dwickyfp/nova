@@ -75,4 +75,38 @@ describe("AssistantComposer", () => {
     );
     expect(container.querySelector('[aria-label^="Approval mode"]')).toBeNull();
   });
+
+  it("attaches a file, shows it, and sends it with the message", async () => {
+    const onSendMessage = vi.fn();
+    const { getByPlaceholder, getByRole, getByLabelText, getByText } = await render(
+      <AssistantComposer onSendMessage={onSendMessage} />,
+    );
+    const input = getByLabelText("Choose files to attach").element() as HTMLInputElement;
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["city,orders\nJakarta,12\n"], "orders.csv", { type: "text/csv" }));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await expect.element(getByText("orders.csv")).toBeVisible();
+
+    await getByPlaceholder("Ask a question or describe a query").fill("How many orders?");
+    await getByRole("button", { name: "Send message" }).click();
+    expect(onSendMessage).toHaveBeenCalledWith("How many orders?", [
+      { name: "orders.csv", content: "city,orders\nJakarta,12\n", mediaType: "text/plain" },
+    ]);
+    expect(getByText("orders.csv").query()).toBeNull();
+  });
+
+  it("refuses a file type Neva cannot read and says why", async () => {
+    const onSendMessage = vi.fn();
+    const { getByLabelText, getByRole } = await render(
+      <AssistantComposer onSendMessage={onSendMessage} />,
+    );
+    const input = getByLabelText("Choose files to attach").element() as HTMLInputElement;
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["x"], "setup.exe"));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await expect.element(getByRole("alert")).toHaveTextContent("unsupported file type");
+    await expect.element(getByRole("button", { name: "Send message" })).toBeDisabled();
+  });
 });

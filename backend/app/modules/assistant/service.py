@@ -224,6 +224,12 @@ class LoopContext:
     readable_views: Callable[[LoopContext], Awaitable[list[str]]] | None = field(
         default=None, repr=False
     )
+    #: Neva only: a smaller step and time ceiling for the planned kind of turn
+    #: (a quick explanation needs fewer steps than an investigation). It can
+    #: only lower the loop's own limits, never raise them.
+    scale_budget: Callable[[TurnRoute], tuple[int, float] | None] | None = field(
+        default=None, repr=False
+    )
     #: Legacy bindings remain readable while stored agents are migrated.
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] | None = None
@@ -857,6 +863,7 @@ class AssistantLoop:
         time_budget = remaining_loop_seconds(self._time_budget, resume_state)
         deadline_unix_seconds = time.time() + time_budget
         deadline = _budget_time() + time_budget
+        max_iterations = self._max_iterations
         if time_budget <= 0:
             yield events.error("timeout", "The assistant turn exhausted its time budget.")
             yield events.done(str(uuid4()), finish_reason="timeout")
@@ -1078,6 +1085,20 @@ class AssistantLoop:
                 })
         route = turn_plan.route
         context.route = route.as_dict()
+        if context.scale_budget is not None and resume_state is None:
+            scaled = context.scale_budget(route)
+            if scaled is not None:
+                # Only lowers the ceilings set for this loop.
+                steps, seconds = scaled
+                max_iterations = min(max_iterations, max(1, steps))
+                remaining = max(0.0, seconds - (time.perf_counter() - context.trace_started_at))
+                if _budget_time() + remaining < deadline:
+                    deadline = _budget_time() + remaining
+                    deadline_unix_seconds = time.time() + remaining
+                _record_step(context, {
+                    "kind": "runtime_decision", "budget": "scaled",
+                    "max_iterations": max_iterations, "status": "done",
+                })
         context.intent_frame = turn_plan.intent_frame
         if route.needs_data:
             from app.modules.assistant.messages import known
@@ -1298,7 +1319,7 @@ class AssistantLoop:
             context.quality_facts.update(resume_state.get("quality_facts", {}))
             first_iteration = int(resume_state.get("iteration", 0))
 
-        for _iteration in range(first_iteration, self._max_iterations):
+        for _iteration in range(first_iteration, max_iterations):
             if on_checkpoint is not None:
                 for incoming in await on_checkpoint():
                     messages.append({
@@ -2940,7 +2961,7 @@ class AssistantLoop:
                 composing_final = True
                 messages.append(composer_message())
             elif self._iterative:
-                remaining_steps = self._max_iterations - _iteration - 1
+                remaining_steps = max_iterations - _iteration - 1
                 remaining_time = deadline - _budget_time()
                 if required_done and not analysis_noted:
                     analysis_noted = True
@@ -2973,7 +2994,7 @@ class AssistantLoop:
             context.pending_output = []
         yield events.error(
             "iteration_cap",
-            f"The assistant reached its {self._max_iterations}-step limit for this turn.",
+            f"The assistant reached its {max_iterations}-step limit for this turn.",
         )
         yield events.done(str(uuid4()), finish_reason="iteration_cap", usage=context.usage)
 

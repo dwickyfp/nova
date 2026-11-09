@@ -118,14 +118,17 @@ Acceptance: parity suite and leak check green; stored data untouched
       `AssistantLoop` with Studio's budget profile and options directly
       (`assistant/router.py` `_neva_loop`). Revisit only if a third caller
       appears.
-- [~] 2.2 Neva's own tool set: `build_neva_registry()` adds the governed
-      `semantic_query` tool to the console tools; readable semantic views are
-      resolved per turn as the caller (`_readable_views`), so metric questions
-      are answered from governed definitions. Standing rules and guards from
-      policy: not yet.
-- [~] 2.3 Budget: Neva runs on the analyst profile (16 steps, 180 s,
-      iterative re-planning, history summarization, spend limit). Automatic
-      fast/analyst choice per question: not yet; measured in 6.1 first.
+- [x] 2.2 Neva's own tool set: `build_neva_registry()` adds the governed
+      `semantic_query` and `list_semantic_views` to the console tools;
+      readable semantic views are resolved per turn as the caller. Guards: the
+      loop runs the system guard chain (answer screening for credentials and
+      injected instructions); owner-written rules are a Studio agent concept,
+      and Neva's standing rules are its persona and the plain-language rule.
+- [x] 2.3 Budget scales automatically: the loop starts with the analyst
+      ceiling (16 steps, 180 s, iterative re-planning, summarization, spend
+      limit); once the plan shows a quick turn (explain, help, catalog, a
+      question back) it lowers to Studio's fast limits (8 steps, 60 s). It can
+      only lower limits. Trajectories in `test_neva_lookups_and_views.py`.
 - [x] 2.4 A bad plan no longer ends the turn: a planning error falls back to
       a read-only plan (look up guides, catalog, governed metrics, read-only
       SQL) with nothing required. When a required check still did not run,
@@ -133,12 +136,26 @@ Acceptance: parity suite and leak check green; stored data untouched
       that it will not guess (`loop.incomplete`, English and Indonesian) instead
       of an empty answer. Trajectories: `tests/eval/test_studio_planner_fallback.py`,
       `test_turn_planning.py`, `test_semantic_hardening.py`, `scenarios.py`.
-- [ ] 2.5 File attachments reach the loop.
-- [ ] 2.6 "Always allow read-only" persisted per thread in Redis.
-- [ ] 2.7 Cross-session memory scoped to user, role and security-context
-      version (decision 2026-11-09).
-- [ ] 2.8 Trajectories: re-planning, budget choice, memory isolation across
-      roles, consent unchanged.
+- [x] 2.5 File attachments reach the loop: up to 3 files (text, PDF, image)
+      from the panel composer, validated like Studio, given to the model as
+      data (never instructions), kept with the message and audited
+      (`ASSISTANT_ATTACHMENT`). Tests: `test_neva_attachments.py`, composer and
+      stream-client tests.
+- [x] 2.6 "Always allow read-only" kept per user and thread in Redis
+      (`read_grants.py`), stamped with the active role and session version;
+      a role switch (in the menu or by `USE ROLE`) or a new session drops it,
+      in memory and in Redis; without Redis nothing is restored (fail closed).
+      Also closes a gap: before, an in-memory grant outlived a role switch made
+      in the menu between turns. Tests: `test_neva_read_grants.py`.
+- [x] 2.7 Cross-session memory scoped to user and role (decision 2026-11-09):
+      Neva keeps durable facts the person stated in its own words in Studio's
+      memory store under the system id `neva-assistant`; questions and
+      credential-shaped text are refused before any model call; writes and
+      removals are audited; the person can list and remove them. A different
+      role starts without them. Tests: `test_neva_memory.py`.
+- [x] 2.8 Trajectories: fallback plan and skipped checks, budget choice,
+      view choice, lookup correction, role switch; memory and grant isolation
+      across roles in unit tests; the existing consent trajectories unchanged.
 - [x] 2.9 Role-based by default: Neva runs as the active role the user set in
       Nova; when access is denied it offers an approved `USE ROLE` to another
       assigned role, then continues under it (views re-listed for the new
@@ -230,3 +247,4 @@ latency within the bound agreed from the phase 0 baseline.
 | 2026-11-09 | 2.10 | Live run judged: better on every category; wrong governed view found | `phase-2-checkpoint.md` |
 | 2026-11-09 | 2.11 | View choice, lookup correction, plain failure messages | `test_neva_lookups_and_views.py` |
 | 2026-11-09 | 2b | Re-measured after the fixes: solved 0.21 → 0.67, correct 0.50 → 0.95, empty 0, leaks 0, wrong-and-confident 4 | `phase-2b-checkpoint.md` |
+| 2026-11-09 | 2.3, 2.5–2.8 | Automatic budget, attachments, role-stamped grant in Redis, per-role memory, readable fallback text | tests listed in phase 2 |

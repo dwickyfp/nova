@@ -127,6 +127,14 @@ class ThreadUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=256)
 
 
+class AttachmentInput(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    content: str = Field(..., min_length=1, max_length=2_800_000)
+    media_type: str = Field(default="text/plain", max_length=64)
+
+    model_config = {"extra": "forbid"}
+
+
 class MessageRequest(BaseModel):
     """A user turn. The response is an SSE stream, not a JSON body.
 
@@ -135,7 +143,7 @@ class MessageRequest(BaseModel):
     omitted, the provider's first active model is used.
     """
 
-    content: str = Field(..., min_length=1, max_length=32_000)
+    content: str = Field(default="", max_length=32_000)
     database: str | None = Field(default=None, max_length=128)
     schema_name: str | None = Field(default=None, alias="schema", max_length=128)
     role: str | None = Field(
@@ -147,16 +155,24 @@ class MessageRequest(BaseModel):
     model: str | None = Field(default=None, max_length=256)
     provider_id: str | None = Field(default=None, max_length=64)
     app_context: NevaAppContext | None = None
+    #: Files the person attached: text is read as data, images by name only.
+    attachments: list[AttachmentInput] = Field(default_factory=list, max_length=3)
+    _prepared_attachments: list[dict] = PrivateAttr(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
+    @model_validator(mode="after")
+    def validate_message(self) -> MessageRequest:
+        if not self.content.strip() and not self.attachments:
+            raise ValueError("Write a message or attach a file.")
+        self._prepared_attachments = validate_attachments(
+            [item.model_dump() for item in self.attachments]
+        )
+        return self
 
-class AttachmentInput(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    content: str = Field(..., min_length=1, max_length=2_800_000)
-    media_type: str = Field(default="text/plain", max_length=64)
-
-    model_config = {"extra": "forbid"}
+    @property
+    def prepared_attachments(self) -> list[dict]:
+        return self._prepared_attachments
 
 
 class UiActionInput(BaseModel):
@@ -210,24 +226,12 @@ class AgentMessageRequest(MessageRequest):
     )
     new_mission: bool = False
     continue_mission_id: str | None = Field(default=None, min_length=1, max_length=64)
-    content: str = Field(default="", max_length=32_000)
-    attachments: list[AttachmentInput] = Field(default_factory=list, max_length=3)
-    _prepared_attachments: list[dict] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="after")
     def validate_turn(self) -> AgentMessageRequest:
         if self.new_mission and self.continue_mission_id:
             raise ValueError("New and continue Mission controls conflict")
-        if not self.content.strip() and not self.attachments:
-            raise ValueError("Write a message or attach a file.")
-        self._prepared_attachments = validate_attachments(
-            [item.model_dump() for item in self.attachments]
-        )
         return self
-
-    @property
-    def prepared_attachments(self) -> list[dict]:
-        return self._prepared_attachments
 
 
 class ConsentDecisionRequest(BaseModel):

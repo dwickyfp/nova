@@ -25,6 +25,7 @@ import {
 import { useAssistantConversation } from "./use-assistant-conversation";
 import type { ApprovalMode, UiAction } from "./use-assistant-turn";
 import type { AssistantPanelProps } from "./assistant-panel";
+import type { SentFile } from "./stream-client";
 import {
   nextAttachmentId,
   type AttachContext,
@@ -84,7 +85,7 @@ type AssistantContextType = {
    * what the panel's composer calls; the raw conversation sender stays private
    * so attachments can never be dropped silently.
    */
-  sendMessage: (message: string) => Promise<void>;
+  sendMessage: (message: string, files?: SentFile[]) => Promise<void>;
   /** Queries attached to the next message, shown as badges above the composer. */
   attachments: AttachedQuery[];
   /** Attaches a workspace selection; returns the created attachment. */
@@ -356,10 +357,10 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
    * panel receives, keeping the attachment rule in one place.
    */
   const sendMessage = useCallback(
-    (message: string) => {
+    (message: string, files: SentFile[] = []) => {
       const pending = attachments;
       setAttachments([]);
-      return conversation.sendMessage(message, pending);
+      return conversation.sendMessage(message, pending, files);
     },
     [attachments, conversation],
   );

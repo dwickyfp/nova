@@ -28,6 +28,26 @@ Current selection, entity, and execution evidence take precedence when Neva reso
 
 The client's `domain.role` describes what the page displayed. The authenticated StarRocks session remains the authority for execution and authorization. A page cannot grant itself privileges by changing its context envelope.
 
+### Turn harness
+
+Neva composes the shared `AssistantLoop` with Studio's analyst limits (16
+steps, 180 s, iterative re-planning, history summarization, spend limit); once
+the plan shows a quick turn (explain, help, catalog, a question back) the
+limits drop to Studio's fast profile (8 steps, 60 s). A plan the model cannot
+shape becomes a read-only plan. Read-only checks the model skipped (the guide,
+the editor's failed query, the SQL its draft proposes) are run by the loop
+before the answer; a failed lookup that is not an access refusal is corrected
+once; anything still unmet ends in a plain "I won't guess" message, never an
+empty reply or an engine error.
+
+Files attached in the panel (up to 3: text, PDF or image) reach the model as
+data, are kept with the message and audited. The "always allow read-only"
+grant is kept per user and thread in Redis, stamped with the active role and
+session version; another context never inherits it. Durable facts the person
+states are remembered per user and role (Studio's memory store, system id
+`neva-assistant`), listed and removed through `/memories`, and given to the
+model as untrusted data.
+
 ### Active role
 
 Nova is role-based: every Neva turn runs as the one active role of the user's web session, the role picked in the account menu. The request's `role` field is ignored. Neva's model context names that role and the user's assigned roles, and every query, governed metric and Semantic View lookup uses it.

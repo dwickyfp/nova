@@ -96,7 +96,12 @@ export function useAssistantConversation({
   const transcript = {
     messages,
     addUserMessage: useCallback(
-      (content: string, attachments?: AttachedQuery[], displayText?: string) =>
+      (
+        content: string,
+        attachments?: AttachedQuery[],
+        displayText?: string,
+        fileNames?: string[],
+      ) =>
         setStore((prev) => ({
           ...prev,
           messages: {
@@ -106,6 +111,7 @@ export function useAssistantConversation({
               content,
               attachments,
               displayText,
+              fileNames,
             }),
           },
         })),

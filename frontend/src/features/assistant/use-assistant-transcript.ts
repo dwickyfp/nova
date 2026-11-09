@@ -43,6 +43,8 @@ export type TranscriptMessage = AssistantMessage & {
   attachments?: AttachedQuery[];
   /** The user's typed text without the attachment preamble. */
   display_text?: string;
+  /** Names of files the person attached to this message. */
+  file_names?: string[];
   /**
    * Structured content blocks (Phase 12): result grids and charts emitted by a
    * tool. Client-side only; the backend stores those events in the thread as
@@ -71,6 +73,7 @@ type Action =
       content: string;
       attachments?: AttachedQuery[];
       displayText?: string;
+      fileNames?: string[];
     }
   | { type: "event"; event: AssistantEvent }
   | { type: "cancelled" }
@@ -368,6 +371,7 @@ export function transcriptReducer(
           created_at: new Date().toISOString(),
           attachments: action.attachments,
           display_text: action.displayText,
+          ...(action.fileNames?.length ? { file_names: action.fileNames } : {}),
         },
       ];
     case "event":
@@ -388,13 +392,19 @@ export function useAssistantTranscript() {
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
 
   const addUserMessage = useCallback(
-    (content: string, attachments?: AttachedQuery[], displayText?: string) =>
+    (
+      content: string,
+      attachments?: AttachedQuery[],
+      displayText?: string,
+      fileNames?: string[],
+    ) =>
       setMessages((prev) =>
         transcriptReducer(prev, {
           type: "user_message",
           content,
           attachments,
           displayText,
+          fileNames,
         }),
       ),
     [],

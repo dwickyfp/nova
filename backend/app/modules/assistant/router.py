@@ -10,6 +10,8 @@ Endpoints under ``/api/v1/assistant``:
   POST   /tool-calls/{tool_call_id}/decision       → resolve a pending tool call
   PUT    /threads/{thread_id}/grant                → set/clear the read-only grant
   DELETE /threads/{thread_id}/grant                → reset the conversation grant
+  GET    /memories                                 → what Neva remembers (active role)
+  DELETE /memories/{memory_id}                     → forget one remembered fact
 
 Every route requires ``get_current_user``. Threads are scoped to their owner;
 an unknown or foreign id answers 404, never 403, so existence does not leak.
@@ -17,8 +19,9 @@ The scoping is enforced in SQL (``repository.py``), so one user's history can
 never be returned to another.
 
 Threads and messages are persisted in ``NOVA_SYSTEM`` and survive a reload.
-Consent grants stay process-local (``state.py``): an always-allow grant is
-deliberately ephemeral and is not revived by a restart.
+The read-only always-allow grant is kept in Redis per user and thread
+(``read_grants.py``), stamped with the active role and security-context
+version it was given under; any other context starts without it.
 """
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
@@ -37,11 +40,13 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.common.audit import write_audit_log
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
-from app.modules.assistant import events
+from app.modules.assistant import events, neva_memory, read_grants
 from app.modules.assistant.app_context import NevaApplicationEvent
 from app.modules.assistant.application_events import application_event_broker
+from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.plain_language import plain_frames
@@ -72,20 +77,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-def _neva_loop() -> AssistantLoop:
+def _neva_loop(memory: str = "") -> AssistantLoop:
     """The shared engine with Studio's analyst limits for Neva.
 
     The limits are ceilings, not targets: a simple question still ends after
-    one or two steps. Iterative mode lets Neva look further after a first
-    result, and long conversations are summarized instead of cut.
+    one or two steps, and :func:`_neva_budget` lowers them once the plan shows
+    a quick turn. Iterative mode lets Neva look further after a first result,
+    and long conversations are summarized instead of cut. ``memory`` is what
+    the person told Neva before, framed as untrusted data.
     """
     from app.modules.agents.service import BUDGET_PROFILES
     from app.modules.assistant.registry import build_neva_registry
+    from app.modules.assistant.service import _default_skill_prompt
 
     limits = BUDGET_PROFILES["analyst"]
     return AssistantLoop(
         provider=assistant_provider,
         registry=build_neva_registry(),
+        system_prompt=_default_skill_prompt() + ("\n\n" + memory if memory else ""),
         max_iterations=limits.max_iterations,
         time_budget_seconds=float(limits.time_budget_seconds),
         max_calls_per_tool=limits.max_calls_per_tool,
@@ -93,6 +102,22 @@ def _neva_loop() -> AssistantLoop:
         summarize_history=True,
         spend_limit=limits.spend_tokens,
     )
+
+
+#: Turns that explain, help or ask back: Studio's fast limits are enough.
+_QUICK_INTENTS = frozenset({"direct_answer", "capability_help", "agent_catalog", "clarification"})
+#: Background learning tasks, kept so they are not collected mid-flight.
+_learning: set[asyncio.Task] = set()
+
+
+def _neva_budget(route) -> tuple[int, float] | None:
+    """Fast limits for a quick turn; analyst limits (the loop's own) otherwise."""
+    from app.modules.agents.service import BUDGET_PROFILES
+
+    if str(route.intent) not in _QUICK_INTENTS:
+        return None
+    fast = BUDGET_PROFILES["fast"]
+    return fast.max_iterations, float(fast.time_budget_seconds)
 
 
 async def _readable_views(user: dict, question: str) -> list[str]:
@@ -309,6 +334,47 @@ async def delete_thread(
     # Drop the runtime entry too, so a lingering grant cannot outlive the thread.
     thread_store.remove(thread_id, user_name=user["username"])
     application_event_broker.remove(thread_id, user["username"])
+    await read_grants.remember(user, thread_id, False)
+    return None
+
+
+@router.get("/memories")
+async def list_memories(user: dict = Depends(get_current_user)):
+    """What Neva remembers for the caller under the active role."""
+    from app.modules.agents.memory import governed_memories, memory_repository
+
+    memories = await memory_repository.list(
+        user_name=user["username"], agent_id=neva_memory.NEVA_MEMORY_ID,
+        role_name=session_security(user).active_role, limit=100,
+    )
+    visible = await governed_memories(memories, user)
+    return {
+        "memories": [
+            {"memory_id": item["memory_id"], "fact": item["fact"],
+             "updated_at": item.get("updated_at")}
+            for item in visible
+        ],
+    }
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+async def forget_memory(memory_id: str, user: dict = Depends(get_current_user)):
+    """Remove one remembered fact; only the caller's own, under the active role."""
+    from app.modules.agents.memory import memory_repository
+
+    security = session_security(user)
+    deleted = await memory_repository.delete(
+        memory_id, user_name=user["username"], agent_id=neva_memory.NEVA_MEMORY_ID,
+        role_name=security.active_role,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    await write_audit_log(
+        event_type="AGENT_MEMORY", user_name=user["username"], action="DELETE",
+        object_type="AGENT_MEMORY", object_name=memory_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=security.active_role,
+        security_context_version=security.security_context_version,
+    )
     return None
 
 
@@ -321,7 +387,9 @@ async def reset_grant(
     await _require_thread(thread_id, user["username"])
     runtime = thread_store.get(thread_id, user_name=user["username"])
     if runtime is not None:
-        runtime.consent.always_allow_read_only = False
+        await read_grants.grant(runtime, user, thread_id, False)
+    else:
+        await read_grants.remember(user, thread_id, False)
     return None
 
 
@@ -355,7 +423,7 @@ async def set_grant(
         title=thread_row["title"],
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
-    runtime.consent.always_allow_read_only = body.always_allow_read_only
+    await read_grants.grant(runtime, user, thread_id, body.always_allow_read_only)
     return {"grant_active": runtime.consent.always_allow_read_only}
 
 
@@ -386,28 +454,43 @@ async def send_message(
         title=thread_row["title"],
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
+    # The read-only grant follows the caller's current role and session.
+    await read_grants.apply(runtime, user, thread_id)
     history = await assistant_repository.list_messages(thread_id, user_name=user_name)
     runtime.messages = [
         AssistantMessage(
             message_id=row["message_id"],
             role=row["role"],
-            content=row["content"],
+            # Earlier files stay part of what the person said, as data.
+            content=attachment_prompt(row["content"], row.get("attachments") or [])
+            if row["role"] == "user" else row["content"],
             steps=row.get("steps") or [],
             created_at=row["created_at"],
             security_context=row.get("security_context"),
+            attachments=row.get("attachments") or [],
         )
         for row in history
     ]
 
     # Store the user's message before the stream starts, so a disconnect still
     # leaves a coherent transcript.
+    attachments = body.prepared_attachments
+    prompt = attachment_prompt(body.content, attachments)
     await assistant_repository.append_message(
         thread_id, user_name=user_name, role="user", content=body.content,
-        security_context=stamp,
+        security_context=stamp, attachments=attachments,
     )
+    if attachments:
+        await write_audit_log(
+            event_type="ASSISTANT_ATTACHMENT", user_name=user_name, action="send",
+            object_type="ASSISTANT_THREAD", object_name=thread_id, status="SUCCESS",
+            session_id=user.get("session_id"), active_role=security.active_role,
+            security_context_version=security.security_context_version,
+        )
     runtime.messages.append(
         AssistantMessage(
-            message_id=str(uuid4()), role="user", content=body.content, security_context=stamp
+            message_id=str(uuid4()), role="user", content=prompt, security_context=stamp,
+            attachments=attachments,
         )
     )
 
@@ -436,7 +519,9 @@ async def send_message(
         semantic_view_ids=await _readable_views(user, body.content),
         # After an approved role switch the turn continues under the new role.
         readable_views=lambda ctx: _readable_views(ctx.user or {}, body.content),
+        scale_budget=_neva_budget,
     )
+    memory = await neva_memory.memory_note(user, body.content)
 
     async def resolve_consent(
         invocation: ToolInvocation, classification: str
@@ -481,9 +566,9 @@ async def send_message(
         # the screen or the stored transcript.
         plain = plain_frames()
         try:
-            async for raw in _neva_loop().run(
+            async for raw in _neva_loop(memory).run(
                 thread=runtime,
-                user_content=body.content,
+                user_content=prompt,
                 context=context,
                 resolve_consent=resolve_consent,
                 cancelled=lambda: False,
@@ -519,6 +604,18 @@ async def send_message(
             # replayed; only the assistant's text is part of the thread. The
             # write is best-effort: a storage failure must not turn a completed
             # answer into a stream error the user cannot see the cause of.
+            if not runtime.consent.always_allow_read_only:
+                # A role switch during the turn took the grant back.
+                await read_grants.remember(user, thread_id, False)
+            if body.content.strip() and reply_parts:
+                # Durable facts the person stated are kept for later turns,
+                # after the answer, so the reply is never slower for it.
+                task = asyncio.create_task(neva_memory.learn(
+                    context.user or user, thread_id=thread_id, message=body.content,
+                    provider_id=body.provider_id, model=body.model,
+                ))
+                _learning.add(task)
+                task.add_done_callback(_learning.discard)
             if reply_parts or context.steps or context.pending_output:
                 try:
                     steps = list(context.steps or [])
@@ -625,7 +722,7 @@ async def resolve_tool_call(
                 status_code=400,
                 detail="allow_session is only valid for a read-only tool call",
             )
-        thread.consent.always_allow_read_only = True
+        await read_grants.grant(thread, user, thread_id, True)
         grant_active = True
 
     resolved = consent_broker.resolve(

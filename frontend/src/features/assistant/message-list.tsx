@@ -1,4 +1,4 @@
-import { FileCode } from "lucide-react";
+import { FileCode, FileText } from "lucide-react";
 import { CitationList, ResultChart } from "@/features/studio/result-cards";
 import { ResultTable } from "@/features/studio/result-table";
 import { cn } from "@/lib/utils";
@@ -144,6 +144,19 @@ function MessageBubble({
             "border-destructive/40 text-destructive",
         )}
       >
+        {isUser && message.file_names?.length ? (
+          <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Attached files">
+            {message.file_names.map((name) => (
+              <span
+                key={name}
+                className="inline-flex max-w-full items-center gap-1 rounded-md bg-primary-foreground/15 px-1.5 py-0.5 text-xs"
+              >
+                <FileText aria-hidden="true" className="size-3 shrink-0" />
+                <span className="truncate">{name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {isUser && attachments.length > 0 ? (
           <div
             className="mb-2 flex flex-col gap-1.5"

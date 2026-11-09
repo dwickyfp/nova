@@ -124,7 +124,7 @@ def test_a_replacement_does_not_repeat_a_table_already_on_screen():
     )
     assert result.replaced
     assert "| city |" not in result.text
-    assert result.text.startswith("Berikut angkanya.")
+    assert result.text.startswith("Berikut yang ditunjukkan hasilnya.")
 
 
 def test_a_replacement_uses_the_users_language_and_number_format():
@@ -297,3 +297,27 @@ def test_the_extremes_are_not_repeated_when_the_answer_already_names_them():
         language="id", compares_groups=True,
     )
     assert "Bandung" in added.text
+
+
+def test_a_fallback_reads_like_a_sentence_not_a_dump():
+    # Found live: "2026-10-01: net revenue 1.573.810.277,50000000." and raw task
+    # ids. A month reads as the month, stored trailing zeros are not precision,
+    # and an identifier-long label is cut.
+    from app.modules.assistant.answer_contract import render_with_claims
+
+    text, claims = render_with_claims(
+        {"e1": {"columns": ["month", "net_revenue"],
+                "rows": [["2026-10-01", Decimal("1573810277.50000000")]]}},
+        language="id", include_table=False,
+    )
+    assert "Oktober 2026" in text and "2026-10-01" not in text
+    assert "1.573.810.277,5" in text and ",50000000" not in text
+    assert claims and claims[0].value == Decimal("1573810277.50000000")
+
+    long_label = "intelligence_08d427ce3e134ff12aa44d0c3b6ec560 / gov_read_a3d5fa5838 / failed"
+    text, _ = render_with_claims(
+        {"e1": {"columns": ["task", "failures"], "rows": [[long_label, 3]]}},
+        language="en", include_table=False,
+    )
+    assert long_label not in text and "…" in text
+    assert text.startswith("Here is what the results show.")
