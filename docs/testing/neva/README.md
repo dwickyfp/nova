@@ -148,7 +148,7 @@ Acceptance: parity suite and leak check green; stored data untouched
 - [x] 2.10 Measured (`phase-2-checkpoint.md`): solved 0.21 → 0.42, understandable
       0.41 → 0.93, correct 0.50 → 0.70, empty answers 37% → 6%, leaks 3 → 0.
       Blocked on: wrong-and-confident 3 → 19 (wrong governed view).
-- [~] 2.11 Fixes from the measurement: Neva names a governed view from the
+- [x] 2.11 Fixes from the measurement (re-measured: `phase-2b-checkpoint.md`, solved 0.67, correct 0.95, wrong-and-confident 4): Neva names a governed view from the
       readable list and never falls back to the first one (asks the model to
       choose, `VIEW_CHOICE_REQUIRED`); a failed lookup that is not an access
       refusal gets one correction, then a plain "couldn't look this up" message
@@ -229,3 +229,4 @@ latency within the bound agreed from the phase 0 baseline.
 | 2026-11-09 | 2.9 | Neva follows the UI's active role and switches roles only with approval; views re-listed after a switch | `test_assistant_role_switch.py` |
 | 2026-11-09 | 2.10 | Live run judged: better on every category; wrong governed view found | `phase-2-checkpoint.md` |
 | 2026-11-09 | 2.11 | View choice, lookup correction, plain failure messages | `test_neva_lookups_and_views.py` |
+| 2026-11-09 | 2b | Re-measured after the fixes: solved 0.21 → 0.67, correct 0.50 → 0.95, empty 0, leaks 0, wrong-and-confident 4 | `phase-2b-checkpoint.md` |
