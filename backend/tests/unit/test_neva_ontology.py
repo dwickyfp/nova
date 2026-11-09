@@ -36,6 +36,10 @@ def test_neva_has_the_glossary_and_grounds_terms_in_order():
              ("business glossary", "Semantic View", "verified query", "new SQL")]
     assert order == sorted(order)
     assert "ask" in prompt and "proposed, never changed" in prompt
+    # Ambiguity: the data's own period is checked before asking which period
+    # is meant.
+    assert "check what period the data covers" in prompt
+    assert "Never ask permission for a read-only lookup" in prompt
 
 
 def test_writing_sql_may_check_what_a_business_word_means():

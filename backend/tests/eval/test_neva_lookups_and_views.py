@@ -438,3 +438,29 @@ async def test_the_model_cannot_propose_sql_that_was_never_checked():
     # The editor gets this SQL only after validate_sql checked this exact text.
     proposed = "event: client_action" in frames
     assert not proposed or any(run.arguments["sql"] == sql for run in validate.runs)
+
+
+async def test_a_slow_model_call_ends_with_the_turn_s_time_budget():
+    import asyncio
+    import time
+
+    class SlowProvider(ScriptedProvider):
+        async def stream(self, **kwargs):
+            await asyncio.sleep(30)
+            async for frame in super().stream(**kwargs):
+                yield frame
+
+    started = time.monotonic()
+    frames = [frame async for frame in AssistantLoop(
+        provider=SlowProvider(script=[text_frame("late")], turn_plan=_plan([])),
+        registry=ToolRegistry(), time_budget_seconds=1.5,
+    ).run(
+        thread=AssistantThread(thread_id="slow", user_name="alice", title="Eval"),
+        user_content="How many orders?", context=LoopContext(user_name="alice"),
+        resolve_consent=allow,
+    )]
+    result = TurnResult(frames=frames)
+    assert time.monotonic() - started < 10
+    assert result.finish_reason == "timeout"
+    # Neva says plainly that it stopped; the person never gets an empty reply.
+    assert any(frame.startswith("event: text_delta") for frame in frames)

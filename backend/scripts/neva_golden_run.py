@@ -133,8 +133,9 @@ async def run_turn(
             timeout=httpx.Timeout(timeout, read=timeout),
         ) as response:
             if response.status_code != 200:
-                record["errors"].append(f"status {response.status_code}")
-                return record
+                body = (await response.aread()).decode(errors="replace")[:200]
+                record["errors"].append(f"status {response.status_code}: {body}")
+                raise httpx.HTTPError("refused")
             event = None
             async for line in response.aiter_lines():
                 if time.monotonic() - started > timeout:
@@ -181,7 +182,8 @@ async def run_turn(
                     record["source"] = data.get("source")
                     # Read to the end like the panel does, so the reply is stored.
     except httpx.HTTPError as exc:
-        record["errors"].append(type(exc).__name__)
+        if str(exc) != "refused":
+            record["errors"].append(type(exc).__name__)
     finally:
         # The transcript is kept in the run file; the test thread is not left
         # in the person's history.

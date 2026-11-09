@@ -55,3 +55,16 @@ def test_page_text_cannot_close_its_context_tag():
                  if "<NOVA_APPLICATION_CONTEXT>" in str(m["content"]))
     assert block.count("</NOVA_APPLICATION_CONTEXT>") == 1
     assert block.rstrip().endswith("</NOVA_APPLICATION_CONTEXT>")
+
+
+def test_a_timed_out_neva_turn_says_so_plainly_while_studio_keeps_its_error():
+    from types import SimpleNamespace
+
+    from app.modules.assistant.service import LoopContext, _timeout_frame
+
+    neva = LoopContext(user_name="a")
+    neva.intent_frame = SimpleNamespace(language="id")
+    frame = _timeout_frame(neva)
+    assert frame.startswith("event: text_delta") and "tanpa menebak" in frame
+    studio = LoopContext(user_name="a", agent_id="agent-1")
+    assert _timeout_frame(studio).startswith("event: error")

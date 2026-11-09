@@ -245,19 +245,19 @@ another request.
       (selected object), Tasks and Business Ontology (open tab), next to
       Workspace, Roles and Query history; filter choices and page counts reach
       Neva.
-- [ ] 5.5 Ambiguous or unanswerable questions get a clarifying question or
+- [x] 5.5 Ambiguous or unanswerable questions get a clarifying question or
       answerable alternatives instead of a guess.
 - [~] 5.6 Knowledge search finds guides from plain questions ("how do I create
       a table" → the table guide), measured on a question set.
 
 ## Phase 6: acceptance
 
-- [ ] 6.1 Live run of the golden set (test half) on the configured provider.
-- [ ] 6.2 Lay-user judge rubric: solved, understandable, correct, cited, no
+- [x] 6.1 Live run of the golden set (test half) on the configured provider.
+- [x] 6.2 Lay-user judge rubric: solved, understandable, correct, cited, no
       technical leak, asked before changing; pass^3.
-- [ ] 6.3 Comparison with the phase 0 baseline with CIs; no task class worse.
-- [ ] 6.4 Security review of the full diff; Ranger acceptance; leak check green.
-- [ ] 6.5 `phase-6-checkpoint.md` with the decision per change.
+- [x] 6.3 Comparison with the phase 0 baseline with CIs; no task class worse.
+- [x] 6.4 Security review of the full diff; Ranger acceptance; leak check green.
+- [x] 6.5 `phase-6-checkpoint.md` with the decision per change.
 
 ## Log
 
@@ -276,3 +276,5 @@ another request.
 | 2026-11-09 | 2.3, 2.5–2.8 | Automatic budget, attachments, role-stamped grant in Redis, per-role memory, readable fallback text | tests listed in phase 2 |
 | 2026-11-09 | 3 | Intelligence UI in the panel: shared UI checks, Neva UI routes and actions, blocks and rail in the panel, history search/rename/delete, titles; first step 17 s → 3 s | tests in `test_neva_ui_routes.py`, panel tests |
 | 2026-11-10 | 5.4 (Workspace) | Page work in SQL Workspace: Neva writes, edits and optimizes the open SQL and puts it in the editor as a reviewed diff, then explains the change. Found while testing live: the provider gateway read only the first system message, so the page context, turn plan and loop corrections never reached the model (Neva said "I can't see your editor"). All system instructions now go as one message. Live: explain, optimize and edit-per-city all worked; the edited SQL ran and returned rows per city | `test_provider_request_options.py`, `test_neva_editor_proposal.py`, page-work trajectories in `test_neva_lookups_and_views.py` |
+| 2026-11-10 | 4–5 | Ontology reader boundaries and Neva glossary tools; SQL checked as the caller before it reaches the editor; written objects read back; source labels; seven more page surfaces; frameless diff review | `f144c34`, `8402b26`, tests listed in phases 4–5 |
+| 2026-11-10 | 6 | Test half solved 0.21 → 0.82 (0.73–0.91), correct 0.95, pass^3 0.75; page context solved 0.92, used the page 1.00; no leaks; Ranger acceptance green; two independent reviews fixed | `phase-6-checkpoint.md` |

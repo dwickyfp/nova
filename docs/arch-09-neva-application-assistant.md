@@ -110,6 +110,12 @@ case is matched to the page's own spelling, and anything else is refused.
 After any page action the turn continues and Neva says, in the person's
 language, what it asked the page to do. The page shows the outcome itself.
 
+Every model call ends with the turn's own time budget, and the Neva router
+ends any turn that outlives the budget by 30 s (time spent waiting for the
+person's approval does not count). In both cases Neva says plainly, in the
+person's language, that it stopped without guessing; the stalled work is
+cancelled without waiting for it.
+
 The provider client sends all system instructions as one leading system
 message, in their original order. Some OpenAI-compatible gateways keep only
 the first system message and silently drop the rest, which removed the page

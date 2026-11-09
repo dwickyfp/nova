@@ -1375,7 +1375,7 @@ class AssistantLoop:
                 yield events.done(str(uuid4()), finish_reason="cancelled")
                 return
             if _budget_time() >= deadline:
-                yield events.error("timeout", "The assistant turn exceeded its time budget.")
+                yield _timeout_frame(context)
                 yield events.done(str(uuid4()), finish_reason="timeout")
                 return
 
@@ -1512,11 +1512,19 @@ class AssistantLoop:
                         yield events.done(str(uuid4()), finish_reason="context_overflow")
                         return
 
-                    async for kind, payload in measured_provider.stream(**stream_kwargs):
-                        if kind == "delta":
-                            buffered_text.append(payload)
-                        else:
-                            message = payload
+                    # A model call ends with the turn's own time budget, so a slow
+                    # provider cannot keep the person waiting past it.
+                    async with asyncio.timeout(max(1.0, deadline - _budget_time())):
+                        async for kind, payload in measured_provider.stream(**stream_kwargs):
+                            if kind == "delta":
+                                buffered_text.append(payload)
+                            else:
+                                message = payload
+                except TimeoutError:
+                    _finish_step(context, provider_step, "failed", "time budget exceeded")
+                    yield _timeout_frame(context)
+                    yield events.done(str(uuid4()), finish_reason="timeout")
+                    return
                 except Exception as exc:  # noqa: BLE001
                     _finish_step(context, provider_step, "failed", str(exc))
                     logger.warning("Assistant provider call failed: %s", type(exc).__name__)
@@ -2428,9 +2436,7 @@ class AssistantLoop:
                         tool_task.cancel()
                         _finish_tool_step(context, "failed", "time budget exceeded")
                         yield events.tool_status(invocation.tool_call_id, "failed")
-                        yield events.error(
-                            "timeout", "The assistant turn exceeded its time budget."
-                        )
+                        yield _timeout_frame(context)
                         yield events.done(str(uuid4()), finish_reason="timeout")
                         return
                     progress_task = asyncio.create_task(progress_queue.get())
@@ -4589,6 +4595,13 @@ def _accumulate_usage(context: Any, message: dict[str, Any]) -> None:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _timeout_frame(context: LoopContext) -> str:
+    """Neva says in plain words that it stopped; Studio keeps its error frame."""
+    if context.agent_scope is None and context.agent_id is None:
+        return events.text_delta(say("loop.timeout", _turn_language(context)))
+    return events.error("timeout", "The assistant turn exceeded its time budget.")
 
 
 def _tag_safe(payload: str) -> str:

@@ -34,7 +34,7 @@ import asyncio
 import logging
 import tempfile
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -87,9 +87,14 @@ NEVA_GROUNDING = (
     "(ontology_resolve). Then answer from a Semantic View the active role can open, then "
     "from a verified query, and write new SQL only when none of these covers it; say "
     "which one the answer comes from. When a term has several official meanings, ask "
-    "which one is meant instead of choosing. A glossary suggestion "
+    "which one is meant instead of choosing, unless one reading is clearly meant or is the "
+    "usual one: then answer with it, say which reading you used and offer the others. "
+    "Never ask permission for a read-only lookup or calculation. A glossary suggestion "
     "(knowledge_propose) is only proposed until a steward approves it and a release is "
-    "published: say proposed, never changed."
+    "published: say proposed, never changed.\n"
+    "Periods: before asking which period is meant, check what period the data covers and "
+    "answer for it, saying which dates it spans; if the comparison asked for is not "
+    "possible (no data for last year), say so plainly."
 )
 
 
@@ -119,6 +124,58 @@ def _neva_loop(memory: str = "") -> AssistantLoop:
         summarize_history=True,
         spend_limit=limits.spend_tokens,
     )
+
+
+#: Slack on top of the loop's own time budget before Neva stops a stalled turn.
+_STALL_MARGIN_SECONDS = 30.0
+
+
+def _turn_ceiling() -> float:
+    from app.modules.agents.service import BUDGET_PROFILES
+
+    return float(BUDGET_PROFILES["analyst"].time_budget_seconds) + _STALL_MARGIN_SECONDS
+
+
+async def _within_turn_budget(
+    frames: AsyncIterator[str], context: Any, ceiling: float | None = None
+) -> AsyncIterator[str]:
+    """Pass the loop's frames on, ending a turn that outlives its time budget.
+
+    The loop keeps its own deadline, but a step that blocks without returning
+    (a remote catalog whose host cannot be resolved, say) would keep the person
+    waiting with no answer. Time spent waiting for the person's approval does
+    not count. When the ceiling passes, Neva says plainly that it stopped and
+    the stalled work is cancelled without waiting for it.
+    """
+    from app.modules.assistant.messages import say
+    from app.modules.assistant.service import _turn_language
+
+    limit = _turn_ceiling() if ceiling is None else ceiling
+    iterator = aiter(frames)
+    used = 0.0
+    awaiting_approval = False
+    while True:
+        step = asyncio.ensure_future(anext(iterator))
+        started = asyncio.get_running_loop().time()
+        done, _ = await asyncio.wait(
+            {step}, timeout=None if awaiting_approval else max(0.0, limit - used)
+        )
+        if not awaiting_approval:
+            used += asyncio.get_running_loop().time() - started
+        if not done:
+            step.cancel()
+            yield events.text_delta(say("loop.timeout", _turn_language(context)))
+            yield events.done(str(uuid4()), finish_reason="timeout")
+            return
+        try:
+            frame = step.result()
+        except StopAsyncIteration:
+            return
+        if frame.startswith(f"event: {events.EVENT_TOOL_CALL}\n"):
+            awaiting_approval = _frame_data(frame).get("status") == "pending"
+        elif frame.startswith(f"event: {events.EVENT_TOOL_STATUS}\n"):
+            awaiting_approval = False
+        yield frame
 
 
 def _title_from(question: str, limit: int = 80) -> str:
@@ -722,16 +779,17 @@ async def send_message(
         # Neva speaks to people who look after Nova: internal names never reach
         # the screen or the stored transcript.
         plain = plain_frames()
+        frames = _within_turn_budget(_neva_loop(memory).run(
+            thread=runtime,
+            user_content=prompt,
+            context=context,
+            resolve_consent=resolve_consent,
+            cancelled=lambda: False,
+            model=body.model,
+            provider_id=body.provider_id,
+        ), context)
         try:
-            async for raw in _neva_loop(memory).run(
-                thread=runtime,
-                user_content=prompt,
-                context=context,
-                resolve_consent=resolve_consent,
-                cancelled=lambda: False,
-                model=body.model,
-                provider_id=body.provider_id,
-            ):
+            async for raw in frames:
                 if await request.is_disconnected():
                     break
                 for frame in plain(raw):

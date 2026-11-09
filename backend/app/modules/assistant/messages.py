@@ -49,6 +49,11 @@ MESSAGES: dict[str, str] = {
         "This request was not run because this agent's rules do not allow it. {reason}"
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.timeout": (
+        "This needed more time than I can spend on one answer, so I stopped without "
+        "guessing. Ask about a narrower part, such as one table, one period or one "
+        "report, and I'll answer that."
+    ),
     "loop.incomplete": (
         "I couldn't finish the check this question needs, so I won't guess an answer. "
         "Try asking again with a little more detail, such as the table, report or "
@@ -122,6 +127,11 @@ BUILTIN: dict[str, dict[str, str]] = {
             "{reason}"
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.timeout": (
+            "Pertanyaan ini butuh waktu lebih lama dari yang bisa saya pakai untuk satu "
+            "jawaban, jadi saya berhenti tanpa menebak. Tanyakan bagian yang lebih sempit, "
+            "misalnya satu tabel, satu periode, atau satu laporan, dan akan saya jawab."
+        ),
         "loop.incomplete": (
             "Saya belum bisa menyelesaikan pengecekan yang dibutuhkan pertanyaan ini, "
             "jadi saya tidak akan menebak jawabannya. Coba tanyakan lagi dengan sedikit "

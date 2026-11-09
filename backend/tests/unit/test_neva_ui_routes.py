@@ -146,3 +146,30 @@ def test_the_first_question_names_the_conversation():
     )
     long = neva._title_from("x " * 100)
     assert len(long) == 80 and long.endswith("…")
+
+
+async def test_a_stalled_turn_ends_plainly_but_waiting_for_approval_does_not_count():
+    import asyncio
+
+    from app.modules.assistant import events
+
+    async def stalled():
+        yield events.text_delta("Looking it up")
+        await asyncio.sleep(60)  # a step that never returns
+        yield events.done("late")
+
+    context = SimpleNamespace(intent_frame=SimpleNamespace(language="en"))
+    frames = [frame async for frame in neva._within_turn_budget(stalled(), context, 0.3)]
+    assert frames[-1].startswith("event: done") and '"timeout"' in frames[-1]
+    assert "stopped without guessing" in frames[-2]
+
+    async def waits_for_the_person():
+        yield events.tool_call(SimpleNamespace(model_dump=lambda **_: {
+            "tool_call_id": "c1", "tool_name": "query_execute", "status": "pending"}))
+        await asyncio.sleep(0.6)  # the person reads the approval card
+        yield events.tool_status("c1", "done")
+        yield events.done("m1")
+
+    frames = [frame async for frame in neva._within_turn_budget(
+        waits_for_the_person(), context, 0.3)]
+    assert frames[-1].startswith("event: done") and '"timeout"' not in frames[-1]
