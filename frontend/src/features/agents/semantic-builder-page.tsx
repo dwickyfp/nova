@@ -73,10 +73,13 @@ export function SemanticBuilderPage() {
         definition: yaml,
       }),
     onSuccess: (view) => {
-      toast.success(`Semantic View "${view.name}" created as draft`)
+      toast.success(`"${view.name}" saved as a draft. Check it, then make it live.`)
       setSaveOpen(false)
       queryClient.invalidateQueries({ queryKey: ['intelligence', 'semantic'] })
-      void navigate({ to: '/semantic-views' })
+      // Straight to the new view, where the draft is tried, checked and made live.
+      void navigate(view.id
+        ? { to: '/semantic-views/$viewId', params: { viewId: view.id } }
+        : { to: '/semantic-views' })
     },
     onError: (error: Error) => toast.error(error.message),
   })

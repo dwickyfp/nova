@@ -239,11 +239,11 @@ describe("Nova Intelligence", () => {
       return defaultGet?.(path);
     });
     const screen = await renderIntelligence("semantic", "sv1");
-    await expect.element(screen.getByText("Total revenue?: result_changed")).toBeVisible();
+    await expect.element(screen.getByText("Total revenue?: answer changed")).toBeVisible();
     await userEvent.click(screen.getByRole("checkbox", {
-      name: "Acknowledge verified-query changes before publishing",
+      name: "I reviewed the changed answers",
     }));
-    await userEvent.click(screen.getByRole("button", { name: "Publish", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: "Make live", exact: true }));
     await expect.poll(() => mocks.post.mock.calls.length).toBe(1);
     expect(mocks.post).toHaveBeenCalledWith(
       "/semantic-views/sv1/versions/2/publish",
@@ -297,16 +297,16 @@ describe("Nova Intelligence", () => {
       return defaultGet?.(path);
     });
     const screen = await renderIntelligence("semantic", "sv1");
-    await userEvent.click(screen.getByRole("button", { name: "Metrics" }));
+    await userEvent.click(screen.getByRole("button", { name: "Numbers" }));
     await userEvent.click(screen.getByText("total_revenue", { exact: true }).last());
     await userEvent.keyboard("{Escape}");
-    await userEvent.click(screen.getByRole("button", { name: "Dimensions" }));
+    await userEvent.click(screen.getByRole("button", { name: "Break down by" }));
     await userEvent.click(screen.getByText("customers.country", { exact: true }));
     await userEvent.keyboard("{Escape}");
-    await userEvent.click(screen.getByRole("button", { name: "Named filters" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     await userEvent.click(screen.getByText("completed_orders", { exact: true }).last());
     await userEvent.keyboard("{Escape}");
-    await userEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await userEvent.click(screen.getByRole("button", { name: "Show results" }));
     await expect.poll(() => mocks.post.mock.calls.length).toBe(1);
     expect(mocks.post).toHaveBeenCalledWith("/semantic-views/sv1/query", {
       metrics: ["total_revenue"], dimensions: ["customers.country"],
@@ -363,19 +363,21 @@ describe("Nova Intelligence", () => {
     });
 
     const screen = await renderIntelligence("semantic", "sv1");
-    await screen.getByRole("tab", { name: "Definition" }).click();
+    await screen.getByRole("tab", { name: "What it defines" }).click();
     await expect.element(screen.getByText("NOVA_DEMO.orders", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("Unique keys: id + region", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("location", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("Derived from: gross_revenue", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("order_customer", { exact: true })).toBeVisible();
-    await screen.getByRole("tab", { name: "Verified questions" }).click();
+    await screen.getByRole("tab", { name: "Approved examples" }).click();
     await expect.element(screen.getByText("Revenue?", { exact: true })).toBeVisible();
-    await screen.getByRole("tab", { name: "Quality" }).click();
+    await screen.getByRole("tab", { name: "Health check" }).click();
     await expect.element(screen.getByText("Add a synonym")).toBeVisible();
-    await screen.getByRole("tab", { name: "Question preview" }).click();
+    await screen.getByRole("tab", { name: "Try a question" }).click();
     await screen.getByRole("textbox", { name: "Business question" }).fill("Revenue?");
-    await screen.getByRole("button", { name: "Preview question" }).click();
+    await screen.getByRole("button", { name: "Try question" }).click();
+    await expect.element(screen.getByRole("heading", { name: "How this view would answer" })).toBeVisible();
+    await screen.getByText("Technical details").click();
     await expect.element(screen.getByText("SELECT SUM(amount) FROM orders", { exact: true })).toBeVisible();
     expect(mocks.post).toHaveBeenCalledWith("/semantic-views/sv1/versions/1/preview", { question: "Revenue?" });
   });
@@ -399,7 +401,7 @@ describe("Nova Intelligence", () => {
     await page.viewport(320, 640);
     try {
       const screen = await renderIntelligence("semantic", "sv1");
-      await screen.getByRole("tab", { name: "Definition" }).click();
+      await screen.getByRole("tab", { name: "What it defines" }).click();
       await expect.element(screen.getByText("NOVA_DEMO.orders", { exact: true })).toBeVisible();
       const surface = screen.getByRole("region", { name: "Semantic View details" }).element();
       expect(surface.getBoundingClientRect().right).toBeLessThanOrEqual(320);
@@ -430,12 +432,12 @@ describe("Nova Intelligence", () => {
       return defaultGet?.(path);
     });
     const screen = await renderIntelligence("semantic", "legacy-1");
-    await screen.getByRole("tab", { name: "Definition" }).click();
+    await screen.getByRole("tab", { name: "What it defines" }).click();
     await expect.element(screen.getByText(/Legacy format: add a supported Ossie 0.1.1 version/).first()).toBeVisible();
     await expect.element(screen.getByText("Original imported definition")).toBeVisible();
     await expect.element(screen.getByText(/scope pending review/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Validate" }).elements()).toHaveLength(0);
-    await screen.getByRole("tab", { name: "Verified questions" }).click();
+    expect(screen.getByRole("button", { name: "Check", exact: true }).elements()).toHaveLength(0);
+    await screen.getByRole("tab", { name: "Approved examples" }).click();
     await expect.element(screen.getByText("Old revenue?", { exact: true })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Copy original to editor" }));
     await expect.element(screen.getByRole("textbox", { name: /New version definition/ })).toBeVisible();
@@ -468,7 +470,7 @@ describe("Nova Intelligence", () => {
       return defaultGet?.(path);
     });
     const screen = await renderIntelligence("semantic", "sv1");
-    await screen.getByRole("tab", { name: "Quality" }).click();
+    await screen.getByRole("tab", { name: "Health check" }).click();
     await expect.element(screen.getByText("Could not load quality report")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Retry" })).toBeVisible();
   });

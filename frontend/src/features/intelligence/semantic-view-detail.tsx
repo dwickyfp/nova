@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/auth-store'
+import { versionStatusWord } from './semantic-view-glance'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -58,16 +59,15 @@ function DefinitionDetail({ view, version }: {
 
   return <div className='space-y-5'>
     <dl className='grid gap-x-6 gap-y-3 rounded-lg border bg-surface-2 p-4 text-sm sm:grid-cols-2'>
-      <div><dt className='text-muted-foreground'>Catalog / database / schema</dt>
+      <div><dt className='text-muted-foreground'>Where the data lives</dt>
         <dd className='mt-1 break-all font-mono'>{[view.catalog_name, view.database_name, view.schema_name].filter(Boolean).join(' / ')}{legacyReview && view.database_name === 'NOVA_SYSTEM' ? <span className='ms-2 font-sans text-warning-strong'>(scope pending review)</span> : null}</dd></div>
       <div><dt className='text-muted-foreground'>Owner</dt><dd className='mt-1'>{view.owner_name || 'Unknown'}</dd></div>
-      <div><dt className='text-muted-foreground'>View status</dt><dd className='mt-1'>{view.status}</dd></div>
-      {view.visibility ? <div><dt className='text-muted-foreground'>Visibility</dt><dd className='mt-1'>{view.visibility}</dd></div> : null}
-      <div><dt className='text-muted-foreground'>Active version</dt><dd className='mt-1'>{view.active_version ? `v${view.active_version}` : 'No published version'}</dd></div>
+      <div><dt className='text-muted-foreground'>View status</dt><dd className='mt-1'>{view.status === 'DEPRECATED' ? 'Retired' : view.active_version ? 'Live' : 'Draft'}</dd></div>
+      {view.visibility ? <div><dt className='text-muted-foreground'>Who can see it</dt><dd className='mt-1'>{view.visibility === 'PRIVATE' ? 'Only its owner' : 'Everyone with access to the data'}</dd></div> : null}
+      <div><dt className='text-muted-foreground'>Live version</dt><dd className='mt-1'>{view.active_version ? `v${view.active_version}` : 'None yet'}</dd></div>
       <div><dt className='text-muted-foreground'>Created</dt><dd className='mt-1'>{dateText(view.created_at)}</dd></div>
       <div><dt className='text-muted-foreground'>Last updated</dt><dd className='mt-1'>{dateText(view.updated_at)}</dd></div>
-      <div><dt className='text-muted-foreground'>Selected version</dt><dd className='mt-1'>v{version.version} · {version.status}</dd></div>
-      <div><dt className='text-muted-foreground'>Definition fingerprint</dt><dd className='mt-1 break-all font-mono text-xs'>{version.fingerprint || 'Unavailable'}</dd></div>
+      <div><dt className='text-muted-foreground'>Version shown</dt><dd className='mt-1'>v{version.version} · {versionStatusWord(version.status, view.status === 'DEPRECATED')}</dd></div>
     </dl>
     {definition.description ? <p className='text-sm leading-6'>{definition.description}</p> : null}
     {definition.ai_context ? <p className='text-sm'><span className='font-medium'>Business context: </span>{contextText(definition.ai_context)}</p> : null}
@@ -182,15 +182,39 @@ function DefinitionDetail({ view, version }: {
   </div>
 }
 
+/** Names from a plan list whose items are strings or `{name}` objects. */
+function planNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) =>
+    typeof item === 'string' ? [item]
+      : item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string'
+        ? [(item as { name: string }).name] : [])
+}
+
 function PreviewDetail({ result }: { result: SemanticPreview }) {
+  const plan = (result.semantic_plan ?? {}) as Record<string, unknown>
+  const answer = [
+    ['Measures', planNames(plan.metrics)],
+    ['Broken down by', planNames(plan.dimensions)],
+    ['Filters', planNames(plan.filters ?? plan.named_filters)],
+  ] as const
   return <div className='space-y-4' aria-live='polite'>
-    <div className='flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-surface-2 p-4 text-sm'>
-      <span>Planned by: {result.plan_source === 'verified_query' ? 'a verified query' : 'the model, checked against this View'}</span>
-      <span>Relationship path: {result.relationship_path.length ? result.relationship_path.join(' → ') : 'None required'}</span>
-    </div>
-    {result.warnings.length ? <div className='rounded-lg border border-warning bg-warning/10 p-4 text-sm'><p className='font-medium'>Review warnings</p><ul className='mt-2 list-disc space-y-1 ps-5'>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
-    <section><h4 className='text-sm font-medium'>Semantic plan</h4><pre className='mt-2 max-h-64 overflow-auto rounded-lg border bg-muted p-4 font-mono text-xs'>{JSON.stringify(result.semantic_plan, null, 2)}</pre></section>
-    <section><h4 className='text-sm font-medium'>Generated StarRocks SQL</h4><pre className='mt-2 max-h-64 overflow-auto rounded-lg border bg-muted p-4 font-mono text-xs'>{result.generated_sql}</pre></section>
+    <section className='space-y-2 rounded-lg border bg-surface-2 p-4 text-sm'>
+      <h4 className='font-medium'>How this view would answer</h4>
+      <dl className='grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]'>
+        {answer.filter(([, names]) => names.length).map(([label, names]) => <div key={label} className='contents'>
+          <dt className='text-muted-foreground'>{label}</dt><dd>{names.map((name) => name.replace(/_/g, ' ')).join(', ')}</dd></div>)}
+        <dt className='text-muted-foreground'>Answered from</dt>
+        <dd>{result.plan_source === 'verified_query' ? 'an approved example' : 'AI, checked against these definitions'}</dd>
+        {result.relationship_path.length ? <><dt className='text-muted-foreground'>Tables joined</dt><dd>{result.relationship_path.map((name) => name.replace(/_/g, ' ')).join(' → ')}</dd></> : null}
+      </dl>
+    </section>
+    {result.warnings.length ? <div className='rounded-lg border border-warning bg-warning/10 p-4 text-sm'><p className='font-medium'>Worth checking</p><ul className='mt-2 list-disc space-y-1 ps-5'>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
+    <details className='rounded-lg border p-4 text-sm'>
+      <summary className='cursor-pointer text-muted-foreground'>Technical details</summary>
+      <section className='mt-3'><h4 className='text-sm font-medium'>Semantic plan</h4><pre className='mt-2 max-h-64 overflow-auto rounded-lg border bg-muted p-4 font-mono text-xs'>{JSON.stringify(result.semantic_plan, null, 2)}</pre></section>
+      <section className='mt-3'><h4 className='text-sm font-medium'>Generated StarRocks SQL</h4><pre className='mt-2 max-h-64 overflow-auto rounded-lg border bg-muted p-4 font-mono text-xs'>{result.generated_sql}</pre></section>
+    </details>
   </div>
 }
 
@@ -239,16 +263,16 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
 
   return <Tabs value={activeTab} onValueChange={setActiveTab} className='min-w-0'>
     <div className='mb-3'>
-      <h3 className='font-medium'>Check this version</h3>
-      <p className='text-sm text-muted-foreground'>Start with a business question. You can inspect the definition and quality checks when you need more detail.</p>
+      <h3 className='font-medium'>Try it and look inside</h3>
+      <p className='text-sm text-muted-foreground'>Ask a business question to see how this version would answer it, or look at what it defines.</p>
     </div>
     <TabsList className='mb-4 max-w-full justify-start overflow-x-auto'>
-      <TabsTrigger value='preview'>Question preview</TabsTrigger>
-      <TabsTrigger value='definition'>Definition</TabsTrigger>
-      <TabsTrigger value='quality'>Quality</TabsTrigger>
-      <TabsTrigger value='verified'>Verified questions</TabsTrigger>
-      <TabsTrigger value='context'>Context Graph</TabsTrigger>
-      <TabsTrigger value='autopilot'>Autopilot</TabsTrigger>
+      <TabsTrigger value='preview'>Try a question</TabsTrigger>
+      <TabsTrigger value='definition'>What it defines</TabsTrigger>
+      <TabsTrigger value='quality'>Health check</TabsTrigger>
+      <TabsTrigger value='verified'>Approved examples</TabsTrigger>
+      <TabsTrigger value='context'>Related concepts</TabsTrigger>
+      <TabsTrigger value='autopilot'>Suggested additions</TabsTrigger>
     </TabsList>
     <TabsContent value='context' className='mt-0 min-w-0'>
       <ContextInspector semantic={{ view_id: view.id, version: version.version, fingerprint: version.fingerprint }} />
@@ -261,24 +285,24 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
     </TabsContent>
     <TabsContent value='preview' className='mt-0 min-w-0 space-y-4'>
       {legacyReview ? <EmptyState title='Legacy version cannot be previewed' description='Add a supported Ossie 0.1.1 version, validate it, then preview business questions.' /> : <>
-      <p className='text-sm text-muted-foreground'>Check how this version resolves a business question. Preview compiles SQL without running it.</p>
+      <p className='text-sm text-muted-foreground'>Type a question the way people ask it. Nova shows how this version would answer, without running it on the data.</p>
       <form className='flex flex-col gap-2 sm:flex-row sm:items-end' onSubmit={(event) => {
         event.preventDefault()
         if (question.trim()) previewMutation.mutate()
       }}>
         <div className='min-w-0 flex-1 space-y-1.5'><Label htmlFor='semantic-question'>Business question</Label><Input id='semantic-question' value={question} onChange={(event) => setQuestion(event.target.value)} placeholder='Revenue by region last month' /></div>
-        <Button type='submit' disabled={!question.trim() || previewMutation.isPending}>Preview question</Button>
+        <Button type='submit' disabled={!question.trim() || previewMutation.isPending}>Try question</Button>
       </form>
-      {previewMutation.isPending ? <LoadingOverlay label='Compiling question' /> : previewMutation.isError ?
+      {previewMutation.isPending ? <LoadingOverlay label='Working out the answer' /> : previewMutation.isError ?
         <EmptyState variant='error' title='Could not preview this question' description='Check the question or try again.' action={<Button variant='outline' onClick={() => previewMutation.mutate()}>Retry preview</Button>} /> : preview ? <>
         <PreviewDetail result={preview} />
         <div className='space-y-2 rounded-lg border p-4'>
-          <Button variant='outline' disabled={saveVerified.isPending || version.version !== latestVersion} onClick={() => saveVerified.mutate()}>Save as verified question</Button>
-          <p className='text-xs text-muted-foreground'>Saving creates a new draft version. Validate and publish it before agents use the example.</p>
-          {version.version !== latestVersion ? <p className='text-xs text-warning-strong'>Select the latest version to save a verified question.</p> : null}
-          {saveVerified.isError ? <p role='alert' className='text-xs text-destructive'>Could not save this verified question. Review the preview and try again.</p> : null}
+          <Button variant='outline' disabled={saveVerified.isPending || version.version !== latestVersion} onClick={() => saveVerified.mutate()}>Save as approved example</Button>
+          <p className='text-xs text-muted-foreground'>Saving creates a new draft version. Check it and make it live before agents use the example.</p>
+          {version.version !== latestVersion ? <p className='text-xs text-warning-strong'>Open the latest version to save an approved example.</p> : null}
+          {saveVerified.isError ? <p role='alert' className='text-xs text-destructive'>Could not save this example. Try the question again, then save.</p> : null}
         </div>
-      </> : <EmptyState title='No preview yet' description='Enter a question to inspect the semantic plan and generated SQL for this version.' />}
+      </> : <EmptyState title='No question tried yet' description='Ask something like \u201crevenue by city last month\u201d to see which measures and breakdowns this version would use.' />}
       </>}
     </TabsContent>
     <TabsContent value='quality' className='mt-0 min-w-0 space-y-5'>
@@ -286,31 +310,31 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
         <EmptyState variant='error' title='Could not load quality report' description='Try again to inspect this version.' action={<Button variant='outline' onClick={() => void quality.refetch()}>Retry</Button>} /> :
         <>
           <div className='flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-surface-2 p-4'>
-            <div className='flex items-center gap-2'><StatusBadge tone={quality.data.valid ? 'success' : 'danger'}>{quality.data.valid ? 'Compiler ready' : 'Needs changes'}</StatusBadge><span className='text-sm'>v{version.version}</span></div>
-            <span className='break-all font-mono text-xs text-muted-foreground'>{quality.data.model_fingerprint}</span>
+            <div className='flex items-center gap-2'><StatusBadge tone={quality.data.valid ? 'success' : 'danger'}>{quality.data.valid ? 'Ready to use' : 'Needs fixes'}</StatusBadge><span className='text-sm'>v{version.version}</span></div>
+            
           </div>
           {quality.data.errors.length ? <section><h4 className='text-sm font-medium'>Errors</h4><ul className='mt-2 list-disc space-y-1 ps-5 text-sm'>{quality.data.errors.map((error) => <li key={error}>{error}</li>)}</ul></section> : null}
-          <DefinitionSection title='Readiness indicators' empty={!Object.keys(quality.data.quality).length}>
+          <DefinitionSection title='Completeness' empty={!Object.keys(quality.data.quality).length}>
             <dl className='divide-y rounded-lg border'>{Object.entries(quality.data.quality).map(([key, value]) => <div key={key} className='flex flex-wrap justify-between gap-2 px-4 py-2 text-sm'><dt>{key.replace(/_/g, ' ')}</dt><dd className='font-medium'>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></div>)}</dl>
           </DefinitionSection>
-          <DefinitionSection title='Lint findings' empty={!quality.data.findings.length}>
-            <div className='divide-y rounded-lg border'>{quality.data.findings.map((finding, index) => <div key={`${finding.code}-${index}`} className='space-y-1 px-4 py-3 text-sm'><div className='flex flex-wrap items-center gap-2'><StatusBadge tone={finding.severity === 'error' ? 'danger' : 'warning'}>{finding.severity}</StatusBadge><code>{finding.code}</code>{finding.object_name ? <span className='text-muted-foreground'>{finding.object_name}</span> : null}</div><p>{finding.message}</p></div>)}</div>
+          <DefinitionSection title='Suggestions to improve' empty={!quality.data.findings.length}>
+            <div className='divide-y rounded-lg border'>{quality.data.findings.map((finding, index) => <div key={`${finding.code}-${index}`} className='space-y-1 px-4 py-3 text-sm'><div className='flex flex-wrap items-center gap-2'><StatusBadge tone={finding.severity === 'error' ? 'danger' : 'warning'}>{finding.severity}</StatusBadge>{finding.object_name ? <span className='text-muted-foreground'>{finding.object_name}</span> : null}</div><p>{finding.message}</p></div>)}</div>
           </DefinitionSection>
-          {quality.data.quality_lab ? <DefinitionSection title='Verified question checks'>
-            <p className='text-sm'>{quality.data.quality_lab.matched} of {quality.data.quality_lab.total} match; {quality.data.quality_lab.changed} need review.</p>
+          {quality.data.quality_lab ? <DefinitionSection title='Approved examples still give the same answer'>
+            <p className='text-sm'>{quality.data.quality_lab.matched} of {quality.data.quality_lab.total} give the same answer; {quality.data.quality_lab.changed} changed and need a look.</p>
             {quality.data.quality_lab.unevaluated ? <p className='text-xs text-muted-foreground'>{quality.data.quality_lab.unevaluated} could not be evaluated.</p> : null}
-            <div className='divide-y rounded-lg border'>{quality.data.quality_lab.cases.map((item) => <div key={item.verified_query_id} className='flex flex-wrap justify-between gap-2 px-4 py-3 text-sm'><span>{item.question}</span><StatusBadge tone={item.status === 'matched' ? 'success' : 'warning'}>{item.status}</StatusBadge></div>)}</div>
+            <div className='divide-y rounded-lg border'>{quality.data.quality_lab.cases.map((item) => <div key={item.verified_query_id} className='flex flex-wrap justify-between gap-2 px-4 py-3 text-sm'><span>{item.question}</span><StatusBadge tone={item.status === 'matched' ? 'success' : 'warning'}>{item.status === 'matched' ? 'Same answer' : 'Answer changed'}</StatusBadge></div>)}</div>
           </DefinitionSection> : null}
         </>}
     </TabsContent>
     <TabsContent value='verified' className='mt-0 min-w-0'>
       {verified.length ? <div className='divide-y rounded-lg border'>{verified.map((item, index) => <article key={item.verified_query_id ?? `${item.question}-${index}`} className='space-y-2 p-4'>
         <h4 className='text-sm font-medium'>{item.question}</h4>
-        {item.verified_by || item.tags?.length ? <p className='text-xs text-muted-foreground'>{[item.verified_by ? `Verified by ${item.verified_by}` : '', item.tags?.length ? `Tags: ${item.tags.join(', ')}` : ''].filter(Boolean).join(' · ')}</p> : null}
-        <pre className='max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs'>{item.verified_sql}</pre>
-        {item.expected_result_signature ? <p className='break-all text-xs text-muted-foreground'>Expected result signature: {item.expected_result_signature}</p> : null}
-        <details className='text-xs'><summary className='cursor-pointer font-medium'>Semantic plan</summary><pre className='mt-2 max-h-48 overflow-auto rounded-md bg-muted p-3 font-mono'>{JSON.stringify(item.semantic_plan, null, 2)}</pre></details>
-      </article>)}</div> : <EmptyState title='No verified questions in this version' description='Preview a business question, review its plan and SQL, then save it to a new draft version.' />}
+        {item.verified_by || item.tags?.length ? <p className='text-xs text-muted-foreground'>{[item.verified_by ? `Approved by ${item.verified_by}` : '', item.tags?.length ? `Tags: ${item.tags.join(', ')}` : ''].filter(Boolean).join(' · ')}</p> : null}
+        <details className='text-xs'><summary className='cursor-pointer text-muted-foreground'>Technical details</summary>
+        <pre className='mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs'>{item.verified_sql}</pre>
+        <pre className='mt-2 max-h-48 overflow-auto rounded-md bg-muted p-3 font-mono'>{JSON.stringify(item.semantic_plan, null, 2)}</pre></details>
+      </article>)}</div> : <EmptyState title='No approved examples yet' description='Try a question, and if the answer is right, save it as an approved example so agents answer it the same way every time.' />}
     </TabsContent>
   </Tabs>
 }
