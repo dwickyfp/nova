@@ -141,6 +141,38 @@ def _task_scope_key(task: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
+
+def graph_ids_from(edges: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> list[str]:
+    """Graph ids from already-loaded edges and tasks (see ``list_graph_ids``).
+
+    Pure, so a caller that already holds every edge and task (the graph list
+    read model) derives the ids without reading both tables again.
+    """
+    graph_ids = sorted({str(edge["graph_id"]) for edge in edges})
+
+    # Endpoint names by scope, so a task is only "referenced" by an edge in
+    # its own scope (a same-named task in another schema is its own graph).
+    referenced: dict[tuple[str, ...], set[str]] = {}
+    for edge in edges:
+        scope = scope_from_graph_id(str(edge["graph_id"]))
+        referenced.setdefault(scope or (), set()).update(
+            (str(edge["parent_task"]), str(edge["child_task"]))
+        )
+
+    standalone: list[str] = []
+    for task in tasks:
+        scope = _task_scope_key(task)
+        name = str(task["name"])
+        if name in referenced.get(scope or (), set()):
+            continue
+        if scope and name in referenced.get((), set()):
+            continue
+        qualified = task_graph_id(task)
+        if qualified not in graph_ids:
+            standalone.append(qualified)
+    return [*graph_ids, *sorted(set(standalone) - set(graph_ids))]
+
+
 class TaskOrchestrationRepository:
     """CRUD over task definitions, runs, edges, and scheduled role bindings."""
 
@@ -425,30 +457,7 @@ class TaskOrchestrationRepository:
         ``scheduler.build_graphs`` uses, so the API and the scheduler agree on
         what a graph is. A legacy row with no scope keeps its bare name / task id.
         """
-        edges = await self.list_all_edges()
-        graph_ids = sorted({str(edge["graph_id"]) for edge in edges})
-
-        # Endpoint names by scope, so a task is only "referenced" by an edge in
-        # its own scope (a same-named task in another schema is its own graph).
-        referenced: dict[tuple[str, ...], set[str]] = {}
-        for edge in edges:
-            scope = scope_from_graph_id(str(edge["graph_id"]))
-            referenced.setdefault(scope or (), set()).update(
-                (str(edge["parent_task"]), str(edge["child_task"]))
-            )
-
-        standalone: list[str] = []
-        for task in await self.list_tasks():
-            scope = _task_scope_key(task)
-            name = str(task["name"])
-            if name in referenced.get(scope or (), set()):
-                continue
-            if scope and name in referenced.get((), set()):
-                continue
-            qualified = task_graph_id(task)
-            if qualified not in graph_ids:
-                standalone.append(qualified)
-        return [*graph_ids, *sorted(set(standalone) - set(graph_ids))]
+        return graph_ids_from(await self.list_all_edges(), await self.list_tasks())
 
     async def get_tasks_by_names(self, names: list[str]) -> list[dict[str, Any]]:
         """Task rows for ``names``, in one query.
@@ -481,6 +490,26 @@ class TaskOrchestrationRepository:
         row = self._to_dict(_GRAPH_RUN_COLUMNS, result["rows"][0])
         row["wal_marks"] = self._decode_wal_marks(row["wal_marks"])
         return row
+
+    async def latest_graph_runs(self) -> dict[str, dict[str, Any]]:
+        """Each graph's most recent run, keyed by graph id, in one query.
+
+        The graph list shows a last run for every graph; one query per graph
+        made the page wait on hundreds of sequential round trips.
+        """
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM ("
+            f"  SELECT {_GRAPH_RUN_COLUMNS}, ROW_NUMBER() OVER ("
+            "    PARTITION BY graph_id ORDER BY started_at DESC, id DESC) AS rn"
+            f"  FROM {_GRAPH_RUNS}"
+            ") latest WHERE rn = 1"
+        )
+        latest: dict[str, dict[str, Any]] = {}
+        for raw in result["rows"]:
+            row = self._to_dict(_GRAPH_RUN_COLUMNS, raw)
+            row["wal_marks"] = self._decode_wal_marks(row["wal_marks"])
+            latest[str(row["graph_id"])] = row
+        return latest
 
     async def list_task_runs_for_graph(self, graph_id: str) -> list[dict[str, Any]]:
         """Every node-run row belonging to any run of ``graph_id``.

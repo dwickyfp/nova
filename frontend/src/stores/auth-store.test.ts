@@ -55,6 +55,34 @@ describe('useAuthStore', () => {
     expect(useAuthStore.getState().auth.user).toEqual(sampleUser)
   })
 
+  it('changes the security epoch only when the identity changes', async () => {
+    const useAuthStore = await importAuthStore()
+    const epoch = () => useAuthStore.getState().securityEpoch
+
+    useAuthStore.getState().auth.reset()
+    const before = epoch()
+    useAuthStore.getState().auth.setUser({ ...sampleUser, activeRole: 'analyst' })
+    const signedIn = epoch()
+    expect(signedIn).toBe(before + 1)
+    useAuthStore.getState().auth.setUser({ ...sampleUser, activeRole: 'analyst' })
+    expect(epoch()).toBe(signedIn)
+
+    useAuthStore.getState().auth.setUser({ ...sampleUser, activeRole: 'admin' })
+    expect(epoch()).toBe(signedIn + 1)
+    useAuthStore.getState().auth.setUser({ ...sampleUser, activeRole: 'admin', securityContextVersion: 2 })
+    expect(epoch()).toBe(signedIn + 2)
+
+    useAuthStore.getState().auth.setAccessToken('token-a')
+    const withToken = epoch()
+    useAuthStore.getState().auth.setAccessToken('token-a')
+    expect(epoch()).toBe(withToken)
+    useAuthStore.getState().auth.setAccessToken('token-b')
+    expect(epoch()).toBe(withToken + 1)
+
+    useAuthStore.getState().auth.setUser(null)
+    expect(epoch()).toBe(withToken + 2)
+  })
+
   it('reset clears user and access token and drops persistence', async () => {
     const useAuthStore = await importAuthStore()
     useAuthStore.getState().auth.setAccessToken('will-be-cleared')

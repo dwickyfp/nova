@@ -107,7 +107,9 @@ async def test_catalog_tree_comes_from_the_callers_session(monkeypatch):
     # The store describes catalogs; it never adds one the caller cannot list.
     assert result.catalogs[1].source == "engine"
     assert result.catalogs[1].sync_status == "ok"
-    assert opened == [USER]
+    # Every listing runs on the caller's own session: one for the catalogs and
+    # one per catalog for its databases, never on another identity.
+    assert opened and all(session == USER for session in opened)
     execute_system.assert_not_awaited()
 
 

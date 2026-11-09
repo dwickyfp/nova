@@ -28,7 +28,7 @@ from app.core.deps import get_current_user
 from . import schemas
 from .access import graph_role, is_task_admin, owns_task, verify_active_role
 from .dag import finalizer_targets
-from .repository import TaskOrchestrationRepository
+from .repository import TaskOrchestrationRepository, graph_ids_from
 from .repository import task_orchestration_repository as _repository
 from .scheduler import should_enqueue
 from .transport import RedisGraphRunTransport
@@ -113,16 +113,19 @@ class _GraphAccess:
         if self._graph_ids is not None:
             return
         await verify_active_role(self._user)
-        graph_ids = await self._repository.list_graph_ids()
-        for task in await self._repository.list_tasks():
+        edges = await self._repository.list_all_edges()
+        tasks = await self._repository.list_tasks()
+        graph_ids = graph_ids_from(edges, tasks)
+        for task in tasks:
             self._tasks_by_qualified[_qualified_name(task)] = task
             self._tasks_by_id[str(task["id"])] = task
             # Last write wins on a duplicate bare name; the scoped lookup is
             # consulted first, so this fallback only ever serves a row the
             # qualified map could not resolve.
             self._tasks_by_name_only[str(task["name"])] = task
-        for graph_id in graph_ids:
-            self._edges_by_graph[graph_id] = await self._repository.list_edges(graph_id)
+        # Edges arrive ordered by graph and id, so grouping keeps each graph's order.
+        for edge in edges:
+            self._edges_by_graph.setdefault(str(edge["graph_id"]), []).append(edge)
         self._graph_ids = graph_ids
 
     def _tasks_for(self, graph_id: str) -> list[dict[str, Any]]:
@@ -266,11 +269,12 @@ async def list_graphs(user: dict = current_user) -> schemas.GraphListResponse:
     """List the graphs the caller may see, with each graph's last run and tallies."""
     access = _GraphAccess(_repository, user)
     tallies = await _repository.count_graph_runs_by_graph()
+    latest_runs = await _repository.latest_graph_runs()
     summaries: list[schemas.GraphSummary] = []
     for graph_id in await access.visible_graph_ids():
         graph_tasks = await access.require(graph_id)
         root = _root_task(access.edges_for(graph_id), graph_tasks)
-        last_run = await _repository.get_latest_graph_run(graph_id)
+        last_run = latest_runs.get(graph_id)
         scope_task = root or (graph_tasks[0] if graph_tasks else None)
         summaries.append(
             schemas.GraphSummary(
