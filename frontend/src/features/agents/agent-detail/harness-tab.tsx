@@ -650,7 +650,12 @@ function Experiments({ agentId }: { agentId: string }) {
   const [caseIds, setCaseIds] = useState<string[]>([]);
   const [budget, setBudget] = useState("400000");
   const [openId, setOpenId] = useState("");
-  const activeVersion = versions.data?.active_version_id ?? "";
+  // Only a saved version can be run; an agent that never saved one has none.
+  const activeVersion = versions.data?.versions.some(
+    (item) => item.version_id === versions.data?.active_version_id,
+  )
+    ? (versions.data?.active_version_id ?? "")
+    : "";
   const chosenVersion = versionId || activeVersion;
   const items = experiments.data?.experiments ?? [];
   const caseItems = cases.data?.items ?? [];

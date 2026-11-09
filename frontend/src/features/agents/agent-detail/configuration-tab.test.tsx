@@ -85,7 +85,13 @@ describe("AgentConfigurationTab", () => {
     await expect.element(screen.getByText("semantic_query", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("query_execute", { exact: true })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("checkbox", { name: /semantic_query/ })).toBeChecked();
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    // Save wakes up only with an edit to save.
+    const save = screen.getByRole("button", { name: "Save", exact: true });
+    await expect.element(save).toBeDisabled();
+    await screen.getByRole("tab", { name: "General" }).click();
+    await screen.getByLabelText("Display name").fill("Revenue analyst v2");
+    await expect.element(screen.getByText("Unsaved changes")).toBeVisible();
+    await save.click();
     await vi.waitFor(() => expect(updates[0]?.default_tools).toEqual(["semantic_query"]));
   });
 
@@ -129,7 +135,7 @@ describe("AgentConfigurationTab", () => {
     } else {
       await expect.element(screen.getByText(/No Tavily API key is set/)).not.toBeInTheDocument();
     }
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    await screen.getByRole("button", { name: "Save", exact: true }).click();
     await vi.waitFor(() => expect(updates[0]?.default_tools).toEqual(to));
   });
 
@@ -255,7 +261,7 @@ describe("AgentConfigurationTab", () => {
     await screen
       .getByRole("option", { name: "Chat model · Provider B" })
       .click();
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    await screen.getByRole("button", { name: "Save", exact: true }).click();
     await vi.waitFor(() =>
       expect(updates[0]).toMatchObject({
         model_provider_id: "b",
@@ -266,7 +272,7 @@ describe("AgentConfigurationTab", () => {
     await screen
       .getByRole("option", { name: "Provider default", exact: true })
       .click();
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    await screen.getByRole("button", { name: "Save", exact: true }).click();
     await vi.waitFor(() =>
       expect(updates[1]).toMatchObject({
         model_provider_id: null,
@@ -357,7 +363,7 @@ describe("AgentConfigurationTab", () => {
     expect(screen.getByRole("combobox", { name: /mode/ }).query()).toBeNull();
     await skill.click();
     await expect.element(skill).toBeChecked();
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    await screen.getByRole("button", { name: "Save", exact: true }).click();
 
     await vi.waitFor(() => {
       const update = fetchMock.mock.calls.find(
@@ -412,7 +418,7 @@ describe("AgentConfigurationTab", () => {
       .element(screen.getByText("External calls always require approval."))
       .toBeVisible();
     await screen.getByRole("checkbox", { name: /lookup_customer/ }).click();
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    await screen.getByRole("button", { name: "Save", exact: true }).click();
     await vi.waitFor(() =>
       expect(updates[0]?.default_tools).toContain("mcp:tool-1"),
     );
@@ -446,7 +452,7 @@ describe("AgentConfigurationTab", () => {
     await expect.element(screen.getByRole("option", { name: /Forecast/ })).not.toBeInTheDocument();
     await screen.getByRole("option", { name: /Sales/ }).click();
     await screen.getByRole("button", { name: "Add Semantic View" }).click();
-    await screen.getByRole("button", { name: "Save draft" }).click();
+    await screen.getByRole("button", { name: "Save", exact: true }).click();
     await vi.waitFor(() => expect(updates[0]?.semantic_view_ids).toEqual(["view-active"]));
     expect(updates[0]?.semantic_model_ids).toBeUndefined();
   });

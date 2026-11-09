@@ -163,6 +163,30 @@ afterEach(async () => {
 });
 
 describe("Agent Quality", () => {
+  it("treats an agent that never saved a version as having no release", async () => {
+    const calls: string[] = [];
+    const base = mock();
+    base.mockImplementation((input) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/versions?"))
+        // The active revision exists, but it was never saved as a version.
+        return json({ versions: [], active_version_id: "unsaved-revision" });
+      if (url.endsWith("/quality/cases")) return json({ items: [item] });
+      if (url.endsWith("/quality/runs")) return json({ items: [] });
+      if (url.endsWith("/quality/monitoring"))
+        return json({ enabled: false, sample_rate: 0.1, max_traces: 20, revision: 1 });
+      if (url.endsWith("/quality/proposals")) return json({ items: [] });
+      return json({});
+    });
+    const screen = await setup(<AgentQualityTab agentId="sales" />);
+    await expect
+      .element(screen.getByText("Save the configuration to evaluate a release."))
+      .toBeVisible();
+    expect(screen.getByText(/Manifest could not be read/).query()).toBeNull();
+    expect(calls.some((url) => url.includes("/manifest"))).toBe(false);
+  });
+
   it("shows recorded canonicalization costs across narrow and desktop themes", async () => {
     const measuredRun: QualityRun = {
       ...run,

@@ -11,14 +11,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { semanticViewsApi } from "@/features/intelligence/semantic-views-api";
 import { agentAccessApi, agentsApi, observabilityApi, toolsApi } from "./api";
-import { automationsApi } from "./studio-intelligence-api";
 import { AgentOverviewTab } from "./agent-detail/overview-tab";
 import { AgentConfigurationTab } from "./agent-detail/configuration-tab";
 import { AgentAccessTab } from "./agent-detail/access-tab";
 import { AgentObservabilityTab } from "./agent-detail/observability-tab";
 import { AgentVersionHistory } from "./agent-detail/version-history";
 import { AgentImproveTab } from "./agent-detail/improve-tab";
-import { AgentAutomationsTab } from "./agent-detail/automations-tab";
 
 /** A tab's own scroll region below the fixed tab row. */
 const SCROLL = "mt-6 min-h-0 flex-1 overflow-y-auto pb-6";
@@ -26,8 +24,7 @@ const SCROLL = "mt-6 min-h-0 flex-1 overflow-y-auto pb-6";
 const FIT = "mt-6 flex min-h-0 flex-1 flex-col pb-6";
 
 /**
- * Agent detail: Overview, Configuration, Access, Observability, Improve, and
- * Automations. The header is shared; each tab owns its own data and layout.
+ * Agent detail: Overview, Configuration, Access, Observability, and Improve. The header is shared; each tab owns its own data and layout.
  */
 export function AgentBuilderPage() {
   const { agentId } = useParams({ from: "/_authenticated/agents/$agentId" });
@@ -54,10 +51,6 @@ export function AgentBuilderPage() {
     void queryClient.prefetchQuery({
       queryKey: ["agents", "observability", "sessions", agentId],
       queryFn: () => observabilityApi.sessions(agentId, 200),
-    });
-    void queryClient.prefetchQuery({
-      queryKey: ["agents", "automations", agentId],
-      queryFn: () => automationsApi.list(agentId),
     });
   }, [agentId, queryClient]);
 
@@ -149,7 +142,6 @@ export function AgentBuilderPage() {
             <TabsTrigger value="access">Access</TabsTrigger>
             <TabsTrigger value="observability">Observability</TabsTrigger>
             <TabsTrigger value="improve">Improve</TabsTrigger>
-            <TabsTrigger value="automations">Automations</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className={SCROLL}>
@@ -180,9 +172,6 @@ export function AgentBuilderPage() {
           </TabsContent>
           <TabsContent value="improve" className={FIT}>
             <AgentImproveTab agentId={agentId} />
-          </TabsContent>
-          <TabsContent value="automations" className={SCROLL}>
-            <AgentAutomationsTab agentId={agentId} />
           </TabsContent>
         </Tabs>
       </Main>

@@ -55,13 +55,15 @@ class AccessControlService:
         object_name: str,
         ranger_ids: list[int | str] | None = None,
     ) -> None:
-        # Every managed access change retires cached News access proofs and
-        # cached catalog visibility at once.
+        # Every managed access change retires cached News access proofs,
+        # cached catalog visibility and reused agent access checks at once.
+        from app.modules.access_control import passed_checks
         from app.modules.catalog import visibility as catalog_visibility
         from app.modules.intelligence.newsroom_cache import proof_cache
 
         await proof_cache.bump()
         await catalog_visibility.bump()
+        await passed_checks.retire()
         await write_audit_log(
             event_type="security_admin",
             user_name=security.principal,

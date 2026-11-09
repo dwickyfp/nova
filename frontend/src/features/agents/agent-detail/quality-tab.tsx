@@ -151,7 +151,14 @@ function QualityWorkspace({
     retry: false,
     gcTime: 0,
   });
-  const activeVersion = versionId || versions.data?.active_version_id || "";
+  // The active revision is only a release once it is a saved version; an agent
+  // that has never saved one has nothing to evaluate yet (and no manifest).
+  const savedActive = versions.data?.versions.some(
+    (item) => item.version_id === versions.data?.active_version_id,
+  )
+    ? versions.data?.active_version_id
+    : undefined;
+  const activeVersion = versionId || savedActive || "";
   const manifest = useQuery({
     queryKey: [...key, "manifest", activeVersion],
     queryFn: ({ signal }) =>
@@ -485,7 +492,7 @@ function QualityWorkspace({
         )}
         {versions.data?.versions.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            Save a configuration draft to evaluate a release.
+            Save the configuration to evaluate a release.
           </p>
         )}
         {evaluate.isError && (

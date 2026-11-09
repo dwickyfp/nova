@@ -205,3 +205,58 @@ async def test_ranger_semantic_probe_plans_select_under_current_identity(monkeyp
             security_context_version=7,
             max_rows=0,
         )
+
+
+async def test_a_passed_source_check_is_reused_for_the_same_session(monkeypatch):
+    from app.modules.access_control import passed_checks
+    from app.modules.intelligence.semantic_views import SemanticViewService
+
+    class FakeRedis:
+        def __init__(self):
+            self.data = {}
+
+        async def get(self, key):
+            return self.data.get(key)
+
+        async def set(self, key, value, ex=None):
+            self.data[key] = value
+
+        async def incr(self, key):
+            self.data[key] = str(int(self.data.get(key, "0")) + 1)
+
+    redis = FakeRedis()
+    monkeypatch.setattr(passed_checks, "_client", lambda: redis)
+    monkeypatch.setattr(passed_checks.session_store, "_redis", redis)
+    effective = AsyncMock(return_value={"object_access": ["SELECT"]})
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access", effective
+    )
+    probe = AsyncMock(return_value=SimpleNamespace(error=None))
+    monkeypatch.setattr(query_service, "execute", probe)
+    definition = {"datasets": [{"source": "sales.orders"}, {"source": "sales.items"}]}
+    user = {
+        "username": "reader", "encrypted_password": "opaque", "active_role": "ANALYST",
+        "session_id": "current", "security_context_version": 7,
+    }
+
+    assert await SemanticViewService._source_access(definition, user)
+    assert await SemanticViewService._source_access(definition, user)
+    assert probe.await_count == 2 and effective.await_count == 2  # checked once per source
+
+    # Another role or session re-checks; a managed access change retires all.
+    assert await SemanticViewService._source_access(definition, {**user, "active_role": "SALES"})
+    assert probe.await_count == 4
+    await passed_checks.retire()
+    assert await SemanticViewService._source_access(definition, user)
+    assert probe.await_count == 6
+
+    # A denied source is never kept.
+    redis.data.clear()
+    probe.reset_mock()
+    probe.return_value = SimpleNamespace(error="denied")
+    for _ in range(2):
+        assert not await SemanticViewService._source_access(definition, user)
+    assert probe.await_count >= 2 and not any(
+        key.startswith("nova:access:passed:") and not key.endswith(("epoch", "settling"))
+        for key in redis.data
+    )

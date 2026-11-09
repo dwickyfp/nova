@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentModelSelect } from "./model-select";
 import { AgentResourceBindings } from "./resource-bindings";
@@ -125,21 +125,23 @@ export function AgentConfigurationTab({
           <TabsTrigger value="skills">Skills</TabsTrigger>
           <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
-        <div className="flex items-center gap-2">
+        {/* One action. It wakes up when there is something to save, and the
+            state beside it says why; saving makes a draft version to review
+            before it is published. */}
+        <div className="flex items-center gap-3">
+          {isDirty ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
+              Unsaved changes
+            </span>
+          ) : null}
           <Button
-            variant="ghost"
+            size="sm"
+            className="min-w-20"
             disabled={!isDirty || save.isPending}
-            onClick={() => {
-              base.current = agent;
-              dirty.current = false;
-              setDraft(toAgentDraft(agent));
-            }}
+            onClick={() => save.mutate(draft)}
           >
-            Discard edits
-          </Button>
-          <Button disabled={save.isPending} onClick={() => save.mutate(draft)}>
-            <Save className="size-4" />
-            Save draft
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>

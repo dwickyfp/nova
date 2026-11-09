@@ -337,7 +337,14 @@ async def access_fingerprint(agent: dict) -> str:
 
 
 async def has_verified_access(agent: dict, *, role_name: str, user: dict) -> bool:
-    """A grant and a current successful permission check are both required."""
+    """A grant and a current successful permission check are both required.
+
+    The grant and the agent's fingerprint are read on every call, so a removed
+    grant or a changed configuration takes effect at once. Only the expensive
+    Ranger check of every dependency is reused when it passed
+    (:mod:`app.modules.access_control.passed_checks`).
+    """
+    from app.modules.access_control import passed_checks
     from app.modules.agents.repository import AgentMetadataUnavailable, agent_repository
 
     for attempt in range(3):
@@ -350,15 +357,24 @@ async def has_verified_access(agent: dict, *, role_name: str, user: dict) -> boo
                 return False
             if grant["verified_fingerprint"] != await access_fingerprint(agent):
                 return False
-            items = await verify_access(
-                agent=agent,
-                role_name=role_name,
-                username=user["username"],
-                encrypted_password=user.get("encrypted_password", ""),
-                session_id=user.get("session_id"),
-                security_context_version=int(user.get("security_context_version") or 1),
+            entry = await passed_checks.key(
+                "agent",
+                {**user, "active_role": role_name},
+                [agent["agent_id"], grant["verified_fingerprint"]],
             )
-            return all(item.granted for item in items)
+
+            async def check() -> bool:
+                items = await verify_access(
+                    agent=agent,
+                    role_name=role_name,
+                    username=user["username"],
+                    encrypted_password=user.get("encrypted_password", ""),
+                    session_id=user.get("session_id"),
+                    security_context_version=int(user.get("security_context_version") or 1),
+                )
+                return all(item.granted for item in items)
+
+            return await passed_checks.once(entry, check)
         except Exception:  # noqa: BLE001 - an errored check is unavailable, never a denial
             if attempt == 2:
                 logger.warning("Agent access verification unavailable for role %s", role_name)

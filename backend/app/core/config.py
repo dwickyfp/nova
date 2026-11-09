@@ -199,6 +199,10 @@ class Settings(BaseSettings):
     # catalog store, and how long one caller's visible catalog tree is reused.
     CATALOG_SYNC_INTERVAL_SECONDS: int = 300
     CATALOG_VISIBILITY_CACHE_SECONDS: int = 60
+    # A passed access check (an agent's dependencies, a Semantic View's
+    # sources) is reused for this long for the same caller, role and session;
+    # 0 checks on every request. Failed checks are never reused.
+    ACCESS_CHECK_CACHE_SECONDS: int = 60
 
     # --- Centralized authorization (Apache Ranger) ---
     # Ranger is always on: every session activates exactly one named role and

@@ -3,59 +3,6 @@ import { api, apiBase, authHeaders, ApiError } from "@/lib/api-client";
 const agentPath = (agentId: string, rest: string) =>
   `/agents/${encodeURIComponent(agentId)}${rest}`;
 
-// ── Automations ────────────────────────────────────────────────
-
-export type AutomationCondition = {
-  metric: string;
-  operator: ">" | ">=" | "<" | "<=" | "=" | "!=";
-  value: number;
-};
-
-export type AutomationDelivery = {
-  mcp_tool_id?: string | null;
-  text_argument?: string;
-  fixed_arguments?: Record<string, string | number | boolean>;
-};
-
-export type Automation = {
-  automation_id: string;
-  agent_id: string;
-  title: string;
-  prompt: string;
-  schedule_kind: "cron" | "interval";
-  schedule_expr: string;
-  timezone: string;
-  condition: AutomationCondition | null;
-  delivery: AutomationDelivery | null;
-  enabled: boolean;
-  next_run_at: string | null;
-  last_run_at: string | null;
-  last_status: string | null;
-  last_thread_id: string | null;
-};
-
-export type AutomationInput = {
-  title: string;
-  prompt: string;
-  schedule_kind: "cron" | "interval";
-  schedule_expr: string;
-  timezone?: string;
-  condition?: AutomationCondition | null;
-  delivery?: AutomationDelivery;
-  enabled?: boolean;
-};
-
-export const automationsApi = {
-  list: (agentId: string) =>
-    api.get<{ automations: Automation[]; count: number }>(agentPath(agentId, "/automations")),
-  create: (agentId: string, body: AutomationInput) =>
-    api.post<Automation>(agentPath(agentId, "/automations"), body),
-  update: (agentId: string, id: string, body: Partial<AutomationInput>) =>
-    api.patch<Automation>(agentPath(agentId, `/automations/${encodeURIComponent(id)}`), body),
-  remove: (agentId: string, id: string) =>
-    api.delete<void>(agentPath(agentId, `/automations/${encodeURIComponent(id)}`)),
-};
-
 // ── Learning loop and readiness ───────────────────────────────
 
 export type VerifiedQueryCandidate = {
