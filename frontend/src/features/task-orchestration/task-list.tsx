@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { defineNevaCapability } from "@/features/assistant/surface-registry";
 import {
   keepPreviousData,
   useMutation,
@@ -85,6 +88,46 @@ export default function TaskList() {
       ].some((value) => value.toLowerCase().includes(normalized)),
     );
   }, [graphs, search]);
+
+  useNevaSurface({
+    id: "tasks.list",
+    route: "/tasks",
+    title: "Tasks",
+    context: () => ({
+      view: {
+        filters: { search },
+        shown: filtered.length,
+        failingTasks: graphs.filter((graph) => graph.last_run?.state === "failed").length,
+      },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
+        execute: () => graphsQuery.refetch({ throwOnError: true }),
+      }),
+      defineNevaCapability({
+        name: "surface.set_filter", risk: "safe",
+        argsSchema: z.object({ filter: z.enum(["search"]), value: z.string().max(120) }),
+        execute: ({ value }) => {
+          setSearch(value);
+          setPage(1);
+        },
+      }),
+      defineNevaCapability({
+        name: "surface.select", risk: "safe", mayChangeSurface: true,
+        argsSchema: z.object({ id: z.string().min(1).max(200) }),
+        execute: ({ id }) => {
+          if (!graphs.some((graph) => graph.graph_id === id))
+            throw new Error("Task is not in the current list");
+          return navigate({ to: "/tasks/$graphId", params: { graphId: id } });
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: "Why did a task fail", prompt: "Which tasks failed recently, and why?" },
+      { label: "Schedule a task", prompt: "How do I schedule a SQL task to run every night?" },
+    ],
+  });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);

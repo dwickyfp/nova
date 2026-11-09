@@ -53,6 +53,17 @@ Nova is single-tenant per deployment, so records carry no tenant id.
   keeps no second role store.
 - **Data.** Seeing a concept never grants data access. Bindings are listed only
   for Semantic Views the caller can already see.
+- **Unreleased work.** The `working` scope shows a concept only to a steward
+  of its domain (or an ancestor) and to `ACCOUNTADMIN`. Anyone else gets an
+  empty list, and a 404 by id, as if the concept did not exist.
+- **History.** A non-steward sees only revisions that a published release
+  pinned, without `changed_by` or `proposal_id`. Stewards see every revision.
+- **Classification and models.** A definition goes into a model prompt only
+  if its classification allows it: `INTERNAL` and `CONFIDENTIAL` for any
+  reader, `RESTRICTED` only for a steward of its domain, `HIGHLY_SENSITIVE`
+  never. The resolver applies this unless the caller is the ontology page
+  (`for_model=False`), and `ontology_explain` refuses such a concept exactly
+  like a missing one. Its related concepts are filtered the same way.
 - **Audit.** Every governed action, and every refusal of one, is written to
   `AUDIT_LOG` with `event_type=ONTOLOGY`.
 
@@ -542,7 +553,15 @@ The ontology release used is chosen in this order:
 - `ontology_explain` returns one concept's definition, its bindings and its
   related concepts.
 
-Both are read-only, need consent, and are bundled per agent. Bindings are
+- `ontology_status` returns the release in use and the caller's own
+  proposals with their review status.
+- `knowledge_propose` files a proposal and `knowledge_withdraw` withdraws the
+  caller's own pending one. Both ask for approval every time; a read-only
+  grant never covers them.
+
+The reads need consent once (a read-only grant covers them). Studio bundles
+the tools per agent; Neva always has all five and grounds a business word in
+this order: glossary, Semantic View, verified query, new SQL. Bindings are
 limited to the agent's Semantic Views and to views the caller can see.
 `GET /ontology/resolve?q=` exposes resolution over HTTP.
 

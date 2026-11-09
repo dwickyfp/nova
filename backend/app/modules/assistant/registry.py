@@ -130,4 +130,17 @@ def build_neva_registry() -> ToolRegistry:
 
     registry.register(semantic_query_tool)
     registry.register(list_semantic_views_tool)
+    # The business glossary: what a term officially means, the release in use,
+    # and proposals the person files or withdraws (each with consent).
+    from app.modules.agents.tools.ontology import (
+        knowledge_propose_tool,
+        knowledge_withdraw_tool,
+        ontology_explain_tool,
+        ontology_resolve_tool,
+        ontology_status_tool,
+    )
+
+    for tool in (ontology_resolve_tool, ontology_explain_tool, ontology_status_tool,
+                 knowledge_propose_tool, knowledge_withdraw_tool):
+        registry.register(tool)
     return registry

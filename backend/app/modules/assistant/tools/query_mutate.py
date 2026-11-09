@@ -132,8 +132,71 @@ class QueryMutateTool:
                 ),
                 error_class="SQL_WRITE_FAILED",
             )
-        return ToolOutcome(ok=True, summary="\n".join(_render_result(r) for r in results),
-                           data={"statements_completed": completed, "atomic": False})
+        readback = await _read_back(statements_of(sql), context, security, user)
+        lines = [_render_result(r) for r in results]
+        lines += [_readback_line(item) for item in readback]
+        return ToolOutcome(ok=True, summary="\n".join(lines),
+                           data={"statements_completed": completed, "atomic": False,
+                                 "readback": readback})
+
+
+_OBJECT = re.compile(
+    r"^\s*(CREATE|ALTER|DROP)\s+(?:OR\s+REPLACE\s+)?(?:EXTERNAL\s+|TEMPORARY\s+)?"
+    r"(TABLE|VIEW|MATERIALIZED\s+VIEW)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"
+    r"((?:`[^`]+`|[A-Za-z_][\w$]*)(?:\.(?:`[^`]+`|[A-Za-z_][\w$]*)){0,2})",
+    re.IGNORECASE,
+)
+#: At most this many changed objects are read back after one approval.
+READBACK_LIMIT = 4
+
+
+def statements_of(sql: str) -> list[str]:
+    return split_sql_statements(sql)
+
+
+async def _read_back(
+    statements: list[str], context: Any, security: SecurityContext, user: dict
+) -> list[dict[str, Any]]:
+    """Look at each created, altered or dropped table or view as the caller.
+
+    A write is reported as done only for what the active role can now see:
+    a created object answers DESC, a dropped one no longer does.
+    """
+    from app.modules.query.service import query_service
+
+    checked: list[dict[str, Any]] = []
+    for statement in statements:
+        match = _OBJECT.match(statement)
+        if match is None or len(checked) >= READBACK_LIMIT:
+            continue
+        action, kind, name = match.group(1).upper(), " ".join(match.group(2).upper().split()), \
+            match.group(3)
+        try:
+            result = await query_service.execute(
+                sql=f"DESC {name}", username=security.principal,
+                encrypted_password=user["encrypted_password"], role=security.active_role,
+                database=context.database, schema=context.schema_name, max_rows=200,
+            )
+            visible, columns = not result.error, (result.row_count or 0)
+        except Exception:  # noqa: BLE001 - an unreadable object is reported as unknown
+            visible, columns = None, 0
+        checked.append({
+            "object": name, "kind": kind.lower(), "action": action.lower(),
+            "visible": visible, "columns": columns if visible else 0,
+            "confirmed": visible is (action != "DROP"),
+        })
+    return checked
+
+
+def _readback_line(item: dict[str, Any]) -> str:
+    name = f"{item['kind']} {item['object']}"
+    if item["visible"] is None:
+        return f"Could not look at {name} afterwards; say it was not confirmed."
+    if item["action"] == "drop":
+        return (f"Checked: {name} is gone." if item["confirmed"]
+                else f"Checked: {name} still exists for this role.")
+    return (f"Checked: {name} exists with {item['columns']} column(s)." if item["confirmed"]
+            else f"Checked: {name} is not visible to this role afterwards.")
 
 
 query_mutate_tool = QueryMutateTool()

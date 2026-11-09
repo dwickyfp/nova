@@ -113,8 +113,13 @@ class ConceptResolver:
         purpose: str = "general",
         snapshot: Snapshot | None = None,
         scope_views: Collection[str] | None = None,
+        for_model: bool = True,
     ) -> Resolution:
         """Resolve the business terms in ``text`` for ``user``.
+
+        A resolution goes into a model prompt unless ``for_model`` is False
+        (the ontology pages, read by a person): then a concept whose
+        classification keeps it from models is left out, as if absent.
 
         ``scope_views`` are the Semantic Views the asking agent (or open
         dashboard) works with. Their bound concepts name its business domains;
@@ -139,6 +144,10 @@ class ConceptResolver:
             if concept.status == "APPROVED"
             and (kinds is None or concept.kind in kinds)
             and in_scope(concept.domain_id)
+            and (not for_model or access.model_may_see(
+                concept.classification, snapshot.domains.get(concept.domain_id),
+                snapshot.domains, user,
+            ))
         }
         views = {
             concept_id: self.service.concept_view(concept, snapshot.domains)

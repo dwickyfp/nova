@@ -148,10 +148,7 @@ class OntologyExplainTool:
                 item for item in bindings["representations"]
                 if views is None or item["semantic"]["view_id"] in views
             ],
-            "related": (
-                {"concepts": related["concepts"], "relations": related["relations"]}
-                if related else None
-            ),
+            "related": await _model_related(related, concept["id"], context.user),
         }
         from fastapi.encoders import jsonable_encoder
 
@@ -161,6 +158,30 @@ class OntologyExplainTool:
             data=jsonable_encoder(result),
             evidence={"source": "business_ontology", "release_id": detail["release_id"]},
         )
+
+
+async def _model_related(related: dict | None, root: str, user: dict) -> dict | None:
+    """Related concepts a model may read; relations to the rest are dropped."""
+    if not related:
+        return None
+    from app.modules.ontology import access
+    from app.modules.ontology.service import ontology_service
+
+    snapshot = await ontology_service.snapshot("current", release_id=related.get("release_id"))
+    allowed = {root} | {
+        item["id"] for item in related["concepts"]
+        if access.model_may_see(
+            item["classification"], snapshot.domains.get(item["domain_id"]),
+            snapshot.domains, user,
+        )
+    }
+    return {
+        "concepts": [item for item in related["concepts"] if item["id"] in allowed],
+        "relations": [
+            edge for edge in related["relations"]
+            if edge["source_id"] in allowed and edge["target_id"] in allowed
+        ],
+    }
 
 
 ontology_resolve_tool = OntologyResolveTool()
@@ -194,7 +215,7 @@ class KnowledgeProposeTool:
         "Suggest a change to the organisation's business definitions when the user corrects or "
         "teaches a term: add other names (aliases), revise a definition, or propose a new "
         "concept. It only files a proposal: a domain steward must approve it and a release must "
-        "be published before Studio uses it. Never claim the definition has changed."
+        "be published before assistants use it. Never claim the definition has changed."
     )
     parameters = ProposeRequest.model_json_schema()
     #: It files a reviewable proposal; approved meaning never changes here.
@@ -214,7 +235,7 @@ class KnowledgeProposeTool:
             proposal = await stewardship_service.create(
                 ProposalCreate(
                     title=title,
-                    rationale=f"Suggested in Studio: {body.rationale}",
+                    rationale=f"Suggested in a conversation: {body.rationale}",
                     changes=changes,
                     operation_id=fingerprint(
                         [getattr(context, "run_id", None), invocation.tool_call_id]
@@ -264,7 +285,13 @@ async def _proposed_changes(body: ProposeRequest, user: dict):
     if not body.concept:
         raise ValueError("Name the concept to change")
     snapshot = await ontology_service.snapshot("working")
-    visible = ontology_service.visible_concepts(snapshot, user)
+    # A non-steward can only name what was released; unreleased work stays
+    # unseen, and is refused like a missing concept.
+    visible = ontology_service.visible_in(snapshot, "working", user)
+    released = await ontology_service.snapshot("current")
+    for concept_id in ontology_service.visible_concepts(released, user):
+        if concept_id not in visible and concept_id in snapshot.concepts:
+            visible[concept_id] = snapshot.concepts[concept_id]
     wanted = body.concept.strip().casefold()
     current = visible.get(body.concept) or next(
         (
@@ -300,3 +327,101 @@ async def _proposed_changes(body: ProposeRequest, user: dict):
 
 
 knowledge_propose_tool = KnowledgeProposeTool()
+
+
+class StatusRequest(Contract):
+    limit: int = Field(default=10, ge=1, le=25)
+
+
+class OntologyStatusTool:
+    name = "ontology_status"
+    description = (
+        "Which business-definition release is in use (when it was published and its note) "
+        "and the definition proposals the user filed, with their review status. Use it when "
+        "the user asks whether a suggestion was approved or what changed in the definitions."
+    )
+    parameters = StatusRequest.model_json_schema()
+    classification: ToolClassification = "read_only"
+    requires_consent = True
+
+    def preview(self, invocation):
+        return "Check the business-definition release and your proposals"
+
+    async def run(self, invocation, context):
+        from app.modules.ontology.contracts import Actor
+        from app.modules.ontology.releases import release_service
+        from app.modules.ontology.stewardship import stewardship_service
+
+        try:
+            body = StatusRequest.model_validate(invocation.arguments)
+            alias = await release_service.alias()
+            release = await release_service.get(alias.release_id) if alias else None
+            me = Actor.from_user(context.user).principal
+            mine = [
+                item for item in await stewardship_service.list(context.user)
+                if item.submitter == me
+            ][: body.limit]
+        except (HTTPException, ValueError, ValidationError) as exc:
+            return _failure(exc)
+        data = {
+            "release": {
+                "id": release.id,
+                "sequence": release.sequence,
+                "published_at": release.published_at,
+                "note": release.note,
+            } if release else None,
+            "my_proposals": [
+                {"id": item.id, "title": item.title, "status": item.status,
+                 "created_at": item.created_at}
+                for item in mine
+            ],
+        }
+        from fastapi.encoders import jsonable_encoder
+
+        summary = (
+            "No business definitions have been published yet."
+            if release is None
+            else f"Release {release.sequence} is in use; you filed {len(mine)} proposal(s)."
+        )
+        return ToolOutcome(
+            ok=True, summary=summary, data=jsonable_encoder(data),
+            evidence={"source": "business_ontology",
+                      "release_id": release.id if release else None},
+        )
+
+
+class WithdrawRequest(Contract):
+    proposal_id: str = Field(min_length=1, max_length=64)
+
+
+class KnowledgeWithdrawTool:
+    name = "knowledge_withdraw"
+    description = (
+        "Withdraw a business-definition proposal the user filed and that is still waiting "
+        "for review. Only the person who filed it can withdraw it."
+    )
+    parameters = WithdrawRequest.model_json_schema()
+    classification: ToolClassification = "session_change"
+    requires_consent = True
+
+    def preview(self, invocation):
+        return "Withdraw your business-definition proposal"
+
+    async def run(self, invocation, context):
+        from app.modules.ontology.stewardship import stewardship_service
+
+        try:
+            body = WithdrawRequest.model_validate(invocation.arguments)
+            proposal = await stewardship_service.withdraw(body.proposal_id, context.user)
+        except (HTTPException, ValueError, ValidationError) as exc:
+            return _failure(exc)
+        return ToolOutcome(
+            ok=True,
+            summary=f"The proposal \"{proposal.title}\" is withdrawn; nothing was changed.",
+            data={"proposal_id": proposal.id, "status": proposal.status},
+            evidence={"source": "ontology_proposal", "proposal_id": proposal.id},
+        )
+
+
+ontology_status_tool = OntologyStatusTool()
+knowledge_withdraw_tool = KnowledgeWithdrawTool()

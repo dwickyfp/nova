@@ -221,25 +221,29 @@ another request.
 
 ## Phase 4: ontology
 
-- [ ] 4.1 Fix: `scope=working` readable by stewards only.
-- [ ] 4.2 Fix: unreleased revision history hidden from non-stewards.
-- [ ] 4.3 Fix: concept `classification` limits what reaches a model prompt.
-- [ ] 4.4 Ranger and patched-FE acceptance for 4.1–4.3.
-- [ ] 4.5 Tools: resolve, explain, search, trace metric, related, release info,
+- [x] 4.1 Fix: `scope=working` readable by stewards only (others: empty, 404 by id).
+- [x] 4.2 Fix: unreleased revision history hidden from non-stewards, without authors.
+- [x] 4.3 Fix: concept `classification` limits what reaches a model prompt.
+- [x] 4.4 Acceptance on the dev engine's real ontology (5 roles, read-only) and
+      `test_business_ontology_metadata.py` on the engine (6 passed, 1 skipped by
+      design). These checks are Nova metadata gated by the active role; the
+      Ranger evidence suite creates Ranger users and was not run without approval.
+- [x] 4.5 Tools: resolve, explain, search, trace metric, related, release info,
       my proposals (read); propose, withdraw (write, consent every time).
-- [ ] 4.6 Grounding order: ontology → semantic view → verified query → ad-hoc
+- [x] 4.6 Grounding order: ontology → semantic view → verified query → ad-hoc
       SQL; ask when a term is ambiguous.
-- [ ] 4.7 Trajectories: grounding order, consent on propose, "proposed" never
+- [x] 4.7 Trajectories: grounding order, consent on propose, "proposed" never
       "changed", hidden domain refused like a missing one.
 
 ## Phase 5: smarter answers
 
-- [ ] 5.1 Drafted SQL verified as the caller (objects resolve, EXPLAIN passes)
+- [x] 5.1 Drafted SQL verified as the caller (objects resolve, EXPLAIN passes)
       and repaired in the loop before it is offered.
-- [ ] 5.2 Written objects read back after a change.
-- [ ] 5.3 Source label in every answer; "Trusted" only for governed sources.
-- [ ] 5.4 Surfaces added for Database Explorer, Tasks, Monitoring pages, Access
-      Control, Business Ontology, Agents, Users.
+- [x] 5.2 Written objects read back after a change.
+- [x] 5.3 Source label in every answer; "Trusted" only for governed sources.
+- [~] 5.4 Surfaces added: Users, Database Explorer (selected object), Tasks and
+      Business Ontology (open tab), next to Workspace, Roles and Query history.
+      Access Control and Agents remain.
 - [ ] 5.5 Ambiguous or unanswerable questions get a clarifying question or
       answerable alternatives instead of a guess.
 - [~] 5.6 Knowledge search finds guides from plain questions ("how do I create
@@ -270,3 +274,4 @@ another request.
 | 2026-11-09 | 2b | Re-measured after the fixes: solved 0.21 → 0.67, correct 0.50 → 0.95, empty 0, leaks 0, wrong-and-confident 4 | `phase-2b-checkpoint.md` |
 | 2026-11-09 | 2.3, 2.5–2.8 | Automatic budget, attachments, role-stamped grant in Redis, per-role memory, readable fallback text | tests listed in phase 2 |
 | 2026-11-09 | 3 | Intelligence UI in the panel: shared UI checks, Neva UI routes and actions, blocks and rail in the panel, history search/rename/delete, titles; first step 17 s → 3 s | tests in `test_neva_ui_routes.py`, panel tests |
+| 2026-11-10 | 5.4 (Workspace) | Page work in SQL Workspace: Neva writes, edits and optimizes the open SQL and puts it in the editor as a reviewed diff, then explains the change. Found while testing live: the provider gateway read only the first system message, so the page context, turn plan and loop corrections never reached the model (Neva said "I can't see your editor"). All system instructions now go as one message. Live: explain, optimize and edit-per-city all worked; the edited SQL ran and returned rows per city | `test_provider_request_options.py`, `test_neva_editor_proposal.py`, page-work trajectories in `test_neva_lookups_and_views.py` |

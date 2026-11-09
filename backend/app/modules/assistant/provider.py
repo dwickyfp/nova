@@ -113,6 +113,35 @@ def normalize_tool_schema_for_provider(schema: dict[str, Any]) -> tuple[dict[str
     return normalized, compatible
 
 
+def _system_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(part.get("text", "")) for part in content if isinstance(part, dict)
+        )
+    return str(content or "")
+
+
+def _one_system_message(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Send every system instruction as one leading system message.
+
+    Some OpenAI-compatible gateways keep only the first system message and drop
+    the rest without an error, including the page context, the turn plan and
+    the loop's later corrections. One leading message, in the original order,
+    is read the same way by every provider.
+    """
+    texts = [
+        _system_text(message.get("content"))
+        for message in messages
+        if message.get("role") == "system"
+    ]
+    if len(texts) <= 1 and (not messages or messages[0].get("role") == "system" or not texts):
+        return messages
+    rest = [message for message in messages if message.get("role") != "system"]
+    return [{"role": "system", "content": "\n\n".join(text for text in texts if text)}, *rest]
+
+
 class AssistantProviderError(NovaException):
     """The provider could not be reached or refused the request.
 
@@ -301,7 +330,9 @@ class AssistantProviderClient:
         tool_choice: str | dict[str, Any] | None = None,
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {"model": config.model, "messages": messages}
+        first = messages[0] if messages else {}
+        system = first.get("content") if first.get("role") == "system" else None
+        body: dict[str, Any] = {"model": config.model, "messages": _one_system_message(messages)}
         if tools and config.capabilities.supports_tools:
             prepared_tools: list[dict[str, Any]] = []
             for tool in tools:
@@ -321,8 +352,6 @@ class AssistantProviderClient:
                 body["parallel_tool_calls"] = False
         if response_format is not None and config.capabilities.supports_json_schema:
             body["response_format"] = response_format
-        first = messages[0] if messages else {}
-        system = first.get("content") if first.get("role") == "system" else None
         if config.capabilities.supports_prompt_cache_key and isinstance(system, str):
             # The platform and agent prompt is the stable prefix of every call.
             body["prompt_cache_key"] = "nova-" + hashlib.sha256(system.encode()).hexdigest()[:32]

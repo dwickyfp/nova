@@ -23,12 +23,38 @@ const STATUS_LABEL: Record<ToolCallStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/** What each step is called for the person; internal names never show. */
 const TOOL_LABEL: Record<string, string> = {
   query_execute: "Run query",
   semantic_query: "Query data",
+  list_semantic_views: "List business views",
   search_knowledge: "Check guidance",
+  load_skill: "Read a guide",
+  catalog_search: "Look up the data catalog",
+  validate_sql: "Check the SQL",
+  inspect_query_error: "Read the query error",
+  verify_query_repair: "Check the fixed query",
+  inspect_agent_configuration: "Read agent settings",
   call_ui_operation: "Apply action",
-  invoke_client_capability: "Update view",
+  invoke_client_capability: "Update this page",
+  data_to_chart: "Draw a chart",
+  query_mutate: "Change data",
+  compute_metrics: "Calculate",
+  ml_execute: "Run a model",
+  ai_search: "Search records",
+  semantic_view_query: "Query a business view",
+  feature_lookup: "Look up features",
+  inspect_role_access: "Check role access",
+  grant_role_access: "Grant role access",
+  provision_user: "Create a user",
+  create_semantic_view: "Create a business view",
+  create_agent: "Create an agent",
+  web_search: "Search the web",
+  ontology_resolve: "Look up business terms",
+  ontology_explain: "Explain a business term",
+  knowledge_propose: "Suggest a definition change",
+  ontology_status: "Check definition updates",
+  knowledge_withdraw: "Withdraw a definition suggestion",
 };
 
 export type ToolCallDecision = {
@@ -70,7 +96,7 @@ export function ToolCallCard({
     toolCall.status === "pending" && Boolean(onDecide && toolCallId);
   const detailsVisible = toolCall.status === "pending" || showDetails;
   const title =
-    TOOL_LABEL[toolCall.tool_name] ?? toolCall.tool_name.replace(/_/g, " ");
+    TOOL_LABEL[toolCall.tool_name] ?? "Work step";
 
   const decide = (decision: "approve" | "deny") => {
     if (!toolCallId) return;
@@ -172,9 +198,6 @@ export function ToolCallCard({
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
             {toolCall.sql_preview}
           </pre>
-          {!isDecidable ? (
-            <p className="font-mono text-[11px]">{toolCall.tool_name}</p>
-          ) : null}
         </div>
       ) : null}
 

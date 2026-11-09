@@ -13,6 +13,7 @@ import type {
   ToolCallView,
   TurnState,
 } from "./types";
+import { answerSource, type AnswerSource } from "./types";
 
 /** One observed agentic step, kept so the block renders the whole trace. */
 export type ActivityStep = {
@@ -54,6 +55,8 @@ export type TranscriptMessage = AssistantMessage & {
   blocks?: TranscriptBlock[];
   /** Follow-up questions offered after the answer. */
   suggestions?: string[];
+  /** Where the answer came from, shown as a quiet label under it. */
+  source?: AnswerSource;
 };
 
 /** A structured content block attached to an assistant message. */
@@ -82,7 +85,9 @@ export function restoredMessage(message: {
   attachments?: { name: string }[];
 }): TranscriptMessage {
   const blocks: TranscriptBlock[] = [];
+  let source: AnswerSource | undefined;
   for (const step of message.role === "assistant" ? message.steps ?? [] : []) {
+    if (step.kind === "answer") source = answerSource(step.source) ?? source;
     if (step.kind === "table" && Array.isArray(step.columns)) {
       blocks.push({ kind: "table", block: {
         tool_call_id: step.tool_call_id as string | undefined,
@@ -116,6 +121,7 @@ export function restoredMessage(message: {
     created_at: message.created_at,
     turn_state: "done",
     ...(blocks.length ? { blocks } : {}),
+    ...(source ? { source } : {}),
     ...(message.role === "user" && message.attachments?.length
       ? { file_names: message.attachments.map((item) => item.name) }
       : {}),
@@ -426,6 +432,7 @@ function applyEvent(
             ...message,
             message_id: event.message_id,
             turn_state: "done",
+            ...(event.source ? { source: event.source } : {}),
           };
         }
         return settleActivity(message);

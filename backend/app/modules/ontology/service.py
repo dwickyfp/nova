@@ -261,7 +261,7 @@ class OntologyService:
         snapshot = await self.snapshot(scope)
         needle = " ".join((query or "").split()).casefold()
         concepts = []
-        for concept in self.visible_concepts(snapshot, user).values():
+        for concept in self.visible_in(snapshot, scope, user).values():
             if domain_id is not None and concept.domain_id != domain_id:
                 continue
             if concept.status != "APPROVED" and not include_deprecated:
@@ -281,9 +281,20 @@ class OntologyService:
     async def find(
         self, reference: str, user: dict, *, release_id: str | None = None
     ) -> dict:
-        """A visible concept by id or qualified name (case-insensitive)."""
+        """A released concept by id or qualified name, as a model may read it.
+
+        Only the agent tools call this, so a concept whose classification keeps
+        it out of model prompts is refused exactly like a missing one.
+        """
         snapshot = await self.snapshot("current", release_id=release_id)
-        visible = self.visible_concepts(snapshot, user)
+        visible = {
+            concept_id: concept
+            for concept_id, concept in self.visible_concepts(snapshot, user).items()
+            if access.model_may_see(
+                concept.classification, snapshot.domains.get(concept.domain_id),
+                snapshot.domains, user,
+            )
+        }
         if reference in visible:
             return self.concept_view(visible[reference], snapshot.domains)
         wanted = reference.strip().casefold()
@@ -293,8 +304,22 @@ class OntologyService:
                 return view
         raise HTTPException(status_code=404, detail=access.NOT_FOUND)
 
-    async def _visible(self, concept_id: str, snapshot: Snapshot, user: dict) -> Concept:
-        concept = self.visible_concepts(snapshot, user).get(concept_id)
+    def visible_in(self, snapshot: Snapshot, scope: Scope, user: dict) -> dict[str, Concept]:
+        """Visible concepts; unreleased work shows only to its domain's stewards,
+        and to anyone else it is as absent as a missing record."""
+        visible = self.visible_concepts(snapshot, user)
+        if scope != "working":
+            return visible
+        return {
+            concept_id: concept
+            for concept_id, concept in visible.items()
+            if access.stewards_path(snapshot.domains.get(concept.domain_id), snapshot.domains, user)
+        }
+
+    async def _visible(
+        self, concept_id: str, snapshot: Snapshot, user: dict, scope: Scope = "current"
+    ) -> Concept:
+        concept = self.visible_in(snapshot, scope, user).get(concept_id)
         if concept is None:
             raise HTTPException(status_code=404, detail=access.NOT_FOUND)
         return concept
@@ -304,8 +329,21 @@ class OntologyService:
         release_id: str | None = None,
     ) -> dict:
         snapshot = await self.snapshot(scope, release_id=release_id)
-        concept = await self._visible(concept_id, snapshot, user)
+        concept = await self._visible(concept_id, snapshot, user, scope)
         history = await self.repository.history("concepts", concept_id, Concept)
+        steward = access.stewards_path(
+            snapshot.domains.get(concept.domain_id), snapshot.domains, user
+        )
+        if not steward:
+            # Others see only what was released, and not who changed it.
+            released = {
+                member.revision
+                for release in await self.releases.list()
+                if release.status == "PUBLISHED"
+                for member in release.members
+                if member.kind == "concept" and member.id == concept_id
+            }
+            history = [item for item in history if item.revision in released]
         return {
             **self._scope_info(snapshot, scope),
             "concept": self.concept_view(concept, snapshot.domains),
@@ -314,8 +352,10 @@ class OntologyService:
                     "revision": item.revision,
                     "status": item.status,
                     "label": item.label,
-                    "proposal_id": item.proposal_id,
-                    "changed_by": item.actor.principal,
+                    **({
+                        "proposal_id": item.proposal_id,
+                        "changed_by": item.actor.principal,
+                    } if steward else {}),
                     "updated_at": item.updated_at,
                 }
                 for item in history
@@ -327,8 +367,8 @@ class OntologyService:
         release_id: str | None = None,
     ) -> dict:
         snapshot = await self.snapshot(scope, release_id=release_id)
-        await self._visible(concept_id, snapshot, user)
-        visible = self.visible_concepts(snapshot, user)
+        await self._visible(concept_id, snapshot, user, scope)
+        visible = self.visible_in(snapshot, scope, user)
         reached, edges = neighbourhood(
             concept_id, snapshot.relations,
             {item.id for item in visible.values() if item.status == "APPROVED"},
@@ -355,7 +395,7 @@ class OntologyService:
         release_id: str | None = None,
     ) -> dict:
         snapshot = await self.snapshot(scope, release_id=release_id)
-        await self._visible(concept_id, snapshot, user)
+        await self._visible(concept_id, snapshot, user, scope)
         bindings = []
         for item in snapshot.representations:
             if item.concept_id != concept_id:

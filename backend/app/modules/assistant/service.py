@@ -86,6 +86,10 @@ from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.security import secured_thread, session_security
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry, requires_consent
+from app.modules.assistant.tools.client_capability import (
+    EXPLAINED as EXPLAINED_CLIENT_ACTIONS,
+)
+from app.modules.assistant.tools.client_capability import SENT_PLAINLY
 from app.modules.assistant.workflow_provenance import workflow_provenance
 
 logger = logging.getLogger(__name__)
@@ -617,7 +621,8 @@ class AssistantLoop:
                             "priority; otherwise current selection and entity take priority "
                             "over older conversation context. An action request is "
                             "not proof of completion; wait for a matching outcome event.\n"
-                            + json.dumps(app_data, ensure_ascii=False, separators=(",", ":"))
+                            + _tag_safe(json.dumps(app_data, ensure_ascii=False,
+                                                   separators=(",", ":")))
                             + "\n</NOVA_APPLICATION_CONTEXT>"
                         ),
                     },
@@ -917,7 +922,7 @@ class AssistantLoop:
         guard_reason = ""
         analysis_noted = False
         forced_semantic = False
-        forced_lookups = False
+        forced_lookups = 0
         #: The governed data tool ran this turn, whatever its result.
         governed_attempted = False
         #: Read-only calls started ahead of their turn: call id -> (task, context copy).
@@ -969,15 +974,15 @@ class AssistantLoop:
                     sql_preview=fast_tool.preview(invocation),
                     classification="read_only",
                     status="done",
-                    result_summary=outcome.summary,
+                    result_summary=SENT_PLAINLY,
                 ))
                 yield events.client_action(outcome.metadata["client_action"])
                 _record_step(context, {
                     "kind": "tool", "name": invocation.tool_name,
                     "tool_call_id": invocation.tool_call_id,
-                    "status": "done", "result_summary": outcome.summary,
+                    "status": "done", "result_summary": SENT_PLAINLY,
                 })
-                yield events.text_delta(outcome.summary)
+                yield events.text_delta(SENT_PLAINLY)
                 yield events.done(str(uuid4()), finish_reason="client_action_pending")
                 return
 
@@ -1145,6 +1150,11 @@ class AssistantLoop:
             selected_tools = tuple(dict.fromkeys((
                 *selected_tools,
                 *(name for name in _NEVA_LOOKUPS if self._registry.get(name) is not None),
+                # The page's own actions (put SQL in the editor, open a tab)
+                # stay in reach whenever the page offers any.
+                *(("invoke_client_capability",)
+                  if context.app_context is not None and context.app_context.capabilities
+                  and self._registry.get("invoke_client_capability") is not None else ()),
             )))
             context.selected_tools = list(selected_tools)
         if context.capability_aliases:
@@ -1724,19 +1734,24 @@ class AssistantLoop:
                             },
                         })
                         continue
-                    if context.agent_scope is None and not forced_lookups:
+                    if context.agent_scope is None and forced_lookups < 2:
                         # Neva runs the checks the model skipped itself: the
                         # guide for the question, the editor's current error,
-                        # and the SQL its draft proposes. A draft with no SQL
-                        # has nothing to check. Then the model answers again
-                        # from that evidence.
-                        forced_lookups = True
+                        # and the SQL its draft proposes; once that SQL passed
+                        # its check, it goes into the editor as a change the
+                        # person reviews. A draft with no SQL has nothing to
+                        # check. Then the model answers again from that evidence.
+                        forced_lookups += 1
                         calls, nothing_to_check = _neva_check_calls(
                             missing_required, draft_text,
                             context.user_question or user_content, self._registry,
+                            app=context.app_context,
                         )
                         completed_capabilities.update(nothing_to_check)
                         if calls:
+                            # Neva's own checks are steps, not a composer's
+                            # stray tool call: the answer is written after them.
+                            composing_final = False
                             deferred_calls.extend(calls)
                             continue
                         if not [name for name in missing_required
@@ -2024,13 +2039,16 @@ class AssistantLoop:
                 follow_ups = _follow_up_suggestions(context, user_content)
                 if follow_ups:
                     yield events.suggestions(follow_ups)
-                _record_step(context, {"kind": "answer"})
+                source = answer_source(evidence.items)
+                _record_step(context, {"kind": "answer", **({"source": source} if source else {})})
                 if context.steps is not None:
                     context.steps.append(
                         state_step(ActiveConversationState.from_dict(context.active_state))
                     )
                 _transition(context, TurnState.DONE)
-                yield events.done(str(uuid4()), finish_reason="stop", usage=context.usage)
+                yield events.done(
+                    str(uuid4()), finish_reason="stop", usage=context.usage, source=source
+                )
                 return
 
             # A tool call follows, so any text so far is intermediate narration.
@@ -2656,11 +2674,15 @@ class AssistantLoop:
                 invocation.tool_name == "invoke_client_capability"
                 and isinstance(client_action, dict)
             ):
-                _finish_tool_step(context, "done", None)
                 yield events.client_action(client_action)
-                yield events.text_delta(outcome.summary)
-                yield events.done(str(uuid4()), finish_reason="client_action_pending")
-                return
+                if client_action.get("capability") not in EXPLAINED_CLIENT_ACTIONS:
+                    _finish_tool_step(context, "done", None)
+                    yield events.text_delta(outcome.summary)
+                    yield events.done(str(uuid4()), finish_reason="client_action_pending")
+                    return
+                # A suggested edit runs nothing: Neva goes on to say, in the
+                # person's words, what it changed and why.
+                composing_final = True
             if outcome.metadata.get("security_context_changed"):
                 security = session_security(context.user or {})
                 thread = secured_thread(thread, security)
@@ -3584,15 +3606,21 @@ _SQL_BLOCK = re.compile(r"```sql\s*\n(.*?)```", re.IGNORECASE | re.DOTALL)
 
 
 def _neva_check_calls(
-    missing: list[str], draft: str, question: str, registry: ToolRegistry
+    missing: list[str], draft: str, question: str, registry: ToolRegistry,
+    *, app: Any = None,
 ) -> tuple[list[dict[str, Any]], set[str]]:
-    """Calls for the read-only checks Neva's model skipped, and checks with no input.
+    """Calls for the checks Neva's model skipped, and checks with nothing to do.
 
-    Only checks that read nothing private and need no approval are run this
-    way; anything else stays required and unmet.
+    Only read-only checks and a page proposal the person must accept are run
+    this way; anything else stays required and unmet.
     """
     calls: list[dict[str, Any]] = []
     nothing_to_check: set[str] = set()
+    blocks = [block.strip() for block in _SQL_BLOCK.findall(draft) if block.strip()]
+    editor = getattr(app, "editor", None)
+    on_screen = bool(editor and (editor.selected_text or editor.text)
+                     and editor.text != "***" and editor.selected_text != "***")
+    capabilities = set(getattr(app, "capabilities", None) or ())
 
     def call(name: str, arguments: dict[str, Any]) -> None:
         calls.append({
@@ -3601,6 +3629,9 @@ def _neva_check_calls(
             "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)},
         })
 
+    if not blocks and draft.strip().endswith("?"):
+        # The model asks the person something instead: that is the answer.
+        return [], set(missing)
     for name in missing:
         if registry.get(name) is None:
             continue
@@ -3608,12 +3639,26 @@ def _neva_check_calls(
             call(name, {"query": question[:500]})
         elif name == "inspect_query_error":
             call(name, {})
+        elif name == "catalog_search" and on_screen:
+            # The SQL being changed is on the person's screen; its names are known.
+            nothing_to_check.add(name)
         elif name == "validate_sql":
-            blocks = [block.strip() for block in _SQL_BLOCK.findall(draft) if block.strip()]
             if blocks:
                 call(name, {"sql": blocks[0]})
             else:
                 nothing_to_check.add(name)
+        elif (
+            name == "invoke_client_capability"
+            and blocks
+            and "editor.propose_sql" in capabilities
+            and "validate_sql" not in missing
+        ):
+            # Checked SQL becomes a suggested change; with SQL already in the
+            # editor it is added below, never written over.
+            call(name, {
+                "capability": "editor.propose_sql",
+                "args": {"sql": blocks[0], "mode": "insert" if on_screen else "replace"},
+            })
     return calls, nothing_to_check
 
 
@@ -4526,6 +4571,42 @@ def _accumulate_usage(context: Any, message: dict[str, Any]) -> None:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _tag_safe(payload: str) -> str:
+    """JSON that cannot close or open a prompt tag: page text may contain one."""
+    return payload.replace("<", "\\u003c").replace(">", "\\u003e")
+
+
+#: Governed sources, strongest first: their answers are labelled trusted.
+_GOVERNED_SOURCES = (
+    ("semantic_view", frozenset({"semantic_query", "semantic_view_query", "dataviz_query"})),
+    ("glossary", frozenset({"ontology_resolve", "ontology_explain"})),
+)
+
+
+def answer_source(items: tuple[Any, ...] | list[Any]) -> dict[str, Any] | None:
+    """Where this answer's facts came from, from the evidence this turn recorded.
+
+    Only a Semantic View or the released business glossary is "trusted"; a
+    query, the data catalog or Nova's guides are named but not vouched for. An
+    answer with no evidence carries no label.
+    """
+    tools = {item.tool for item in items}
+    for kind, names in _GOVERNED_SOURCES:
+        if tools & names:
+            return {"kind": kind, "trusted": True}
+    data = any(
+        item.tool == "query_execute" and item.metadata.get("evidence_kind") != "catalog"
+        for item in items
+    )
+    if data or tools & {"compute_metrics", "ml_execute", "ai_search", "feature_lookup"}:
+        return {"kind": "query", "trusted": False}
+    if tools & {"catalog_search", "list_semantic_views", "query_execute"}:
+        return {"kind": "catalog", "trusted": False}
+    if tools & {"search_knowledge", "load_skill"}:
+        return {"kind": "guide", "trusted": False}
+    return None
 
 
 def _default_skill_prompt() -> str:

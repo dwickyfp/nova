@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { defineNevaCapability } from "@/features/assistant/surface-registry";
 import {
   Database,
   MoreHorizontal,
@@ -513,6 +516,53 @@ export function Users() {
         .includes(query);
     });
   }, [searchUsers, userAccessFilter, visibleUsersList]);
+
+  useNevaSurface({
+    id: "users.list",
+    route: "/users",
+    title: "Users",
+    context: () => ({
+      view: {
+        filters: { search: searchUsers, access: userAccessFilter },
+        shown: filteredUsers.length,
+        total: visibleUsersList.length,
+      },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
+        execute: () => loadBaseData(false),
+      }),
+      defineNevaCapability({
+        name: "surface.set_filter", risk: "safe",
+        argsSchema: z.object({
+          filter: z.enum(["search", "access"]),
+          value: z.string().max(120),
+        }),
+        execute: ({ filter, value }) => {
+          if (filter === "access") {
+            if (!["", "Protected", "Standard"].includes(value))
+              throw new Error("Unsupported access filter");
+            setUserAccessFilter(value);
+          } else setSearchUsers(value);
+          setUsersPage(1);
+        },
+      }),
+      defineNevaCapability({
+        name: "surface.select", risk: "safe", mayChangeSurface: true,
+        argsSchema: z.object({ id: z.string().min(1).max(160) }),
+        execute: ({ id }) => {
+          if (!visibleUsersList.some((user) => user.username === id))
+            throw new Error("User is not in the current list");
+          return navigate({ to: "/users/$username", params: { username: id } });
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: "Find a user", prompt: "Help me find a user and see their roles." },
+      { label: "Give access", prompt: "How do I give a user access to a database?" },
+    ],
+  });
 
   const usersPageCount = Math.ceil(filteredUsers.length / usersPageSize);
 

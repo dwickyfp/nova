@@ -68,6 +68,39 @@ def stewards(domain: Domain, user: dict) -> bool:
     return domain.status == "ACTIVE" and active_role(user) in domain.steward_roles
 
 
+def stewards_path(domain: Domain | None, domains: dict[str, Domain], user: dict) -> bool:
+    """The active role stewards this domain or one of its ancestors."""
+    if domain is None:
+        return False
+    if is_admin(user):
+        return True
+    path = chain(domain, domains)
+    return path is not None and any(stewards(item, user) for item in path)
+
+
+def stewards_any(domains: dict[str, Domain], user: dict) -> bool:
+    return is_admin(user) or any(stewards(item, user) for item in domains.values())
+
+
+#: Classifications a model may read for anyone, and for stewards only.
+_MODEL_OPEN = frozenset({"INTERNAL", "CONFIDENTIAL"})
+_MODEL_STEWARD = frozenset({"RESTRICTED"})
+
+
+def model_may_see(
+    classification: str, domain: Domain | None, domains: dict[str, Domain], user: dict
+) -> bool:
+    """Whether a concept's definition may go into a model prompt for ``user``.
+
+    HIGHLY_SENSITIVE definitions never reach a model; RESTRICTED ones only for
+    a steward of their domain. People still read them in the ontology pages.
+    """
+    value = str(getattr(classification, "value", classification)).upper()
+    if value in _MODEL_OPEN:
+        return True
+    return value in _MODEL_STEWARD and stewards_path(domain, domains, user)
+
+
 async def audit(
     action: str,
     object_type: str,

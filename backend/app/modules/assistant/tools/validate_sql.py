@@ -1,7 +1,9 @@
-"""Local syntax checks without executing SQL or resolving database objects."""
+"""Syntax checks, plus a planning check of one read statement as the caller."""
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Any
 
 from app.common.sql_guard import redact_sql_credentials, split_sql_statements
@@ -48,9 +50,10 @@ def check_sql(sql: str) -> list[dict[str, Any]]:
 class ValidateSQLTool:
     name = "validate_sql"
     description = (
-        "Check draft SQL against the packaged StarRocks grammar and Nova extension parsers, "
-        "without executing or accessing a database. Supports '<temporary_password>' placeholders. "
-        "Does not verify objects, types, permissions, runtime functions or deployment support."
+        "Check draft SQL against the packaged StarRocks grammar and Nova extension parsers. A "
+        "single SELECT is also planned by the database as the active role (EXPLAIN, nothing "
+        "runs), which checks that its tables and columns exist and may be read. Supports "
+        "'<temporary_password>' placeholders."
     )
     parameters = {
         "type": "object",
@@ -62,7 +65,7 @@ class ValidateSQLTool:
     requires_consent = False
 
     def preview(self, invocation: ToolInvocation) -> str:
-        return "Check SQL syntax without execution"
+        return "Check the SQL without running it"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         sql = invocation.arguments.get("sql")
@@ -72,16 +75,87 @@ class ValidateSQLTool:
             checks = check_sql(sql)
         except Exception:
             return ToolOutcome(ok=False, summary="", error="SQL could not be checked safely.")
+        valid = all(c["valid"] for c in checks)
+        verified, problem = (
+            await _plan_as_caller(sql, context) if valid and len(checks) == 1 else (False, None)
+        )
+        if problem:
+            checks[0]["valid"] = False
+            checks[0]["errors"] = [problem]
         return ToolOutcome(
             ok=True,
-            summary="Syntax checked; runtime behavior has not been verified.",
+            summary=(
+                "The database could not plan this SQL for the active role: " + problem
+                if problem else
+                "Syntax checked and the database planned it for the active role; nothing ran."
+                if verified else
+                "Syntax checked; tables and columns have not been verified."
+            ),
             data={
-                "valid": all(c["valid"] for c in checks),
+                "valid": valid and not problem,
                 "statements": checks,
                 "executed": False,
-                "objects_verified": False,
+                "objects_verified": verified,
             },
         )
+
+
+_READ = re.compile(r"^\s*(?:SELECT|WITH)\b", re.IGNORECASE)
+#: A table function as a source (FILES(...), TABLE(...), ...): planning it can
+#: reach outside storage, so such SQL is never planned without consent.
+_TABLE_FUNCTION = re.compile(
+    r"(?:\bFROM|\bJOIN|,)\s*(?:LATERAL\s+)?[\w.`]+\s*\(|\b(?:FILES|TABLE)\s*\(",
+    re.IGNORECASE,
+)
+#: A planning check is bounded; a slow catalog only means "not verified".
+PLAN_TIMEOUT_SECONDS = 15.0
+
+
+async def _plan_as_caller(sql: str, context: Any) -> tuple[bool, str | None]:
+    """Ask the database to plan one read statement as the caller (EXPLAIN only).
+
+    It checks that the tables and columns exist and that the active role may
+    read them, without running the query or reading a row. Stage references are
+    left out: planning them would resolve storage credentials.
+    """
+    from app.common.sql_guard import strip_sql_comments
+    from app.modules.assistant.tools.query_execute import (
+        _active_role,
+        _context_value,
+        _is_privilege_error,
+        _safe_redact,
+    )
+    from app.modules.query.service import query_service
+
+    statement = strip_sql_comments(sql).strip()
+    user = getattr(context, "user", None) or {}
+    if (
+        not _READ.match(statement)
+        or "@" in statement
+        or _TABLE_FUNCTION.search(statement)
+        or not user.get("username")
+        or not user.get("encrypted_password")
+    ):
+        return False, None
+    try:
+        result = await asyncio.wait_for(
+            query_service.explain(
+                sql=statement,
+                username=user["username"],
+                encrypted_password=user["encrypted_password"],
+                database=_context_value(context, "database"),
+                schema=_context_value(context, "schema_name"),
+                role=_active_role(context),
+            ),
+            timeout=PLAN_TIMEOUT_SECONDS,
+        )
+    except Exception:  # noqa: BLE001 - an unplanned check is "not verified", not a failure
+        return False, None
+    if not result.error:
+        return True, None
+    if _is_privilege_error(result.error):
+        return True, "the active role may not read one of these tables."
+    return True, _safe_redact(result.error)[:300]
 
 
 validate_sql_tool = ValidateSQLTool()

@@ -72,6 +72,42 @@ The model can request `invoke_client_capability` only for a capability advertise
 
 Safe read and navigation actions execute without a consent card. Draft actions may prepare a reviewable state. Reversible, privileged, and destructive actions use the existing consent and authorization paths; the client bus rejects direct execution of those risk classes. A dispatched client action is **pending** until the page publishes a correlated success or failure event. Page refreshes propagate fetch errors so a failed reload cannot be acknowledged as a successful action.
 
+SQL Workspace advertises the draft action `editor.propose_sql` (`sql` up to
+20,000 characters, `mode` `replace` or `insert`) and sends the open
+document's SQL as `editor.text` (bounded; withheld whole when it holds a
+credential), so "this query" means the open file without a selection. When
+the page offers the action, the planner selects the catalog lookup, the SQL
+check and the action; the loop checks the drafted SQL before it proposes it.
+The page shows the SQL as a diff with **Apply**, **Apply & Run** and
+**Cancel**. Because a proposal runs nothing, the turn continues after the
+`client_action` frame and Neva explains the change in the person's language.
+Apply & Run of a proposal asks Neva to review the run only when it fails; a
+repair still asks on every run.
+
+`validate_sql` also asks the database to plan one `SELECT` or `WITH`
+statement as the caller with `EXPLAIN` (15 s bound, nothing runs). That
+checks that tables and columns exist and that the active role may read them.
+A failed plan sends the reason back to the loop, which repairs the draft
+before it is proposed. Statements with `@stage` references, writes and
+several statements are not planned. After an approved write, `query_mutate`
+looks at each created, altered or dropped table or view with `DESC` as the
+caller and reports it done only if the role can see the result.
+
+Every answer built from evidence carries its source in the `done` frame and
+in its stored `answer` step: `semantic_view` or `glossary` (shown as
+**Trusted**), `query`, `catalog` or `guide`. The panel shows it as a quiet
+label under the answer, also after a reload.
+
+Pages with their own context: SQL Workspace, Roles (list and detail),
+Monitoring query history, Users, Database Explorer (the selected object as
+the entity), Tasks and Business Ontology (open tab). Each offers only safe
+actions: refresh, filters, selecting an item, opening a tab.
+
+The provider client sends all system instructions as one leading system
+message, in their original order. Some OpenAI-compatible gateways keep only
+the first system message and silently drop the rest, which removed the page
+context, the turn plan and the loop's corrections from the model's view.
+
 Authenticated client action dispatch is recorded in `NOVA_SYSTEM.AUDIT_LOG` before the SSE action is sent. If that write fails, the action is not dispatched. Only capability and surface names are logged; arguments and page data are excluded.
 
 A capability that intentionally navigates away from its surface declares `mayChangeSurface`; all other actions fail if the page changes while they run. The action's originating surface and correlation ID remain attached to its outcome event.

@@ -80,6 +80,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+#: How Neva grounds business words; Neva only, after the shared SQL primer.
+NEVA_GROUNDING = (
+    "Business terms: when a question uses a business word (revenue, active customer, "
+    "churn), first check its official meaning in the business glossary "
+    "(ontology_resolve). Then answer from a Semantic View the active role can open, then "
+    "from a verified query, and write new SQL only when none of these covers it; say "
+    "which one the answer comes from. When a term has several official meanings, ask "
+    "which one is meant instead of choosing. A glossary suggestion "
+    "(knowledge_propose) is only proposed until a steward approves it and a release is "
+    "published: say proposed, never changed."
+)
+
+
 def _neva_loop(memory: str = "") -> AssistantLoop:
     """The shared engine with Studio's analyst limits for Neva.
 
@@ -97,7 +110,8 @@ def _neva_loop(memory: str = "") -> AssistantLoop:
     return AssistantLoop(
         provider=assistant_provider,
         registry=build_neva_registry(),
-        system_prompt=_default_skill_prompt() + ("\n\n" + memory if memory else ""),
+        system_prompt=_default_skill_prompt() + "\n\n" + NEVA_GROUNDING
+        + ("\n\n" + memory if memory else ""),
         max_iterations=limits.max_iterations,
         time_budget_seconds=float(limits.time_budget_seconds),
         max_calls_per_tool=limits.max_calls_per_tool,

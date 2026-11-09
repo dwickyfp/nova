@@ -48,6 +48,8 @@ TOOL_NAMES = frozenset(
         "ontology_resolve",
         "ontology_explain",
         "knowledge_propose",
+        "ontology_status",
+        "knowledge_withdraw",
     }
 )
 
@@ -168,6 +170,8 @@ _TOOL_WORDS = {
     "ontology_resolve": "the business glossary",
     "ontology_explain": "the business glossary",
     "knowledge_propose": "a glossary proposal",
+    "ontology_status": "the business glossary",
+    "knowledge_withdraw": "a glossary proposal",
 }
 
 _REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (

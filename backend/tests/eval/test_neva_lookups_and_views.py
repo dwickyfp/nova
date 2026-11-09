@@ -296,3 +296,111 @@ async def test_an_sql_turn_keeps_the_loop_s_own_ceiling():
 async def test_scaling_can_never_raise_a_limit():
     tool, _result, _context = await _looping("capability_help", lambda _route: (40, 600.0))
     assert len(tool.runs) == 10
+
+
+# ── Page work: SQL for the person's editor ──────────────────────────────────
+
+
+def _workspace(text="SELECT order_date FROM NOVA_RETAIL_FIELD.sales_orders"):
+    from app.modules.assistant.app_context import NevaAppContext
+
+    return NevaAppContext.model_validate({
+        "version": 1,
+        "surface": {"id": "workspace.sql", "route": "/workspaces"},
+        "capabilities": ["editor.propose_sql"],
+        "editor": {"language": "sql", "text": text},
+    })
+
+
+async def _run_page(tools, script, required, app):
+    registry = ToolRegistry()
+    for tool in tools:
+        registry.register(tool)
+    context = LoopContext(user_name="alice")
+    context.app_context = app
+    frames = [frame async for frame in AssistantLoop(
+        provider=ScriptedProvider(script=script, turn_plan=_plan(required)), registry=registry,
+    ).run(
+        thread=AssistantThread(thread_id="page", user_name="alice", title="Eval"),
+        user_content="Make this query faster and put it in my editor",
+        context=context, resolve_consent=allow,
+    )]
+    return TurnResult(frames=frames)
+
+
+def _page_tools():
+    validate = EvalTool("validate_sql", parameters={
+        "type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"],
+    })
+    propose = EvalTool("invoke_client_capability", parameters={
+        "type": "object",
+        "properties": {"capability": {"type": "string"},
+                       "args": {"type": "object", "additionalProperties": True}},
+        "required": ["capability", "args"],
+    })
+    catalog = EvalTool("catalog_search")
+    return validate, propose, catalog
+
+
+async def test_checked_sql_goes_into_the_editor_as_an_added_suggestion():
+    validate, propose, catalog = _page_tools()
+    draft = "Faster:\n```sql\nSELECT order_date FROM NOVA_RETAIL_FIELD.sales_orders LIMIT 100\n```"
+    await _run_page([validate, propose, catalog], [text_frame(draft)] * 6,
+                    ["catalog_search", "validate_sql", "invoke_client_capability"], _workspace())
+    assert catalog.runs == []  # the SQL being changed is on screen
+    assert [run.arguments["sql"] for run in validate.runs] == [
+        "SELECT order_date FROM NOVA_RETAIL_FIELD.sales_orders LIMIT 100"]
+    assert len(propose.runs) == 1
+    assert propose.runs[0].arguments == {
+        "capability": "editor.propose_sql",
+        "args": {"sql": "SELECT order_date FROM NOVA_RETAIL_FIELD.sales_orders LIMIT 100",
+                 "mode": "insert"},
+    }
+
+
+async def test_a_question_back_is_an_answer_not_a_refusal():
+    validate, propose, catalog = _page_tools()
+    result = await _run_page([validate, propose, catalog],
+                             [text_frame("Which date range should it cover?")] * 4,
+                             ["catalog_search", "validate_sql", "invoke_client_capability"],
+                             _workspace())
+    assert result.finish_reason == "stop"
+    assert propose.runs == [] and validate.runs == []
+    assert "won't guess" not in "".join(result.frames)
+
+
+async def test_a_page_without_the_editor_action_gets_no_proposal():
+    from app.modules.assistant.app_context import NevaAppContext
+
+    validate, propose, catalog = _page_tools()
+    app = NevaAppContext.model_validate({
+        "version": 1, "surface": {"id": "roles.list", "route": "/roles"},
+        "capabilities": ["surface.refresh"],
+    })
+    draft = "```sql\nSELECT 1\n```"
+    await _run_page([validate, propose, catalog], [text_frame(draft)] * 6,
+                    ["validate_sql", "invoke_client_capability"], app)
+    assert propose.runs == []
+
+
+async def test_a_suggested_edit_is_explained_in_the_person_s_words():
+    from app.modules.assistant.tools.client_capability import InvokeClientCapabilityTool
+
+    validate, _propose, catalog = _page_tools()
+    sql = "SELECT order_date FROM NOVA_RETAIL_FIELD.sales_orders LIMIT 100"
+    explanation = "Saya membatasi hasilnya ke 100 baris; tinjau perubahannya di editor."
+    result = await _run_page(
+        [validate, InvokeClientCapabilityTool(), catalog],
+        [tool_call_frame("v1", name="validate_sql", arguments={"sql": sql}),
+         tool_call_frame("p1", name="invoke_client_capability", arguments={
+             "capability": "editor.propose_sql", "args": {"sql": sql, "mode": "insert"}}),
+         text_frame(explanation)],
+        ["validate_sql", "invoke_client_capability"], _workspace(),
+    )
+    events = [frame.split("\n", 1)[0] for frame in result.frames]
+    assert "event: client_action" in events
+    text = "".join(frame for frame in result.frames if frame.startswith("event: text_delta"))
+    assert "membatasi" in text
+    # Neva's own instruction to the model never reaches the person.
+    assert "person's language" not in text and "nothing has run" not in text
+    assert result.finish_reason == "stop"

@@ -18,6 +18,8 @@ export type NevaAppContext = {
     documentId?: string | null;
     language?: string | null;
     selectedText?: string | null;
+    /** The open document's SQL, so "this query" works without a selection. */
+    text?: string | null;
     cursor?: { line?: number; column?: number };
     dirty?: boolean;
   };
@@ -146,6 +148,7 @@ export function boundAppContext(context: NevaAppContext): NevaAppContext {
       documentId: clip(context.editor.documentId, 160),
       language: clip(context.editor.language, 32),
       selectedText: clipSensitiveText(context.editor.selectedText, 2_000),
+      text: clipSensitiveText(context.editor.text, 6_000),
       cursor: context.editor.cursor
         ? {
             line: Number.isSafeInteger(context.editor.cursor.line)
@@ -219,6 +222,11 @@ export function boundAppContext(context: NevaAppContext): NevaAppContext {
         0,
         Math.floor(current.selection.text.length / 2),
       );
+    else if (current.editor?.text)
+      // The whole document goes first: a selection is what the person meant.
+      current.editor.text = current.editor.text.length > 200
+        ? current.editor.text.slice(0, Math.floor(current.editor.text.length / 2))
+        : null;
     else if (current.editor?.selectedText)
       current.editor.selectedText = current.editor.selectedText.slice(
         0,

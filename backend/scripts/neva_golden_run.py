@@ -39,6 +39,11 @@ SURFACES = {
     "roles.list": ("/roles", "Roles"),
     "access.control": ("/access-control", "Access Control"),
     "monitoring.queries": ("/monitoring/queries", "Queries"),
+    "monitoring.query_history": ("/query-history", "Query history"),
+    "users.list": ("/users", "Users"),
+    "database_explorer": ("/database-explorer", "Database Explorer"),
+    "tasks.list": ("/tasks", "Tasks"),
+    "business_ontology": ("/business-ontology", "Business Ontology"),
 }
 
 
@@ -50,8 +55,16 @@ def app_context(task: dict[str, Any]) -> dict[str, Any]:
     }
     if "entity" in task:
         context["entity"] = task["entity"]
+    if "capabilities" in task:
+        # What the page offers Neva, e.g. putting SQL in the editor.
+        context["capabilities"] = task["capabilities"]
+    if "view" in task:
+        context["view"] = task["view"]
     if "editor" in task:
         context["editor"] = {"language": "sql", "selectedText": task["editor"]}
+    elif "editor_text" in task:
+        # The open file with nothing selected, as the SQL Workspace sends it.
+        context["editor"] = {"language": "sql", "text": task["editor_text"]}
     if "execution" in task:
         context["execution"] = {"type": "sql", "executionId": f"run-{task['id']}",
                                 **task["execution"]}
@@ -98,6 +111,8 @@ async def run_turn(
         "errors": [],
         "finish_reason": None,
         "events": {},
+        "page_actions": [],
+        "source": None,
     }
     started = time.monotonic()
     first_token: float | None = None
@@ -152,11 +167,18 @@ async def run_turn(
                             f"/api/v1/assistant/tool-calls/{data['tool_call_id']}/decision",
                             json={"decision": "allow_once" if allow else "deny"},
                         )
+                elif event == "client_action":
+                    # The page action Neva asked for (e.g. SQL put in the editor).
+                    record["page_actions"].append({
+                        "capability": data.get("capability"),
+                        "args": data.get("args"),
+                    })
                 elif event == "error":
                     record["errors"].append(data.get("message", ""))
                 elif event == "done":
                     record["finish_reason"] = data.get("finish_reason")
                     record["usage"] = data.get("usage")
+                    record["source"] = data.get("source")
                     # Read to the end like the panel does, so the reply is stored.
     except httpx.HTTPError as exc:
         record["errors"].append(type(exc).__name__)

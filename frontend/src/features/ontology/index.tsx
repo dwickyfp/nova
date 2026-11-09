@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
+import { z } from 'zod'
+import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
+import { defineNevaCapability } from '@/features/assistant/surface-registry'
 import {
   BookText,
   FlaskConical,
@@ -37,6 +40,10 @@ export type OntologyTab =
   | 'releases'
   | 'domains'
 
+const ONTOLOGY_TABS = [
+  'overview', 'concepts', 'derived', 'checks', 'proposals', 'evaluation', 'releases', 'domains',
+] as const satisfies readonly OntologyTab[]
+
 const route = getRouteApi('/_authenticated/business-ontology')
 
 /** The routed page: the open tab is kept in the URL. */
@@ -70,6 +77,27 @@ export function BusinessOntology({
     setTab(value as OntologyTab)
     onTabChange?.(value as OntologyTab)
   }
+  useNevaSurface({
+    id: 'business_ontology',
+    route: '/business-ontology',
+    title: 'Business Ontology',
+    context: () => ({ view: { activeTab: tab, filters: { proposalsInReview: inReview } } }),
+    capabilities: [
+      defineNevaCapability({
+        name: 'tab.open', risk: 'safe',
+        argsSchema: z.object({ tab: z.enum(ONTOLOGY_TABS) }),
+        execute: ({ tab: next }) => change(next),
+      }),
+      defineNevaCapability({
+        name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
+        execute: () => pending.refetch({ throwOnError: true }),
+      }),
+    ],
+    suggestedActions: [
+      { label: 'What does a term mean', prompt: 'What does net revenue officially mean?' },
+      { label: 'My suggestions', prompt: 'Were my definition suggestions approved?' },
+    ],
+  })
 
   return (
     <>

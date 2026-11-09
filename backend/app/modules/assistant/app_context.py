@@ -130,10 +130,13 @@ class AppEditor(_ContextPart):
     document_id: str | None = Field(default=None, alias="documentId", max_length=256)
     language: str | None = Field(default=None, max_length=40)
     selected_text: str | None = Field(default=None, alias="selectedText", max_length=4096)
+    #: The open document's SQL, so "this query" means something without a
+    #: selection. Bounded, and withheld whole if it carries a credential.
+    text: str | None = Field(default=None, max_length=8192)
     cursor: AppCursor | None = None
     dirty: bool | None = None
 
-    @field_validator("selected_text")
+    @field_validator("selected_text", "text")
     @classmethod
     def scrub_selected_text(cls, value: str | None) -> str | None:
         return _safe_text(value) if value is not None else None
@@ -279,4 +282,7 @@ def resolve_app_references(request: str, app: NevaAppContext | None) -> dict[str
         result["lastFailure"] = failure.model_dump(by_alias=True, exclude_none=True)
     if app.editor is not None and app.editor.selected_text:
         result["editorSelection"] = app.editor.selected_text
+    elif app.editor is not None and app.editor.text:
+        # No selection: "this query" is the open document.
+        result["editorText"] = app.editor.text
     return result

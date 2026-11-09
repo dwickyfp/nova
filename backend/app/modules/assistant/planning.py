@@ -208,7 +208,14 @@ def validate_turn_plan(
         tools = required = ("describe_agent",)
         skills = ()
     if intent == TurnIntent.SQL_AUTHORING:
-        if not set(tools) <= _REFERENCE_TOOLS or not set(required) <= _REFERENCE_TOOLS:
+        # Writing SQL looks names up in the catalog (metadata only) and may end
+        # with putting it in the person's editor as a change they accept (a page
+        # action with no effect of its own); nothing runs.
+        authoring = _REFERENCE_TOOLS | {
+            "catalog_search", "list_semantic_views", "invoke_client_capability",
+            "ontology_resolve", "ontology_explain",
+        }
+        if not set(tools) <= authoring or not set(required) <= authoring:
             raise TurnPlanningError(
                 "SQL authoring produces text; it cannot execute data or action tools."
             )
@@ -427,7 +434,11 @@ def _neva_instructions() -> str:
         "Only when application_context.capabilities explicitly advertises a matching "
         "safe client capability, "
         "use invoke_client_capability for navigation, tab, filter, selection, "
-        "refresh, or editor focus instead of a server API call. A dispatched "
+        "refresh, or editor focus instead of a server API call. When it advertises "
+        "editor.propose_sql and the person asks you to write, change, fix or speed up "
+        "SQL for their editor, select catalog_search, validate_sql and "
+        "invoke_client_capability: the checked SQL goes into their editor as a change "
+        "they accept. A dispatched "
         "client action is pending until an application outcome event confirms it. "
         "For questions about the agent currently open in Studio, use "
         "inspect_agent_configuration when available; do not act as that agent. "

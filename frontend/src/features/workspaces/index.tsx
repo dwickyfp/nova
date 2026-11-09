@@ -80,6 +80,7 @@ import {
   type ProposedRewrite,
 } from "@/features/assistant/query-attach";
 import { DatabaseSchemaSelector } from "./database-schema-selector";
+import { RewriteReview } from "./rewrite-review";
 import {
   type CompletionResponse,
   buildStageCompletionPath,
@@ -180,6 +181,8 @@ const FILE_PANEL_WIDE_FROM = 1024;
 const EDITOR_MIN_HEIGHT = 160;
 
 const NO_DATABASES: string[] = [];
+/** Id prefix of SQL Neva suggests for the editor, as opposed to a repair. */
+const NEVA_SUGGESTION = "neva-";
 const NO_EXPANDED: Record<string, boolean> = {};
 const NO_SCHEMAS: { name: string }[] = [];
 
@@ -930,8 +933,50 @@ export function WorkspacesPage() {
         argsSchema: z.object({}).strict(),
         execute: () => activeSqlEditorInstance?.focus(),
       }),
+      // Neva's SQL becomes a suggested change in the open file: the person
+      // sees the diff and accepts or dismisses it. Nothing runs or saves here.
+      defineNevaCapability({
+        name: "editor.propose_sql",
+        risk: "draft",
+        argsSchema: z
+          .object({
+            sql: z.string().trim().min(1).max(20_000),
+            mode: z.enum(["replace", "insert"]),
+          })
+          .strict(),
+        execute: ({ sql, mode }) => {
+          const tabId = activeTabIdRef.current;
+          const tab = tabId ? tabsRef.current[tabId] : undefined;
+          if (!tabId || !tab) throw new Error("Open a SQL file first.");
+          const before = tab.content;
+          const editor = activeSqlEditorInstance;
+          const selection = editor?.getSelection();
+          const model = editor?.getModel();
+          let next: string;
+          if (mode === "replace" && selection && model && !selection.isEmpty()) {
+            // A selection is what the person pointed at: only it changes.
+            const start = model.getOffsetAt(selection.getStartPosition());
+            const end = model.getOffsetAt(selection.getEndPosition());
+            next = before.slice(0, start) + sql + before.slice(end);
+          } else if (mode === "insert" && before.trim()) {
+            next = `${before.trimEnd()}\n\n${sql}\n`;
+          } else {
+            next = `${sql}\n`;
+          }
+          const id = `${NEVA_SUGGESTION}${crypto.randomUUID()}`;
+          setProposedRewrite({
+            attachmentId: id,
+            tabId,
+            sourceContent: before,
+            sql,
+            hunks: buildRewriteHunks(before, next),
+            sourceMessageId: id,
+            reviewRun: "on_error",
+          });
+        },
+      }),
     ],
-    [],
+    [setProposedRewrite],
   );
   const { publishEvent: publishWorkspaceEvent, askNeva: askFromWorkspace } =
     useNevaSurface({
@@ -958,6 +1003,7 @@ export function WorkspacesPage() {
                   documentId: activeTab.id,
                   language: "sql",
                   selectedText,
+                  text: safeNevaSql(editor?.getModel()?.getValue() ?? activeTab.content ?? ""),
                   cursor: cursor
                     ? { line: cursor.lineNumber, column: cursor.column }
                     : undefined,
@@ -2197,7 +2243,10 @@ export function WorkspacesPage() {
         rewrite.sql,
         rewrite.sourceMessageId,
       );
-      if (outcome === "success" || outcome === "error") {
+      if (
+        outcome === "error" ||
+        (outcome === "success" && rewrite.reviewRun !== "on_error")
+      ) {
         await askFromWorkspace(
           "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
         );
@@ -3025,7 +3074,9 @@ export function WorkspacesPage() {
             ).then((outcome) => {
               if (
                 pending.correlationId &&
-                (outcome === "success" || outcome === "error")
+                (outcome === "error" ||
+                  (outcome === "success" &&
+                    !pending.correlationId.startsWith(NEVA_SUGGESTION)))
               )
                 void askFromWorkspace(
                   "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
@@ -5127,7 +5178,7 @@ function MonacoSqlEditor({
 
   /**
    * Paints the proposed rewrite into the editor: replaced original lines in
-   * red, proposed lines in blue, inserted as whole-line decorations with a
+   * red, proposed lines in green, inserted as whole-line decorations with a
    * margin marker so an empty proposed line still shows. Partial-line rewrites
    * naturally produce single-line hunks, so only the changed lines light up.
    */
@@ -5172,8 +5223,8 @@ function MonacoSqlEditor({
     style.textContent = `
       .nova-rewrite-old-line { background: color-mix(in srgb, var(--destructive) 14%, transparent); }
       .nova-rewrite-old-gutter { border-left: 3px solid var(--destructive); }
-      .nova-rewrite-new-line { background: color-mix(in srgb, var(--info) 16%, transparent); }
-      .nova-rewrite-new-gutter { border-left: 3px solid var(--info); }
+      .nova-rewrite-new-line { background: color-mix(in srgb, var(--success) 14%, transparent); }
+      .nova-rewrite-new-gutter { border-left: 3px solid var(--success); }
     `;
     document.head.appendChild(style);
   }, []);
@@ -5543,69 +5594,13 @@ function MonacoSqlEditor({
         }}
       />
       {proposedRewrite ? (
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10">
-          <div className="pointer-events-auto max-h-[45%] overflow-auto rounded-lg border bg-background shadow-lg">
-            <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-              <p className="text-xs font-medium">Proposed rewrite from Neva</p>
-              <p className="text-xs text-muted-foreground">
-                {proposedRewrite.hunks.length} change
-                {proposedRewrite.hunks.length === 1 ? "" : "s"}
-              </p>
-            </div>
-            <div className="flex flex-col gap-1.5 p-2">
-              {proposedRewrite.hunks.map((hunk, index) => (
-                <div
-                  key={`${hunk.startLine}-${index}`}
-                  className="grid grid-cols-2 gap-1.5"
-                >
-                  <div className="min-w-0 rounded border border-destructive/30 bg-destructive/10 p-1.5">
-                    <p className="mb-0.5 text-xs font-medium text-destructive">
-                      Before
-                    </p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem] text-muted-foreground">
-                      {hunk.kind === "insert"
-                        ? "(none)"
-                        : value
-                            .split("\n")
-                            .slice(hunk.startLine - 1, hunk.endLine)
-                            .join("\n")}
-                    </pre>
-                  </div>
-                  <div className="min-w-0 rounded border border-info/40 bg-info/10 p-1.5">
-                    <p className="mb-0.5 text-xs font-medium text-info-strong">
-                      After
-                    </p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem]">
-                      {hunk.kind === "delete"
-                        ? "(removed)"
-                        : hunk.lines.join("\n") || "(none)"}
-                    </pre>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onDenyRewrite}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onApproveRewrite}
-              >
-                Apply
-              </Button>
-              <Button type="button" size="sm" onClick={onApproveAndRunRewrite}>
-                Apply &amp; Run
-              </Button>
-            </div>
-          </div>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex flex-col justify-end">
+          <RewriteReview
+            rewrite={proposedRewrite}
+            onCancel={onDenyRewrite}
+            onApply={onApproveRewrite}
+            onApplyAndRun={onApproveAndRunRewrite}
+          />
         </div>
       ) : null}
     </div>

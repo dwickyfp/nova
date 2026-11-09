@@ -271,6 +271,7 @@ def done(
     finish_reason: str = "stop",
     *,
     usage: dict[str, Any] | None = None,
+    source: dict[str, Any] | None = None,
 ) -> str:
     """The terminal frame.
 
@@ -285,6 +286,9 @@ def done(
     }
     if usage:
         payload["usage"] = usage
+    if source:
+        # Where the answer came from; stored with the message for a reload.
+        payload["source"] = source
     return format_sse(EVENT_DONE, payload)
 
 

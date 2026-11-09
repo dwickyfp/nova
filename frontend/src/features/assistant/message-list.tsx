@@ -1,4 +1,4 @@
-import { FileCode, FileText } from "lucide-react";
+import { BookOpen, Database, FileCode, FileText, ShieldCheck } from "lucide-react";
 import { CitationList, ResultChart } from "@/features/studio/result-cards";
 import { ResultTable } from "@/features/studio/result-table";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { ToolCallCard, type ToolCallCardProps } from "./tool-call-card";
 import { IntelligentUi } from "@/features/studio/intelligent-ui/renderer";
 import type { UiAction } from "@/features/studio/intelligent-ui/types";
 import type { TranscriptMessage } from "./use-assistant-transcript";
+import type { AnswerSource } from "./types";
 
 export type MessageListProps = {
   messages: TranscriptMessage[];
@@ -195,6 +196,9 @@ function MessageBubble({
             {marker}
           </span>
         ) : null}
+        {!isUser && message.turn_state === "done" && message.source ? (
+          <SourceLabel source={message.source} />
+        ) : null}
         {!isUser && message.turn_state !== "streaming" && message.suggestions?.length ? (
           <FollowUps suggestions={message.suggestions} onAsk={onFixWithNeva} />
         ) : null}
@@ -253,6 +257,39 @@ function AnswerBlocks({
       )}
       <CitationList citations={citations} />
     </div>
+  );
+}
+
+const SOURCE_TEXT: Record<AnswerSource["kind"], string> = {
+  semantic_view: "From a Semantic View",
+  glossary: "From the business glossary",
+  query: "From a query on your data",
+  catalog: "From the data catalog",
+  guide: "From Nova's guides",
+};
+
+/** Where the answer came from; only governed sources say "Trusted". */
+function SourceLabel({ source }: { source: AnswerSource }) {
+  const Icon = source.trusted
+    ? ShieldCheck
+    : source.kind === "guide"
+      ? BookOpen
+      : Database;
+  return (
+    <p
+      data-testid="answer-source"
+      className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      <Icon
+        aria-hidden="true"
+        className={cn("size-3.5 shrink-0", source.trusted && "text-success-strong")}
+      />
+      {source.trusted ? (
+        <span className="font-medium text-foreground">Trusted</span>
+      ) : null}
+      {source.trusted ? <span aria-hidden="true">·</span> : null}
+      <span>{SOURCE_TEXT[source.kind]}</span>
+    </p>
   );
 }
 
