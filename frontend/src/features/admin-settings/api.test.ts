@@ -1,14 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  PASSWORD_POLICY_VARIABLES,
-  fetchPasswordPolicy,
   fetchVariables,
   isVariableChanged,
-  parsePasswordPolicy,
-  parsePolicyBoolean,
-  parsePolicyNumber,
   setVariable,
-  updatePasswordPolicy,
   type VariableItem,
 } from './api'
 
@@ -80,46 +74,6 @@ describe('admin settings API calls match the merged variables router', () => {
     })
     expect(requestedBody().value).toBeUndefined()
   })
-
-  it('reads the policy from GET /variables/password-policy', async () => {
-    await fetchPasswordPolicy()
-
-    expect(requestedUrl()).toBe('/api/v1/variables/password-policy')
-    expect(requestedMethod()).toBe('GET')
-  })
-
-  it('writes the policy through POST /variables/password-policy', async () => {
-    await updatePasswordPolicy({ password_lifetime: 90, validate_password: true })
-
-    expect(requestedUrl()).toBe('/api/v1/variables/password-policy')
-    expect(requestedMethod()).toBe('POST')
-    expect(requestedBody()).toEqual({
-      password_lifetime: 90,
-      validate_password: true,
-    })
-  })
-})
-
-describe('password policy unwrapping', () => {
-  it('unwraps the {policy: ...} envelope and fills every documented field', () => {
-    const policy = parsePasswordPolicy({
-      password_lifetime: '90',
-      validate_password: 'false',
-    })
-
-    expect(policy.password_lifetime).toBe('90')
-    expect(policy.validate_password).toBe('false')
-    expect(policy.password_history).toBe('')
-    for (const name of PASSWORD_POLICY_VARIABLES) {
-      expect(policy[name]).toBeDefined()
-    }
-  })
-
-  it('handles a missing envelope without throwing', () => {
-    const policy = parsePasswordPolicy(undefined)
-
-    expect(policy.password_lifetime).toBe('')
-  })
 })
 
 describe('variable change detection', () => {
@@ -140,26 +94,5 @@ describe('variable change detection', () => {
 
   it('does not treat an unknown default as changed', () => {
     expect(isVariableChanged({ ...base, default: null })).toBe(false)
-  })
-})
-
-describe('policy value parsing', () => {
-  it('parses a non-negative integer', () => {
-    expect(parsePolicyNumber('30')).toBe(30)
-  })
-
-  it('treats a blank field as unset, not zero', () => {
-    expect(parsePolicyNumber('   ')).toBeNull()
-  })
-
-  it('rejects negatives and non-numeric input', () => {
-    expect(parsePolicyNumber('-1')).toBeNull()
-    expect(parsePolicyNumber('abc')).toBeNull()
-  })
-
-  it('parses the engine boolean strings', () => {
-    expect(parsePolicyBoolean('true')).toBe(true)
-    expect(parsePolicyBoolean('ON')).toBe(true)
-    expect(parsePolicyBoolean('false')).toBe(false)
   })
 })

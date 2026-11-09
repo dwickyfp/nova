@@ -65,21 +65,3 @@ class VariableSetResponse(BaseModel):
     scope: VariableScope
     value: str | None = None
     message: str
-
-
-class PasswordPolicy(BaseModel):
-    """The password-policy subset `docs/22-variables-settings.md` documents.
-
-    Every field is optional: the settings page sends only what changed, and the
-    service writes exactly those `SET GLOBAL` statements.
-    """
-
-    password_lifetime: int | None = Field(None, ge=0, le=3650)
-    password_history: int | None = Field(None, ge=0, le=100)
-    failed_login_attempts: int | None = Field(None, ge=0, le=1000)
-    password_lock_time: int | None = Field(None, ge=0, le=100000)
-    validate_password: bool | None = None
-    validate_password_length: int | None = Field(None, ge=1, le=256)
-    validate_password_mixed_case_count: int | None = Field(None, ge=0, le=64)
-    validate_password_number_count: int | None = Field(None, ge=0, le=64)
-    validate_password_special_char_count: int | None = Field(None, ge=0, le=64)

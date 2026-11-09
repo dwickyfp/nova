@@ -3,8 +3,6 @@
 Endpoints under ``/api/v1/variables``:
   GET  /                  → browse ``SHOW [GLOBAL] VARIABLES`` (search + page)
   POST /set               → ``SET [SESSION|GLOBAL] <name> = <value|DEFAULT>``
-  GET  /password-policy   → the documented password-policy variables (global)
-  POST /password-policy   → ``SET GLOBAL`` for the supplied policy fields
 
 ``SET`` runs as the caller through the shared pipeline, so the engine's
 ``GLOBAL`` privilege is the authority and the mutation is audited.
@@ -20,7 +18,6 @@ from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 
 from .schemas import (
-    PasswordPolicy,
     VariableListResponse,
     VariableScope,
     VariableSetRequest,
@@ -80,23 +77,3 @@ async def set_variable(body: VariableSetRequest, user: CurrentUser):
     except VariableError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return VariableSetResponse(**result)
-
-
-@router.get("/password-policy", response_class=SanitizingJSONResponse)
-async def get_password_policy(user: CurrentUser):
-    """Read the documented password-policy variables from global scope."""
-    try:
-        policy = await variable_service.get_password_policy(**_caller(user))
-    except VariableError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"policy": policy}
-
-
-@router.post("/password-policy", response_class=SanitizingJSONResponse)
-async def set_password_policy(body: PasswordPolicy, user: CurrentUser):
-    """Write the supplied password-policy fields, each as ``SET GLOBAL``."""
-    try:
-        result = await variable_service.set_password_policy(body, **_caller(user))
-    except VariableError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result

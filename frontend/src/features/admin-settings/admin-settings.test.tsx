@@ -26,17 +26,6 @@ const variables = (scope: string) =>
     scope,
   }))
 
-const EMPTY_POLICY = {
-  policy: Object.fromEntries(
-    [
-      'password_lifetime', 'password_history', 'failed_login_attempts',
-      'password_lock_time', 'validate_password', 'validate_password_length',
-      'validate_password_mixed_case_count', 'validate_password_number_count',
-      'validate_password_special_char_count',
-    ].map((name) => [name, ''])
-  ),
-}
-
 function Page() {
   const [tab, setTab] = useState<SettingsTab>('session')
   return <AdminSettingsPage tab={tab} onTabChange={setTab} />
@@ -52,7 +41,6 @@ function mount() {
 
 beforeEach(() => {
   mocks.get.mockImplementation(async (path: string) => {
-    if (path.startsWith('/variables/password-policy')) return EMPTY_POLICY
     const scope = new URLSearchParams(path.split('?')[1]).get('scope') ?? 'session'
     const all = variables(scope)
     return { variables: all, count: all.length, total: all.length, limit: 1000, offset: 0, scope }
@@ -68,10 +56,12 @@ describe('Admin Settings', () => {
   it('shows each scope as a plain tab and loads every list once', async () => {
     const screen = await mount()
     await expect.element(screen.getByRole('heading', { name: 'Admin Settings' })).toBeVisible()
-    const tabs = ['Session variables', 'Global variables', 'Password policy']
+    const tabs = ['Session variables', 'Global variables']
     for (const name of tabs) {
       await expect.element(screen.getByRole('tab', { name })).toBeVisible()
     }
+    // The engine offers no password policy, so there is no tab for one.
+    expect(screen.getByRole('tab').elements().map((tab) => tab.textContent)).toEqual(tabs)
     await expect.element(screen.getByText('session_variable_00')).toBeVisible()
     await expect.element(screen.getByText('30 variables')).toBeVisible()
     await expect.element(screen.getByText('1 changed')).toBeVisible()
@@ -96,15 +86,6 @@ describe('Admin Settings', () => {
     await expect.element(screen.getByText('session_variable_29')).toBeVisible()
     expect(screen.getByText('session_variable_00').query()).toBeNull()
     expect(mocks.get.mock.calls.length).toBe(before)
-  })
-
-  it('says plainly when the engine offers no password policy', async () => {
-    const screen = await mount()
-    await screen.getByRole('tab', { name: 'Password policy' }).click()
-    await expect.element(
-      screen.getByText('Password policy is not available on this engine')
-    ).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Save policy' }).query()).toBeNull()
   })
 
   it('fits a phone screen without sideways scrolling', async () => {

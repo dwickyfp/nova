@@ -8,7 +8,6 @@ authenticated user comes from a dependency override. The tests pin:
 * ``SET`` renders the value safely (bare token vs quoted literal) and is
   refused when a name or value could inject a second statement;
 * ``SET GLOBAL`` / ``SET SESSION`` / ``= DEFAULT`` shapes;
-* the password-policy surface writes only the supplied fields as ``SET GLOBAL``;
 * every mutation goes through the audited pipeline.
 """
 
@@ -25,7 +24,6 @@ from app.core import deps as deps_module
 from app.modules.variables import router as variables_router
 from app.modules.variables import service as service_module
 from app.modules.variables.schemas import (
-    PasswordPolicy,
     VariableScope,
     VariableSetRequest,
 )
@@ -241,55 +239,6 @@ class TestValidation:
         assert "unknown variable" in resp.json()["detail"]
 
 
-# ── Password policy ─────────────────────────────────────────────
-
-
-class TestPasswordPolicy:
-    async def test_get_reads_global_and_maps_documented_keys(self, pipeline):
-        policy = await variable_service.get_password_policy(
-            username="alice",
-            encrypted_password="enc",
-            session_id="s1",
-        )
-        assert "password_lifetime" in policy
-        assert "validate_password_length" in policy
-        assert pipeline.statements()[0] == "SHOW GLOBAL VARIABLES"
-
-    async def test_set_writes_only_supplied_fields(self, pipeline):
-        await variable_service.set_password_policy(
-            PasswordPolicy(password_lifetime=90, validate_password=True),
-            username="alice",
-            encrypted_password="enc",
-            session_id="s1",
-        )
-        assert pipeline.statements() == [
-            "SET GLOBAL password_lifetime = 90",
-            "SET GLOBAL validate_password = true",
-        ]
-
-    async def test_empty_policy_writes_nothing(self, pipeline):
-        result = await variable_service.set_password_policy(
-            PasswordPolicy(),
-            username="alice",
-            encrypted_password="enc",
-            session_id="s1",
-        )
-        assert result["updated"] == 0
-        assert pipeline.calls == []
-
-    def test_http_password_policy_roundtrip(self, client, pipeline):
-        resp = client.post(
-            "/api/v1/variables/password-policy",
-            json={"password_lifetime": 60, "password_history": 5},
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["updated"] == 2
-        assert pipeline.statements() == [
-            "SET GLOBAL password_lifetime = 60",
-            "SET GLOBAL password_history = 5",
-        ]
-
-
 # ── Audit ───────────────────────────────────────────────────────
 
 
@@ -301,13 +250,7 @@ class TestAudit:
             encrypted_password="enc",
             session_id="s1",
         )
-        await variable_service.set_password_policy(
-            PasswordPolicy(password_lifetime=30),
-            username="alice",
-            encrypted_password="enc",
-            session_id="s1",
-        )
-        assert len(pipeline.calls) == 2
+        assert len(pipeline.calls) == 1
 
     async def test_service_opens_no_direct_connection(self):
         import inspect

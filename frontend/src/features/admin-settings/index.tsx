@@ -5,14 +5,12 @@ import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
 import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { passwordPolicyQueryOptions, type SettingsTab, variablesQueryOptions } from './api'
-import { PasswordPolicyTab } from './password-policy-tab'
+import { type SettingsTab, variablesQueryOptions } from './api'
 import { VariablesTab } from './variables-tab'
 
 const TABS: { value: SettingsTab; label: string }[] = [
   { value: 'session', label: 'Session variables' },
   { value: 'global', label: 'Global variables' },
-  { value: 'password-policy', label: 'Password policy' },
 ]
 
 export function AdminSettingsPage({
@@ -24,12 +22,11 @@ export function AdminSettingsPage({
 }) {
   const queryClient = useQueryClient()
 
-  // Every tab's data is small; loading it all in the background makes
-  // switching tabs instant.
+  // Both lists are small; loading them in the background makes switching
+  // tabs instant.
   useEffect(() => {
     void queryClient.prefetchQuery(variablesQueryOptions('session'))
     void queryClient.prefetchQuery(variablesQueryOptions('global'))
-    void queryClient.prefetchQuery(passwordPolicyQueryOptions)
   }, [queryClient])
 
   return (
@@ -42,7 +39,7 @@ export function AdminSettingsPage({
         <div className='min-w-0 space-y-5'>
           <PageHeader
             title='Admin Settings'
-            description='Engine variables for your session or the whole engine, and the password policy for Nova sign-ins.'
+            description='Engine variables for your own session or for the whole engine.'
           />
           <Tabs
             value={tab}
@@ -61,9 +58,6 @@ export function AdminSettingsPage({
             </TabsContent>
             <TabsContent value='global' className='mt-0 min-w-0'>
               <VariablesTab scope='global' />
-            </TabsContent>
-            <TabsContent value='password-policy' className='mt-0 min-w-0'>
-              <PasswordPolicyTab />
             </TabsContent>
           </Tabs>
         </div>
