@@ -109,7 +109,8 @@ _PARAMETERS = {
             "type": "string",
             "description": (
                 "The Semantic View to query, by its name in the agent scope or in the "
-                "workspace's semantic_views. Omit it only when one view is available."
+                "workspace's semantic_views_your_role_can_open. Omit it only when one view "
+                "is available."
             ),
         },
     },

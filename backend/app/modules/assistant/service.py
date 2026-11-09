@@ -582,8 +582,10 @@ class AssistantLoop:
                             "workspace_file_id": context.workspace_file_id,
                             # Neva names one of these in semantic_query; a
                             # Studio agent reads its own scope instead.
-                            **({"semantic_views": _readable_view_summaries(context)}
-                               if context.agent_scope is None
+                            **({
+                                "semantic_views_your_role_can_open":
+                                    _readable_view_summaries(context),
+                            } if context.agent_scope is None
                                and context.authorized_semantic_models else {}),
                         },
                         ensure_ascii=False,
@@ -908,6 +910,7 @@ class AssistantLoop:
         guard_reason = ""
         analysis_noted = False
         forced_semantic = False
+        forced_lookups = False
         #: The governed data tool ran this turn, whatever its result.
         governed_attempted = False
         #: Read-only calls started ahead of their turn: call id -> (task, context copy).
@@ -1109,6 +1112,18 @@ class AssistantLoop:
             selected_tools = tuple(dict.fromkeys((
                 *selected_tools,
                 *(name for name in _ANALYSIS_TOOLS if self._registry.get(name) is not None),
+            )))
+            context.selected_tools = list(selected_tools)
+        if (
+            context.agent_scope is None
+            and route.intent != TurnIntent.CLARIFICATION
+            and not context.capability_aliases
+        ):
+            # Neva looks names up instead of asking the person for them: the
+            # catalog and the guides stay in reach whatever the planner chose.
+            selected_tools = tuple(dict.fromkeys((
+                *selected_tools,
+                *(name for name in _NEVA_LOOKUPS if self._registry.get(name) is not None),
             )))
             context.selected_tools = list(selected_tools)
         if context.capability_aliases:
@@ -1688,6 +1703,26 @@ class AssistantLoop:
                             },
                         })
                         continue
+                    if context.agent_scope is None and not forced_lookups:
+                        # Neva runs the checks the model skipped itself: the
+                        # guide for the question, the editor's current error,
+                        # and the SQL its draft proposes. A draft with no SQL
+                        # has nothing to check. Then the model answers again
+                        # from that evidence.
+                        forced_lookups = True
+                        calls, nothing_to_check = _neva_check_calls(
+                            missing_required, draft_text,
+                            context.user_question or user_content, self._registry,
+                        )
+                        completed_capabilities.update(nothing_to_check)
+                        if calls:
+                            deferred_calls.extend(calls)
+                            continue
+                        if not [name for name in missing_required
+                                if name not in nothing_to_check]:
+                            composing_final = True
+                            messages.append(composer_message())
+                            continue
                     if context.agent_scope is None:
                         # Neva never leaves a person with an empty reply. The
                         # words are Nova's own, not the model's, so nothing
@@ -3520,6 +3555,45 @@ async def _localized(language: str, _context: LoopContext) -> None:
         return
     with contextlib.suppress(Exception):
         await asyncio.wait_for(asyncio.shield(task), timeout=5)
+
+
+#: Read-only lookups Neva always has: the catalog and Nova's guides.
+_NEVA_LOOKUPS = ("catalog_search", "search_knowledge", "list_semantic_views")
+_SQL_BLOCK = re.compile(r"```sql\s*\n(.*?)```", re.IGNORECASE | re.DOTALL)
+
+
+def _neva_check_calls(
+    missing: list[str], draft: str, question: str, registry: ToolRegistry
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """Calls for the read-only checks Neva's model skipped, and checks with no input.
+
+    Only checks that read nothing private and need no approval are run this
+    way; anything else stays required and unmet.
+    """
+    calls: list[dict[str, Any]] = []
+    nothing_to_check: set[str] = set()
+
+    def call(name: str, arguments: dict[str, Any]) -> None:
+        calls.append({
+            "id": f"check-{uuid4()}",
+            "type": "function",
+            "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)},
+        })
+
+    for name in missing:
+        if registry.get(name) is None:
+            continue
+        if name == "search_knowledge":
+            call(name, {"query": question[:500]})
+        elif name == "inspect_query_error":
+            call(name, {})
+        elif name == "validate_sql":
+            blocks = [block.strip() for block in _SQL_BLOCK.findall(draft) if block.strip()]
+            if blocks:
+                call(name, {"sql": blocks[0]})
+            else:
+                nothing_to_check.add(name)
+    return calls, nothing_to_check
 
 
 #: Neva's lookups: a failure here is usually a name to correct, not a wall.

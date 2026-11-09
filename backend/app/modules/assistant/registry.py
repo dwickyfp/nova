@@ -126,6 +126,8 @@ def build_neva_registry() -> ToolRegistry:
     for tool in tool_registry._tools.values():  # noqa: SLF001 - copy the inventory
         registry.register(tool)
     from app.modules.agents.tools.semantic_query import semantic_query_tool
+    from app.modules.assistant.tools.semantic_views import list_semantic_views_tool
 
     registry.register(semantic_query_tool)
+    registry.register(list_semantic_views_tool)
     return registry

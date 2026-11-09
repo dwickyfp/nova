@@ -35,6 +35,7 @@ TOOL_NAMES = frozenset(
         "ai_search",
         "semantic_view_query",
         "semantic_query",
+        "list_semantic_views",
         "feature_lookup",
         "inspect_role_access",
         "grant_role_access",
@@ -57,8 +58,46 @@ class Leak:
     text: str
 
 
+#: Nova's page addresses, by the menu a person clicks instead.
+PAGE_MENUS: dict[str, str] = {
+    "workspaces": "Data Management → Workspaces",
+    "database-explorer": "Data Management → Database Explorer",
+    "tasks": "Data Management → Tasks",
+    "agents/skills": "AI & ML → Skills",
+    "agents/tools": "AI & ML → Tools",
+    "agents": "AI & ML → Agent",
+    "semantic-views": "AI & ML → Semantic Views",
+    "business-ontology": "AI & ML → Business Ontology",
+    "ai-search": "AI & ML → AI Search",
+    "studio": "AI & ML → Nova Studio",
+    "analytics": "AI & ML → BI",
+    "entities": "AI & ML → Entities",
+    "feature-store": "AI & ML → Feature Store",
+    "ml-models": "AI & ML → ML Models",
+    "users": "Access Control → Users",
+    "roles": "Access Control → Roles",
+    "access-control": "Access Control → Data Access",
+    "monitoring/audit": "Operations → Monitoring → Audit Trail",
+    "monitoring/queries": "Operations → Monitoring → Queries",
+    "monitoring/loads": "Operations → Monitoring → Data Loads",
+    "monitoring/cluster": "Operations → Monitoring → Cluster Monitor",
+    "monitoring/health": "Operations → Monitoring → Production Health",
+    "monitoring/ai": "Operations → Monitoring → AI Monitoring",
+    "monitoring": "Operations → Monitoring",
+    "query-history": "Operations → Monitoring → Queries",
+    "ai-providers": "Administrator → AI Providers",
+    "settings": "Administrator → Admin Settings",
+    "migration": "Operations → Migration",
+}
+_PAGE = re.compile(
+    r"`?(?<![\w@.\-/])/("
+    + "|".join(re.escape(path) for path in sorted(PAGE_MENUS, key=len, reverse=True))
+    + r")(?:/[\w{}\-]+)*/?(?![\w\-])`?"
+)
+
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("route", re.compile(r"(?<![\w.])/api/[\w/{}.\-]*", re.I)),
+    ("page_address", _PAGE),
     ("route", re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE)\s+/[\w/{}.\-]+")),
     ("endpoint", re.compile(r"\bend[- ]?points?\b", re.I)),
     ("api", re.compile(r"\bAPIs?\b")),
@@ -103,6 +142,7 @@ _TOOL_WORDS = {
     "load_skill": "a Nova guide",
     "search_knowledge": "Nova's guides",
     "catalog_search": "the data catalog",
+    "list_semantic_views": "the list of Semantic Views",
     "validate_sql": "a SQL check",
     "inspect_query_error": "the failed query",
     "verify_query_repair": "a rerun check",
@@ -176,6 +216,7 @@ def make_plain(text: str) -> str:
 def _plain_prose(text: str) -> str:
     if not text:
         return text
+    text = _PAGE.sub(lambda match: PAGE_MENUS[match.group(1)], text)
     for pattern, replacement in _REWRITES:
         if replacement == "" and pattern.pattern.startswith("`?"):
             text = pattern.sub(lambda match: _TOOL_WORDS[match.group(1)], text)

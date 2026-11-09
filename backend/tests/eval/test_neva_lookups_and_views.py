@@ -174,3 +174,78 @@ def test_neva_sees_the_views_it_can_name(monkeypatch):
         if "<WORKSPACE_CONTEXT>" in str(message.get("content"))
     )
     assert "retail_sales" not in workspace
+
+
+# ── Checks the model skipped ─────────────────────────────────────────────────
+
+
+def _plan(required):
+    return {"intent": "sql_authoring", "tools": list(required), "required_tools": list(required),
+            "skills": [], "ml_task": None}
+
+
+async def _run_plan(tools, script, required, *, agent=False):
+    registry = ToolRegistry()
+    for tool in tools:
+        registry.register(tool)
+    context = LoopContext(user_name="alice")
+    if agent:
+        context.agent_scope = {"agent": "Sales"}
+    frames = [
+        frame async for frame in AssistantLoop(
+            provider=ScriptedProvider(script=script, turn_plan=_plan(required)),
+            registry=registry,
+        ).run(
+            thread=AssistantThread(thread_id="checks", user_name="alice", title="Eval"),
+            user_content="Write me a query for total sales per month",
+            context=context, resolve_consent=allow,
+        )
+    ]
+    return TurnResult(frames=frames)
+
+
+SQL_DRAFT = "Use this:\n```sql\nSELECT 1\n```"
+
+
+async def test_neva_checks_the_sql_its_draft_proposes():
+    validate = EvalTool("validate_sql", parameters={
+        "type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"],
+    })
+    result = await _run_plan([validate], [
+        text_frame(SQL_DRAFT), text_frame(SQL_DRAFT), text_frame(SQL_DRAFT),
+    ], ["validate_sql"])
+    assert [run.arguments for run in validate.runs] == [{"sql": "SELECT 1"}]
+    assert result.finish_reason == "stop"
+    assert "SELECT 1" in "".join(result.frames)
+
+
+async def test_neva_looks_up_the_guide_the_model_skipped():
+    guide = EvalTool("search_knowledge", parameters={
+        "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"],
+    })
+    result = await _run_plan([guide], [
+        text_frame("ACCOUNTADMIN is protected."), text_frame("ACCOUNTADMIN is protected."),
+        text_frame("ACCOUNTADMIN is protected and cannot be deleted."),
+    ], ["search_knowledge"])
+    assert len(guide.runs) == 1
+    assert guide.runs[0].arguments["query"].startswith("Write me a query")
+    assert result.finish_reason == "stop"
+
+
+async def test_a_draft_without_sql_has_nothing_to_check():
+    validate = EvalTool("validate_sql")
+    result = await _run_plan([validate], [
+        text_frame("Which table holds your sales?"), text_frame("Which table holds your sales?"),
+        text_frame("Which table holds your sales?"),
+    ], ["validate_sql"])
+    assert validate.runs == []
+    assert result.finish_reason == "stop"
+
+
+async def test_studio_agents_still_stop_when_a_check_is_skipped():
+    validate = EvalTool("validate_sql")
+    result = await _run_plan([validate], [
+        text_frame(SQL_DRAFT), text_frame(SQL_DRAFT), text_frame(SQL_DRAFT),
+    ], ["validate_sql"], agent=True)
+    assert validate.runs == []
+    assert result.finish_reason == "required_capability_incomplete"

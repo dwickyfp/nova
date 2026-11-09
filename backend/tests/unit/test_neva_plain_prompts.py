@@ -55,3 +55,19 @@ def test_skill_bodies_carry_no_internals(name):
 def test_tool_descriptions_carry_no_internals():
     for name, tool in tool_registry._tools.items():  # noqa: SLF001 - the inventory
         assert _leaks(tool.description) == [], name
+
+
+FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "src"
+SIDEBAR = FRONTEND / "components/layout/data/sidebar-data.ts"
+QUERY_TABS = FRONTEND / "features/monitoring/queries/index.tsx"
+
+
+def test_the_navigation_guide_names_every_menu_and_tab():
+    # Neva tells people where to click; a menu renamed in the app must be
+    # renamed in the guide too, or Neva sends people to a page that is gone.
+    guide = (KNOWLEDGE[0].parent / "nova-navigation.md").read_text()
+    titles = re.findall(r'title: "([^"]+)"', SIDEBAR.read_text())
+    tabs = re.findall(r"label: '([^']+)'", QUERY_TABS.read_text())
+    assert titles and tabs
+    missing = [name for name in [*titles, *tabs] if name not in guide]
+    assert missing == []

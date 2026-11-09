@@ -53,7 +53,25 @@ def app_context(task: dict[str, Any]) -> dict[str, Any]:
     if "editor" in task:
         context["editor"] = {"language": "sql", "selectedText": task["editor"]}
     if "execution" in task:
-        context["execution"] = {"type": "sql", **task["execution"]}
+        context["execution"] = {"type": "sql", "executionId": f"run-{task['id']}",
+                                **task["execution"]}
+        if task["execution"].get("status") == "error" and "editor" in task:
+            # What the SQL Workspace sends after a failed run: the failing
+            # statement and its error, as a query_failed event.
+            context["events"] = [{
+                "id": f"event-{task['id']}",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "source": "execution",
+                "type": "query_failed",
+                "surfaceId": task["surface"],
+                "executionId": f"run-{task['id']}",
+                "status": "failure",
+                "payload": {
+                    "executionId": f"run-{task['id']}",
+                    "sql": task["editor"],
+                    "errorMessage": task["execution"].get("errorMessage", ""),
+                },
+            }]
     return context
 
 
@@ -68,7 +86,9 @@ async def sign_in(client: httpx.AsyncClient, username: str) -> str:
     return str(response.json()["access_token"])
 
 
-async def run_turn(client: httpx.AsyncClient, task: dict[str, Any], timeout: float) -> dict:
+async def run_turn(
+    client: httpx.AsyncClient, task: dict[str, Any], timeout: float, keep: bool = False
+) -> dict:
     record: dict[str, Any] = {
         "task": task["id"],
         "thread_id": None,
@@ -137,13 +157,13 @@ async def run_turn(client: httpx.AsyncClient, task: dict[str, Any], timeout: flo
                 elif event == "done":
                     record["finish_reason"] = data.get("finish_reason")
                     record["usage"] = data.get("usage")
-                    break
+                    # Read to the end like the panel does, so the reply is stored.
     except httpx.HTTPError as exc:
         record["errors"].append(type(exc).__name__)
     finally:
         # The transcript is kept in the run file; the test thread is not left
         # in the person's history.
-        if thread_id:
+        if thread_id and not keep:
             try:
                 await client.delete(f"/api/v1/assistant/threads/{thread_id}")
             except httpx.HTTPError:
@@ -163,6 +183,8 @@ async def main() -> None:
     parser.add_argument("--only", nargs="*", default=None)
     parser.add_argument("--timeout", type=float, default=240)
     parser.add_argument("--out", required=True)
+    # Keep the test threads so their stored plans can be read; delete them after.
+    parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
 
     tasks = json.loads(Path(args.golden).read_text())["tasks"]
@@ -184,7 +206,7 @@ async def main() -> None:
             for task in tasks:
                 if (task["id"], run) in done:
                     continue
-                record = await run_turn(client, task, args.timeout)
+                record = await run_turn(client, task, args.timeout, args.keep)
                 record.update(
                     batch=batch, run=run, at=datetime.now(UTC).isoformat(timespec="seconds")
                 )

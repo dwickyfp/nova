@@ -67,6 +67,7 @@ KNOWLEDGE = {
     "intelligence-search-entities": "what are entities and AI search",
     "intelligence-semantic-features": "what is a semantic view and the feature store",
     "ml-ai-providers": "how do I set up an AI provider for machine learning",
+    "nova-navigation": "where can I see which queries are running right now",
     "operations-monitoring": "how do I check running queries and cluster health",
     "query-troubleshooting": "my query failed, how do I troubleshoot it",
     "security-governance": "how do roles and data masking work",

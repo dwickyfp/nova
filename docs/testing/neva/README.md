@@ -154,6 +154,15 @@ Acceptance: parity suite and leak check green; stored data untouched
       refusal gets one correction, then a plain "couldn't look this up" message
       instead of the engine's text; a missing capability is stated in plain
       words. Trajectories: `tests/eval/test_neva_lookups_and_views.py`.
+      Also from the measurement: Neva runs the read-only checks the model
+      skipped (guide lookup, the editor's failed query, a SQL check on the SQL
+      its draft proposes; a draft with no SQL has nothing to check) instead of
+      ending with "I won't guess"; the catalog, guides and the new
+      `list_semantic_views` (views the active role can open) are always in
+      reach. Knowledge: `nova-navigation.md` (every menu and tab, kept in step
+      with the sidebar by a test), stale monitoring menus fixed, and every page
+      address in the guides replaced by its menu name; the leak finder now
+      flags page addresses and turns them into menu names.
       Re-measure: `runs/phase-2b-neva.jsonl`.
 
 Acceptance: parity, leak and Studio/Dataviz evals green; simple-question
@@ -195,7 +204,7 @@ latency within the bound agreed from the phase 0 baseline.
       Control, Business Ontology, Agents, Users.
 - [ ] 5.5 Ambiguous or unanswerable questions get a clarifying question or
       answerable alternatives instead of a guess.
-- [ ] 5.6 Knowledge search finds guides from plain questions ("how do I create
+- [~] 5.6 Knowledge search finds guides from plain questions ("how do I create
       a table" → the table guide), measured on a question set.
 
 ## Phase 6: acceptance

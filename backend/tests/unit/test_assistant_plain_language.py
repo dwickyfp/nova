@@ -21,6 +21,9 @@ from app.modules.assistant.plain_language import find_technical_leaks
         ("Open http://localhost:8000/docs", "address"),
         ("I ran query_execute to check", "tool_name"),
         ("Next I will call inspect_role_access.", "tool_name"),
+        ("Open `/ai-providers` to check the key", "page_address"),
+        ("Go to /monitoring/queries and pick Running now", "page_address"),
+        ("Tasks at /tasks schedule SQL", "page_address"),
     ],
 )
 def test_flags_each_kind_of_internal(text, kind):
@@ -36,6 +39,9 @@ def test_flags_each_kind_of_internal(text, kind):
         "Pilih database dulu di pojok kanan atas, lalu jalankan lagi.",
         "Ask your administrator to check the AI service settings.",
         "The capital of Indonesia is Jakarta; rapid growth.",
+        "COPY INTO sales FROM @stage1/tasks/orders.csv",
+        "Read it and/or share it on 11/09/2026.",
+        "Open AI & ML → Semantic Views.",
     ],
 )
 def test_leaves_plain_answers_alone(text):
@@ -120,3 +126,10 @@ def test_code_a_person_copies_is_left_exactly_as_written():
     out = "".join(stream.feed(chunk) for chunk in chunks) + stream.flush()
     assert '{"endpoint": 1}' in out
     assert out.endswith("The service address is set.")
+
+
+def test_a_page_address_becomes_the_menu_a_person_clicks():
+    from app.modules.assistant.plain_language import make_plain
+
+    text = make_plain("Open `/ai-providers`, then /monitoring/queries.")
+    assert text == "Open Administrator → AI Providers, then Operations → Monitoring → Queries."

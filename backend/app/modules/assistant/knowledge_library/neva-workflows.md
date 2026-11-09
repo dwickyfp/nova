@@ -30,3 +30,5 @@ A conversation read-only grant applies only to read-only actions. A write tool
 still requires approval. Changing instructions or loading a skill never widens
 the user's privileges.
 
+
+Which Semantic Views exist: list_semantic_views returns every published Semantic View the active role can open, with what each covers and its main metrics. Answer "which views do we have" from it, and name the matching view when asking a governed metric question. A view the role cannot open is not listed and is not mentioned.
