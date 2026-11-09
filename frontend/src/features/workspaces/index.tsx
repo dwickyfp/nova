@@ -171,6 +171,7 @@ const FILE_PANEL_WIDE_FROM = 1024;
 const EDITOR_MIN_HEIGHT = 160;
 
 const NO_DATABASES: string[] = [];
+const NO_EXPANDED: Record<string, boolean> = {};
 const NO_SCHEMAS: { name: string }[] = [];
 
 function useElementSize(element: HTMLElement | null) {
@@ -682,6 +683,8 @@ export function WorkspacesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = workspacesRoute.useSearch();
+  // The database tree is built once, on first visit, and kept while hidden.
+  const [databasesVisited, setDatabasesVisited] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"workspaces" | "databases">(
     "workspaces",
   );
@@ -816,6 +819,21 @@ export function WorkspacesPage() {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const activeTabIdRef = useRef(activeTabId);
+
+  useEffect(() => {
+    if (sidebarTab === "databases") setDatabasesVisited(true);
+  }, [sidebarTab]);
+  // Stable, so toggling one database re-renders that node, not all of them.
+  const toggleDatabase = useCallback(
+    (name: string) =>
+      setExpandedDatabases((prev) => ({ ...prev, [name]: !prev[name] })),
+    [],
+  );
+  const toggleSchema = useCallback(
+    (key: string) =>
+      setExpandedSchemas((prev) => ({ ...prev, [key]: !prev[key] })),
+    [],
+  );
 
   // Stable across keystrokes, so the memoized selector does not re-render
   // while only the SQL text changes.
@@ -2327,7 +2345,7 @@ export function WorkspacesPage() {
                   </div>
                 </div>
                 <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
-                  {sidebarTab === "workspaces" ? (
+                  <div hidden={sidebarTab !== "workspaces"}>
                     <WorkspaceTree
                       entries={filteredEntries}
                       activeEntryId={activeTabId}
@@ -2371,31 +2389,24 @@ export function WorkspacesPage() {
                       onRename={renameEntry}
                       onDelete={deleteEntry}
                     />
-                  ) : (
-                    <DatabaseExplorer
-                      databases={filteredDatabases}
-                      expandedDatabases={expandedDatabases}
-                      expandedSchemas={expandedSchemas}
-                      onToggleDatabase={(name) =>
-                        setExpandedDatabases((prev) => ({
-                          ...prev,
-                          [name]: !prev[name],
-                        }))
-                      }
-                      onToggleSchema={(key) =>
-                        setExpandedSchemas((prev) => ({
-                          ...prev,
-                          [key]: !prev[key],
-                        }))
-                      }
-                      role={
-                        sessionRole ||
-                        queryContextQuery.data?.defaults.role ||
-                        undefined
-                      }
-                      setSchemasByDatabase={setSchemasByDatabase}
-                    />
-                  )}
+                  </div>
+                  {databasesVisited || sidebarTab === "databases" ? (
+                    <div hidden={sidebarTab !== "databases"}>
+                      <DatabaseExplorer
+                        databases={filteredDatabases}
+                        expandedDatabases={expandedDatabases}
+                        expandedSchemas={expandedSchemas}
+                        onToggleDatabase={toggleDatabase}
+                        onToggleSchema={toggleSchema}
+                        role={
+                          sessionRole ||
+                          queryContextQuery.data?.defaults.role ||
+                          undefined
+                        }
+                        setSchemasByDatabase={setSchemasByDatabase}
+                      />
+                    </div>
+                  ) : null}
                 </ScrollArea>
               </>
             )}
@@ -3025,7 +3036,7 @@ function renderWorkspaceEntries(
     });
 }
 
-function DatabaseExplorer({
+const DatabaseExplorer = memo(function DatabaseExplorer({
   databases,
   expandedDatabases,
   expandedSchemas,
@@ -3053,7 +3064,11 @@ function DatabaseExplorer({
               key={database.name}
               database={database.name}
               expanded={expandedDatabases[database.name] ?? false}
-              expandedSchemas={expandedSchemas}
+              // Closed databases get one constant, so opening a schema
+              // re-renders only the database that holds it.
+              expandedSchemas={
+                expandedDatabases[database.name] ? expandedSchemas : NO_EXPANDED
+              }
               onToggleDatabase={onToggleDatabase}
               onToggleSchema={onToggleSchema}
               role={role}
@@ -3064,9 +3079,9 @@ function DatabaseExplorer({
       </div>
     </TablePopoverProvider>
   );
-}
+});
 
-function DatabaseNode({
+const DatabaseNode = memo(function DatabaseNode({
   database,
   expanded,
   expandedSchemas,
@@ -3085,24 +3100,6 @@ function DatabaseNode({
     SetStateAction<Record<string, Array<{ name: string }>>>
   >;
 }) {
-  const schemasQuery = useQuery<SchemaResponse>({
-    queryKey: ["db-schemas", database, role],
-    queryFn: () =>
-      api.get<SchemaResponse>(
-        `/objects/databases/${encodeURIComponent(database)}/schemas${role ? `?role=${encodeURIComponent(role)}` : ""}`,
-      ),
-    enabled: expanded,
-  });
-
-  useEffect(() => {
-    if (schemasQuery.data) {
-      setSchemasByDatabase((prev) => ({
-        ...prev,
-        [database]: schemasQuery.data.schemas,
-      }));
-    }
-  }, [database, schemasQuery.data, setSchemasByDatabase]);
-
   return (
     <Collapsible
       open={expanded}
@@ -3125,27 +3122,75 @@ function DatabaseNode({
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub>
-            {schemasQuery.data?.schemas.map((schema) => (
-              <SchemaNode
-                key={`${database}:${schema.name}`}
-                database={database}
-                schema={schema.name}
-                expanded={
-                  expandedSchemas[`${database}:${schema.name}`] ?? false
-                }
-                onToggleSchema={onToggleSchema}
-                role={role}
-              />
-            ))}
-          </SidebarMenuSub>
+          {expanded ? (
+            <DatabaseSchemas
+              database={database}
+              expandedSchemas={expandedSchemas}
+              onToggleSchema={onToggleSchema}
+              role={role}
+              setSchemasByDatabase={setSchemasByDatabase}
+            />
+          ) : null}
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
   );
+});
+
+/**
+ * An open database's schemas. Its query exists only while the database is
+ * open, instead of one idle query per listed database.
+ */
+function DatabaseSchemas({
+  database,
+  expandedSchemas,
+  onToggleSchema,
+  role,
+  setSchemasByDatabase,
+}: {
+  database: string;
+  expandedSchemas: Record<string, boolean>;
+  onToggleSchema: (key: string) => void;
+  role?: string;
+  setSchemasByDatabase: Dispatch<
+    SetStateAction<Record<string, Array<{ name: string }>>>
+  >;
+}) {
+  const schemasQuery = useQuery<SchemaResponse>({
+    queryKey: ["db-schemas", database, role],
+    queryFn: () =>
+      api.get<SchemaResponse>(
+        `/objects/databases/${encodeURIComponent(database)}/schemas${role ? `?role=${encodeURIComponent(role)}` : ""}`,
+      ),
+  });
+
+  useEffect(() => {
+    if (schemasQuery.data) {
+      setSchemasByDatabase((prev) =>
+        prev[database] === schemasQuery.data.schemas
+          ? prev
+          : { ...prev, [database]: schemasQuery.data.schemas },
+      );
+    }
+  }, [database, schemasQuery.data, setSchemasByDatabase]);
+
+  return (
+    <SidebarMenuSub>
+      {schemasQuery.data?.schemas.map((schema) => (
+        <SchemaNode
+          key={`${database}:${schema.name}`}
+          database={database}
+          schema={schema.name}
+          expanded={expandedSchemas[`${database}:${schema.name}`] ?? false}
+          onToggleSchema={onToggleSchema}
+          role={role}
+        />
+      ))}
+    </SidebarMenuSub>
+  );
 }
 
-function SchemaNode({
+const SchemaNode = memo(function SchemaNode({
   database,
   schema,
   expanded,
@@ -3159,14 +3204,6 @@ function SchemaNode({
   role?: string;
 }) {
   const schemaKey = `${database}:${schema}`;
-  const treeQuery = useQuery<SchemaTreeResponse>({
-    queryKey: ["schema-tree", database, schema, role],
-    queryFn: () =>
-      api.get<SchemaTreeResponse>(
-        `/objects/databases/${encodeURIComponent(database)}/schemas/${encodeURIComponent(schema)}/tree${role ? `?role=${encodeURIComponent(role)}` : ""}`,
-      ),
-    enabled: expanded,
-  });
 
   return (
     <Collapsible open={expanded} onOpenChange={() => onToggleSchema(schemaKey)}>
@@ -3187,37 +3224,60 @@ function SchemaNode({
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          {treeQuery.data && (
-            <SidebarMenuSub className="space-y-2 py-1">
-              <ObjectGroup
-                title="Tables"
-                items={treeQuery.data.tables}
-                database={database}
-                schema={schema}
-              />
-              <ObjectGroup
-                title="Views"
-                items={treeQuery.data.views}
-                database={database}
-                schema={schema}
-              />
-              <ObjectGroup
-                title="Materialized Views"
-                items={treeQuery.data.materialized_views}
-                database={database}
-                schema={schema}
-              />
-              <ObjectGroup
-                title="Stages"
-                items={treeQuery.data.stages}
-                database={database}
-                schema={schema}
-              />
-            </SidebarMenuSub>
-          )}
+          {expanded ? (
+            <SchemaObjects database={database} schema={schema} role={role} />
+          ) : null}
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
+  );
+});
+
+/** An open schema's objects; queried only while the schema is open. */
+function SchemaObjects({
+  database,
+  schema,
+  role,
+}: {
+  database: string;
+  schema: string;
+  role?: string;
+}) {
+  const treeQuery = useQuery<SchemaTreeResponse>({
+    queryKey: ["schema-tree", database, schema, role],
+    queryFn: () =>
+      api.get<SchemaTreeResponse>(
+        `/objects/databases/${encodeURIComponent(database)}/schemas/${encodeURIComponent(schema)}/tree${role ? `?role=${encodeURIComponent(role)}` : ""}`,
+      ),
+  });
+  if (!treeQuery.data) return null;
+  return (
+    <SidebarMenuSub className="space-y-2 py-1">
+      <ObjectGroup
+        title="Tables"
+        items={treeQuery.data.tables}
+        database={database}
+        schema={schema}
+      />
+      <ObjectGroup
+        title="Views"
+        items={treeQuery.data.views}
+        database={database}
+        schema={schema}
+      />
+      <ObjectGroup
+        title="Materialized Views"
+        items={treeQuery.data.materialized_views}
+        database={database}
+        schema={schema}
+      />
+      <ObjectGroup
+        title="Stages"
+        items={treeQuery.data.stages}
+        database={database}
+        schema={schema}
+      />
+    </SidebarMenuSub>
   );
 }
 
