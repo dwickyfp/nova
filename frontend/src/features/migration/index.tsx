@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,6 @@ import {
   createSource,
   dryRun,
   enqueueMigration,
-  fetchCapabilities,
   fetchEngineStatus,
   fetchMigrationJob,
   fetchPlan,
@@ -23,7 +22,6 @@ import {
   testSourceConnection,
   type DryRunResponse,
   type EngineStatus,
-  type MigrationCapabilities,
   type MigrationJob,
   type PlanResponse,
   type PreflightResponse,
@@ -51,8 +49,6 @@ const MAX_DATABASES = 50;
 const JOB_FAILURE_MESSAGES: Record<string, string> = {
   session_expired:
     "The migration session expired. Sign in again, then review and submit a new job.",
-  execute_disabled:
-    "Migration execution is disabled. Ask an operator to enable it before retrying.",
   confirmation_required:
     "The confirmation was not accepted. Review the selection before retrying.",
   preflight_failed:
@@ -80,9 +76,46 @@ function jobFailureMessage(code: string | null | undefined) {
     : JOB_FAILURE_MESSAGES.migration_failed;
 }
 
+const SECTION_CLASS =
+  "rounded-lg border border-surface-border bg-card p-4 md:p-6";
+
+function SectionHeader({
+  step,
+  id,
+  title,
+  description,
+  meta,
+}: {
+  step: string;
+  id: string;
+  title: string;
+  description: string;
+  meta?: ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline gap-3">
+      <span
+        aria-hidden="true"
+        className="w-6 shrink-0 font-mono text-sm tabular-nums text-muted-foreground"
+      >
+        {step}
+      </span>
+      <div className="min-w-0 flex-1">
+        <h2 id={id} className="font-heading text-base font-semibold">
+          {title}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
+      {meta && (
+        <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {meta}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MigrationPage() {
-  const [capabilities, setCapabilities] =
-    useState<MigrationCapabilities | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [engineError, setEngineError] = useState("");
   const [sources, setSources] = useState<SourceConnection[]>([]);
@@ -144,30 +177,10 @@ export function MigrationPage() {
         );
       });
     try {
-      const [capabilitiesResult, sourcesResult] = await Promise.allSettled([
-        fetchCapabilities(),
-        fetchSources(),
-      ]);
-      const errors: string[] = [];
-      if (capabilitiesResult.status === "fulfilled") {
-        setCapabilities(capabilitiesResult.value);
-      } else {
-        setCapabilities(null);
-        errors.push(
-          errorMessage(
-            capabilitiesResult.reason,
-            "Could not load migration capabilities.",
-          ),
-        );
-      }
-      if (sourcesResult.status === "fulfilled") {
-        setSources(sourcesResult.value.connections);
-      } else {
-        errors.push(
-          errorMessage(sourcesResult.reason, "Could not load saved sources."),
-        );
-      }
-      setLoadError(errors.join(" "));
+      const sourcesResult = await fetchSources();
+      setSources(sourcesResult.connections);
+    } catch (error) {
+      setLoadError(errorMessage(error, "Could not load saved sources."));
     } finally {
       setLoading(false);
     }
@@ -462,7 +475,6 @@ export function MigrationPage() {
       !reviewReady ||
       !acknowledged ||
       confirmation !== confirmationPhrase ||
-      !capabilities?.execute_available ||
       job !== null
     ) {
       return;
@@ -563,50 +575,20 @@ export function MigrationPage() {
             }
           />
         )}
-        {!loading && capabilities && !capabilities.execute_available && (
-          <div
-            role="status"
-            className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning/5 p-4 text-sm"
-          >
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
-            <div>
-              <p className="font-medium">Migration execution is disabled</p>
-              <p className="mt-1 text-muted-foreground">
-                Connection tests and plan review still work. After a restorable
-                target backup is ready, an operator can set{" "}
-                <code>MIGRATION_EXECUTE_ENABLED=true</code> for the backend and
-                worker to allow job submission.
-              </p>
-            </div>
-          </div>
-        )}
+        <section aria-labelledby="source-heading" className={SECTION_CLASS}>
+          <SectionHeader
+            step="01"
+            id="source-heading"
+            title="Source connection"
+            description="Enter the source SQL address and a credential reference, or use a saved connection."
+            meta={
+              engine
+                ? `Sync utility: ${engine.available ? "available" : "not configured"}`
+                : undefined
+            }
+          />
 
-        <section
-          aria-labelledby="source-heading"
-          className="rounded-lg border border-surface-border bg-card p-4 md:p-6"
-        >
-          <div className="flex items-start gap-3">
-            <span
-              aria-hidden="true"
-              className="mt-0.5 font-mono text-sm text-muted-foreground"
-            >
-              01
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2
-                id="source-heading"
-                className="font-heading text-base font-semibold"
-              >
-                Source connection
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Enter the source SQL address and a credential reference, or use
-                a saved connection.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.3fr_0.55fr_1fr_1.3fr]">
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.3fr_0.55fr_1fr_1.3fr]">
             <div className="min-w-0 space-y-2">
               <Label htmlFor="source-name">Connection name</Label>
               <Input
@@ -684,7 +666,7 @@ export function MigrationPage() {
               </p>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
               className="min-h-11"
@@ -728,12 +710,6 @@ export function MigrationPage() {
                 credential reference, and worker, then try again.
               </span>
             )}
-            {engine && (
-              <span className="text-xs text-muted-foreground">
-                Sync utility:{" "}
-                {engine.available ? "available" : "not configured"}
-              </span>
-            )}
             {engineError && (
               <span
                 role="status"
@@ -745,7 +721,7 @@ export function MigrationPage() {
           </div>
 
           {sources.length > 0 && (
-            <div className="mt-5 border-t border-border pt-5">
+            <div className="mt-6 border-t border-border pt-6">
               <Label htmlFor="saved-source">Saved connection</Label>
               <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <select
@@ -783,41 +759,23 @@ export function MigrationPage() {
           )}
         </section>
 
-        <section
-          aria-labelledby="database-heading"
-          className="rounded-lg border border-surface-border bg-card p-4 md:p-6"
-        >
-          <div className="flex items-start gap-3">
-            <span
-              aria-hidden="true"
-              className="mt-0.5 font-mono text-sm text-muted-foreground"
-            >
-              02
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2
-                id="database-heading"
-                className="font-heading text-base font-semibold"
-              >
-                Choose databases
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Select every database to include in this migration job.
-              </p>
-            </div>
-            <span className="text-sm font-medium">
-              {selectedDatabases.length} of {MAX_DATABASES} selected
-            </span>
-          </div>
+        <section aria-labelledby="database-heading" className={SECTION_CLASS}>
+          <SectionHeader
+            step="02"
+            id="database-heading"
+            title="Choose databases"
+            description="Select every database to include in this migration job."
+            meta={`${selectedDatabases.length} of ${MAX_DATABASES} selected`}
+          />
 
           {discovering ? (
             <LoadingOverlay
-              className="mt-5"
+              className="mt-6"
               label={`Listing databases from ${selectedSource}`}
             />
           ) : discoveryError ? (
             <EmptyState
-              className="mt-5"
+              className="mt-6"
               variant="error"
               title="Could not list databases"
               description={discoveryError}
@@ -833,13 +791,13 @@ export function MigrationPage() {
             />
           ) : availableDatabases === null ? (
             <EmptyState
-              className="mt-5"
+              className="mt-6"
               title="Choose a source connection"
               description="Save a source or choose a saved connection to list its databases."
             />
           ) : availableDatabases.length === 0 ? (
             <EmptyState
-              className="mt-5"
+              className="mt-6"
               title="No selectable databases"
               description="Check the source connection and its access, then list databases again."
               action={
@@ -853,7 +811,7 @@ export function MigrationPage() {
               }
             />
           ) : (
-            <div className="mt-5">
+            <div className="mt-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="w-full min-w-0 space-y-2 sm:max-w-sm">
                   <Label htmlFor="database-search">Find a database</Label>
@@ -935,7 +893,7 @@ export function MigrationPage() {
           {availableDatabases !== null && unsupportedDatabases.length > 0 && (
             <div
               role="status"
-              className="mt-4 rounded-md border border-warning/30 bg-warning/5 p-4 text-sm"
+              className="mt-6 rounded-md border border-warning/30 bg-warning/5 p-4 text-sm"
             >
               <p className="font-medium text-warning-strong">
                 Some database names cannot be migrated yet
@@ -955,32 +913,15 @@ export function MigrationPage() {
           )}
         </section>
 
-        <section
-          aria-labelledby="review-heading"
-          className="rounded-lg border border-surface-border bg-card p-4 md:p-6"
-        >
-          <div className="flex items-start gap-3">
-            <span
-              aria-hidden="true"
-              className="mt-0.5 font-mono text-sm text-muted-foreground"
-            >
-              03
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2
-                id="review-heading"
-                className="font-heading text-base font-semibold"
-              >
-                Review and run
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Check object verdicts, target statements, and access for each
-                selected database.
-              </p>
-            </div>
-          </div>
+        <section aria-labelledby="review-heading" className={SECTION_CLASS}>
+          <SectionHeader
+            step="03"
+            id="review-heading"
+            title="Review and run"
+            description="Check object verdicts, target statements, and access for each selected database."
+          />
 
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <label className="flex min-h-11 items-center gap-3 text-sm">
               <Checkbox
                 checked={includeData}
@@ -1027,7 +968,7 @@ export function MigrationPage() {
           )}
 
           {reviews.length > 0 && (
-            <div className="mt-5 space-y-4">
+            <div className="mt-6 space-y-4">
               {reviews.map((review) => (
                 <div
                   key={review.database}
@@ -1127,7 +1068,7 @@ export function MigrationPage() {
 
           {reviews.length === selectedDatabases.length &&
             reviews.length > 0 && (
-              <div className="mt-6 border-t border-border pt-5">
+              <div className="mt-6 border-t border-border pt-6">
                 <label className="flex min-h-11 items-start gap-3 text-sm">
                   <Checkbox
                     className="mt-1"
@@ -1163,7 +1104,6 @@ export function MigrationPage() {
                       !reviewReady ||
                       !acknowledged ||
                       confirmation !== confirmationPhrase ||
-                      !capabilities?.execute_available ||
                       enqueueing ||
                       !!job
                     }
@@ -1194,10 +1134,7 @@ export function MigrationPage() {
         </section>
 
         {job && (
-          <section
-            aria-labelledby="job-heading"
-            className="rounded-lg border border-surface-border bg-card p-4 md:p-6"
-          >
+          <section aria-labelledby="job-heading" className={SECTION_CLASS}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2

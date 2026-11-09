@@ -67,8 +67,6 @@ async def _worker_read(operation: str, body: MigrationJobRequest, user: dict) ->
 
 
 def _check_execute_gate(confirmation: str, expected: str, acknowledged: bool) -> None:
-    if not settings.MIGRATION_EXECUTE_ENABLED:
-        raise HTTPException(status_code=403, detail="Migration execute is disabled")
     if not acknowledged:
         raise HTTPException(status_code=422, detail="Acknowledge the migration omissions")
     if settings.MIGRATION_EXECUTE_REQUIRE_CONFIRMATION and confirmation != expected:
@@ -80,17 +78,12 @@ def _check_execute_gate(confirmation: str, expected: str, acknowledged: bool) ->
     response_class=SanitizingJSONResponse,
 )
 async def capabilities(user: CurrentUser):
-    """Expose the operator's execute gate to the client."""
+    """Describe the migration phases and execute requirements to the client."""
     return {
         "phase": "11",
         "version": "v1",
         "phases": ["assess", "dry_run", "plan", "preflight", "execute"],
-        # True because an execute endpoint now exists — but it is **gated**: it
-        # refuses unless the operator enabled it (issue #7). ``write_operations``
-        # mirrors that gate so a client shows the right affordance.
-        "write_operations": settings.MIGRATION_EXECUTE_ENABLED,
-        "execute_available": settings.MIGRATION_EXECUTE_ENABLED,
-        "execute_gate": {"issue": "#7", "name": "backup/restore"},
+        "write_operations": True,
         "mv_ddl_surface": "SHOW CREATE MATERIALIZED VIEW",
         "source_required": True,
         "execute_require_confirmation": settings.MIGRATION_EXECUTE_REQUIRE_CONFIRMATION,

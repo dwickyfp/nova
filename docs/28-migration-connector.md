@@ -7,12 +7,12 @@
 
 ## Status
 
-Source discovery, dry-run, planning, preflight, and gated execution are
+Source discovery, dry-run, planning, preflight, and execution are
 implemented. The operator first enters the source address and optional secret reference,
 then selects one or more databases returned by that source. The API persists
 job state in `NOVA_SYSTEM`; `nova-worker` performs source reads and target
-mutations. The execute gate (`MIGRATION_EXECUTE_ENABLED`) is off by default
-until an operator has a restorable target backup for issue #7.
+mutations. Execution is always available; each job still requires omission
+acknowledgement and an explicit confirmation phrase.
 
 | Capability | v1 |
 |---|---|
@@ -191,14 +191,12 @@ status and counts. `GET /api/v1/migration/jobs/{id}` reports `queued`,
 database. A single-database `POST /execute` compatibility route also queues a
 worker job and responds `202`.
 
-Three gates are enforced before submission and again when needed in the
+Two gates are enforced before submission and again when needed in the
 worker:
 
-1. **`MIGRATION_EXECUTE_ENABLED`** (default **False**) — the operator's explicit
-   acknowledgement that a restorable backup exists (issue #7). Closed → `403`.
-2. **Omission acknowledgement** — `acknowledge_omissions=true` is required. The
+1. **Omission acknowledgement** — `acknowledge_omissions=true` is required. The
    report is the product; executing without reading it is refused → `422`.
-3. **Confirmation** — when `MIGRATION_EXECUTE_REQUIRE_CONFIRMATION` is set
+2. **Confirmation** — when `MIGRATION_EXECUTE_REQUIRE_CONFIRMATION` is set
    (default True), batch `confirmation` must equal
    `MIGRATE <number of selected databases> DATABASES` → `422`. The single-DB
    route still requires its target database name.

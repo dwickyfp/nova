@@ -310,7 +310,6 @@ def data_client(monkeypatch):
         "get_credential_params",
         lambda stype, conn: {"aws.s3.access_key": "AK", "aws.s3.secret_key": "SK"},
     )
-    monkeypatch.setattr(service_module.settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
     monkeypatch.setattr(
         service_module.settings,
         "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION",

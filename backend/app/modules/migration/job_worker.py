@@ -41,7 +41,6 @@ from .schemas import (
 )
 from .service import (
     MigrationExecuteConfirmationError,
-    MigrationExecuteGateError,
     MigrationPreflightError,
     migration_service,
 )
@@ -81,8 +80,6 @@ class MigrationSessionExpired(RuntimeError):
 def _safe_error(exc: Exception) -> str:
     if isinstance(exc, MigrationSessionExpired):
         return "session_expired"
-    if isinstance(exc, MigrationExecuteGateError):
-        return "execute_disabled"
     if isinstance(exc, MigrationExecuteConfirmationError):
         return "confirmation_required"
     if isinstance(exc, MigrationPreflightError):

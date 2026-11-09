@@ -164,13 +164,6 @@ class Settings(BaseSettings):
     # guessing a location.
     MIGRATION_CLUSTER_SYNC_BINARY: str = ""
 
-    # Execute is gated on issue #7 (backup/restore). This flag is the operator's
-    # explicit acknowledgement that a restorable backup exists; it is **False by
-    # default** and the execute endpoint returns 403 until the operator sets it.
-    # A flag alone is not the backup — the operator owns that guarantee; this is
-    # a deliberate gate, not a safety mechanism Nova can enforce.
-    MIGRATION_EXECUTE_ENABLED: bool = False
-
     # Whether the execute endpoint also requires the caller to pass the exact
     # target database name as a second confirmation (guards a mis-typed run).
     MIGRATION_EXECUTE_REQUIRE_CONFIRMATION: bool = True

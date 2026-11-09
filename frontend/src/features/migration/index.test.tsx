@@ -29,16 +29,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   window.sessionStorage.clear();
   apiMocks.get.mockImplementation(async (path: string) => {
-    if (path === "/migration/capabilities")
-      return {
-        phase: "11",
-        version: "v1",
-        phases: [],
-        write_operations: true,
-        execute_available: true,
-        execute_gate: { issue: "#7", name: "backup/restore" },
-        mv_ddl_surface: "",
-      };
     if (path === "/migration/engine")
       return {
         available: true,
@@ -126,7 +116,6 @@ beforeEach(() => {
           ],
           blocked: [],
           step_count: 1,
-          execute_available: true,
         };
       if (path === "/migration/preflight")
         return {
@@ -190,38 +179,14 @@ async function registerAndDiscover() {
 }
 
 describe("MigrationPage", () => {
-  it("allows connection testing while migration execution is disabled", async () => {
-    const normalGet = apiMocks.get.getMockImplementation();
-    apiMocks.get.mockImplementation(async (path: string) => {
-      if (path === "/migration/capabilities") {
-        return {
-          phase: "11",
-          version: "v1",
-          phases: [],
-          write_operations: false,
-          execute_available: false,
-          execute_gate: { issue: "#7", name: "backup/restore" },
-          mv_ddl_surface: "",
-        };
-      }
-      return normalGet?.(path);
-    });
+  it("shows no execution gate and needs no capability check", async () => {
     const screen = await render(<MigrationPage />);
     await expect
-      .element(screen.getByText(/MIGRATION_EXECUTE_ENABLED=true/))
+      .element(screen.getByRole("heading", { name: "Source connection" }))
       .toBeVisible();
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "Connection name" }),
-      "origin",
-    );
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "IP or hostname" }),
-      "10.0.0.12",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await expect
-      .element(screen.getByText("Connection successful. You can save this source."))
-      .toBeVisible();
+    expect(screen.container.textContent).not.toMatch(/execution is disabled/i);
+    expect(screen.container.textContent).not.toMatch(/MIGRATION_EXECUTE_ENABLED/);
+    expect(apiMocks.get).not.toHaveBeenCalledWith("/migration/capabilities");
   });
 
   it("requires a successful connection test and invalidates it when the address changes", async () => {

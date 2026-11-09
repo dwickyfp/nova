@@ -892,9 +892,9 @@ job migrasi diklaim dari `NOVA_SYSTEM`. API menerima
 per database lewat `GET /api/v1/migration/jobs/{id}`. Pemindahan skema dan data
 berjalan di worker. Jika worker tidak hidup, job tetap menunggu. Pastikan
 backend dan worker memakai nilai
-`FERNET_KEY`, `REDIS_URL`, `NOVA_CONFIG_PATH`, dan `MIGRATION_EXECUTE_ENABLED`
-yang sama. Eksekusi migrasi memerlukan `MIGRATION_EXECUTE_ENABLED=true` setelah
-backup target yang dapat dipulihkan tersedia; nilai bawaan adalah `false`.
+`FERNET_KEY`, `REDIS_URL`, dan `NOVA_CONFIG_PATH` yang sama. Eksekusi migrasi
+selalu aktif; setiap job tetap meminta konfirmasi nama target dan pengakuan atas
+objek yang tidak dapat dimigrasikan.
 Jika koneksi sumber memakai `secret_ref`, worker juga harus memiliki konfigurasi
 dan akses ke penyedia secret yang sama dengan backend. Worker membuka koneksi
 ke cluster sumber dan menyelesaikan referensi secret saat job berjalan.

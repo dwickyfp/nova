@@ -77,7 +77,6 @@ services:
       SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
       FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
       NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
-      MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
       PROXY_ENABLED: "true"
       # Where the engine's backends reach the AI_* gateway.
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-http://nova-backend:8000}
@@ -133,7 +132,6 @@ services:
       SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
       FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
       NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
-      MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
       WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
       WORKER_IMPERSONATION_PASSWORD: ${WORKER_IMPERSONATION_PASSWORD:-}
       WORKER_IMPERSONATION_ROLE: ${WORKER_IMPERSONATION_ROLE:-}

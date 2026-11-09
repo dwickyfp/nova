@@ -194,7 +194,6 @@ async def test_batch_executes_in_standalone_worker_across_two_clusters(
         monkeypatch.setattr(migration_service, "databases", backend_must_not_migrate)
         monkeypatch.setattr(migration_service, "execute", backend_must_not_migrate)
         monkeypatch.setattr(migration_service, "test_source_connection", backend_must_not_migrate)
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True)
 
         worker_env = os.environ.copy()
         worker_env.update(
@@ -214,22 +213,10 @@ async def test_batch_executes_in_standalone_worker_across_two_clusters(
                 "WORKER_IMPERSONATION_USER": worker_user,
                 "WORKER_IMPERSONATION_PASSWORD": worker_password,
                 "RANGER_ENABLED": "false",
-                "MIGRATION_EXECUTE_ENABLED": "true",
                 "NOVA_METRICS_HOST": "127.0.0.1",
                 "NOVA_METRICS_WORKER_PORT": str(_free_port()),
             }
         )
-        gate_probe = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-c",
-            "from app.core.config import settings; print(int(settings.MIGRATION_EXECUTE_ENABLED))",
-            cwd=BACKEND_DIR,
-            env=worker_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        gate_output, _ = await gate_probe.communicate()
-        assert gate_probe.returncode == 0 and gate_output.strip() == b"1"
         worker_log_path = config_path.parent / "worker.log"
         with worker_log_path.open("wb") as worker_log:
             process = await asyncio.create_subprocess_exec(

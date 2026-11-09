@@ -452,7 +452,6 @@ def execute_client(monkeypatch):
         return "audit-id"
 
     monkeypatch.setattr(service_module, "write_audit_log", _audit)
-    monkeypatch.setattr(service_module.settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
     monkeypatch.setattr(
         service_module.settings,
         "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION",
@@ -537,7 +536,6 @@ class TestPlanEndpoint:
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["execute_available"] is False
         kinds = [s["kind"] for s in body["steps"]]
         assert kinds == ["database", "table", "view"]
 

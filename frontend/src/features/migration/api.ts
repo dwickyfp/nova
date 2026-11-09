@@ -72,16 +72,6 @@ export type EngineStatus = {
   reason: string | null;
 };
 
-export type MigrationCapabilities = {
-  phase: string;
-  version: string;
-  phases: string[];
-  write_operations: boolean;
-  execute_available: boolean;
-  execute_gate: { issue: string; name: string };
-  mv_ddl_surface: string;
-};
-
 export type PlanStepKind =
   "database" | "table" | "view" | "materialized_view" | "function" | "task";
 
@@ -105,14 +95,9 @@ export type PlanResponse = {
   steps: PlanStep[];
   blocked: BlockedObject[];
   step_count: number;
-  execute_available: boolean;
 };
 
 const BASE = "/migration";
-
-export function fetchCapabilities() {
-  return api.get<MigrationCapabilities>(`${BASE}/capabilities`);
-}
 
 export function fetchEngineStatus() {
   return api.get<EngineStatus>(`${BASE}/engine`);

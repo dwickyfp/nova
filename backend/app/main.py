@@ -553,9 +553,6 @@ def create_app() -> FastAPI:
         tags=["external-catalogs"],
     )
     # Phase 11 — Migration Connector: assess, dry-run, plan, and execute.
-    # Execute is gated on #7 (backup/restore): the endpoint exists but refuses
-    # (403) unless the operator sets MIGRATION_EXECUTE_ENABLED. Data movement is
-    # not implemented (11-C).
     app.include_router(migration_router, prefix=f"{prefix}/migration", tags=["migration"])
 
     # Static files for Java UDFs

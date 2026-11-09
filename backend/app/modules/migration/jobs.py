@@ -48,7 +48,6 @@ class MigrationJobFailed(RuntimeError):
         "preflight_failed": 409,
         "data_movement_failed": 422,
         "confirmation_required": 422,
-        "execute_disabled": 403,
         "session_expired": 401,
     }
 
