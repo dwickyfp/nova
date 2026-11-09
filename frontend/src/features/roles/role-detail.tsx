@@ -21,8 +21,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api-client'
-import { useNoveSurface } from '@/features/assistant/nove-surface-hook'
-import { defineNoveCapability } from '@/features/assistant/surface-registry'
+import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
+import { defineNevaCapability } from '@/features/assistant/surface-registry'
 
 // ---------------------------------------------------------------------------
 // Types (mirror the API contract from backend/app/modules/users/router.py)
@@ -95,7 +95,7 @@ export function RoleDetailPage({ name }: { name: string }) {
   })
 
   const detail = detailQuery.data
-  const { askNove } = useNoveSurface({
+  const { askNeva } = useNevaSurface({
     id: 'roles.detail',
     route: `/roles/${encodeURIComponent(name)}`,
     title: `Role ${detail?.name ?? name}`,
@@ -113,11 +113,11 @@ export function RoleDetailPage({ name }: { name: string }) {
       view: { activeTab: 'privileges', filters: { scope: privScopeFilter, grantable: privGrantableFilter }, search: privSearch },
     }),
     capabilities: [
-      defineNoveCapability({
+      defineNevaCapability({
         name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
         execute: () => detailQuery.refetch({ throwOnError: true }),
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: 'surface.set_filter', risk: 'safe',
         argsSchema: z.object({ filter: z.enum(['scope', 'grantable', 'search']), value: z.string().max(120) }),
         execute: ({ filter, value }) => {
@@ -232,8 +232,8 @@ export function RoleDetailPage({ name }: { name: string }) {
         {/* ---------- Top bar ---------- */}
         <div className='flex items-start justify-between gap-3'>
           <div className='flex items-center gap-3'>
-            <Button variant='outline' onClick={() => void askNove('Explain the access this role currently has.')}>
-              Ask Nove
+            <Button variant='outline' onClick={() => void askNeva('Explain the access this role currently has.')}>
+              Ask Neva
             </Button>
             <Button
               variant='outline'

@@ -17,8 +17,8 @@ import { AssistantEmptyState } from "./assistant-empty-state";
 import type { ApprovalMode } from "./use-assistant-turn";
 import { MessageList } from "./message-list";
 import type { TurnContext } from "./stream-client";
-import type { NoveSuggestedAction } from "./surface-registry";
-import type { NoveEventInput } from "./app-context";
+import type { NevaSuggestedAction } from "./surface-registry";
+import type { NevaEventInput } from "./app-context";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ThreadHistory } from "./thread-history";
 import type { ThreadView } from "./thread-client";
@@ -79,10 +79,10 @@ export type AssistantPanelProps = {
   userName?: string | null;
   /** Recent conversations listed in the empty state; omitted hides the section. */
   recentThreads?: ThreadView[];
-  suggestedActions?: readonly NoveSuggestedAction[];
+  suggestedActions?: readonly NevaSuggestedAction[];
   clientActionStatus?: string | null;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
 };
 
 function AssistantBody({
@@ -114,7 +114,7 @@ function AssistantBody({
   suggestedActions,
   clientActionStatus,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
 }: AssistantPanelProps) {
   const hasTranscript = Boolean(children) || Boolean(messages?.length);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -177,7 +177,7 @@ function AssistantBody({
                 statusMessage={statusMessage}
                 activeContext={activeContext}
                 onExecutionEvent={onExecutionEvent}
-                onFixWithNove={onFixWithNove}
+                onFixWithNeva={onFixWithNeva}
               />
             ) : (
               <AssistantEmptyState
@@ -238,7 +238,7 @@ function AssistantHeader({
         className="size-4 shrink-0"
       />
       <h2 className="min-w-0 flex-1 truncate text-sm font-medium">
-        {title ?? "Nove"}
+        {title ?? "Neva"}
       </h2>
       <div className="flex shrink-0 items-center gap-0">
         <Tooltip>
@@ -326,7 +326,7 @@ export function AssistantPanel(props: AssistantPanelProps) {
           side="right"
           className="flex w-[22rem] flex-col p-0 sm:max-w-[22rem]"
         >
-          <SheetTitle className="sr-only">Nove</SheetTitle>
+          <SheetTitle className="sr-only">Neva</SheetTitle>
           <div className="flex h-full min-h-0 flex-col">
             {header}
             <AssistantBody {...props} />
@@ -367,7 +367,7 @@ export function AssistantPanel(props: AssistantPanelProps) {
       ) : null}
       <aside
         id="assistant-panel"
-        aria-label="Nove"
+        aria-label="Neva"
         inert={!open}
         style={{ width }}
         className="flex h-full min-h-0 flex-col border-l bg-background"

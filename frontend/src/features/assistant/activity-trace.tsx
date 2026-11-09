@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NoveMark } from "./nove-mark";
+import { NevaMark } from "./neva-mark";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 
 export type ActivityTraceProps = {
@@ -28,12 +28,12 @@ export function ActivityTrace({ message }: ActivityTraceProps) {
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={
-          running ? "Nove is working. Show activity" : "Show Nove activity"
+          running ? "Neva is working. Show activity" : "Show Neva activity"
         }
         className="inline-flex min-h-11 min-w-11 items-center gap-1.5 rounded-sm px-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-7 sm:min-w-0"
       >
         {running ? (
-          <NoveMark className="size-4 animate-spin text-primary motion-reduce:animate-none" />
+          <NevaMark className="size-4 animate-spin text-primary motion-reduce:animate-none" />
         ) : (
           <ChevronRight
             aria-hidden="true"
@@ -41,7 +41,7 @@ export function ActivityTrace({ message }: ActivityTraceProps) {
           />
         )}
         {running ? (
-          <span className="sr-only">Nove is working</span>
+          <span className="sr-only">Neva is working</span>
         ) : (
           <span>Activity</span>
         )}

@@ -20,7 +20,7 @@ export type WorkspaceExecutionFeedback = {
   eventPayload: Record<string, string | number | boolean>;
 };
 
-export function safeNoveSql(sql: string): string | undefined {
+export function safeNevaSql(sql: string): string | undefined {
   const trimmed = sql.trim();
   if (
     !trimmed ||
@@ -77,8 +77,8 @@ function safeErrorMessage(message: string): string {
     : trimmed.slice(0, MAX_ERROR_CHARS);
 }
 
-/** Return only the execution evidence Nove needs; result rows stay in the workspace. */
-export function summarizeQueryForNove(
+/** Return only the execution evidence Neva needs; result rows stay in the workspace. */
+export function summarizeQueryForNeva(
   executionId: string,
   sql: string,
   results: QueryResponse[],
@@ -110,7 +110,7 @@ export function summarizeQueryForNove(
       .slice(0, MAX_RESULT_COLUMNS)
       .map((name) => ({ name: name.slice(0, 128) })),
   };
-  const safeSql = failed || noResult ? safeNoveSql(sql) : undefined;
+  const safeSql = failed || noResult ? safeNevaSql(sql) : undefined;
   return {
     execution,
     eventType: failed || noResult ? "query_failed" : "query_completed",

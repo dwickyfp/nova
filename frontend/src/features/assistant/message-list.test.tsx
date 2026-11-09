@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { MessageList } from "./message-list";
 import type { AttachedQuery } from "./query-attach";
@@ -26,6 +26,48 @@ const attachment: AttachedQuery = {
 };
 
 describe("MessageList", () => {
+  it("shows an answer's table and offers its follow-ups", async () => {
+    const onAsk = vi.fn();
+    const answer: TranscriptMessage = {
+      message_id: "a1",
+      role: "assistant",
+      content: "Net revenue per city:",
+      tool_call: null,
+      created_at: "2026-11-09T00:00:00Z",
+      turn_state: "done",
+      blocks: [
+        {
+          kind: "table",
+          block: { title: "Net revenue by city", columns: ["city", "net_revenue"], rows: [["Jakarta", 120], ["Bandung", 80]] },
+        },
+      ],
+      suggestions: ["Which city grew fastest?"],
+    };
+    const screen = await render(
+      <MessageList messages={[userMessage, answer]} onFixWithNeva={onAsk} />,
+    );
+    await expect.element(screen.getByText("Net revenue by city")).toBeVisible();
+    await expect.element(screen.getByRole("cell", { name: "Jakarta" })).toBeVisible();
+    await screen.getByRole("button", { name: "Which city grew fastest?" }).click();
+    expect(onAsk).toHaveBeenCalledWith("Which city grew fastest?");
+  });
+
+  it("holds follow-ups back until the answer is finished", async () => {
+    const streaming: TranscriptMessage = {
+      message_id: "a2",
+      role: "assistant",
+      content: "Working",
+      tool_call: null,
+      created_at: "2026-11-09T00:00:00Z",
+      turn_state: "streaming",
+      suggestions: ["Next?"],
+    };
+    const screen = await render(
+      <MessageList messages={[streaming]} onFixWithNeva={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Next?" }).elements()).toHaveLength(0);
+  });
+
   it("announces status transitions through a single polite live region", async () => {
     const { getByRole } = await render(
       <MessageList messages={[userMessage]} statusMessage="Running query" />,

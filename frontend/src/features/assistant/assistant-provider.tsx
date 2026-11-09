@@ -14,13 +14,13 @@ import { useAuthStore } from "@/stores/auth-store";
 import type { WorkspaceTreeResponse } from "@/features/workspaces/types";
 import { createThread, listThreads } from "./thread-client";
 import type { TurnContext } from "./stream-client";
-import type { NoveAppContext, NoveEventInput } from "./app-context";
-import { NoveSurfaceContext } from "./nove-surface-hook";
+import type { NevaAppContext, NevaEventInput } from "./app-context";
+import { NevaSurfaceContext } from "./neva-surface-hook";
 import {
-  NoveApplicationEvents,
-  NoveSurfaceRegistry,
-  type NoveSurfaceDefinition,
-  type NoveSuggestedAction,
+  NevaApplicationEvents,
+  NevaSurfaceRegistry,
+  type NevaSurfaceDefinition,
+  type NevaSuggestedAction,
 } from "./surface-registry";
 import { useAssistantConversation } from "./use-assistant-conversation";
 import type { ApprovalMode, UiAction } from "./use-assistant-turn";
@@ -74,10 +74,10 @@ type AssistantContextType = {
   collapsedToPersist: () => boolean;
   /** Registers the active surface binding; call with null to clear it. */
   setBinding: (binding: AssistantBinding | null) => void;
-  registerNoveSurface: (get: () => NoveSurfaceDefinition) => () => void;
-  refreshNoveSurface: () => void;
-  publishApplicationEvent: (input: NoveEventInput) => void;
-  askNove: (prompt: string, attachment?: AttachContext) => Promise<void>;
+  registerNevaSurface: (get: () => NevaSurfaceDefinition) => () => void;
+  refreshNevaSurface: () => void;
+  publishApplicationEvent: (input: NevaEventInput) => void;
+  askNeva: (prompt: string, attachment?: AttachContext) => Promise<void>;
   conversation: ReturnType<typeof useAssistantConversation>;
   /**
    * Sends a message with the pending attachments, then clears them. This is
@@ -130,9 +130,9 @@ type AssistantContextType = {
    * context a turn is sent with, so a card runs where the conversation is.
    */
   activeContext: TurnContext;
-  /** Label the header shows, e.g. the open worksheet's name; "Nove" when none. */
+  /** Label the header shows, e.g. the open worksheet's name; "Neva" when none. */
   headerTitle?: string;
-  suggestedActions: readonly NoveSuggestedAction[];
+  suggestedActions: readonly NevaSuggestedAction[];
   clientActionStatus: string | null;
 };
 
@@ -155,8 +155,8 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
   const queryClient = useQueryClient();
   const [open, setOpenState] = useState(false);
   const [binding, setBindingState] = useState<AssistantBinding | null>(null);
-  const [surfaceRegistry] = useState(() => new NoveSurfaceRegistry());
-  const [applicationEvents] = useState(() => new NoveApplicationEvents());
+  const [surfaceRegistry] = useState(() => new NevaSurfaceRegistry());
+  const [applicationEvents] = useState(() => new NevaApplicationEvents());
   const [clientActionStatus, setClientActionStatus] = useState<string | null>(null);
   const surfaceVersion = useSyncExternalStore(surfaceRegistry.subscribe, surfaceRegistry.getSnapshot, surfaceRegistry.getSnapshot);
   const eventVersion = useSyncExternalStore(applicationEvents.subscribe, applicationEvents.getSnapshot, applicationEvents.getSnapshot);
@@ -211,14 +211,14 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
     () => surfaceRegistry.buildContext(activeBinding.context, applicationEvents.getRecent()),
     [activeBinding.context, applicationEvents, surfaceRegistry],
   );
-  const activeAppContext = useMemo<NoveAppContext>(
+  const activeAppContext = useMemo<NevaAppContext>(
     () => getAppContext(),
     // Versions notify the panel when another page or application event changes.
     [getAppContext, surfaceVersion, eventVersion],
   );
   useEffect(() => setClientActionStatus(null), [activeAppContext.surface.id, activeAppContext.surface.route]);
   const activeSurface = surfaceRegistry.getActive();
-  const onClientAction = useCallback(async (action: { capability: string; args: Record<string, unknown>; correlation_id: string; surface_id?: string }, threadId: string, turnContext?: NoveAppContext) => {
+  const onClientAction = useCallback(async (action: { capability: string; args: Record<string, unknown>; correlation_id: string; surface_id?: string }, threadId: string, turnContext?: NevaAppContext) => {
     const surfaceId = action.surface_id ?? surfaceRegistry.getActive()?.id;
     setClientActionStatus("Applying the page action…");
     let outcome: "success" | "failure" = "success";
@@ -256,12 +256,12 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
         ? reason ?? "The page action failed."
         : acknowledgment.verification === "verified"
           ? "Page action applied."
-          : "Page action applied; Nove could not verify it yet.");
+          : "Page action applied; Neva could not verify it yet.");
     } catch {
       // The bounded turn context will carry this evidence on the next request.
       setClientActionStatus(outcome === "failure"
         ? reason ?? "The page action failed."
-        : "Page action applied; Nove could not record it yet.");
+        : "Page action applied; Neva could not record it yet.");
     }
   }, [applicationEvents, getAppContext, surfaceRegistry]);
   const onUiActionCompleted = useCallback(
@@ -324,7 +324,7 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
     return attachment;
   }, []);
 
-  const askNove = useCallback((prompt: string, attachContext?: AttachContext) => {
+  const askNeva = useCallback((prompt: string, attachContext?: AttachContext) => {
     setOpenState(true);
     const attachment: AttachedQuery | undefined = attachContext ? {
       ...attachContext,
@@ -334,9 +334,9 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
     return conversation.sendMessage(prompt, attachment ? [attachment] : []);
   }, [conversation]);
 
-  const registerNoveSurface = useCallback((get: () => NoveSurfaceDefinition) => surfaceRegistry.register(get), [surfaceRegistry]);
-  const refreshNoveSurface = useCallback(() => surfaceRegistry.refresh(), [surfaceRegistry]);
-  const publishApplicationEvent = useCallback((input: NoveEventInput) => {
+  const registerNevaSurface = useCallback((get: () => NevaSurfaceDefinition) => surfaceRegistry.register(get), [surfaceRegistry]);
+  const refreshNevaSurface = useCallback(() => surfaceRegistry.refresh(), [surfaceRegistry]);
+  const publishApplicationEvent = useCallback((input: NevaEventInput) => {
     applicationEvents.publish(input);
   }, [applicationEvents]);
 
@@ -440,10 +440,10 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
       toggle,
       collapsedToPersist,
       setBinding,
-      registerNoveSurface,
-      refreshNoveSurface,
+      registerNevaSurface,
+      refreshNevaSurface,
       publishApplicationEvent,
-      askNove,
+      askNeva,
       conversation,
       sendMessage,
       attachments,
@@ -476,10 +476,10 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
       toggle,
       collapsedToPersist,
       setBinding,
-      registerNoveSurface,
-      refreshNoveSurface,
+      registerNevaSurface,
+      refreshNevaSurface,
       publishApplicationEvent,
-      askNove,
+      askNeva,
       conversation,
       sendMessage,
       attachments,
@@ -504,13 +504,13 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
   );
 
   const surfaceServices = useMemo(() => ({
-    register: registerNoveSurface,
-    refresh: refreshNoveSurface,
+    register: registerNevaSurface,
+    refresh: refreshNevaSurface,
     publish: publishApplicationEvent,
-    ask: askNove,
-  }), [registerNoveSurface, refreshNoveSurface, publishApplicationEvent, askNove]);
+    ask: askNeva,
+  }), [registerNevaSurface, refreshNevaSurface, publishApplicationEvent, askNeva]);
   return <AssistantContext value={value}>
-    <NoveSurfaceContext value={surfaceServices}>{children}</NoveSurfaceContext>
+    <NevaSurfaceContext value={surfaceServices}>{children}</NevaSurfaceContext>
   </AssistantContext>;
 }
 
@@ -546,7 +546,7 @@ export function useAssistantPanelProps(): AssistantPanelProps {
     suggestedActions,
     clientActionStatus,
     publishApplicationEvent,
-    askNove,
+    askNeva,
   } = useAssistant();
   // The greeting addresses the signed-in user by name; until `/auth/me` lands
   // the store is empty and the empty state falls back to a neutral salutation.
@@ -597,7 +597,7 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       suggestedActions,
       clientActionStatus,
       onExecutionEvent: publishApplicationEvent,
-      onFixWithNove: (prompt: string) => { void askNove(prompt); },
+      onFixWithNeva: (prompt: string) => { void askNeva(prompt); },
     }),
     [
       open,
@@ -619,7 +619,7 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       suggestedActions,
       clientActionStatus,
       publishApplicationEvent,
-      askNove,
+      askNeva,
       headerTitle,
       userName,
       recentThreads,

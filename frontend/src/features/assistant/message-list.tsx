@@ -1,10 +1,12 @@
 import { FileCode } from "lucide-react";
+import { CitationList, ResultChart } from "@/features/studio/result-cards";
+import { ResultTable } from "@/features/studio/result-table";
 import { cn } from "@/lib/utils";
 import { ActivityTrace } from "./activity-trace";
 import { Markdown } from "./markdown";
 import type { AttachedQuery } from "./query-attach";
 import type { TurnContext } from "./stream-client";
-import type { NoveEventInput } from "./app-context";
+import type { NevaEventInput } from "./app-context";
 import { ToolCallCard, type ToolCallCardProps } from "./tool-call-card";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 
@@ -17,8 +19,8 @@ export type MessageListProps = {
   statusMessage?: string | null;
   /** Context a SQL code card's Run button executes against. */
   activeContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
 };
 
 export function MessageList({
@@ -28,7 +30,7 @@ export function MessageList({
   statusMessage,
   activeContext,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
 }: MessageListProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -43,7 +45,7 @@ export function MessageList({
           busy={decidingToolCallId === message.tool_call_id}
           runContext={activeContext}
           onExecutionEvent={onExecutionEvent}
-          onFixWithNove={onFixWithNove}
+          onFixWithNeva={onFixWithNeva}
         />
       ))}
     </div>
@@ -96,14 +98,14 @@ function MessageBubble({
   busy,
   runContext,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
 }: {
   message: TranscriptMessage;
   onDecide?: ToolCallCardProps["onDecide"];
   busy?: boolean;
   runContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
 }) {
   if (message.role === "activity") {
     return <ActivityTrace message={message} />;
@@ -156,8 +158,9 @@ function MessageBubble({
         {isUser ? (
           text
         ) : (
-          <Markdown runContext={runContext} onExecutionEvent={onExecutionEvent} onFixWithNove={onFixWithNove}>{message.content}</Markdown>
+          <Markdown runContext={runContext} onExecutionEvent={onExecutionEvent} onFixWithNeva={onFixWithNeva}>{message.content}</Markdown>
         )}
+        {!isUser ? <AnswerBlocks message={message} /> : null}
         {message.turn_state === "streaming" && !isUser ? (
           <span className="mt-1 inline-block h-3 w-1.5 animate-pulse bg-foreground/60 align-middle" />
         ) : null}
@@ -166,7 +169,56 @@ function MessageBubble({
             {marker}
           </span>
         ) : null}
+        {!isUser && message.turn_state !== "streaming" && message.suggestions?.length ? (
+          <FollowUps suggestions={message.suggestions} onAsk={onFixWithNeva} />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+/** The tables, charts and sources an answer produced, in the order they came. */
+function AnswerBlocks({ message }: { message: TranscriptMessage }) {
+  const blocks = message.blocks ?? [];
+  if (!blocks.length) return null;
+  const citations = blocks.flatMap((item) =>
+    item.kind === "citation" ? [item.block] : [],
+  );
+  return (
+    <div className="mt-2 flex min-w-0 flex-col gap-2">
+      {blocks.map((item, index) =>
+        item.kind === "table" ? (
+          <ResultTable key={`table-${index}`} block={item.block} />
+        ) : item.kind === "chart" ? (
+          <ResultChart key={`chart-${index}`} block={item.block} />
+        ) : null,
+      )}
+      <CitationList citations={citations} />
+    </div>
+  );
+}
+
+/** Questions Neva suggests next; choosing one asks it. */
+function FollowUps({
+  suggestions,
+  onAsk,
+}: {
+  suggestions: string[];
+  onAsk?: (prompt: string) => void;
+}) {
+  if (!onAsk) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Suggested follow-ups">
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion}
+          type="button"
+          onClick={() => onAsk(suggestion)}
+          className="rounded-full border bg-background px-2.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {suggestion}
+        </button>
+      ))}
     </div>
   );
 }

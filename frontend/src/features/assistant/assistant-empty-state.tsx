@@ -1,7 +1,9 @@
 import { MessageSquare } from "lucide-react";
+import { GREETING } from "@/features/studio/greeting";
+import { useClientDaypart } from "@/features/studio/use-client-daypart";
 import { cn } from "@/lib/utils";
 import type { ThreadView } from "./thread-client";
-import type { NoveSuggestedAction } from "./surface-registry";
+import type { NevaSuggestedAction } from "./surface-registry";
 
 export type AssistantEmptyStateProps = {
   /** First name (or username) the greeting addresses; null falls back to "there". */
@@ -19,7 +21,7 @@ export type AssistantEmptyStateProps = {
   /** The thread currently open, highlighted in the list. */
   activeThreadId?: string | null;
   surfaceTitle?: string | null;
-  suggestedActions?: readonly NoveSuggestedAction[];
+  suggestedActions?: readonly NevaSuggestedAction[];
 };
 
 export const ASSISTANT_TOUR_PROMPT = "What can you help me do here?";
@@ -57,25 +59,32 @@ export function AssistantEmptyState({
   suggestedActions,
 }: AssistantEmptyStateProps) {
   const recent = recentThreads ?? [];
-  const name = userName?.trim() || "there";
+  const name = userName?.trim();
+  const daypart = useClientDaypart();
   const canStart = Boolean(onSendMessage);
   const actions = suggestedActions?.slice(0, 4) ?? [];
 
   return (
     <div className="flex min-h-full min-w-0 w-full flex-col items-start justify-start px-4 pt-10 pb-2">
-      <h2 className="text-2xl leading-tight font-semibold tracking-tight text-foreground">
-        Hi {name},
+      {/* The same greeting as Studio: the sky of the hour, then the offer. */}
+      <h2 className="text-[1.75rem] leading-[1.15] font-normal tracking-[-0.02em] text-balance">
+        <span className="nova-welcome-line block">
+          <span className="nova-greeting-ink" data-daypart={daypart}>
+            {GREETING[daypart]}
+            {name ? `, ${name}` : ""}
+          </span>
+        </span>
+        <span className="nova-welcome-line block text-muted-foreground">
+          {surfaceTitle && actions.length
+            ? `How can I help with ${surfaceTitle}?`
+            : "How can I help you with Nova?"}
+        </span>
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {surfaceTitle && actions.length
-          ? `Working in ${surfaceTitle}`
-          : "How can I help?"}
-      </p>
 
       {canStart && actions.length ? (
         <div className="mt-8 w-full min-w-0">
           <p className="mb-1 text-xs font-medium text-muted-foreground">
-            Ask Nove
+            Ask Neva
           </p>
           {actions.map((action) => (
             <button

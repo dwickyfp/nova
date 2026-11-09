@@ -49,6 +49,8 @@ export type TranscriptMessage = AssistantMessage & {
    * part of the assistant message, so a restored transcript shows the text.
    */
   blocks?: TranscriptBlock[];
+  /** Follow-up questions offered after the answer. */
+  suggestions?: string[];
 };
 
 /** A structured content block attached to an assistant message. */
@@ -96,6 +98,25 @@ function appendAssistantText(
       turn_state: "streaming",
     },
   ];
+}
+
+/** Follow-ups belong to the answer they follow, whether it is still streaming or not. */
+function attachSuggestions(
+  messages: TranscriptMessage[],
+  suggestions: string[],
+): TranscriptMessage[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "user") break;
+    if (message.role === "assistant") {
+      return [
+        ...messages.slice(0, index),
+        { ...message, suggestions },
+        ...messages.slice(index + 1),
+      ];
+    }
+  }
+  return messages;
 }
 
 function appendBlock(
@@ -286,8 +307,7 @@ function applyEvent(
     case "citation":
       return appendBlock(state, { kind: "citation", block: event.payload });
     case "suggestions":
-      // Nove's panel offers no catalog follow-ups; Studio does.
-      return state;
+      return attachSuggestions(state, event.suggestions);
     case "tool_detail":
       // What a tool did, for the reader who opens its step. Recorded on the
       // matching tool activity step so the panel can show it.

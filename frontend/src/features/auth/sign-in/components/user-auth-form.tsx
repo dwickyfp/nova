@@ -253,7 +253,7 @@ export function UserAuthForm({
         auth.setAccessToken(loginResult.access_token);
         auth.setUser(getAuthUser(loginResult));
         navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
-        toast.success("Password changed. Welcome to Nove!");
+        toast.success("Password changed. Welcome to Nova");
       } else {
         toast.error(
           "Password changed but login failed. Please log in manually.",

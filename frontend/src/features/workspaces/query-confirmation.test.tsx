@@ -79,7 +79,7 @@ describe("worksheet server confirmation", () => {
     expect(rect.left).toBeGreaterThanOrEqual(0);
     expect(rect.right).toBeLessThanOrEqual(320);
     await expect
-      .element(screen.getByRole("dialog", { name: "Nove" }))
+      .element(screen.getByRole("dialog", { name: "Neva" }))
       .not.toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     await expect
@@ -96,7 +96,7 @@ describe("worksheet server confirmation", () => {
     await expect
       .element(
         screen.getByRole("complementary", {
-          name: "Nove",
+          name: "Neva",
           includeHidden: true,
         }),
       )

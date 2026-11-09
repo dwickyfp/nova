@@ -42,7 +42,7 @@ import {
 } from "@/features/agents/agent-detail/custom-tool-editor";
 
 /**
- * Tools a user agent may bundle; authoring tools are Nove-only. Loading the
+ * Tools a user agent may bundle; authoring tools are Neva-only. Loading the
  * agent's skills is always on and so is not listed.
  */
 const BUNDLEABLE = new Set([
@@ -347,7 +347,7 @@ function ToolsConfig({
       <p className="text-sm text-muted-foreground">
         Choose the tools this agent can use during conversations.
         {" "}Data questions use the agent’s bound Semantic Views and configured tools.
-        {" "}Use Nove for free-form SQL and database exploration.
+        {" "}Use Neva for free-form SQL and database exploration.
       </p>
 
       <WebSearchSwitch checked={webSearchOn} onCheckedChange={() => toggle(WEB_SEARCH)} />

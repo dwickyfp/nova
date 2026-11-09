@@ -1,5 +1,5 @@
-/** The bounded application state Nove receives with each turn. */
-export type NoveAppContext = {
+/** The bounded application state Neva receives with each turn. */
+export type NevaAppContext = {
   version: 1;
   surface: { id: string; route: string; title?: string | null };
   entity?: {
@@ -45,14 +45,14 @@ export type NoveAppContext = {
     providerId?: string | null;
   };
   capabilities: string[];
-  events?: NoveApplicationEvent[];
+  events?: NevaApplicationEvent[];
 };
 
-export type NoveSurfaceContext = Partial<
-  Omit<NoveAppContext, "version" | "surface" | "capabilities" | "events">
+export type NevaSurfaceContext = Partial<
+  Omit<NevaAppContext, "version" | "surface" | "capabilities" | "events">
 >;
 
-export type NoveApplicationEvent = {
+export type NevaApplicationEvent = {
   id: string;
   timestamp: string;
   source: "assistant" | "surface" | "execution" | "user";
@@ -65,7 +65,7 @@ export type NoveApplicationEvent = {
   payload?: Record<string, unknown>;
 };
 
-export type NoveEventInput = Omit<NoveApplicationEvent, "id" | "timestamp">;
+export type NevaEventInput = Omit<NevaApplicationEvent, "id" | "timestamp">;
 
 const MAX_CONTEXT_BYTES = 16_384;
 const MAX_EVENTS = 8;
@@ -113,8 +113,8 @@ function scalarRecord(
 }
 
 /** Only named fields cross the model boundary; unknown surface state is discarded. */
-export function boundAppContext(context: NoveAppContext): NoveAppContext {
-  const current: NoveAppContext = {
+export function boundAppContext(context: NevaAppContext): NevaAppContext {
+  const current: NevaAppContext = {
     version: 1,
     surface: {
       id: clip(context.surface.id, 96) || "nova",
@@ -244,8 +244,8 @@ export function boundAppContext(context: NoveAppContext): NoveAppContext {
 
 let eventSequence = 0;
 export function createApplicationEvent(
-  input: NoveEventInput,
-): NoveApplicationEvent {
+  input: NevaEventInput,
+): NevaApplicationEvent {
   eventSequence += 1;
   return {
     ...input,

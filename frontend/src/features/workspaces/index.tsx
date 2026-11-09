@@ -67,9 +67,9 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { Header } from "@/components/layout/header";
 import {
-  defineNoveCapability,
+  defineNevaCapability,
   useAssistant,
-  useNoveSurface,
+  useNevaSurface,
 } from "@/features/assistant";
 import type { TurnContext } from "@/features/assistant";
 import { createThread } from "@/features/assistant/thread-client";
@@ -122,10 +122,10 @@ import { QueryHistory } from "./query-history";
 import { splitSqlStatements, statementAtOffset } from "./sql-statements";
 import {
   replaceAttachedSql,
-  safeNoveSql,
-  summarizeQueryForNove,
+  safeNevaSql,
+  summarizeQueryForNeva,
   type WorkspaceExecutionFeedback,
-} from "./nove-feedback";
+} from "./neva-feedback";
 import type {
   HistoryResponse,
   QueryContextResponse,
@@ -911,9 +911,9 @@ export function WorkspacesPage() {
     setProposedRewrite,
     collapsedToPersist,
   } = useAssistant();
-  const noveCapabilities = useMemo(
+  const nevaCapabilities = useMemo(
     () => [
-      defineNoveCapability({
+      defineNevaCapability({
         name: "tab.open",
         risk: "safe",
         argsSchema: z
@@ -924,7 +924,7 @@ export function WorkspacesPage() {
           setResultsCollapsed(false);
         },
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: "editor.focus",
         risk: "safe",
         argsSchema: z.object({}).strict(),
@@ -933,8 +933,8 @@ export function WorkspacesPage() {
     ],
     [],
   );
-  const { publishEvent: publishWorkspaceEvent, askNove: askFromWorkspace } =
-    useNoveSurface({
+  const { publishEvent: publishWorkspaceEvent, askNeva: askFromWorkspace } =
+    useNevaSurface({
       id: "workspace.sql",
       route: "/workspaces",
       title: activeTab?.title ?? "SQL Workspace",
@@ -943,7 +943,7 @@ export function WorkspacesPage() {
         const selection = editor?.getSelection();
         const selectedText =
           selection && !selection.isEmpty()
-            ? safeNoveSql(editor?.getModel()?.getValueInRange(selection) ?? "")
+            ? safeNevaSql(editor?.getModel()?.getValueInRange(selection) ?? "")
             : undefined;
         const cursor = editor?.getPosition();
         return {
@@ -989,7 +989,7 @@ export function WorkspacesPage() {
           },
         };
       },
-      capabilities: activeTab ? noveCapabilities : [],
+      capabilities: activeTab ? nevaCapabilities : [],
       suggestedActions: activeTab
         ? [
             {
@@ -1746,7 +1746,7 @@ export function WorkspacesPage() {
     elapsed: number,
     correlationId?: string,
   ): WorkspaceExecutionFeedback {
-    const feedback = summarizeQueryForNove(executionId, sql, results, elapsed);
+    const feedback = summarizeQueryForNeva(executionId, sql, results, elapsed);
     setLastExecutionByTab((previous) => ({ ...previous, [tabId]: feedback }));
     publishWorkspaceEvent({
       source: "execution",
@@ -2090,7 +2090,7 @@ export function WorkspacesPage() {
       endLine,
     });
     if (!assistantOpen) toggleAssistant();
-    toast.success("Query attached to Nove");
+    toast.success("Query attached to Neva");
   }
 
   function askAboutWorkspaceQuery(prompt: string, sourceSql?: string) {
@@ -2098,7 +2098,7 @@ export function WorkspacesPage() {
     const sql =
       sourceSql ??
       getSqlForExecution(editorContentRef.current || activeTab.content);
-    const safeSql = safeNoveSql(sql);
+    const safeSql = safeNevaSql(sql);
     if (!safeSql) {
       void askFromWorkspace(prompt);
       return;
@@ -2155,7 +2155,7 @@ export function WorkspacesPage() {
     if (nextContent === null) {
       setProposedRewrite(null);
       toast.error(
-        "The SQL changed after Nove proposed this rewrite. Request a new fix.",
+        "The SQL changed after Neva proposed this rewrite. Request a new fix.",
       );
       return;
     }
@@ -2873,7 +2873,7 @@ export function WorkspacesPage() {
                                 )
                               }
                             >
-                              Fix with Nove
+                              Fix with Neva
                             </Button>
                           </div>
                         )}
@@ -5482,11 +5482,11 @@ function MonacoSqlEditor({
       },
     });
 
-    // "Attach to Nove" in the editor's right-click menu, in the navigation
+    // "Attach to Neva" in the editor's right-click menu, in the navigation
     // group so it sits above the native clipboard entries.
     editor.addAction({
       id: "attach-to-nova",
-      label: "Attach to Nove",
+      label: "Attach to Neva",
       contextMenuGroupId: "navigation",
       contextMenuOrder: 1,
       run: () => {
@@ -5546,7 +5546,7 @@ function MonacoSqlEditor({
         <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10">
           <div className="pointer-events-auto max-h-[45%] overflow-auto rounded-lg border bg-background shadow-lg">
             <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-              <p className="text-xs font-medium">Proposed rewrite from Nove</p>
+              <p className="text-xs font-medium">Proposed rewrite from Neva</p>
               <p className="text-xs text-muted-foreground">
                 {proposedRewrite.hunks.length} change
                 {proposedRewrite.hunks.length === 1 ? "" : "s"}

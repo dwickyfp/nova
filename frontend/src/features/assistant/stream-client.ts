@@ -1,7 +1,7 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import { parseAssistantEvent, readSseFrames } from "./events";
-import type { NoveAppContext } from "./app-context";
+import type { NevaAppContext } from "./app-context";
 import type {
   AssistantEvent,
   ConsentDecision,
@@ -25,7 +25,7 @@ export type TurnContext = {
   model?: string | null;
   providerId?: string | null;
   /** Versioned, bounded application state for contextual references. */
-  appContext?: NoveAppContext;
+  appContext?: NevaAppContext;
 };
 
 /**

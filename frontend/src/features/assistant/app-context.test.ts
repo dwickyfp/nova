@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { boundAppContext } from "./app-context";
 
-describe("Nove app-context redaction", () => {
+describe("Neva app-context redaction", () => {
   it("scrubs quoted multiword credentials from every free-form context section", () => {
     const poisoned =
       'password="correct horse battery staple" followed by private text';

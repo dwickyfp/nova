@@ -212,7 +212,7 @@ export function ToolCallCard({
               <Input
                 ref={passwordRef}
                 type="password"
-                name="nove-new-user-password"
+                name="neva-new-user-password"
                 autoComplete="new-password"
                 required
                 disabled={busy}

@@ -4,16 +4,16 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { useState } from "react";
 import { z } from "zod";
 import { AssistantProvider, useAssistant } from "./assistant-provider";
-import { useNoveSurface } from "./nove-surface-hook";
-import { defineNoveCapability } from "./surface-registry";
+import { useNevaSurface } from "./neva-surface-hook";
+import { defineNevaCapability } from "./surface-registry";
 
 function HistoryPage() {
   const [status, setStatus] = useState("");
   const { clientActionStatus } = useAssistant();
-  const { askNove } = useNoveSurface({
+  const { askNeva } = useNevaSurface({
     id: "monitoring.query_history", route: "/query-history", title: "Query history",
     context: () => ({ view: { filters: { status } } }),
-    capabilities: [defineNoveCapability({
+    capabilities: [defineNevaCapability({
       name: "surface.set_filter", risk: "safe",
       argsSchema: z.object({ filter: z.literal("status"), value: z.enum(["", "ERROR", "SUCCESS"]) }),
       execute: ({ value }) => setStatus(value),
@@ -23,12 +23,12 @@ function HistoryPage() {
   return <div>
     <span data-testid="status">{status || "all"}</span>
     <span data-testid="action-status">{clientActionStatus ?? "idle"}</span>
-    <button onClick={() => void askNove("Show only failed queries.")}>filter with Nove</button>
-    <button onClick={() => void askNove("Did that filter work?")}>ask outcome</button>
+    <button onClick={() => void askNeva("Show only failed queries.")}>filter with Neva</button>
+    <button onClick={() => void askNeva("Did that filter work?")}>ask outcome</button>
   </div>;
 }
 
-describe("Nove page integration", () => {
+describe("Neva page integration", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("sends active context, executes a validated UI action, and returns outcome evidence next turn", async () => {
@@ -62,7 +62,7 @@ describe("Nove page integration", () => {
         <AssistantProvider loadWorkspaceDefaults={false}><HistoryPage /></AssistantProvider>
       </QueryClientProvider>,
     );
-    await screen.getByRole("button", { name: "filter with Nove" }).click();
+    await screen.getByRole("button", { name: "filter with Neva" }).click();
     await expect.element(screen.getByTestId("status")).toHaveTextContent("ERROR");
     await expect.element(screen.getByTestId("action-status")).toHaveTextContent("Page action applied.");
     expect(acknowledged).toEqual([expect.objectContaining({
@@ -86,11 +86,11 @@ describe("Nove page integration", () => {
       .mockResolvedValueOnce("ready")
       .mockRejectedValue(new Error("Refresh failed"));
     function RefreshPage() {
-      const query = useQuery({ queryKey: ["nove-refresh-test"], queryFn: load, retry: false });
+      const query = useQuery({ queryKey: ["neva-refresh-test"], queryFn: load, retry: false });
       const { clientActionStatus } = useAssistant();
-      const { askNove } = useNoveSurface({
+      const { askNeva } = useNevaSurface({
         id: "roles.list", route: "/roles", context: () => ({}),
-        capabilities: [defineNoveCapability({
+        capabilities: [defineNevaCapability({
           name: "surface.refresh", risk: "safe", argsSchema: z.object({}).strict(),
           execute: () => query.refetch({ throwOnError: true }),
         })],
@@ -98,7 +98,7 @@ describe("Nove page integration", () => {
       return <div>
         <span data-testid="query-status">{query.data ?? "loading"}</span>
         <span data-testid="action-status">{clientActionStatus ?? "idle"}</span>
-        <button onClick={() => void askNove("Refresh this view.")}>refresh with Nove</button>
+        <button onClick={() => void askNeva("Refresh this view.")}>refresh with Neva</button>
       </div>;
     }
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -129,7 +129,7 @@ describe("Nove page integration", () => {
       </QueryClientProvider>,
     );
     await expect.element(screen.getByTestId("query-status")).toHaveTextContent("ready");
-    await screen.getByRole("button", { name: "refresh with Nove" }).click();
+    await screen.getByRole("button", { name: "refresh with Neva" }).click();
     await expect.element(screen.getByTestId("action-status")).toHaveTextContent("Refresh failed");
     expect(acknowledged).toEqual([expect.objectContaining({
       type: "ui_action_failed", correlationId: "refresh-1", status: "failure",

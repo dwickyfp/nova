@@ -25,15 +25,15 @@ export {
   useAssistantPanelProps,
   type SelectedModel,
 } from "./assistant-provider";
-export { useNoveSurface } from "./nove-surface-hook";
-export { defineNoveCapability } from "./surface-registry";
+export { useNevaSurface } from "./neva-surface-hook";
+export { defineNevaCapability } from "./surface-registry";
 export type {
-  NoveClientCapability,
-  NoveSurfaceDefinition,
-  NoveSuggestedAction,
-  NoveCapabilityRisk,
+  NevaClientCapability,
+  NevaSurfaceDefinition,
+  NevaSuggestedAction,
+  NevaCapabilityRisk,
 } from "./surface-registry";
-export type { NoveAppContext, NoveSurfaceContext, NoveApplicationEvent, NoveEventInput } from "./app-context";
+export type { NevaAppContext, NevaSurfaceContext, NevaApplicationEvent, NevaEventInput } from "./app-context";
 export {
   assistantCollapsedToPersist,
   clampAssistantWidth,

@@ -174,7 +174,7 @@ export function AssistantComposer({
       </div>
       <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-xs leading-4 text-muted-foreground">
         <Info aria-hidden="true" className="size-3.5 shrink-0" />
-        <span>Nove can make mistakes. Check important details.</span>
+        <span>Neva can make mistakes. Check important details.</span>
       </p>
     </div>
   );

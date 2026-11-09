@@ -270,8 +270,8 @@ export function AgentAccessTab({
                             variant="ghost"
                             size="icon"
                             className="size-11 sm:size-8"
-                            aria-label="Ask Nove to grant missing access"
-                            title="Ask Nove to grant missing access"
+                            aria-label="Ask Neva to grant missing access"
+                            title="Ask Neva to grant missing access"
                             onClick={() =>
                               newChatAndSend(
                                 buildAccessGrantPrompt({

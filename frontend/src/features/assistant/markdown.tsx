@@ -10,7 +10,7 @@ import bash from "highlight.js/lib/languages/bash";
 import { cn } from "@/lib/utils";
 import { CodeCard } from "./code-card";
 import type { TurnContext } from "./stream-client";
-import type { NoveEventInput } from "./app-context";
+import type { NevaEventInput } from "./app-context";
 import type { TableBlock } from "./types";
 import { matchesResultTable } from "./matching-result-table";
 
@@ -37,8 +37,8 @@ const RUNNABLE_LANGUAGES = new Set(["sql", "mysql"]);
 type MarkdownContextValue = {
   offline?: boolean;
   runContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
   representedTables?: TableBlock[];
 };
 const MarkdownContext = createContext<MarkdownContextValue>({});
@@ -48,13 +48,13 @@ function CodeBlock({
   language,
   runContext,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
 }: {
   code: string;
   language: string;
   runContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
 }) {
   const normalized = language.toLowerCase();
   const html = useMemo(() => {
@@ -76,7 +76,7 @@ function CodeBlock({
       runContext={runContext}
       runnable={RUNNABLE_LANGUAGES.has(normalized)}
       onExecutionEvent={onExecutionEvent}
-      onFixWithNove={onFixWithNove}
+      onFixWithNeva={onFixWithNeva}
     />
   );
 }
@@ -176,7 +176,7 @@ export const Markdown = memo(function Markdown({
   className,
   runContext,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
   representedTables,
   offline,
 }: {
@@ -184,8 +184,8 @@ export const Markdown = memo(function Markdown({
   className?: string;
   /** Context a SQL code card's Run button executes against. */
   runContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
   representedTables?: TableBlock[];
   offline?: boolean;
 }) {
@@ -193,11 +193,11 @@ export const Markdown = memo(function Markdown({
     () => ({
       runContext,
       onExecutionEvent,
-      onFixWithNove,
+      onFixWithNeva,
       representedTables,
       offline,
     }),
-    [runContext, onExecutionEvent, onFixWithNove, representedTables, offline],
+    [runContext, onExecutionEvent, onFixWithNeva, representedTables, offline],
   );
 
   return (

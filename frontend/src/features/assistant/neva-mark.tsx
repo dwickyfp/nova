@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export function NoveMark(props: SVGProps<SVGSVGElement>) {
+export function NevaMark(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
       <path

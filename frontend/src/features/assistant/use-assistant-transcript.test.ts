@@ -168,7 +168,7 @@ describe("transcriptReducer", () => {
   it("places each turn's loading activity after its own user message", () => {
     const firstUser = transcriptReducer([], {
       type: "user_message",
-      content: "What can Nove do?",
+      content: "What can Neva do?",
     });
     const firstTurn = reduce(
       firstUser,

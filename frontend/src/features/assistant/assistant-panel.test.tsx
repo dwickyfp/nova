@@ -17,7 +17,7 @@ describe("AssistantPanel", () => {
       const { getByRole } = await render(
         <AssistantPanel open onOpenChange={() => {}} />,
       );
-      const panel = getByRole("complementary", { name: "Nove" });
+      const panel = getByRole("complementary", { name: "Neva" });
       await expect.element(panel).toBeInTheDocument();
     } finally {
       await page.viewport(375, 800);
@@ -100,7 +100,7 @@ describe("AssistantPanel", () => {
       const { getByRole } = await render(
         <AssistantPanel open onOpenChange={() => {}} />,
       );
-      const header = getByRole("heading", { name: "Nove" }).element()
+      const header = getByRole("heading", { name: "Neva" }).element()
         .parentElement as HTMLElement;
       expect(header.className).not.toContain("border-b");
     } finally {

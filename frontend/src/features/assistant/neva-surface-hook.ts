@@ -1,24 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useRef } from "react";
-import type { NoveEventInput } from "./app-context";
+import type { NevaEventInput } from "./app-context";
 import type { AttachContext } from "./query-attach";
-import type { NoveSurfaceDefinition } from "./surface-registry";
+import type { NevaSurfaceDefinition } from "./surface-registry";
 
-export type NoveSurfaceServices = {
-  register: (get: () => NoveSurfaceDefinition) => () => void;
+export type NevaSurfaceServices = {
+  register: (get: () => NevaSurfaceDefinition) => () => void;
   refresh: () => void;
-  publish: (input: NoveEventInput) => void;
+  publish: (input: NevaEventInput) => void;
   ask: (prompt: string, attachment?: AttachContext) => Promise<void>;
 };
 
-export const NoveSurfaceContext = createContext<NoveSurfaceServices | null>(null);
+export const NevaSurfaceContext = createContext<NevaSurfaceServices | null>(null);
 
 /** A page owns its context and safe capabilities for its mounted lifetime. */
-export function useNoveSurface(definition: NoveSurfaceDefinition): {
-  publishEvent: (input: Omit<NoveEventInput, "surfaceId">) => void;
-  askNove: (prompt: string, attachment?: AttachContext) => Promise<void>;
+export function useNevaSurface(definition: NevaSurfaceDefinition): {
+  publishEvent: (input: Omit<NevaEventInput, "surfaceId">) => void;
+  askNeva: (prompt: string, attachment?: AttachContext) => Promise<void>;
   refreshContext: () => void;
 } {
-  const services = useContext(NoveSurfaceContext);
+  const services = useContext(NevaSurfaceContext);
   const definitionRef = useRef(definition);
   definitionRef.current = definition;
   useEffect(() => services?.register(() => definitionRef.current), [
@@ -28,12 +28,12 @@ export function useNoveSurface(definition: NoveSurfaceDefinition): {
   ]);
   // Context can read editor refs that change without a page navigation.
   useEffect(() => services?.refresh());
-  const publishEvent = useCallback((input: Omit<NoveEventInput, "surfaceId">) => {
+  const publishEvent = useCallback((input: Omit<NevaEventInput, "surfaceId">) => {
     services?.publish({ ...input, surfaceId: definitionRef.current.id });
     services?.refresh();
   }, [services]);
-  const askNove = useCallback((prompt: string, attachment?: AttachContext) =>
+  const askNeva = useCallback((prompt: string, attachment?: AttachContext) =>
     services?.ask(prompt, attachment) ?? Promise.resolve(), [services]);
   const refreshContext = useCallback(() => services?.refresh(), [services]);
-  return { publishEvent, askNove, refreshContext };
+  return { publishEvent, askNeva, refreshContext };
 }

@@ -11,7 +11,7 @@ import {
   clampAssistantOffsetY,
 } from "./assistant-panel-state";
 import { useAssistant } from "./assistant-provider";
-import { NoveMark } from "./nove-mark";
+import { NevaMark } from "./neva-mark";
 
 type DragState = {
   pointerId: number;
@@ -166,7 +166,7 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
 
   if (open || typeof document === "undefined") return null;
 
-  const label = "Ask Nove";
+  const label = "Ask Neva";
 
   return createPortal(
     <div
@@ -210,7 +210,7 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
                 ))}
               </span>
             ) : null}
-            <NoveMark className="absolute right-3 size-4.5" />
+            <NevaMark className="absolute right-3 size-4.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent

@@ -10,9 +10,9 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
-import { useNoveSurface } from '@/features/assistant/nove-surface-hook'
-import { defineNoveCapability } from '@/features/assistant/surface-registry'
-import { safeNoveSql } from '@/features/workspaces/nove-feedback'
+import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
+import { defineNevaCapability } from '@/features/assistant/surface-registry'
+import { safeNevaSql } from '@/features/workspaces/neva-feedback'
 import { formatDateTime, formatDuration, formatNumber, truncate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -123,7 +123,7 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
   const items = historyQuery.data?.items ?? []
   const total = historyQuery.data?.total ?? 0
   const selectedQuery = items.find((item) => item.log_id === expandedRow)
-  const { askNove } = useNoveSurface({
+  const { askNeva } = useNevaSurface({
     id: 'monitoring.query_history', route: '/monitoring/queries', title: 'Query history',
     context: () => ({
       entity: selectedQuery ? {
@@ -131,13 +131,13 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
         metadata: { status: selectedQuery.status, durationMs: selectedQuery.duration_ms },
       } : undefined,
       selection: selectedQuery ? {
-        type: 'query', ids: [selectedQuery.log_id], text: safeNoveSql(selectedQuery.sql_text),
+        type: 'query', ids: [selectedQuery.log_id], text: safeNevaSql(selectedQuery.sql_text),
       } : undefined,
       execution: selectedQuery ? {
         type: 'query', executionId: selectedQuery.query_id || selectedQuery.log_id,
         status: selectedQuery.status === 'ERROR' ? 'error' : 'success',
         errorMessage: selectedQuery.error_message
-          ? safeNoveSql(selectedQuery.error_message) ?? 'Error details omitted.'
+          ? safeNevaSql(selectedQuery.error_message) ?? 'Error details omitted.'
           : null,
         elapsedMs: selectedQuery.duration_ms,
         rowCount: selectedQuery.rows_affected,
@@ -148,11 +148,11 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
       },
     }),
     capabilities: [
-      defineNoveCapability({
+      defineNevaCapability({
         name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
         execute: () => historyQuery.refetch({ throwOnError: true }),
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: 'surface.set_filter', risk: 'safe',
         argsSchema: z.object({ filter: z.enum(['status', 'user', 'database', 'search']), value: z.string().max(160) }),
         execute: ({ filter, value }) => {
@@ -166,7 +166,7 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
           setExpandedRow(null)
         },
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: 'surface.select', risk: 'safe', argsSchema: z.object({ id: z.string().min(1).max(160) }),
         execute: ({ id }) => {
           if (!items.some((item) => item.log_id === id)) throw new Error('Query is not in the current list')
@@ -232,10 +232,10 @@ export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolea
         title='Query History'
         description='Browse and search previously executed queries across all workspaces.'
         actions={
-          <Button variant='outline' size='sm' onClick={() => void askNove(
+          <Button variant='outline' size='sm' onClick={() => void askNeva(
             selectedQuery ? 'Explain why this query failed or took so long.' : 'Show only failed queries here.'
           )}>
-            Ask Nove
+            Ask Neva
           </Button>
         }
       />

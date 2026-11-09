@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   replaceAttachedSql,
-  safeNoveSql,
-  summarizeQueryForNove,
-} from "./nove-feedback";
+  safeNevaSql,
+  summarizeQueryForNeva,
+} from "./neva-feedback";
 import type { QueryResponse } from "./types";
 
 function result(overrides: Partial<QueryResponse> = {}): QueryResponse {
@@ -21,7 +21,7 @@ function result(overrides: Partial<QueryResponse> = {}): QueryResponse {
   };
 }
 
-describe("workspace feedback for Nove", () => {
+describe("workspace feedback for Neva", () => {
   it("replaces only the attached statement in a multi-query worksheet", () => {
     const document = "SELECT 1;\nSELECT broken FROM orders;\nSELECT 3;";
     const next = replaceAttachedSql(
@@ -87,7 +87,7 @@ describe("workspace feedback for Nove", () => {
   });
 
   it("keeps a failed query and its error available for repair without copying rows", () => {
-    const feedback = summarizeQueryForNove(
+    const feedback = summarizeQueryForNeva(
       "run-1",
       "SELECT order_id FROM missing",
       [
@@ -108,7 +108,7 @@ describe("workspace feedback for Nove", () => {
   });
 
   it("requires every statement to succeed before the run is successful", () => {
-    const feedback = summarizeQueryForNove(
+    const feedback = summarizeQueryForNeva(
       "run-2",
       "SELECT 1; SELECT * FROM missing",
       [result(), result({ success: false, error: "Unknown table" })],
@@ -119,7 +119,7 @@ describe("workspace feedback for Nove", () => {
   });
 
   it("reports bounded successful result metadata without result values", () => {
-    const feedback = summarizeQueryForNove(
+    const feedback = summarizeQueryForNeva(
       "run-3",
       "SELECT order_id FROM orders",
       [result({ columns: Array.from({ length: 40 }, (_, i) => `c${i}`) })],
@@ -132,17 +132,17 @@ describe("workspace feedback for Nove", () => {
   });
 
   it("does not verify success when the API returns no statement outcome", () => {
-    const feedback = summarizeQueryForNove("run-empty", "SELECT 1", [], 2);
+    const feedback = summarizeQueryForNeva("run-empty", "SELECT 1", [], 2);
     expect(feedback.eventType).toBe("query_failed");
     expect(feedback.execution.status).toBe("error");
   });
 
   it("omits credential-shaped or oversized SQL from events", () => {
     expect(
-      safeNoveSql("CREATE USER a IDENTIFIED BY 'top secret'"),
+      safeNevaSql("CREATE USER a IDENTIFIED BY 'top secret'"),
     ).toBeUndefined();
-    expect(safeNoveSql("SELECT " + "x".repeat(4_001))).toBeUndefined();
-    const feedback = summarizeQueryForNove(
+    expect(safeNevaSql("SELECT " + "x".repeat(4_001))).toBeUndefined();
+    const feedback = summarizeQueryForNeva(
       "run-4",
       "SELECT token FROM accounts",
       [result({ success: false, error: "bad token abc123" })],

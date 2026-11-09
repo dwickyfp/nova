@@ -8,8 +8,8 @@ import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { useNoveSurface } from "@/features/assistant/nove-surface-hook";
-import { defineNoveCapability } from "@/features/assistant/surface-registry";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { defineNevaCapability } from "@/features/assistant/surface-registry";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Button } from "@/components/ui/button";
@@ -225,7 +225,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
   const pageTitle = tab === "features" ? "Feature Store" : tab === "semantic"
     ? semanticViewId ? selectedSemanticView?.name ?? "Semantic View" : "Semantic Views"
     : tab === "search" ? "AI Search" : "Entities";
-  const { askNove, publishEvent } = useNoveSurface({
+  const { askNeva, publishEvent } = useNevaSurface({
     id: `intelligence.${tab}`,
     route: typeof window === "undefined" ? "/semantic-views" : window.location.pathname,
     title: pageTitle,
@@ -245,7 +245,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
       domain: { database: selectedSemanticView?.database_name ?? null },
     }),
     capabilities: [
-      defineNoveCapability({
+      defineNevaCapability({
         name: "tab.open", risk: "safe", mayChangeSurface: true,
         argsSchema: z.object({ tab: z.enum(["entities", "search", "semantic", "features"]) }),
         execute: ({ tab: next }) => navigate({ to: {
@@ -253,7 +253,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
           semantic: "/semantic-views", features: "/feature-store",
         }[next] }),
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
         execute: () => tab === "semantic" && semanticViewId
           ? semanticDetail.refetch({ throwOnError: true })
@@ -264,7 +264,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
               { throwOnError: true },
             ),
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: "surface.select", risk: "safe", argsSchema: z.object({ id: z.string().min(1).max(160) }),
         execute: ({ id }) => {
           if (tab !== "semantic" || !id.trim()) {
@@ -311,11 +311,11 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
            {tab === "semantic" && semanticViewId && semanticDetail.data && selectedSemanticView?.status !== "DEPRECATED"
              ? <NewsSettings view={{ ...semanticDetail.data, id: selectedSemantic }}
                  onChanged={() => void semanticDetail.refetch()} /> : null}
-           <Button variant="outline" size="sm" onClick={() => void askNove(
+           <Button variant="outline" size="sm" onClick={() => void askNeva(
              tab === "semantic" && selectedSemantic
                ? "Explain this Semantic View and suggest any missing relationships."
                : `Help me use ${pageTitle} in Nova.`,
-           )}>Ask Nove</Button>
+           )}>Ask Neva</Button>
            </div>
          </div>
         {tab === "entities" && (

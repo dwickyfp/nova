@@ -111,7 +111,7 @@ afterEach(() => {
 });
 
 describe("useAssistantTurn", () => {
-  it("parses only Nove UI action previews", () => {
+  it("parses only Neva UI action previews", () => {
     expect(
       uiActionFromPreview(
         "call_ui_operation",

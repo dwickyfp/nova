@@ -44,7 +44,7 @@ describe("AssistantToggle", () => {
   it("shows the panel affordance and reports its state when closed", async () => {
     const { getByRole } = await renderToggle();
 
-    const button = getByRole("button", { name: "Ask Nove" });
+    const button = getByRole("button", { name: "Ask Neva" });
     await expect.element(button).toBeInTheDocument();
     expect(button.element().getAttribute("aria-pressed")).toBe("false");
     expect(button.element().getAttribute("aria-expanded")).toBe("false");
@@ -57,7 +57,7 @@ describe("AssistantToggle", () => {
   it("keeps the primary fill compact while preserving its width", async () => {
     const { getByRole } = await renderToggle();
     // Keep the sizing contract alongside the measured viewport checks below.
-    const classes = getByRole("button", { name: "Ask Nove" }).element()
+    const classes = getByRole("button", { name: "Ask Neva" }).element()
       .className;
     expect(classes).toContain("min-h-9");
     expect(classes).toContain("min-w-11");
@@ -71,7 +71,7 @@ describe("AssistantToggle", () => {
       await page.viewport(width, 800);
       try {
         const { getByRole } = await renderToggle();
-        const button = getByRole("button", { name: "Ask Nove" }).element();
+        const button = getByRole("button", { name: "Ask Neva" }).element();
         const anchor = button.closest("div[style]") as HTMLElement;
         const rect = button.getBoundingClientRect();
 
@@ -87,7 +87,7 @@ describe("AssistantToggle", () => {
 
   it("does not leave a root scrollbar strip beside the badge", async () => {
     const { getByRole } = await renderToggle();
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
     const previousHeight = document.body.style.minHeight;
     document.body.style.minHeight = "200vh";
     try {
@@ -104,7 +104,7 @@ describe("AssistantToggle", () => {
 
   it("shows a six-dot grip affordance, hidden until hover", async () => {
     const { getByRole } = await renderToggle();
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
 
     const grip = button.querySelector("span[class*='grid-cols-2']");
     expect(grip).not.toBeNull();
@@ -118,9 +118,9 @@ describe("AssistantToggle", () => {
 
   it("is not draggable without the prop, and carries no grip", async () => {
     const { getByRole, container } = await renderToggle(false);
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
     await expect
-      .element(getByRole("button", { name: "Ask Nove" }))
+      .element(getByRole("button", { name: "Ask Neva" }))
       .toBeInTheDocument();
     expect(container.querySelector("span[class*='grid-cols-2']")).toBeNull();
     expect(button.className).not.toContain("touch-none");
@@ -145,7 +145,7 @@ describe("AssistantToggle", () => {
     );
 
     const { getByRole } = await renderToggle(true, 0);
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
     const anchor = button.closest("div[style]") as HTMLElement;
 
     // Omit `pointerId` on purpose: React reads it as 0 on both the start event
@@ -168,7 +168,7 @@ describe("AssistantToggle", () => {
     // A drag is not a click: the toggle is still mounted (the panel did not
     // open, which would have hidden it).
     await expect
-      .element(getByRole("button", { name: "Ask Nove" }))
+      .element(getByRole("button", { name: "Ask Neva" }))
       .toBeInTheDocument();
   });
 
@@ -176,7 +176,7 @@ describe("AssistantToggle", () => {
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
 
     const { getByRole } = await renderToggle();
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
 
     button.dispatchEvent(
       new PointerEvent("pointerdown", {
@@ -194,7 +194,7 @@ describe("AssistantToggle", () => {
     // effect of the click reaching `toggle`. The query re-evaluates each poll.
     await expect
       .poll(
-        () => document.querySelector('button[aria-label="Ask Nove"]') === null,
+        () => document.querySelector('button[aria-label="Ask Neva"]') === null,
       )
       .toBe(true);
   });
@@ -219,7 +219,7 @@ describe("AssistantToggle", () => {
     );
 
     const { getByRole } = await renderToggle(true, 0);
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
 
     await button.dispatchEvent(
       new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }),
@@ -234,7 +234,7 @@ describe("AssistantToggle", () => {
 
   it("ignores unrelated keys on the button", async () => {
     const { getByRole } = await renderToggle();
-    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const button = getByRole("button", { name: "Ask Neva" }).element();
     await button.dispatchEvent(
       new KeyboardEvent("keydown", { key: "a", bubbles: true }),
     );
@@ -267,7 +267,7 @@ describe("AssistantPanel narrow ladder", () => {
         <AssistantPanel open onOpenChange={() => {}} />,
       );
       await expect
-        .element(getByRole("complementary", { name: "Nove" }))
+        .element(getByRole("complementary", { name: "Neva" }))
         .toBeInTheDocument();
     } finally {
       await page.viewport(375, 800);
