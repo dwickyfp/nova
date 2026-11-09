@@ -101,9 +101,17 @@ describe("Access Control", () => {
     });
     const screen = await mount();
     await screen.getByRole("tab", { name: "Check access" }).click();
+    // A list that is still closing hands focus back to its own field; opening
+    // the next one before that closes it again. Wait for each pick to settle.
     const pick = async (label: string, option: string) => {
-      await screen.getByRole("button", { name: label, exact: true }).click();
-      await screen.getByRole("button", { name: option, exact: true }).click();
+      const field = screen.getByRole("button", { name: label, exact: true });
+      await expect.element(field).toBeEnabled();
+      await field.click();
+      const choice = screen.getByRole("button", { name: option, exact: true });
+      await expect.element(choice).toBeVisible();
+      await choice.click();
+      await expect.element(choice).not.toBeInTheDocument();
+      await expect.element(field).toHaveTextContent(option);
     };
     await pick("Person", "ana");
     await pick("Using role", "SALES_JAKARTA");

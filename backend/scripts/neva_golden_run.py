@@ -69,11 +69,9 @@ async def sign_in(client: httpx.AsyncClient, username: str) -> str:
 
 
 async def run_turn(client: httpx.AsyncClient, task: dict[str, Any], timeout: float) -> dict:
-    thread = (await client.post("/api/v1/assistant/threads", json={})).json()
-    thread_id = thread.get("thread_id") or thread.get("id")
     record: dict[str, Any] = {
         "task": task["id"],
-        "thread_id": thread_id,
+        "thread_id": None,
         "text": "",
         "tools": [],
         "consent_requested": [],
@@ -83,8 +81,16 @@ async def run_turn(client: httpx.AsyncClient, task: dict[str, Any], timeout: flo
     }
     started = time.monotonic()
     first_token: float | None = None
+    thread_id = None
+    try:
+        thread = (await client.post("/api/v1/assistant/threads", json={})).json()
+        thread_id = record["thread_id"] = thread.get("thread_id") or thread.get("id")
+    except httpx.HTTPError as exc:
+        record["errors"].append(f"thread not created: {type(exc).__name__}")
     body = {"content": task["prompt"], "app_context": app_context(task)}
     try:
+        if thread_id is None:
+            raise httpx.HTTPError("no thread")
         async with client.stream(
             "POST",
             f"/api/v1/assistant/threads/{thread_id}/messages",
@@ -138,7 +144,10 @@ async def run_turn(client: httpx.AsyncClient, task: dict[str, Any], timeout: flo
         # The transcript is kept in the run file; the test thread is not left
         # in the person's history.
         if thread_id:
-            await client.delete(f"/api/v1/assistant/threads/{thread_id}")
+            try:
+                await client.delete(f"/api/v1/assistant/threads/{thread_id}")
+            except httpx.HTTPError:
+                record["errors"].append("thread cleanup failed")
     record["seconds"] = round(time.monotonic() - started, 2)
     record["first_token_seconds"] = round(first_token, 2) if first_token else None
     record["leaks"] = [f"{leak.kind}:{leak.text}" for leak in find_technical_leaks(record["text"])]
@@ -162,11 +171,19 @@ async def main() -> None:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     batch = uuid.uuid4().hex[:8]
+    # Resume: turns already in the file are not asked again.
+    done = set()
+    if out.exists():
+        for line in out.read_text().splitlines():
+            row = json.loads(line)
+            done.add((row["task"], row["run"]))
     async with httpx.AsyncClient(base_url=args.base, timeout=60) as client:
         token = await sign_in(client, args.user)
         client.headers["Authorization"] = f"Bearer {token}"
         for run in range(args.runs):
             for task in tasks:
+                if (task["id"], run) in done:
+                    continue
                 record = await run_turn(client, task, args.timeout)
                 record.update(
                     batch=batch, run=run, at=datetime.now(UTC).isoformat(timespec="seconds")
