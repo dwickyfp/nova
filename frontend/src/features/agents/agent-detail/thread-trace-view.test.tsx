@@ -234,10 +234,10 @@ describe("ThreadTraceView", () => {
           .getByText("Agent turn 1", { exact: true }),
       )
       .toBeVisible();
-    await expect.element(screen.getByText("Semantic Context")).toBeVisible();
+    await expect.element(screen.getByText("Semantic context")).toBeVisible();
     await screen
       .getByTestId("thread-pane-shell")
-      .getByText("Runtime Routing", { exact: true })
+      .getByText("Runtime routing", { exact: true })
       .click();
     await expect
       .element(
@@ -261,7 +261,7 @@ describe("ThreadTraceView", () => {
 
     await screen
       .getByTestId("thread-pane-shell")
-      .getByText("Semantic Context", { exact: true })
+      .getByText("Semantic context", { exact: true })
       .click();
     const semanticDetail = screen.getByTestId("detail-pane-shell");
     await expect
@@ -287,7 +287,7 @@ describe("ThreadTraceView", () => {
 
     await screen
       .getByTestId("thread-pane-shell")
-      .getByText("Semantic Query", { exact: true })
+      .getByText("Semantic query", { exact: true })
       .click();
     await expect.element(screen.getByText("evidence_1")).toBeVisible();
 
@@ -326,7 +326,7 @@ describe("ThreadTraceView", () => {
     expect(tableOutput).not.toBeNull();
     await tableOutput?.click();
 
-    const sqlRows = screen.getByText("SQL Execution", { exact: true });
+    const sqlRows = screen.getByText("SQL execution", { exact: true });
     await expect.element(sqlRows.first()).toBeInTheDocument();
     await expect
       .element(screen.getByText("Generated SQL", { exact: true }))
@@ -364,7 +364,7 @@ describe("ThreadTraceView", () => {
       .toBeInTheDocument();
 
     await screen
-      .getByRole("button", { name: "Collapse SQL Execution" })
+      .getByRole("button", { name: "Collapse SQL execution" })
       .click();
     await expect
       .element(screen.getByTestId("detail-pane-shell"))
@@ -374,7 +374,7 @@ describe("ThreadTraceView", () => {
       .first()
       .click();
     await expect
-      .element(screen.getByRole("button", { name: "Collapse SQL Execution" }))
+      .element(screen.getByRole("button", { name: "Collapse SQL execution" }))
       .toBeInTheDocument();
   });
 
@@ -423,7 +423,7 @@ describe("ThreadTraceView", () => {
       }
       await screen
         .getByTestId("thread-pane-shell")
-        .getByText("Semantic Context", { exact: true })
+        .getByText("Semantic context", { exact: true })
         .click();
       const detail = screen.getByTestId("detail-pane-shell");
       await expect
@@ -448,4 +448,38 @@ describe("ThreadTraceView", () => {
       await page.screenshot();
     },
   );
+
+  it("accounts for the turn's time: preparation and an unrecorded planning call", async () => {
+    await page.viewport(1440, 720);
+    const assistant = {
+      ...TRACE.turns[1],
+      steps: [
+        { kind: "state", step_id: "s0", state: "planning", status: "done", started_offset_ms: 1146, duration_ms: 0 },
+        { kind: "reasoning", step_id: "plan-1", phase: "plan", text: "Selected actions: semantic_query", status: "done", started_offset_ms: 1146, duration_ms: 8988 },
+        { kind: "runtime_decision", step_id: "rt-1", intent: "semantic_analytics", harness_mode: "guided", selected_tools: [], selected_skills: [], semantic_model_ids: [], status: "done", started_offset_ms: 10135, duration_ms: 0 },
+        { kind: "reasoning", step_id: "compose-1", phase: "compose", text: "Composing from verified evidence", status: "done", started_offset_ms: 10726 },
+        { kind: "provider", step_id: "prov-1", purpose: "response", status: "done", started_offset_ms: 10726, duration_ms: 1703 },
+      ],
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ...TRACE, turns: [TRACE.turns[0], assistant] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <ThreadTraceView agentId="agent-1" threadId="thread-1" onClose={() => {}} />
+      </QueryClientProvider>,
+    );
+    const row = (name: string) =>
+      screen.getByRole("button", { name: new RegExp(`^${name}`) });
+    // The planning call had no provider step of its own; it is still shown.
+    await expect.element(row("LLM planning")).toHaveTextContent("9.0s");
+    await expect.element(row("Preparation")).toHaveTextContent("1.1s");
+    await expect.element(row("LLM response generation")).toHaveTextContent("1.7s");
+    // The compose phase the response call covers is not a second row.
+    expect(screen.getByText("Composing from verified evidence").elements()).toHaveLength(0);
+  });
 });

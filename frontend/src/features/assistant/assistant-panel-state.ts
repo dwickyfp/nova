@@ -39,8 +39,12 @@ export function parseAssistantWidth(value: string | undefined): number {
  */
 export const ASSISTANT_DEFAULT_OFFSET_Y = 0;
 
-/** Cookie name for the persisted toggle offset; mirrors the width. */
-export const ASSISTANT_OFFSET_Y_COOKIE = "assistant_offset_y";
+/**
+ * Cookie name for the persisted toggle offset; mirrors the width. Versioned
+ * when the resting position moved to three quarters of the window, so offsets
+ * measured from the old bottom resting place start over once.
+ */
+export const ASSISTANT_OFFSET_Y_COOKIE = "assistant_offset_y_v2";
 
 /**
  * Smallest gap kept between the toggle and the viewport edges, so a dragged
@@ -53,6 +57,24 @@ export const ASSISTANT_TOGGLE_REST_BOTTOM = 16;
 
 /** Keyboard step for the drag handle's arrow-key path, mirroring the panel. */
 export const ASSISTANT_OFFSET_Y_STEP = 16;
+
+/** Height of the toggle button, used to centre it on its resting line. */
+const ASSISTANT_TOGGLE_HEIGHT = 40;
+
+/**
+ * Where the toggle rests before anyone moves it: centred three quarters of
+ * the way down the window, clear of the page's bottom edge and its controls.
+ */
+export function assistantRestOffsetY(viewportHeight: number): number {
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0)
+    return ASSISTANT_DEFAULT_OFFSET_Y;
+  return Math.max(
+    0,
+    Math.round(
+      viewportHeight / 4 - ASSISTANT_TOGGLE_HEIGHT / 2 - ASSISTANT_TOGGLE_REST_BOTTOM,
+    ),
+  );
+}
 
 export function parseAssistantOffsetY(value: string | undefined): number {
   if (!value) return ASSISTANT_DEFAULT_OFFSET_Y;

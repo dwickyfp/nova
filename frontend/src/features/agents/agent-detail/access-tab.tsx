@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { StateBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -178,9 +179,9 @@ export function AgentAccessTab({
                       {role.role_name}
                     </span>
                     <Badge variant="outline">{role.grant_type}</Badge>
-                    <Badge variant={role.verified ? "secondary" : "outline"}>
-                      {role.verified ? "Verified" : "Needs verification"}
-                    </Badge>
+                    <StateBadge
+                      status={role.verified ? "verified" : "needs_verification"}
+                    />
                   </div>
                   <div className="flex items-center gap-1">
                     <Button

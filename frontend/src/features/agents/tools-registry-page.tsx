@@ -7,6 +7,7 @@ import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
+import { StateBadge } from '@/components/ui/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -215,11 +216,7 @@ function McpServers() {
                   <span className='font-medium'>{server.name}</span>
                   <Badge variant='outline'>{server.transport}</Badge>
                   {server.last_status ? (
-                    <Badge
-                      variant={server.last_status === 'connected' ? 'secondary' : 'destructive'}
-                    >
-                      {server.last_status}
-                    </Badge>
+                    <StateBadge status={server.last_status} />
                   ) : null}
                 </div>
                 <p className='mt-1 truncate text-sm text-muted-foreground'>

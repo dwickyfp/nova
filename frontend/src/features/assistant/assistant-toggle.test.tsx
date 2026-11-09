@@ -8,10 +8,14 @@ import { AssistantToggle } from "./assistant-toggle";
 import { AssistantProvider } from "./assistant-provider";
 import { ASSISTANT_OFFSET_Y_COOKIE } from "./assistant-panel-state";
 
-function renderToggle(draggable = true) {
-  // The offset is persisted in a cookie, which outlives a test's DOM; clear it
-  // so each render starts at the default instead of a previous test's value.
-  document.cookie = `${ASSISTANT_OFFSET_Y_COOKIE}=; path=/; max-age=0`;
+function renderToggle(draggable = true, storedOffset?: number) {
+  // The offset is persisted in a cookie, which outlives a test's DOM; reset it
+  // so each render starts at the resting position (or the given stored one)
+  // instead of a previous test's value.
+  document.cookie =
+    storedOffset == null
+      ? `${ASSISTANT_OFFSET_Y_COOKIE}=; path=/; max-age=0`
+      : `${ASSISTANT_OFFSET_Y_COOKIE}=${storedOffset}; path=/`;
   // `assistant_collapsed: true` keeps the panel closed, so the toggle is the
   // surface under test instead of unmounting itself once the tree loads.
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -140,7 +144,7 @@ describe("AssistantToggle", () => {
       rect,
     );
 
-    const { getByRole } = await renderToggle();
+    const { getByRole } = await renderToggle(true, 0);
     const button = getByRole("button", { name: "Ask Nove" }).element();
     const anchor = button.closest("div[style]") as HTMLElement;
 
@@ -214,7 +218,7 @@ describe("AssistantToggle", () => {
       rect,
     );
 
-    const { getByRole } = await renderToggle();
+    const { getByRole } = await renderToggle(true, 0);
     const button = getByRole("button", { name: "Ask Nove" }).element();
 
     await button.dispatchEvent(

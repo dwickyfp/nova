@@ -9,6 +9,7 @@ import { agentVersionsApi } from "../api";
 import { toAgentDraft } from "./agent-draft";
 import { semanticViewsApi, type SemanticView } from "@/features/intelligence/semantic-views-api";
 import { Badge } from "@/components/ui/badge";
+import { StateBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,7 @@ export function AgentConfigurationTab({
   const [draft, setDraft] = useState<AgentCreateInput>(() =>
     toAgentDraft(agent),
   );
+  const [isDirty, setIsDirty] = useState(false);
   const base = useRef(agent);
   const dirty = useRef(false);
   useEffect(() => {
@@ -83,6 +85,7 @@ export function AgentConfigurationTab({
   }, [agent]);
   useEffect(() => {
     dirty.current = JSON.stringify(draft) !== JSON.stringify(toAgentDraft(base.current));
+    setIsDirty(dirty.current);
     onDirtyChange?.(dirty.current);
   }, [draft, agent, onDirtyChange]);
 
@@ -92,6 +95,7 @@ export function AgentConfigurationTab({
     onSuccess: (version) => {
       onDirtyChange?.(false);
       dirty.current = false;
+      setIsDirty(false);
       toast.success("Draft saved. Review the changes before publishing.");
       if (onDraftSaved) onDraftSaved(version.version_id); else onSaved();
     },
@@ -104,17 +108,11 @@ export function AgentConfigurationTab({
   ) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="outline" disabled={save.isPending} onClick={() => { base.current = agent; dirty.current = false; setDraft(toAgentDraft(agent)); }}>Discard edits</Button>
-        <Button disabled={save.isPending} onClick={() => save.mutate(draft)}>
-          <Save className="size-4" />
-          Save draft
-        </Button>
-      </div>
-
-      <Tabs defaultValue="general">
-        <TabsList className="h-auto flex-wrap">
+    // The sub-tab row and its actions stay put; the sub-tab's content
+    // scrolls below them, inside the agent page's fixed frame.
+    <Tabs defaultValue="general" className="flex min-h-0 flex-1 flex-col gap-0">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <TabsList className="h-auto max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&>[role=tab]]:flex-none">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
@@ -122,8 +120,27 @@ export function AgentConfigurationTab({
           <TabsTrigger value="skills">Skills</TabsTrigger>
           <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            disabled={!isDirty || save.isPending}
+            onClick={() => {
+              base.current = agent;
+              dirty.current = false;
+              setDraft(toAgentDraft(agent));
+            }}
+          >
+            Discard edits
+          </Button>
+          <Button disabled={save.isPending} onClick={() => save.mutate(draft)}>
+            <Save className="size-4" />
+            Save draft
+          </Button>
+        </div>
+      </div>
 
-        <TabsContent value="general" className="mt-6 max-w-2xl space-y-5">
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto pb-6">
+        <TabsContent value="general" className="max-w-2xl space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="c-name">Display name</Label>
             <Input
@@ -180,7 +197,7 @@ export function AgentConfigurationTab({
           </div>
         </TabsContent>
 
-        <TabsContent value="instructions" className="mt-6 max-w-3xl space-y-4">
+        <TabsContent value="instructions" className="max-w-3xl space-y-4">
           <AgentModelSelect
             providerId={draft.model_provider_id ?? null}
             modelName={draft.model_name ?? null}
@@ -212,24 +229,24 @@ export function AgentConfigurationTab({
           </div>
         </TabsContent>
 
-        <TabsContent value="tools" className="mt-6">
+        <TabsContent value="tools">
           <ToolsConfig draft={draft} set={set} />
         </TabsContent>
 
-        <TabsContent value="skills" className="mt-6">
+        <TabsContent value="skills">
           <SkillsConfig draft={draft} set={set} />
         </TabsContent>
 
-        <TabsContent value="resources" className="mt-6">
+        <TabsContent value="resources">
           <AgentResourceBindings value={draft.resource_bindings ?? { search_indexes: [], feature_groups: [] }}
             onChange={(value) => set("resource_bindings", value)} />
         </TabsContent>
 
-        <TabsContent value="mcp" className="mt-6 max-w-2xl">
+        <TabsContent value="mcp" className="max-w-2xl">
           <McpConfig />
         </TabsContent>
-      </Tabs>
-    </div>
+      </div>
+    </Tabs>
   );
 }
 
@@ -366,9 +383,7 @@ function ToolsConfig({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{view?.name ?? id}</span>
-                      <Badge variant="outline">
-                        {view?.status ?? "Unavailable"}
-                      </Badge>
+                      <StateBadge status={view?.status ?? "Unavailable"} />
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {view?.database_name ?? "View is no longer accessible"}
@@ -751,15 +766,7 @@ function McpConfig() {
                 <Badge variant="outline">{server.transport}</Badge>
               </div>
               {server.last_status ? (
-                <Badge
-                  variant={
-                    server.last_status === "connected"
-                      ? "secondary"
-                      : "destructive"
-                  }
-                >
-                  {server.last_status}
-                </Badge>
+                <StateBadge status={server.last_status} />
               ) : null}
             </div>
           ))}

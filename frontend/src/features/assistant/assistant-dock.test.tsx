@@ -258,10 +258,10 @@ describe("AssistantDock", () => {
       // wrapper's style rather than a `bottom-4` class.
       const closed = getByRole("button", { name: "Ask Nove" }).element();
       const anchor = closed.closest("div[style]") as HTMLElement | null;
-      // The default `bottom-4` (1rem) plus a zero offset; the browser may order
-      // the two addends either way.
+      // `bottom-4` (1rem) plus the resting offset, which centres the toggle
+      // three quarters of the way down a 900px window (189px).
       expect(anchor?.style.bottom).toContain("1rem");
-      expect(anchor?.style.bottom).toContain("0px");
+      expect(anchor?.style.bottom).toContain("189px");
 
       await getByRole("button", { name: "Ask Nove" }).click();
       // Closing lives in the header; no FAB floats over it.

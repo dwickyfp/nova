@@ -33,6 +33,7 @@ import {
 } from "./query-attach";
 import {
   ASSISTANT_OFFSET_Y_COOKIE,
+  assistantRestOffsetY,
   ASSISTANT_WIDTH_COOKIE,
   assistantCollapsedToPersist,
   clampAssistantWidth,
@@ -170,9 +171,13 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
   );
   // Same synchronous-read trick as the width: the toggle mounts at its stored
   // offset on the first paint instead of jumping from the default.
-  const [offsetY, setOffsetYState] = useState(() =>
-    parseAssistantOffsetY(getCookie(ASSISTANT_OFFSET_Y_COOKIE)),
-  );
+  const [offsetY, setOffsetYState] = useState(() => {
+    const stored = getCookie(ASSISTANT_OFFSET_Y_COOKIE);
+    // A position the user dragged to wins; otherwise rest at three quarters.
+    return stored
+      ? parseAssistantOffsetY(stored)
+      : assistantRestOffsetY(typeof window === "undefined" ? 0 : window.innerHeight);
+  });
   // Same key and fetcher as WorkspacesPage, so the two consumers share one
   // cache entry instead of issuing a second GET when both are mounted.
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({

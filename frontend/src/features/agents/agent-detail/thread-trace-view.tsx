@@ -21,7 +21,8 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge"
+import { StateBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -213,7 +214,7 @@ export function ThreadTraceView({
           data-testid="conversation-pane-shell"
           data-collapsed={collapsedPanes.conversation}
           className={cn(
-            "nova-trace-pane min-h-0 flex-1 flex-col lg:flex",
+            "nova-trace-pane min-h-0 min-w-0 flex-1 flex-col lg:flex lg:flex-[5]",
             mobilePane === "conversation" ? "flex" : "hidden",
           )}
         >
@@ -236,7 +237,7 @@ export function ThreadTraceView({
           data-testid="thread-pane-shell"
           data-collapsed={collapsedPanes.thread}
           className={cn(
-            "nova-trace-pane min-h-0 flex-1 flex-col lg:flex",
+            "nova-trace-pane min-h-0 min-w-0 flex-1 flex-col lg:flex lg:flex-[4]",
             mobilePane === "thread" ? "flex" : "hidden",
           )}
         >
@@ -260,7 +261,7 @@ export function ThreadTraceView({
           data-testid="detail-pane-shell"
           data-collapsed={collapsedPanes.detail}
           className={cn(
-            "nova-trace-pane min-h-0 flex-1 flex-col lg:flex",
+            "nova-trace-pane min-h-0 min-w-0 flex-1 flex-col lg:flex lg:flex-[4]",
             mobilePane === "detail" ? "flex" : "hidden",
           )}
         >
@@ -349,10 +350,10 @@ function ConversationPane({
         collapseSide="left"
         onCollapse={onCollapse}
       />
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className={PANE_SCROLL}>
         <div
           data-testid="conversation-preview"
-          className="nova-observability-preview mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-5 px-3 py-4"
+          className="nova-observability-preview mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-8 px-6 py-6"
         >
           {groups.map((group) => {
             const selected = selection?.turnId === group.id;
@@ -379,7 +380,8 @@ function ConversationPane({
                         })
                       }
                       className={cn(
-                        "max-w-[85%] rounded-2xl bg-accent px-4 py-2.5 text-left text-sm text-accent-foreground ring-1 ring-input outline-none",
+                        // The same bubble Studio draws for a question.
+                        "max-w-[85%] rounded-2xl bg-foreground px-4 py-2.5 text-left text-sm text-white ring-1 ring-input outline-none dark:bg-accent",
                         "focus-visible:ring-2 focus-visible:ring-ring",
                         selected &&
                           selection?.nodeId === group.nodes[0].id &&
@@ -461,7 +463,7 @@ function ThreadDetailsPane({
         collapseSide="left"
         onCollapse={onCollapse}
       />
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className={PANE_SCROLL}>
         <div className="border-b px-4 py-3">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
             <dt className="text-muted-foreground">Thread ID</dt>
@@ -483,10 +485,11 @@ function ThreadDetailsPane({
         <div className="py-2">
           {groups.map((group) => (
             <div key={group.id} className="border-b py-2 last:border-b-0">
-              {group.nodes.map((node) => (
+              {group.nodes.map((node, nodeIndex) => (
                 <TimelineRow
                   key={node.id}
                   node={node}
+                  rail={railFor(group.nodes, nodeIndex)}
                   turnDuration={group.durationMs}
                   selected={selection?.nodeId === node.id}
                   ref={(element) => {
@@ -508,12 +511,14 @@ function ThreadDetailsPane({
 
 function TimelineRow({
   node,
+  rail,
   turnDuration,
   selected,
   ref,
   onClick,
 }: {
   node: TraceNode;
+  rail: Rail;
   turnDuration?: number;
   selected: boolean;
   ref: (element: HTMLButtonElement | null) => void;
@@ -538,32 +543,28 @@ function TimelineRow({
       onClick={onClick}
       aria-pressed={selected}
       className={cn(
-        "grid min-h-9 w-full grid-cols-[minmax(0,1fr)_4rem_5.5rem] items-center gap-2 px-3 text-left text-xs outline-none transition-colors",
+        "relative grid min-h-10 w-full grid-cols-[minmax(0,1fr)_3.5rem_5rem] items-center gap-3 px-4 py-1.5 text-left text-xs outline-none transition-colors",
         "hover:bg-muted/60 focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        selected && "bg-accent text-accent-foreground",
+        // Selected: a surface step and a hairline at the edge, text unchanged.
+        selected && "bg-muted before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary",
       )}
     >
+      <RailLines rail={rail} depth={node.depth} />
       <span
-        className="relative flex min-w-0 items-center gap-2"
-        style={{ paddingLeft: `${node.depth * 18}px` }}
+        className="relative flex min-w-0 items-center gap-2.5"
+        style={{ paddingLeft: `${node.depth * RAIL_STEP}px` }}
       >
-        {node.depth > 0 ? (
-          <span
-            className="absolute top-0 bottom-0 border-l"
-            style={{ left: `${node.depth * 18 - 9}px` }}
-          />
-        ) : null}
         <span
           className={cn(
-            "grid size-5 shrink-0 place-items-center rounded-sm border bg-background",
+            "grid size-6 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground",
             node.status === "failed" &&
               "border-destructive/50 text-destructive",
           )}
         >
-          <Icon className="size-3" />
+          <Icon className="size-3.5" />
         </span>
         <span className="min-w-0">
-          <span className="block truncate font-medium">{node.label}</span>
+          <span className="block truncate text-sm">{sentenceCase(node.label)}</span>
           {node.description ? (
             <span className="block truncate text-xs text-muted-foreground">
               {node.description}
@@ -572,7 +573,7 @@ function TimelineRow({
         </span>
       </span>
       <span className="text-right tabular-nums text-muted-foreground">
-        {node.durationMs != null ? formatDuration(node.durationMs) : "—"}
+        {node.durationMs != null ? formatDuration(node.durationMs) : null}
       </span>
       <span className="relative h-1.5 overflow-hidden rounded-full bg-muted">
         {width > 0 ? (
@@ -616,12 +617,12 @@ function StepDetailPane({
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <PaneHeading
-        label={node.label}
+        label={sentenceCase(node.label)}
         icon={node.detailKind === "semantic"}
         collapseSide="right"
         onCollapse={onCollapse}
       />
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className={PANE_SCROLL}>
         <div className="space-y-3 p-4">
           <StepSummary group={group} node={node} />
           {node.detailKind === "semantic" || node.detailKind === "sql" ? (
@@ -747,9 +748,7 @@ function StepSummary({ group, node }: { group: TraceGroup; node: TraceNode }) {
   return (
     <div className="border-b pb-3">
       <div className="flex items-center justify-between gap-3">
-        <Badge variant={node.status === "failed" ? "destructive" : "secondary"}>
-          {node.status}
-        </Badge>
+        <StateBadge status={node.status} />
         <span className="text-xs tabular-nums text-muted-foreground">
           {node.durationMs != null
             ? formatDuration(node.durationMs)
@@ -1195,6 +1194,96 @@ function Panel({
   );
 }
 
+/**
+ * The pane's scroll body. Radix wraps content in a `display: table` box that
+ * grows to its widest child, which pushed the conversation past the pane's
+ * edge; a block wrapper lets text and blocks wrap to the pane instead.
+ */
+const PANE_SCROLL = "min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!";
+
+/** `Runtime Routing` → `Runtime routing`, keeping acronyms such as LLM or SQL. */
+function sentenceCase(label: string): string {
+  return label
+    .split(" ")
+    .map((word, index) =>
+      index === 0 || /^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase(),
+    )
+    .join(" ");
+}
+
+/** Indent per level; a parent's icon centre sits at `RAIL_STEP / 2`. */
+const RAIL_STEP = 24;
+/** The row's left padding (`px-4`). */
+const RAIL_INSET = 16;
+
+type Rail = {
+  /** Levels (1-based) whose line passes straight through this row. */
+  through: number[];
+  /** This row's own line continues to a later sibling. */
+  continues: boolean;
+  /** This row has children below, so a line leaves its icon. */
+  parent: boolean;
+};
+
+/** Where Studio-style rail lines run for one row of a flat, depth-ordered list. */
+function railFor(nodes: TraceNode[], index: number): Rail {
+  const depth = nodes[index].depth;
+  const laterAt = (level: number) => {
+    for (const next of nodes.slice(index + 1)) {
+      if (next.depth < level) return false;
+      if (next.depth === level) return true;
+    }
+    return false;
+  };
+  const through: number[] = [];
+  for (let level = 1; level < depth; level += 1)
+    if (laterAt(level)) through.push(level);
+  return {
+    through,
+    continues: depth > 0 && laterAt(depth),
+    parent: (nodes[index + 1]?.depth ?? 0) > depth,
+  };
+}
+
+/**
+ * The rail Studio draws for a run's steps: one hairline per level, and a
+ * rounded elbow into each step.
+ */
+function RailLines({ rail, depth }: { rail: Rail; depth: number }) {
+  const x = (level: number) => RAIL_INSET + (level - 1) * RAIL_STEP + RAIL_STEP / 2 - 0.5;
+  return (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+      {rail.through.map((level) => (
+        <span
+          key={level}
+          className="absolute inset-y-0 border-l border-border"
+          style={{ left: x(level) }}
+        />
+      ))}
+      {depth > 0 ? (
+        <>
+          <span
+            className="absolute top-0 h-1/2 w-3 rounded-bl-lg border-b border-l border-border"
+            style={{ left: x(depth) }}
+          />
+          {rail.continues ? (
+            <span
+              className="absolute inset-y-0 border-l border-border"
+              style={{ left: x(depth) }}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {rail.parent ? (
+        <span
+          className="absolute bottom-0 border-l border-border"
+          style={{ left: x(depth + 1), top: "calc(50% + 12px)" }}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 function buildTraceGroups(turns: ThreadTurn[]): TraceGroup[] {
   const groups: TraceGroup[] = [];
   let latestUser: ThreadTurn | undefined;
@@ -1224,6 +1313,13 @@ function buildGroup(
   const nodes: TraceNode[] = [];
   const rootId = `${assistant.message_id}:root`;
   const hasProvider = assistant.steps.some((step) => step.kind === "provider");
+  const firstOffset = Math.min(
+    ...assistant.steps.flatMap((step) =>
+      "started_offset_ms" in step && typeof step.started_offset_ms === "number"
+        ? [step.started_offset_ms]
+        : [],
+    ),
+  );
   nodes.push({
     id: rootId,
     turnId: assistant.message_id,
@@ -1233,6 +1329,20 @@ function buildGroup(
     depth: 0,
     detailKind: "turn",
   });
+  // The time before the first recorded step: loading the thread, the agent
+  // and its context. Shown so a turn's children account for its duration.
+  if (Number.isFinite(firstOffset) && firstOffset >= 100)
+    nodes.push({
+      id: `${assistant.message_id}:preparation`,
+      turnId: assistant.message_id,
+      label: "Preparation",
+      description: "Loading the conversation, agent and context",
+      status: "done",
+      depth: 1,
+      detailKind: "turn",
+      startedOffsetMs: 0,
+      durationMs: firstOffset,
+    });
 
   for (const [stepIndex, step] of assistant.steps.entries()) {
     const baseId = stepId(step) ?? `${assistant.message_id}:step:${stepIndex}`;
@@ -1296,7 +1406,15 @@ function buildGroup(
       continue;
     }
     if (step.kind === "reasoning") {
-      if (hasProvider && ["plan", "act", "answer"].includes(step.phase))
+      // A reasoning phase is shown unless a recorded model call already
+      // covers its time, or it is an instant marker. Hiding every plan phase
+      // whenever any model call was recorded dropped the planning call (often
+      // most of the turn) when only the response call had a provider step.
+      if (coveredByProvider(step, assistant.steps)) continue;
+      if (
+        ["act", "answer"].includes(step.phase) &&
+        (step.duration_ms ?? 0) < 1
+      )
         continue;
       nodes.push({
         id: baseId,
@@ -1529,11 +1647,27 @@ function normalizeStatus(status: string): TraceNode["status"] {
   if (["failed", "denied", "cancelled"].includes(status)) return "failed";
   return ["running", "pending"].includes(status) ? "running" : "done";
 }
+/** A reasoning step whose time a recorded model call (provider step) covers. */
+function coveredByProvider(step: TraceStep, steps: TraceStep[]): boolean {
+  if (!("started_offset_ms" in step) || typeof step.started_offset_ms !== "number")
+    return steps.some((other) => other.kind === "provider");
+  const start = step.started_offset_ms;
+  const end = start + Math.max(1, step.duration_ms ?? 0);
+  return steps.some(
+    (other) =>
+      other.kind === "provider" &&
+      "started_offset_ms" in other &&
+      typeof other.started_offset_ms === "number" &&
+      other.started_offset_ms >= start - 1 &&
+      other.started_offset_ms <= end + 1,
+  );
+}
+
 function reasoningLabel(phase: string): string {
-  if (phase === "observe") return "Result Review";
-  if (phase === "skill") return "Skill Loading";
-  if (phase === "answer") return "LLM Response Generation";
-  return "LLM Planning";
+  if (phase === "observe") return "Result review";
+  if (phase === "skill") return "Skill loading";
+  if (phase === "answer") return "LLM response generation";
+  return "LLM planning";
 }
 function toolLabel(name: string): string {
   if (name === "semantic_query") return "Semantic Query";

@@ -458,7 +458,13 @@ Primitif untuk tiga keadaan ini ada di `src/components/ui/`:
 
 `StatusBadge` hanya memakai token status (`--success-strong`,
 `--warning-strong`, `--info-strong`, `--danger`), tidak pernah emerald/teal/sky
-mentah. `MetricCard` mewarnai ikon, tidak pernah angkanya: angka tetap
+mentah. Keadaan sebuah record (Active, Verified, Published, Connected, Pending,
+Failed, Deprecated, dan seterusnya) selalu ditampilkan dengan `StateBadge`, yang
+mengambil warnanya dari `statusTone()` di `components/ui/status-tone.ts`:
+keadaan baik dan hidup hijau (`success`), perlu perhatian kuning (`warning`),
+gagal atau hilang merah (`danger`), dipensiunkan atau tidak dikenal netral.
+Labelnya sentence case ("Active", bukan "ACTIVE"). Keadaan baru ditambahkan ke
+peta itu, bukan diwarnai di layar masing-masing. `MetricCard` mewarnai ikon, tidak pernah angkanya: angka tetap
 `--foreground` supaya netral dan terbaca.
 
 ### B3. Aksi yang terlihat harus punya perilaku

@@ -647,9 +647,28 @@ async def delete_artifact(
 
 
 async def _seed_builtin_tools(owner: str) -> None:
-    """Ensure the builtin catalog exists for ``owner`` (idempotent)."""
+    """Ensure the builtin catalog exists for ``owner`` (idempotent).
+
+    Only a missing builtin, or one whose description or schema changed in a
+    release, is written. Reads stay a single query, and a builtin the owner
+    switched off keeps its switch.
+    """
+    stored = {
+        tool["name"]: tool
+        for tool in await agent_repository.list_tools(owner_name=owner)
+        if tool["source"] == "builtin"
+    }
     for row in tool_catalog.builtin_rows():
-        await agent_repository.upsert_tool(owner_name=owner, fields=row)
+        current = stored.get(row["name"])
+        if current is None:
+            await agent_repository.upsert_tool(owner_name=owner, fields=row)
+        elif (current["description"], current["input_schema"]) != (
+            row["description"],
+            row["input_schema"],
+        ):
+            await agent_repository.upsert_tool(
+                owner_name=owner, fields={**row, "is_enabled": current["is_enabled"]}
+            )
 
 
 @router.get("/tools", response_model=ToolListResponse)
