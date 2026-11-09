@@ -1,16 +1,20 @@
-import { SaveArtifactButton } from "../result-table";
-import type { UiArtifactDraft } from "./types";
-import { useNodeArtifact } from "./use-node-artifact";
+import { useContext } from "react";
+import { AddToDatavizButton } from "../dataviz/add-to-dataviz";
+import { UiRuntimeContext, type UiDatavizTarget } from "./runtime-context";
 
-export function NodeArtifactButton({
+/**
+ * **Add to Dataviz** for a chart, table or KPI drawn from one verified result.
+ * The server decides; an unsupported view simply has no action.
+ */
+export function NodeDatavizAction({
   data,
-  noun,
-  draft,
+  target,
 }: {
   data: unknown;
-  noun: "chart" | "table" | "map";
-  draft: UiArtifactDraft;
+  target: Omit<UiDatavizTarget, "evidence_id">;
 }) {
-  const save = useNodeArtifact(data, draft);
-  return save ? <SaveArtifactButton noun={noun} {...save} /> : null;
+  const { artifacts } = useContext(UiRuntimeContext);
+  const evidenceId = artifacts?.evidenceFor(data);
+  const locator = artifacts && evidenceId ? artifacts.locate({ ...target, evidence_id: evidenceId }) : null;
+  return <AddToDatavizButton locator={locator} />;
 }

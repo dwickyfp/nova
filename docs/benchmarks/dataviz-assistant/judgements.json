@@ -1,0 +1,167 @@
+{
+  "judge": "Claude (LLM judge), strict: every number checked against gold; a correct number in a broken or dumped answer, or a missing headline figure, is not a pass",
+  "gold": {
+    "what_how": "definition from the ontology (sales after discounts and returns, IDR, by order date) and Oct 2026 total Rp1.573.810.277,50",
+    "who": "Yusuf Santoso, Rp230.375.301",
+    "when": "October 2026, Rp1.573.810.277,50 (May-Oct 2026)",
+    "where": "Jawa Barat & DKI, Rp807.421.961",
+    "why": "Oct Rp1.573.810.277,50 vs Sep Rp1.492.211.974,53, +Rp81.598.302,97 (5,47%); drivers Jawa Barat & DKI +37.675.596, Jawa Timur +36.166.680,97, Sulawesi +5.408.229 (a brand breakdown with exact shares is also a valid decomposition)",
+    "lineage": "dataset semantic_retail_sales_sales_orders, Semantic View retail_sales v18, concept definitions",
+    "filtered": "Region = Sulawesi applied, Rp148.289.709",
+    "full_5w1h": "units 329.840 vs 312.046, +17.794 (5,7%); contributors Jawa Timur +9.232, Jawa Barat & DKI +6.966"
+  },
+  "runs": {
+    "9": {
+      "build": "dashboard-only data, before column resolution",
+      "what_how": "pass",
+      "who": "fail: unknown column 'salesman' ended the turn",
+      "when": "fail: grouped by day, no month answer",
+      "where": "pass",
+      "why": "pass",
+      "lineage": "fail: data_evidence_incomplete guard",
+      "filtered": "pass",
+      "full_5w1h": "fail: two dimensions in a comparison, raw dump"
+    },
+    "10": {
+      "build": "invalidated: the backend reloaded several times during the run",
+      "excluded": true
+    },
+    "11": {
+      "build": "column resolution, month grain, lineage, one dimension per change",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "pass (total change not stated, both totals and all drivers exact)",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "12": {
+      "build": "same as 11",
+      "what_how": "pass",
+      "who": "fail: unrequested comparison, named the biggest mover (Rudi Saputra) not the biggest earner",
+      "when": "pass",
+      "where": "pass",
+      "why": "pass (raw float digits)",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "13": {
+      "build": "row_order and largest_in_period; partly run during a reload",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "pass",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "fail: totals left out, interactive-view notice"
+    },
+    "14": {
+      "build": "text and tables only in the Dataviz panel",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "fail: number guard removed the opening sentence (raw float made the rounded total look invented)",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "15": {
+      "build": "values rounded to 2 decimals; lean Superset with role-scoped dashboards",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "pass",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "16": {
+      "build": "same as 15",
+      "what_how": "pass",
+      "who": "fail: AI provider ReadTimeout after a correct query",
+      "when": "pass",
+      "where": "pass",
+      "why": "fail: guard removed the total change sentence ('net revenue naik X' names no row)",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "17": {
+      "build": "prompt: name the row of a change",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "fail: brand drivers exact but total change removed by the guard",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "18": {
+      "build": "same as 17",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "fail: guard fell back to a raw number dump",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    },
+    "19": {
+      "build": "period-named comparison columns",
+      "excluded": true,
+      "note": "the eval client timed out on the last case before the file was written (the runner now saves after every case); the 7 logged turns all finished normally but were not judged"
+    },
+    "20": {
+      "build": "same as 19",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "fail: model sent compare_period '.', the query refused and the turn ended",
+      "where": "pass",
+      "why": "pass (totals, +Rp81.598.302,97 (5,47%), all drivers exact)",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "fail: guard removed 'naik 17.794 unit' ('Units sold' did not match the column 'units_sold'), leaving a broken bullet"
+    },
+    "21": {
+      "build": "period columns with spaces, period normalisation",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "fail: engine appended 'tertinggi Total (8.823.693.541,03)', ranking the Total row as a member",
+      "where": "pass",
+      "why": "pass (5,47% and all drivers exact; absolute total change not stated)",
+      "lineage": "fail: answered in Portuguese",
+      "filtered": "pass",
+      "full_5w1h": "pass (numbers right, written 329840.0)"
+    },
+    "22": {
+      "build": "FINAL: Total rows never ranked; one answer language",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "pass",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass (units written without thousand separators)"
+    },
+    "23": {
+      "build": "FINAL, same as 22",
+      "what_how": "pass",
+      "who": "pass",
+      "when": "pass",
+      "where": "pass",
+      "why": "pass",
+      "lineage": "pass",
+      "filtered": "pass",
+      "full_5w1h": "pass"
+    }
+  }
+}

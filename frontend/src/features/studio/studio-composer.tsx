@@ -69,8 +69,11 @@ export const Composer = ({
   agents,
   onSelectAgent,
   sendDisabled = false,
+  agentPicker = true,
 }: {
   sendDisabled?: boolean;
+  /** False where Nova picks the agent itself (the Dataviz assistant). */
+  agentPicker?: boolean;
   ref: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
   onChange: (v: string) => void;
@@ -147,7 +150,7 @@ export const Composer = ({
           placeholder="Ask a question about your data"
           rows={1}
           disabled={disabled}
-          className="max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+          className="min-h-14 max-h-48 w-full shrink-0 resize-none bg-transparent px-4 pt-4 pb-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
         />
         <div className="flex items-center gap-1 px-2.5 pb-2.5">
           <Button
@@ -162,9 +165,11 @@ export const Composer = ({
             <Plus aria-hidden="true" className="size-4" strokeWidth={1} />
           </Button>
 
-          <AgentPicker agent={agent} agents={agents}
-            disabled={streaming || readingFiles}
-            onSelectAgent={onSelectAgent} />
+          {agentPicker ? (
+            <AgentPicker agent={agent} agents={agents}
+              disabled={streaming || readingFiles}
+              onSelectAgent={onSelectAgent} />
+          ) : null}
 
           <div className="flex-1" />
           {onResearch ? (

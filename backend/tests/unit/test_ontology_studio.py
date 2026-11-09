@@ -276,3 +276,60 @@ def test_concept_grounding_is_scored_from_recorded_facts():
     failed = score(expected, wrong)
     assert failed.status == "fail" and failed.failure_taxonomy == "WRONG_BUSINESS_CONCEPT"
     assert score(expected, {"facts": {}}).status == "unavailable"
+
+
+async def test_resolve_tool_reads_a_shared_term_in_the_agents_own_business(world, monkeypatch):
+    """Sales defines its own NetRevenue ("omzet") on another view: each agent
+    gets its business's definition, never the other's."""
+    from app.modules.agents.semantic import access as semantic_access
+
+    await world.approved(
+        [
+            world.concept(
+                world.sales, "NetRevenue", aliases=["omzet"],
+                definition="Sales omzet: invoiced sell-in after returns.",
+            ),
+            RepresentationChange(
+                op="create", concept_id="@0", view_id="sales_sv", metric="revenue"
+            ),
+        ],
+        reviewers=(SALES_STEWARD,),
+    )
+    await world.release()
+    unscoped = await call(ontology_tools.ontology_resolve_tool, {"text": "omzet"}, tool_context())
+    assert unscoped.summary.startswith("A term has several approved definitions")
+
+    for views, expected, foreign in (
+        (["sales_sv"], "Sales.NetRevenue", "Finance.NetRevenue"),
+        (["sales"], "Finance.NetRevenue", "Sales.NetRevenue"),
+    ):
+        monkeypatch.setattr(semantic_access, "_context_ids", lambda context, v=views: v)
+        outcome = await call(
+            ontology_tools.ontology_resolve_tool, {"text": "omzet per kota"},
+            tool_context(agent_id="agent"),
+        )
+        assert [item["qualified_name"] for item in outcome.data["concepts"]] == [expected]
+        assert foreign not in str(outcome.data)
+
+
+async def test_an_agent_that_spans_two_meanings_is_told_to_ask_which(world, monkeypatch):
+    """Read in the agent's own views: a term two of its businesses define is named
+    with both choices; a term only one of them defines adds nothing."""
+    from app.modules.agents import router as agent_router
+
+    await world.approved(
+        [
+            world.concept(world.sales, "NetRevenue", aliases=["omzet"],
+                          definition="Sales omzet: invoiced sell-in after returns."),
+            RepresentationChange(
+                op="create", concept_id="@0", view_id="sales_sv", metric="revenue"
+            ),
+        ],
+        reviewers=(SALES_STEWARD,),
+    )
+    await world.release()
+    both = await agent_router._business_terms_note("omzet per kota", ANALYST, ["sales", "sales_sv"])
+    assert "Finance.NetRevenue" in both and "Sales.NetRevenue" in both
+    assert "Ask the user which one they mean" in both
+    assert await agent_router._business_terms_note("omzet per kota", ANALYST, ["sales"]) == ""
+    assert await agent_router._business_terms_note("omzet", ANALYST, []) == ""

@@ -74,8 +74,12 @@ class OntologyResolveTool:
 
         try:
             body = ResolveRequest.model_validate(invocation.arguments)
+            # A term means what it means in this agent's business (its views).
             resolution = await concept_resolver.resolve(
-                body.text, context.user, release_id=_release(context)
+                body.text,
+                context.user,
+                release_id=_release(context),
+                scope_views=_agent_views(context),
             )
         except (HTTPException, ValueError, ValidationError) as exc:
             return _failure(exc)

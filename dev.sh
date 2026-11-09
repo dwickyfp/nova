@@ -310,8 +310,22 @@ if [[ -z "$RANGER_SERVICE_NAME_VALUE" ]]; then
   RANGER_SERVICE_NAME_VALUE="${RANGER_SERVICE_NAME_VALUE:-nova_starrocks}"
 fi
 
+# BI (docs/arch-17-superset.md): Superset runs in Docker and calls this backend
+# through docker-compose.dev.yml; the backend reaches Superset on loopback and
+# shares its service token, read from the running container like Ranger's.
+SUPERSET_PORT="${SUPERSET_PORT:-8088}"
+SUPERSET_SERVICE_TOKEN_VALUE="${SUPERSET_SERVICE_TOKEN:-}"
+if [[ -z "$SUPERSET_SERVICE_TOKEN_VALUE" ]]; then
+  SUPERSET_SERVICE_TOKEN_VALUE="$(container_env_value nova-superset NOVA_SUPERSET_SERVICE_TOKEN || true)"
+fi
+if [[ -z "$SUPERSET_SERVICE_TOKEN_VALUE" ]]; then
+  warn "Superset is not running: BI and Studio Dataviz stay unavailable until it starts."
+fi
+
 BACKEND_ENV=(
   env
+  SUPERSET_INTERNAL_URL="${SUPERSET_INTERNAL_URL:-http://127.0.0.1:${SUPERSET_PORT}}"
+  SUPERSET_SERVICE_TOKEN="$SUPERSET_SERVICE_TOKEN_VALUE"
   STARROCKS_HOST="$STARROCKS_HOST"
   STARROCKS_FE_MYSQL_PORT="$STARROCKS_FE_MYSQL_PORT"
   RANGER_ADMIN_URL="$RANGER_ADMIN_URL"

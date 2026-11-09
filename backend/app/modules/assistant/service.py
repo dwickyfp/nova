@@ -195,6 +195,17 @@ class LoopContext:
     workspace_file_id: str | None = None
     session_id: str | None = None
     thread_id: str | None = None
+    #: The Dataviz page a Studio turn was asked from: dashboard id, filter key
+    #: and edit state. Hints only; Dataviz tools verify them as the caller.
+    dataviz: dict[str, Any] | None = None
+    #: Required tools whose verified output the server already put in this
+    #: turn's context (for example the Dataviz dashboard brief, which is the
+    #: output of ``dataviz_context`` for the caller). Set by the router only.
+    settled_capabilities: tuple[str, ...] = ()
+    #: Required tools this turn satisfies with another registered tool (for
+    #: the Dataviz assistant, governed data comes from the open dashboard's
+    #: own dataset). Set by the router only.
+    capability_aliases: dict[str, str] = field(default_factory=dict)
     user: dict[str, Any] | None = None
     app_context: NoveAppContext | None = None
     secure_input: dict[str, str] | None = field(default=None, repr=False)
@@ -309,7 +320,11 @@ _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
 _PREVIEW_ROWS = 40
 _PREVIEW_COLUMNS = 12
 #: Read-only analysis an owner can enable on a Studio agent, usable after its query.
-_ANALYSIS_TOOLS = ("compute_metrics", "data_to_chart", "diagnose_change", "ml_execute")
+#: ``dataviz_query`` answers from the open Dataviz dashboard's own dataset; it
+#: is registered only for Studio turns and refuses when no dashboard is open.
+_ANALYSIS_TOOLS = (
+    "compute_metrics", "data_to_chart", "diagnose_change", "ml_execute", "dataviz_query",
+)
 #: Tool-call syntax some providers leak into the text channel.
 _TOOL_MARKUP = re.compile(
     r"<\s*[\uff5c|]{1,2}\s*DSML\s*[\uff5c|]|<\s*(?:function_calls|tool_call)\s*>|<\s*invoke\s+name\s*=",
@@ -1080,6 +1095,18 @@ class AssistantLoop:
                 *(name for name in _ANALYSIS_TOOLS if self._registry.get(name) is not None),
             )))
             context.selected_tools = list(selected_tools)
+        if context.capability_aliases:
+            # The Dataviz assistant on an open dashboard: reading that
+            # dashboard is always in reach, whatever the planner chose, so a
+            # question it mislabels as a clarification still gets its data.
+            selected_tools = tuple(dict.fromkeys((
+                *selected_tools,
+                *(
+                    name for name in ("dataviz_query", "dataviz_context")
+                    if self._registry.get(name) is not None
+                ),
+            )))
+            context.selected_tools = list(selected_tools)
         selected_actions = ", ".join(selected_tools[:5])
         if len(selected_tools) > 5:
             selected_actions += f" and {len(selected_tools) - 5} more"
@@ -1165,6 +1192,15 @@ class AssistantLoop:
         )
         if _has_semantic_binding(context):
             required_capabilities = route.required_capabilities
+        if context.settled_capabilities:
+            required_capabilities = tuple(
+                name for name in required_capabilities
+                if name not in set(context.settled_capabilities)
+            )
+        if context.capability_aliases:
+            required_capabilities = tuple(dict.fromkeys(
+                context.capability_aliases.get(name, name) for name in required_capabilities
+            ))
         unavailable =[name for name in required_capabilities if name not in selected_tools]
         if unavailable:
             detail = (
@@ -1197,6 +1233,9 @@ class AssistantLoop:
                 "intent": route.intent.value,
                 "harness_mode": context.harness_mode,
                 "selected_tools": list(selected_tools),
+                # What the completion gate will demand, so a stopped turn
+                # can be explained from its trace.
+                "required_tools": list(required_capabilities),
                 "selected_skills": list(context.selected_skills or []),
                 "semantic_view_ids": list(context.semantic_view_ids or []),
                 "prompt_telemetry": dict(context.prompt_telemetry or {}),
@@ -1650,9 +1689,20 @@ class AssistantLoop:
                         or context.agent_scope is not None
                     )
                 )
+                # Where a Dataviz dashboard's numbers come from is answered by
+                # its verified metadata (charts, datasets, Semantic Views,
+                # concepts) when no data tool was required.
+                lineage_answer = bool(
+                    getattr(context, "dataviz", None)
+                    and completed_capabilities & {"dataviz_context", "dataviz_chart_source"}
+                    and not set(route.required_capabilities) & {
+                        "semantic_query", "semantic_view_query", "query_execute",
+                        "diagnose_change", "compute_metrics", "dataviz_query",
+                    }
+                )
                 if (
                     business_request and not denials and not guard_blocked
-                    and not evidence.business_tables
+                    and not evidence.business_tables and not lineage_answer
                 ):
                     detail = (
                         "No business query result is available. Catalog listings do not "
@@ -2656,6 +2706,7 @@ class AssistantLoop:
                     context.evidence_sql = {
                         **(context.evidence_sql or {}), evidence_item.evidence_id: compiled,
                     }
+                _attach_semantic_evidence(context, invocation.tool_call_id, outcome.evidence)
             if (
                 invocation.tool_name == "semantic_query" and route.needs_diagnosis
                 and not deferred_calls and not tool_uses.get("diagnose_change")
@@ -2763,6 +2814,16 @@ class AssistantLoop:
                 )
             )
             completed_capabilities.add(invocation.tool_name)
+            settled = _settled_capabilities(
+                self._registry.get(invocation.tool_name), outcome
+            )
+            if settled:
+                # A verified result made a later required step inapplicable
+                # (for example Dataviz refused a conversion): explaining that
+                # is the answer, not a missing capability.
+                required_capabilities = tuple(
+                    name for name in required_capabilities if name not in settled
+                )
             required_available = set(required_capabilities)
             required_done = (
                 not deferred_calls
@@ -4189,6 +4250,48 @@ async def _autocompose_artifacts(
             if statements:
                 provenance["statements"] = statements
     return ordered
+
+
+def _settled_capabilities(tool: Any, outcome: Any) -> set[str]:
+    """Required tools a successful result declares inapplicable.
+
+    Only a tool that declares ``may_settle`` can settle anything, and only the
+    names it declares there; a model or a result cannot widen it.
+    """
+    if tool is None or not getattr(outcome, "ok", False):
+        return set()
+    allowed = frozenset(getattr(tool, "may_settle", frozenset()))
+    named = (getattr(outcome, "metadata", None) or {}).get("settles_capabilities") or []
+    return {str(name) for name in named if str(name) in allowed}
+
+
+def _attach_semantic_evidence(context: Any, tool_call_id: str, evidence: Any) -> None:
+    """Keep a Semantic View result's meaning on its persisted tool step.
+
+    The view, its version, the planned metrics and dimensions, and the
+    ontology ``business_context`` (release, concepts, bindings) stay with the
+    step that produced the rows, so a later publication or Dataviz answer can
+    name the exact business meaning without re-planning or guessing. Only ids,
+    names and governed definitions are kept: no rows, SQL or credentials.
+    """
+    if not isinstance(evidence, dict):
+        return
+    business = evidence.get("business_context")
+    record = {
+        "view_id": evidence.get("view_id"),
+        "version": evidence.get("version"),
+        "semantic_model_fingerprint": evidence.get("semantic_model_fingerprint"),
+        "metrics": [str(item) for item in evidence.get("metrics") or []][:32],
+        "dimensions": [str(item) for item in evidence.get("dimensions") or []][:32],
+        "business_context": business if isinstance(business, dict) else None,
+    }
+    steps = getattr(context, "steps", None)
+    if not isinstance(steps, list):
+        return
+    for step in reversed(steps):
+        if step.get("kind") == "tool" and step.get("tool_call_id") == tool_call_id:
+            step["semantic_evidence"] = record
+            return
 
 
 def _attach_tool_evidence(context: Any, tool_call_id: str, evidence_id: str) -> None:

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, signInUrl } from './api-client'
+import { useAuthStore } from '@/stores/auth-store'
+import { ApiError, api, signInNavigation, signInUrl, tokenSecondsLeft } from './api-client'
 
 const fetchMock = vi.fn()
 
@@ -137,5 +138,51 @@ describe('signInUrl', () => {
     ).toBe('/sign-in?redirect=%2Fstudio%3Fagent%3Da%26thread%3Dt')
     expect(signInUrl({ pathname: '/', search: '', hash: '' })).toBe('/sign-in')
     expect(signInUrl({ pathname: '/sign-in', search: '?redirect=x', hash: '' })).toBeNull()
+  })
+})
+
+function jwt(exp: number) {
+  const body = btoa(JSON.stringify({ sub: 'alice', sid: 's1', exp })).replace(/=+$/, '')
+  return `h.${body}.sig`
+}
+
+describe('token renewal', () => {
+  afterEach(() => {
+    useAuthStore.getState().auth.reset()
+  })
+
+  it('reads the seconds a token has left', () => {
+    expect(tokenSecondsLeft(jwt(1_000), 400_000)).toBe(600)
+    expect(tokenSecondsLeft('not-a-token')).toBeNull()
+  })
+
+  it('renews an expired token once and retries the request', async () => {
+    useAuthStore.getState().auth.setAccessToken('old')
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 401, headers: new Headers(), json: async () => ({}) })
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'fresh' }))
+      .mockResolvedValueOnce(jsonResponse({ value: 1 }))
+
+    await expect(api.get('/thing')).resolves.toEqual({ value: 1 })
+
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/renew')
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer old')
+    expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer fresh')
+    expect(useAuthStore.getState().auth.accessToken).toBe('fresh')
+  })
+
+  it('signs in again when the session has ended', async () => {
+    const open = vi.spyOn(signInNavigation, 'open').mockImplementation(() => {})
+    useAuthStore.getState().auth.setAccessToken('old')
+    const unauthorized = { ok: false, status: 401, headers: new Headers(), json: async () => ({}) }
+    fetchMock.mockResolvedValueOnce(unauthorized).mockResolvedValueOnce(unauthorized)
+
+    await expect(api.get('/thing')).rejects.toThrow('Session expired')
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(useAuthStore.getState().auth.accessToken).toBe('')
+    expect(open).toHaveBeenCalledOnce()
+    expect(open.mock.calls[0][1]).toMatch(/^\/sign-in/)
+    open.mockRestore()
   })
 })

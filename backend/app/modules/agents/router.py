@@ -40,6 +40,11 @@ from app.core.database import configured_timezone
 from app.core.deps import get_current_user
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.automations import AutomationCreate, AutomationUpdate
+from app.modules.agents.dataviz_assistant import (
+    dataviz_assistant_config,
+    is_dataviz_assistant,
+    scope_views,
+)
 from app.modules.agents.instructions import (
     InstructionCompilationError,
     compile_agent_instructions,
@@ -238,10 +243,20 @@ def _skill_view(row: dict) -> SkillView:
     return SkillView(**row)
 
 
-async def _require_agent(agent_id: str, user: dict | str) -> dict:
+async def _require_agent(agent_id: str, user: dict | str, *, platform: bool = False) -> dict:
+    """The agent the caller may use, or 404.
+
+    ``platform`` admits Nova's Dataviz assistant on conversation routes only:
+    it is not a user agent, so it has no versions, memory, access grants or
+    settings to manage (docs/arch-19-studio-dataviz.md, D6).
+    """
     user_name = user if isinstance(user, str) else user["username"]
     if agent_id == SKILL_AUTHOR_ID:
         return skill_author_config(user_name)
+    if is_dataviz_assistant(agent_id):
+        if not platform or isinstance(user, str):
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return dataviz_assistant_config(user_name)
     try:
         agent = await agent_repository.get_agent(agent_id, owner_name=user_name)
         if agent is None and isinstance(user, dict):
@@ -1386,7 +1401,7 @@ async def list_agent_threads(
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: Annotated[str | None, Query(max_length=1024)] = None,
 ):
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     try:
         if limit is not None or cursor is not None:
             threads, next_cursor = await history_repository.threads(
@@ -1416,7 +1431,7 @@ async def create_agent_thread(
     body: ThreadCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     thread = await assistant_repository.create_thread(
         user_name=user["username"],
         title=body.title,
@@ -1442,7 +1457,7 @@ async def get_agent_thread(
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: Annotated[str | None, Query(max_length=1024)] = None,
 ):
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     thread = await _require_agent_thread(thread_id, agent_id, user["username"])
     if limit is not None or cursor is not None:
         try:
@@ -1477,7 +1492,7 @@ async def update_message_feedback(
     body: MessageFeedbackRequest,
     user: dict = Depends(get_current_user),
 ) -> MessageFeedbackRequest:
-    agent = await _require_agent(agent_id, user)
+    agent = await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     updated = await assistant_repository.set_feedback(
         thread_id, message_id, body.feedback, user_name=user["username"]
@@ -1816,7 +1831,7 @@ async def delete_agent_thread(
     thread_id: str,
     user: dict = Depends(get_current_user),
 ):
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     if not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -1835,7 +1850,7 @@ async def rename_agent_thread(
     """Rename a conversation. The generated title is a summary, not a name the
     user chose, so a title they can edit is the one that will actually be
     findable the next time they look for it."""
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     if body.title is None:
         thread = await _require_agent_thread(thread_id, agent_id, user["username"])
@@ -1852,7 +1867,7 @@ async def rename_agent_thread(
 async def active_agent_run(
     agent_id: str, thread_id: str, user: dict = Depends(get_current_user),
 ):
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     security = session_security(user)
     run_id = await run_journal.current(
@@ -1868,7 +1883,7 @@ async def cancel_agent_run(
 ):
     from app.core.redis import session_store
 
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     security = session_security(user)
     state = await run_journal.get(
@@ -1899,7 +1914,7 @@ async def replay_agent_run(
     after: int = Query(-1, ge=-1),
     user: dict = Depends(get_current_user),
 ):
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     role = session_security(user).active_role
     scope = dict(
@@ -1989,7 +2004,7 @@ async def _ui_source(agent_id: str, thread_id: str, message_id: str,
                      content_id: str, user: dict) -> dict:
     from app.modules.assistant.intelligent_ui import SUPPORTED_CATALOGS
 
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     block = await assistant_repository.ui_source(
         thread_id, message_id, content_id, user_name=user["username"],
@@ -2072,6 +2087,39 @@ async def record_agent_map_metric(agent_id: str, thread_id: str, message_id: str
     return {"recorded": True}
 
 
+async def _business_terms_note(text: str, user: dict, views: list[str]) -> str:
+    """Name a term with several approved meanings in this agent's business.
+
+    Read in the agent's own Semantic Views (its business), so only meanings it
+    actually works with count. The model is told the choices and asked to let
+    the user pick before it queries; it never picks one itself.
+    """
+    if not text.strip() or not views:
+        return ""
+    from app.modules.ontology.resolver import concept_resolver
+
+    try:
+        resolution = await concept_resolver.resolve(text, user, scope_views=views)
+    except Exception as exc:  # noqa: BLE001 - a hint only; grounding still fails closed
+        logger.info("Business-term check unavailable: %s", type(exc).__name__)
+        return ""
+    if resolution.status != "ambiguous":
+        return ""
+    lines = []
+    for item in resolution.ambiguities[:4]:
+        choices = "; ".join(
+            f"{candidate['qualified_name']}: {str(candidate.get('definition') or '')[:200]}"
+            for candidate in item.candidates
+        )
+        lines.append(f"- '{item.term}' means one of: {choices}")
+    return (
+        "\n\n## Business terms with more than one meaning in this agent's business\n"
+        + "\n".join(lines)
+        + "\nAsk the user which one they mean, naming the choices, before any query. "
+        "Do not pick one and do not say you will check."
+    )
+
+
 @router.post("/{agent_id}/threads/{thread_id}/messages")
 async def send_agent_message(
     agent_id: str,
@@ -2090,7 +2138,18 @@ async def send_agent_message(
     stamp = observation_context(security)
     attachments = body.prepared_attachments
     prompt = attachment_prompt(body.content, attachments)
-    agent = await _require_agent(agent_id, user)
+    agent = await _require_agent(agent_id, user, platform=True)
+    if is_dataviz_assistant(agent_id):
+        # No agent grant: the views are the open dashboard's, the ontology's
+        # for this question, then any other the active role can open.
+        agent = dataviz_assistant_config(
+            user["username"],
+            semantic_view_ids=await scope_views(
+                user,
+                dashboard_id=body.dataviz.dashboard_id if body.dataviz else None,
+                question=body.content,
+            ),
+        )
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
     ui_trace = []
@@ -2164,6 +2223,9 @@ async def send_agent_message(
     from app.modules.agents.personal_skills import SKILL_AUTHORING_PROMPT, is_skill_authoring
     from app.modules.assistant.tools import ToolRegistry
 
+    #: Required tools whose output the server already gave this turn.
+    dataviz_settled: tuple[str, ...] = ()
+    dataviz_aliases: dict[str, str] = {}
     if agent_id == SKILL_AUTHOR_ID or is_skill_authoring(body.content, history):
         from app.modules.agents.prompt import build_system_prompt
 
@@ -2171,6 +2233,81 @@ async def send_agent_message(
         system_prompt = build_system_prompt({"name": "Nova Studio"}, actual_tools=[])
         system_prompt += "\n\n" + SKILL_AUTHORING_PROMPT
     elif agent_id != SKILL_AUTHOR_ID:
+        # Dataviz (docs/arch-19-studio-dataviz.md): the same loop gets the
+        # schema-bound Dataviz tools in every Studio turn, so a request to add
+        # a result reaches the one server resolver and pipeline.
+        from app.modules.agents.tools import dataviz as dataviz_tools
+
+        dataviz_tools.register(registry)
+        system_prompt += "\n\n" + dataviz_tools.PROMPT
+        from app.modules.superset.dataviz import pending_change
+
+        pending = await pending_change(user, thread_id)
+        if pending:
+            # A change prepared in an earlier turn of this conversation: a later
+            # "yes" applies exactly it (dataviz_apply still asks for consent).
+            changes = "; ".join(pending.get("changes") or [])
+            dataviz_tools.remember_preview(pending["action_token"], changes)
+            system_prompt += (
+                "\n\n## Prepared Dataviz change, not applied yet\n"
+                f"action_token: {pending['action_token']}\nChanges: {changes}\n"
+                "If the user approves it, call dataviz_apply with this action_token."
+            )
+        if body.dataviz is not None and body.dataviz.dashboard_id:
+            from app.modules.superset.client import BiError
+            from app.modules.superset.dashboard_context import brief, dashboard_context
+
+            try:
+                # Verified as the caller: the dashboard, its datasets and fields,
+                # the filter state and the ontology concepts, without SQL or rows.
+                for attempt in (1, 2):
+                    try:
+                        opened = await dashboard_context(
+                            user,
+                            int(body.dataviz.dashboard_id),
+                            native_filters_key=body.dataviz.native_filters_key,
+                            edit_state=body.dataviz.edit_state,
+                        )
+                        break
+                    except BiError as exc:
+                        # One retry for a momentary BI outage, so a blip does
+                        # not move the answer off the dashboard's own data.
+                        if attempt == 2 or exc.status not in (0, 502, 503, 504):
+                            raise
+                        await asyncio.sleep(1.0)
+                system_prompt += "\n\n## The dashboard on screen\n" + brief(opened)
+                dataviz_settled = ("dataviz_context",)
+                if any(
+                    concept.get("definition")
+                    for chart in opened.get("charts", [])
+                    for concept in chart.get("concepts", [])
+                ):
+                    # The brief already states the approved ontology meaning
+                    # of the dashboard's measures, verified as the caller.
+                    dataviz_settled += ("ontology_resolve", "ontology_explain")
+                if is_dataviz_assistant(agent_id) and opened.get("datasets"):
+                    # Numbers come only from the dashboard's own datasets, so
+                    # they match its charts and its verified filters.
+                    from app.modules.agents.dataviz_assistant import DASHBOARD_ALIASES
+
+                    for name in DASHBOARD_ALIASES:
+                        registry.discard(name)
+                    dataviz_aliases = dict(DASHBOARD_ALIASES)
+                elif is_dataviz_assistant(agent_id):
+                    logger.warning(
+                        "Dataviz dashboard %s gave no datasets (available=%s)",
+                        body.dataviz.dashboard_id,
+                        opened.get("available"),
+                    )
+            except BiError as exc:
+                logger.warning(
+                    "Dataviz dashboard %s context failed: %s", body.dataviz.dashboard_id, exc.status
+                )
+                system_prompt += (
+                    f"\n\nThe user is looking at Dataviz dashboard "
+                    f"{body.dataviz.dashboard_id}, which could not be read right now."
+                )
+        system_prompt += await _business_terms_note(body.content, user, bound_view_ids(agent))
         try:
             memories = await memory_repository.list(
                 user_name=user_name,
@@ -2265,7 +2402,9 @@ async def send_agent_message(
 
     context = LoopContext(
         user_name=user_name,
-        intelligent_ui=agent_id != SKILL_AUTHOR_ID,
+        # The Dataviz assistant answers in text and tables: its visuals are
+        # the Superset dashboard beside it.
+        intelligent_ui=agent_id != SKILL_AUTHOR_ID and not is_dataviz_assistant(agent_id),
         ui_action_accepted=body.ui_action is not None,
         ui_private_context=bool(body.ui_action) or any(
             step.get("kind") == "ui_action" for row in history for step in row.get("steps") or []
@@ -2277,6 +2416,9 @@ async def send_agent_message(
         workspace_file_id=thread_row.get("workspace_file_id"),
         session_id=user.get("session_id"),
         thread_id=thread_id,
+        dataviz=body.dataviz.model_dump() if body.dataviz is not None else None,
+        settled_capabilities=dataviz_settled,
+        capability_aliases=dataviz_aliases,
         user=user,
         attachments=attachments,
         has_attachment_history=any(row.get("attachments") for row in history),
@@ -2599,7 +2741,7 @@ async def resolve_agent_tool_call(
     user: dict = Depends(get_current_user),
 ):
     """Resolve a pending agent tool call with owner and grant validation."""
-    await _require_agent(agent_id, user)
+    await _require_agent(agent_id, user, platform=True)
     owner = consent_broker.owner_of(tool_call_id)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")

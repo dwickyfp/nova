@@ -443,6 +443,18 @@ jobs:
       - name: Build the Nova Superset image
         run: docker build -f superset/Dockerfile -t nova-superset:ci .
 
+      # The web image (web app, bootstrap, beat) carries no browser; only the
+      # worker's `jobs` image draws thumbnails and report screenshots
+      # (docs/operations/superset-lean-deployment.md).
+      - name: Web image has no browser and loads Nova's configuration
+        run: |
+          docker build -f superset/Dockerfile --target web -t nova-superset-web:ci .
+          docker run --rm --entrypoint sh nova-superset-web:ci -c \
+            '! /app/.venv/bin/python -c "import playwright" 2>/dev/null && test ! -d /app/.playwright'
+          docker run --rm -e SUPERSET_SECRET_KEY=ci-only-secret -e SUPERSET_DB_PASSWORD=ci-only-password \
+            --entrypoint /app/.venv/bin/python nova-superset-web:ci \
+            -c "import superset_config as c; assert c.CELERY_CONFIG.beat_schedule['reports.scheduler']['options']['expires'] < 60"
+
       # The package runs inside the pinned Superset release, so its tests do
       # too. The secrets are throwaway values for configuration import only.
       - name: nova_superset unit tests

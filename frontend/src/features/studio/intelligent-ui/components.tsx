@@ -27,7 +27,7 @@ import { Markdown } from "@/features/assistant/markdown";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/context/theme-provider";
 import { ResultTable } from "../result-table";
-import { useNodeArtifact } from "./use-node-artifact";
+import { NodeDatavizAction } from "./artifact-button";
 import { PublicMedia } from "./media";
 import { UiRuntimeContext } from "./runtime-context";
 const DataChart = lazy(() => import("./data-chart"));
@@ -326,15 +326,22 @@ export function DataTable({ p }: { p: Props }) {
     ? p.columns.map(String)
     : Object.keys(data[0] ?? {});
   const title = str(p, "title") || "Result table";
-  const save = useNodeArtifact(p.data, { kind: "table", title });
   return (
     <ResultTable
       block={{ title, columns, rows: data.map((r) => columns.map((c) => cell(r[c]))) }}
       note={null}
       emptyText="No rows match these filters."
-      onSave={save?.onSave}
-      saving={save?.saving}
-      saved={save?.saved}
+      action={
+        p.datavizAction === false ? null : (
+          <NodeDatavizAction
+            data={p.data}
+            target={{
+              component: "Table",
+              title: typeof p.title === "string" ? p.title : undefined,
+            }}
+          />
+        )
+      }
     />
   );
 }
@@ -421,7 +428,16 @@ export function UiNode({ name, p }: { name: string; p: Props }) {
       const value = records[0]?.[str(p, "column")];
       return (
         <section className="rounded-lg border border-border bg-card p-4">
-          <p className="text-sm text-muted-foreground">{str(p, "label")}</p>
+          <div className="flex min-h-7 items-start gap-2">
+            <p className="min-w-0 flex-1 text-sm text-muted-foreground">{str(p, "label")}</p>
+            <NodeDatavizAction
+              data={p.data}
+              target={{
+                component: "Kpi",
+                column: typeof p.column === "string" ? p.column : undefined,
+              }}
+            />
+          </div>
           <p className="mt-2 break-words text-2xl font-semibold tabular-nums">
             {typeof value === "number"
               ? new Intl.NumberFormat(undefined, {

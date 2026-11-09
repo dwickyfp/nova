@@ -428,12 +428,37 @@ The longest name wins over a name inside it. Matching is lexical. Embedding
 similarity never decides what an official concept is. A question in another
 language matches through aliases, which stewards add.
 
+**One agent, one business.** One ontology holds many businesses: each domain
+(Penjualan, Persediaan, HR, …) may define the same word ("Profit") with its own
+meaning, and a role sees the domains its visibility allows. An agent's business
+is its Semantic Views:
+
+- The domains of the concepts bound to an agent's views are its business
+  domains. When that agent's turn resolves a term, only concepts in those
+  domains, their parents or their children are candidates.
+- A term defined in another domain is outside the agent's business, unless
+  the question names that domain outright ("HR profit").
+- The same scope applies to `semantic_query` grounding (`ground` loads the
+  agent's authorized views, then resolves within them) and to
+  `ontology_resolve`.
+- The Dataviz assistant with a dashboard open is scoped to that dashboard's
+  views and adds no other business's views.
+- An agent whose views have no bound concepts keeps the role-wide reading.
+- When an agent really spans two businesses that both define a word (an agent
+  over sales and stock asked about "received units"), the turn's prompt names
+  both meanings and the agent asks which is meant before any query. It never
+  picks one, and never answers "I will check".
+
+The scope only narrows what a role may see. Domain visibility, data
+authorization through Ranger, and binding usability are unchanged.
+Measurement: [ontology isolation](benchmarks/ontology-isolation/README.md).
+
 **Effect on the query.**
 
 | Situation | Result |
 |---|---|
 | No published release, or no metric concept named | Nothing changes |
-| A name belongs to visible concepts in several domains, and the question names none of their domains | `CLARIFICATION_REQUIRED`: the turn ends as a question naming each choice; nothing is planned or run |
+| A name belongs to visible concepts in several of the agent's business domains, and the question names none of their domains | `CLARIFICATION_REQUIRED`: the turn ends as a question naming each choice; nothing is planned or run |
 | An approved concept has no binding the user and agent can use | The turn stops with `NO_AUTHORIZED_REPRESENTATION` and names the concept. It is never answered with a metric of a similar name |
 | The named metrics are computed in different views | `CLARIFICATION_REQUIRED`: ask for them one at a time |
 | Grounded | The binding's view is used, the planner receives the concepts and their metrics, and a plan that omits a required metric is rejected unless a planned metric explains the mention (below) |

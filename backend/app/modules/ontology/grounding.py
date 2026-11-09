@@ -108,10 +108,22 @@ async def ground(
     resolver: ConceptResolver = concept_resolver,
 ) -> Grounding:
     user = getattr(context, "user", None) or {}
+    models: list[dict[str, Any]] | None = None
     try:
         resolution = await resolver.resolve(
             question, user, release_id=pinned_release(context), kinds=METRIC_KINDS
         )
+        if resolution.status in {"resolved", "ambiguous"}:
+            # The agent's own Semantic Views name its business: a term means
+            # what it means there, not in another business the role can see.
+            models = await load_models()
+            resolution = await resolver.resolve(
+                question,
+                user,
+                release_id=resolution.release_id or pinned_release(context),
+                kinds=METRIC_KINDS,
+                scope_views=[str(model.get("semantic_model_id")) for model in models],
+            )
     except Exception as exc:  # noqa: BLE001 - an unreadable ontology must not answer wrongly
         if never_created(exc):
             return Grounding(status="no_release")
@@ -149,7 +161,8 @@ async def ground(
             repair=resolution.public(),
         )
 
-    models = await load_models()
+    if models is None:
+        models = await load_models()
     by_view: dict[str, dict[str, dict[str, Any]]] = {}
     unbound = []
     for concept in resolution.concepts:

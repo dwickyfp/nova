@@ -1,0 +1,327 @@
+{
+  "ran_at": "2026-11-08T15:01:09.862390+00:00",
+  "dashboard": {
+    "dashboard_id": 16,
+    "dataset_id": 41
+  },
+  "gold": {
+    "net_revenue_oct": 1573810277.5,
+    "net_revenue_sep": 1492211974.5277934,
+    "change": 81598302.9722066,
+    "top_region_oct": {
+      "region": "Jawa Barat & DKI",
+      "net_revenue": 807421961.0
+    },
+    "top_salesman_oct": {
+      "employee_name": "Yusuf Santoso",
+      "net_revenue": 230375301.0
+    },
+    "best_month": {
+      "order_date": 1790812800000.0,
+      "net_revenue": 1573810277.5
+    },
+    "region_drivers": [
+      [
+        "Jawa Barat & DKI",
+        37675596.0
+      ],
+      [
+        "Jawa Timur",
+        36166680.97220665
+      ],
+      [
+        "Sulawesi",
+        5408229.0
+      ]
+    ],
+    "units_oct": 329840,
+    "units_sep": 312046,
+    "filter_region": "Sulawesi",
+    "net_revenue_oct_filtered": 148289709.0
+  },
+  "results": [
+    {
+      "id": "what_how",
+      "w": [
+        "what",
+        "how",
+        "when"
+      ],
+      "filters": null,
+      "question": "Apa arti net revenue di dashboard ini, bagaimana dihitung, dan berapa totalnya di Oktober 2026?",
+      "seconds": 64.0,
+      "answer": "Net revenue adalah nilai penjualan ke outlet setelah diskon dan retur, dalam IDR, berdasarkan tanggal order. Dalam model dashboard, nilainya dihitung dengan menjumlahkan nilai bersih penjualan dikurangi bagian yang dikembalikan, dihitung secara proporsional dari jumlah retur terhadap jumlah pesanan.\n\nTotal net revenue untuk **Oktober 2026** adalah **Rp1.573.810.277,50**. Filter dashboard saat ini tidak membatasi hasil, jadi total ini berlaku tanpa filter tambahan.",
+      "tools": [
+        {
+          "name": "semantic_query",
+          "status": "done",
+          "arguments": {
+            "question": "Apa arti net revenue di dashboard ini, bagaimana dihitung, dan berapa totalnya di Oktober 2026?"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 6556,
+      "required_tools": [
+        "ontology_resolve",
+        "semantic_query"
+      ],
+      "selected_tools": [
+        "ontology_resolve",
+        "dataviz_context",
+        "semantic_query",
+        "compute_metrics",
+        "data_to_chart",
+        "diagnose_change",
+        "dataviz_query"
+      ]
+    },
+    {
+      "id": "who",
+      "w": [
+        "who",
+        "when"
+      ],
+      "filters": null,
+      "question": "Salesman siapa yang menyumbang net revenue terbesar di Oktober 2026?",
+      "seconds": 49.6,
+      "answer": "Yusuf Santoso menyumbang net revenue terbesar pada Oktober 2026, sebesar Rp230.375.301. Dashboard saat ini tidak memiliki filter terpilih.",
+      "tools": [
+        {
+          "name": "semantic_query",
+          "status": "done",
+          "arguments": {
+            "question": "Salesman siapa yang menyumbang net revenue terbesar di Oktober 2026?"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 6383,
+      "required_tools": [
+        "semantic_query"
+      ],
+      "selected_tools": [
+        "semantic_query",
+        "compute_metrics",
+        "data_to_chart",
+        "diagnose_change",
+        "dataviz_query"
+      ]
+    },
+    {
+      "id": "when",
+      "w": [
+        "when"
+      ],
+      "filters": null,
+      "question": "Bulan apa net revenue tertinggi antara Mei dan Oktober 2026?",
+      "seconds": 50.2,
+      "answer": "Oktober 2026, dengan net revenue sebesar Rp1.573.810.277,50. Ini hasil kueri untuk Mei\u2013Oktober 2026; filter dashboard yang terbuka tidak diterapkan.",
+      "tools": [
+        {
+          "name": "semantic_query",
+          "status": "done",
+          "arguments": {
+            "question": "Bulan apa net revenue tertinggi antara Mei dan Oktober 2026?"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 6394,
+      "required_tools": [
+        "semantic_query"
+      ],
+      "selected_tools": [
+        "semantic_query",
+        "compute_metrics",
+        "data_to_chart",
+        "diagnose_change",
+        "dataviz_query"
+      ]
+    },
+    {
+      "id": "where",
+      "w": [
+        "where",
+        "when"
+      ],
+      "filters": null,
+      "question": "Region mana yang net revenue-nya paling besar di Oktober 2026?",
+      "seconds": 54.6,
+      "answer": "Jawa Barat & DKI memiliki net revenue tertinggi pada Oktober 2026, sebesar **Rp807.421.961,00**. Dashboard mencatat tidak ada filter yang dipilih.",
+      "tools": [
+        {
+          "name": "semantic_query",
+          "status": "done",
+          "arguments": {
+            "question": "Region mana yang net revenue-nya paling besar di Oktober 2026?"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 6387,
+      "required_tools": [
+        "semantic_query"
+      ],
+      "selected_tools": [
+        "semantic_query",
+        "compute_metrics",
+        "data_to_chart",
+        "diagnose_change",
+        "dataviz_query"
+      ]
+    },
+    {
+      "id": "why",
+      "w": [
+        "why",
+        "where",
+        "who",
+        "when"
+      ],
+      "filters": null,
+      "question": "Kenapa net revenue Oktober 2026 berubah dibanding September 2026?",
+      "seconds": 123.6,
+      "answer": "Tampilan interaktif belum dapat disiapkan. Hanya jawaban teks yang tersedia.\n\nNet revenue naik 5,47% pada Oktober 2026 dibanding September 2026. Filters dashboard saat ini tidak diterapkan. Kenaikan terutama disumbang Jawa Barat & DKI (+Rp37.675.596,00) dan Jawa Timur (+Rp36.166.680,97); keduanya menyumbang sebagian besar perubahan. Sulawesi dan Sumatera juga berkontribusi positif, tetapi lebih kecil.\n\nAngka ini menunjukkan kontributor perubahan, bukan penyebab pasti. Net revenue adalah nilai penjualan ke outlet setelah diskon dan retur, berdasarkan tanggal order.",
+      "tools": [
+        {
+          "name": "dataviz_query",
+          "status": "done",
+          "arguments": {
+            "compare_period": "2026-09-01 : 2026-10-01",
+            "dataset_id": "41",
+            "dimensions": "['region']",
+            "metrics": "['net_revenue']",
+            "period": "2026-10-01 : 2026-11-01",
+            "row_limit": "200",
+            "time_column": "order_date"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 37114,
+      "required_tools": [
+        "semantic_query",
+        "diagnose_change"
+      ],
+      "selected_tools": [
+        "semantic_query",
+        "diagnose_change",
+        "compute_metrics",
+        "data_to_chart",
+        "dataviz_query"
+      ]
+    },
+    {
+      "id": "lineage",
+      "w": [
+        "how"
+      ],
+      "filters": null,
+      "question": "Data di dashboard ini dari mana?",
+      "seconds": 51.8,
+      "answer": "Dashboard ini mengambil data dari dataset `semantic_retail_sales_sales_orders`, yang menggunakan Semantic View `retail_sales` versi 18 di skema `NOVA_RETAIL_FIELD`. Sumbernya menggabungkan data pesanan (`sales_orders`) dengan produk (`products`), outlet (`outlets`), dan karyawan (`employees`).\n\nGrafik omzet memakai metrik `net_revenue` (nilai penjualan setelah diskon dan retur); grafik unit memakai `units_sold` (jumlah unit yang dipesan outlet). Filter Region tersedia, tetapi saat ini tidak ada pilihan filter yang diterapkan.",
+      "tools": [
+        {
+          "name": "dataviz_context",
+          "status": "done",
+          "arguments": {}
+        }
+      ],
+      "finish": "stop",
+      "tokens": 12739,
+      "required_tools": [],
+      "selected_tools": [
+        "dataviz_context"
+      ]
+    },
+    {
+      "id": "filtered",
+      "w": [
+        "what",
+        "when",
+        "where"
+      ],
+      "filters": "first_region",
+      "question": "Berapa net revenue Oktober 2026 dengan filter yang sedang aktif?",
+      "seconds": 83.0,
+      "answer": "Net revenue Oktober 2026 adalah **Rp148.289.709,00**, dengan filter dashboard yang aktif diterapkan: **Region = Sulawesi**.",
+      "tools": [
+        {
+          "name": "dataviz_context",
+          "status": "done",
+          "arguments": {}
+        },
+        {
+          "name": "dataviz_query",
+          "status": "done",
+          "arguments": {
+            "compare_period": "",
+            "dataset_id": "41",
+            "dimensions": "[]",
+            "metrics": "['net_revenue']",
+            "period": "2026-10-01 : 2026-11-01",
+            "row_limit": "10",
+            "time_column": "order_date"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 24877,
+      "required_tools": [
+        "dataviz_query"
+      ],
+      "selected_tools": [
+        "dataviz_context",
+        "dataviz_query",
+        "compute_metrics",
+        "data_to_chart",
+        "diagnose_change"
+      ]
+    },
+    {
+      "id": "full_5w1h",
+      "w": [
+        "what",
+        "who",
+        "when",
+        "where",
+        "why",
+        "how"
+      ],
+      "filters": null,
+      "question": "Jelaskan perubahan units sold Oktober 2026 dibanding September 2026: apa, siapa, kapan, di mana, kenapa, dan bagaimana dihitung.",
+      "seconds": 98.8,
+      "answer": "Tampilan interaktif belum dapat disiapkan. Hanya jawaban teks yang tersedia.\n\nUnits sold meningkat pada Oktober 2026 dibanding September 2026. Angka ini mengukur unit yang dipesan outlet (sell-in). Dashboard memakai filter yang berlaku saat ini: tidak ada filter terpilih.\n\n- **Apa dan kapan:** Oktober 2026 (1\u201331 Oktober) dibanding September 2026 (1\u201330 September), berdasarkan tanggal order.\n- **Siapa dan di mana:** Semua wilayah yang ditampilkan naik. Jawa Timur bertambah 9232.0 unit (11.43%) dan menyumbang 51.88% dari perubahan; Jawa Barat & DKI bertambah 6966.0 unit (4.49%), menyumbang 39.15%; Sulawesi bertambah 979.0 unit (3.24%), menyumbang 5.5%; Sumatera bertambah 617.0 unit (1.35%), menyumbang 3.47%. Jawa Timur merupakan kontributor wilayah terbesar.\n- **Kenapa:** Data menunjukkan wilayah-wilayah tersebut berkontribusi pada kenaikan, tetapi tidak menjelaskan penyebabnya. Rincian produk atau faktor lain tidak tersedia dalam hasil ini.\n- **Bagaimana dihitung:** Perubahan tiap wilayah dihitung sebagai units sold Oktober dikurangi September; persentase perubahan membandingkan selisih itu dengan units sold September. Periode Oktober dan September dibandingkan dengan filter dashboard saat ini, yaitu tanpa filter terpilih.",
+      "tools": [
+        {
+          "name": "dataviz_query",
+          "status": "done",
+          "arguments": {
+            "compare_period": "2026-09-01 : 2026-10-01",
+            "dataset_id": "41",
+            "dimensions": "['region']",
+            "metrics": "['units_sold']",
+            "period": "2026-10-01 : 2026-11-01",
+            "row_limit": "200",
+            "time_column": "order_date"
+          }
+        }
+      ],
+      "finish": "stop",
+      "tokens": 24680,
+      "required_tools": [
+        "semantic_query",
+        "diagnose_change",
+        "compute_metrics"
+      ],
+      "selected_tools": [
+        "semantic_query",
+        "diagnose_change",
+        "compute_metrics",
+        "data_to_chart",
+        "dataviz_query"
+      ]
+    }
+  ]
+}

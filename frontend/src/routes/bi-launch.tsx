@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { BiLaunch } from '@/features/bi/bi-launch'
+import { signInUrl } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 
 /**
@@ -15,10 +16,11 @@ const searchSchema = z.object({
 export const Route = createFileRoute('/bi-launch')({
   beforeLoad: () => {
     const { accessToken } = useAuthStore.getState().auth
-    if (!accessToken && window.self !== window.top) {
+    if (!accessToken && window.top && window.self !== window.top) {
       // Superset sent its frame here after the Nova session ended. Sign in
-      // at the top level, then come back to the framed BI page.
-      window.top?.location.assign('/sign-in?redirect=%2Fanalytics')
+      // at the top level, then come back to the page that framed BI.
+      const back = signInUrl(window.top.location) ?? '/sign-in'
+      window.top.location.assign(back)
       throw redirect({ to: '/sign-in', search: { redirect: '/analytics' } })
     }
     if (!accessToken) {

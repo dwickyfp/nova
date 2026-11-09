@@ -1,6 +1,6 @@
 import { page, userEvent } from "vitest/browser";
 import { StrictMode, useEffect, useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,6 +11,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { Agent } from "@/features/agents/api";
+import { signInNavigation } from "@/lib/api-client";
 import { StudioChat } from "./studio-chat";
 import { registerUiFlush } from "./intelligent-ui/state";
 import "@/styles/index.css";
@@ -241,6 +242,12 @@ function renderStudio(
     </StrictMode>,
   );
 }
+
+// A request a test leaves unmocked reaches the dev proxy and comes back 401;
+// opening sign-in would navigate the test page away and lose the whole file.
+beforeEach(() => {
+  vi.spyOn(signInNavigation, "open").mockImplementation(() => undefined);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();

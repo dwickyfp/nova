@@ -1152,6 +1152,14 @@ class _Rendering:
         return text
 
 
+_TOTAL_LABELS = frozenset({"total", "grand total", "jumlah", "total keseluruhan"})
+
+
+def _is_total_row(row: list[Any], labels: list[int]) -> bool:
+    """A row labelled Total (first label column) aggregates the other rows."""
+    return bool(labels) and str(row[labels[0]]).strip().casefold() in _TOTAL_LABELS
+
+
 def _layout(table: dict[str, Any]) -> tuple[list[str], list[list[Any]], list[int], list[int]]:
     columns = [str(value)[:80] for value in (table.get("columns") or [])[:12]]
     rows = [
@@ -1246,6 +1254,9 @@ def verified_leaders(
     lines = []
     for evidence_id, table in tables.items():
         columns, rows, labels, measures = _layout(table)
+        if labels:
+            # A Total row sums the members; it is never the highest member.
+            rows = [row for row in rows if not _is_total_row(row, labels)]
         if len(rows) < 2 or not labels:
             continue
         for index in measures:
@@ -1385,7 +1396,8 @@ def _sentences(
                 f"{label_of(row)} {cell(row, i)}" for row in ordered
             ) + ".")
             continue
-        high, low = ordered[0], ordered[-1]
+        members = [row for row in ordered if not _is_total_row(row, labels)] or ordered
+        high, low = members[0], members[-1]
         out.append(f"{name[i]}: " + say(
             "render.extremes", language,
             high=f"{label_of(high)} ({cell(high, i)})", low=f"{label_of(low)} ({cell(low, i)})",

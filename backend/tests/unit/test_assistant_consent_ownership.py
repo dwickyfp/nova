@@ -334,7 +334,7 @@ async def test_agent_studio_allow_session_sets_the_same_read_only_grant(monkeypa
     broker = ConsentBroker()
     monkeypatch.setattr(agent_router, "consent_broker", broker, raising=True)
 
-    async def _agent(_agent_id: str, _user_name: str) -> dict:
+    async def _agent(_agent_id: str, _user_name: str, *, platform: bool = False) -> dict:
         return {"agent_id": "agent-1"}
 
     monkeypatch.setattr(agent_router, "_require_agent", _agent, raising=True)

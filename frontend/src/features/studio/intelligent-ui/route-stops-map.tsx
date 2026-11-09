@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/map";
 import { mapColor } from "@/components/ui/map/tokens";
 import { cn } from "@/lib/utils";
-import { NodeArtifactButton } from "./artifact-button";
 import { geoBounds } from "./geometry";
 import type { MapOptions } from "./map-options";
 import { MapSurface } from "./map-surface";
@@ -247,11 +246,6 @@ export default function RouteStopsMap({
     <section className="min-w-0 space-y-2" aria-label={title}>
       <div className="flex min-h-7 items-center gap-2">
         <p className="min-w-0 flex-1 text-sm font-medium">{title}</p>
-        <NodeArtifactButton
-          data={p.data}
-          noun="map"
-          draft={{ kind: "table", title }}
-        />
       </div>
       <MapSurface
         aside={routeList}

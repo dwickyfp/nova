@@ -56,6 +56,15 @@ class NovaSecurityManager(SupersetSecurityManager):
 
         return [*super().get_rls_cache_key(datasource), context.partition_key() or "nova:none"]
 
+    def _team_role(self, active_role: str):
+        """The permission-less role that scopes dashboards to a Nova role (D8)."""
+        from nova_superset.role_scope import role_name
+
+        if not active_role:
+            return None
+        name = role_name(active_role)
+        return self.find_role(name) or self.add_role(name)
+
     def sync_nova_user(self, identity: Identity):
         """Return the mirror user for ``identity``, created or corrected."""
         if identity.superset_role not in NOVA_ROLES:
@@ -63,6 +72,8 @@ class NovaSecurityManager(SupersetSecurityManager):
         role = self.find_role(identity.superset_role)
         if role is None:
             raise RuntimeError(f"Superset role {identity.superset_role} is not bootstrapped")
+        team = NovaSecurityManager._team_role(self, identity.active_role)
+        expected = [role, team] if team is not None else [role]
         user = self.find_user(username=identity.username)
         if user is None:
             user = self.add_user(
@@ -75,10 +86,14 @@ class NovaSecurityManager(SupersetSecurityManager):
             if not user:
                 raise RuntimeError("Superset could not create the mirror user")
         # FAB stores a hash even for an empty password; a mirror user has none.
-        roles = [r.name for r in user.roles]
-        if user.password is not None or roles != [role.name] or not user.active:
+        roles = sorted(r.name for r in user.roles)
+        if (
+            user.password is not None
+            or roles != sorted(r.name for r in expected)
+            or not user.active
+        ):
             user.password = None
-            user.roles = [role]
+            user.roles = expected
             user.active = True
             self.update_user(user)
         return user

@@ -110,6 +110,23 @@ class SignInTests(unittest.TestCase):
             self.assertEqual(self.http.get("/superset/welcome/").status_code, 503)
 
 
+class LogoPrefixTests(unittest.TestCase):
+    def test_logo_and_its_link_carry_the_app_root_once(self):
+        flask_app = Flask(__name__)
+        flask_app.config["APPLICATION_ROOT"] = "/bi"
+        flask_app.config["THEME_DEFAULT"] = {
+            "token": {"brandLogoUrl": "/bi/static/logo.png", "brandLogoHref": "/bi"}
+        }
+        flask_app.config["THEME_DARK"] = {"token": {"brandLogoHref": "/bi/dashboard/list/"}}
+        nova_app._undo_double_logo_prefix(flask_app)
+        light = flask_app.config["THEME_DEFAULT"]["token"]
+        self.assertEqual(light["brandLogoUrl"], "/static/logo.png")
+        self.assertEqual(light["brandLogoHref"], "/")
+        self.assertEqual(
+            flask_app.config["THEME_DARK"]["token"]["brandLogoHref"], "/dashboard/list/"
+        )
+
+
 class ConnectionMutatorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.app = Flask(__name__)
@@ -184,17 +201,25 @@ class SecurityTests(unittest.TestCase):
             self.assertEqual(security.launch_url("https://evil.example/"), "/bi-launch?next=/bi/")
             self.assertEqual(security.launch_url("/settings"), "/bi-launch?next=/bi/")
 
-    def test_mirror_user_gets_exactly_the_mapped_role(self):
+    def test_mirror_user_gets_exactly_the_mapped_role_and_its_nova_role(self):
         viewer, author = SimpleNamespace(name="NovaViewer"), SimpleNamespace(name="NovaAuthor")
-        existing = SimpleNamespace(roles=[viewer], active=False, password="pbkdf2:sha256:x")
+        finance = SimpleNamespace(name="Nova role finance")
+        existing = SimpleNamespace(
+            roles=[viewer, SimpleNamespace(name="Nova role sales")],
+            active=False,
+            password="pbkdf2:sha256:x",
+        )
         sm = SimpleNamespace(
             find_role=lambda name: {"NovaViewer": viewer, "NovaAuthor": author}.get(name),
+            add_role=mock.Mock(return_value=finance),
             find_user=mock.Mock(return_value=existing),
             update_user=mock.Mock(),
         )
         user = security.NovaSecurityManager.sync_nova_user(sm, IDENTITY)
         self.assertIs(user, existing)
-        self.assertEqual(user.roles, [author])
+        # The previous Nova role is dropped: dashboards follow the active role.
+        self.assertEqual(user.roles, [author, finance])
+        sm.add_role.assert_called_once_with("Nova role finance")
         self.assertTrue(user.active)
         self.assertIsNone(user.password)
         sm.update_user.assert_called_once_with(existing)
@@ -203,7 +228,8 @@ class SecurityTests(unittest.TestCase):
         author = SimpleNamespace(name="NovaAuthor")
         created = SimpleNamespace(roles=[author], active=True, password="pbkdf2:sha256:empty")
         sm = SimpleNamespace(
-            find_role=lambda name: author,
+            find_role=lambda name: author if name == "NovaAuthor" else None,
+            add_role=mock.Mock(return_value=SimpleNamespace(name="Nova role finance")),
             find_user=mock.Mock(return_value=None),
             add_user=mock.Mock(return_value=created),
             update_user=mock.Mock(),
@@ -216,6 +242,49 @@ class SecurityTests(unittest.TestCase):
         bad = client.Identity("alice", "x", "Admin", 1)
         with self.assertRaises(ValueError):
             security.NovaSecurityManager.sync_nova_user(SimpleNamespace(), bad)
+
+
+class RoleScopeTests(unittest.TestCase):
+    def test_a_new_dashboard_is_published_to_its_creators_nova_role(self):
+        from nova_superset import role_scope
+
+        class Dashboard:
+            roles: list = []
+            published = False
+
+        finance = SimpleNamespace(name="Nova role finance")
+        fresh, already = Dashboard(), Dashboard()
+        already.roles = [SimpleNamespace(name="Nova role sales")]
+        query = mock.Mock()
+        query.filter_by.return_value.one_or_none.return_value = finance
+        session = mock.MagicMock()
+        session.new = [fresh, already, object()]
+        session.query.return_value = query
+        with mock.patch.object(role_scope, "_models", return_value=(object, Dashboard)), \
+                mock.patch.object(role_scope.context, "current_identity", return_value=IDENTITY):
+            role_scope.stamp_new_dashboards(session, None, None)
+        self.assertEqual(fresh.roles, [finance])
+        self.assertTrue(fresh.published)
+        # A dashboard that already names its roles keeps them.
+        self.assertEqual(already.roles[0].name, "Nova role sales")
+        self.assertFalse(already.published)
+        query.filter_by.assert_called_once_with(name="Nova role finance")
+
+    def test_without_a_nova_session_nothing_is_stamped(self):
+        from nova_superset import role_scope
+
+        class Dashboard:
+            roles: list = []
+            published = False
+
+        fresh = Dashboard()
+        session = mock.MagicMock()
+        session.new = [fresh]
+        with mock.patch.object(role_scope, "_models", return_value=(object, Dashboard)), \
+                mock.patch.object(role_scope.context, "current_identity", return_value=None):
+            role_scope.stamp_new_dashboards(session, None, None)
+        self.assertFalse(fresh.published)
+        session.query.assert_not_called()
 
 
 class BootstrapTests(unittest.TestCase):

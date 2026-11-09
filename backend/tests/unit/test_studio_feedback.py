@@ -65,7 +65,8 @@ async def test_feedback_endpoint_checks_agent_thread_and_audits(monkeypatch):
         "a1", "t1", "m1", MessageFeedbackRequest(feedback="like"), {"username": "alice"}
     )
     assert result.feedback == "like"
-    agent.assert_awaited_once_with("a1", {"username": "alice"})
+    # Feedback is a conversation route: the platform Dataviz assistant is allowed.
+    agent.assert_awaited_once_with("a1", {"username": "alice"}, platform=True)
     thread.assert_awaited_once_with("t1", "a1", "alice")
     assert audit.call_args.kwargs["decision"] == "like"
     save.return_value = False

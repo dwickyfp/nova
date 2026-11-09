@@ -14,6 +14,7 @@ names nor the number of hidden candidates can leak through an ambiguity.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -111,7 +112,16 @@ class ConceptResolver:
         kinds: frozenset[ConceptKind] | None = None,
         purpose: str = "general",
         snapshot: Snapshot | None = None,
+        scope_views: Collection[str] | None = None,
     ) -> Resolution:
+        """Resolve the business terms in ``text`` for ``user``.
+
+        ``scope_views`` are the Semantic Views the asking agent (or open
+        dashboard) works with. Their bound concepts name its business domains;
+        a term then means only what it means in those domains, their parents
+        or their children, unless the question names another domain outright.
+        Without bindings in scope, every domain the role can see counts.
+        """
         snapshot = snapshot or await self.service.snapshot("current", release_id=release_id)
         if snapshot.release is None:
             return Resolution(status="no_release")
@@ -120,10 +130,15 @@ class ConceptResolver:
             release_id=snapshot.release.id,
             manifest_hash=snapshot.release.manifest_hash,
         )
+        visible = self.service.visible_concepts(snapshot, user)
+        question = f" {normalise(text[:MAX_TEXT])} "
+        in_scope = self._scope(snapshot, visible, scope_views, set(question.split()))
         concepts = {
             concept_id: concept
-            for concept_id, concept in self.service.visible_concepts(snapshot, user).items()
-            if concept.status == "APPROVED" and (kinds is None or concept.kind in kinds)
+            for concept_id, concept in visible.items()
+            if concept.status == "APPROVED"
+            and (kinds is None or concept.kind in kinds)
+            and in_scope(concept.domain_id)
         }
         views = {
             concept_id: self.service.concept_view(concept, snapshot.domains)
@@ -134,7 +149,6 @@ class ConceptResolver:
             for name in names_of(concept, views[concept_id]["qualified_name"]):
                 index.setdefault(name, set()).add(concept_id)
 
-        question = f" {normalise(text[:MAX_TEXT])} "
         taken: list[tuple[int, int]] = []
         matches: list[tuple[str, set[str]]] = []
         for name in sorted(index, key=lambda item: (-len(item), item)):
@@ -191,6 +205,48 @@ class ConceptResolver:
         elif resolution.concepts:
             resolution.status = "resolved"
         return resolution
+
+    def _scope(
+        self,
+        snapshot: Snapshot,
+        visible: dict[str, Any],
+        scope_views: Collection[str] | None,
+        words: set[str],
+    ) -> Callable[[str], bool]:
+        """Which domains a scoped turn may draw meanings from (see ``resolve``)."""
+        if not scope_views:
+            return lambda _domain_id: True
+        views = {str(view) for view in scope_views}
+        bound = {
+            visible[item.concept_id].domain_id
+            for item in snapshot.representations
+            if item.status == "VALIDATED"
+            and item.semantic.view_id in views
+            and item.concept_id in visible
+        }
+        if not bound:
+            return lambda _domain_id: True
+        paths = {
+            domain_id: access.qualified_path(domain, snapshot.domains)
+            for domain_id, domain in snapshot.domains.items()
+        }
+        home = {paths[domain_id] for domain_id in bound if domain_id in paths}
+
+        def related(path: str) -> bool:
+            return any(
+                path == own or path.startswith(own + ".") or own.startswith(path + ".")
+                for own in home
+            )
+
+        def named(path: str) -> bool:
+            # The question names this domain outright ("HR profit").
+            return bool(path) and normalise(path.split(".")[-1]) in words
+
+        def allowed(domain_id: str) -> bool:
+            path = paths.get(domain_id, "")
+            return related(path) or named(path)
+
+        return allowed
 
     async def _usable(
         self, snapshot: Snapshot, concept_id: str, user: dict, purpose: str

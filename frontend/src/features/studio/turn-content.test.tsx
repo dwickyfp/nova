@@ -5,7 +5,17 @@ import type { TableBlock } from "@/features/assistant/types";
 import { type OrderedContent, type TranscriptTurn } from "./studio-chat";
 import { replayThread } from "./studio-transcript";
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TurnContent } from "./turn-content";
+
+const dataviz = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("./dataviz/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./dataviz/api")>()),
+  datavizApi: dataviz,
+}));
+const withQueries = (ui: React.ReactNode) => (
+  <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
+);
 import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
 
 const table: TableBlock = {
@@ -69,8 +79,11 @@ describe("one table per query result", () => {
         provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
       },
     });
-    const onSave = vi.fn();
-    const screen = await render(<TurnContent turn={original} onSaveArtifact={onSave} />);
+    original.messageId = "message-1";
+    dataviz.check.mockResolvedValue({ results: [
+      { preview_ref: "pv1.a.b", status: "SUPPORTED", reason_code: "OK", message: "", can_add: true },
+    ] });
+    const screen = await render(withQueries(<TurnContent turn={original} datavizThreadId="thread-1" />));
     const source = screen.getByText("Source data (1 table)", { exact: true });
     if (folded) {
       expect(screen.container.querySelector("details")?.open).toBe(false);
@@ -79,8 +92,15 @@ describe("one table per query result", () => {
       await expect.element(source).not.toBeInTheDocument();
     }
     await expect.element(screen.getByRole("textbox", { name: "Filter rows" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Save table as artifact" }));
-    expect(onSave).toHaveBeenCalledWith(original.content[1]);
+    if (state === "done") {
+      await expect.element(screen.getByRole("button", { name: "Add to Dataviz" })).toBeVisible();
+      expect(dataviz.check.mock.calls[0][0]).toEqual([
+        { thread_id: "thread-1", message_id: "message-1", content_id: "result" },
+      ]);
+    } else {
+      // A failed turn's results are never offered for publication.
+      expect(screen.getByRole("button", { name: "Add to Dataviz" }).query()).toBeNull();
+    }
   });
 
   it.each(["ordered", "legacy"])(
@@ -100,10 +120,7 @@ describe("one table per query result", () => {
   for (const [locale, answer] of Object.entries(answers)) {
     it(`keeps the summary and one interactive table for a ${locale} comparison`, async () => {
       const original = turn(answer);
-      const onSave = vi.fn();
-      const screen = await render(
-        <TurnContent turn={original} onSaveArtifact={onSave} />,
-      );
+      const screen = await render(<TurnContent turn={original} />);
       expect(screen.container.querySelectorAll("table")).toHaveLength(1);
       await expect
         .element(screen.getByText(answer.split("\n")[0]))
@@ -117,10 +134,8 @@ describe("one table per query result", () => {
       expect(
         screen.container.querySelector('[aria-sort="ascending"]'),
       ).not.toBeNull();
-      await userEvent.click(
-        screen.getByRole("button", { name: "Save table as artifact" }),
-      );
-      expect(onSave).toHaveBeenCalledWith(original.content[1]);
+      // Without a stored thread there is nothing to verify, so no action shows.
+      expect(screen.getByRole("button", { name: "Add to Dataviz" }).query()).toBeNull();
       await expect
         .element(
           screen.getByRole("button", { name: "Download results as CSV" }),

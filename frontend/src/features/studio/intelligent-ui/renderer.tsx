@@ -17,11 +17,11 @@ import { componentDefinitions as legacyDefinitions, createSchemaLibrary as legac
 import { validateProgram as validateLegacyProgram } from "./validator-v2";
 import { rendersCatalog } from "./catalog-support";
 import { UiNode } from "./components";
-import { UiRuntimeContext, type UiArtifacts, type UiArtifactTarget } from "./runtime-context";
+import { UiRuntimeContext, type UiArtifacts } from "./runtime-context";
 import { validateDeclarativeState, validateProgram } from "./validator";
 import { uiApi } from "./api";
 import { registerUiFlush } from "./state";
-import type { UiAction, UiArtifactRequest, UiBlock, UiSource, UiState } from "./types";
+import type { UiAction, UiBlock, UiDatavizSource, UiSource, UiState } from "./types";
 
 // Saved state comes back with object keys sorted, while the client emits them in
 // creation order; compare by content so reopening an answer does not re-save it.
@@ -48,18 +48,14 @@ export function IntelligentUi({
   source,
   onAction,
   complete,
-  onSaveArtifact,
-  artifactStatus,
-  artifactKinds,
+  dataviz,
 }: {
   block: UiBlock;
   source?: UiSource;
   complete: boolean;
   onAction?: (message: string, action: UiAction) => Promise<void>;
-  onSaveArtifact?: (request: UiArtifactRequest) => void;
-  artifactStatus?: (request: UiArtifactRequest) => "idle" | "saving" | "saved";
-  /** Which visuals offer saving; all of them when omitted. */
-  artifactKinds?: UiArtifactRequest["kind"][];
+  /** Where the answer is stored; its views then offer Add to Dataviz when supported. */
+  dataviz?: UiDatavizSource;
 }) {
   const epoch = useAuthStore((s) => s.securityEpoch);
   const identity = `${epoch}:${block.program_sha256}`;
@@ -86,9 +82,7 @@ export function IntelligentUi({
       source={source}
       complete={complete}
       onAction={onAction}
-      onSaveArtifact={onSaveArtifact}
-      artifactStatus={artifactStatus}
-      artifactKinds={artifactKinds}
+      dataviz={dataviz}
     />
   );
 }
@@ -103,33 +97,30 @@ function UiSession({
   source,
   onAction,
   complete,
-  onSaveArtifact,
-  artifactStatus,
-  artifactKinds,
+  dataviz,
 }: Parameters<typeof IntelligentUi>[0]) {
   const readOnly = !source || !onAction;
   // Nova draws deterministic blocks from results already shown; their local
   // controls work without a saved session because they have nothing to send.
   const deterministic = block.provenance.composer === "deterministic";
   const artifacts = useMemo<UiArtifacts | undefined>(() => {
-    if (!onSaveArtifact || !artifactStatus) return undefined;
+    if (!dataviz) return undefined;
     const ids = block.provenance.evidence_ids;
-    const request = (target: UiArtifactTarget): UiArtifactRequest => ({
-      ...target,
-      columns: Object.keys(block.evidence[target.evidenceId]?.[0] ?? {}),
-      toolCallId: block.provenance.tool_calls?.[target.evidenceId],
-      sql: block.provenance.statements?.[target.evidenceId],
-    });
+    const base = {
+      thread_id: dataviz.threadId,
+      message_id: dataviz.messageId,
+      content_id: dataviz.contentId,
+    };
     return {
-      kinds: artifactKinds,
-      // Local filters and sorts make new records; one bound result is still their source.
+      // Local filters and sorts make new records; one bound result is still
+      // their source. The server re-reads the program to see what changed them.
       evidenceFor: (data) =>
         ids.find((id) => sameRecords(block.evidence[id], data))
         ?? (ids.length === 1 ? ids[0] : null),
-      save: (target) => onSaveArtifact(request(target)),
-      status: (target) => artifactStatus(request(target)),
+      // A stored chart drawn through this renderer is one block, not a node.
+      locate: (target) => (dataviz.whole ? base : { ...base, node: target }),
     };
-  }, [artifactKinds, artifactStatus, block, onSaveArtifact]);
+  }, [block, dataviz]);
   const validation = useMemo(() => {
     try {
       return rendersCatalog(block)

@@ -45,6 +45,16 @@ describe("replayThread", () => {
       expect(restored.messageId).toBe("a1");
     },
   );
+  it("restores a question back to the user as a finished answer", () => {
+    const [restored] = replayThread([
+      user("Berapa received units Oktober 2026?"),
+      assistant("Operasional.ReceivedUnits atau Persediaan.ReceivedUnits?", [
+        { kind: "turn_outcome", finish_reason: "clarification" },
+      ]),
+    ]);
+    expect(restored.state).toBe("done");
+    expect(restored.stopReason).toBeUndefined();
+  });
   it("opens a turn from the question and fills it from the answer", () => {
     const turns = replayThread([
       user("How many orders?"),

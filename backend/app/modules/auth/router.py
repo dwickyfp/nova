@@ -2,11 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from cryptography.fernet import InvalidToken
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError
 
 from app.common.news_entitlement import is_news_enabled
 from app.common.user_flags import is_must_change_password
 from app.core.deps import get_current_user
+from app.core.redis import session_store
+from app.core.security import create_access_token, decode_renewable_token, decrypt_password
 from app.modules.auth.profile import ProfileFields, ProfileResponse, get_profile, save_profile
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
@@ -77,6 +82,33 @@ async def change_password(
         confirm_password=req.confirm_password,
     )
     return result
+
+
+@router.post("/renew")
+async def renew(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())],
+) -> dict[str, str]:
+    """Exchange the caller's token for a fresh one while its session lives.
+
+    The token may have expired (within a grace period); the Redis session is
+    what decides. Renewal is not activity: it does not extend the session, so
+    an idle session still ends and then this answers 401.
+    """
+    try:
+        payload = decode_renewable_token(credentials.credentials)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Sign in again") from None
+    session = await session_store.get(payload["sid"])
+    if not session or session.get("username") != payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Sign in again")
+    try:
+        decrypt_password(session["encrypted_password"])
+    except (InvalidToken, KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Sign in again") from None
+    return {
+        "access_token": create_access_token(payload["sub"], payload["sid"]),
+        "token_type": "bearer",
+    }
 
 
 @router.post("/logout")

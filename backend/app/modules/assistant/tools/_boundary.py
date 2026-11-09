@@ -240,6 +240,10 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return list(self._tools)
 
+    def discard(self, name: str) -> None:
+        """Withdraw a tool for this turn (no-op when absent)."""
+        self._tools.pop(name, None)
+
     def clear(self) -> None:
         """Test helper."""
         self._tools.clear()

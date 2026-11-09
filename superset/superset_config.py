@@ -72,14 +72,106 @@ EVENT_LOGGER = NovaEventLogger()
 STATS_LOGGER = NovaStatsLogger()
 
 # Nova's look (DESIGN.md): brick-red primary, Inter, the console's radius and
-# dark surface. Nova sets the light or dark mode of a framed Superset.
+# surfaces. Nova sets the light or dark mode of a framed Superset.
+#
+# Every surface, text, border and status token is pinned to Nova's values in
+# frontend/src/styles/theme.css rather than left to Ant Design's derivation,
+# which tinted the dark surfaces navy and darkened brick red to an unreadable
+# text color. Brick red stays the fill of primary actions; as text on dark
+# surfaces Nova uses its --accent-foreground (#ff8274), never --primary.
 APP_NAME = "Nova BI"
 _NOVA_TOKENS = {
     "colorPrimary": "#d04738",
-    "colorLink": "#d04738",
     "fontFamily": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     "borderRadius": 10,
     "brandAppName": "Nova BI",
+}
+_NOVA_LIGHT_TOKENS = {
+    # Text and links: --foreground, --muted-foreground, --primary / --accent-foreground.
+    "colorTextBase": "#1e293b",
+    "colorText": "#1e293b",
+    "colorTextSecondary": "#475569",
+    "colorTextTertiary": "#64748b",
+    "colorTextQuaternary": "#94a3b8",
+    "colorTextPlaceholder": "#64748b",
+    "colorLink": "#c13f31",
+    "colorLinkHover": "#a53126",
+    "colorLinkActive": "#a53126",
+    "colorPrimaryText": "#a53126",
+    "colorPrimaryTextHover": "#c13f31",
+    # Superset labels its secondary buttons in colorPrimary on colorPrimaryBg;
+    # Nova's #d04738 reads 4.08:1 there. #c34032 on #fff5f3 clears 4.5:1 as
+    # that label (hover included) and under white text on solid buttons.
+    "colorPrimary": "#c34032",
+    "colorPrimaryBg": "#fff5f3",
+    "colorPrimaryBgHover": "#fff0ed",
+    "colorPrimaryBorder": "#f6c2b9",
+    # Surfaces: --background, --surface-1, --muted, --border.
+    "colorBgBase": "#ffffff",
+    "colorBgLayout": "#f8fafc",
+    "colorBgContainer": "#ffffff",
+    "colorBgElevated": "#ffffff",
+    "colorFillAlter": "#f8fafc",
+    "colorFillSecondary": "#f1f5f9",
+    "colorFillTertiary": "#f1f5f9",
+    "colorFillQuaternary": "#f8fafc",
+    "colorBorder": "#e2e8f0",
+    # One hairline, Nova's --border, so Superset's rules meet Nova's at one shade.
+    "colorBorderSecondary": "#e2e8f0",
+    "colorSplit": "#e2e8f0",
+    # Status: --success, --warning, --destructive, --info.
+    "colorSuccess": "#14a89a",
+    "colorWarning": "#e89b17",
+    "colorError": "#dc2626",
+    "colorInfo": "#4f7ee8",
+    # As text, status uses Nova's -strong variants (AA on white and on /10 tints).
+    "colorSuccessText": "#107c70",
+    "colorWarningText": "#986411",
+    "colorErrorText": "#b91c1c",
+    "colorInfoText": "#4369c4",
+}
+_NOVA_DARK_TOKENS = {
+    "colorTextBase": "#f7f8fa",
+    "colorText": "#f7f8fa",
+    "colorTextSecondary": "#c2cbd6",
+    "colorTextTertiary": "#9ca8b8",
+    "colorTextQuaternary": "#6b7787",
+    "colorTextPlaceholder": "#7d8999",
+    "colorLink": "#ff8274",
+    "colorLinkHover": "#ffa197",
+    "colorLinkActive": "#ff8274",
+    "colorPrimaryText": "#ff8274",
+    "colorPrimaryTextHover": "#ffa197",
+    # Superset paints its secondary buttons' label in colorPrimary itself, and
+    # the dark algorithm darkens colorPrimary for solid fills. #e05a4c is the
+    # brick that clears 4.5:1 both ways: as that label on colorPrimaryBg and
+    # under white text once darkened.
+    "colorPrimary": "#e05a4c",
+    "colorPrimaryBg": "#221514",
+    "colorPrimaryBgHover": "#2b1917",
+    "colorPrimaryBorder": "#5c2a24",
+    # Surfaces: --background, --surface-1/2/3, --popover, --border.
+    "colorBgBase": "#0b0f14",
+    "colorBgLayout": "#0b0f14",
+    "colorBgContainer": "#11161d",
+    "colorBgElevated": "#171d26",
+    "colorBgSpotlight": "#202833",
+    "colorFillAlter": "#0e131a",
+    "colorFillSecondary": "#1b222c",
+    "colorFillTertiary": "#171d26",
+    "colorFillQuaternary": "#11161d",
+    "colorBorder": "#28313d",
+    "colorBorderSecondary": "#28313d",
+    "colorSplit": "#28313d",
+    "colorSuccess": "#2cc6b6",
+    "colorWarning": "#f0ad3d",
+    "colorError": "#ff6467",
+    "colorInfo": "#7398ed",
+    "colorSuccessText": "#2cc6b6",
+    "colorWarningText": "#f0ad3d",
+    "colorErrorText": "#ff6467",
+    "colorInfoText": "#7398ed",
+    "colorEditorSelection": "#3a2f17",
 }
 # Charts draw series in Nova's categorical palette (frontend/src/styles/theme.css
 # --chart-1 to --chart-9), so a chart reads the same in Studio's answers, News
@@ -105,10 +197,19 @@ EXTRA_CATEGORICAL_COLOR_SCHEMES = [
     }
 ]
 THEME_DEFAULT = deepcopy(_DEFAULT_THEME)
-THEME_DEFAULT.setdefault("token", {}).update(_NOVA_TOKENS)
+THEME_DEFAULT.setdefault("token", {}).update({**_NOVA_TOKENS, **_NOVA_LIGHT_TOKENS})
 THEME_DARK = deepcopy(_DEFAULT_THEME_DARK) if _DEFAULT_THEME_DARK else None
 if THEME_DARK is not None:
-    THEME_DARK.setdefault("token", {}).update({**_NOVA_TOKENS, "colorBgBase": "#0b0f14"})
+    THEME_DARK.setdefault("token", {}).update({**_NOVA_TOKENS, **_NOVA_DARK_TOKENS})
+    # The selected top-menu item otherwise takes the darkened brick as text.
+    THEME_DARK["components"] = {
+        "Menu": {
+            "itemSelectedColor": "#ff8274",
+            "horizontalItemSelectedColor": "#ff8274",
+            "itemHoverColor": "#ffa197",
+            "horizontalItemHoverColor": "#ffa197",
+        },
+    }
 
 # Superset is served under /bi behind Nova's gateway or dev server.
 ENABLE_PROXY_FIX = True
@@ -163,9 +264,21 @@ class CeleryConfig:
     )
     worker_prefetch_multiplier = 1
     task_acks_late = False
+    # Each tick expires before the next one is due. With the worker down, beat
+    # would otherwise pile stale ticks into the shared Redis (measured: 1 323
+    # queued in 22 hours on 2026-11-08), and a restarted worker would replay
+    # every one of them.
     beat_schedule = {
-        "reports.scheduler": {"task": "reports.scheduler", "schedule": crontab(minute="*")},
-        "reports.prune_log": {"task": "reports.prune_log", "schedule": crontab(minute=0, hour=0)},
+        "reports.scheduler": {
+            "task": "reports.scheduler",
+            "schedule": crontab(minute="*"),
+            "options": {"expires": 55},
+        },
+        "reports.prune_log": {
+            "task": "reports.prune_log",
+            "schedule": crontab(minute=0, hour=0),
+            "options": {"expires": 3600},
+        },
     }
 
 
@@ -194,6 +307,8 @@ FEATURE_FLAGS = {
     "EMBEDDED_SUPERSET": False,
     # The Nova partition in get_rls_cache_key already covers the principal.
     "CACHE_IMPERSONATION": False,
+    # D8: a dashboard belongs to the Nova role it was made under (role_scope).
+    "DASHBOARD_RBAC": True,
 }
 
 SUPERSET_WEBSERVER_TIMEOUT = 300

@@ -1,0 +1,91 @@
+{
+  "ok": true,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "container nova-superset",
+      "ok": true,
+      "status": "running healthy"
+    },
+    {
+      "check": "container nova-superset-worker",
+      "ok": true,
+      "status": "running healthy"
+    },
+    {
+      "check": "container nova-superset-beat",
+      "ok": true,
+      "status": "running healthy"
+    },
+    {
+      "check": "container nova-superset-db",
+      "ok": true,
+      "status": "running healthy"
+    },
+    {
+      "check": "superset-init ran once and exited 0",
+      "ok": true,
+      "status": "exited 0"
+    },
+    {
+      "check": "web image carries no browser",
+      "ok": true,
+      "playwright_dir": "no"
+    },
+    {
+      "check": "worker image carries the browser",
+      "ok": true,
+      "playwright_dir": "yes"
+    },
+    {
+      "check": "worker answers on its broker",
+      "ok": true,
+      "reply": "->  celery@e9357ec15885: OK\n        pong\n\n1 node online."
+    },
+    {
+      "check": "no backlog in the Celery queue",
+      "ok": true,
+      "llen": "0"
+    },
+    {
+      "check": "GET /bi/health",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "check": "signed-in dashboard read",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "check": "governed chart data through Nova's proxy",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "check": "dashboard edit save",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "check": "native filter state round trip",
+      "ok": true,
+      "status": 201
+    },
+    {
+      "check": "thumbnail endpoint answers",
+      "ok": true,
+      "status": 302
+    },
+    {
+      "check": "Nova Dataviz dashboard listing",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "check": "Nova Dataviz context",
+      "ok": true,
+      "status": 200
+    }
+  ]
+}

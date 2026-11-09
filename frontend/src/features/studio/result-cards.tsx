@@ -1,20 +1,17 @@
 import { memo } from "react";
-import { BookmarkPlus, Check, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import type { ChartBlock, CitationBlock } from "@/features/assistant/types";
 import { VizView } from "@/features/viz/viz-view";
+import { AddToDatavizButton } from "./dataviz/add-to-dataviz";
+import type { DatavizLocator } from "./dataviz/api";
 import { UiChart } from "./intelligent-ui/ui-chart";
 
 export const ResultChart = memo(function ResultChart({
   block,
-  onSave,
-  saving = false,
-  saved = false,
+  dataviz,
 }: {
   block: ChartBlock;
-  onSave?: () => void;
-  saving?: boolean;
-  saved?: boolean;
+  /** Where the chart is stored; it offers Add to Dataviz when the server allows. */
+  dataviz?: DatavizLocator;
 }) {
   // A viz-core chart renders its presentation model directly; the stored
   // Vega-Lite spec remains the template for charts the core did not build.
@@ -26,25 +23,7 @@ export const ResultChart = memo(function ResultChart({
             <p className="min-w-0 flex-1 truncate text-sm font-medium">
               {block.presmodel.title || "Chart"}
             </p>
-            {onSave ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onSave}
-                disabled={saving || saved}
-                aria-label={saved ? "Chart saved" : "Save chart"}
-              >
-                {saving ? (
-                  <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-                ) : saved ? (
-                  <Check aria-hidden="true" className="size-3.5" />
-                ) : (
-                  <BookmarkPlus aria-hidden="true" className="size-3.5" />
-                )}
-                {saved ? "Saved" : "Save"}
-              </Button>
-            ) : null}
+            <AddToDatavizButton locator={dataviz ?? null} />
           </div>
           <VizView presmodel={block.presmodel} />
         </div>
@@ -53,7 +32,18 @@ export const ResultChart = memo(function ResultChart({
   }
   return (
     <div className="nova-chat-item min-w-0">
-      <UiChart spec={block.chart_spec} onSave={onSave} saving={saving} saved={saved} />
+      <UiChart
+        spec={block.chart_spec}
+        dataviz={
+          dataviz
+            ? {
+                threadId: dataviz.thread_id,
+                messageId: dataviz.message_id,
+                contentId: dataviz.content_id,
+              }
+            : undefined
+        }
+      />
     </div>
   );
 });

@@ -503,3 +503,73 @@ def test_substitution_is_still_refused():
     assert missing_metrics(grounding, ("gross_revenue",)) == [
         "Penjualan.DiscountAmount must use metric discount_amount"
     ]
+
+
+# --- two businesses, one term ------------------------------------------------------------
+
+
+async def two_profits(world):
+    """Sales and Finance each define Profit, bound to their own Semantic View; the
+    sales steward's role can see both domains."""
+    await world.let_sales_steward_read_finance()
+    sales = await bind(
+        world, world.sales, "Profit", reviewer=SALES_STEWARD,
+        definition="Sales profit: net revenue minus cost of goods.",
+    )
+    finance = await bind(
+        world, world.finance, "Profit", metric="revenue", view="sales_sv", unit="IDR",
+        definition="Finance profit: operating income after overhead.",
+    )
+    await world.approved([world.concept(world.finance, "Overhead")])
+    await world.release()
+    return sales, finance
+
+
+async def test_each_agent_reads_a_shared_term_in_its_own_business(world):
+    sales, finance = await two_profits(world)
+    # A role that sees both businesses, with no agent in between, is asked which one.
+    unscoped = await world.resolver.resolve("profit by region", SALES_STEWARD)
+    assert unscoped.status == "ambiguous"
+    in_sales = await world.resolver.resolve(
+        "profit by region", SALES_STEWARD, scope_views=["sales"]
+    )
+    assert [item["id"] for item in in_sales.concepts] == [sales]
+    assert "operating income" not in json.dumps(in_sales.public())
+    in_finance = await world.resolver.resolve(
+        "profit by region", SALES_STEWARD, scope_views=["sales_sv"]
+    )
+    assert [item["id"] for item in in_finance.concepts] == [finance]
+    assert "cost of goods" not in json.dumps(in_finance.public())
+
+
+async def test_another_business_term_stays_out_unless_the_question_names_that_business(world):
+    await two_profits(world)
+    # Overhead exists only in Finance: the Sales agent does not borrow it.
+    assert (
+        await world.resolver.resolve("overhead", SALES_STEWARD, scope_views=["sales"])
+    ).status == "none"
+    named = await world.resolver.resolve(
+        "finance profit by region", SALES_STEWARD, scope_views=["sales"]
+    )
+    assert [item["qualified_name"] for item in named.concepts] == ["Finance.Profit"]
+
+
+async def test_grounding_uses_the_agents_business_without_asking(world):
+    sales, _finance = await two_profits(world)
+    result = await ground("profit per kota", context(user=SALES_STEWARD), models(world))
+    assert result.status == "grounded" and result.view_id == "sales"
+    assert [item["id"] for item in result.resolution.concepts] == [sales]
+    other = await ground(
+        "profit per kota", context(user=SALES_STEWARD), models(world, view="sales_sv")
+    )
+    assert other.status == "grounded" and other.view_id == "sales_sv"
+    assert other.provenance()["concepts"][0]["qualified_name"] == "Finance.Profit"
+
+
+async def test_an_agent_with_no_bound_views_keeps_the_role_wide_reading(world):
+    await two_profits(world)
+    world.catalog.publish("unmapped", sales_definition())
+    result = await world.resolver.resolve(
+        "profit by region", SALES_STEWARD, scope_views=["unmapped"]
+    )
+    assert result.status == "ambiguous"

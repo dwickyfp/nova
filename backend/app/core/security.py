@@ -34,6 +34,29 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
 
 
+#: How long after its expiry a token may still be exchanged for a new one.
+#: The live Redis session is what actually decides; this only bounds replay
+#: of a very old token.
+RENEW_GRACE = timedelta(hours=12)
+
+
+def decode_renewable_token(token: str) -> dict:
+    """Decode a correctly signed token that may have expired, within the grace.
+
+    Raises JWTError for a bad signature, a malformed token, or one that expired
+    longer ago than :data:`RENEW_GRACE`.
+    """
+    from jose import JWTError
+
+    payload = jwt.decode(
+        token, settings.SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False}
+    )
+    expired = datetime.fromtimestamp(float(payload.get("exp") or 0), UTC)
+    if expired + RENEW_GRACE < datetime.now(UTC) or not payload.get("sid"):
+        raise JWTError("The token is too old to renew")
+    return payload
+
+
 # --- Fernet Encryption (for DB passwords in Redis sessions) ---
 
 _fernet: Fernet | None = None

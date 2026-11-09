@@ -526,6 +526,122 @@ input:-webkit-autofill:active {
   animation: nova-chat-in 0.22s ease-out both;
 }
 
+/* Studio workspace switch. A frosted track floating over the workspace; the
+   selected plate is lacquered brick red: a tonal shift within --primary, a
+   lit top edge, and a soft neutral shadow, so it reads as a pressed key. */
+.nova-mode-switch {
+  background: color-mix(in oklab, var(--card) 72%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 8%, transparent),
+    0 8px 24px -12px color-mix(in oklab, black 50%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.nova-mode-plate {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--primary), white 14%) 0%,
+    var(--primary) 55%,
+    color-mix(in oklab, var(--primary), black 12%) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, black 18%, transparent),
+    0 2px 8px -2px color-mix(in oklab, black 45%, transparent);
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Studio greeting ink: the sky of the client's hour, drawn from the chart
+   palette. Sunrise warms from amber into Nova's coral, daylight is a clear
+   blue sky into teal, dusk goes rose to violet to blue. Light theme deepens each stop so
+   the text keeps 3:1 against the page. */
+.nova-greeting-ink {
+  --g1: var(--chart-3);
+  --g2: var(--chart-1);
+  --g3: var(--chart-5);
+  background-image: linear-gradient(
+    in oklch 100deg,
+    color-mix(in oklch, var(--g1), black var(--g-depth, 12%)) 0%,
+    color-mix(in oklch, var(--g2), black var(--g-depth, 12%)) 52%,
+    color-mix(in oklch, var(--g3), black var(--g-depth, 12%)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  color: transparent;
+  padding-bottom: 0.08em;
+}
+
+.dark .nova-greeting-ink {
+  --g-depth: 0%;
+}
+
+.nova-greeting-ink[data-daypart="afternoon"] {
+  --g1: var(--chart-4);
+  --g2: var(--chart-8);
+  --g3: var(--chart-2);
+}
+
+.nova-greeting-ink[data-daypart="evening"] {
+  --g1: var(--chart-5);
+  --g2: var(--chart-6);
+  --g3: var(--chart-4);
+}
+
+@media (forced-colors: active) {
+  .nova-greeting-ink {
+    background-image: none;
+    color: CanvasText;
+  }
+}
+
+/* Studio welcome. The two lines rise once, a beat apart, then settle. */
+.nova-welcome-line {
+  animation: nova-welcome-in 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nova-welcome-line:nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.nova-welcome-follow {
+  animation: nova-welcome-in 560ms 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes nova-welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-mode-plate {
+    transition: none;
+  }
+  .nova-welcome-line,
+  .nova-welcome-follow {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .nova-mode-switch {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Observability keeps three equally useful panes visible at once. Compact the
    replay through local typography and spacing instead of CSS zoom: zoom changes
    ScrollArea layout metrics and can create a large empty band above the panes. */

@@ -341,9 +341,11 @@ services:
   superset-init:
     logging: *default-logging
     profiles: ["app"]
+    # The web image has no browser; the worker builds the `jobs` target.
     build:
       context: ..
       dockerfile: superset/Dockerfile
+      target: web
     image: nova-superset:local
     container_name: nova-superset-init
     command: ["/app/nova/bootstrap.sh"]
@@ -394,16 +396,24 @@ services:
     networks:
       - nova
 
-  # Alerts, reports, thumbnails, cache warmup and async SQL Lab.
+  # Alerts, reports, thumbnails and async SQL Lab, all in use (see
+  # docs/operations/superset-feature-inventory.md). Cache warmup is not
+  # scheduled. One process idles; a second starts under load.
   superset-worker:
     logging: *default-logging
     profiles: ["app"]
-    image: nova-superset:local
+    build:
+      context: ..
+      dockerfile: superset/Dockerfile
+      target: jobs
+    image: nova-superset-jobs:local
     container_name: nova-superset-worker
-    command: ["celery", "--app=superset.tasks.celery_app:app", "worker", "--pool=prefork", "-O", "fair", "-c", "2", "-l", "INFO"]
+    command: ["celery", "--app=superset.tasks.celery_app:app", "worker", "--pool=prefork", "-O", "fair", "--autoscale=2,1", "--max-memory-per-child=716800", "-l", "INFO"]
+    # The worker answers a ping over its broker. Loading the whole Superset app
+    # for every check cost 13.9 CPU-seconds and 258 MB each time; this costs 1.6.
     healthcheck:
-      test: ["CMD-SHELL", "celery --app=superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME -t 10"]
-      interval: 30s
+      test: ["CMD-SHELL", "celery --broker=\"$${SUPERSET_REDIS_URL}/6\" inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 60s
       timeout: 20s
       retries: 5
       start_period: 60s

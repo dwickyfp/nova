@@ -1,0 +1,215 @@
+{
+  "label": "baseline-idle",
+  "started_at": "2026-11-08T11:50:46.852443+00:00",
+  "minutes": 10.0,
+  "interval_s": 5,
+  "containers": [
+    "nova-superset",
+    "nova-superset-worker",
+    "nova-superset-beat",
+    "nova-superset-db"
+  ],
+  "per_container": {
+    "nova-superset": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 1.94,
+        "p95": 11.64,
+        "max": 29.54
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 14.44,
+        "p95": 20.73,
+        "max": 21.22
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 19.95,
+        "p95": 20.05,
+        "max": 34.14
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 14.94,
+        "p95": 15.0,
+        "max": 26.39
+      },
+      "swap_pss_mib": {
+        "n": 120,
+        "mean": 185.83,
+        "p95": 185.85,
+        "max": 185.85
+      },
+      "footprint_mib": {
+        "n": 120,
+        "mean": 200.77,
+        "p95": 200.82,
+        "max": 212.22
+      }
+    },
+    "nova-superset-worker": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 26.71,
+        "p95": 109.98,
+        "max": 156.41
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 104.33,
+        "p95": 266.9,
+        "max": 326.4
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 126.33,
+        "p95": 357.57,
+        "max": 386.69
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 95.36,
+        "p95": 313.35,
+        "max": 338.48
+      },
+      "swap_pss_mib": {
+        "n": 120,
+        "mean": 315.27,
+        "p95": 341.05,
+        "max": 341.07
+      },
+      "footprint_mib": {
+        "n": 120,
+        "mean": 410.63,
+        "p95": 612.96,
+        "max": 632.94
+      }
+    },
+    "nova-superset-beat": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 0.07,
+        "p95": 0.0,
+        "max": 2.44
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 9.08,
+        "p95": 9.51,
+        "max": 9.89
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 14.49,
+        "p95": 14.95,
+        "max": 14.96
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 10.56,
+        "p95": 10.92,
+        "max": 10.96
+      },
+      "swap_pss_mib": {
+        "n": 120,
+        "mean": 180.53,
+        "p95": 180.54,
+        "max": 180.54
+      },
+      "footprint_mib": {
+        "n": 120,
+        "mean": 191.09,
+        "p95": 191.44,
+        "max": 191.48
+      }
+    },
+    "nova-superset-db": {
+      "cpu_pct": {
+        "n": 120,
+        "mean": 1.31,
+        "p95": 5.98,
+        "max": 12.64
+      },
+      "docker_mem_mib": {
+        "n": 120,
+        "mean": 8.16,
+        "p95": 12.05,
+        "max": 14.36
+      },
+      "rss_mib": {
+        "n": 120,
+        "mean": 2.73,
+        "p95": 2.91,
+        "max": 2.94
+      },
+      "pss_mib": {
+        "n": 120,
+        "mean": 0.81,
+        "p95": 0.9,
+        "max": 0.94
+      },
+      "swap_pss_mib": {
+        "n": 120,
+        "mean": 0.0,
+        "p95": 0.0,
+        "max": 0.0
+      },
+      "footprint_mib": {
+        "n": 120,
+        "mean": 0.81,
+        "p95": 0.9,
+        "max": 0.94
+      }
+    }
+  },
+  "total": {
+    "cpu_pct": {
+      "n": 120,
+      "mean": 30.02,
+      "p95": 120.06,
+      "max": 156.48
+    },
+    "docker_mem_mib": {
+      "n": 120,
+      "mean": 136.01,
+      "p95": 302.13,
+      "max": 358.52
+    },
+    "pss_mib": {
+      "n": 120,
+      "mean": 121.68,
+      "p95": 338.48,
+      "max": 363.52
+    },
+    "footprint_mib": {
+      "n": 120,
+      "mean": 803.3,
+      "p95": 1004.97,
+      "max": 1024.69
+    }
+  },
+  "images_mib": {
+    "nova-superset:local": 1969.8,
+    "apache/superset:6.1.0": null,
+    "postgres:16.10-alpine": 254.6,
+    "redis:7-alpine": 37.6
+  },
+  "environment": {
+    "host": {
+      "platform": "macOS-27.0.1-arm64-arm-64bit",
+      "machine": "arm64",
+      "cpu": "Apple M3",
+      "host_mem_gib": 16.0
+    },
+    "docker": {
+      "server_version": "29.8.2",
+      "vm_cpus": 8,
+      "vm_mem_gib": 7.8,
+      "os": "OrbStack"
+    },
+    "image_ids": {
+      "nova-superset:local": "sha256:81a69921fb7dc5e2c9e6300b530069e87fccc8c63a93b2a59fbc4345c5ffa86b"
+    }
+  }
+}

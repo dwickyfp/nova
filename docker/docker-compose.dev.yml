@@ -8,3 +8,16 @@ services:
   starrocks-fe:
     ports:
       - "127.0.0.1:${STARROCKS_DEV_MYSQL_PORT:-29030}:9030"
+
+  # Superset calls Nova's internal API and MySQL proxy. In host development
+  # both run in ../dev.sh on the host, not in the nova-backend container.
+  superset: &superset-host-dev
+    environment:
+      NOVA_API_URL: http://host.docker.internal:${BACKEND_PORT:-8000}
+      NOVA_PROXY_HOST: host.docker.internal
+      NOVA_PROXY_PORT: "${PROXY_PORT:-4406}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  superset-init: *superset-host-dev
+  superset-worker: *superset-host-dev
+  superset-beat: *superset-host-dev

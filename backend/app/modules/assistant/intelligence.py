@@ -238,6 +238,9 @@ class EvidenceTracker:
             (tool in {
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
                 "compute_metrics", "analyze_documents",
+                # Rows of the open Dataviz dashboard's own dataset, read through
+                # Superset and Nova's proxy as the caller (governed, audited).
+                "dataviz_query",
                 "canonical_investigation",
                 # A forecast or score the runtime computed is a result the answer may
                 # state; without it every ML answer is rebuilt from the input table.

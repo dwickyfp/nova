@@ -31,3 +31,17 @@ def test_an_answer_with_its_own_table_gets_no_repeated_leader_lines():
         answer, question="compare drivers", tables={"e1": table}, compares_groups=True,
     )
     assert "highest" not in verified.text.casefold() and "tertinggi" not in verified.text
+
+
+def test_a_total_row_is_never_named_the_highest_member():
+    table = {
+        "columns": ["order_date", "net_revenue"],
+        "rows": [
+            ["Total", 8823693541.03],
+            ["2026-05", 1368529656.0],
+            ["2026-10", 1573810277.5],
+        ],
+    }
+    (line,) = verified_leaders({"e1": table}, language="id")
+    assert "Total" not in line
+    assert "2026-10" in line and "2026-05" in line

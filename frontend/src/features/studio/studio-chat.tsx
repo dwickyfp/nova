@@ -1,4 +1,5 @@
 import { threadTitle } from "./thread-title";
+import { clientTimeZone, daypartAt, GREETING, hourIn, type Daypart } from "./greeting";
 import {
   memo,
   useCallback,
@@ -28,15 +29,13 @@ import {
   studioApi,
   type Agent,
   type AgentMessage,
+  type DatavizTurnContext,
 } from "@/features/agents/api";
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
 import { ConsentCard } from "./consent-card";
 import { TurnContent } from "./turn-content";
 import { flushUiStates } from './intelligent-ui/state';
 import type { UiAction } from './intelligent-ui/types';
-import { findArtifactSql, type SavableContent } from "./artifact-source";
-import { descriptorToVegaLite } from "./artifact-chart-descriptor";
-import { splitChartTitle } from "./chart-title";
 import {
   CREATE_SKILL_COMMAND,
   SKILL_AUTHOR_ID,
@@ -93,6 +92,8 @@ export function StudioChat({
   initialPrompt = "",
   handoff = null,
   noAgents = false,
+  variant = "full",
+  datavizContext,
 }: {
   agent: Agent | null;
   agents: Agent[];
@@ -111,6 +112,10 @@ export function StudioChat({
   handoff?: StudioHandoff | null;
   /** The catalog loaded and the user has no agent to chat with. */
   noAgents?: boolean;
+  /** `panel`: the Dataviz assistant beside the dashboard (narrow, no research). */
+  variant?: "full" | "panel";
+  /** Read when a message is sent: the dashboard on screen in Dataviz. */
+  datavizContext?: () => DatavizTurnContext | null;
 }) {
   const queryClient = useQueryClient();
   const selectComposerAgent = async (id: string) => {
@@ -161,10 +166,6 @@ export function StudioChat({
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
-  const [savingContentId, setSavingContentId] = useState<string | null>(null);
-  const [savedContentIds, setSavedContentIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const { abortRef, queueEvent, flushEvents, discardQueuedEvents } = useTranscriptStream(setTurns);
   const onTurnEvent = useCallback((turnId: string, event: AssistantEvent) => {
     const workflow = event as unknown as { type: string; mission?: Mission };
@@ -237,8 +238,6 @@ export function StudioChat({
     }
     preserveDraft.current = false;
     setDeepenTarget(null);
-    setSavingContentId(null);
-    setSavedContentIds(new Set());
   }, [agent?.agent_id, discardQueuedEvents]);
 
   /**
@@ -279,8 +278,6 @@ export function StudioChat({
         setTurns(restored);
         setAttachments([]);
         setDeepenTarget(null);
-        setSavingContentId(null);
-        setSavedContentIds(new Set());
         if (active?.run_id && unfinished && !unfinished.messageId) {
           const controller = new AbortController();
           abortRef.current = controller;
@@ -341,8 +338,6 @@ export function StudioChat({
     setInput("");
     setAttachments([]);
     setDeepenTarget(null);
-    setSavingContentId(null);
-    setSavedContentIds(new Set());
   }, [discardQueuedEvents, newChatNonce]);
 
   useEffect(() => {
@@ -392,11 +387,27 @@ export function StudioChat({
     return () => observer.disconnect();
   }, []);
 
+  // Grow the composer with its text. An empty composer keeps its CSS height:
+  // measuring the placeholder before layout settles (a hidden tab, a pane
+  // still sizing) left it clipped or several lines tall. Width changes
+  // re-measure, since wrapping changes the height.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    const fit = () => {
+      el.style.height = "";
+      if (!el.value || el.clientWidth === 0) return;
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    };
+    fit();
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [input]);
 
   const ensureThread = useCallback(
@@ -496,7 +507,7 @@ export function StudioChat({
       setStreaming(true);
       stopRequestedRef.current = false;
       setDeepenTarget(null);
-      rememberLastAgent(agent.agent_id);
+      if (variant !== "panel") rememberLastAgent(agent.agent_id);
 
       let accepted = false;
       let submittedThread: string | null = null;
@@ -507,6 +518,7 @@ export function StudioChat({
         if (controller.signal.aborted) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
           uiAction,
+          dataviz: datavizContext?.() ?? null,
           signal: controller.signal,
           role: currentRole,
           continueMissionId: followUpMissionId,
@@ -733,86 +745,6 @@ export function StudioChat({
     }
   };
 
-  const saveArtifact = useCallback(
-    async (turn: TranscriptTurn, item: SavableContent) => {
-      if (!agent || savingContentId) return;
-      const provenance = item.type === "table" ? item.block.semantic_provenance_ref : undefined;
-      const sql = provenance ? "" : findArtifactSql(turnsRef.current, turn.id, item);
-      if (!sql && !provenance) {
-        toast.error("This result has no reusable SQL to save.");
-        return;
-      }
-
-      let chartSpec: Record<string, unknown> | null = null;
-      let vizSpec: Record<string, unknown> | null = null;
-      let saved = "Artifact saved";
-      let title =
-        item.type === "table"
-          ? item.block.title?.trim() || turn.question.trim()
-          : turn.question.trim();
-      if (item.type === "ui-node") {
-        const { request } = item;
-        title = request.title.trim() || title;
-        if (request.kind === "chart") {
-          chartSpec = request.chart
-            ? descriptorToVegaLite(request.chart, request.columns, title)
-            : null;
-          if (!chartSpec) {
-            saved = "Saved its result as a grid: this chart plots values calculated in the answer.";
-          }
-        }
-      } else if (item.type === "chart") {
-        const chartTitle = splitChartTitle(item.block.chart_spec).title;
-        title = chartTitle || turn.question.trim() || "Saved chart";
-        if (item.block.viz_spec) {
-          // A viz-core chart persists its worksheet; refresh re-compiles it.
-          vizSpec = {
-            ...item.block.viz_spec,
-            title,
-            source: { kind: "sql", sql: sql ?? "" },
-          };
-        }
-        if (!vizSpec) {
-          try {
-            chartSpec = JSON.parse(item.block.chart_spec) as Record<
-              string,
-              unknown
-            >;
-          } catch {
-            toast.error("This chart specification cannot be saved.");
-            return;
-          }
-        }
-      }
-      title = title.slice(0, 256) || "Saved result";
-
-      setSavingContentId(item.id);
-      try {
-        await studioApi.createArtifact({
-          title,
-          artifact_type: "chart",
-          sql_text: sql ?? "",
-          semantic_provenance_ref: provenance,
-          database_name: agent.database_name,
-          schema_name: agent.schema_name,
-          chart_spec: chartSpec,
-          viz_spec: vizSpec,
-          agent_id: agent.agent_id,
-          thread_id: threadId ?? activeThreadId,
-        });
-        setSavedContentIds((current) => new Set(current).add(item.id));
-        await queryClient.invalidateQueries({
-          queryKey: ["studio", "artifacts"],
-        });
-        toast.success(saved);
-      } catch (error) {
-        toast.error((error as Error).message || "Artifact could not be saved.");
-      } finally {
-        setSavingContentId(null);
-      }
-    },
-    [activeThreadId, agent, queryClient, savingContentId, threadId],
-  );
 
   // Whether an answer offers a reconsider pass is a preference, not a
   // per-message control; it is set in Settings and read here.
@@ -877,8 +809,10 @@ export function StudioChat({
             ref={transcriptRef}
             className={cn(
               "mx-auto w-full px-4 sm:px-6",
-              'max-w-3xl',
+              variant === "panel" ? "px-3 sm:px-4" : 'max-w-3xl',
               welcome ? "my-auto shrink-0 py-6 sm:py-12" : "py-8 sm:py-10",
+              // The full Studio chat sits under the floating workspace tabs.
+              variant !== "panel" && "pt-16 sm:pt-16",
             )}
           >
             {agent && loadingThread && empty ? (
@@ -898,6 +832,11 @@ export function StudioChat({
               </div>
             ) : !agent && noAgents ? (
               <NoAgentState />
+            ) : variant === "panel" && (empty || !agent) ? (
+              <DatavizGreeting
+                displayName={displayName}
+                onPick={agent ? (text) => void send(text) : undefined}
+              />
             ) : empty || !agent ? (
               <>
                 <Greeting displayName={displayName} />
@@ -928,9 +867,6 @@ export function StudioChat({
                     reconsiderDisabled={streaming}
                     onFeedback={saveFeedback}
                     onDecide={decide}
-                    onSaveArtifact={saveArtifact}
-                    savingContentId={savingContentId}
-                    savedContentIds={savedContentIds}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
                 ))}
@@ -965,7 +901,7 @@ export function StudioChat({
             onChange={setInput}
             onKeyDown={onKeyDown}
             onSend={() => void send()}
-          onResearch={researchable ? () => void startResearch() : undefined}
+          onResearch={researchable && variant === "full" ? () => void startResearch() : undefined}
           onStop={stop}
           readingFiles={readingFiles}
           attachments={attachments}
@@ -977,6 +913,7 @@ export function StudioChat({
             agent={agent}
             agents={agents}
             onSelectAgent={(id) => void selectComposerAgent(id)}
+            agentPicker={variant !== "panel"}
           />
         </div>
       </div>
@@ -1001,9 +938,6 @@ const TurnView = memo(function TurnView({
   reconsiderDisabled,
   onFeedback,
   onDecide,
-  onSaveArtifact,
-  savingContentId,
-  savedContentIds,
   onReviewSkill,
   uiContext,
 }: {
@@ -1021,9 +955,6 @@ const TurnView = memo(function TurnView({
     call: PendingCall,
     decision: "allow_once" | "allow_session" | "deny",
   ) => Promise<void>;
-  onSaveArtifact: (turn: TranscriptTurn, item: SavableContent) => Promise<void>;
-  savingContentId: string | null;
-  savedContentIds: ReadonlySet<string>;
   onReviewSkill?: (document: string) => void;
   uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
 }) {
@@ -1086,9 +1017,7 @@ const TurnView = memo(function TurnView({
         uiContext={uiContext}
         runContext={runContext}
         running={running}
-        onSaveArtifact={(item) => void onSaveArtifact(turn, item)}
-        savingContentId={savingContentId}
-        savedContentIds={savedContentIds}
+        datavizThreadId={uiContext?.threadId ?? null}
       />
       {draft ? (
         <div>
@@ -1151,22 +1080,34 @@ const TurnView = memo(function TurnView({
 });
 
 
+/** The client's daypart, re-read each minute so an open tab crosses noon or 18:00 on time. */
+function useClientDaypart(): Daypart {
+  const read = () => daypartAt(hourIn(new Date(), clientTimeZone()));
+  const [daypart, setDaypart] = useState(read);
+  useEffect(() => {
+    const timer = window.setInterval(() => setDaypart(read()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return daypart;
+}
+
 function Greeting({ displayName }: { displayName?: string | null }) {
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const daypart = useClientDaypart();
   const name = displayName?.trim();
+  // One heading in two lines that rise a beat apart. The greeting carries the
+  // sky of its hour (sunrise, daylight, dusk); the question stays quiet.
   return (
-    <div className="text-left">
-      <h1 className="text-3xl leading-tight font-normal text-foreground sm:text-4xl">
-        {greeting}
-        {name ? `, ${name}` : ""}
-      </h1>
-      {/* Brick red stays for actions; the question reads as the greeting's quiet second line. */}
-      <p className="mt-2 text-2xl leading-tight font-normal text-muted-foreground sm:text-4xl">
+    <h1 className="text-left text-[2rem] leading-[1.15] font-normal tracking-[-0.02em] text-balance sm:text-[2.75rem]">
+      <span className="nova-welcome-line block">
+        <span className="nova-greeting-ink" data-daypart={daypart}>
+          {GREETING[daypart]}
+          {name ? `, ${name}` : ""}
+        </span>
+      </span>
+      <span className="nova-welcome-line block text-muted-foreground">
         What would you like to work on?
-      </p>
-    </div>
+      </span>
+    </h1>
   );
 }
 
@@ -1186,6 +1127,55 @@ function NoAgentState() {
   );
 }
 
+/**
+ * The Dataviz assistant's empty state, in the Agent greeting's voice and ink,
+ * sized for the side panel: the question names what it answers about.
+ */
+function DatavizGreeting({
+  displayName,
+  onPick,
+}: {
+  displayName?: string | null;
+  onPick?: (text: string) => void;
+}) {
+  const daypart = useClientDaypart();
+  const name = displayName?.trim();
+  const questions = [
+    "Dashboard ini tentang apa?",
+    "Data di dashboard ini dari mana?",
+    "Kenapa angkanya berubah bulan ini?",
+  ];
+  return (
+    <section aria-label="Dataviz assistant" className="py-2">
+      <h1 className="text-left text-2xl leading-[1.2] font-normal tracking-[-0.01em] text-balance">
+        <span className="nova-welcome-line block">
+          <span className="nova-greeting-ink" data-daypart={daypart}>
+            {GREETING[daypart]}
+            {name ? `, ${name}` : ""}
+          </span>
+        </span>
+        <span className="nova-welcome-line block text-muted-foreground">
+          What would you like to know?
+        </span>
+      </h1>
+      {onPick ? (
+        <div className="nova-welcome-follow mt-6 grid gap-2">
+          {questions.map((question) => (
+            <button
+              key={question}
+              type="button"
+              onClick={() => onPick(question)}
+              className="flex min-h-12 items-center rounded-xl border bg-card px-4 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {question}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function SuggestedQuestions({
   questions,
   onPick,
@@ -1201,28 +1191,26 @@ function SuggestedQuestions({
 
   return (
     <>
-      <section aria-label="Suggested questions" className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4 sm:px-6">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h2 className="text-xs font-medium text-muted-foreground">Suggested questions</h2>
-          {questions.length > 4 ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setAllOpen(true)}>
-              View all ({questions.length})
-            </Button>
-          ) : null}
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {/* Shares the greeting's left edge: no padding of its own inside the transcript column. */}
+      <section aria-label="Suggested questions" className="nova-welcome-follow mt-8 w-full sm:mt-10">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {questions.slice(0, 4).map((question) => (
             <button
               key={question}
               type="button"
               title={question}
               onClick={() => pick(question)}
-              className="rounded-lg border bg-card px-3 py-2.5 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-16 items-center rounded-xl border bg-card px-4 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="line-clamp-2">{question}</span>
             </button>
           ))}
         </div>
+        {questions.length > 4 ? (
+          <Button type="button" variant="ghost" size="sm" className="mt-2 -ml-3 text-muted-foreground" onClick={() => setAllOpen(true)}>
+            View all ({questions.length})
+          </Button>
+        ) : null}
       </section>
       {questions.length > 4 ? (
         <Dialog open={allOpen} onOpenChange={setAllOpen}>

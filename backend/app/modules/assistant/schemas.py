@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from app.modules.assistant.app_context import NoveAppContext
 from app.modules.assistant.attachments import validate_attachments
@@ -187,8 +187,24 @@ class UiMapMetricInput(BaseModel):
 
 
 
+class DatavizTurnInput(BaseModel):
+    """The Dataviz page a Studio turn is asked from (docs/arch-19-studio-dataviz.md).
+
+    Untrusted hints: the server reads the dashboard and its filter state again
+    through the caller's own BI session before any tool uses them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dashboard_id: int | None = Field(default=None, ge=1)
+    native_filters_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_\-]{1,128}$")
+    edit_state: Literal["clean", "dirty", "unknown"] = "unknown"
+    path: str | None = Field(default=None, max_length=512)
+
+
 class AgentMessageRequest(MessageRequest):
     ui_action: UiActionInput | None = None
+    dataviz: DatavizTurnInput | None = None
     work_intent: Literal["ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"] | None = (
         None
     )

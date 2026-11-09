@@ -6,10 +6,11 @@ import { CitationList, ResultChart } from "./result-cards";
 import { ResultTable } from "./result-table";
 import { TextShimmer } from "./text-shimmer";
 import type { OrderedContent, TranscriptTurn } from "./studio-chat";
-import { uiNodeContentId, type SavableContent } from "./artifact-source";
+import { AddToDatavizButton } from "./dataviz/add-to-dataviz";
+import type { DatavizLocator } from "./dataviz/api";
 import { visibleContent } from "./turn-content-order";
 import { IntelligentUi } from "./intelligent-ui/renderer";
-import type { UiAction, UiArtifactRequest } from "./intelligent-ui/types";
+import type { UiAction } from "./intelligent-ui/types";
 import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
 
 /**
@@ -25,9 +26,7 @@ export function TurnContent({
   running = false,
   selectedContentId,
   onSelectContent,
-  onSaveArtifact,
-  savingContentId,
-  savedContentIds,
+  datavizThreadId,
   uiContext,
 }: {
   turn: TranscriptTurn;
@@ -35,9 +34,11 @@ export function TurnContent({
   running?: boolean;
   selectedContentId?: string | null;
   onSelectContent?: (item: OrderedContent | null) => void;
-  onSaveArtifact?: (item: SavableContent) => void;
-  savingContentId?: string | null;
-  savedContentIds?: ReadonlySet<string>;
+  /**
+   * The stored thread this turn belongs to. Its results then offer
+   * **Add to Dataviz** when Nova's server allows it; nothing otherwise.
+   */
+  datavizThreadId?: string | null;
   uiContext?: {
     agentId: string;
     threadId: string;
@@ -48,22 +49,10 @@ export function TurnContent({
   const representedTables = ordered.flatMap((item) =>
     item.type === "table" ? [item.block] : [],
   );
-  const uiArtifact = (contentId: string) => ({
-    onSaveArtifact: onSaveArtifact
-      ? (request: UiArtifactRequest) =>
-          onSaveArtifact({
-            id: uiNodeContentId(contentId, request),
-            type: "ui-node",
-            request,
-            block: { tool_call_id: request.toolCallId },
-          })
-      : undefined,
-    artifactStatus: (request: UiArtifactRequest) => {
-      const id = uiNodeContentId(contentId, request);
-      return savingContentId === id ? "saving" as const
-        : savedContentIds?.has(id) ? "saved" as const : "idle" as const;
-    },
-  });
+  const locate = (contentId: string): DatavizLocator | null =>
+    datavizThreadId && turn.messageId && turn.state === "done"
+      ? { thread_id: datavizThreadId, message_id: turn.messageId, content_id: contentId }
+      : null;
   const sourceTables = ordered.filter((item) => item.type === "table");
   const foldSources = ordered.some(
     (item) => item.type === "ui" && item.complete &&
@@ -72,9 +61,7 @@ export function TurnContent({
   const renderTable = (item: Extract<OrderedContent, { type: "table" }>) => (
     <ResultTable
       block={item.block}
-      onSave={onSaveArtifact ? () => onSaveArtifact(item) : undefined}
-      saving={savingContentId === item.id}
-      saved={savedContentIds?.has(item.id)}
+      action={<AddToDatavizButton locator={locate(item.id)} />}
     />
   );
 
@@ -164,18 +151,17 @@ export function TurnContent({
                     : undefined
                 }
                 onAction={uiContext?.onAction}
-                {...uiArtifact(item.id)}
+                dataviz={
+                  datavizThreadId && turn.messageId && turn.state === "done"
+                    ? { threadId: datavizThreadId, messageId: turn.messageId, contentId: item.id }
+                    : undefined
+                }
               />
             )
           ) : item.type === "table" ? (
             renderTable(item)
           ) : item.type === "chart" ? (
-            <ResultChart
-              block={item.block}
-              onSave={onSaveArtifact ? () => onSaveArtifact(item) : undefined}
-              saving={savingContentId === item.id}
-              saved={savedContentIds?.has(item.id)}
-            />
+            <ResultChart block={item.block} dataviz={locate(item.id) ?? undefined} />
           ) : (
             <CitationList citations={[item.block]} />
           )}
