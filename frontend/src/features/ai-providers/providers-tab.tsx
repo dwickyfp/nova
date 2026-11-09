@@ -46,6 +46,7 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { DefaultModelControl } from './default-model-control'
+import { WebSearchKeyControl } from './web-search-key-control'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -453,6 +454,7 @@ export function ProvidersTab() {
   return (
     <div className='space-y-4'>
       <DefaultModelControl providers={providers} loading={loading} />
+      <WebSearchKeyControl />
       {/* Filters */}
       <SimpleTableToolbar
         search={search}

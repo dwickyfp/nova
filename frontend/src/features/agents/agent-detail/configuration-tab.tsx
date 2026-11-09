@@ -25,6 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api } from "@/lib/api-client";
+import type { WebSearchStatus } from "@/features/ai-providers/web-search-key-control";
 import {
   customToolsApi,
   mcpApi,
@@ -54,6 +56,9 @@ const BUNDLEABLE = new Set([
   "feature_lookup",
   "semantic_view_query",
 ]);
+
+/** The per-agent web search switch adds or removes this tool. */
+const WEB_SEARCH = "web_search";
 
 /**
  * Agent Configuration, split into the same sub-tabs as the detail surface:
@@ -250,6 +255,55 @@ export function AgentConfigurationTab({
   );
 }
 
+/**
+ * Per-agent switch for public web search. Off by default: only agents whose
+ * owner turns it on are offered the tool. The search itself needs the Tavily
+ * key an administrator sets in AI providers.
+ */
+function WebSearchSwitch({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  const status = useQuery({
+    queryKey: ["ai", "web-search"],
+    queryFn: () => api.get<WebSearchStatus>("/ai/web-search"),
+  });
+  const missingKey = status.data ? !status.data.configured : false;
+  return (
+    <section className="space-y-2 rounded-xl border p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor="agent-web-search" className="text-sm font-medium">
+            Web search
+          </Label>
+          <p id="agent-web-search-description" className="text-xs text-muted-foreground">
+            Let this agent search the public web for current facts. Answers cite each
+            web page as a source and keep it apart from your governed data.
+          </p>
+        </div>
+        <Switch
+          id="agent-web-search"
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          aria-describedby="agent-web-search-description"
+        />
+      </div>
+      {checked && missingKey ? (
+        <p className="text-xs text-muted-foreground">
+          No Tavily API key is set, so searches will report that web search is not
+          configured.{" "}
+          <Link to="/ai-providers" className="font-medium text-foreground underline underline-offset-2">
+            Add the key in AI providers
+          </Link>
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function ToolsConfig({
   draft,
   set,
@@ -281,6 +335,7 @@ function ToolsConfig({
 
   const bundleable =
     toolsQuery.data?.tools.filter((t) => BUNDLEABLE.has(t.name)) ?? [];
+  const webSearchOn = (draft.default_tools ?? []).includes(WEB_SEARCH);
   const mcpTools = toolsQuery.data?.tools.filter(
     (tool) => tool.source.startsWith("mcp:") && tool.is_enabled,
   ) ?? [];
@@ -292,6 +347,8 @@ function ToolsConfig({
         {" "}Data questions use the agent’s bound Semantic Views and configured tools.
         {" "}Use Nove for free-form SQL and database exploration.
       </p>
+
+      <WebSearchSwitch checked={webSearchOn} onCheckedChange={() => toggle(WEB_SEARCH)} />
 
       <section className="space-y-2">
         <h3 className="text-sm font-medium">Builtin tools</h3>

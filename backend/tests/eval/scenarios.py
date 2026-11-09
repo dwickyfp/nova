@@ -273,6 +273,43 @@ def scenario_external_mcp_requires_explicit_consent() -> Scenario:
     )
 
 
+def scenario_web_search_cites_public_sources() -> Scenario:
+    """A switched-on agent searches the web read-only and cites the page it used."""
+    return Scenario(
+        name="web_search_cites_public_sources",
+        content="What is Bank Indonesia's policy rate today?",
+        script=[
+            tool_call_frame("w1", name="web_search", arguments={"query": "BI policy rate"}),
+            text_frame("Bank Indonesia's policy rate is 6% (web source: Bank Indonesia "
+                       "holds rate, news.example.com)."),
+        ],
+        tools=[
+            EvalTool(
+                "web_search",
+                classification="read_only",
+                summary="1 web result(s) from the public web",
+                parameters={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+                citations=[{"source": "web", "title": "Bank Indonesia holds rate",
+                            "url": "https://news.example.com/bi-rate"}],
+            )
+        ],
+        turn_plan={"intent": "direct_answer", "tools": ["web_search"],
+                   "required_tools": ["web_search"], "ml_task": None},
+        read_only_grant=True,
+        checks=[
+            check("searched the web", used_tool("web_search")),
+            check("read-only search needs no prompt", did_not_prompt()),
+            check("answer names the web source", answer_contains("web source")),
+            check("finished normally", finished_with("stop")),
+            check("no error", no_error()),
+        ],
+    )
+
+
 def scenario_studio_text_attachment_answers_without_tools() -> Scenario:
     return Scenario(
         name="studio_text_attachment_answers_without_tools",
@@ -1450,6 +1487,7 @@ def all_scenarios() -> list[Scenario]:
         scenario_unsupported_numeric_claim_is_withheld(),
         scenario_change_diagnosis_reconciles_after_data(),
         scenario_external_mcp_requires_explicit_consent(),
+        scenario_web_search_cites_public_sources(),
         scenario_studio_text_attachment_answers_without_tools(),
         scenario_studio_attachment_math_stays_with_document(),
         scenario_studio_image_attachment_reaches_vision_turn(),

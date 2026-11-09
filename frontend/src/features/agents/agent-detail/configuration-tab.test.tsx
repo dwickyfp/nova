@@ -89,6 +89,50 @@ describe("AgentConfigurationTab", () => {
     await vi.waitFor(() => expect(updates[0]?.default_tools).toEqual(["semantic_query"]));
   });
 
+  it.each([
+    { configured: false, from: ["semantic_query"], to: ["semantic_query", "web_search"] },
+    { configured: true, from: ["semantic_query", "web_search"], to: ["semantic_query"] },
+  ])("switches web search for this agent (key set: $configured)", async ({ configured, from, to }) => {
+    const updates: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (init?.method === "POST") {
+        updates.push(JSON.parse(init.body as string).configuration);
+        return response(AGENT);
+      }
+      const url = String(input);
+      if (url.endsWith("/ai/web-search")) return response({ provider: "tavily", configured });
+      if (url.endsWith("/tools")) return response({ tools: [
+        { name: "semantic_query", source: "builtin", description: "Business metrics" },
+        { name: "web_search", source: "builtin", description: "Public web" },
+      ] });
+      if (url.endsWith("/custom-tools")) return response({ tools: [] });
+      if (url.endsWith("/semantic-views")) return response([]);
+      return response({});
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <AgentConfigurationTab agent={{ ...AGENT, default_tools: from }} onSaved={() => {}} />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("tab", { name: "Tools" }).click();
+    const toggle = screen.getByRole("switch", { name: "Web search" });
+    if (configured) await expect.element(toggle).toBeChecked();
+    else await expect.element(toggle).not.toBeChecked();
+    // The switch is the only control for web search; it is not repeated as a checkbox.
+    await expect.element(screen.getByRole("checkbox", { name: /web_search/ })).not.toBeInTheDocument();
+    await toggle.click();
+    if (!configured) {
+      await expect.element(screen.getByText(/No Tavily API key is set/)).toBeVisible();
+      await expect.element(screen.getByRole("link", { name: "Add the key in AI providers" }))
+        .toHaveAttribute("href", "/ai-providers");
+    } else {
+      await expect.element(screen.getByText(/No Tavily API key is set/)).not.toBeInTheDocument();
+    }
+    await screen.getByRole("button", { name: "Save draft" }).click();
+    await vi.waitFor(() => expect(updates[0]?.default_tools).toEqual(to));
+  });
+
   it("resets an unsaved custom tool edit when the dialog is reopened", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
