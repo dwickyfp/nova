@@ -47,6 +47,7 @@ KNOWN_TOOLS = frozenset(
         "execute_business_action",
         "analysis_workspace",
         "catalog_search",
+        "web_search",
     }
 )
 
@@ -82,6 +83,12 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         from app.modules.assistant.tools.catalog_search import catalog_search_tool
 
         registry.register(catalog_search_tool)
+    # The per-agent web search switch: only an agent whose owner turned it on
+    # offers ``web_search`` to the model.
+    if "web_search" in selected:
+        from app.modules.assistant.tools.web_search import web_search_tool
+
+        registry.register(web_search_tool)
 
     # The semantic/agent tools live in this module's own ``tools`` package.
     # Imported lazily so a deployment that has not built them yet (they land in

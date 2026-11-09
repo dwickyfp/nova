@@ -501,6 +501,7 @@ function parseCitation(record: Record<string, unknown>): AssistantEvent | null {
       title: typeof record.title === "string" ? record.title : undefined,
       source: typeof record.source === "string" ? record.source : undefined,
       snippet: typeof record.snippet === "string" ? record.snippet : undefined,
+      url: typeof record.url === "string" ? record.url : undefined,
     },
   };
 }

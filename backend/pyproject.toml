@@ -34,6 +34,7 @@ dependencies = [
     "babel>=2.16",
     "psycopg[binary]>=3.2,<4",
     "snowflake-connector-python>=4.0,<5",
+    "tavily-python>=0.7",
 ]
 
 [dependency-groups]
@@ -110,7 +111,7 @@ ignore_missing_imports = true
 # These pinned third-party packages do not ship type information. Keep this
 # exception at their import boundary; application modules remain checked.
 [[tool.mypy.overrides]]
-module = ["asyncmy", "asyncmy.*", "sklearn", "sklearn.*", "statsforecast", "statsforecast.*", "pyod", "pyod.*", "joblib", "joblib.*"]
+module = ["asyncmy", "asyncmy.*", "sklearn", "sklearn.*", "statsforecast", "statsforecast.*", "pyod", "pyod.*", "joblib", "joblib.*", "tavily", "tavily.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

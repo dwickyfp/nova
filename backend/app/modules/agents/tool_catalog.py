@@ -33,6 +33,7 @@ from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 from app.modules.assistant.analysis_workspace import analysis_workspace_tool
 from app.modules.assistant.tools.catalog_search import catalog_search_tool
+from app.modules.assistant.tools.web_search import web_search_tool
 from app.modules.intelligence.action_contracts import (
     BUSINESS_ACTION_TOOL_DESCRIPTION,
     BUSINESS_ACTION_TOOL_NAME,
@@ -70,6 +71,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "catalog_search": (catalog_search_tool.description, catalog_search_tool.parameters),
+    web_search_tool.name: (web_search_tool.description, web_search_tool.parameters),
     "query_execute": (
         "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
         "connection for explicit SQL, schema inspection, or data outside a semantic "
@@ -396,6 +398,7 @@ AGENT_BUNDLEABLE_TOOLS = (
     "compute_metrics",
     "schedule_automation",
     "ml_execute",
+    "web_search",
 )
 
 

@@ -56,6 +56,39 @@ availability and stays blocked until an isolated analytical executor exists.
 These deployment facts contain no credentials and do not replace current
 authorization, consent, or per-agent quality opt-in checks.
 
+## Web search
+
+An agent can search the public web through Tavily with the `web_search` tool
+([tool](../backend/app/modules/assistant/tools/web_search.py)). Each agent has
+its own **Web search** switch on the Configuration → Tools tab; it stores
+`web_search` in the agent's `default_tools`, so it is versioned and released
+like any other tool choice. An agent with the switch off is never offered the
+tool. There is no global switch.
+
+The Tavily API key is a system credential. An administrator sets it on the AI
+providers page (`PUT /api/v1/ai/web-search/api-key`, `DELETE` to remove). It is
+stored Fernet-encrypted in the `__system__` / `tavily_api_key` row of
+`NOVA_SYSTEM.CONFIG_USER_PREFERENCES`
+([settings](../backend/app/modules/ai_ml/web_search_settings.py)), and
+`GET /api/v1/ai/web-search` returns only `configured` and `key_hint`. The hint
+is one of Tavily's published key-type prefixes (`tvly-dev-`, `tvly-prod-`,
+`tvly-`) chosen from a fixed list at save time, never characters from the
+secret. The settings page shows it with a fixed-length mask and an Active
+badge, and has no copy button, since the real key is never available to copy.
+The key is never returned, logged, audited, or sent to the frontend or the
+model. Without
+a key the tool answers that web search is not configured, and the turn goes on.
+
+The tool is read-only and goes through the normal consent gate. It refuses a
+query that looks like it carries a secret, calls the official `tavily-python`
+async client with basic depth and no generated answer, and keeps at most eight
+http(s) results. Results reach the model inside `<EXTERNAL_CONTENT
+source="web">` with an untrusted-content notice, are marked
+`evidence_kind=external`, and never count as governed business evidence. Each
+result is a `source: "web"` citation with its title and URL, shown in chat as
+a linked web source. Every call writes a `WEB_SEARCH` audit entry with the
+caller, role, and status, but not the query or results.
+
 ## Release manifests and promotion
 
 Existing agent configuration history remains the draft/version owner. A release
