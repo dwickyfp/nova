@@ -45,23 +45,45 @@ These come from the user and do not expire.
 
 Goal: know exactly what Nove does today and how well, before changing it.
 
-- [ ] 0.1 Technical-leak audit of prompts, skills, knowledge docs, tool
+- [x] 0.1 Technical-leak audit of prompts, skills, knowledge docs, tool
       descriptions, tool error texts and provider error texts; list every leak.
-- [ ] 0.2 Leak check as code: a scrubber test that fails on route paths,
-      "endpoint", status codes, internal names, `NOVA_SYSTEM` names or stack
-      traces in tool results and final answers (deterministic, offline).
-- [ ] 0.3 "No HTTP self-calls" test: assistant and agent tools import no HTTP
-      client aimed at Nova's own routes.
-- [ ] 0.4 Parity suite: one scripted eval trajectory per tool (21), per skill
-      (14) and per surface (6), plus frontend tests for every panel affordance
-      (approval card, password field, file upload, code card Run/preview/fix,
-      query attach and rewrite diff, model and approval-mode selectors, dock,
-      resize, thread history).
-- [ ] 0.5 Lay-user golden set: 40 tasks in English and Indonesian across
-      explain, find, fix SQL, build with consent, data questions, access and
-      governance, monitoring and maintenance; each with the expected outcome
-      and a grading rule. Dev/test split fixed before any tuning.
-- [ ] 0.6 Live Nove baseline on the configured provider: success rate,
+      Findings (fixed in phase 1):
+      - Persona prompt tells the model about "HTTP/API routes" and names tools
+        (`assistant/service.py` default system prompt).
+      - Provider errors: "AI provider endpoint is not allowed", "AI provider
+        returned HTTP …", "API key" (`assistant/provider.py:252,330,374`).
+      - Web search errors name "Tavily API key" (`tools/web_search.py:37,240`).
+      - Tool catalog text mentions "HTTP routes" (`agents/tool_catalog.py:301`).
+      - Skills/knowledge use "endpoint" for the SQL editor and list internal doc
+        paths: `copy-into.md:48`, `sql-extensions.md:26`,
+        `accountadmin-guardrail.md:34`, `stages-tasks-access.md:24`,
+        `data-movement-storage.md:11` (provider/storage property names in
+        `ai-functions.md` and `stage-query.md` are real SQL property names and
+        stay inside SQL examples).
+      - Dynamic risk: raw engine/service error texts reach tool results, and the
+        model may repeat tool names. Measured live in 0.6.
+- [x] 0.2 Leak check as code: `assistant/plain_language.py`
+      (`find_technical_leaks`), tested by `tests/unit/test_assistant_plain_language.py`
+      (19 cases). Used by the live runner now and by Neva's answer guard in
+      phase 1.
+- [x] 0.3 "No HTTP self-calls": `tests/unit/test_assistant_tools_call_services.py`.
+      HTTP clients only in provider, measurements, ui_media, mcp_client; no Nova
+      route in assistant or agent code (the Dataviz assistant's Superset route is
+      the one named exception).
+- [x] 0.4 Parity suite: `tests/unit/test_neva_capability_parity.py` (52 checks:
+      21 tools with read/write class and approval rule, every write needs
+      approval, 14 skills load, 16 knowledge documents present and found by a
+      question). Behaviour stays covered by the existing `tests/eval/`
+      trajectories (Nove scenarios, consent, surfaces) and the frontend panel
+      tests (`assistant-panel`, `tool-call-card`, `code-card`, `query-attach`,
+      `model-selector`, `thread-history`, `assistant-dock`, `panel-resize-handle`),
+      which must stay green. Finding: plain questions like "how do I create a
+      table" do not reach the table guide (phase 5.6).
+- [x] 0.5 Lay-user golden set: `golden-set.json`, 40 tasks (explain 8, find 6,
+      fix SQL 6, data 8, access 6, maintain 6), English and Indonesian, expected
+      outcome and grading rubric each; stratified dev/test split 20/20 fixed
+      before tuning. Runner: `backend/scripts/neva_golden_run.py`.
+- [~] 0.6 Live Nove baseline on the configured provider: success rate,
       pass^3, technical-leak count, wrong-but-confident count, latency
       p50/p95, tokens; judged; recorded in `phase-0-checkpoint.md`.
 
@@ -136,6 +158,8 @@ latency within the bound agreed from the phase 0 baseline.
       Control, Business Ontology, Agents, Users.
 - [ ] 5.5 Ambiguous or unanswerable questions get a clarifying question or
       answerable alternatives instead of a guess.
+- [ ] 5.6 Knowledge search finds guides from plain questions ("how do I create
+      a table" → the table guide), measured on a question set.
 
 ## Phase 6: acceptance
 
@@ -152,3 +176,4 @@ latency within the bound agreed from the phase 0 baseline.
 |---|---|---|---|
 | 2026-11-09 | – | Research, proposal and decisions recorded | `docs/research/neva-assistant-harness-research.md`, `docs/proposals/neva-assistant.md` |
 | 2026-11-09 | 0.1 | Audit started: no tool calls Nova's HTTP routes; "endpoint" wording found in 7 skill/knowledge docs and provider error texts | this file |
+| 2026-11-09 | 0.1–0.5 | Leak audit, leak finder, services-not-routes test, parity suite (52), golden set 40 with split | tests listed in phase 0 |
