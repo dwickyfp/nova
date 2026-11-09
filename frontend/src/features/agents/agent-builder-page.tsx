@@ -22,6 +22,8 @@ import { AgentAutomationsTab } from "./agent-detail/automations-tab";
 
 /** A tab's own scroll region below the fixed tab row. */
 const SCROLL = "mt-6 min-h-0 flex-1 overflow-y-auto pb-6";
+/** A tab that fits the frame itself, like a paged table that scrolls its rows. */
+const FIT = "mt-6 flex min-h-0 flex-1 flex-col pb-6";
 
 /**
  * Agent detail: Overview, Configuration, Access, Observability, Improve, and
@@ -173,10 +175,10 @@ export function AgentBuilderPage() {
             <AgentAccessTab agentId={agentId} agentName={agent.name}
               hasSemanticViews={(agent.semantic_view_ids ?? []).length > 0} />
           </TabsContent>
-          <TabsContent value="observability" className={SCROLL}>
+          <TabsContent value="observability" className={FIT}>
             <AgentObservabilityTab agentId={agentId} />
           </TabsContent>
-          <TabsContent value="improve" className={SCROLL}>
+          <TabsContent value="improve" className={FIT}>
             <AgentImproveTab agentId={agentId} />
           </TabsContent>
           <TabsContent value="automations" className={SCROLL}>

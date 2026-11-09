@@ -149,8 +149,10 @@ export function AgentObservabilityTab({ agentId }: { agentId: string }) {
     : `${total} conversation${total === 1 ? '' : 's'}`
 
   return (
-    <div className='flex flex-1 flex-col gap-4'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
+    // Fits the tab: the heading and pager stay put and only the table's rows
+    // scroll when they do not fit.
+    <div className='flex min-h-0 flex-1 flex-col gap-4'>
+      <div className='flex shrink-0 flex-wrap items-center justify-between gap-3'>
         <div>
           <h2 className='text-lg font-medium'>Conversations</h2>
           <p className='mt-0.5 text-sm text-muted-foreground'>{pageLabel}</p>
@@ -195,7 +197,7 @@ export function AgentObservabilityTab({ agentId }: { agentId: string }) {
         </div>
       ) : (
         <>
-          <div className='overflow-hidden rounded-md border'>
+          <div className='min-h-0 shrink overflow-hidden rounded-md border [&_[data-slot=table-container]]:h-full'>
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -205,7 +207,7 @@ export function AgentObservabilityTab({ agentId }: { agentId: string }) {
                         key={header.id}
                         colSpan={header.colSpan}
                         className={cn(
-                          'bg-background group-hover/row:bg-muted',
+                          'sticky top-0 z-10 bg-background group-hover/row:bg-muted',
                           header.column.columnDef.meta?.className
                         )}
                       >
@@ -243,7 +245,7 @@ export function AgentObservabilityTab({ agentId }: { agentId: string }) {
               </TableBody>
             </Table>
           </div>
-          <DataTablePagination table={table} className='mt-auto' />
+          <DataTablePagination table={table} className='mt-auto shrink-0' />
         </>
       )}
     </div>

@@ -55,10 +55,11 @@ function ImproveWorkspace({
       ),
   });
   return (
-    <Tabs defaultValue="quality" className="min-w-0 max-w-4xl gap-6">
+    // The sub-tab row stays put; the open sub-tab's content scrolls below it.
+    <Tabs defaultValue="quality" className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
       <TabsList
         aria-label="Improve agent"
-        className="max-w-full"
+        className="max-w-full shrink-0 self-start"
         indicatorVariant="underline"
       >
         <TabsTrigger value="quality" className="min-h-11">
@@ -74,14 +75,15 @@ function ImproveWorkspace({
           Suggestions
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="quality" className="min-w-0 space-y-8">
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+      <TabsContent value="quality" className="min-w-0 max-w-4xl space-y-8">
         <AgentQualityTab agentId={agentId} onInspectTrace={onInspectTrace} />
         <Readiness agentId={agentId} />
       </TabsContent>
-      <TabsContent value="harness" className="min-w-0">
+      <TabsContent value="harness" className="min-w-0 max-w-4xl">
         <AgentHarnessTab agentId={agentId} />
       </TabsContent>
-      <TabsContent value="knowledge" className="min-w-0 space-y-8">
+      <TabsContent value="knowledge" className="min-w-0 max-w-4xl space-y-8">
         <section className="space-y-3">
           <h2 className="text-base font-medium">Business knowledge</h2>
           <p className="text-sm text-muted-foreground">
@@ -111,10 +113,11 @@ function ImproveWorkspace({
         />
         <Candidates agentId={agentId} />
       </TabsContent>
-      <TabsContent value="suggestions" className="min-w-0 space-y-8">
+      <TabsContent value="suggestions" className="min-w-0 max-w-4xl space-y-8">
         <QualitySuggestions agentId={agentId} />
         <Suggestions agentId={agentId} />
       </TabsContent>
+      </div>
     </Tabs>
   );
 }
