@@ -580,6 +580,11 @@ class AssistantLoop:
                             "assigned_roles": (context.user or {}).get("assigned_roles")
                             or (context.user or {}).get("roles", []),
                             "workspace_file_id": context.workspace_file_id,
+                            # Neva names one of these in semantic_query; a
+                            # Studio agent reads its own scope instead.
+                            **({"semantic_views": _readable_view_summaries(context)}
+                               if context.agent_scope is None
+                               and context.authorized_semantic_models else {}),
                         },
                         ensure_ascii=False,
                     )
@@ -1218,6 +1223,9 @@ class AssistantLoop:
                 "Chart creation is not enabled for this conversation. Enable "
                 "data_to_chart in the selected agent's Tools configuration."
                 if "data_to_chart" in unavailable
+                # Neva's reader is not told which internal capability is missing.
+                else say("loop.capability_missing", _turn_language(context))
+                if context.agent_scope is None
                 else "This turn requires a capability that is not available: "
                 + ", ".join(unavailable)
             )
@@ -2528,13 +2536,25 @@ class AssistantLoop:
                             and invocation.tool_name not in required_capabilities)
                     )
                 )
-                if outcome.recoverable and not terminal and repairs.take("recoverable_tool"):
+                # For Neva a failed lookup (a misspelled name, a table that is
+                # not there) teaches the next step instead of ending the turn.
+                neva_read = (
+                    context.agent_scope is None
+                    and classification == "read_only"
+                    and _lookup_failure(invocation.tool_name, outcome)
+                )
+                if (
+                    (outcome.recoverable or neva_read)
+                    and not terminal
+                    and repairs.take("recoverable_tool")
+                ):
                     _transition(context, TurnState.REPAIRING)
                     messages.append(
                         _tool_message(
                             provider_capabilities.supports_tool_role_messages,
                             invocation,
-                            outcome.envelope(tool_name=invocation.tool_name),
+                            {**outcome.envelope(tool_name=invocation.tool_name),
+                             "recoverable": True},
                         )
                     )
                     continue
@@ -2552,6 +2572,13 @@ class AssistantLoop:
                     composing_final = True
                     messages.append(composer_message())
                     continue
+                if neva_read and not terminal:
+                    # Neva says so in its own words; the engine's message is
+                    # for the audit trail, not for the person.
+                    yield events.text_delta(say("loop.lookup_failed", _turn_language(context)))
+                    _transition(context, TurnState.FAILED)
+                    yield events.done(str(uuid4()), finish_reason="error")
+                    return
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
                 _transition(context, TurnState.FAILED)
                 yield events.done(str(uuid4()), finish_reason="error")
@@ -3493,6 +3520,33 @@ async def _localized(language: str, _context: LoopContext) -> None:
         return
     with contextlib.suppress(Exception):
         await asyncio.wait_for(asyncio.shield(task), timeout=5)
+
+
+#: Neva's lookups: a failure here is usually a name to correct, not a wall.
+_LOOKUP_TOOLS = frozenset({
+    "catalog_search", "query_execute", "inspect_role_access", "search_knowledge",
+    "validate_sql", "inspect_query_error",
+})
+_ACCESS_WORDS = re.compile(
+    r"denied|permission|privilege|not authori[sz]ed|forbidden|access", re.IGNORECASE
+)
+
+
+def _lookup_failure(tool_name: str, outcome: ToolOutcome) -> bool:
+    """A failed lookup Neva may correct once; access refusals never qualify."""
+    if tool_name not in _LOOKUP_TOOLS:
+        return False
+    if (outcome.error_class or "").upper() in {
+        "ACCESS_DENIED", "AUTHORIZATION", "POLICY_VIOLATION", "POSTCONDITION_UNVERIFIED",
+    }:
+        return False
+    return not _ACCESS_WORDS.search(f"{outcome.error or ''} {outcome.safe_detail or ''}")
+
+
+def _readable_view_summaries(context: LoopContext) -> list[dict[str, Any]]:
+    from app.modules.agents.tools.semantic_query import readable_view_summaries
+
+    return readable_view_summaries(context.authorized_semantic_models or [])
 
 
 def _console_fallback_plan(registry: ToolRegistry) -> TurnPlan:

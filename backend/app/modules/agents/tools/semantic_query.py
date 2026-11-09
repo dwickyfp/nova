@@ -108,8 +108,8 @@ _PARAMETERS = {
         "semantic_view": {
             "type": "string",
             "description": (
-                "The Semantic View to query, by its name in the agent scope. Omit it when "
-                "the agent has one view."
+                "The Semantic View to query, by its name in the agent scope or in the "
+                "workspace's semantic_views. Omit it only when one view is available."
             ),
         },
     },
@@ -256,7 +256,13 @@ class SemanticQueryTool:
                 safe_detail=grounding.detail,
                 repair_context={"business_concepts": grounding.repair},
             )
-        semantic_model = await self._resolve_model(context, question, grounding.view_id)
+        semantic_model = await self._resolve_model(
+            context, question, grounding.view_id, guess=_is_agent_turn(context)
+        )
+        if semantic_model is None and not _is_agent_turn(context):
+            choice = await _view_choice(context)
+            if choice is not None:
+                return choice
         if semantic_model is None:
             return ToolOutcome(
                 ok=False,
@@ -788,7 +794,12 @@ class SemanticQueryTool:
         return list(result.columns or []), [list(row) for row in result.rows or []], None
 
     async def _resolve_model(
-        self, context: Any, question: str, grounded_view: str | None = None
+        self,
+        context: Any,
+        question: str,
+        grounded_view: str | None = None,
+        *,
+        guess: bool = True,
     ) -> dict[str, Any] | None:
         from app.modules.agents.semantic.access import load_authorized_models
 
@@ -819,7 +830,51 @@ class SemanticQueryTool:
             )
             if chosen is not None:
                 return chosen
-        return models[0] if models else None
+        # A Studio agent's first view is its own business. Neva reads every view
+        # the role can open, so the first one is not an answer to anything.
+        return models[0] if models and guess else None
+
+
+def _is_agent_turn(context: Any) -> bool:
+    return bool(getattr(context, "agent_scope", None) or getattr(context, "agent_id", None))
+
+
+async def _view_choice(context: Any) -> ToolOutcome | None:
+    """Several views and none named: ask the model to name one, never guess."""
+    from app.modules.agents.semantic.access import load_authorized_models
+
+    models = await load_authorized_models(context)
+    if len(models) < 2:
+        return None
+    return ToolOutcome(
+        ok=False,
+        summary="",
+        error="Several Semantic Views are readable and none was named.",
+        error_class="VIEW_CHOICE_REQUIRED",
+        recoverable=True,
+        safe_detail=(
+            "Call semantic_query again with semantic_view set to the view whose "
+            "metrics answer the question. If no view fits, tell the person which "
+            "business areas are available and ask which one they mean."
+        ),
+        repair_context={"semantic_views": readable_view_summaries(models)},
+    )
+
+
+def readable_view_summaries(models: list[dict[str, Any]], limit: int = 16) -> list[dict[str, Any]]:
+    """Name, purpose and main metrics of each readable view, for choosing one."""
+    from app.modules.agents.tools.describe_agent import semantic_catalog
+
+    try:
+        catalog = semantic_catalog(models)
+    except (KeyError, AttributeError):
+        return []
+    return [{
+        "name": view["name"],
+        "about": view["description"][:240],
+        "metrics": [metric["name"] for metric in view["metrics"][:10]],
+        "dimensions": [field["name"] for field in view["dimensions"][:8]],
+    } for view in catalog[:limit]]
 
 
 def _view_naming_metric(models: list[dict[str, Any]], question: str) -> str | None:

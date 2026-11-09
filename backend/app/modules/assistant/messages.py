@@ -54,6 +54,14 @@ MESSAGES: dict[str, str] = {
         "Try asking again with a little more detail, such as the table, report or "
         "period you mean."
     ),
+    "loop.capability_missing": (
+        "I can't do this part from Neva yet, so I won't guess. I can explain where "
+        "to find it in Nova, or help with a related question."
+    ),
+    "loop.lookup_failed": (
+        "I couldn't look this up in Nova just now, so I won't guess. Try again, or "
+        "tell me a little more, such as the name of the table, person or role."
+    ),
     "loop.no_data_window": (
         "There is no data for that period. The governed data covers {first} to {last}."
     ),
@@ -118,6 +126,14 @@ BUILTIN: dict[str, dict[str, str]] = {
             "Saya belum bisa menyelesaikan pengecekan yang dibutuhkan pertanyaan ini, "
             "jadi saya tidak akan menebak jawabannya. Coba tanyakan lagi dengan sedikit "
             "detail, misalnya tabel, laporan, atau periode yang dimaksud."
+        ),
+        "loop.capability_missing": (
+            "Bagian ini belum bisa saya kerjakan dari Neva, jadi saya tidak akan menebak. "
+            "Saya bisa jelaskan tempatnya di Nova, atau bantu pertanyaan terkait."
+        ),
+        "loop.lookup_failed": (
+            "Saya belum bisa mencarinya di Nova saat ini, jadi saya tidak akan menebak. "
+            "Coba lagi, atau beri sedikit detail, misalnya nama tabel, orang, atau role."
         ),
         "loop.no_data_window": (
             "Tidak ada data untuk periode itu. Data terkelola mencakup {first} sampai {last}."

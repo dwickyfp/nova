@@ -145,6 +145,17 @@ Acceptance: parity suite and leak check green; stored data untouched
       role, old results hidden, account menu updated). Trajectory:
       `tests/eval/test_assistant_role_switch.py`. Design: `arch-09`, Active role.
 
+- [x] 2.10 Measured (`phase-2-checkpoint.md`): solved 0.21 → 0.42, understandable
+      0.41 → 0.93, correct 0.50 → 0.70, empty answers 37% → 6%, leaks 3 → 0.
+      Blocked on: wrong-and-confident 3 → 19 (wrong governed view).
+- [~] 2.11 Fixes from the measurement: Neva names a governed view from the
+      readable list and never falls back to the first one (asks the model to
+      choose, `VIEW_CHOICE_REQUIRED`); a failed lookup that is not an access
+      refusal gets one correction, then a plain "couldn't look this up" message
+      instead of the engine's text; a missing capability is stated in plain
+      words. Trajectories: `tests/eval/test_neva_lookups_and_views.py`.
+      Re-measure: `runs/phase-2b-neva.jsonl`.
+
 Acceptance: parity, leak and Studio/Dataviz evals green; simple-question
 latency within the bound agreed from the phase 0 baseline.
 
@@ -207,3 +218,5 @@ latency within the bound agreed from the phase 0 baseline.
 | 2026-11-09 | 1 | Neva rename and plain language (backend); passed access checks no longer reused across requests (a revocation made directly in Ranger denies at once) | unit 8,522 pass, eval scorecard 51/51, mypy 0, ruff clean; 4 `tests/eval` trajectories fail before and after (pre-existing) |
 | 2026-11-09 | 2.2–2.4 | Analyst budget, governed metrics, read-only fallback plan, plain "won't guess" message; four stale trajectories updated to current behaviour (`sql` key in last result, `load_skill` always registered, chart intent mocked) | see phase 2 entries |
 | 2026-11-09 | 2.9 | Neva follows the UI's active role and switches roles only with approval; views re-listed after a switch | `test_assistant_role_switch.py` |
+| 2026-11-09 | 2.10 | Live run judged: better on every category; wrong governed view found | `phase-2-checkpoint.md` |
+| 2026-11-09 | 2.11 | View choice, lookup correction, plain failure messages | `test_neva_lookups_and_views.py` |
