@@ -170,15 +170,18 @@ eval scorecard and affected `tests/eval/` trajectories, ruff and mypy; frontend
 lint, build, coverage; seeded integration and Ranger acceptance where auth,
 ontology access or SQL execution change.
 
-## 8. Decisions for the user
+## 8. Decisions (2026-11-09)
 
-1. **Budget**: let Neva use the analyst profile (16 steps, iterative) for
-   complex questions, accepting slower and costlier answers there, or keep 8
-   steps everywhere.
-2. **Memory**: should Neva remember facts and preferences across sessions,
-   scoped to user and role?
-3. **Ontology writes**: may Neva file ontology proposals (consent every time),
-   or stay read-only?
-4. **Ontology fixes**: fix the three access gaps in this work, or separately.
-5. **Golden set**: confirm the 40-task set mixes English and Indonesian as real
-   users ask.
+Taken by the user after reading this proposal:
+
+1. **Budget**: scale automatically. The planner picks the fast profile for simple
+   questions and the analyst profile (16 steps, iterative re-planning) for
+   complex ones; the limits are measured in phase 2 before they are fixed.
+2. **Memory**: yes, across sessions, scoped to user and role through Studio's
+   memory module; never read after the role or security-context version changes.
+3. **Ontology writes**: Neva may file proposals (`knowledge_propose`,
+   `ontology_withdraw_proposal`) with consent every time; review, apply and
+   publish stay with stewards and admins.
+4. **Ontology fixes**: the three access gaps are fixed in this work, in phase 4,
+   with Ranger acceptance, before Neva gets ontology tools.
+5. **Golden set**: still to confirm in phase 0 (mix of English and Indonesian).
