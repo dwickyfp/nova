@@ -26,7 +26,7 @@
 #
 # Auth Model:
 #   root       → empty password, Docker internal only (NOT exposed externally)
-#   nova_admin → default 'nova', forces password change on first login
+#   nova_admin → default '!1password' (docker/init-nova.sql); change it after first login
 #   All login users ARE StarRocks users (no separate user table)
 #
 # NOVA_SYSTEM tables are grouped by prefixes because StarRocks namespaces

@@ -25,7 +25,7 @@ Step 1: Docker starts
                  → GRANT ALL ON *.* TO USER 'nova_admin'
 
 Step 2: User opens Nova (http://localhost:3000)
-  Login: nova_admin / nova (default password)
+  Login: nova_admin / !1password (default password, docker/init-nova.sql)
 
 Step 3: API detects first login
   Check: NOVA_SYSTEM.CONFIG_USER_PREFERENCES
