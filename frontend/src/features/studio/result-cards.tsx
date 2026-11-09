@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Globe } from "lucide-react";
 import type { ChartBlock, CitationBlock } from "@/features/assistant/types";
 import { VizView } from "@/features/viz/viz-view";
 import { AddToDatavizButton } from "./dataviz/add-to-dataviz";
@@ -48,7 +49,18 @@ export const ResultChart = memo(function ResultChart({
   );
 });
 
-/** The sources a semantic search cited, so an answer can be checked. */
+/** An http(s) link a web citation may open; anything else renders as text. */
+function webCitationHref(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The sources an answer cited, so it can be checked. Web pages open in a new tab. */
 export const CitationList = memo(function CitationList({
   citations,
 }: {
@@ -62,8 +74,25 @@ export const CitationList = memo(function CitationList({
           key={`${citation.source ?? citation.title ?? "source"}-${i}`}
           className="max-w-xs rounded-lg border bg-muted/30 px-3 py-2"
         >
+          {citation.source === "web" ? (
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Globe aria-hidden className="size-3" />
+              Web source
+            </p>
+          ) : null}
           <p className="truncate text-xs font-medium">
-            {citation.title ?? citation.source}
+            {webCitationHref(citation.url) ? (
+              <a
+                href={webCitationHref(citation.url)!}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="underline-offset-2 hover:underline"
+              >
+                {citation.title ?? citation.url}
+              </a>
+            ) : (
+              citation.title ?? citation.source
+            )}
           </p>
           {citation.snippet ? (
             <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">

@@ -105,7 +105,8 @@ MAX_CALLS_PER_TOOL = 2
 MAX_PARALLEL_TOOLS = 3
 PARALLEL_SAFE_TOOLS = frozenset(
     {"semantic_query", "semantic_view_query", "query_execute", "ai_search",
-     "semantic_search", "feature_lookup", "search_knowledge", "catalog_search"}
+     "semantic_search", "feature_lookup", "search_knowledge", "catalog_search",
+     "web_search"}
 )
 SQL_WRITE_MAX_CALLS = 4
 CONSENT_TIMEOUT_SECONDS = 300.0

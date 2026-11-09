@@ -184,6 +184,7 @@ KNOWN_TOOLS = {
     "execute_business_action",
     "analysis_workspace",
     "catalog_search",
+    "web_search",
 }
 
 

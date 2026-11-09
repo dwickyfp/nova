@@ -9,6 +9,9 @@ Endpoints under /api/v1/ai:
   POST   /providers/{id}/models     → create model
   DELETE /models/{id}               → delete model
   PUT    /providers/{id}/api-key    → update provider API key (admin)
+  GET    /web-search                → whether the Tavily web-search key is set
+  PUT    /web-search/api-key        → store the Tavily API key, write-only (admin)
+  DELETE /web-search/api-key        → remove the Tavily API key (admin)
 
 Provider records are **system configuration**: the stored ``endpoint`` is later
 called server-side by ``test_connection`` and by the assistant. The write routes
@@ -42,6 +45,14 @@ from app.modules.ai_ml.schemas import (
     TestConnectionResponse,
 )
 from app.modules.ai_ml.service import ai_service
+from app.modules.ai_ml.web_search_settings import (
+    TavilyKeyRequest,
+    WebSearchStatus,
+    clean_tavily_key,
+    clear_tavily_api_key,
+    save_tavily_api_key,
+    web_search_status,
+)
 from app.modules.users.router import ADMIN_ROLES
 
 router = APIRouter()
@@ -93,6 +104,46 @@ async def update_default_model(body: DefaultModelSettings, user: dict = require_
     await write_audit_log(
         event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
         object_type="DEFAULT_MODEL", object_name=body.model_id or "automatic", status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return result
+
+
+@router.get("/web-search", response_model=WebSearchStatus)
+async def get_web_search(user: dict = require_user):
+    """Whether Studio web search has a Tavily key. The key itself is never returned."""
+    return await web_search_status()
+
+
+@router.put("/web-search/api-key", response_model=WebSearchStatus)
+async def update_web_search_key(body: TavilyKeyRequest, user: dict = require_admin):
+    """Store the Tavily API key encrypted. Write-only: the response carries status only."""
+    from app.common.crypto import EncryptionError
+
+    api_key = clean_tavily_key(body.api_key)
+    if api_key is None:
+        raise HTTPException(status_code=400, detail="Enter a valid Tavily API key.")
+    try:
+        result = await save_tavily_api_key(api_key)
+    except EncryptionError:
+        raise HTTPException(
+            status_code=500, detail="The key could not be stored securely."
+        ) from None
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+        object_type="WEB_SEARCH_KEY", object_name="tavily", status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return result
+
+
+@router.delete("/web-search/api-key", response_model=WebSearchStatus)
+async def delete_web_search_key(user: dict = require_admin):
+    """Remove the Tavily API key; agents then report that web search is not configured."""
+    result = await clear_tavily_api_key()
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="DELETE",
+        object_type="WEB_SEARCH_KEY", object_name="tavily", status="SUCCESS",
         session_id=user.get("session_id"), active_role=user.get("active_role"),
     )
     return result

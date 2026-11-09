@@ -79,6 +79,8 @@ export type CitationBlock = {
   title?: string;
   source?: string;
   snippet?: string;
+  /** A public web page; set only for web search sources (``source: "web"``). */
+  url?: string;
 };
 
 export type ContentPosition = {
