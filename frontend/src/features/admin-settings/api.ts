@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 
 /**
@@ -134,3 +135,24 @@ export function parsePolicyBoolean(value: string): boolean {
   const normalized = value.trim().toLowerCase()
   return normalized === 'true' || normalized === 'on' || normalized === '1'
 }
+
+/** Every variable of a scope, read once: a few hundred short rows. */
+const ALL_VARIABLES = 1000
+
+export function variablesQueryOptions(scope: VariableScope) {
+  return queryOptions<VariableListResponse>({
+    queryKey: ['variables', scope],
+    queryFn: () => fetchVariables({ scope, limit: ALL_VARIABLES, offset: 0 }),
+    // Engine variables change only when someone sets one; a save refreshes.
+    staleTime: 5 * 60_000,
+  })
+}
+
+export const SETTINGS_TABS = ['session', 'global', 'password-policy'] as const
+export type SettingsTab = (typeof SETTINGS_TABS)[number]
+
+export const passwordPolicyQueryOptions = queryOptions({
+  queryKey: ['password-policy'],
+  queryFn: fetchPasswordPolicy,
+  staleTime: 5 * 60_000,
+})

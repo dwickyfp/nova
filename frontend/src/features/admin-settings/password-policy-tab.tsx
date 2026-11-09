@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import {
   PASSWORD_POLICY_VARIABLES,
-  fetchPasswordPolicy,
+  passwordPolicyQueryOptions,
   parsePolicyBoolean,
   parsePolicyNumber,
   updatePasswordPolicy,
@@ -99,10 +99,7 @@ export function PasswordPolicyTab() {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [validatePassword, setValidatePassword] = useState(false)
 
-  const policyQuery = useQuery({
-    queryKey: ['password-policy'],
-    queryFn: fetchPasswordPolicy,
-  })
+  const policyQuery = useQuery(passwordPolicyQueryOptions)
 
   useEffect(() => {
     if (policyQuery.error) {
@@ -149,6 +146,21 @@ export function PasswordPolicyTab() {
             Retry
           </Button>
         }
+      />
+    )
+  }
+
+  // The engine reports none of the policy settings: it does not offer them,
+  // so a form here could never be saved.
+  if (
+    policyQuery.data &&
+    PASSWORD_POLICY_VARIABLES.every((name) => (policyQuery.data[name] ?? '').trim() === '')
+  ) {
+    return (
+      <EmptyState
+        icon={KeyRound}
+        title='Password policy is not available on this engine'
+        description='The connected engine does not offer password expiry, lockout or complexity settings. Nova sign-ins use the engine’s own rules.'
       />
     )
   }

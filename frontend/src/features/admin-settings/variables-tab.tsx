@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { AlertCircle, Pencil, RotateCcw, SearchX, Sliders } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,10 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  LoadingLines,
-  RefreshBanner,
-} from '@/components/ui/loading-overlay'
+import { LoadingLines } from '@/components/ui/loading-overlay'
 import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
@@ -25,42 +22,22 @@ import {
 } from '@/components/data-table/simple-table-controls'
 import { cn } from '@/lib/utils'
 import {
-  fetchVariables,
   isVariableChanged,
   setVariable,
+  variablesQueryOptions,
   type VariableItem,
   type VariableScope,
 } from './api'
 
-export function VariablesTab() {
+export function VariablesTab({ scope }: { scope: VariableScope }) {
   const queryClient = useQueryClient()
-  const [scope, setScope] = useState<VariableScope>('session')
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [editing, setEditing] = useState<VariableItem | null>(null)
   const [draftValue, setDraftValue] = useState('')
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearch(search.trim())
-      setPage(1)
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [search])
-
-  const variablesQuery = useQuery({
-    queryKey: ['variables', scope, debouncedSearch, page, pageSize],
-    queryFn: () =>
-      fetchVariables({
-        scope,
-        search: debouncedSearch,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      }),
-    placeholderData: keepPreviousData,
-  })
+  const variablesQuery = useQuery(variablesQueryOptions(scope))
 
   useEffect(() => {
     if (variablesQuery.error) {
@@ -69,6 +46,18 @@ export function VariablesTab() {
       })
     }
   }, [variablesQuery.error])
+
+  // Search and pages work on the loaded list, so they answer at once.
+  const term = search.trim().toLowerCase()
+  const matching = useMemo(
+    () =>
+      (variablesQuery.data?.variables ?? []).filter((variable) =>
+        variable.name.toLowerCase().includes(term)
+      ),
+    [variablesQuery.data, term]
+  )
+  const total = matching.length
+  const items = matching.slice((page - 1) * pageSize, page * pageSize)
 
   const updateMutation = useMutation({
     mutationFn: (variable: VariableItem) => {
@@ -82,51 +71,24 @@ export function VariablesTab() {
     onSuccess: (updated) => {
       toast.success(updated.message)
       setEditing(null)
-      queryClient.invalidateQueries({ queryKey: ['variables'] })
+      void queryClient.invalidateQueries({ queryKey: ['variables', scope] })
     },
     onError: (err: Error) =>
       toast.error('Could not set variable', { description: err.message }),
   })
 
-  const items = variablesQuery.data?.variables ?? []
-  const total = variablesQuery.data?.total ?? 0
-  const changedCount = useMemo(
-    () => items.filter(isVariableChanged).length,
-    [items]
-  )
+  const changedCount = useMemo(() => matching.filter(isVariableChanged).length, [matching])
 
   return (
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center gap-2'>
-        <div
-          role='group'
-          aria-label='Variable scope'
-          className='inline-flex rounded-md border border-border p-0.5'
-        >
-          {(['session', 'global'] as const).map((option) => (
-            <button
-              key={option}
-              type='button'
-              aria-pressed={scope === option}
-              onClick={() => {
-                setScope(option)
-                setPage(1)
-              }}
-              className={cn(
-                'rounded px-3 py-1.5 text-sm capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                scope === option
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              )}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
         <Input
-          placeholder='Search variables...'
+          placeholder='Search variables'
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setSearch(event.target.value)
+            setPage(1)
+          }}
           className='h-9 w-full sm:max-w-xs'
           aria-label='Search variables'
         />
@@ -143,9 +105,6 @@ export function VariablesTab() {
       </div>
 
       <SimpleTableViewport>
-        {variablesQuery.isFetching && !variablesQuery.isLoading ? (
-          <RefreshBanner label='Loading variables...' />
-        ) : null}
         <table className='w-full'>
           <thead>
             <tr>
@@ -196,21 +155,24 @@ export function VariablesTab() {
                   <EmptyState
                     icon={SearchX}
                     title={
-                      debouncedSearch
+                      term
                         ? 'No variables match this search'
                         : `No ${scope} variables reported`
                     }
                     description={
-                      debouncedSearch
+                      term
                         ? 'Clear the search box to list every variable in this scope.'
                         : 'The engine returned an empty list for this scope.'
                     }
                     action={
-                      debouncedSearch ? (
+                      term ? (
                         <Button
                           variant='outline'
                           size='sm'
-                          onClick={() => setSearch('')}
+                          onClick={() => {
+                            setSearch('')
+                            setPage(1)
+                          }}
                         >
                           Clear search
                         </Button>
@@ -234,7 +196,7 @@ export function VariablesTab() {
                       <span
                         className={cn(
                           'font-mono text-xs',
-                          changed ? 'font-semibold text-warning-strong' : 'text-foreground'
+                          changed ? 'font-medium text-warning-strong' : 'text-foreground'
                         )}
                       >
                         {variable.value || '-'}

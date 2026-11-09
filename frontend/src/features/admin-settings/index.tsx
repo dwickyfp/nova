@@ -1,14 +1,36 @@
-import { useState } from 'react'
-import { KeyRound, SlidersHorizontal } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
+import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { VariablesTab } from './variables-tab'
+import { passwordPolicyQueryOptions, type SettingsTab, variablesQueryOptions } from './api'
 import { PasswordPolicyTab } from './password-policy-tab'
+import { VariablesTab } from './variables-tab'
 
-export function AdminSettingsPage() {
-  const [activeTab, setActiveTab] = useState('variables')
+const TABS: { value: SettingsTab; label: string }[] = [
+  { value: 'session', label: 'Session variables' },
+  { value: 'global', label: 'Global variables' },
+  { value: 'password-policy', label: 'Password policy' },
+]
+
+export function AdminSettingsPage({
+  tab = 'session',
+  onTabChange,
+}: {
+  tab?: SettingsTab
+  onTabChange?: (tab: SettingsTab) => void
+}) {
+  const queryClient = useQueryClient()
+
+  // Every tab's data is small; loading it all in the background makes
+  // switching tabs instant.
+  useEffect(() => {
+    void queryClient.prefetchQuery(variablesQueryOptions('session'))
+    void queryClient.prefetchQuery(variablesQueryOptions('global'))
+    void queryClient.prefetchQuery(passwordPolicyQueryOptions)
+  }, [queryClient])
 
   return (
     <>
@@ -17,34 +39,34 @@ export function AdminSettingsPage() {
       </Header>
 
       <Main scroll>
-        <div className='mb-2'>
-          <h1 className='text-2xl leading-8 font-normal'>
-            Admin Settings
-          </h1>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            Engine session and global variables, plus the password policy that
-            governs every Nova login.
-          </p>
+        <div className='min-w-0 space-y-5'>
+          <PageHeader
+            title='Admin Settings'
+            description='Engine variables for your session or the whole engine, and the password policy for Nova sign-ins.'
+          />
+          <Tabs
+            value={tab}
+            onValueChange={(value) => onTabChange?.(value as SettingsTab)}
+            className='gap-5'
+          >
+            <TabsList className='h-auto max-w-full shrink-0 justify-start self-start overflow-x-auto [scrollbar-width:none] [&>[role=tab]]:flex-none'>
+              {TABS.map((item) => (
+                <TabsTrigger key={item.value} value={item.value}>
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent value='session' className='mt-0 min-w-0'>
+              <VariablesTab scope='session' />
+            </TabsContent>
+            <TabsContent value='global' className='mt-0 min-w-0'>
+              <VariablesTab scope='global' />
+            </TabsContent>
+            <TabsContent value='password-policy' className='mt-0 min-w-0'>
+              <PasswordPolicyTab />
+            </TabsContent>
+          </Tabs>
         </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value='variables' className='gap-1.5'>
-              <SlidersHorizontal className='size-3.5' />
-              Variables
-            </TabsTrigger>
-            <TabsTrigger value='password-policy' className='gap-1.5'>
-              <KeyRound className='size-3.5' />
-              Password policy
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value='variables' className='mt-4'>
-            <VariablesTab />
-          </TabsContent>
-          <TabsContent value='password-policy' className='mt-4'>
-            <PasswordPolicyTab />
-          </TabsContent>
-        </Tabs>
       </Main>
     </>
   )
