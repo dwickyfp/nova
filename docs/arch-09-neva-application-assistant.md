@@ -28,6 +28,18 @@ Current selection, entity, and execution evidence take precedence when Neva reso
 
 The client's `domain.role` describes what the page displayed. The authenticated StarRocks session remains the authority for execution and authorization. A page cannot grant itself privileges by changing its context envelope.
 
+### Active role
+
+Nova is role-based: every Neva turn runs as the one active role of the user's web session, the role picked in the account menu. The request's `role` field is ignored. Neva's model context names that role and the user's assigned roles, and every query, governed metric and Semantic View lookup uses it.
+
+When a check is denied and another assigned role may allow it, Neva offers `USE ROLE <role>` (or `SET ROLE`) as its own statement. A role switch:
+
+- always asks for approval, separately from any "always allow read-only" grant, and that grant is cleared afterwards;
+- goes through the session's role activation, so only an assigned role can become active, and the account menu shows the new role at once (`role_changed` event);
+- hides results and history from the previous role, re-lists the Semantic Views the new role can open, and is audited, including refusals.
+
+Neva never runs a query under a role the user did not activate or approve, and never uses a service credential in its place.
+
 ### Surface registry
 
 `useNevaSurface` registers a page-owned context getter, safe capabilities, and starter actions. The registry reads the getter at turn time, so an editor selection or active tab does not depend on a stale render. Unmounting the page removes its registration and capabilities. New pages add their own registration; assistant core has no route-specific page switch.

@@ -46,7 +46,6 @@ from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.plain_language import plain_frames
 from app.modules.assistant.provider import assistant_provider
-from app.modules.assistant.registry import tool_registry
 from app.modules.assistant.repository import (
     AssistantThreadListUnavailable,
     assistant_repository,
@@ -73,8 +72,38 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-#: One loop instance is fine: it holds no per-request state.
-_loop = AssistantLoop(provider=assistant_provider, registry=tool_registry)
+def _neva_loop() -> AssistantLoop:
+    """The shared engine with Studio's analyst limits for Neva.
+
+    The limits are ceilings, not targets: a simple question still ends after
+    one or two steps. Iterative mode lets Neva look further after a first
+    result, and long conversations are summarized instead of cut.
+    """
+    from app.modules.agents.service import BUDGET_PROFILES
+    from app.modules.assistant.registry import build_neva_registry
+
+    limits = BUDGET_PROFILES["analyst"]
+    return AssistantLoop(
+        provider=assistant_provider,
+        registry=build_neva_registry(),
+        max_iterations=limits.max_iterations,
+        time_budget_seconds=float(limits.time_budget_seconds),
+        max_calls_per_tool=limits.max_calls_per_tool,
+        iterative=True,
+        summarize_history=True,
+        spend_limit=limits.spend_tokens,
+    )
+
+
+async def _readable_views(user: dict, question: str) -> list[str]:
+    """Semantic Views the caller's active role can open, most relevant first."""
+    from app.modules.agents.dataviz_assistant import scope_views
+
+    try:
+        return await scope_views(user, question=question)
+    except Exception:  # noqa: BLE001 - fewer views, never other views
+        logger.info("Neva could not list readable Semantic Views")
+        return []
 
 
 def _thread_view(row: dict) -> ThreadView:
@@ -404,6 +433,9 @@ async def send_message(
         thread_id=thread_id,
         user=user,
         app_context=app_context,
+        semantic_view_ids=await _readable_views(user, body.content),
+        # After an approved role switch the turn continues under the new role.
+        readable_views=lambda ctx: _readable_views(ctx.user or {}, body.content),
     )
 
     async def resolve_consent(
@@ -449,7 +481,7 @@ async def send_message(
         # the screen or the stored transcript.
         plain = plain_frames()
         try:
-            async for raw in _loop.run(
+            async for raw in _neva_loop().run(
                 thread=runtime,
                 user_content=body.content,
                 context=context,

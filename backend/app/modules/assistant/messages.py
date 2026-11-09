@@ -49,6 +49,11 @@ MESSAGES: dict[str, str] = {
         "This request was not run because this agent's rules do not allow it. {reason}"
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.incomplete": (
+        "I couldn't finish the check this question needs, so I won't guess an answer. "
+        "Try asking again with a little more detail, such as the table, report or "
+        "period you mean."
+    ),
     "loop.no_data_window": (
         "There is no data for that period. The governed data covers {first} to {last}."
     ),
@@ -109,6 +114,11 @@ BUILTIN: dict[str, dict[str, str]] = {
             "{reason}"
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.incomplete": (
+            "Saya belum bisa menyelesaikan pengecekan yang dibutuhkan pertanyaan ini, "
+            "jadi saya tidak akan menebak jawabannya. Coba tanyakan lagi dengan sedikit "
+            "detail, misalnya tabel, laporan, atau periode yang dimaksud."
+        ),
         "loop.no_data_window": (
             "Tidak ada data untuk periode itu. Data terkelola mencakup {first} sampai {last}."
         ),

@@ -73,7 +73,7 @@ from app.modules.assistant.intelligence import (
 )
 from app.modules.assistant.measurements import AttemptMeasurements, measurement_scope
 from app.modules.assistant.messages import say
-from app.modules.assistant.planning import TurnPlan, plan_turn
+from app.modules.assistant.planning import TurnPlan, TurnPlanningError, plan_turn
 from app.modules.assistant.provider import (
     AssistantProviderClient,
     normalize_tool_schema_for_provider,
@@ -219,6 +219,11 @@ class LoopContext:
     agent_id: str | None = None
     agent_owner_name: str | None = None
     semantic_view_ids: list[str] | None = None
+    #: Neva only: re-lists the Semantic Views the caller can open after a role
+    #: switch inside the turn, so the new role's views (and only those) are used.
+    readable_views: Callable[[LoopContext], Awaitable[list[str]]] | None = field(
+        default=None, repr=False
+    )
     #: Legacy bindings remain readable while stored agents are migrated.
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] | None = None
@@ -1027,11 +1032,16 @@ class AssistantLoop:
             turn_plan = await asyncio.wait_for(
                 plan_with(provider), timeout=max(0.01, deadline - _budget_time()),
             )
-        except Exception as exc:  # noqa: BLE001 - Studio has a governed fallback; Neva stops
+        except Exception as exc:  # noqa: BLE001 - each surface has a safe fallback plan
             logger.warning("Assistant turn planning failed: %s", type(exc).__name__)
             fallback = (
                 _studio_fallback_plan(self._registry, context, user_content)
-                if context.agent_scope is not None else None
+                if context.agent_scope is not None
+                # A plan the model could not shape is replaced; an AI service
+                # that cannot be reached would fail the fallback too.
+                else _console_fallback_plan(self._registry)
+                if isinstance(exc, TurnPlanningError)
+                else None
             )
             if fallback is None:
                 yield events.error(
@@ -1648,7 +1658,9 @@ class AssistantLoop:
                         )
                         continue
                     if (
-                        context.agent_scope is not None
+                        # Studio agents, and Neva turns with governed views the
+                        # caller can open, fall back to the governed query.
+                        (context.agent_scope is not None or context.authorized_semantic_models)
                         and "semantic_query" in missing_required
                         and self._registry.get("semantic_query") is not None
                         and not forced_semantic
@@ -1668,6 +1680,16 @@ class AssistantLoop:
                             },
                         })
                         continue
+                    if context.agent_scope is None:
+                        # Neva never leaves a person with an empty reply. The
+                        # words are Nova's own, not the model's, so nothing
+                        # unverified can be claimed in them.
+                        yield events.text_delta(say("loop.incomplete", _turn_language(context)))
+                        _transition(context, TurnState.FAILED)
+                        yield events.done(
+                            str(uuid4()), finish_reason="required_capability_incomplete"
+                        )
+                        return
                     yield events.error(
                         "required_capability_incomplete",
                         "The required capability was not executed, so Nova cannot "
@@ -2579,6 +2601,11 @@ class AssistantLoop:
                         "security_context_version": security.security_context_version,
                     },
                 )
+                if context.readable_views is not None and not context.release_manifest:
+                    context.semantic_view_ids = await asyncio.wait_for(
+                        context.readable_views(context),
+                        timeout=max(0, deadline - _budget_time()),
+                    )
                 if _has_semantic_binding(context):
                     from app.modules.agents.semantic.access import load_authorized_models
 
@@ -3466,6 +3493,25 @@ async def _localized(language: str, _context: LoopContext) -> None:
         return
     with contextlib.suppress(Exception):
         await asyncio.wait_for(asyncio.shield(task), timeout=5)
+
+
+def _console_fallback_plan(registry: ToolRegistry) -> TurnPlan:
+    """A safe plan when the model planner fails for Neva.
+
+    Read-only capabilities only, none required: Neva looks things up and
+    answers, or asks a question, instead of stopping with nothing.
+    """
+    names = registry.names()
+    return TurnPlan(
+        route=TurnRoute(TurnIntent.DIRECT_ANSWER),
+        selected_tools=tuple(
+            name for name in (
+                "search_knowledge", "load_skill", "catalog_search", "semantic_query",
+                "query_execute", "validate_sql", "inspect_query_error",
+            )
+            if name in names
+        ),
+    )
 
 
 def _studio_fallback_plan(

@@ -113,19 +113,37 @@ Acceptance: parity suite and leak check green; stored data untouched
 
 ## Phase 2: harness
 
-- [ ] 2.1 Extract the loop builder from the agents router; Studio and Dataviz
-      call it unchanged (their evals unchanged).
-- [ ] 2.2 `neva_system_config()`: never persisted; console tools and skills
-      (audience filter inverted); standing rules; guards from policy.
-- [ ] 2.3 Budget scaling: fast for simple intents, analyst (16 steps, iterative
-      re-planning, summarization) for complex ones; limits measured, then fixed.
-- [ ] 2.4 Re-plan instead of failing the turn on a bad plan.
+- [!] 2.1 Extract the loop builder from the agents router. Not needed for
+      what Neva uses today: the console router builds the shared
+      `AssistantLoop` with Studio's budget profile and options directly
+      (`assistant/router.py` `_neva_loop`). Revisit only if a third caller
+      appears.
+- [~] 2.2 Neva's own tool set: `build_neva_registry()` adds the governed
+      `semantic_query` tool to the console tools; readable semantic views are
+      resolved per turn as the caller (`_readable_views`), so metric questions
+      are answered from governed definitions. Standing rules and guards from
+      policy: not yet.
+- [~] 2.3 Budget: Neva runs on the analyst profile (16 steps, 180 s,
+      iterative re-planning, history summarization, spend limit). Automatic
+      fast/analyst choice per question: not yet; measured in 6.1 first.
+- [x] 2.4 A bad plan no longer ends the turn: a planning error falls back to
+      a read-only plan (look up guides, catalog, governed metrics, read-only
+      SQL) with nothing required. When a required check still did not run,
+      the governed metric tool is tried, and otherwise Neva says in plain words
+      that it will not guess (`loop.incomplete`, English and Indonesian) instead
+      of an empty answer. Trajectories: `tests/eval/test_studio_planner_fallback.py`,
+      `test_turn_planning.py`, `test_semantic_hardening.py`, `scenarios.py`.
 - [ ] 2.5 File attachments reach the loop.
 - [ ] 2.6 "Always allow read-only" persisted per thread in Redis.
 - [ ] 2.7 Cross-session memory scoped to user, role and security-context
       version (decision 2026-11-09).
 - [ ] 2.8 Trajectories: re-planning, budget choice, memory isolation across
       roles, consent unchanged.
+- [x] 2.9 Role-based by default: Neva runs as the active role the user set in
+      Nova; when access is denied it offers an approved `USE ROLE` to another
+      assigned role, then continues under it (views re-listed for the new
+      role, old results hidden, account menu updated). Trajectory:
+      `tests/eval/test_assistant_role_switch.py`. Design: `arch-09`, Active role.
 
 Acceptance: parity, leak and Studio/Dataviz evals green; simple-question
 latency within the bound agreed from the phase 0 baseline.
@@ -187,3 +205,5 @@ latency within the bound agreed from the phase 0 baseline.
 | 2026-11-09 | 0.1–0.5 | Leak audit, leak finder, services-not-routes test, parity suite (52), golden set 40 with split | tests listed in phase 0 |
 | 2026-11-09 | 0.6 | Nove baseline measured and judged | `phase-0-checkpoint.md` |
 | 2026-11-09 | 1 | Neva rename and plain language (backend); passed access checks no longer reused across requests (a revocation made directly in Ranger denies at once) | unit 8,522 pass, eval scorecard 51/51, mypy 0, ruff clean; 4 `tests/eval` trajectories fail before and after (pre-existing) |
+| 2026-11-09 | 2.2–2.4 | Analyst budget, governed metrics, read-only fallback plan, plain "won't guess" message; four stale trajectories updated to current behaviour (`sql` key in last result, `load_skill` always registered, chart intent mocked) | see phase 2 entries |
+| 2026-11-09 | 2.9 | Neva follows the UI's active role and switches roles only with approval; views re-listed after a switch | `test_assistant_role_switch.py` |

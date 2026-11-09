@@ -151,7 +151,8 @@ async def test_neva_stream_uses_configured_timezone(monkeypatch, observed_loops,
     }))
     monkeypatch.setattr(neva.assistant_repository, "list_messages", AsyncMock(return_value=[]))
     monkeypatch.setattr(neva.assistant_repository, "append_message", AsyncMock())
-    monkeypatch.setattr(neva, "_loop", assistant_service.AssistantLoop())
+    monkeypatch.setattr(neva, "_neva_loop", lambda: assistant_service.AssistantLoop())
+    monkeypatch.setattr(neva, "_readable_views", AsyncMock(return_value=[]))
     request = SimpleNamespace(is_disconnected=AsyncMock(return_value=False))
     try:
         response = await neva.send_message("neva-timezone", MessageRequest(content="Revenue today"),

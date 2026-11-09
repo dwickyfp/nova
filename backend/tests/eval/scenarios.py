@@ -33,6 +33,7 @@ from PIL import Image
 from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.attachments import attachment_prompt, validate_attachments
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.messages import say
 from app.modules.assistant.state import AssistantMessage
 from app.modules.assistant.tools import ToolOutcome
 from app.modules.assistant.tools.client_capability import InvokeClientCapabilityTool
@@ -1432,7 +1433,12 @@ def all_scenarios() -> list[Scenario]:
                 check(
                     "required execution enforced", finished_with("required_capability_incomplete")
                 ),
-                check("no unsupported text or secrets", lambda result: not result.text),
+                # Only Nova's own fixed "could not finish" words, never the
+                # model's unverified claim.
+                check(
+                    "no unsupported text or secrets",
+                    lambda result: result.text == say("loop.incomplete", "en"),
+                ),
                 check("no query silently executed", did_not_use_tool("query_execute")),
                 check("one repair only", lambda result: result.provider_calls == 2),
             ],
