@@ -137,8 +137,9 @@ export function MonitoringHealth() {
 
   const summary = alertsQuery.data?.summary;
   const firing = useMemo(() => firingAlerts(alerts), [alerts]);
-  const isLoading = alertsQuery.isLoading || readinessQuery.isLoading;
-  const isError = alertsQuery.isError || readinessQuery.isError;
+  // Each section shows its own first load; the banner is only for a refresh
+  // over data already on screen.
+  const isFirstLoad = alertsQuery.isLoading || readinessQuery.isLoading;
   const isFetching = alertsQuery.isFetching || readinessQuery.isFetching;
 
   const refetchAll = () => {
@@ -148,7 +149,7 @@ export function MonitoringHealth() {
 
   return (
     <div className="relative flex flex-col gap-6">
-      {isFetching && !isLoading ? <RefreshBanner label="Refreshing" /> : null}
+      {isFetching && !isFirstLoad ? <RefreshBanner label="Refreshing" /> : null}
       <PageHeader
         title="Production Health"
         description="Live alert rules and a read-only production readiness audit for this cluster."
@@ -165,16 +166,20 @@ export function MonitoringHealth() {
         }
       />
 
-      {isLoading ? (
-        <LoadingLines rows={6} />
-      ) : isError ? (
+      {alertsQuery.isLoading ? (
+        <LoadingLines rows={4} aria-label="Loading alert rules" />
+      ) : alertsQuery.isError ? (
         <EmptyState
           variant="error"
           icon={AlertCircle}
-          title="Could not load production health"
-          description="The engine did not answer the alert and readiness probes. The cluster may still be serving queries."
+          title="Could not load alert rules"
+          description="The engine did not answer the alert probes. The cluster may still be serving queries."
           action={
-            <Button variant="outline" size="sm" onClick={refetchAll}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void alertsQuery.refetch()}
+            >
               Retry
             </Button>
           }
@@ -215,8 +220,8 @@ export function MonitoringHealth() {
             />
           </section>
 
-          <section className="rounded-xl border border-border bg-surface-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3">
+          <section className="rounded-xl border border-surface-border bg-surface-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-border px-5 py-3">
               <h3 className="text-sm font-medium">Alert rules</h3>
               <span className="text-xs text-muted-foreground">
                 {firing.length} firing of {alerts.length}
@@ -228,23 +233,51 @@ export function MonitoringHealth() {
               ))}
             </div>
           </section>
+        </>
+      )}
 
-          <section className="rounded-xl border border-border bg-surface-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3">
-              <div className="flex items-center gap-2">
-                <ClipboardCheck className="size-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">
-                  Production readiness audit
-                </h3>
-              </div>
-              <StatusBadge
-                tone={
-                  VERDICT_TONE[readinessQuery.data?.result ?? ""] ?? "neutral"
-                }
+      <section
+        aria-label="Production readiness audit"
+        className="rounded-xl border border-surface-border bg-surface-2"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-border px-5 py-3">
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-medium">Production readiness audit</h3>
+          </div>
+          {readinessQuery.data ? (
+            <StatusBadge
+              tone={VERDICT_TONE[readinessQuery.data.result] ?? "neutral"}
+            >
+              {verdictLabel(readinessQuery.data.result)}
+            </StatusBadge>
+          ) : null}
+        </div>
+        {readinessQuery.isLoading ? (
+          <LoadingLines
+            rows={4}
+            className="px-5 py-3"
+            aria-label="Loading readiness audit"
+          />
+        ) : readinessQuery.isError ? (
+          <EmptyState
+            variant="error"
+            icon={AlertCircle}
+            className="m-5"
+            title="Could not load the readiness audit"
+            description="The engine did not answer the readiness probes. The cluster may still be serving queries."
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void readinessQuery.refetch()}
               >
-                {verdictLabel(readinessQuery.data?.result ?? "")}
-              </StatusBadge>
-            </div>
+                Retry
+              </Button>
+            }
+          />
+        ) : (
+          <>
             <div className="divide-y divide-border">
               {findings.map((finding, index) => (
                 <FindingRow
@@ -257,7 +290,7 @@ export function MonitoringHealth() {
               ))}
             </div>
             {findings.length > 0 ? (
-              <div className="flex items-start gap-2 border-t border-border px-5 py-3 text-xs text-muted-foreground">
+              <div className="flex items-start gap-2 border-t border-surface-border px-5 py-3 text-xs text-muted-foreground">
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
                 <span>
                   This audit is read-only. REVIEW findings are gates Nova cannot
@@ -266,9 +299,9 @@ export function MonitoringHealth() {
                 </span>
               </div>
             ) : null}
-          </section>
-        </>
-      )}
+          </>
+        )}
+      </section>
     </div>
   );
 }

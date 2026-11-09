@@ -12,7 +12,6 @@ import {
   House,
   KeyRound,
   Library,
-  ListTodo,
   Shield,
   Sparkles,
   SquareChartGantt,
@@ -20,7 +19,6 @@ import {
   TrendingUp,
   Upload,
   Users,
-  Zap,
   Activity,
   ArrowRightLeft,
   Workflow,
@@ -188,34 +186,14 @@ export const sidebarData: SidebarData = {
               icon: TrendingUp,
             },
             {
-              title: "Query History",
-              url: "/query-history",
+              title: "Queries",
+              url: "/monitoring/queries",
               icon: Clock,
-            },
-            {
-              title: "Active Queries",
-              url: "/active-query",
-              icon: Zap,
             },
             {
               title: "Audit Trail",
               url: "/monitoring/audit",
               icon: Shield,
-            },
-            {
-              title: "Tasks",
-              url: "/tasks",
-              icon: ListTodo,
-            },
-            {
-              title: "Query Autopilot",
-              url: "/monitoring/autopilot",
-              icon: Activity,
-            },
-            {
-              title: "Query Cost",
-              url: "/query-cost",
-              icon: TrendingUp,
             },
             {
               title: "Data Loads",

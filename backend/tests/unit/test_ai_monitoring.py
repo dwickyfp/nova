@@ -137,6 +137,12 @@ async def test_sql_history_normalizes_database_timezone_and_never_returns_sql(mo
     assert "private prompt" not in str(events)
     assert "sql_text" not in events[0]
     assert not limited
+    # Only statements naming an AI function are read; a bare '%AI%' matched
+    # nearly every query in the audit log.
+    patterns = [param for param in params if isinstance(param, str) and param.startswith("%")]
+    assert "%AI%" not in patterns
+    assert sorted(patterns) == sorted(f"%{name}%" for name in ai_usage.FUNCTIONS)
+    assert sql.count("UPPER(sql_text) LIKE %s") == len(ai_usage.FUNCTIONS)
 
 
 @pytest.mark.parametrize(("role", "status"), [("analyst", 403), ("ACCOUNTADMIN", 200)])

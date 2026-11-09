@@ -1,5 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { QueryAutopilot } from "@/features/monitoring/autopilot";
-export const Route = createFileRoute("/_authenticated/monitoring/autopilot")({
-  component: QueryAutopilot,
-});
+import { createFileRoute, redirect } from '@tanstack/react-router'
+
+// Merged into Monitoring > Queries; old links land on the matching tab.
+export const Route = createFileRoute('/_authenticated/monitoring/autopilot')({
+  beforeLoad: () => {
+    throw redirect({ to: '/monitoring/queries', search: { tab: 'autopilot' } })
+  },
+})

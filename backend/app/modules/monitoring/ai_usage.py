@@ -20,6 +20,7 @@ FUNCTIONS = frozenset({
     "AI_QUERY", "AI_COMPLETE", "AI_SENTIMENT", "AI_CLASSIFY", "AI_SUMMARIZE",
     "AI_EXTRACT", "AI_TRANSLATE", "AI_FILTER", "AI_EMBED", "AI_EMBEDDING",
 })
+_FUNCTION_PATTERNS = tuple(f"%{name}%" for name in sorted(FUNCTIONS))
 
 
 def sql_actions(sql: str) -> list[str]:
@@ -131,10 +132,13 @@ class AIUsageService:
             "user_name, sql_text, status, duration_ms "
             "FROM NOVA_SYSTEM.AUDIT_LOG WHERE event_type = 'query' "
             "AND event_time >= CONVERT_TZ(%s, '+00:00', %s) "
-            "AND event_time < CONVERT_TZ(%s, '+00:00', %s) AND UPPER(sql_text) LIKE %s "
+            "AND event_time < CONVERT_TZ(%s, '+00:00', %s) "
+            # Only statements that name an AI function: a bare '%AI%' matched
+            # nearly every query (EMAIL, DETAIL, ...) and shipped them all here.
+            f"AND ({' OR '.join(['UPPER(sql_text) LIKE %s'] * len(_FUNCTION_PATTERNS))}) "
             "ORDER BY event_time DESC, log_id DESC LIMIT %s",
             [zone, start.replace(tzinfo=None), zone, end.replace(tzinfo=None), zone,
-             "%AI%", SOURCE_LIMIT + 1],
+             *_FUNCTION_PATTERNS, SOURCE_LIMIT + 1],
         )
         rows = result["rows"]
         events = []

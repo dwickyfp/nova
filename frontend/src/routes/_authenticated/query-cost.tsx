@@ -1,25 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
-import { Search } from '@/components/search'
-import { MonitoringPageScroller } from '@/features/monitoring'
-import { MonitoringQueryCost } from '@/features/monitoring/query-cost'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
+// Merged into Monitoring > Queries; old links land on the matching tab.
 export const Route = createFileRoute('/_authenticated/query-cost')({
-  component: RouteComponent,
+  beforeLoad: () => {
+    throw redirect({ to: '/monitoring/queries', search: { tab: 'cost' } })
+  },
 })
-
-function RouteComponent() {
-  return (
-    <>
-      <Header>
-        <Search className='me-auto' />
-      </Header>
-      <Main fixed className='min-h-0'>
-        <MonitoringPageScroller>
-          <MonitoringQueryCost />
-        </MonitoringPageScroller>
-      </Main>
-    </>
-  )
-}

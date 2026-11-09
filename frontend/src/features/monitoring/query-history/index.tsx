@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -13,21 +13,34 @@ import { api } from '@/lib/api-client'
 import { useNoveSurface } from '@/features/assistant/nove-surface-hook'
 import { defineNoveCapability } from '@/features/assistant/surface-registry'
 import { safeNoveSql } from '@/features/workspaces/nove-feedback'
-import { cn } from '@/lib/utils'
+import { formatDateTime, formatDuration, formatNumber, truncate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   LoadingLines,
   RefreshBanner,
 } from '@/components/ui/loading-overlay'
-import { PageHeader } from '@/components/ui/page-header'
+import { MonitoringHeader } from '../components/monitoring-header'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { statusLabel, statusTone } from '@/components/ui/status-tone'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+} from '@/components/ui/table'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
-  SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
-import { statusTone } from '../components/status-tone'
+import {
+  DetailBlock,
+  DetailFields,
+  ExpandableRow,
+  MonitoringTableHeader,
+  MonitoringTableViewport,
+  TableMessageRow,
+} from '../components/expandable-row'
 
 type QueryHistoryItem = {
   log_id: string
@@ -52,14 +65,33 @@ type QueryHistoryResponse = {
   total: number
 }
 
-export function MonitoringQueryHistory() {
+/** Seven data columns plus the details toggle. */
+const COLUMN_COUNT = 8
+const SEARCH_DEBOUNCE_MS = 300
+
+/**
+ * `embedded` drops the page header when the view sits inside the Queries
+ * tabs, which carry their own title.
+ */
+export function MonitoringQueryHistory({ embedded = false }: { embedded?: boolean } = {}) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [userFilter, setUserFilter] = useState<string>('')
   const [databaseFilter, setDatabaseFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
+
+  // Typing should not fire a request per keystroke; the query key follows
+  // the search text once it settles.
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedSearch(searchQuery),
+      SEARCH_DEBOUNCE_MS
+    )
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   // Fetch history
   const historyQuery = useQuery<QueryHistoryResponse>({
@@ -70,7 +102,7 @@ export function MonitoringQueryHistory() {
       statusFilter,
       userFilter,
       databaseFilter,
-      searchQuery,
+      debouncedSearch,
     ],
     queryFn: () => {
       const params = new URLSearchParams({
@@ -80,7 +112,7 @@ export function MonitoringQueryHistory() {
       if (statusFilter) params.set('status', statusFilter)
       if (userFilter) params.set('user_name', userFilter)
       if (databaseFilter) params.set('database_name', databaseFilter)
-      if (searchQuery) params.set('search', searchQuery)
+      if (debouncedSearch) params.set('search', debouncedSearch)
       return api.get<QueryHistoryResponse>(
         `/monitoring/queries/history?${params.toString()}`
       )
@@ -92,7 +124,7 @@ export function MonitoringQueryHistory() {
   const total = historyQuery.data?.total ?? 0
   const selectedQuery = items.find((item) => item.log_id === expandedRow)
   const { askNove } = useNoveSurface({
-    id: 'monitoring.query_history', route: '/query-history', title: 'Query history',
+    id: 'monitoring.query_history', route: '/monitoring/queries', title: 'Query history',
     context: () => ({
       entity: selectedQuery ? {
         type: 'query', id: selectedQuery.query_id || selectedQuery.log_id,
@@ -112,7 +144,7 @@ export function MonitoringQueryHistory() {
       } : undefined,
       view: {
         filters: { status: statusFilter, user: userFilter, database: databaseFilter },
-        search: searchQuery,
+        search: debouncedSearch,
       },
     }),
     capabilities: [
@@ -189,42 +221,24 @@ export function MonitoringQueryHistory() {
     setExpandedRow(null)
   }
 
-  const formatTime = (isoString: string) => {
-    const date = new Date(isoString)
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-
-  const formatDuration = (ms: number | null | undefined) => {
-    if (ms == null) return '—'
-    if (ms < 1000) return `${ms}ms`
-    return `${(ms / 1000).toFixed(2)}s`
-  }
-
-  const truncateSql = (sql: string, maxLength: number = 80) => {
-    if (sql.length <= maxLength) return sql
-    return sql.slice(0, maxLength).trim() + '...'
-  }
-
   const hasFilters = Boolean(
     statusFilter || userFilter || databaseFilter || searchQuery
   )
 
   return (
     <div className='space-y-6'>
-      <PageHeader
+      <MonitoringHeader
+        embedded={embedded}
         title='Query History'
         description='Browse and search previously executed queries across all workspaces.'
+        actions={
+          <Button variant='outline' size='sm' onClick={() => void askNove(
+            selectedQuery ? 'Explain why this query failed or took so long.' : 'Show only failed queries here.'
+          )}>
+            Ask Nove
+          </Button>
+        }
       />
-      <Button variant='outline' size='sm' onClick={() => void askNove(
-        selectedQuery ? 'Explain why this query failed or took so long.' : 'Show only failed queries here.'
-      )}>
-        Ask Nove
-      </Button>
 
       {/* Filter Bar */}
       <SimpleTableToolbar
@@ -261,197 +275,149 @@ export function MonitoringQueryHistory() {
       />
 
       {/* Data Table */}
-      <SimpleTableViewport>
+      <MonitoringTableViewport>
         {historyQuery.isFetching && !historyQuery.isLoading ? (
           <RefreshBanner label='Loading next results...' />
         ) : null}
-        <table className='w-full'>
-          <thead>
-            <tr>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Time
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                User
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Database
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                SQL
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Status
-              </th>
-              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                Duration
-              </th>
-              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                Rows
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <MonitoringTableHeader>
+            <TableHead>Time</TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>Database</TableHead>
+            <TableHead>SQL</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className='text-right'>Duration</TableHead>
+            <TableHead className='text-right'>Rows</TableHead>
+          </MonitoringTableHeader>
+          <TableBody>
             {historyQuery.isLoading ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <LoadingLines rows={6} />
-                </td>
-              </tr>
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <LoadingLines rows={6} />
+              </TableMessageRow>
             ) : historyQuery.isError ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <EmptyState
-                    variant='error'
-                    icon={AlertCircle}
-                    title='Could not load query history'
-                    description='The monitoring API did not respond. Check the connection and reload.'
-                    action={
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <EmptyState
+                  variant='error'
+                  icon={AlertCircle}
+                  title='Could not load query history'
+                  description='The monitoring API did not respond. Check the connection and reload.'
+                  action={
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={() => void historyQuery.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  }
+                />
+              </TableMessageRow>
+            ) : items.length === 0 ? (
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <EmptyState
+                  icon={SearchX}
+                  title={
+                    hasFilters
+                      ? 'No queries match these filters'
+                      : 'No queries recorded yet'
+                  }
+                  description={
+                    hasFilters
+                      ? 'Clear the status, user, or database filter to widen the search.'
+                      : 'Query history fills as soon as anyone runs SQL against this workspace.'
+                  }
+                  action={
+                    hasFilters ? (
                       <Button
                         variant='outline'
                         size='sm'
-                        onClick={() => void historyQuery.refetch()}
+                        onClick={() => {
+                          setStatusFilter('')
+                          setUserFilter('')
+                          setDatabaseFilter('')
+                          setSearchQuery('')
+                          setDebouncedSearch('')
+                          setPage(1)
+                        }}
                       >
-                        Retry
+                        Clear filters
                       </Button>
-                    }
-                  />
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <EmptyState
-                    icon={SearchX}
-                    title={
-                      hasFilters
-                        ? 'No queries match these filters'
-                        : 'No queries recorded yet'
-                    }
-                    description={
-                      hasFilters
-                        ? 'Clear the status, user, or database filter to widen the search.'
-                        : 'Query history fills as soon as anyone runs SQL against this workspace.'
-                    }
-                    action={
-                      hasFilters ? (
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          onClick={() => {
-                            setStatusFilter('')
-                            setUserFilter('')
-                            setDatabaseFilter('')
-                            setSearchQuery('')
-                            setPage(1)
-                          }}
-                        >
-                          Clear filters
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                </td>
-              </tr>
+                    ) : undefined
+                  }
+                />
+              </TableMessageRow>
             ) : (
               items.map((item) => (
-                <Fragment key={item.log_id}>
-                  <tr
-                    onClick={() =>
-                      setExpandedRow(
-                        expandedRow === item.log_id ? null : item.log_id
-                      )
-                    }
-                    className={cn(
-                      'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                      expandedRow === item.log_id && 'bg-muted/30'
-                    )}
-                  >
-                    <td className='px-4 py-3 text-xs text-muted-foreground whitespace-nowrap'>
-                      {formatTime(item.event_time)}
-                    </td>
-                    <td className='px-4 py-3 text-sm'>
-                      <div className='flex items-center gap-1.5'>
-                        <User className='h-3 w-3 text-muted-foreground' />
-                        <span className='text-xs'>{item.user_name}</span>
-                      </div>
-                    </td>
-                    <td className='px-4 py-3 text-sm'>
-                      <div className='flex items-center gap-1.5'>
-                        <Database className='h-3 w-3 text-muted-foreground' />
-                        <span className='text-xs'>{item.database_name}</span>
-                      </div>
-                    </td>
-                    <td className='px-4 py-3 text-sm'>
-                      <code className='rounded bg-muted px-1.5 py-0.5 text-xs font-mono'>
-                        {truncateSql(item.sql_text)}
-                      </code>
-                    </td>
-                    <td className='px-4 py-3'>
-                      <StatusBadge tone={statusTone(item.status)}>
-                        {item.status}
-                      </StatusBadge>
-                    </td>
-                    <td className='px-4 py-3 text-right text-xs font-medium'>
-                      {formatDuration(item.duration_ms)}
-                    </td>
-                    <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                      {(item.rows_affected ?? 0).toLocaleString()}
-                    </td>
-                  </tr>
-                  {expandedRow === item.log_id && (
-                    <tr className='border-b border-border bg-muted/20'>
-                      <td colSpan={7} className='px-4 py-4'>
-                        <div className='space-y-3'>
-                          <div>
-                            <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                              Full SQL Query
-                            </p>
-                            <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
-                              {item.sql_text}
-                            </pre>
-                          </div>
-                          {item.error_message && (
-                            <div>
-                              <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
-                                <AlertCircle className='h-3 w-3' />
-                                Error Message
-                              </p>
-                              <pre className='rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
-                                {item.error_message}
-                              </pre>
-                            </div>
-                          )}
-                          <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
-                            <div>
-                              <span className='font-medium'>Query ID:</span>{' '}
-                              {item.query_id}
-                            </div>
-                            <div>
-                              <span className='font-medium'>Schema:</span>{' '}
-                              {item.schema_name}
-                            </div>
-                            <div>
-                              <span className='font-medium'>Session:</span>{' '}
-                              {item.session_id}
-                            </div>
-                            {item.file_id && (
-                              <div>
-                                <span className='font-medium'>File ID:</span>{' '}
-                                {item.file_id}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
+                <ExpandableRow
+                  key={item.log_id}
+                  expanded={expandedRow === item.log_id}
+                  onToggle={() =>
+                    setExpandedRow(
+                      expandedRow === item.log_id ? null : item.log_id
+                    )
+                  }
+                  label={`query ${item.query_id || item.log_id}`}
+                  colSpan={COLUMN_COUNT}
+                  detail={
+                    <>
+                      <DetailBlock label='Full SQL Query'>
+                        {item.sql_text}
+                      </DetailBlock>
+                      {item.error_message ? (
+                        <DetailBlock label='Error Message' tone='error'>
+                          {item.error_message}
+                        </DetailBlock>
+                      ) : null}
+                      <DetailFields
+                        fields={[
+                          { label: 'Query ID', value: item.query_id },
+                          { label: 'Schema', value: item.schema_name },
+                          { label: 'Session', value: item.session_id },
+                          ...(item.file_id
+                            ? [{ label: 'File ID', value: item.file_id }]
+                            : []),
+                        ]}
+                      />
+                    </>
+                  }
+                >
+                  <TableCell className='px-4 py-3 text-xs text-muted-foreground'>
+                    {formatDateTime(item.event_time)}
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <div className='flex items-center gap-1.5'>
+                      <User className='size-3 text-muted-foreground' />
+                      <span className='text-xs'>{item.user_name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <div className='flex items-center gap-1.5'>
+                      <Database className='size-3 text-muted-foreground' />
+                      <span className='text-xs'>{item.database_name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <code className='rounded bg-muted px-1.5 py-0.5 font-mono text-xs'>
+                      {truncate(item.sql_text)}
+                    </code>
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <StatusBadge tone={statusTone(item.status)}>
+                      {statusLabel(item.status)}
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell className='px-4 py-3 text-right text-xs font-medium'>
+                    {formatDuration(item.duration_ms)}
+                  </TableCell>
+                  <TableCell className='px-4 py-3 text-right text-xs text-muted-foreground'>
+                    {formatNumber(item.rows_affected ?? 0)}
+                  </TableCell>
+                </ExpandableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </SimpleTableViewport>
+          </TableBody>
+        </Table>
+      </MonitoringTableViewport>
 
       {/* Pagination */}
       <SimpleTablePagination

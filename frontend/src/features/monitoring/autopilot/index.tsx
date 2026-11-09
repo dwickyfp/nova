@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   RefreshCw,
@@ -9,9 +10,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +25,9 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/ui/page-header";
+import { LoadingLines } from "@/components/ui/loading-overlay";
+import { MetricCard } from "@/components/ui/metric-card";
+import { MonitoringHeader } from "../components/monitoring-header";
 import {
   Select,
   SelectContent,
@@ -30,7 +35,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  StateBadge,
+  StatusBadge,
+  type StatusTone,
+} from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -66,25 +75,23 @@ const ms = (value?: number | null) =>
     : `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms`;
 const pct = (value?: number | null) =>
   value == null ? "Unavailable" : `${(value * 100).toFixed(1)}%`;
+/**
+ * Autopilot states the shared tone map does not know. Evidence that is
+ * `unavailable` is a gap to fill, not a failure, so it stays amber here.
+ */
+const AUTOPILOT_TONES: Record<string, StatusTone> = {
+  APPROVED: "success",
+  BLOCKED: "warning",
+  INCONCLUSIVE: "warning",
+  READY_APPROVAL: "warning",
+  expired: "warning",
+  unavailable: "warning",
+  REGRESSED: "danger",
+  unauthorized: "danger",
+};
 function Status({ value }: { value?: string }) {
-  const tone = ["SUCCESS", "COMPLETED", "available", "APPROVED"].includes(
-    value ?? "",
-  )
-    ? "success"
-    : [
-          "BLOCKED",
-          "INCONCLUSIVE",
-          "READY_APPROVAL",
-          "expired",
-          "unavailable",
-        ].includes(value ?? "")
-      ? "warning"
-      : ["FAILED", "REGRESSED", "REJECTED", "unauthorized"].includes(
-            value ?? "",
-          )
-        ? "danger"
-        : "neutral";
-  return <StatusBadge tone={tone}>{human(value)}</StatusBadge>;
+  if (!value) return <StatusBadge tone="neutral">Unavailable</StatusBadge>;
+  return <StateBadge status={value} tone={AUTOPILOT_TONES[value]} />;
 }
 function useScope() {
   const user = useAuthStore((state) => state.auth.user);
@@ -100,7 +107,7 @@ function useScope() {
   };
 }
 
-export function QueryAutopilot() {
+export function QueryAutopilot({ embedded = false }: { embedded?: boolean } = {}) {
   const scope = useScope();
   const [view, setView] = useState("overview");
   const [settings, setSettings] = useState(false);
@@ -112,7 +119,8 @@ export function QueryAutopilot() {
   });
   return (
     <div className="min-w-0 space-y-6">
-      <PageHeader
+      <MonitoringHeader
+        embedded={embedded}
         title="Query Autopilot"
         description="Observe workload changes, test improvements, and review governed actions."
         actions={
@@ -136,9 +144,7 @@ export function QueryAutopilot() {
         }
       />
       {overview.isPending ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading workload observations…
-        </p>
+        <LoadingLines aria-label="Loading workload observations" />
       ) : overview.isError ? (
         <EmptyState
           variant="error"
@@ -215,21 +221,21 @@ function OverviewPanel({
 }) {
   return (
     <div className="space-y-6 pt-4">
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           ["families", "Observed families"],
           ["incidents", "Detected incidents"],
           ["opportunities", "Proposed improvements"],
           ["experiments", "Experiments"],
         ].map(([key, label]) => (
-          <div key={key} className="rounded-lg border bg-card p-4">
-            <dt className="text-sm text-muted-foreground">{label}</dt>
-            <dd className="mt-2 text-2xl font-medium tabular-nums">
-              {data.counts[key]?.toLocaleString() ?? "Unavailable"}
-            </dd>
-          </div>
+          <MetricCard
+            key={key}
+            weight="compact"
+            label={label}
+            value={data.counts[key]?.toLocaleString() ?? "Unavailable"}
+          />
         ))}
-      </dl>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle role="heading" aria-level={3}>
@@ -306,9 +312,10 @@ function RecordList({
     );
   if (query.isPending)
     return (
-      <p role="status" className="py-6 text-sm text-muted-foreground">
-        Loading {label.toLowerCase()}…
-      </p>
+      <LoadingLines
+        className="pt-4"
+        aria-label={`Loading ${label.toLowerCase()}`}
+      />
     );
   if (query.isError)
     return (
@@ -441,7 +448,7 @@ function RecordDetail({
         Back to list
       </Button>
       {query.isPending ? (
-        <p role="status">Loading record…</p>
+        <LoadingLines rows={3} aria-label="Loading record" />
       ) : query.isError ? (
         <EmptyState
           variant="error"
@@ -464,12 +471,15 @@ function RecordDetail({
               </pre>
             )}
             {row.reason && (
-              <p
+              <Alert
                 role="status"
-                className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+                className="border-warning/30 bg-warning/10 text-warning-strong"
               >
-                {human(row.reason)}
-              </p>
+                <AlertTriangle />
+                <AlertDescription className="text-foreground">
+                  {human(row.reason)}
+                </AlertDescription>
+              </Alert>
             )}
             {row.baseline && (
               <Card>
@@ -771,17 +781,18 @@ function EvidenceList({ family, cohort }: { family: string; cohort: string }) {
       </CardHeader>
       <CardContent>
         {query.isPending ? (
-          <p role="status" className="text-sm">
-            Loading evidence…
-          </p>
+          <LoadingLines rows={2} aria-label="Loading evidence" />
         ) : query.isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {query.error.message}
-          </p>
+          <EmptyState
+            variant="error"
+            title="Unable to load evidence"
+            description={query.error.message}
+          />
         ) : !query.data.items.length ? (
-          <p className="text-sm text-muted-foreground">
-            No scoped evidence has been captured.
-          </p>
+          <EmptyState
+            title="No evidence captured"
+            description="No scoped evidence has been captured for this workload."
+          />
         ) : (
           <ul className="space-y-3">
             {query.data.items.map((item) => (
@@ -848,14 +859,16 @@ function PolicyForm({
         enrolled basic statistics maintenance. Higher-risk changes require
         approval in every mode.
       </p>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="autopilot-collection"
           checked={enabled}
-          onChange={(event) => setEnabled(event.target.checked)}
+          onCheckedChange={(checked) => setEnabled(checked === true)}
         />
-        Collect workload observations
-      </label>
+        <Label htmlFor="autopilot-collection" className="font-normal">
+          Collect workload observations
+        </Label>
+      </div>
       {mutation.isError && (
         <p role="alert" className="text-sm text-destructive">
           {mutation.error.message}
@@ -984,31 +997,43 @@ function EnrollmentForm({ row }: { row: RecordItem }) {
                 onChange={(event) => setMapping(event.target.value)}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                required
-                type="checkbox"
-                checked={frozen}
-                onChange={(event) => setFrozen(event.target.checked)}
-              />
-              This snapshot will remain immutable during experiments.
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={optIn}
-                onChange={(event) => setOptIn(event.target.checked)}
-              />
-              Retain encrypted replay samples for up to 24 hours.
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={autoStats}
-                onChange={(event) => setAutoStats(event.target.checked)}
-              />
-              Allow validated basic statistics maintenance on these tables.
-            </label>
+            {(
+              [
+                [
+                  "enroll-frozen",
+                  "This snapshot will remain immutable during experiments.",
+                  frozen,
+                  setFrozen,
+                  true,
+                ],
+                [
+                  "enroll-replay",
+                  "Retain encrypted replay samples for up to 24 hours.",
+                  optIn,
+                  setOptIn,
+                  false,
+                ],
+                [
+                  "enroll-statistics",
+                  "Allow validated basic statistics maintenance on these tables.",
+                  autoStats,
+                  setAutoStats,
+                  false,
+                ],
+              ] as const
+            ).map(([fieldId, text, checked, setChecked, required]) => (
+              <div key={fieldId} className="flex items-center gap-2">
+                <Checkbox
+                  id={fieldId}
+                  required={required}
+                  checked={checked}
+                  onCheckedChange={(value) => setChecked(value === true)}
+                />
+                <Label htmlFor={fieldId} className="font-normal">
+                  {text}
+                </Label>
+              </div>
+            ))}
             {mutation.isError && (
               <p role="alert" className="text-sm text-destructive">
                 {mutation.error.message}

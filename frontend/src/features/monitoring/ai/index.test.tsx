@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 import { Main } from "@/components/layout/main";
 import { ThemeProvider } from "@/context/theme-provider";
+import { useAuthStore } from "@/stores/auth-store";
 import { MonitoringPageScroller } from "../index";
 import { MonitoringAI } from "./index";
 import {
@@ -110,6 +111,12 @@ let client: QueryClient;
 beforeEach(() => {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  useAuthStore.getState().auth.setUser({
+    username: "admin",
+    roles: ["ACCOUNTADMIN"],
+    activeRole: "ACCOUNTADMIN",
+    securityContextVersion: 1,
   });
   vi.mocked(fetchAIUsage).mockImplementation(async (filters) => ({
     ...fixture,
@@ -342,12 +349,35 @@ describe("AI Monitoring", () => {
       .toBeVisible();
   });
 
+  it("fetches usage once on load, after the signed-in identity is known", async () => {
+    useAuthStore.getState().auth.setUser(null);
+    const view = await mount();
+    await expect
+      .element(
+        view.getByRole("status", { name: "Loading AI usage history" }),
+      )
+      .toBeInTheDocument();
+    expect(fetchAIUsage).not.toHaveBeenCalled();
+    useAuthStore.getState().auth.setUser({
+      username: "admin",
+      roles: ["ACCOUNTADMIN"],
+      activeRole: "ACCOUNTADMIN",
+      securityContextVersion: 1,
+    });
+    await expect
+      .element(view.getByText("83.3%", { exact: true }))
+      .toBeVisible();
+    expect(fetchAIUsage).toHaveBeenCalledTimes(1);
+  });
+
   it("shows loading, error, retry, and administrator access states", async () => {
     vi.mocked(fetchAIUsage).mockReturnValueOnce(new Promise(() => {}));
     const loading = await mount();
     await expect
-      .element(loading.getByRole("status"))
-      .toHaveTextContent("Loading AI usage history");
+      .element(
+        loading.getByRole("status", { name: "Loading AI usage history" }),
+      )
+      .toBeInTheDocument();
     await loading.unmount();
     client.clear();
     vi.mocked(fetchAIUsage).mockRejectedValueOnce(new Error("offline"));

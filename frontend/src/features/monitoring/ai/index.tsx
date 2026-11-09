@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -14,8 +14,11 @@ import { ApiError } from "@/lib/api-client";
 import { readModeToken } from "@/lib/read-token";
 import { useAuthStore } from "@/stores/auth-store";
 import { useTheme } from "@/context/theme-provider";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingLines } from "@/components/ui/loading-overlay";
+import { MetricCard } from "@/components/ui/metric-card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
@@ -24,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { StateBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -62,7 +66,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="min-w-0 rounded-xl border bg-card">
+    <section className="min-w-0 rounded-xl border border-surface-border bg-surface-2">
       <div className="px-4 pt-4 sm:px-5 sm:pt-5">
         <h2 className="text-sm font-medium">{title}</h2>
         {description && (
@@ -261,9 +265,10 @@ function Ranking({
       description="Top 5 by reported tokens. Select a name to filter the dashboard."
     >
       {ranked.length === 0 ? (
-        <p className="py-4 text-sm text-muted-foreground">
-          No attributed token usage in this selection.
-        </p>
+        <EmptyState
+          title="No attributed token usage"
+          description="No named entry reported tokens in this selection."
+        />
       ) : (
         <ol className="divide-y">
           {ranked.map((row, index) => (
@@ -306,70 +311,64 @@ export function AIUsageDashboard({
   return (
     <>
       {data.partial && (
-        <div role="alert" className="rounded-lg border p-4 text-sm">
-          <p className="font-medium">Incomplete history</p>
-          <p className="mt-1 text-muted-foreground">
-            Totals cover the available records only. Period comparison is
-            disabled. A source may be unavailable or exceed{" "}
-            {number(data.source_limit)} records; see data coverage below.
-          </p>
-        </div>
+        <Alert>
+          <AlertTriangle />
+          <AlertTitle>Incomplete history</AlertTitle>
+          <AlertDescription>
+            <p>
+              Totals cover the available records only. Period comparison is
+              disabled. A source may be unavailable or exceed{" "}
+              {number(data.source_limit)} records; see data coverage below.
+            </p>
+          </AlertDescription>
+        </Alert>
       )}
       <section
         aria-label="Usage totals"
-        className="rounded-xl border bg-surface-2"
+        className="grid min-w-0 gap-4 sm:grid-cols-2 @3xl/ai:grid-cols-4"
       >
-        <dl className="grid min-w-0 gap-6 p-5 sm:grid-cols-2 @3xl/ai:grid-cols-4">
-          <div className="min-w-0">
-            <dt className="text-sm text-muted-foreground">Reported tokens</dt>
-            <dd className="mt-2 break-words text-3xl tabular-nums sm:text-4xl">
-              {reportedTokens(summary)}
-            </dd>
-            <dd className="mt-2 text-xs text-muted-foreground">
-              {measured && change !== null
-                ? `${change > 0 ? "+" : ""}${change}% vs previous ${data.days} days`
-                : "No comparable previous token total"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted-foreground">Input / output</dt>
-            <dd className="mt-2 text-lg tabular-nums">
-              {measured
-                ? `${number(summary.input_tokens)} / ${number(summary.output_tokens)}`
-                : summary.activities
-                  ? "Unavailable"
-                  : "0 / 0"}
-            </dd>
-            <dd className="mt-2 text-xs text-muted-foreground">
-              Available token components
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted-foreground">
-              Observed activities
-            </dt>
-            <dd className="mt-2 text-2xl tabular-nums">
-              {number(summary.activities)}
-            </dd>
-            <dd className="mt-2 text-xs text-muted-foreground">
-              {number(summary.users)} {summary.users === 1 ? "user" : "users"} ·{" "}
-              {number(summary.models)} named{" "}
-              {summary.models === 1 ? "model" : "models"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted-foreground">Token coverage</dt>
-            <dd className="mt-2 text-2xl tabular-nums">
-              {summary.coverage_percent === null
-                ? "No activity"
-                : `${summary.coverage_percent}%`}
-            </dd>
-            <dd className="mt-2 text-xs text-muted-foreground">
-              {number(summary.reported_activities)} of{" "}
-              {number(summary.activities)} activities report a total
-            </dd>
-          </div>
-        </dl>
+        <MetricCard
+          weight="primary"
+          className="min-w-0 break-words"
+          label="Reported tokens"
+          value={reportedTokens(summary)}
+          hint={
+            measured && change !== null
+              ? `${change > 0 ? "+" : ""}${change}% vs previous ${data.days} days`
+              : "No comparable previous token total"
+          }
+        />
+        <MetricCard
+          weight="compact"
+          className="min-w-0"
+          label="Input / output"
+          value={
+            measured
+              ? `${number(summary.input_tokens)} / ${number(summary.output_tokens)}`
+              : summary.activities
+                ? "Unavailable"
+                : "0 / 0"
+          }
+          hint="Available token components"
+        />
+        <MetricCard
+          weight="compact"
+          className="min-w-0"
+          label="Observed activities"
+          value={number(summary.activities)}
+          hint={`${number(summary.users)} ${summary.users === 1 ? "user" : "users"} · ${number(summary.models)} named ${summary.models === 1 ? "model" : "models"}`}
+        />
+        <MetricCard
+          weight="compact"
+          className="min-w-0"
+          label="Token coverage"
+          value={
+            summary.coverage_percent === null
+              ? "No activity"
+              : `${summary.coverage_percent}%`
+          }
+          hint={`${number(summary.reported_activities)} of ${number(summary.activities)} activities report a total`}
+        />
       </section>
       <div className="grid min-w-0 items-start gap-5 @3xl/ai:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <TokenTrend data={data} />
@@ -397,9 +396,10 @@ export function AIUsageDashboard({
         description="An activity is a saved assistant turn or an AI SQL statement. It can contain several provider calls."
       >
         {data.actions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No actions in this selection.
-          </p>
+          <EmptyState
+            title="No actions in this selection"
+            description="Saved assistant turns and audited AI SQL appear here."
+          />
         ) : (
           <Table aria-label="Token usage by action">
             <TableHeader>
@@ -497,16 +497,24 @@ export function AIUsageDashboard({
                   {number(row.total_tokens)}
                 </TableCell>
                 <TableCell>
-                  {row.status === "recorded" ? "Saved turn" : row.status}
+                  {row.status === "recorded" ? (
+                    <StateBadge status={row.status} tone="success">
+                      Saved turn
+                    </StateBadge>
+                  ) : (
+                    <StateBadge status={row.status} />
+                  )}
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
         {data.activities.length === 0 && (
-          <p className="py-4 text-sm text-muted-foreground">
-            No activities on this page.
-          </p>
+          <EmptyState
+            className="mt-4"
+            title="No activities on this page"
+            description="Go back a page or change the filters to see activity."
+          />
         )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
@@ -601,8 +609,18 @@ export function MonitoringAI() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const user = useAuthStore((state) => state.auth.user);
   const query = useQuery({
-    queryKey: ["monitoring", "ai", user?.username, user?.activeRole, filters],
+    queryKey: [
+      "monitoring",
+      "ai",
+      user?.username,
+      user?.activeRole,
+      user?.securityContextVersion,
+      filters,
+    ],
     queryFn: ({ signal }) => fetchAIUsage(filters, signal),
+    // The key is scoped to the signed-in identity. Before `/auth/me` answers
+    // the user is null, and a fetch then would be repeated once it arrives.
+    enabled: Boolean(user),
     staleTime: 30_000,
     refetchInterval: autoRefresh ? 60_000 : false,
     retry: false,
@@ -722,12 +740,7 @@ export function MonitoringAI() {
         </div>
       </div>
       {query.isPending && (
-        <div
-          role="status"
-          className="rounded-xl border p-8 text-sm text-muted-foreground"
-        >
-          Loading AI usage history...
-        </div>
+        <LoadingLines rows={6} aria-label="Loading AI usage history" />
       )}
       {query.isError && (
         <EmptyState
