@@ -303,6 +303,11 @@ class PlainTextStream:
 
 
 #: Frame fields a person reads, by event; values are plain-worded in place.
+#: "semantic_query: …" at the start of a preview.
+_TOOL_PREFIX = re.compile(
+    r"^\s*(?:" + "|".join(sorted(TOOL_NAMES, key=len, reverse=True)) + r"):\s*"
+)
+
 _READABLE_FIELDS = {
     "error": ("message",),
     "thinking": ("text",),
@@ -373,6 +378,13 @@ def plain_frames():  # noqa: ANN201 - returns a small stateful filter
             value = data.get(field)
             if isinstance(value, str):
                 data[field], changed = make_plain(value), True
+        preview = data.get("sql_preview")
+        if name in {"tool_call", "tool_progress"} and isinstance(preview, str):
+            # A non-SQL preview names its tool ("semantic_query: <question>");
+            # the person sees the question only. SQL itself is never rewritten.
+            stripped = _TOOL_PREFIX.sub("", preview, count=1)
+            if stripped != preview:
+                data["sql_preview"], changed = stripped, True
         if name == "plan" and isinstance(data.get("steps"), list):
             for step in data["steps"]:
                 if isinstance(step, dict) and isinstance(step.get("text"), str):

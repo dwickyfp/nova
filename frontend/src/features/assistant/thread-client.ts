@@ -23,6 +23,9 @@ export type ThreadMessageView = {
   role: "user" | "assistant" | "tool";
   content: string;
   created_at: string;
+  /** The public trace of the turn: result tables, charts, citations, blocks. */
+  steps?: Record<string, unknown>[];
+  attachments?: { name: string; size_bytes: number; media_type: string }[];
 };
 
 export type ThreadDetailResponse = {
@@ -41,6 +44,12 @@ export async function createThread(
 
 export async function listThreads(cursor?: string): Promise<ThreadListResponse> {
   return api.get<ThreadListResponse>(`/assistant/threads${historyQuery(cursor)}`);
+}
+
+/** The caller's own conversations whose title contains ``term``. */
+export async function searchThreads(term: string): Promise<ThreadListResponse> {
+  const params = new URLSearchParams({ q: term });
+  return api.get<ThreadListResponse>(`/assistant/threads?${params}`);
 }
 
 export function historyQuery(cursor?: string): string {

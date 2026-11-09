@@ -98,7 +98,12 @@ async def ui_source(monkeypatch):
     monkeypatch.setattr(router, "_require_agent", AsyncMock())
     monkeypatch.setattr(router, "_require_agent_thread", AsyncMock())
     monkeypatch.setattr(router.assistant_repository, "ui_source", AsyncMock(return_value=block))
-    monkeypatch.setattr(router, "write_audit_log", AsyncMock())
+    from app.modules.assistant import ui_access
+
+    # Studio and Neva share the UI checks; one mock sees every audit row.
+    audit = AsyncMock()
+    monkeypatch.setattr(router, "write_audit_log", audit)
+    monkeypatch.setattr(ui_access, "write_audit_log", audit)
     return block
 
 

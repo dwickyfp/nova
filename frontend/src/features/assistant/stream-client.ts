@@ -1,3 +1,4 @@
+import type { UiAction } from "@/features/studio/intelligent-ui/types";
 import { api, apiBase, authHeaders } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import { parseAssistantEvent, readSseFrames } from "./events";
@@ -28,6 +29,8 @@ export type TurnContext = {
   appContext?: NevaAppContext;
   /** Files the person attached: text as text, PDFs and images as base64. */
   files?: SentFile[];
+  /** A button or form of an earlier interactive answer was used. */
+  uiAction?: UiAction;
 };
 
 export type SentFile = { name: string; content: string; mediaType: string };
@@ -56,6 +59,7 @@ export async function streamAssistantTurn(
     providerId,
     appContext,
     files,
+    uiAction,
   }: StreamTurnOptions & TurnContext,
 ): Promise<void> {
   const response = await fetch(
@@ -74,6 +78,7 @@ export async function streamAssistantTurn(
         model,
         provider_id: providerId,
         app_context: appContext,
+        ...(uiAction ? { ui_action: uiAction } : {}),
         ...(files?.length
           ? {
               attachments: files.map((file) => ({

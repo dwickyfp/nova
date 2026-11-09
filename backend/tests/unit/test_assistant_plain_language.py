@@ -133,3 +133,25 @@ def test_a_page_address_becomes_the_menu_a_person_clicks():
 
     text = make_plain("Open `/ai-providers`, then /monitoring/queries.")
     assert text == "Open Administrator → AI Providers, then Operations → Monitoring → Queries."
+
+
+def test_a_preview_shows_the_question_not_the_tool_name():
+    import json
+
+    from app.modules.assistant import events
+    from app.modules.assistant.plain_language import plain_frames
+
+    plain = plain_frames()
+    frame = events.format_sse("tool_call", {
+        "tool_call_id": "c1", "tool_name": "semantic_query", "status": "pending",
+        "sql_preview": "semantic_query: Berapa net revenue per kota?",
+    })
+    data = json.loads(plain(frame)[0].split("data: ", 1)[1])
+    assert data["sql_preview"] == "Berapa net revenue per kota?"
+    sql = events.format_sse("tool_call", {
+        "tool_call_id": "c2", "tool_name": "query_execute", "status": "pending",
+        "sql_preview": "SELECT query_execute FROM t",
+    })
+    assert json.loads(plain(sql)[0].split("data: ", 1)[1])["sql_preview"] == (
+        "SELECT query_execute FROM t"
+    )

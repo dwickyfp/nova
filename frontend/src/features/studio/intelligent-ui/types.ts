@@ -31,7 +31,8 @@ export type UiDatavizSource = {
   whole?: boolean;
 };
 export type UiSource = {
-  agentId: string;
+  /** The Studio agent; absent for a Neva conversation. */
+  agentId?: string | null;
   threadId: string;
   messageId: string;
   contentId: string;

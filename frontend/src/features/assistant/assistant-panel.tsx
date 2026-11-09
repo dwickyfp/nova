@@ -15,7 +15,7 @@ import { ASSISTANT_DEFAULT_WIDTH } from "./assistant-panel-state";
 import { AssistantComposer } from "./assistant-composer";
 import { AssistantEmptyState } from "./assistant-empty-state";
 import type { ApprovalMode } from "./use-assistant-turn";
-import { MessageList } from "./message-list";
+import { MessageList, type UiContext } from "./message-list";
 import type { TurnContext } from "./stream-client";
 import type { NevaSuggestedAction } from "./surface-registry";
 import type { NevaEventInput } from "./app-context";
@@ -34,6 +34,8 @@ export type AssistantPanelProps = {
   /** Overrides the built-in transcript rendering when supplied. */
   children?: React.ReactNode;
   onSendMessage?: (message: string, files?: SentFile[]) => void;
+  /** Where interactive answers keep state and send their actions. */
+  uiContext?: UiContext;
   disabled?: boolean;
   /** Transcript state. When omitted the panel shows the empty state. */
   messages?: TranscriptMessage[];
@@ -116,6 +118,7 @@ function AssistantBody({
   clientActionStatus,
   onExecutionEvent,
   onFixWithNeva,
+  uiContext,
 }: AssistantPanelProps) {
   const hasTranscript = Boolean(children) || Boolean(messages?.length);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -179,6 +182,7 @@ function AssistantBody({
                 activeContext={activeContext}
                 onExecutionEvent={onExecutionEvent}
                 onFixWithNeva={onFixWithNeva}
+                uiContext={uiContext}
               />
             ) : (
               <AssistantEmptyState
@@ -284,6 +288,10 @@ function AssistantHeader({
           <ThreadHistory
             activeThreadId={activeThreadId ?? null}
             onOpenThread={onOpenThread}
+            // The open conversation was deleted: start a fresh one.
+            onDeletedThread={(threadId) => {
+              if (threadId === activeThreadId) onNewChat?.();
+            }}
             disabled={busy}
           />
         ) : null}

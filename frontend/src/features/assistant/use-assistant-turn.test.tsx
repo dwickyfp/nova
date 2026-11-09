@@ -17,6 +17,9 @@ vi.mock("./thread-client", () => ({
   setGrant: (...args: unknown[]) => setGrant(...args),
   getThread: (...args: unknown[]) => getThread(...args),
   listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
+  searchThreads: vi.fn(async () => ({ threads: [], count: 0 })),
+  renameThread: vi.fn(),
+  deleteThread: vi.fn(),
 }));
 
 type Turn = ReturnType<typeof useAssistantTurn>;

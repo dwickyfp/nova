@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { AttachedQuery } from "./query-attach";
+import type { UiBlock } from "@/features/studio/intelligent-ui/types";
 import type {
   AssistantEvent,
   AssistantMessage,
@@ -59,7 +60,67 @@ export type TranscriptMessage = AssistantMessage & {
 export type TranscriptBlock =
   | { kind: "table"; block: TableBlock }
   | { kind: "chart"; block: ChartBlock }
-  | { kind: "citation"; block: CitationBlock };
+  | { kind: "citation"; block: CitationBlock }
+  | {
+      /** An interactive answer (Intelligence UI); its program streams in. */
+      kind: "ui";
+      id: string;
+      block: UiBlock;
+      complete: boolean;
+    };
+
+/**
+ * A stored message as the panel shows it: its result tables, charts,
+ * citations and interactive blocks come back from the recorded trace.
+ */
+export function restoredMessage(message: {
+  message_id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  created_at: string;
+  steps?: Record<string, unknown>[];
+  attachments?: { name: string }[];
+}): TranscriptMessage {
+  const blocks: TranscriptBlock[] = [];
+  for (const step of message.role === "assistant" ? message.steps ?? [] : []) {
+    if (step.kind === "table" && Array.isArray(step.columns)) {
+      blocks.push({ kind: "table", block: {
+        tool_call_id: step.tool_call_id as string | undefined,
+        title: step.title as string | undefined,
+        columns: step.columns as string[],
+        rows: (step.rows ?? []) as unknown[][],
+        truncated: step.truncated === true || undefined,
+      } as TableBlock });
+    } else if (step.kind === "chart" && step.chart_spec) {
+      blocks.push({ kind: "chart", block: {
+        tool_call_id: step.tool_call_id,
+        chart_spec: step.chart_spec,
+        viz_spec: step.viz_spec ?? null,
+        presmodel: step.presmodel ?? null,
+      } as ChartBlock });
+    } else if (step.kind === "citation" && Array.isArray(step.citations)) {
+      for (const citation of step.citations as CitationBlock[]) {
+        blocks.push({ kind: "citation", block: citation });
+      }
+    } else if (step.kind === "ui" && typeof step.content_id === "string") {
+      blocks.push({
+        kind: "ui", id: step.content_id, block: step as unknown as UiBlock, complete: true,
+      });
+    }
+  }
+  return {
+    message_id: message.message_id,
+    role: message.role,
+    content: message.content,
+    tool_call: null,
+    created_at: message.created_at,
+    turn_state: "done",
+    ...(blocks.length ? { blocks } : {}),
+    ...(message.role === "user" && message.attachments?.length
+      ? { file_names: message.attachments.map((item) => item.name) }
+      : {}),
+  };
+}
 
 let localId = 0;
 function nextLocalId(prefix: string) {
@@ -145,6 +206,27 @@ function appendBlock(
       blocks: [block],
     },
   ];
+}
+
+/** Change one streaming interactive block of the current answer. */
+function updateUiBlock(
+  messages: TranscriptMessage[],
+  contentId: string | undefined,
+  change: (item: Extract<TranscriptBlock, { kind: "ui" }>) => Extract<TranscriptBlock, { kind: "ui" }>,
+): TranscriptMessage[] {
+  if (!contentId) return messages;
+  return messages.map((message) =>
+    message.role === "assistant" && message.blocks?.some(
+      (item) => item.kind === "ui" && item.id === contentId,
+    )
+      ? {
+          ...message,
+          blocks: message.blocks.map((item) =>
+            item.kind === "ui" && item.id === contentId ? change(item) : item,
+          ),
+        }
+      : message,
+  );
 }
 
 function upsertToolCall(
@@ -249,9 +331,20 @@ function applyEvent(
   switch (event.type) {
     case "dashboard":
       return appendAssistantText(state, `\n[Open dashboard](/studio?view=artifacts&item=${event.payload.artifact_id})\n`);
-    case "mission_updated":
     case "ui":
+      if (!event.content_id) return state;
+      return appendBlock(state, {
+        kind: "ui",
+        id: event.content_id,
+        block: { ...event.payload, program: "" },
+        complete: false,
+      });
     case "ui_delta":
+      return updateUiBlock(state, event.content_id, (item) => ({
+        ...item,
+        block: { ...item.block, program: (item.block.program + event.text).slice(0, 64000) },
+      }));
+    case "mission_updated":
     case "mission_continuation":
     case "evidence_health":
     case "evidence_envelope":
@@ -322,7 +415,7 @@ function applyEvent(
         ),
       }));
     case "content_block_done":
-      return state;
+      return updateUiBlock(state, event.content_id, (item) => ({ ...item, complete: true }));
     case "done":
       return state.map((message) => {
         if (

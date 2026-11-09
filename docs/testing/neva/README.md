@@ -187,16 +187,37 @@ latency within the bound agreed from the phase 0 baseline.
 
 ## Phase 3: Intelligence UI in the panel
 
-- [ ] 3.1 Extract `TurnContent`, `IntelligentUi`, result table/chart, citations,
-      answer footer from Studio coupling (Dataviz and agent-API props optional).
-- [ ] 3.2 Console threads get UI action/state handling in the shared module.
-- [ ] 3.3 Panel renders `ui` blocks, tables, charts, citations, evidence
-      health, follow-up suggestions and the `ProcessRail` activity trace.
-- [ ] 3.4 Greeting card shared with Studio: daypart greeting, page-aware
-      suggestions, recent threads.
-- [ ] 3.5 Thread history search, rename, delete.
-- [ ] 3.6 Neva mark; `/unslop` pass; screenshots light, dark, phone judged.
-- [ ] 3.7 Every Nove affordance still present (tests from 0.4).
+- [x] 3.1 Shared answer blocks: the UI-block checks (source in the caller's
+      security context, state validation, public media, one-time actions,
+      message visibility) moved out of the agents router into
+      `assistant/ui_access.py`; Studio and Neva both call it after proving the
+      thread is the caller's. `IntelligentUi` takes a source without an agent.
+- [x] 3.2 Neva threads get the same UI routes (`/threads/{id}/messages/{id}/
+      ui-state/{id}`, media, map metric) and accept a button or form action
+      once, as user input; the reply is stored under the id sent in `done`,
+      and `done` is sent only after it is stored.
+- [x] 3.3 The panel renders interactive blocks next to tables, charts and
+      citations (text keeps the panel's renderer: Run and Fix with Neva stay),
+      shows Studio's process rail (open while working, then one summary line
+      with steps and time), and restores every block when a conversation is
+      reopened. Neva turns run with Intelligence UI on.
+- [x] 3.4 Greeting card shared with Studio: daypart greeting, page-aware
+      suggestions, recent chats (phase 1); conversations are now named from
+      their first question.
+- [x] 3.5 History: search by title, rename in place, delete with
+      confirmation (an open conversation that is deleted starts a new one).
+- [x] 3.6 Neva mark kept; `/unslop` pass: no tool names in previews, composer
+      selectors become icons in a narrow panel instead of cut labels; the
+      greeting keeps Studio's sky ink by request. Checked in light, dark and
+      phone width in the browser.
+- [x] 3.7 Every Nove affordance still present: panel, composer, tool-call,
+      code-card, query-attach, model and approval selectors, history, dock and
+      resize tests green.
+
+Also measured: the turn used to wait about 17 s before its first step while
+readable Semantic Views were checked twice, one by one; they are now checked
+once per turn, four at a time, as the caller (about 3 s). Nothing is kept for
+another request.
 
 ## Phase 4: ontology
 
@@ -248,3 +269,4 @@ latency within the bound agreed from the phase 0 baseline.
 | 2026-11-09 | 2.11 | View choice, lookup correction, plain failure messages | `test_neva_lookups_and_views.py` |
 | 2026-11-09 | 2b | Re-measured after the fixes: solved 0.21 → 0.67, correct 0.50 → 0.95, empty 0, leaks 0, wrong-and-confident 4 | `phase-2b-checkpoint.md` |
 | 2026-11-09 | 2.3, 2.5–2.8 | Automatic budget, attachments, role-stamped grant in Redis, per-role memory, readable fallback text | tests listed in phase 2 |
+| 2026-11-09 | 3 | Intelligence UI in the panel: shared UI checks, Neva UI routes and actions, blocks and rail in the panel, history search/rename/delete, titles; first step 17 s → 3 s | tests in `test_neva_ui_routes.py`, panel tests |

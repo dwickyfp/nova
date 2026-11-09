@@ -15,6 +15,9 @@ vi.mock("./thread-client", () => ({
   listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
   resetGrant: (...args: unknown[]) => resetGrant(...args),
   setGrant: vi.fn(async () => true),
+  searchThreads: vi.fn(async () => ({ threads: [], count: 0 })),
+  renameThread: vi.fn(),
+  deleteThread: vi.fn(),
 }));
 
 vi.mock("./stream-client", async () => {

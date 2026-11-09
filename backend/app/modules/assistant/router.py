@@ -43,7 +43,7 @@ from fastapi.responses import StreamingResponse
 from app.common.audit import write_audit_log
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
-from app.modules.assistant import events, neva_memory, read_grants
+from app.modules.assistant import events, neva_memory, read_grants, ui_access
 from app.modules.assistant.app_context import NevaApplicationEvent
 from app.modules.assistant.application_events import application_event_broker
 from app.modules.assistant.attachments import attachment_prompt
@@ -67,6 +67,9 @@ from app.modules.assistant.schemas import (
     ThreadListResponse,
     ThreadUpdateRequest,
     ThreadView,
+    UiMapMetricInput,
+    UiMediaInput,
+    UiStateInput,
 )
 from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import AssistantLoop, LoopContext
@@ -104,6 +107,12 @@ def _neva_loop(memory: str = "") -> AssistantLoop:
     )
 
 
+def _title_from(question: str, limit: int = 80) -> str:
+    """The person's first question, on one line, as the conversation's name."""
+    text = " ".join(question.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
 #: Turns that explain, help or ask back: Studio's fast limits are enough.
 _QUICK_INTENTS = frozenset({"direct_answer", "capability_help", "agent_catalog", "clarification"})
 #: Background learning tasks, kept so they are not collected mid-flight.
@@ -120,15 +129,24 @@ def _neva_budget(route) -> tuple[int, float] | None:
     return fast.max_iterations, float(fast.time_budget_seconds)
 
 
-async def _readable_views(user: dict, question: str) -> list[str]:
-    """Semantic Views the caller's active role can open, most relevant first."""
-    from app.modules.agents.dataviz_assistant import scope_views
+async def _readable_views(context: LoopContext) -> list[str]:
+    """The Semantic Views the caller's active role can open, checked once.
 
+    The check runs as the caller through the Semantic View service; the loaded
+    views stay on this turn's context, so the loop does not check them again.
+    Nothing is kept for another request.
+    """
+    from app.modules.agents.semantic.access import load_authorized_models
+
+    context.authorized_semantic_models = None
+    context.semantic_view_ids = None
     try:
-        return await scope_views(user, question=question)
+        models = await load_authorized_models(context)
     except Exception:  # noqa: BLE001 - fewer views, never other views
         logger.info("Neva could not list readable Semantic Views")
+        context.authorized_semantic_models = []
         return []
+    return [str(model["semantic_model_id"]) for model in models]
 
 
 def _thread_view(row: dict) -> ThreadView:
@@ -142,14 +160,17 @@ def _thread_view(row: dict) -> ThreadView:
     )
 
 
-def _message_view(row: dict) -> MessageView:
+def _message_view(row: dict, user: dict | None = None) -> MessageView:
+    # The same rules as Studio: interactive blocks only in their own security
+    # context, no form input echoed as the person's words, public trace only.
+    content, steps = ui_access.visible_message(row, user)
     return MessageView(
         message_id=row["message_id"],
         role=row["role"],
-        content=row.get("content", ""),
+        content=content,
         tool_call=None,
         created_at=row["created_at"],
-        steps=row.get("steps") or [],
+        steps=steps,
         prompt_tokens=row.get("prompt_tokens"),
         completion_tokens=row.get("completion_tokens"),
         total_tokens=row.get("total_tokens"),
@@ -214,8 +235,21 @@ async def list_threads(
     user: dict = Depends(get_current_user),
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: Annotated[str | None, Query(max_length=1024)] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ):
     try:
+        if q and q.strip():
+            # Search the caller's own conversations by title, newest first.
+            needle = q.strip().casefold()
+            found = [
+                thread for thread in await assistant_repository.list_threads(
+                    user_name=user["username"]
+                )
+                if needle in str(thread.get("title") or "").casefold()
+            ][:50]
+            return ThreadListResponse(
+                threads=[_thread_view(t) for t in found], count=len(found), next_cursor=None,
+            )
         if limit is not None or cursor is not None:
             threads, next_cursor = await history_repository.threads(
                 user_name=user["username"], limit=limit or 50, cursor=cursor,
@@ -275,7 +309,7 @@ async def get_thread(
                 status_code=503, detail="Conversation history is temporarily unavailable"
             ) from exc
         return ThreadDetailResponse(
-            thread=_thread_view(thread), messages=[_message_view(m) for m in messages],
+            thread=_thread_view(thread), messages=[_message_view(m, user) for m in messages],
             next_cursor=next_cursor,
         )
     messages = await assistant_repository.list_messages(
@@ -283,7 +317,7 @@ async def get_thread(
     )
     return ThreadDetailResponse(
         thread=_thread_view(thread),
-        messages=[_message_view(m) for m in messages],
+        messages=[_message_view(m, user) for m in messages],
     )
 
 
@@ -336,6 +370,42 @@ async def delete_thread(
     application_event_broker.remove(thread_id, user["username"])
     await read_grants.remember(user, thread_id, False)
     return None
+
+
+@router.get("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
+async def get_ui_state(thread_id: str, message_id: str, content_id: str,
+                       user: dict = Depends(get_current_user)):
+    """State of an interactive answer block in the caller's own conversation."""
+    await _require_thread(thread_id, user["username"])
+    return await ui_access.get_state(thread_id, message_id, content_id, user)
+
+
+@router.put("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
+async def put_ui_state(thread_id: str, message_id: str, content_id: str, body: UiStateInput,
+                       user: dict = Depends(get_current_user)):
+    await _require_thread(thread_id, user["username"])
+    return await ui_access.put_state(
+        thread_id, message_id, content_id, user, program_sha256=body.program_sha256,
+        revision=body.revision, state=body.state,
+    )
+
+
+@router.post("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/media")
+async def get_ui_media(thread_id: str, message_id: str, content_id: str, body: UiMediaInput,
+                       user: dict = Depends(get_current_user)):
+    await _require_thread(thread_id, user["username"])
+    return await ui_access.media(
+        thread_id, message_id, content_id, user, media_type=body.type, props=body.props,
+    )
+
+
+@router.post("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/map-metric")
+async def record_map_metric(thread_id: str, message_id: str, content_id: str,
+                            body: UiMapMetricInput, user: dict = Depends(get_current_user)):
+    await _require_thread(thread_id, user["username"])
+    return await ui_access.map_metric(
+        thread_id, message_id, content_id, user, event=body.event, elapsed_ms=body.elapsed_ms,
+    )
 
 
 @router.get("/memories")
@@ -457,6 +527,16 @@ async def send_message(
     # The read-only grant follows the caller's current role and session.
     await read_grants.apply(runtime, user, thread_id)
     history = await assistant_repository.list_messages(thread_id, user_name=user_name)
+    if thread_row.get("title") == "New conversation" and body.content.strip() and not any(
+        row["role"] == "user" for row in history
+    ):
+        # The first question names the conversation, so history can be found.
+        try:
+            await assistant_repository.rename_thread(
+                thread_id, _title_from(body.content), user_name=user_name,
+            )
+        except Exception:  # noqa: BLE001 - a title is not worth failing a turn
+            logger.info("Could not name the conversation")
     runtime.messages = [
         AssistantMessage(
             message_id=row["message_id"],
@@ -475,10 +555,17 @@ async def send_message(
     # Store the user's message before the stream starts, so a disconnect still
     # leaves a coherent transcript.
     attachments = body.prepared_attachments
+    ui_trace: list[dict] = []
+    if body.ui_action is not None:
+        # A button or form of an earlier answer: accepted once, as user input.
+        body.content, ui_step = await ui_access.accept_action(
+            thread_id, body.ui_action, body.content, user,
+        )
+        ui_trace.append(ui_step)
     prompt = attachment_prompt(body.content, attachments)
     await assistant_repository.append_message(
         thread_id, user_name=user_name, role="user", content=body.content,
-        security_context=stamp, attachments=attachments,
+        security_context=stamp, attachments=attachments, steps=ui_trace,
     )
     if attachments:
         await write_audit_log(
@@ -507,6 +594,12 @@ async def send_message(
         app_context = app_context.model_copy(update={"events": list(merged_events.values())[-12:]})
     context = LoopContext(
         user_name=user_name,
+        # Interactive answers (tables, charts, forms) as in Studio.
+        intelligent_ui=True,
+        ui_action_accepted=body.ui_action is not None,
+        ui_private_context=bool(body.ui_action) or any(
+            step.get("kind") == "ui_action" for row in history for step in row.get("steps") or []
+        ),
         execution_timezone=configured_timezone(),
         database=body.database or (app_domain.database if app_domain else None),
         schema_name=body.schema_name or (app_domain.schema_name if app_domain else None),
@@ -516,11 +609,11 @@ async def send_message(
         thread_id=thread_id,
         user=user,
         app_context=app_context,
-        semantic_view_ids=await _readable_views(user, body.content),
         # After an approved role switch the turn continues under the new role.
-        readable_views=lambda ctx: _readable_views(ctx.user or {}, body.content),
+        readable_views=_readable_views,
         scale_budget=_neva_budget,
     )
+    context.semantic_view_ids = await _readable_views(context)
     memory = await neva_memory.memory_note(user, body.content)
 
     async def resolve_consent(
@@ -562,6 +655,56 @@ async def send_message(
     async def generate() -> AsyncIterator[str]:
         reply_parts: list[str] = []
         reply_stamp = stamp
+        # The reply is stored under the id the client receives in ``done``, and
+        # ``done`` is sent only after it is stored, so the panel can open the
+        # answer's interactive blocks at once.
+        reply_message_id = str(uuid4())
+        done_frame: str | None = None
+        persisted = False
+
+        async def persist() -> None:
+            nonlocal persisted
+            if persisted:
+                return
+            persisted = True
+            if not runtime.consent.always_allow_read_only:
+                # A role switch during the turn took the grant back.
+                await read_grants.remember(user, thread_id, False)
+            if body.content.strip() and reply_parts:
+                # Durable facts the person stated are kept for later turns,
+                # after the answer, so the reply is never slower for it.
+                task = asyncio.create_task(neva_memory.learn(
+                    context.user or user, thread_id=thread_id, message=body.content,
+                    provider_id=body.provider_id, model=body.model,
+                ))
+                _learning.add(task)
+                task.add_done_callback(_learning.discard)
+            if reply_parts or context.steps or context.pending_output:
+                # Best effort: a storage failure must not turn a completed
+                # answer into a stream error the user cannot see the cause of.
+                try:
+                    steps = list(context.steps or [])
+                    if context.pending_output:
+                        steps.extend(context.pending_output)
+                    await assistant_repository.append_message(
+                        thread_id,
+                        user_name=user_name,
+                        role="assistant",
+                        message_id=reply_message_id,
+                        content="".join(reply_parts),
+                        model_name=body.model,
+                        usage=context.usage,
+                        steps=steps,
+                        instructions=context.instructions,
+                        security_context=(
+                            reply_stamp if reply_stamp == observation_context(
+                                session_security(context.user or {})
+                            ) else None
+                        ),
+                    )
+                except Exception:
+                    logger.exception("Could not persist the assistant reply")
+
         # Neva speaks to people who look after Nova: internal names never reach
         # the screen or the stored transcript.
         plain = plain_frames()
@@ -589,6 +732,12 @@ async def send_message(
                         reply_stamp = observation_context(
                             session_security(context.user or {})
                         )
+                    if frame.startswith(f"event: {events.EVENT_DONE}\n"):
+                        reply_message_id = str(
+                            _frame_data(frame).get("message_id") or reply_message_id
+                        )
+                        done_frame = frame
+                        continue
                     yield frame
             for frame in plain.flush():
                 reply_parts.append(_text_from_frame(frame))
@@ -598,46 +747,12 @@ async def send_message(
             yield events.error(
                 "internal_error", "Neva could not finish this answer. Please try again."
             )
-            yield events.done(str(uuid4()), finish_reason="error")
+            done_frame = events.done(reply_message_id, finish_reason="error")
         finally:
-            # Fold the visible reply into the transcript. Tool frames are not
-            # replayed; only the assistant's text is part of the thread. The
-            # write is best-effort: a storage failure must not turn a completed
-            # answer into a stream error the user cannot see the cause of.
-            if not runtime.consent.always_allow_read_only:
-                # A role switch during the turn took the grant back.
-                await read_grants.remember(user, thread_id, False)
-            if body.content.strip() and reply_parts:
-                # Durable facts the person stated are kept for later turns,
-                # after the answer, so the reply is never slower for it.
-                task = asyncio.create_task(neva_memory.learn(
-                    context.user or user, thread_id=thread_id, message=body.content,
-                    provider_id=body.provider_id, model=body.model,
-                ))
-                _learning.add(task)
-                task.add_done_callback(_learning.discard)
-            if reply_parts or context.steps or context.pending_output:
-                try:
-                    steps = list(context.steps or [])
-                    if context.pending_output:
-                        steps.extend(context.pending_output)
-                    await assistant_repository.append_message(
-                        thread_id,
-                        user_name=user_name,
-                        role="assistant",
-                        content="".join(reply_parts),
-                        model_name=body.model,
-                        usage=context.usage,
-                        steps=steps,
-                        instructions=context.instructions,
-                        security_context=(
-                            reply_stamp if reply_stamp == observation_context(
-                                session_security(context.user or {})
-                            ) else None
-                        ),
-                    )
-                except Exception:
-                    logger.exception("Could not persist the assistant reply")
+            # Runs on a disconnect too: the reply is kept either way.
+            await persist()
+        if done_frame is not None:
+            yield done_frame
 
     return StreamingResponse(
         generate(),

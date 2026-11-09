@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AttachedQuery } from "./query-attach";
 import {
+  restoredMessage,
   transcriptReducer,
   type TranscriptMessage,
 } from "./use-assistant-transcript";
@@ -252,4 +253,51 @@ describe("transcriptReducer", () => {
       expect(state[1].activity_steps?.[0].status).toBe("done");
     },
   );
+});
+
+describe("interactive answer blocks", () => {
+  const ui = {
+    catalog_version: "nova-openui-3", program_sha256: "a".repeat(64), fallback: "Revenue table",
+    evidence: {}, state_defaults: {}, actions: [], provenance: { evidence_ids: [], scope: "turn", assumption: false },
+  };
+
+  it("streams a block's program and seals it", () => {
+    let state = transcriptReducer([], {
+      type: "event",
+      event: { type: "ui", payload: ui, content_id: "c1", content_index: 1 } as never,
+    });
+    state = transcriptReducer(state, {
+      type: "event", event: { type: "ui_delta", text: "root = ", content_id: "c1" } as never,
+    });
+    state = transcriptReducer(state, {
+      type: "event", event: { type: "ui_delta", text: "Col([])", content_id: "c1" } as never,
+    });
+    state = transcriptReducer(state, {
+      type: "event", event: { type: "content_block_done", content_id: "c1" } as never,
+    });
+    const block = state[0].blocks?.[0];
+    expect(block).toMatchObject({ kind: "ui", id: "c1", complete: true });
+    expect(block?.kind === "ui" && block.block.program).toBe("root = Col([])");
+  });
+
+  it("brings stored tables, charts, citations and blocks back with the message", () => {
+    const restored = restoredMessage({
+      message_id: "m1", role: "assistant", content: "Here it is.", created_at: "2026-11-09T00:00:00Z",
+      steps: [
+        { kind: "reasoning", text: "Planning" },
+        { kind: "table", columns: ["city"], rows: [["Jakarta"]], title: "Cities" },
+        { kind: "citation", citations: [{ source: "Guide", title: "Stages" }] },
+        { kind: "ui", content_id: "c1", ...ui, program: "root = Col([])" },
+      ],
+    });
+    expect(restored.blocks?.map((item) => item.kind)).toEqual(["table", "citation", "ui"]);
+    expect(restored.turn_state).toBe("done");
+    const user = restoredMessage({
+      message_id: "u1", role: "user", content: "Rows?", created_at: "2026-11-09T00:00:00Z",
+      attachments: [{ name: "orders.csv" }],
+      steps: [{ kind: "table", columns: ["x"], rows: [] }],
+    });
+    expect(user.blocks).toBeUndefined();
+    expect(user.file_names).toEqual(["orders.csv"]);
+  });
 });

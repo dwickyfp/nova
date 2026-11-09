@@ -475,12 +475,16 @@ class SemanticViewService:
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
             "WHERE status='ACTIVE' AND active_version IS NOT NULL ORDER BY name"
         )
-        visible = []
-        for row in result["rows"]:
-            definition = await self.get_active_for_agent(str(row[0]), user, agent_id=agent_id)
-            if definition:
-                visible.append(definition)
-        return visible
+        # Each view's access is checked as the caller, a few at a time; the
+        # list keeps the catalogue's name order.
+        gate = asyncio.Semaphore(4)
+
+        async def readable(view_id: str) -> dict | None:
+            async with gate:
+                return await self.get_active_for_agent(view_id, user, agent_id=agent_id)
+
+        found = await asyncio.gather(*(readable(str(row[0])) for row in result["rows"]))
+        return [definition for definition in found if definition]
 
     async def _readable_version(self, view_id: str, version: int, user: dict) -> tuple[dict, dict]:
         view = await self._get(view_id)

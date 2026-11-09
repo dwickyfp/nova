@@ -124,7 +124,6 @@ from app.modules.assistant.schemas import (
 )
 from app.modules.assistant.security import (
     observation_context,
-    same_ui_context,
     session_security,
 )
 from app.modules.assistant.service import (
@@ -350,25 +349,15 @@ def _thread_view(row: dict) -> ThreadView:
 
 
 def _message_view(row: dict, user: dict | None = None) -> MessageView:
-    from app.modules.agents.public_projections import sanitize_workflow_payload
+    from app.modules.assistant.ui_access import visible_message
 
-    steps = row.get("steps") or []
-    stamp = row.get("security_context") or {}
-    current = observation_context(session_security(user)) if user is not None and any(
-        item.get("kind") == "ui" for item in steps
-    ) else {}
-    ui_visible = bool(current) and same_ui_context(stamp, current)
-    content = row.get("content") or ""
-    if not ui_visible:
-        steps = [item for item in steps if item.get("kind") != "ui"]
-    if row["role"] == "user" and any(item.get("kind") == "ui_action" for item in steps):
-        content = content.split("\n\nUI form input (user supplied):\n", 1)[0]
+    content, steps = visible_message(row, user)
     return MessageView(
         message_id=row["message_id"],
         role=row["role"],
         content=content,
         created_at=row["created_at"],
-        steps=sanitize_workflow_payload(steps),
+        steps=steps,
         prompt_tokens=row.get("prompt_tokens"),
         completion_tokens=row.get("completion_tokens"),
         total_tokens=row.get("total_tokens"),
@@ -1991,101 +1980,67 @@ async def replay_agent_run(
 
 
 async def _ui_denied(user: dict, resource: str, reason: str, status: int = 422) -> HTTPException:
-    await write_audit_log(
-        event_type="ASSISTANT_UI", user_name=user["username"], action="REFUSE",
-        object_type="UI_BLOCK", object_name=resource, status="DENIED",
-        error_message=reason, session_id=user.get("session_id"),
-        active_role=user.get("active_role"),
-        security_context_version=user.get("security_context_version"),
-    )
-    return HTTPException(status, reason)
+    from app.modules.assistant.ui_access import ui_denied
+
+    return await ui_denied(user, resource, reason, status)
+
+
+async def _ui_owner(agent_id: str, thread_id: str, user: dict) -> None:
+    """The caller may open this agent and owns this agent thread."""
+    await _require_agent(agent_id, user, platform=True)
+    await _require_agent_thread(thread_id, agent_id, user["username"])
 
 
 async def _ui_source(agent_id: str, thread_id: str, message_id: str,
                      content_id: str, user: dict) -> dict:
-    from app.modules.assistant.intelligent_ui import SUPPORTED_CATALOGS
+    from app.modules.assistant.ui_access import ui_source
 
-    await _require_agent(agent_id, user, platform=True)
-    await _require_agent_thread(thread_id, agent_id, user["username"])
-    block = await assistant_repository.ui_source(
-        thread_id, message_id, content_id, user_name=user["username"],
-        security_context=observation_context(session_security(user)),
-    )
-    import hashlib
-
-    if (not block or block.get("catalog_version") not in SUPPORTED_CATALOGS
-            or hashlib.sha256(str(block.get("program", "")).encode()).hexdigest()
-            != block.get("program_sha256")):
-        raise await _ui_denied(user, content_id,
-                               "UI source is unavailable in this security context", 404)
-    return block
+    await _ui_owner(agent_id, thread_id, user)
+    return await ui_source(thread_id, message_id, content_id, user)
 
 
 @router.get("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
 async def get_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
                              user: dict = Depends(get_current_user)):
-    block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
-    return await assistant_repository.get_ui_state(
-        thread_id, message_id, content_id, user_name=user["username"],
-        security_context=observation_context(session_security(user)), block=block,
-    )
+    from app.modules.assistant import ui_access
+
+    await _ui_owner(agent_id, thread_id, user)
+    return await ui_access.get_state(thread_id, message_id, content_id, user)
 
 
 @router.put("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
 async def put_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
                              body: UiStateInput, user: dict = Depends(get_current_user)):
-    from app.modules.assistant.intelligent_ui import UiValidationError, validate_source_state
+    from app.modules.assistant import ui_access
 
-    block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
-    if body.program_sha256 != block["program_sha256"]:
-        raise await _ui_denied(user, content_id, "UI program changed", 409)
-    try:
-        if block["catalog_version"] == "nova-openui-3":
-            await validate_source_state(block, body.state)
-        return await assistant_repository.put_ui_state(
-            thread_id, message_id, content_id, user_name=user["username"],
-            security_context=observation_context(session_security(user)), block=block,
-            revision=body.revision, state=body.state,
-        )
-    except UiValidationError as exc:
-        raise await _ui_denied(user, content_id, str(exc)) from exc
+    await _ui_owner(agent_id, thread_id, user)
+    return await ui_access.put_state(
+        thread_id, message_id, content_id, user, program_sha256=body.program_sha256,
+        revision=body.revision, state=body.state,
+    )
 
 
 @router.post("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/media")
 async def get_agent_ui_media(agent_id: str, thread_id: str, message_id: str, content_id: str,
                              body: UiMediaInput, user: dict = Depends(get_current_user)):
-    from app.modules.assistant.intelligent_ui import UiValidationError, parse_program
-    from app.modules.assistant.ui_media import public_media
+    from app.modules.assistant import ui_access
 
-    block = await _ui_source(agent_id, thread_id, message_id, content_id, user)
-    if block.get("evidence") or len(json.dumps(body.props).encode()) > 64_000:
-        raise await _ui_denied(
-            user, content_id, "Public media cannot receive business or form data"
-        )
-    try:
-        parsed = await parse_program(block["program"], catalog_version=block["catalog_version"])
-    except UiValidationError as exc:
-        raise HTTPException(422, "Public media source is invalid") from exc
-    if not any(item["type"] == body.type and item["props"] == body.props
-               for item in parsed["media"]):
-        raise await _ui_denied(
-            user, content_id, "Media parameters must match the static source program"
-        )
-    return await public_media(body.type, body.props)
+    await _ui_owner(agent_id, thread_id, user)
+    return await ui_access.media(
+        thread_id, message_id, content_id, user, media_type=body.type, props=body.props,
+    )
 
 
 @router.post("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/map-metric")
 async def record_agent_map_metric(agent_id: str, thread_id: str, message_id: str,
                                   content_id: str, body: UiMapMetricInput,
                                   user: dict = Depends(get_current_user)):
-    from app.observability.metrics import STUDIO_WORKFLOW_DURATION, STUDIO_WORKFLOW_OPERATIONS
+    from app.modules.assistant import ui_access
 
-    await _ui_source(agent_id, thread_id, message_id, content_id, user)
-    # Client observations are kept distinct from server validation outcomes.
-    status = f"client_{body.event}"
-    STUDIO_WORKFLOW_OPERATIONS.labels("ui", "map_render", status).inc()
-    STUDIO_WORKFLOW_DURATION.labels("ui", "map_render", status).observe(body.elapsed_ms / 1000)
-    return {"recorded": True}
+    await _ui_owner(agent_id, thread_id, user)
+    return await ui_access.map_metric(
+        thread_id, message_id, content_id, user, event=body.event, elapsed_ms=body.elapsed_ms,
+    )
 
 
 async def _business_terms_note(text: str, user: dict, views: list[str]) -> str:
@@ -2155,47 +2110,13 @@ async def send_agent_message(
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
     ui_trace = []
     if body.ui_action is not None:
-        from app.core.redis import session_store
-        from app.modules.assistant.intelligent_ui import UiValidationError, action_context
-        from app.modules.intelligence.engine_repository import metadata_lock
+        from app.modules.assistant.ui_access import accept_action
 
-        source = await _ui_source(agent_id, thread_id, body.ui_action.message_id,
-                                  body.ui_action.content_id, user)
-        if source["program_sha256"] != body.ui_action.program_sha256:
-            raise await _ui_denied(user, body.ui_action.content_id, "Invalid UI action source")
-        try:
-            ui_context = await action_context(
-                source, body.ui_action.state, action_id=body.ui_action.action_id,
-            )
-        except UiValidationError as exc:
-            raise await _ui_denied(user, body.ui_action.content_id, str(exc)) from exc
-        action = body.ui_action
-        action_content = body.content + "\n\nUI form input (user supplied):\n" + json.dumps(
-            {"action_id": action.action_id, **ui_context}, ensure_ascii=False,
+        await _ui_owner(agent_id, thread_id, user)
+        action_content, ui_step = await accept_action(
+            thread_id, body.ui_action, body.content, user,
         )
-        if len(action_content) > 32_000:
-            raise await _ui_denied(user, action.content_id, "UI action input is too large")
-        import hashlib
-
-        key = hashlib.sha256(f"{user_name}:{thread_id}:{action.operation_id}".encode()).hexdigest()
-        async with metadata_lock(f"ui-action:{key}"):
-            redis = session_store._redis
-            if redis is None:
-                raise HTTPException(503, "Metadata coordination is unavailable")
-            if await assistant_repository.ui_action_seen(
-                thread_id, action.operation_id, user_name=user_name
-            ) or not await redis.set(
-                f"nova:studio:ui-action:{key}", "accepted", nx=True, ex=86400
-            ):
-                raise await _ui_denied(user, action.content_id,
-                                       "This UI action has already been accepted", 409)
-        ui_trace.append({"kind": "ui_action", **action.model_dump()})
-        await write_audit_log(
-            event_type="ASSISTANT_UI", user_name=user_name, action="CONTINUE",
-            object_type="UI_BLOCK", object_name=action.content_id, status="SUCCESS",
-            session_id=user.get("session_id"), active_role=security.active_role,
-            security_context_version=security.security_context_version,
-        )
+        ui_trace.append(ui_step)
         # The validated source provides context, not tool authority. Its form data
         # is ordinary untrusted user input and never becomes a system instruction.
         body.content = action_content

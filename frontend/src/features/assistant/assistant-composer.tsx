@@ -114,7 +114,7 @@ export function AssistantComposer({
       ) : null}
       <div
         className={cn(
-          "flex flex-col gap-2 rounded-xl border bg-surface-2 p-2 shadow-xs",
+          "@container/composer flex flex-col gap-2 rounded-xl border bg-surface-2 p-2 shadow-xs",
           "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/40",
           disabled && "opacity-60",
         )}
@@ -211,7 +211,9 @@ export function AssistantComposer({
             }
           }}
         />
-        <div className="flex items-center gap-1">
+        {/* A narrow panel shows the selectors as icons (their names stay on
+            the controls for screen readers), so no label is cut mid-word. */}
+        <div className="flex items-center gap-1 [&_[data-slot=select-value]]:hidden @[22rem]/composer:[&_[data-slot=select-value]]:inline">
           {onSendMessage ? (
             <Button
               type="button"

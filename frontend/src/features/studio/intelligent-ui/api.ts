@@ -2,7 +2,11 @@ import { api } from "@/lib/api-client";
 import type { UiSource, UiState } from "./types";
 
 export function uiSourcePath(s: UiSource) {
-  return `/agents/${encodeURIComponent(s.agentId)}/threads/${encodeURIComponent(s.threadId)}/messages/${encodeURIComponent(s.messageId)}/ui-state/${encodeURIComponent(s.contentId)}`;
+  const thread = `threads/${encodeURIComponent(s.threadId)}/messages/${encodeURIComponent(s.messageId)}/ui-state/${encodeURIComponent(s.contentId)}`;
+  // A Studio agent's answer, or a Neva answer in the assistant panel.
+  return s.agentId
+    ? `/agents/${encodeURIComponent(s.agentId)}/${thread}`
+    : `/assistant/${thread}`;
 }
 export const uiApi = {
   mapMetric: (s: UiSource, event: "ready" | "failed" | "fallback" | "route_unavailable", elapsed_ms: number) =>

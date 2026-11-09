@@ -135,6 +135,15 @@ class AttachmentInput(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class UiActionInput(BaseModel):
+    message_id: str = Field(min_length=1, max_length=64)
+    content_id: str = Field(min_length=1, max_length=64)
+    program_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    action_id: str = Field(min_length=1, max_length=256)
+    operation_id: str = Field(pattern=r"^[a-f0-9-]{36}$")
+    state: dict = Field(default_factory=dict)
+
+
 class MessageRequest(BaseModel):
     """A user turn. The response is an SSE stream, not a JSON body.
 
@@ -157,6 +166,8 @@ class MessageRequest(BaseModel):
     app_context: NevaAppContext | None = None
     #: Files the person attached: text is read as data, images by name only.
     attachments: list[AttachmentInput] = Field(default_factory=list, max_length=3)
+    #: A button or form in an earlier interactive answer was used.
+    ui_action: UiActionInput | None = None
     _prepared_attachments: list[dict] = PrivateAttr(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -173,15 +184,6 @@ class MessageRequest(BaseModel):
     @property
     def prepared_attachments(self) -> list[dict]:
         return self._prepared_attachments
-
-
-class UiActionInput(BaseModel):
-    message_id: str = Field(min_length=1, max_length=64)
-    content_id: str = Field(min_length=1, max_length=64)
-    program_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    action_id: str = Field(min_length=1, max_length=256)
-    operation_id: str = Field(pattern=r"^[a-f0-9-]{36}$")
-    state: dict = Field(default_factory=dict)
 
 
 class UiStateInput(BaseModel):
@@ -219,7 +221,6 @@ class DatavizTurnInput(BaseModel):
 
 
 class AgentMessageRequest(MessageRequest):
-    ui_action: UiActionInput | None = None
     dataviz: DatavizTurnInput | None = None
     work_intent: Literal["ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"] | None = (
         None
