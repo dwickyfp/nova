@@ -40,6 +40,9 @@ export type QueryContextResponse = {
 
 export type QueryResponse = {
   success: boolean;
+  /** The database the session is in once this statement ran (USE moves it). */
+  context_database?: string | null;
+  context_schema?: string | null;
   columns: string[];
   rows: Array<Array<string | number | boolean | null>>;
   row_count: number;

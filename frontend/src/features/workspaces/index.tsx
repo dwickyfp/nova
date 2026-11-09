@@ -28,6 +28,7 @@ import {
   Clock,
   Copy,
   Database,
+  ListOrdered,
   Download,
   FileCode,
   Folder,
@@ -110,7 +111,15 @@ import {
   getStarterTemplate,
 } from "./starter-templates";
 import { ExplainTreeView } from "./explain-tree";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { QueryHistory } from "./query-history";
+import { splitSqlStatements, statementAtOffset } from "./sql-statements";
 import {
   replaceAttachedSql,
   safeNoveSql,
@@ -202,7 +211,16 @@ function getSqlForExecution(fallbackSql: string) {
       ? (editor.getModel()?.getValueInRange(selection).trim() ?? "")
       : "";
 
-  return selectedSql || fallbackSql.trim();
+  if (selectedSql) return selectedSql;
+  // Without a selection, run the statement at the cursor (the one just
+  // written when the cursor sits after it), not the whole file.
+  const model = editor?.getModel();
+  const position = editor?.getPosition();
+  const source = model ? model.getValue() : fallbackSql;
+  const statements = splitSqlStatements(source);
+  const offset =
+    model && position ? model.getOffsetAt(position) : source.length;
+  return statementAtOffset(statements, offset)?.text ?? fallbackSql.trim();
 }
 
 /**
@@ -728,6 +746,14 @@ export function WorkspacesPage() {
   );
   const [isResizingResults, setIsResizingResults] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<"file" | "all">("file");
+  // While Run all works through a script: which statement of how many.
+  const [runProgress, setRunProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  // The database a run left the session in (a USE moves it).
+  const lastContextRef = useRef<{ database: string | null; schema: string | null } | null>(null);
+  const stopRunAllRef = useRef(false);
   const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(
     () => {
       try {
@@ -1559,9 +1585,14 @@ export function WorkspacesPage() {
   }
 
   function generateUniqueFileName(): string {
-    const existingNames = new Set(
-      Object.values(tabs).map((t) => t.title.toLowerCase()),
-    );
+    // Every file at the top level, not only the open tabs: a name an unopened
+    // file already has would point both files at one stored object.
+    const existingNames = new Set([
+      ...Object.values(tabs).map((t) => t.title.toLowerCase()),
+      ...(workspaceTreeQuery.data?.entries ?? [])
+        .filter((entry) => !entry.parent_path)
+        .map((entry) => entry.name.toLowerCase()),
+    ]);
     const base = "Untitled";
     const first = `${base}.sql`;
     if (!existingNames.has(first.toLowerCase())) return first;
@@ -1728,6 +1759,63 @@ export function WorkspacesPage() {
     return feedback;
   }
 
+  /**
+   * A USE in the run moves the tab to that database, so the selector shows it
+   * and the next run starts there instead of failing with "No database
+   * selected".
+   */
+  function followSessionContext(tabId: string, response: QueryResponse[]) {
+    const last = [...response]
+      .reverse()
+      .find((result) => result.success && result.context_database !== undefined);
+    if (!last) return;
+    const database = last.context_database ?? null;
+    const schema = last.context_schema ?? null;
+    lastContextRef.current = { database, schema };
+    setTabs((previous) => {
+      const tab = previous[tabId];
+      if (!tab || (tab.database || null) === database) return previous;
+      return {
+        ...previous,
+        [tabId]: { ...tab, database: database ?? "", schema: schema ?? "default" },
+      };
+    });
+  }
+
+  /** Runs every statement of the file one after another, stopping at the first failure. */
+  async function runAll() {
+    if (!activeTab) return;
+    const statements = splitSqlStatements(
+      editorContentRef.current || activeTab.content,
+    );
+    if (!statements.length) return;
+    const tabId = activeTab.id;
+    let context = {
+      database: activeTab.database || null,
+      schema: activeTab.schema || null,
+    };
+    setQueryResults(null);
+    setActiveResultIdx(0);
+    stopRunAllRef.current = false;
+    try {
+      for (const [index, statement] of statements.entries()) {
+        if (stopRunAllRef.current) break;
+        setRunProgress({ current: index + 1, total: statements.length });
+        const outcome = await runQuery(
+          false,
+          statement.text,
+          undefined,
+          { tabId, ...context },
+          { append: true },
+        );
+        if (outcome !== "success") break;
+        context = lastContextRef.current ?? context;
+      }
+    } finally {
+      setRunProgress(null);
+    }
+  }
+
   async function runQuery(
     confirmDestructive = false,
     sqlOverride?: string,
@@ -1737,9 +1825,22 @@ export function WorkspacesPage() {
       database: string | null;
       schema: string | null;
     },
+    options: { append?: boolean } = {},
   ): Promise<
     "success" | "error" | "cancelled" | "pending-confirmation" | undefined
   > {
+    const append = options.append ?? false;
+    const showResults = (results: QueryResponse[]) => {
+      if (!append) {
+        setQueryResults(results);
+        return;
+      }
+      setQueryResults((previous) => {
+        const next = [...(previous ?? []), ...results];
+        setActiveResultIdx(next.length - 1);
+        return next;
+      });
+    };
     if (!activeTab) return;
     const sql =
       sqlOverride?.trim() ||
@@ -1764,8 +1865,11 @@ export function WorkspacesPage() {
       payload: { documentId: activeTab.id },
     });
     setRunning(true);
-    setQueryResults(null);
-    setActiveResultIdx(0);
+    lastContextRef.current = null;
+    if (!append) {
+      setQueryResults(null);
+      setActiveResultIdx(0);
+    }
     setElapsedMs(0);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1798,7 +1902,8 @@ export function WorkspacesPage() {
         return "pending-confirmation";
       }
       if (activeTabIdRef.current === requestSnapshot.tabId)
-        setQueryResults(response);
+        showResults(response);
+      followSessionContext(requestSnapshot.tabId, response);
       const feedback = recordQueryFeedback(
         activeTab.id,
         executionId,
@@ -1824,7 +1929,7 @@ export function WorkspacesPage() {
       return feedback.execution.status === "success" ? "success" : "error";
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        setQueryResults([
+        showResults([
           {
             success: false,
             columns: [],
@@ -1868,7 +1973,7 @@ export function WorkspacesPage() {
           destructive: false,
           needs_confirmation: false,
         };
-        setQueryResults([failedResult]);
+        showResults([failedResult]);
         recordQueryFeedback(
           activeTab.id,
           executionId,
@@ -2440,24 +2545,53 @@ export function WorkspacesPage() {
             <>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                 <div className="flex shrink-0 items-center gap-2">
-                  {running ? (
+                  {running || runProgress ? (
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => abortRef.current?.abort()}
+                      onClick={() => {
+                        stopRunAllRef.current = true;
+                        abortRef.current?.abort();
+                      }}
                     >
                       <Square className="size-4" />
                       Cancel {(elapsedMs / 1000).toFixed(1)}s
                     </Button>
                   ) : (
-                    <Button size="sm" onClick={() => runQuery()}>
-                      <Play className="size-4" />
-                      Run
-                    </Button>
+                    <div className="flex gap-px">
+                      <Button
+                        size="sm"
+                        className="rounded-r-none"
+                        title="Run the selection, or the statement at the cursor (Ctrl+Enter)"
+                        onClick={() => runQuery()}
+                      >
+                        <Play className="size-4" />
+                        Run
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="sm"
+                            className="rounded-l-none px-2"
+                            aria-label="More ways to run"
+                          >
+                            <ChevronDown className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                          <DropdownMenuItem onSelect={() => void runAll()}>
+                            <ListOrdered className="size-4" />
+                            Run all
+                            <DropdownMenuShortcut>⇧⌘↵</DropdownMenuShortcut>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   )}
                   <Button
-                    size="sm"
-                    variant="outline"
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     title="Format SQL (Ctrl+Shift+F)"
                     aria-label="Format SQL"
                     onClick={() => {
@@ -2467,28 +2601,17 @@ export function WorkspacesPage() {
                     }}
                   >
                     <Braces className="size-4" />
-                    <span className="hidden @md/editor:inline">Format</span>
                   </Button>
                   <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      askAboutWorkspaceQuery(
-                        "Explain the selected SQL, or the current query if nothing is selected.",
-                      )
-                    }
-                  >
-                    Explain SQL
-                  </Button>
-                  <button
-                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     aria-label="Version history"
                     title="Version history"
-                    className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => setHistoryOpen(true)}
                   >
                     <History className="size-4" />
-                  </button>
+                  </Button>
                 </div>
                 <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
                   {/*
@@ -2543,6 +2666,7 @@ export function WorkspacesPage() {
                       }));
                     }}
                     onRun={() => runQuery()}
+                    onRunAll={() => void runAll()}
                     onAttachSelection={attachEditorSelectionToAssistant}
                     proposedRewrite={
                       proposedRewrite && proposedRewrite.tabId === activeTab.id
@@ -2598,7 +2722,7 @@ export function WorkspacesPage() {
                         type="button"
                         onClick={() => setResultsTab("results")}
                         className={cn(
-                          "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
+                          "flex items-center gap-1.5 whitespace-nowrap rounded-t-md px-3 py-1 text-xs transition-colors",
                           resultsTab === "results"
                             ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
                             : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
@@ -2610,16 +2734,28 @@ export function WorkspacesPage() {
                             Explain
                           </span>
                         )}
-                        {queryResults && queryResults.length > 0 && (
-                          <span className="text-muted-foreground">
-                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r
-                            •{" "}
+                        {runProgress ? (
+                          <span
+                            role="status"
+                            className="tabular-nums text-muted-foreground"
+                          >
+                            Running {runProgress.current} of {runProgress.total} queries
+                          </span>
+                        ) : queryResults && queryResults.length > 0 ? (
+                          <span className="tabular-nums text-muted-foreground">
+                            {queryResults.length > 1
+                              ? `${queryResults.length} queries · `
+                              : ""}
+                            {queryResults
+                              .reduce((s, r) => s + r.row_count, 0)
+                              .toLocaleString()}{" "}
+                            rows ·{" "}
                             {queryResults
                               .reduce((s, r) => s + r.elapsed_ms, 0)
-                              .toFixed(0)}
+                              .toFixed(0)}{" "}
                             ms
                           </span>
-                        )}
+                        ) : null}
                       </button>
                       <button
                         type="button"
@@ -4907,6 +5043,7 @@ function MonacoSqlEditor({
   role,
   onChange,
   onRun,
+  onRunAll,
   onAttachSelection,
   proposedRewrite,
   onApproveRewrite,
@@ -4919,6 +5056,7 @@ function MonacoSqlEditor({
   role: string;
   onChange: (value?: string) => void;
   onRun: () => void;
+  onRunAll: () => void;
   onAttachSelection: () => void;
   proposedRewrite: ProposedRewrite | null;
   onApproveRewrite: () => void;
@@ -4932,6 +5070,8 @@ function MonacoSqlEditor({
   } | null>(null);
   const onRunRef = useRef(onRun);
   onRunRef.current = onRun;
+  const onRunAllRef = useRef(onRunAll);
+  onRunAllRef.current = onRunAll;
   const onAttachSelectionRef = useRef(onAttachSelection);
   onAttachSelectionRef.current = onAttachSelection;
   // Refs for completion provider — prevents stale closure (provider registered once at mount)
@@ -5362,7 +5502,9 @@ function MonacoSqlEditor({
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
-          onRunRef.current();
+          // Shift runs every statement; plain runs the current one.
+          if (e.shiftKey) onRunAllRef.current();
+          else onRunRef.current();
         }
       };
       editorDomNode.addEventListener("keydown", handler, true);
