@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import {
   Check,
   Database,
@@ -24,7 +24,8 @@ export type DatabaseSchemaSelectorProps = {
   onSelectSchema: (schema: string) => void
 }
 
-export function DatabaseSchemaSelector({
+// Memoized: it sits in the editor toolbar, which re-renders on every keystroke.
+export const DatabaseSchemaSelector = memo(function DatabaseSchemaSelector({
   databases,
   selectedDatabase,
   schemas,
@@ -169,4 +170,4 @@ export function DatabaseSchemaSelector({
       </PopoverContent>
     </Popover>
   )
-}
+})

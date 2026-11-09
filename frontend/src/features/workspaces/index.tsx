@@ -4,6 +4,7 @@ import {
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type SetStateAction,
+  memo,
   startTransition,
   useCallback,
   useDeferredValue,
@@ -168,6 +169,9 @@ const FILE_PANEL_OVERLAY_BELOW = 672;
 const FILE_PANEL_WIDE_FROM = 1024;
 // The editor keeps at least this much height when the results panel is tall.
 const EDITOR_MIN_HEIGHT = 160;
+
+const NO_DATABASES: string[] = [];
+const NO_SCHEMAS: { name: string }[] = [];
 
 function useElementSize(element: HTMLElement | null) {
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -812,6 +816,43 @@ export function WorkspacesPage() {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const activeTabIdRef = useRef(activeTabId);
+
+  // Stable across keystrokes, so the memoized selector does not re-render
+  // while only the SQL text changes.
+  const selectDatabase = useCallback(
+    async (value: string) => {
+      if (!activeTabId) return;
+      const schemas = await api.get<SchemaResponse>(
+        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ""}`,
+      );
+      setSchemasByDatabase((prev) => ({
+        ...prev,
+        [value]: schemas.schemas,
+      }));
+      setTabs((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          ...prev[activeTabId],
+          database: value,
+          schema: schemas.schemas[0]?.name ?? "default",
+        },
+      }));
+    },
+    [activeTabId, sessionRole],
+  );
+  const selectSchema = useCallback(
+    (value: string) => {
+      if (!activeTabId) return;
+      setTabs((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          ...prev[activeTabId],
+          schema: value,
+        },
+      }));
+    },
+    [activeTabId],
+  );
   activeTabIdRef.current = activeTabId;
   const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null);
   const handledTemplateRef = useRef<string | null>(null);
@@ -2454,40 +2495,16 @@ export function WorkspacesPage() {
                     {sessionRole || "No role"}
                   </span>
                   <DatabaseSchemaSelector
-                    databases={queryContextQuery.data?.databases ?? []}
+                    databases={queryContextQuery.data?.databases ?? NO_DATABASES}
                     selectedDatabase={activeTab.database}
                     schemas={
                       activeTab.database
-                        ? (schemasByDatabase[activeTab.database] ?? [])
-                        : []
+                        ? (schemasByDatabase[activeTab.database] ?? NO_SCHEMAS)
+                        : NO_SCHEMAS
                     }
                     selectedSchema={activeTab.schema}
-                    onSelectDatabase={async (value) => {
-                      const schemas = await api.get<SchemaResponse>(
-                        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ""}`,
-                      );
-                      setSchemasByDatabase((prev) => ({
-                        ...prev,
-                        [value]: schemas.schemas,
-                      }));
-                      setTabs((prev) => ({
-                        ...prev,
-                        [activeTab.id]: {
-                          ...prev[activeTab.id],
-                          database: value,
-                          schema: schemas.schemas[0]?.name ?? "default",
-                        },
-                      }));
-                    }}
-                    onSelectSchema={(value) =>
-                      setTabs((prev) => ({
-                        ...prev,
-                        [activeTab.id]: {
-                          ...prev[activeTab.id],
-                          schema: value,
-                        },
-                      }))
-                    }
+                    onSelectDatabase={selectDatabase}
+                    onSelectSchema={selectSchema}
                   />
                 </div>
               </div>
@@ -3247,7 +3264,13 @@ function ObjectGroup({
   );
 }
 
-function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
+// Memoized: the page re-renders on every keystroke in the editor, and a large
+// result or chart must not be redrawn when only the SQL text changed.
+const QueryResults = memo(function QueryResults({
+  queryResult,
+}: {
+  queryResult: QueryResponse | null;
+}) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
   const [sortCol, setSortCol] = useState<number | null>(null);
@@ -3550,7 +3573,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
         })()}
     </div>
   );
-}
+});
 
 // ── Chart Visualization ─────────────────────────────────────────────
 // Categorical series palette, read from tokens so dark mode stays correct.
@@ -3713,7 +3736,7 @@ function formatAxisTick(value: unknown, maxLength: number = 18) {
   return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
 }
 
-function ChartVisualization({
+const ChartVisualization = memo(function ChartVisualization({
   queryResult,
 }: {
   queryResult: QueryResponse | null;
@@ -4815,7 +4838,7 @@ function ChartVisualization({
       </div>
     </div>
   );
-}
+});
 
 function MonacoSqlEditor({
   value,
