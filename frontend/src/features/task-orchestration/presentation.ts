@@ -1,3 +1,4 @@
+import { format as formatSql } from "sql-formatter";
 import type { StatusTone } from "@/components/ui/status-badge";
 import type { GraphRunState, ScheduleKind, TaskRunState } from "./api";
 
@@ -98,4 +99,16 @@ export function isAccessError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
   const normalized = message.toLowerCase();
   return ACCESS_ERROR_CODES.some((marker) => normalized.includes(marker));
+}
+
+/**
+ * A task's SQL laid out one clause per line for reading. Statements the
+ * formatter does not know (Nova syntax such as `@stage` paths) stay as stored.
+ */
+export function formatTaskSql(sql: string): string {
+  try {
+    return formatSql(sql, { language: "mysql", keywordCase: "upper", tabWidth: 2 });
+  } catch {
+    return sql;
+  }
 }

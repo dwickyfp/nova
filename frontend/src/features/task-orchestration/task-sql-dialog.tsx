@@ -12,8 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingLines } from "@/components/ui/loading-overlay";
+import { SqlCodeBlock } from "@/features/database-explorer/sql-code-block";
 import { fetchTaskSQL, type GraphNode } from "./api";
-import { isAccessError } from "./presentation";
+import { formatTaskSql, isAccessError } from "./presentation";
 
 export function TaskSQLDialog({
   graphId,
@@ -72,9 +73,7 @@ export function TaskSQLDialog({
               }
             />
           ) : query.data?.sql ? (
-            <pre className="whitespace-pre-wrap break-words rounded-md bg-muted p-4 font-mono text-sm">
-              <code>{query.data.sql}</code>
-            </pre>
+            <SqlCodeBlock source={formatTaskSql(query.data.sql)} label="Task SQL" />
           ) : (
             <p className="text-sm text-muted-foreground">
               No SQL definition was recorded for this task.
