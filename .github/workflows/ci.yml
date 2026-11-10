@@ -217,6 +217,7 @@ jobs:
           bi_token="$(openssl rand -hex 32)"
           bi_db_password="CiS9$(openssl rand -hex 24)"
           bi_secret="$(openssl rand -hex 32)"
+          sandbox_key="$(openssl rand -hex 32)"
           echo "::add-mask::$admin_password"
           echo "::add-mask::$db_password"
           echo "::add-mask::$signing_key"
@@ -224,6 +225,7 @@ jobs:
           echo "::add-mask::$bi_token"
           echo "::add-mask::$bi_db_password"
           echo "::add-mask::$bi_secret"
+          echo "::add-mask::$sandbox_key"
           {
             echo "RANGER_ADMIN_PASSWORD=$admin_password"
             echo "RANGER_PASSWORD=$admin_password"
@@ -237,6 +239,9 @@ jobs:
             echo "NOVA_SUPERSET_SERVICE_TOKEN=$bi_token"
             echo "SUPERSET_DB_PASSWORD=$bi_db_password"
             echo "SUPERSET_SECRET_KEY=$bi_secret"
+            # The notebook sandbox server (not started here) refuses to run
+            # without an API key, so Compose requires one to read the file.
+            echo "NOVA_OPENSANDBOX_API_KEY=$sandbox_key"
           } >> "$GITHUB_ENV"
 
       - name: Start the real engine and Ranger control plane
