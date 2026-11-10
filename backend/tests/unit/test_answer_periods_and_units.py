@@ -147,3 +147,52 @@ def test_a_label_does_not_hide_a_wrong_number(answer, unsupported):
         answer, question="Which product was returned the most?", tables=RETURNS, language="en",
     )
     assert check.unsupported == unsupported
+
+
+MARGIN = {"e1": {"columns": ["gross_margin", "net_revenue"],
+                 "rows": [["3524365749.02779334", "9011367749.03"]],
+                 "units": {"gross_margin": "IDR", "net_revenue": "IDR"}}}
+
+
+def _margin_check(**claim):
+    from app.modules.assistant.answer_contract import Claim
+
+    return check_numeric_answer(
+        "Margin kotor kita Rp3,52 miliar.", question="Berapa margin kita?",
+        tables=MARGIN, claims=(Claim(text="3,52 miliar", kind="derived", **claim),),
+        language="id",
+    )
+
+
+def test_a_rounded_cell_noted_as_derived_is_that_cell():
+    assert _margin_check(column="gross_margin").accepted
+
+
+@pytest.mark.parametrize("claim", [
+    # Another column, a claimed change, or no column: not a rounded cell.
+    {"column": "net_revenue"},
+    {"column": "gross_margin", "direction": "up"},
+    {},
+])
+def test_a_derived_claim_is_not_waved_through(claim):
+    assert _margin_check(**claim).unsupported == ("3,52 miliar",)
+
+
+def test_a_period_the_query_reported_without_rows_backs_its_year():
+    from app.modules.assistant.answer_contract import with_period_facts
+
+    tables = {"e1": {"columns": ["net_revenue"], "rows": [["9011367749.03"]]}}
+    facts = [{"first": "2025-01-01", "last": "2025-12-31"}]
+    checked = with_period_facts(tables, facts)
+    answer = "This year's sales were 9,011,367,749.03; 2025 has no sales data."
+    question = "Compare this year's sales with last year."
+    assert check_numeric_answer(answer, question=question, tables=checked).accepted
+    assert check_numeric_answer(answer, question=question, tables=tables).unsupported == (
+        "2025",
+    )
+    # A period backs its years only: no figure, and an unrelated year still fails.
+    wrong = "This year's sales were 9,011,367,749.03; 2023 has no sales data."
+    assert check_numeric_answer(wrong, question=question, tables=checked).unsupported == (
+        "2023",
+    )
+    assert with_period_facts(tables, []) is tables

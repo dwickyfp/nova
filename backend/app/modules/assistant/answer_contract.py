@@ -393,6 +393,21 @@ def _figure(text: str, language: str) -> str:
     return _key(tokens[0].core.lstrip("+-−") + ("%" if tokens[0].percent else ""))
 
 
+def with_period_facts(
+    tables: dict[str, dict[str, Any]], periods: list[dict[str, str]]
+) -> dict[str, dict[str, Any]]:
+    """The result tables plus periods a query reported without rows.
+
+    Each period is an entry with no columns or rows, so it backs the years it
+    names and nothing else: no cell, count or rendering comes from it.
+    """
+    extra = {
+        f"period_fact_{index}": {"columns": [], "rows": [], "period": dict(period)}
+        for index, period in enumerate(periods)
+    }
+    return {**tables, **extra} if extra else tables
+
+
 def _table_years(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
     """Years in result labels ("2026-08-01", "2025-Q2") or in the period the data
     covers are data, not claims."""
@@ -866,6 +881,23 @@ def _check_numeric_answer(
             )
             if match is not None:
                 accept(token, match.evidence_id, match.column)
+                continue
+        if (
+            kind == "derived" and claim is not None and claim.column in columns
+            and not claim.direction and not claim.labels
+        ):
+            # A rounded cell noted as derived ("3,52 miliar" of gross_margin) is that
+            # cell: no change or comparison was claimed, and the column is named.
+            rounded = next((
+                item for item in cells
+                if item.column == claim.column
+                and claim.evidence_id in {None, item.evidence_id}
+                and (label is None or label in item.labels)
+                and (item.percent or not token.percent)
+                and _cell_matches(item.value, token, item.percent)
+            ), None)
+            if rounded is not None:
+                accept(token, rounded.evidence_id, rounded.column)
                 continue
         if kind is None and token.scale is None and integers & years and _YEAR_TEXT.fullmatch(
             token.text

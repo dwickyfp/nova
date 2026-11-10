@@ -273,6 +273,10 @@ class LoopContext:
     #: This turn's verified result tables by evidence id, for ``compute_metrics``.
     #: Set before each tool call; never persisted or sent upstream.
     evidence_tables: dict[str, dict[str, Any]] | None = None
+    #: Periods a governed query reported without returning rows (the days asked
+    #: for that have no data, and the range the data does cover). Only the number
+    #: check reads them, so a year they name is backed by the query.
+    period_facts: list[dict[str, str]] = field(default_factory=list)
     #: The compiled query behind each ``semantic_query`` result of this turn, so
     #: ``ml_execute`` can take a governed result as its input. Never sent upstream.
     evidence_sql: dict[str, str] | None = None
@@ -1847,10 +1851,14 @@ class AssistantLoop:
                     if all(not table.get("rows") for table in answer_tables.values()):
                         answer_text = say("loop.no_rows", language)
                     await _localized(language, context)
-                    from app.modules.assistant.answer_contract import check_numeric_answer
+                    from app.modules.assistant.answer_contract import (
+                        check_numeric_answer,
+                        with_period_facts,
+                    )
 
+                    checked_tables = with_period_facts(answer_tables, context.period_facts)
                     draft_check = check_numeric_answer(
-                        answer_text, question=_asked(thread, user_content), tables=answer_tables,
+                        answer_text, question=_asked(thread, user_content), tables=checked_tables,
                         claims=answer_claims, language=language,
                     )
                     rewrite = {"role": "system", "content": (
@@ -1880,7 +1888,7 @@ class AssistantLoop:
                         messages.append(rewrite)
                         continue
                     verified_answer = finalize_verified_answer(
-                        answer_text, question=_asked(thread, user_content), tables=answer_tables,
+                        answer_text, question=_asked(thread, user_content), tables=checked_tables,
                         tables_shown=any(item.kind == "table" for item in pending_artifacts),
                         claims=answer_claims, language=language,
                         compares_groups=bool(
@@ -2587,6 +2595,10 @@ class AssistantLoop:
                 }
                 clarification_requested = True
                 clarification_context = dict(outcome.repair_context or {})
+                context.period_facts.extend(
+                    period for key in ("data_window", "missing")
+                    if isinstance(period := clarification_context.get(key), dict)
+                )
                 composing_final = True
                 messages.append(
                     _tool_message(

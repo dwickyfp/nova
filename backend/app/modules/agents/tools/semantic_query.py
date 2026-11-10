@@ -344,6 +344,13 @@ class SemanticQueryTool:
                 ))
             elif material:
                 return _clarification(semantic_ir, material)
+            if grounding.status == "none":
+                official = await _official_view(plan, model_id, context)
+                if official is not None:
+                    # The planned measure is, by its exact name, an approved concept
+                    # computed in another view the caller can read: the model asks
+                    # there itself, so its own call names the source it will cite.
+                    return _use_official_view(official, plan)
             notes: list[str] = []
             if first_query and frame is not None:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
@@ -624,6 +631,9 @@ class SemanticQueryTool:
                         "last": gap.window.last.isoformat(),
                     },
                     "period": gap.period,
+                    # The asked-for days with no data, so an answer saying "2025 has
+                    # no data" is checked against them.
+                    "missing": {"first": gap.start.isoformat(), "last": gap.end.isoformat()},
                 },
                 trace_detail=_semantic_trace(
                     semantic_model,
@@ -689,8 +699,11 @@ class SemanticQueryTool:
 
         if hasattr(context, "primary_query_done"):
             context.primary_query_done = True
+        # The view that answered, named in the result: the model may have asked
+        # for another one, and the answer names its source from what it reads.
+        source = str(semantic_model.get("name") or semantic_ir.name)
         summary = _render(
-            question=question, sql=safe_sql, explanation=explanation,
+            question=question, source=source, sql=safe_sql, explanation=explanation,
             confidence=confidence, results=results,
         )
         health = assess_evidence(
@@ -704,6 +717,7 @@ class SemanticQueryTool:
             ok=True,
             summary=_render(
                 question=question,
+                source=source,
                 sql=safe_sql,
                 explanation=explanation,
                 confidence=confidence,
@@ -870,6 +884,60 @@ class SemanticQueryTool:
         # A Studio agent's first view is its own business. Neva reads every view
         # the role can open, so the first one is not an answer to anything.
         return models[0] if models and guess else None
+
+
+async def _official_view(plan: SemanticPlan, model_id: str, context: Any) -> str | None:
+    """Another readable view that computes the plan's measure as an approved concept.
+
+    Used when the question's words named no concept ("how many orders") but the
+    planned metric's own name is one exactly (``order_count`` is the approved
+    Order count). Only a whole metric name counts: ``net_revenue_target`` does
+    not name Net revenue. ``None`` keeps the view the plan was made in.
+    """
+    from app.modules.agents.semantic.access import load_authorized_models
+    from app.modules.ontology.grounding import ground
+    from app.modules.ontology.resolver import normalise
+
+    if not plan.metrics:
+        return None
+    names = {
+        form for metric in plan.metrics
+        for form in (normalise(metric), normalise(metric.replace("_", " ")))
+    }
+    official = await ground(
+        " | ".join(plan.metrics), context, lambda: load_authorized_models(context)
+    )
+    if official.status != "grounded" or not official.view_id or official.view_id == model_id:
+        return None
+    resolution = official.resolution
+    terms = [term for found in (resolution.terms.values() if resolution else []) for term in found]
+    if not terms or any(normalise(term) not in names for term in terms):
+        return None
+    models = await load_authorized_models(context)
+    return next(
+        (str(model.get("name") or model["semantic_model_id"]) for model in models
+         if str(model["semantic_model_id"]) == official.view_id),
+        None,
+    )
+
+
+def _use_official_view(view: str, plan: SemanticPlan) -> ToolOutcome:
+    """Send the question to the view that computes the measure's approved definition."""
+    measures = ", ".join(plan.metrics)
+    return ToolOutcome(
+        ok=False,
+        summary="",
+        error="This measure has an approved definition in another Semantic View.",
+        error_class="OFFICIAL_VIEW_REQUIRED",
+        recoverable=True,
+        safe_detail=(
+            f"{measures} is the organisation's approved definition, computed in the "
+            f"Semantic View {view}; the view asked for only has a measure of the same "
+            f"name. Call semantic_query again with semantic_view set to {view}, and name "
+            f"{view} as the source."
+        ),
+        repair_context={"semantic_view": view, "metrics": list(plan.metrics)},
+    )
 
 
 def _is_agent_turn(context: Any) -> bool:
@@ -1216,11 +1284,15 @@ def _render(
     confidence: Any,
     results: list[Any],
     evidence_health: dict | None = None,
+    source: str | None = None,
 ) -> str:
-    """The bounded text the model reads back: SQL, rows, and honesty markers."""
+    """The bounded text the model reads back: source, SQL, rows, honesty markers."""
     from app.modules.assistant.tools.redaction import redact_rows
 
-    lines = [f"question: {question}", f"sql:\n{sql}"]
+    lines = [f"question: {question}"]
+    if source:
+        lines.append(f"source: {source} (the Semantic View that answered)")
+    lines.append(f"sql:\n{sql}")
     if explanation:
         lines.append(f"explanation: {explanation}")
     if evidence_health:

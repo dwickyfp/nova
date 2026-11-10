@@ -49,15 +49,42 @@ planner code before it. Every stated figure matches the engine: for example,
 Mie Instan Goreng 85g with 2,745 units returned, October 2026 with
 Rp1,573,810,277.50, and a gross margin of Rp3,524,365,749.03.
 
+## Phase 6c: the official view, the answering view, rounded figures
+
+The 6b run left three problems. This section records how each was fixed.
+
+| Problem | Fix |
+|---|---|
+| DA04 answered 5,000 orders from the benchmark view. "Orders" names no glossary term, so the model picked the view itself. | The planned metric's whole name (`order_count`) is the approved concept Order count, and that concept is computed in `retail_sales`. The tool returns a recoverable `OFFICIAL_VIEW_REQUIRED` naming that view. The model asks there, so its own call names the source it cites. Only a whole metric name counts. |
+| The answer named the view the model asked for, not the view that answered. | Every result now states the view that answered (`source:`). |
+| A rounded figure noted as derived ("Rp3,52 miliar" of `gross_margin`) was refused. | A derived claim with no change or comparison is accepted when it rounds a cell of the column it names. Another column, a claimed change or no column is still refused. |
+| "No data for 2025" was refused when the year came from a query that returned no rows. | The days a query reported without data, and the range the data covers, back the years they name. They are checked by the number check only, and no figure is ever taken from them. |
+
+Results on all eight data tasks × 3 runs, judged as above. Every stated figure
+was checked on the engine. Evidence: `runs/phase-6c-views.jsonl` and
+`judgments/phase-6c-views.jsonl`.
+
+| Measure | Phase 6 (test half) | Phase 6b | **Phase 6c (all 24)** | Phase 6c test half |
+|---|---|---|---|---|
+| Solved | 0.38 | 0.88 | **0.96 (0.88–1.00)** | 0.92 (0.75–1.00) |
+| Correct | — | 0.88 | **1.00** | 1.00 |
+| Understandable | — | 1.00 | **0.96** | 1.00 |
+| Wrong and confident | 3 | 3 | **0** | 0 |
+| pass^3 | — | 0.88 | **0.88** | — |
+| Latency p50 / p95 | — | 37.0 / 59.2 s | **27.1 / 66.7 s** | — |
+
+Solved per task: DA01 to DA07 3 of 3, DA08 2 of 3. The DA08 failure is a model
+call the provider held for 145 s. The turn ended plainly within its time
+budget, without guessing.
+
 ## What still fails
 
-1. **DA04 picks the benchmark view.** "How many orders do we have in total?"
-   is answered with 5,000 from `nova_business_360`, a benchmark dataset. The
-   retail data has 6,758 orders. The two views both fit the question. The
-   view is chosen before planning, so the fix belongs in view selection, not
-   in the planner.
-2. **"Could not confirm the date range"** in DA05 (all runs) and DA08 (runs 1
-   and 2), even though the data runs from 1 May to 4 November 2026. The model
-   did not always ask for the dates, so the tool did not read them.
-3. **Jargon.** "Semantic View" appears in 13 of 24 replies, and internal view
-   names such as `retail_sales` appear in 21. This is phase 6 item 4.
+1. **Terse fallback (DA01 run 1, DA07 run 1).** Neva's draft stated a figure
+   the check could not back: a year for a whole-history answer that did not
+   ask for its dates, or a rounded figure with a claim shape the run did not
+   record. The answer was then rebuilt from cells. The figures are correct,
+   but the reply is bare.
+2. **"Could not confirm the date range"** (DA05, DA08). The tool reads the
+   data's dates only when the model asks for them.
+3. **Jargon.** "Semantic View" and view names such as `retail_sales` appear in
+   almost every reply (phase 6 item 4).

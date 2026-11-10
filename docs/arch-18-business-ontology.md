@@ -543,6 +543,19 @@ checkpoint](testing/supernova/phase-e-checkpoint.md)); data questions then
 asked back in four of eight Neva tasks
 ([Neva phase 6](testing/neva/phase-6-checkpoint.md)).
 
+**Measures named by their metric.** A question can name no glossary term
+("how many orders do we have?") and still ask for an approved measure. In that
+case the model picks the view. If the planned metric's whole name is an
+approved concept ("order_count" is Order count) and another view the caller
+can read computes that concept, nothing runs. Instead, the tool returns a
+recoverable `OFFICIAL_VIEW_REQUIRED` that names that view. The model then asks
+there itself, so its own call names the source it cites. Every result also
+states the view that answered (`source:`). Only a whole
+metric name counts: "net_revenue_target" does not name Net revenue. A measure
+that only one view has stays where it is. Without this rule, a benchmark view
+answered 5,000 orders where the retail business has 6,758
+([Neva phase 6b](testing/neva/phase-6b-checkpoint.md)).
+
 **Presentation requests.** A part of the question about how the result is
 shown (keeping ties, an extra note) never blocks the data: the plan lists it as
 not material and the result names what it does not show. A request for the

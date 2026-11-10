@@ -132,6 +132,7 @@ async def test_semantic_query_reports_a_period_outside_the_data(monkeypatch):
     assert outcome.error_class == "OUTSIDE_DATA_WINDOW" and outcome.recoverable
     assert "Do not present an empty or zero result" in outcome.safe_detail
     assert outcome.repair_context["data_window"] == {"first": "2026-05-01", "last": "2026-11-04"}
+    assert outcome.repair_context["missing"] == {"first": "2026-04-30", "last": "2026-04-30"}
     assert execute.await_count == 3
     # The window is read as the caller, never with another identity.
     assert {call.kwargs["username"] for call in execute.await_args_list} == {"alice"}
