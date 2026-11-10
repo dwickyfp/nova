@@ -53,6 +53,17 @@ Nova is single-tenant per deployment, so records carry no tenant id.
   keeps no second role store.
 - **Data.** Seeing a concept never grants data access. Bindings are listed only
   for Semantic Views the caller can already see.
+- **Unreleased work.** The `working` scope shows a concept only to a steward
+  of its domain (or an ancestor) and to `ACCOUNTADMIN`. Anyone else gets an
+  empty list, and a 404 by id, as if the concept did not exist.
+- **History.** A non-steward sees only revisions that a published release
+  pinned, without `changed_by` or `proposal_id`. Stewards see every revision.
+- **Classification and models.** A definition goes into a model prompt only
+  if its classification allows it: `INTERNAL` and `CONFIDENTIAL` for any
+  reader, `RESTRICTED` only for a steward of its domain, `HIGHLY_SENSITIVE`
+  never. The resolver applies this unless the caller is the ontology page
+  (`for_model=False`), and `ontology_explain` refuses such a concept exactly
+  like a missing one. Its related concepts are filtered the same way.
 - **Audit.** Every governed action, and every refusal of one, is written to
   `AUDIT_LOG` with `event_type=ONTOLOGY`.
 
@@ -515,13 +526,45 @@ split reading; a value only one other searchable dimension holds moves the
 filter there ("Salesman" is a role, not an employee name). The planner adds a
 dimension only for a grouping the question asks for.
 
-**Vague measures.** The planner treats a measure word that several catalog
-metrics fit about equally ("sales" with net, gross and before-returns sales) as
-unresolved and lists the candidates, so the turn becomes a clarification. A
-measure a metric names, or that an approved definition names, is resolved: an
-approved alias is a business decision and outranks vagueness. A plan that names
-nothing at all is a clarification too, never an execution error. Measured
-effect: [Phase E checkpoint](testing/supernova/phase-e-checkpoint.md).
+**Vague measures.** A measure word that several catalog metrics fit ("sales"
+with net, gross and before-returns sales; "returned the most" with returned
+units and returned value) is answered with its usual reading: the metric the
+word names, otherwise the net figure for a money word, the unit count for what
+sold or returned most, and the occurrence or day count for "how often". The
+plan records the reading and the other fitting metrics (`readings`), and the
+result tells the answer to state which one it used and offer the others.
+Readings explain a plan without changing what it computes, so they do not
+affect plan equality or verified-query matches. A measure no metric reasonably
+fits stays unresolved and becomes a clarification, as does a plan that names
+nothing. An approved definition outranks both: a term with two approved
+definitions is still asked back by the ontology, never read. Earlier, every
+vague measure was a clarification ([Phase E
+checkpoint](testing/supernova/phase-e-checkpoint.md)); data questions then
+asked back in four of eight Neva tasks
+([Neva phase 6](testing/neva/phase-6-checkpoint.md)).
+
+**Measures named by their metric.** A question can name no glossary term
+("how many orders do we have?") and still ask for an approved measure. In that
+case the model picks the view. If the planned metric's whole name is an
+approved concept ("order_count" is Order count) and another view the caller
+can read computes that concept, nothing runs. Instead, the tool returns a
+recoverable `OFFICIAL_VIEW_REQUIRED` that names that view. The model then asks
+there itself, so its own call names the source it cites. Every result also
+states the view that answered (`source:`). Only a whole
+metric name counts: "net_revenue_target" does not name Net revenue. A measure
+that only one view has stays where it is. Without this rule, a benchmark view
+answered 5,000 orders where the retail business has 6,758
+([Neva phase 6b](testing/neva/phase-6b-checkpoint.md)).
+
+**Presentation requests.** A part of the question about how the result is
+shown (keeping ties, an extra note) never blocks the data: the plan lists it as
+not material and the result names what it does not show. A request for the
+dates the data covers is marked `data_period`. Every answer over all the data
+(a plan with no requested period) reads the first and last day for the metric
+as the caller. The two governed one-row plans run together and are the same
+ones the empty-result check uses. The result states the dates, and the answer
+names them instead of saying they could not be confirmed. A dated question
+already names its period and reads nothing more.
 
 ## Release pins
 
@@ -542,7 +585,15 @@ The ontology release used is chosen in this order:
 - `ontology_explain` returns one concept's definition, its bindings and its
   related concepts.
 
-Both are read-only, need consent, and are bundled per agent. Bindings are
+- `ontology_status` returns the release in use and the caller's own
+  proposals with their review status.
+- `knowledge_propose` files a proposal and `knowledge_withdraw` withdraws the
+  caller's own pending one. Both ask for approval every time; a read-only
+  grant never covers them.
+
+The reads need consent once (a read-only grant covers them). Studio bundles
+the tools per agent; Neva always has all five and grounds a business word in
+this order: glossary, Semantic View, verified query, new SQL. Bindings are
 limited to the agent's Semantic Views and to views the caller can see.
 `GET /ontology/resolve?q=` exposes resolution over HTTP.
 

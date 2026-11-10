@@ -2,25 +2,40 @@ import type { z } from "zod";
 import {
   boundAppContext,
   createApplicationEvent,
-  type NoveAppContext,
-  type NoveApplicationEvent,
-  type NoveEventInput,
-  type NoveSurfaceContext,
+  type NevaAppContext,
+  type NevaApplicationEvent,
+  type NevaEventInput,
+  type NevaSurfaceContext,
 } from "./app-context";
 
-export type NoveSuggestedAction = { label: string; prompt: string };
-export type NoveCapabilityRisk = "safe" | "draft" | "reversible" | "privileged";
+export type NevaSuggestedAction = { label: string; prompt: string };
+export type NevaCapabilityRisk = "safe" | "draft" | "reversible" | "privileged";
 
 /** A model can name this action, but only application code can implement it. */
-export type NoveClientCapability = {
+export type NevaClientCapability = {
   name: string;
-  risk: NoveCapabilityRisk;
+  risk: NevaCapabilityRisk;
   /** Navigation and tab actions may intentionally replace their source page. */
   mayChangeSurface: boolean;
   invoke: (args: unknown) => Promise<unknown>;
 };
 
-export function defineNoveCapability<T extends z.ZodType>({
+/**
+ * The page's own spelling of a choice Neva named in any letter case
+ * ("protected" → "Protected"); anything else is refused.
+ */
+export function choiceOf<T extends string>(
+  value: string,
+  options: readonly T[],
+  what: string,
+): T {
+  const wanted = value.trim().toLowerCase();
+  const found = options.find((option) => option.toLowerCase() === wanted);
+  if (found === undefined) throw new Error(`Unsupported ${what}`);
+  return found;
+}
+
+export function defineNevaCapability<T extends z.ZodType>({
   name,
   risk,
   mayChangeSurface = false,
@@ -28,11 +43,11 @@ export function defineNoveCapability<T extends z.ZodType>({
   execute,
 }: {
   name: string;
-  risk: NoveCapabilityRisk;
+  risk: NevaCapabilityRisk;
   mayChangeSurface?: boolean;
   argsSchema: T;
   execute: (args: z.infer<T>) => unknown | Promise<unknown>;
-}): NoveClientCapability {
+}): NevaClientCapability {
   return {
     name,
     risk,
@@ -41,19 +56,19 @@ export function defineNoveCapability<T extends z.ZodType>({
   };
 }
 
-export type NoveSurfaceDefinition = {
+export type NevaSurfaceDefinition = {
   id: string;
   route: string;
   title?: string;
-  context: () => NoveSurfaceContext;
-  capabilities?: readonly NoveClientCapability[];
-  suggestedActions?: readonly NoveSuggestedAction[];
+  context: () => NevaSurfaceContext;
+  capabilities?: readonly NevaClientCapability[];
+  suggestedActions?: readonly NevaSuggestedAction[];
 };
 
-type SurfaceEntry = { get: () => NoveSurfaceDefinition };
+type SurfaceEntry = { get: () => NevaSurfaceDefinition };
 
 /** Owned by AssistantProvider; registrations are revoked on page unmount. */
-export class NoveSurfaceRegistry {
+export class NevaSurfaceRegistry {
   private entries = new Map<symbol, SurfaceEntry>();
   private listeners = new Set<() => void>();
   private version = 0;
@@ -66,8 +81,8 @@ export class NoveSurfaceRegistry {
 
   getSnapshot = () => this.version;
 
-  register(get: () => NoveSurfaceDefinition): () => void {
-    const token = Symbol("nove-surface");
+  register(get: () => NevaSurfaceDefinition): () => void {
+    const token = Symbol("neva-surface");
     this.entries.set(token, { get });
     this.refresh(true);
     return () => {
@@ -76,7 +91,7 @@ export class NoveSurfaceRegistry {
     };
   }
 
-  getActive(): NoveSurfaceDefinition | null {
+  getActive(): NevaSurfaceDefinition | null {
     const entries = [...this.entries.values()];
     return entries.length ? entries[entries.length - 1].get() : null;
   }
@@ -104,10 +119,10 @@ export class NoveSurfaceRegistry {
 
   buildContext(
     fallback: { database?: string | null; schema?: string | null; role?: string | null },
-    events: readonly NoveApplicationEvent[],
-  ): NoveAppContext {
+    events: readonly NevaApplicationEvent[],
+  ): NevaAppContext {
     const surface = this.getActive();
-    let details: NoveSurfaceContext = {};
+    let details: NevaSurfaceContext = {};
     try {
       details = surface?.context() ?? {};
     } catch {
@@ -152,8 +167,8 @@ export class NoveSurfaceRegistry {
 }
 
 /** Small, private evidence buffer. A turn only includes events for its active page. */
-export class NoveApplicationEvents {
-  private events: NoveApplicationEvent[] = [];
+export class NevaApplicationEvents {
+  private events: NevaApplicationEvent[] = [];
   private listeners = new Set<() => void>();
   private version = 0;
 
@@ -163,9 +178,9 @@ export class NoveApplicationEvents {
   };
 
   getSnapshot = () => this.version;
-  getRecent = (): readonly NoveApplicationEvent[] => this.events;
+  getRecent = (): readonly NevaApplicationEvent[] => this.events;
 
-  publish(input: NoveEventInput): NoveApplicationEvent {
+  publish(input: NevaEventInput): NevaApplicationEvent {
     const event = createApplicationEvent(input);
     this.events = [...this.events, event].slice(-16);
     this.version += 1;

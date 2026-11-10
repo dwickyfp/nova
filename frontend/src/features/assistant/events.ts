@@ -8,6 +8,7 @@ import type {
   ToolClassification,
   WorkflowProvenance,
 } from "./types";
+import { answerSource } from "./types";
 
 /**
  * Parses one SSE frame into a typed event. Returns null for frames the client
@@ -266,6 +267,7 @@ export function parseAssistantEvent(
             typeof usage?.completion_tokens === "number"
               ? usage.completion_tokens
               : undefined,
+          source: answerSource(record.source),
         };
       }
       case "error":

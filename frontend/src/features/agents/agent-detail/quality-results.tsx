@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { checkLabel } from "./quality-case-editor";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   qualityCountBudgets,
@@ -135,7 +136,7 @@ function PromotionGateResults({ run }: { run: QualityRun }) {
                 <dd className="break-words text-muted-foreground">
                   Case scope: {label(run.gate_results.other_quality.mode)}.
                   {run.gate_results.other_quality.required_scorers.length > 0
-                    ? ` Required in every case: ${run.gate_results.other_quality.required_scorers.map(label).join(", ")}.`
+                    ? ` Required in every case: ${run.gate_results.other_quality.required_scorers.map(checkLabel).join(", ")}.`
                     : " No additional scorers selected."}
                 </dd>
               )}
@@ -183,7 +184,7 @@ function ScoreResults({
             className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-4"
           >
             <p className="text-sm">
-              <span className="font-medium">{label(score.scorer)}</span>{" "}
+              <span className="font-medium">{checkLabel(score.scorer)}</span>{" "}
               {score.scorer_version ? (
                 <span className="text-muted-foreground">
                   v{score.scorer_version}{" "}
@@ -248,7 +249,7 @@ export function QualityRunResults({
     <section className="min-w-0 space-y-4" aria-label="Evaluation results">
       <div className="space-y-1">
         <h3 className="text-base font-medium">
-          {label(run.status)} evaluation
+          {run.status === "passed" ? "Passed" : run.status === "failed" ? "Failed" : run.status === "running" ? "Running" : "Incomplete"} test run
         </h3>
         <p className="break-all text-sm text-muted-foreground">
           Release {run.version_id} · Manifest {run.manifest_id}
@@ -331,7 +332,7 @@ export function QualityRunResults({
                         disabled={busy}
                         onClick={() => onRegression(result.case_id)}
                       >
-                        Create regression case
+                        Turn into a test question
                       </Button>
                     )}
                 </div>
@@ -439,7 +440,7 @@ export function QualityRunComparison({
               return (
                 <tr key={scorer} className="border-b last:border-0">
                   <th scope="row" className="p-3 font-medium">
-                    {label(scorer)}
+                    {checkLabel(scorer)}
                   </th>
                   <td className="p-3 tabular-nums">
                     {a.pass} / {a.fail} / {a.unavailable}
@@ -585,7 +586,7 @@ export function ReleaseDependencies({
   if (!manifest)
     return (
       <p className="text-sm text-muted-foreground">
-        Legacy release: dependencies are unevaluated.
+        This version was saved before Nova recorded what it uses.
       </p>
     );
   const dependencies = dependencyRefs(manifest);

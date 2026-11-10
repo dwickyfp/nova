@@ -1,4 +1,4 @@
-"""Opt-in live model check for Nove's multilingual tool planning."""
+"""Opt-in live model check for Neva's multilingual tool planning."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.asyncio
-async def test_nove_model_plans_diverse_languages_without_lexical_routing():
+async def test_neva_model_plans_diverse_languages_without_lexical_routing():
     client = AssistantProviderClient()
     provider = await client.resolve()
     registry = build_registry()

@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { checkLabel } from "./quality-case-editor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -47,7 +48,7 @@ export function QualityProposalReview({
     <div className="min-w-0 space-y-3">
       {!!proposal.patches?.length && (
         <div className="space-y-2">
-          <Label htmlFor={`${id}-patch`}>Remediation patch</Label>
+          <Label htmlFor={`${id}-patch`}>Suggested change</Label>
           <Select value={patchId} onValueChange={setPatchId} disabled={busy}>
             <SelectTrigger id={`${id}-patch`} className="min-h-11 w-full">
               <SelectValue />
@@ -62,19 +63,25 @@ export function QualityProposalReview({
           </Select>
           {patch && (
             <div className="space-y-2 text-sm">
-              <p>
-                Base revision:{" "}
-                <span className="break-all">{patch.base_revision}</span>.
-                Evaluate the result before publication.
+              <p className="text-muted-foreground">
+                Applying it creates a draft from version{" "}
+                <span className="font-mono">{patch.base_revision.slice(0, 8)}</span>.
+                Test the draft before you publish it.
               </p>
               {!!patch.fields?.length && (
                 <p>
-                  Changed fields:{" "}
+                  It changes{" "}
                   {patch.fields
-                    .map((field) => field.replace(/_/g, " "))
-                    .join(", ")}
+                    .map(
+                      (field) =>
+                        ({
+                          instructions_response: "how the agent writes answers",
+                          instructions_orchestration: "how the agent plans its work",
+                        })[field] ?? field.replace(/_/g, " "),
+                    )
+                    .join(" and ")}
                   {patch.source_version_id
-                    ? `, restored from release ${patch.source_version_id}`
+                    ? `, as it was in version ${patch.source_version_id.slice(0, 8)}`
                     : ""}
                   .
                 </p>
@@ -106,11 +113,11 @@ export function QualityProposalReview({
       {!!proposal.regression_candidates?.length && (
         <fieldset className="space-y-2" disabled={busy}>
           <legend className="text-sm font-medium">
-            Regression cases to add
+            Keep testing these questions
           </legend>
           <p className="text-sm text-muted-foreground">
-            Select frozen cases after reviewing their assertions in the
-            evaluation.
+            Tick the questions that failed so every future version is tested
+            on them too.
           </p>
           {proposal.regression_candidates.map((candidate) => (
             <div key={candidate.id} className="flex items-start gap-2">
@@ -129,8 +136,12 @@ export function QualityProposalReview({
                 htmlFor={`${id}-${candidate.id}`}
                 className="min-h-11 break-words"
               >
-                {candidate.case_id} · revision {candidate.case_revision} ·{" "}
-                {candidate.scorers.join(", ")}
+                <span>
+                  Failed test · {candidate.scorers.map(checkLabel).join(", ")}
+                </span>{" "}
+                <span className="font-mono text-xs text-muted-foreground">
+                  {candidate.case_id.slice(0, 8)}
+                </span>
               </Label>
             </div>
           ))}
@@ -143,7 +154,7 @@ export function QualityProposalReview({
           disabled={busy}
           onClick={() => onReview("rejected")}
         >
-          Reject proposal
+          Dismiss
         </Button>
         <Button
           className="min-h-11"
@@ -157,7 +168,7 @@ export function QualityProposalReview({
             )
           }
         >
-          {busy ? "Applying reviewed patch…" : "Accept for draft"}
+          {busy ? "Applying…" : "Apply as a draft"}
         </Button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { AttachedQuery } from "./query-attach";
+import type { UiBlock } from "@/features/studio/intelligent-ui/types";
 import type {
   AssistantEvent,
   AssistantMessage,
@@ -12,6 +13,7 @@ import type {
   ToolCallView,
   TurnState,
 } from "./types";
+import { answerSource, type AnswerSource } from "./types";
 
 /** One observed agentic step, kept so the block renders the whole trace. */
 export type ActivityStep = {
@@ -43,19 +45,88 @@ export type TranscriptMessage = AssistantMessage & {
   attachments?: AttachedQuery[];
   /** The user's typed text without the attachment preamble. */
   display_text?: string;
+  /** Names of files the person attached to this message. */
+  file_names?: string[];
   /**
    * Structured content blocks (Phase 12): result grids and charts emitted by a
    * tool. Client-side only; the backend stores those events in the thread as
    * part of the assistant message, so a restored transcript shows the text.
    */
   blocks?: TranscriptBlock[];
+  /** Follow-up questions offered after the answer. */
+  suggestions?: string[];
+  /** Where the answer came from, shown as a quiet label under it. */
+  source?: AnswerSource;
 };
 
 /** A structured content block attached to an assistant message. */
 export type TranscriptBlock =
   | { kind: "table"; block: TableBlock }
   | { kind: "chart"; block: ChartBlock }
-  | { kind: "citation"; block: CitationBlock };
+  | { kind: "citation"; block: CitationBlock }
+  | {
+      /** An interactive answer (Intelligence UI); its program streams in. */
+      kind: "ui";
+      id: string;
+      block: UiBlock;
+      complete: boolean;
+    };
+
+/**
+ * A stored message as the panel shows it: its result tables, charts,
+ * citations and interactive blocks come back from the recorded trace.
+ */
+export function restoredMessage(message: {
+  message_id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  created_at: string;
+  steps?: Record<string, unknown>[];
+  attachments?: { name: string }[];
+}): TranscriptMessage {
+  const blocks: TranscriptBlock[] = [];
+  let source: AnswerSource | undefined;
+  for (const step of message.role === "assistant" ? message.steps ?? [] : []) {
+    if (step.kind === "answer") source = answerSource(step.source) ?? source;
+    if (step.kind === "table" && Array.isArray(step.columns)) {
+      blocks.push({ kind: "table", block: {
+        tool_call_id: step.tool_call_id as string | undefined,
+        title: step.title as string | undefined,
+        columns: step.columns as string[],
+        rows: (step.rows ?? []) as unknown[][],
+        truncated: step.truncated === true || undefined,
+      } as TableBlock });
+    } else if (step.kind === "chart" && step.chart_spec) {
+      blocks.push({ kind: "chart", block: {
+        tool_call_id: step.tool_call_id,
+        chart_spec: step.chart_spec,
+        viz_spec: step.viz_spec ?? null,
+        presmodel: step.presmodel ?? null,
+      } as ChartBlock });
+    } else if (step.kind === "citation" && Array.isArray(step.citations)) {
+      for (const citation of step.citations as CitationBlock[]) {
+        blocks.push({ kind: "citation", block: citation });
+      }
+    } else if (step.kind === "ui" && typeof step.content_id === "string") {
+      blocks.push({
+        kind: "ui", id: step.content_id, block: step as unknown as UiBlock, complete: true,
+      });
+    }
+  }
+  return {
+    message_id: message.message_id,
+    role: message.role,
+    content: message.content,
+    tool_call: null,
+    created_at: message.created_at,
+    turn_state: "done",
+    ...(blocks.length ? { blocks } : {}),
+    ...(source ? { source } : {}),
+    ...(message.role === "user" && message.attachments?.length
+      ? { file_names: message.attachments.map((item) => item.name) }
+      : {}),
+  };
+}
 
 let localId = 0;
 function nextLocalId(prefix: string) {
@@ -69,6 +140,7 @@ type Action =
       content: string;
       attachments?: AttachedQuery[];
       displayText?: string;
+      fileNames?: string[];
     }
   | { type: "event"; event: AssistantEvent }
   | { type: "cancelled" }
@@ -98,6 +170,25 @@ function appendAssistantText(
   ];
 }
 
+/** Follow-ups belong to the answer they follow, whether it is still streaming or not. */
+function attachSuggestions(
+  messages: TranscriptMessage[],
+  suggestions: string[],
+): TranscriptMessage[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "user") break;
+    if (message.role === "assistant") {
+      return [
+        ...messages.slice(0, index),
+        { ...message, suggestions },
+        ...messages.slice(index + 1),
+      ];
+    }
+  }
+  return messages;
+}
+
 function appendBlock(
   messages: TranscriptMessage[],
   block: TranscriptBlock,
@@ -121,6 +212,27 @@ function appendBlock(
       blocks: [block],
     },
   ];
+}
+
+/** Change one streaming interactive block of the current answer. */
+function updateUiBlock(
+  messages: TranscriptMessage[],
+  contentId: string | undefined,
+  change: (item: Extract<TranscriptBlock, { kind: "ui" }>) => Extract<TranscriptBlock, { kind: "ui" }>,
+): TranscriptMessage[] {
+  if (!contentId) return messages;
+  return messages.map((message) =>
+    message.role === "assistant" && message.blocks?.some(
+      (item) => item.kind === "ui" && item.id === contentId,
+    )
+      ? {
+          ...message,
+          blocks: message.blocks.map((item) =>
+            item.kind === "ui" && item.id === contentId ? change(item) : item,
+          ),
+        }
+      : message,
+  );
 }
 
 function upsertToolCall(
@@ -225,9 +337,20 @@ function applyEvent(
   switch (event.type) {
     case "dashboard":
       return appendAssistantText(state, `\n[Open dashboard](/studio?view=artifacts&item=${event.payload.artifact_id})\n`);
-    case "mission_updated":
     case "ui":
+      if (!event.content_id) return state;
+      return appendBlock(state, {
+        kind: "ui",
+        id: event.content_id,
+        block: { ...event.payload, program: "" },
+        complete: false,
+      });
     case "ui_delta":
+      return updateUiBlock(state, event.content_id, (item) => ({
+        ...item,
+        block: { ...item.block, program: (item.block.program + event.text).slice(0, 64000) },
+      }));
+    case "mission_updated":
     case "mission_continuation":
     case "evidence_health":
     case "evidence_envelope":
@@ -286,8 +409,7 @@ function applyEvent(
     case "citation":
       return appendBlock(state, { kind: "citation", block: event.payload });
     case "suggestions":
-      // Nove's panel offers no catalog follow-ups; Studio does.
-      return state;
+      return attachSuggestions(state, event.suggestions);
     case "tool_detail":
       // What a tool did, for the reader who opens its step. Recorded on the
       // matching tool activity step so the panel can show it.
@@ -299,7 +421,7 @@ function applyEvent(
         ),
       }));
     case "content_block_done":
-      return state;
+      return updateUiBlock(state, event.content_id, (item) => ({ ...item, complete: true }));
     case "done":
       return state.map((message) => {
         if (
@@ -310,6 +432,7 @@ function applyEvent(
             ...message,
             message_id: event.message_id,
             turn_state: "done",
+            ...(event.source ? { source: event.source } : {}),
           };
         }
         return settleActivity(message);
@@ -348,6 +471,7 @@ export function transcriptReducer(
           created_at: new Date().toISOString(),
           attachments: action.attachments,
           display_text: action.displayText,
+          ...(action.fileNames?.length ? { file_names: action.fileNames } : {}),
         },
       ];
     case "event":
@@ -368,13 +492,19 @@ export function useAssistantTranscript() {
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
 
   const addUserMessage = useCallback(
-    (content: string, attachments?: AttachedQuery[], displayText?: string) =>
+    (
+      content: string,
+      attachments?: AttachedQuery[],
+      displayText?: string,
+      fileNames?: string[],
+    ) =>
       setMessages((prev) =>
         transcriptReducer(prev, {
           type: "user_message",
           content,
           attachments,
           displayText,
+          fileNames,
         }),
       ),
     [],

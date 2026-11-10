@@ -8,9 +8,10 @@ The selection is **structural**: a tool the owner did not choose is not put in
 the registry, so the loop neither advertises it nor can the model call it. This
 is stronger than hiding it in the prompt.
 
-``load_skill`` is always present when the agent also selects it; it is a pure,
-credential-free reader, and a missing skill catalog simply means the model does
-not load one.
+``load_skill`` is always present: every agent can load the skills its
+configuration makes available. It is a pure, credential-free reader scoped to
+those skills (``agents.service`` swaps in the agent's own loader), so it is not
+a choice in the tool list.
 """
 
 from __future__ import annotations
@@ -75,10 +76,9 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         from app.modules.assistant.analysis_workspace import analysis_workspace_tool
 
         registry.register(analysis_workspace_tool)
-    if "load_skill" in selected:
-        from app.modules.assistant.tools.load_skill import load_skill_tool
+    from app.modules.assistant.tools.load_skill import load_skill_tool
 
-        registry.register(load_skill_tool)
+    registry.register(load_skill_tool)
     if "catalog_search" in selected:
         from app.modules.assistant.tools.catalog_search import catalog_search_tool
 

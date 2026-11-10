@@ -3,10 +3,12 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
   type ReactNode,
+  type RefObject,
   type SetStateAction,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -33,8 +35,10 @@ const TablePopoverContext = createContext<{
 
 export function TablePopoverProvider({ children }: { children: ReactNode }) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Stable unless the open table changes, so rows do not all re-render.
+  const value = useMemo(() => ({ activeId, setActiveId }), [activeId]);
   return (
-    <TablePopoverContext.Provider value={{ activeId, setActiveId }}>
+    <TablePopoverContext.Provider value={value}>
       {children}
     </TablePopoverContext.Provider>
   );
@@ -73,9 +77,6 @@ export function TableItemWithPopover({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openedByHover = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  const isMobile = useIsMobile();
-  const user = useAuthStore((state) => state.auth.user);
-  const identity = [user?.username, user?.activeRole];
 
   function cancelClose() {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -106,39 +107,6 @@ export function TableItemWithPopover({
     [open],
   );
 
-  const columnsQuery = useQuery({
-    queryKey: ["workspace-table-columns", database, schema, name, ...identity],
-    queryFn: ({ signal }) =>
-      api.get<{ columns: ColumnInfo[]; count: number }>(
-        `/objects/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(name)}/columns`,
-        signal,
-      ),
-    enabled: open,
-    staleTime: 60_000,
-  });
-  const previewQuery = useQuery({
-    queryKey: ["workspace-table-preview", database, schema, name, ...identity],
-    queryFn: ({ signal }) =>
-      api.post<QueryResponse[]>(
-        "/query/execute",
-        {
-          sql: `SELECT * FROM ${quoteIdentifier(database)}.${quoteIdentifier(name)} LIMIT ${PREVIEW_LIMIT}`,
-          database,
-          schema,
-          max_rows: PREVIEW_LIMIT,
-        },
-        signal,
-      ),
-    enabled: open && tab === "preview",
-    staleTime: 60_000,
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
-  const preview = previewQuery.data?.[0];
-  const previewFailed =
-    previewQuery.isError || (previewQuery.isSuccess && !preview?.success);
-  const columns = columnsQuery.data?.columns ?? [];
-
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
@@ -166,160 +134,241 @@ export function TableItemWithPopover({
           <span className="min-w-0 flex-1 truncate">{name}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        ref={contentRef}
-        aria-label={`${name} table details`}
-        side={isMobile ? "bottom" : "right"}
-        align="start"
-        sideOffset={8}
-        collisionPadding={8}
-        className="z-[9999] flex h-76 w-64 max-w-[calc(100vw-1rem)] max-h-[var(--radix-popover-content-available-height)] animate-none! flex-col overflow-hidden p-0"
-        onPointerEnter={cancelClose}
-        onPointerLeave={(event) => {
-          if (event.pointerType === "mouse") scheduleClose();
-        }}
-        onFocusCapture={cancelClose}
-        onOpenAutoFocus={(event) => {
-          if (openedByHover.current) event.preventDefault();
-        }}
-        onCloseAutoFocus={(event) => {
-          if (openedByHover.current || (activeId !== null && activeId !== id))
-            event.preventDefault();
-        }}
-      >
-        <div className="flex max-h-1/3 shrink-0 items-start gap-1.5 overflow-y-auto border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
-          <FileCode className="mt-0.5 size-3 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="whitespace-normal [overflow-wrap:anywhere]">
-              {name}
-            </div>
-            {columnsQuery.data && (
-              <div className="mt-0.5">{columnsQuery.data.count} columns</div>
-            )}
+      {open ? (
+        <TableDetails
+          name={name}
+          database={database}
+          schema={schema}
+          tab={tab}
+          onTabChange={setTab}
+          contentRef={contentRef}
+          onKeepOpen={cancelClose}
+          onLeave={scheduleClose}
+          openedByHover={openedByHover}
+          otherOpen={activeId !== null && activeId !== id}
+        />
+      ) : null}
+    </Popover>
+  );
+}
+
+/**
+ * An open table's details: columns and a preview. It exists only while the
+ * popover is open, so a schema with many tables does not hold two idle
+ * queries and a media listener per row.
+ */
+function TableDetails({
+  name,
+  database,
+  schema,
+  tab,
+  onTabChange,
+  contentRef,
+  onKeepOpen,
+  onLeave,
+  openedByHover,
+  otherOpen,
+}: {
+  name: string;
+  database: string;
+  schema: string;
+  tab: string;
+  onTabChange: (tab: string) => void;
+  contentRef: RefObject<HTMLDivElement | null>;
+  onKeepOpen: () => void;
+  onLeave: () => void;
+  openedByHover: RefObject<boolean>;
+  otherOpen: boolean;
+}) {
+  const isMobile = useIsMobile();
+  const user = useAuthStore((state) => state.auth.user);
+  const identity = [user?.username, user?.activeRole];
+  const columnsQuery = useQuery({
+    queryKey: ["workspace-table-columns", database, schema, name, ...identity],
+    queryFn: ({ signal }) =>
+      api.get<{ columns: ColumnInfo[]; count: number }>(
+        `/objects/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(name)}/columns`,
+        signal,
+      ),
+        staleTime: 60_000,
+  });
+  const previewQuery = useQuery({
+    queryKey: ["workspace-table-preview", database, schema, name, ...identity],
+    queryFn: ({ signal }) =>
+      api.post<QueryResponse[]>(
+        "/query/execute",
+        {
+          sql: `SELECT * FROM ${quoteIdentifier(database)}.${quoteIdentifier(name)} LIMIT ${PREVIEW_LIMIT}`,
+          database,
+          schema,
+          max_rows: PREVIEW_LIMIT,
+        },
+        signal,
+      ),
+    enabled: tab === "preview",
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const preview = previewQuery.data?.[0];
+  const previewFailed =
+    previewQuery.isError || (previewQuery.isSuccess && !preview?.success);
+  const columns = columnsQuery.data?.columns ?? [];
+
+  return (
+    <PopoverContent
+      ref={contentRef}
+      aria-label={`${name} table details`}
+      side={isMobile ? "bottom" : "right"}
+      align="start"
+      sideOffset={8}
+      collisionPadding={8}
+      className="z-[9999] flex h-76 w-64 max-w-[calc(100vw-1rem)] max-h-[var(--radix-popover-content-available-height)] animate-none! flex-col overflow-hidden p-0"
+      onPointerEnter={onKeepOpen}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "mouse") onLeave();
+      }}
+      onFocusCapture={onKeepOpen}
+      onOpenAutoFocus={(event) => {
+        if (openedByHover.current) event.preventDefault();
+      }}
+      onCloseAutoFocus={(event) => {
+        if (openedByHover.current || otherOpen)
+          event.preventDefault();
+      }}
+    >
+      <div className="flex max-h-1/3 shrink-0 items-start gap-1.5 overflow-y-auto border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
+        <FileCode className="mt-0.5 size-3 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="whitespace-normal [overflow-wrap:anywhere]">
+            {name}
           </div>
+          {columnsQuery.data && (
+            <div className="mt-0.5">{columnsQuery.data.count} columns</div>
+          )}
         </div>
-        <Tabs
-          value={tab}
-          onValueChange={setTab}
-          className="min-h-0 flex-1 gap-0"
+      </div>
+      <Tabs
+        value={tab}
+        onValueChange={onTabChange}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <TabsList
+          aria-label="Table information"
+          indicatorVariant="underline"
+          className="w-full shrink-0 rounded-none border-b bg-transparent p-0"
         >
-          <TabsList
-            aria-label="Table information"
-            indicatorVariant="underline"
-            className="w-full shrink-0 rounded-none border-b bg-transparent p-0"
-          >
-            <TabsTrigger value="detail" className="rounded-none text-xs">
-              Detail
-            </TabsTrigger>
-            <TabsTrigger value="preview" className="rounded-none text-xs">
-              Preview Data
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="detail" className="min-h-0 overflow-auto py-1">
-            {columnsQuery.isLoading && (
-              <p
-                role="status"
-                className="px-3 py-2 text-xs text-muted-foreground"
+          <TabsTrigger value="detail" className="rounded-none text-xs">
+            Detail
+          </TabsTrigger>
+          <TabsTrigger value="preview" className="rounded-none text-xs">
+            Preview Data
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="detail" className="min-h-0 overflow-auto py-1">
+          {columnsQuery.isLoading && (
+            <p
+              role="status"
+              className="px-3 py-2 text-xs text-muted-foreground"
+            >
+              Loading columns…
+            </p>
+          )}
+          {columnsQuery.isError && (
+            <p role="alert" className="px-3 py-2 text-xs text-destructive">
+              Failed to load columns
+            </p>
+          )}
+          {columnsQuery.isSuccess && !columns.length && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              No columns available.
+            </p>
+          )}
+          <div className="grid min-w-full w-max grid-cols-[auto_1fr_auto] items-center gap-x-2 text-xs">
+            {columns.map((column) => (
+              <div
+                key={column.name}
+                className="col-span-3 grid grid-cols-subgrid items-center px-3 py-1"
               >
-                Loading columns…
-              </p>
-            )}
-            {columnsQuery.isError && (
-              <p role="alert" className="px-3 py-2 text-xs text-destructive">
-                Failed to load columns
-              </p>
-            )}
-            {columnsQuery.isSuccess && !columns.length && (
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                No columns available.
-              </p>
-            )}
-            <div className="grid min-w-full w-max grid-cols-[auto_1fr_auto] items-center gap-x-2 text-xs">
-              {columns.map((column) => (
-                <div
-                  key={column.name}
-                  className="col-span-3 grid grid-cols-subgrid items-center px-3 py-1"
-                >
-                  <ColumnTypeIcon type={column.type} />
-                  <span className="whitespace-nowrap font-medium">
-                    {column.name}
-                  </span>
-                  <span className="text-right whitespace-nowrap text-muted-foreground">
-                    {column.type}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-          <TabsContent value="preview" className="min-h-0 overflow-auto">
-            {previewQuery.isLoading ? (
-              <p
-                role="status"
-                className="px-3 py-2 text-xs text-muted-foreground"
-              >
-                Loading preview…
-              </p>
-            ) : previewFailed ? (
-              <div className="px-3 py-2 text-xs">
-                <p role="alert" className="text-destructive">
-                  Could not load preview data.
-                </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 text-xs"
-                  onClick={() => void previewQuery.refetch()}
-                >
-                  Retry
-                </Button>
+                <ColumnTypeIcon type={column.type} />
+                <span className="whitespace-nowrap font-medium">
+                  {column.name}
+                </span>
+                <span className="text-right whitespace-nowrap text-muted-foreground">
+                  {column.type}
+                </span>
               </div>
-            ) : preview && preview.rows.length > 0 ? (
-              <table
-                aria-label={`Preview of ${name}, up to 10 rows`}
-                className="w-max min-w-full border-collapse text-xs"
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="preview" className="min-h-0 overflow-auto">
+          {previewQuery.isLoading ? (
+            <p
+              role="status"
+              className="px-3 py-2 text-xs text-muted-foreground"
+            >
+              Loading preview…
+            </p>
+          ) : previewFailed ? (
+            <div className="px-3 py-2 text-xs">
+              <p role="alert" className="text-destructive">
+                Could not load preview data.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-1 text-xs"
+                onClick={() => void previewQuery.refetch()}
               >
-                <thead className="sticky top-0 bg-popover">
-                  <tr>
-                    {preview.columns.map((column, index) => (
-                      <th
+                Retry
+              </Button>
+            </div>
+          ) : preview && preview.rows.length > 0 ? (
+            <table
+              aria-label={`Preview of ${name}, up to 10 rows`}
+              className="w-max min-w-full border-collapse text-xs"
+            >
+              <thead className="sticky top-0 bg-popover">
+                <tr>
+                  {preview.columns.map((column, index) => (
+                    <th
+                      key={index}
+                      scope="col"
+                      className="border-b px-3 py-1.5 text-left font-medium whitespace-nowrap"
+                    >
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.slice(0, PREVIEW_LIMIT).map((row, rowIndex) => (
+                  <tr key={rowIndex} className="border-b last:border-0">
+                    {row.map((cell, index) => (
+                      <td
                         key={index}
-                        scope="col"
-                        className="border-b px-3 py-1.5 text-left font-medium whitespace-nowrap"
+                        className="px-3 py-1.5 align-top whitespace-nowrap"
                       >
-                        {column}
-                      </th>
+                        {cell == null ? (
+                          <span className="font-mono text-xs text-muted-foreground">
+                            NULL
+                          </span>
+                        ) : (
+                          String(cell)
+                        )}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {preview.rows.slice(0, PREVIEW_LIMIT).map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-b last:border-0">
-                      {row.map((cell, index) => (
-                        <td
-                          key={index}
-                          className="px-3 py-1.5 align-top whitespace-nowrap"
-                        >
-                          {cell == null ? (
-                            <span className="font-mono text-xs text-muted-foreground">
-                              NULL
-                            </span>
-                          ) : (
-                            String(cell)
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                No rows to preview.
-              </p>
-            )}
-          </TabsContent>
-        </Tabs>
-      </PopoverContent>
-    </Popover>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              No rows to preview.
+            </p>
+          )}
+        </TabsContent>
+      </Tabs>
+    </PopoverContent>
   );
 }

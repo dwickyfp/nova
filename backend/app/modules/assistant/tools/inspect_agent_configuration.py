@@ -1,4 +1,4 @@
-"""Owner-scoped Agent Studio configuration inspection for Nove."""
+"""Owner-scoped Agent Studio configuration inspection for Neva."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ class InspectAgentConfigurationTool:
             return ToolOutcome(
                 ok=False,
                 summary="",
-                error="This Nove capability is unavailable inside a Studio agent run.",
+                error="This Neva capability is unavailable inside a Studio agent run.",
                 error_class="POLICY_VIOLATION",
             )
         user = getattr(context, "user", None)

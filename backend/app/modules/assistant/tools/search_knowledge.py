@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.skill_registry import skill_library
 from app.modules.assistant.skills import contains_credential_shape
@@ -24,7 +24,7 @@ _SURFACE_REFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
     "workspace": (("query-troubleshooting", 5), ("data-workspace-catalog", 4)),
     "role": (("security-governance", 6), ("stages-tasks-access", 2)),
     "roles": (("security-governance", 6),),
-    "studio": (("nove-workflows", 6), ("ml-ai-providers", 5)),
+    "studio": (("neva-workflows", 6), ("ml-ai-providers", 5)),
     "semantic": (("intelligence-semantic-features", 6),),
     "intelligence": (("intelligence-semantic-features", 5),),
     "monitoring": (("operations-monitoring", 6), ("query-troubleshooting", 2)),
@@ -32,7 +32,7 @@ _SURFACE_REFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
 }
 
 
-def _surface_boosts(app_context: NoveAppContext | None) -> dict[str, int]:
+def _surface_boosts(app_context: NevaAppContext | None) -> dict[str, int]:
     if app_context is None:
         return {}
     keys = {
@@ -55,7 +55,7 @@ def _surface_boosts(app_context: NoveAppContext | None) -> dict[str, int]:
 
 
 def search_references(
-    query: str, *, app_context: NoveAppContext | None = None, refers_to_screen: bool = False,
+    query: str, *, app_context: NevaAppContext | None = None, refers_to_screen: bool = False,
 ) -> list[dict[str, str]]:
     """Rank Nova's references for ``query``.
 
@@ -170,7 +170,7 @@ class SearchKnowledgeTool:
         app_context = getattr(context, "app_context", None)
         references = search_references(
             query,
-            app_context=app_context if isinstance(app_context, NoveAppContext) else None,
+            app_context=app_context if isinstance(app_context, NevaAppContext) else None,
             refers_to_screen=bool(getattr(
                 getattr(context, "intent_frame", None), "refers_to_screen", False
             )),

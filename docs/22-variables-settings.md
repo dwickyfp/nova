@@ -1,6 +1,6 @@
 # Module 22: Variables & Settings
 
-> Manage session/global variables, password policies, and system configuration.
+> Manage session/global variables and system configuration.
 
 ---
 
@@ -26,10 +26,6 @@
 | `enable_materialized_view_rewrite` | Session/Global | MV auto-rewrite | true |
 | `enable_query_queue` | Global | Enable query queue | true |
 | `task_runs_concurrency` | Global | Max parallel tasks | 4 |
-| `password_lifetime` | Global | Password expiry (days) | 90 |
-| `password_history` | Global | Password history count | 0 |
-| `failed_login_attempts` | Global | Max failed logins | 0 |
-| `validate_password` | Global | Enable password validation | false |
 
 ### Operations
 
@@ -55,26 +51,12 @@ SET SESSION query_timeout = DEFAULT;
 
 ---
 
-## Password Policies
+## Password policies
 
-```sql
--- Password expiry
-SET GLOBAL password_lifetime = 90;
-
--- Password history (prevent reuse)
-SET GLOBAL password_history = 5;
-
--- Failed login lockout
-SET GLOBAL failed_login_attempts = 5;
-SET GLOBAL password_lock_time = 30;  -- minutes
-
--- Password complexity
-SET GLOBAL validate_password = ON;
-SET GLOBAL validate_password_length = 8;
-SET GLOBAL validate_password_mixed_case_count = 1;
-SET GLOBAL validate_password_number_count = 1;
-SET GLOBAL validate_password_special_char_count = 1;
-```
+Not available. The pinned StarRocks engine has no password expiry, history,
+lockout or complexity variables (`SHOW GLOBAL VARIABLES` reports none of them,
+and no Nova patch adds them), so Nova offers no password policy page or API.
+Revisit if the engine gains these settings.
 
 ---
 
@@ -101,30 +83,6 @@ SET GLOBAL validate_password_special_char_count = 1;
 │  enable_materialized_view_rewrite  true     true         │
 │                                                          │
 │  ⚠️ Changed values shown in bold. [Reset All to Default]│
-└──────────────────────────────────────────────────────────┘
-```
-
-### Password Policy
-
-```
-┌─ Password Policy ───────────────────────────────────────┐
-│                                                          │
-│  Expiration                                              │
-│  Password lifetime: [90 ▼] days                          │
-│  Password history:  [5  ▼] passwords                     │
-│                                                          │
-│  Lockout                                                 │
-│  Failed attempts:   [5  ▼] before lock                  │
-│  Lock duration:     [30 ▼] minutes                      │
-│                                                          │
-│  Complexity                                              │
-│  [✓] Enable validation                                   │
-│  Min length:     [8  ▼]                                  │
-│  Mixed case:     [1  ▼] uppercase + lowercase            │
-│  Numbers:        [1  ▼] digits                           │
-│  Special chars:  [1  ▼] special characters               │
-│                                                          │
-│  [Save]  [Reset to Defaults]                             │
 └──────────────────────────────────────────────────────────┘
 ```
 

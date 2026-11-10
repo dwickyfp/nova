@@ -81,10 +81,6 @@ from app.modules.query.service import query_service
 logger = logging.getLogger(__name__)
 
 
-class MigrationExecuteGateError(RuntimeError):
-    """Execute is disabled by configuration (the #7 backup gate)."""
-
-
 class MigrationExecuteConfirmationError(RuntimeError):
     """The caller did not confirm — a bad target name or unacknowledged omissions."""
 
@@ -623,14 +619,12 @@ class MigrationService:
     ) -> ExecuteResponse:
         """Apply the plan to the target. Runs as the caller, never root.
 
-        Three gates, all enforced here so the router stays thin:
+        Two gates, both enforced here so the router stays thin:
 
-        1. ``MIGRATION_EXECUTE_ENABLED`` — the operator's acknowledgement that a
-           restorable backup exists (#7). Off by default.
-        2. **Omission acknowledgement** — when the plan has lossy or blocked
+        1. **Omission acknowledgement** — when the plan has lossy or blocked
            objects, the caller must set ``acknowledge_omissions``. The report is
            the product; execution without reading it is refused.
-        3. **Confirmation** — when required, ``confirmation`` must equal the
+        2. **Confirmation** — when required, ``confirmation`` must equal the
            target database name.
 
         Statements run through ``query_service`` as the authenticated user, so
@@ -642,12 +636,6 @@ class MigrationService:
         that was created successfully, using a shared stage as the transfer. It
         requires the source and target to reach the same object storage.
         """
-        if not settings.MIGRATION_EXECUTE_ENABLED:
-            raise MigrationExecuteGateError(
-                "Migration execute is disabled. Set MIGRATION_EXECUTE_ENABLED "
-                "only after a restorable backup exists (issue #7)."
-            )
-
         resolved_target = target_database or database
         if settings.MIGRATION_EXECUTE_REQUIRE_CONFIRMATION and confirmation != resolved_target:
             raise MigrationExecuteConfirmationError(

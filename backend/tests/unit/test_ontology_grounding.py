@@ -22,6 +22,7 @@ from tests.unit._ontology import ADMIN, ANALYST, FINANCE_STEWARD, OUTSIDER, SALE
 from tests.unit.test_business_ontology import World
 from tests.unit.test_semantic_guidance_fallback import USER
 from tests.unit.test_semantic_intelligence import sales_model
+from tests.unit.test_semantic_llm_planner import answer_queries
 
 
 def sales_definition() -> dict:
@@ -340,7 +341,7 @@ async def test_a_grounded_question_plans_and_answers_with_the_official_metric(
         "status": "grounded", "release_id": ctx.ontology_release_id,
         "concepts": ["Finance.NetRevenue"], "ambiguous_terms": [], "metrics": ["total_revenue"],
     }
-    execute.assert_awaited_once()
+    assert len(answer_queries(execute)) == 1
 
 
 async def test_a_plan_that_skips_the_official_metric_is_refused(alice_world, monkeypatch):

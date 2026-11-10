@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
+import { statusLabel, statusTone } from './status-tone'
 
 export type StatusTone =
   | 'success'
@@ -63,4 +64,22 @@ function StatusBadge({
   )
 }
 
-export { StatusBadge }
+/**
+ * A lifecycle state (`ACTIVE`, `verified`, `needs_verification`, …) in its
+ * standard colour and sentence case. Use it for any state a record is in;
+ * use `StatusBadge` directly only for a label that is not such a state.
+ */
+function StateBadge({
+  status,
+  tone,
+  children,
+  ...props
+}: StatusBadgeProps & { status: string }) {
+  return (
+    <StatusBadge tone={tone ?? statusTone(status)} {...props}>
+      {children ?? statusLabel(status)}
+    </StatusBadge>
+  )
+}
+
+export { StateBadge, StatusBadge }

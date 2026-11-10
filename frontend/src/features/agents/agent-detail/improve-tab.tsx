@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/auth-store";
 import { AgentQualityTab, QualitySuggestions } from "./quality-tab";
 import { AgentHarnessTab } from "./harness-tab";
+import { ImproveOverview, type ImproveSection } from "./improve-overview";
 import { AgentMemoryDialog } from "@/features/studio/agent-memory-dialog";
 import { api } from "@/lib/api-client";
 import {
@@ -20,9 +21,11 @@ import {
 export function AgentImproveTab({
   agentId,
   onInspectTrace,
+  onOpenConfiguration,
 }: {
   agentId: string;
   onInspectTrace?: (traceId: string) => void;
+  onOpenConfiguration?: () => void;
 }) {
   const epoch = useAuthStore((state) => state.securityEpoch);
   return (
@@ -30,6 +33,7 @@ export function AgentImproveTab({
       key={`${epoch}:${agentId}`}
       agentId={agentId}
       onInspectTrace={onInspectTrace}
+      onOpenConfiguration={onOpenConfiguration}
     />
   );
 }
@@ -37,9 +41,11 @@ export function AgentImproveTab({
 function ImproveWorkspace({
   agentId,
   onInspectTrace,
+  onOpenConfiguration,
 }: {
   agentId: string;
   onInspectTrace?: (traceId: string) => void;
+  onOpenConfiguration?: () => void;
 }) {
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const consolidation = useMutation({
@@ -54,18 +60,30 @@ function ImproveWorkspace({
         "Learning could not be queued. Check your current session and retry.",
       ),
   });
+  const [section, setSection] = useState<ImproveSection>("overview");
   return (
-    <Tabs defaultValue="quality" className="min-w-0 max-w-4xl gap-6">
+    // The sub-tab row stays put; the open sub-tab's content scrolls below it.
+    <Tabs
+      value={section}
+      onValueChange={(value) => setSection(value as ImproveSection)}
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
+    >
       <TabsList
         aria-label="Improve agent"
-        className="max-w-full"
+        className="max-w-full shrink-0 self-start overflow-x-auto [scrollbar-width:none]"
         indicatorVariant="underline"
       >
+        <TabsTrigger value="overview" className="min-h-11">
+          Overview
+        </TabsTrigger>
         <TabsTrigger value="quality" className="min-h-11">
-          Quality
+          Tests
+        </TabsTrigger>
+        <TabsTrigger value="readiness" className="min-h-11">
+          Data check
         </TabsTrigger>
         <TabsTrigger value="harness" className="min-h-11">
-          Harness
+          Behavior rules
         </TabsTrigger>
         <TabsTrigger value="knowledge" className="min-h-11">
           Knowledge
@@ -74,20 +92,42 @@ function ImproveWorkspace({
           Suggestions
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="quality" className="min-w-0 space-y-8">
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+      <TabsContent value="overview" className="min-w-0">
+        <ImproveOverview
+          agentId={agentId}
+          onOpen={setSection}
+          onOpenConfiguration={onOpenConfiguration}
+        />
+      </TabsContent>
+      <TabsContent value="quality" className="min-w-0 max-w-4xl space-y-8">
         <AgentQualityTab agentId={agentId} onInspectTrace={onInspectTrace} />
+      </TabsContent>
+      <TabsContent value="readiness" className="min-w-0 max-w-4xl space-y-8">
+        <Intro>
+          Checks on the business data this agent reads. Each fix helps it
+          understand the words people use; make them in the Semantic View.
+        </Intro>
         <Readiness agentId={agentId} />
       </TabsContent>
-      <TabsContent value="harness" className="min-w-0">
+      <TabsContent value="harness" className="min-w-0 max-w-4xl space-y-8">
+        <Intro>
+          How the agent works: rules it always follows, tips for each tool, and
+          safety rules that stop certain actions. Changes are saved as a draft
+          you test and publish.
+        </Intro>
         <AgentHarnessTab agentId={agentId} />
       </TabsContent>
-      <TabsContent value="knowledge" className="min-w-0 space-y-8">
+      <TabsContent value="knowledge" className="min-w-0 max-w-4xl space-y-8">
+        <Intro>
+          What the agent has learned from your conversations, and answers people
+          liked that you can approve so the same question gets the same answer.
+        </Intro>
         <section className="space-y-3">
-          <h2 className="text-base font-medium">Business knowledge</h2>
+          <h2 className="text-base font-medium">What it remembers</h2>
           <p className="text-sm text-muted-foreground">
-            Review private statements, supporting evidence, conflicts, and
-            published definitions. Learning from pending conversations runs
-            under your current access.
+            Facts and business rules picked up from conversations. Review them,
+            confirm the right ones, and remove the wrong ones.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setKnowledgeOpen(true)}>
@@ -100,7 +140,7 @@ function ImproveWorkspace({
             >
               {consolidation.isPending
                 ? "Queuing…"
-                : "Consolidate pending learning"}
+                : "Learn from recent conversations"}
             </Button>
           </div>
         </section>
@@ -111,12 +151,22 @@ function ImproveWorkspace({
         />
         <Candidates agentId={agentId} />
       </TabsContent>
-      <TabsContent value="suggestions" className="min-w-0 space-y-8">
+      <TabsContent value="suggestions" className="min-w-0 max-w-4xl space-y-8">
+        <Intro>
+          Fixes Nova proposes from failed tests, and signals from real use such
+          as disliked answers. A fix you accept becomes a draft you test first.
+        </Intro>
         <QualitySuggestions agentId={agentId} />
         <Suggestions agentId={agentId} />
       </TabsContent>
+      </div>
     </Tabs>
   );
+}
+
+/** One plain sentence on what a sub-tab is for. */
+function Intro({ children }: { children: React.ReactNode }) {
+  return <p className="max-w-3xl text-sm text-muted-foreground">{children}</p>;
 }
 
 const STATUS_ICON = {
@@ -125,22 +175,44 @@ const STATUS_ICON = {
   fail: <CircleX className="size-4 text-destructive" aria-hidden />,
 } as const;
 
+/** Each readiness check in plain words, by the stable part of its id. */
+const CHECK_TITLES: Record<string, string> = {
+  semantic_view: "It can read its business data",
+  lint: "Problems in the data definition",
+  dimensions: "Text fields can be used to group and filter",
+  synonyms: "Everyday words for each number",
+  values: "Example values for filters",
+  time: "A date for each number",
+  catalog: "It can see the whole definition at once",
+  sample_questions: "Starter questions are set",
+  tools: "It can query the data",
+  charts: "It can draw charts",
+  budget: "Room to break results down",
+};
+
+function checkTitle(check: ReadinessCheck): { title: string; view?: string } {
+  const [kind, view] = check.id.split(":", 2);
+  return { title: CHECK_TITLES[kind] ?? check.title, view };
+}
+
 function Readiness({ agentId }: { agentId: string }) {
   const epoch = useAuthStore((state) => state.securityEpoch);
   const query = useQuery({
     queryKey: ["agents", "readiness", epoch, agentId],
     queryFn: () => learningApi.readiness(agentId),
   });
+  const checks = query.data?.checks ?? [];
+  const issues = checks.filter((check) => check.status !== "ok");
+  const passing = checks.filter((check) => check.status === "ok");
   return (
     <section aria-labelledby="readiness-heading" className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h2 id="readiness-heading" className="text-base font-medium">
-          Readiness
+          Data checks
         </h2>
         {query.data && (
-          <span className="text-sm text-muted-foreground">
-            {query.data.checks.filter((check) => check.status === "ok").length}{" "}
-            of {query.data.checks.length} checks pass
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {passing.length} of {checks.length} checks pass
           </span>
         )}
       </div>
@@ -148,25 +220,67 @@ function Readiness({ agentId }: { agentId: string }) {
         <Skeleton className="h-40 w-full" />
       ) : query.isError ? (
         <p role="alert" className="text-sm text-destructive">
-          Readiness could not be checked.
+          Readiness could not be checked.{" "}
+          <Button variant="link" onClick={() => void query.refetch()}>
+            Retry checks
+          </Button>
         </p>
       ) : (
-        <ul className="divide-y rounded-lg border">
-          {query.data?.checks.map((check) => (
-            <ReadinessRow key={check.id} check={check} />
-          ))}
-        </ul>
+        <>
+          {issues.length ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm">
+                  {issues.length} thing{issues.length === 1 ? "" : "s"} to tidy
+                  up, most useful first.
+                </p>
+                <Button asChild variant="outline" size="sm">
+                  <a href="/semantic-views">Open Semantic Views</a>
+                </Button>
+              </div>
+              <ul className="divide-y rounded-lg border">
+                {[...issues]
+                  .sort((a, b) => (a.status === "fail" ? -1 : 0) - (b.status === "fail" ? -1 : 0))
+                  .map((check) => (
+                    <ReadinessRow key={check.id} check={check} />
+                  ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm">Everything checks out.</p>
+          )}
+          {passing.length ? (
+            <details className="rounded-lg border">
+              <summary className="cursor-pointer px-4 py-3 text-sm text-muted-foreground">
+                {passing.length} check{passing.length === 1 ? "" : "s"} pass
+              </summary>
+              <ul className="divide-y border-t">
+                {passing.map((check) => (
+                  <ReadinessRow key={check.id} check={check} />
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </>
       )}
     </section>
   );
 }
 
 function ReadinessRow({ check }: { check: ReadinessCheck }) {
+  const { title, view } = checkTitle(check);
   return (
     <li className="flex gap-3 px-4 py-3">
       <span className="mt-0.5 shrink-0">{STATUS_ICON[check.status]}</span>
       <div className="min-w-0 space-y-0.5">
-        <p className="text-sm font-medium">{check.title}</p>
+        <p className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
+          {title}
+          {view ? (
+            <span className="font-mono text-xs font-normal text-muted-foreground">
+              {view}
+            </span>
+          ) : null}
+        </p>
         {check.detail && (
           <p className="text-sm text-muted-foreground break-words">
             {check.detail}
@@ -210,11 +324,11 @@ function Candidates({ agentId }: { agentId: string }) {
     <section aria-labelledby="candidates-heading" className="space-y-3">
       <div>
         <h2 id="candidates-heading" className="text-base font-medium">
-          Liked answers to verify
+          Liked answers to approve
         </h2>
         <p className="text-sm text-muted-foreground">
-          Approving adds the question and its plan as a verified query, so the
-          same question is answered the same way next time.
+          Answers someone gave a thumbs up. Approve one and the same question
+          is answered the same way next time.
         </p>
       </div>
       {query.isLoading ? (
@@ -281,7 +395,7 @@ function CandidateRow({
           Dismiss
         </Button>
         <Button size="sm" disabled={busy} onClick={() => onDecide("approve")}>
-          Verify
+          Approve
         </Button>
       </div>
     </li>
@@ -299,7 +413,7 @@ function Suggestions({ agentId }: { agentId: string }) {
   return (
     <section aria-labelledby="suggestions-heading" className="space-y-3">
       <h2 id="suggestions-heading" className="text-base font-medium">
-        From usage
+        Signals from real use
       </h2>
       {query.isLoading ? (
         <Skeleton className="h-20 w-full" />
@@ -312,7 +426,7 @@ function Suggestions({ agentId }: { agentId: string }) {
         </p>
       ) : feedback.length === 0 && views.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing yet. Disliked answers and frequent query shapes appear here.
+          Nothing yet. Disliked answers and questions asked often appear here.
         </p>
       ) : (
         <ul className="divide-y rounded-lg border">

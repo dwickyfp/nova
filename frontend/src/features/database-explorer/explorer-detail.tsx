@@ -21,6 +21,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { StateBadge } from '@/components/ui/status-badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatDateTime } from '@/lib/datetime'
@@ -900,11 +901,6 @@ export function ExplorerDetail({
       )
     }
     if (mvDetail) {
-      const activeColor =
-        mvDetail.is_active === 'true'
-          ? 'bg-success/10 text-success-strong border-success/25'
-          : 'bg-warning/10 text-warning-strong border-warning/25'
-
       return (
         <div className='space-y-5'>
           {/* Header */}
@@ -917,9 +913,11 @@ export function ExplorerDetail({
                 <h1 className='text-xl font-semibold tracking-tight'>{mvDetail.name}</h1>
                 <Badge variant='secondary'>Materialized View</Badge>
                 {mvDetail.is_active && (
-                  <Badge variant='outline' className={activeColor}>
-                    {mvDetail.is_active === 'true' ? 'Active' : 'Inactive'}
-                  </Badge>
+                  <StateBadge
+                    status={mvDetail.is_active === 'true' ? 'active' : 'inactive'}
+                    // An inactive materialized view no longer refreshes.
+                    tone={mvDetail.is_active === 'true' ? undefined : 'warning'}
+                  />
                 )}
               </div>
               <QualifiedName node={node} />

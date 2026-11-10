@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -26,6 +26,14 @@ import {
 } from 'recharts'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import {
+  formatDateTime,
+  formatDuration,
+  formatNumber,
+  truncate,
+} from '@/lib/format'
+import { readToken } from '@/lib/read-token'
+import { fetchFeMetrics, successRate } from '@/features/cluster/api'
 import { useTheme } from '@/context/theme-provider'
 import {
   Select,
@@ -42,14 +50,27 @@ import {
   LoadingOverlay,
 } from '@/components/ui/loading-overlay'
 import { MetricCard } from '@/components/ui/metric-card'
-import { PageHeader } from '@/components/ui/page-header'
+import { MonitoringHeader } from '../components/monitoring-header'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { statusLabel, statusTone } from '@/components/ui/status-tone'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+} from '@/components/ui/table'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
-  SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
-import { statusTone } from '../components/status-tone'
+import {
+  DetailBlock,
+  DetailFields,
+  ExpandableRow,
+  MonitoringTableHeader,
+  MonitoringTableViewport,
+  TableMessageRow,
+} from '../components/expandable-row'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -80,48 +101,20 @@ type AggregationItem = {
   error_count: number
 }
 
-type FEMetricsResponse = {
-  metrics: {
-    query_total: number
-    query_success: number
-    query_err: number
-    slow_query: number
-    connection_total: number
-  }
-}
-
 type SortField = 'event_time' | 'duration_ms' | 'rows_affected'
 type SortDir = 'asc' | 'desc'
+
+/** Seven data columns plus the details toggle. */
+const COLUMN_COUNT = 8
+/** Durations above this read as slow in the history table. */
+const SLOW_QUERY_MS = 5000
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function formatTime(isoString: string) {
-  return new Date(isoString).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const formatDuration = (ms: number | null | undefined) => {
-  if (ms == null) return '—'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
-}
-
-function truncateSql(sql: string, max = 80) {
-  if (sql.length <= max) return sql
-  return sql.slice(0, max).trim() + '...'
-}
-
-function formatNumber(n: number | null | undefined) {
-  if (n == null) return '—'
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return n.toLocaleString()
+function compact(value: number | null | undefined) {
+  return formatNumber(value, { compact: true })
 }
 
 function formatPeriodLabel(period: string, groupBy: 'hour' | 'day') {
@@ -139,19 +132,6 @@ function formatPeriodLabel(period: string, groupBy: 'hour' | 'day') {
     month: 'short',
     day: 'numeric',
   })
-}
-
-/**
- * Recharts needs concrete colour strings, not classes, so the chart reads the
- * resolved token values off the document instead of carrying its own palette.
- * That keeps dark mode automatic when a token changes.
- */
-function readToken(name: string, fallback: string) {
-  if (typeof document === 'undefined') return fallback
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim()
-  return value || fallback
 }
 
 function getChartColors() {
@@ -198,7 +178,7 @@ function ChartTooltipContent({
           <span className='font-medium'>
             {entry.name === 'Avg Duration (ms)'
               ? formatDuration(entry.value)
-              : formatNumber(entry.value)}
+              : compact(entry.value)}
           </span>
         </div>
       ))}
@@ -210,7 +190,11 @@ function ChartTooltipContent({
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function MonitoringQueryCost() {
+/**
+ * `embedded` drops the page header when the view sits inside the Queries
+ * tabs, which carry their own title.
+ */
+export function MonitoringQueryCost({ embedded = false }: { embedded?: boolean } = {}) {
   /* ---- state ---- */
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -228,9 +212,10 @@ export function MonitoringQueryCost() {
 
   /* ---- queries ---- */
 
-  const metricsQuery = useQuery<FEMetricsResponse>({
-    queryKey: ['monitoring', 'cost', 'metrics'],
-    queryFn: () => api.get<FEMetricsResponse>('/monitoring/metrics/fe'),
+  // Same key and fetcher as the cluster page, so both read one cached copy.
+  const metricsQuery = useQuery({
+    queryKey: ['cluster', 'fe-metrics'],
+    queryFn: fetchFeMetrics,
   })
 
   const aggregationQuery = useQuery<AggregationItem[]>({
@@ -290,10 +275,7 @@ export function MonitoringQueryCost() {
   const items = historyQuery.data?.items ?? []
   const total = historyQuery.data?.total ?? 0
 
-  const successRate =
-    metrics && metrics.query_total > 0
-      ? ((metrics.query_success / (metrics.query_total || 1)) * 100).toFixed(1)
-      : null
+  const rate = successRate(metrics)
 
   const sortedItems = useMemo(() => {
     const copy = [...items]
@@ -352,15 +334,32 @@ export function MonitoringQueryCost() {
     }
   }
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field)
-      return (
-        <ArrowUpDown className='ml-1 inline h-3 w-3 text-muted-foreground/50' />
-      )
-    return sortDir === 'asc' ? (
-      <ArrowUp className='ml-1 inline h-3 w-3' />
-    ) : (
-      <ArrowDown className='ml-1 inline h-3 w-3' />
+  const ariaSort = (field: SortField) =>
+    sortField === field
+      ? sortDir === 'asc'
+        ? ('ascending' as const)
+        : ('descending' as const)
+      : undefined
+
+  // A render helper, not a nested component: a component defined here would
+  // remount on every sort and drop keyboard focus from the header button.
+  const sortButton = (field: SortField, label: string) => {
+    const Icon =
+      sortField !== field ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown
+    return (
+      <Button
+        type='button'
+        variant='ghost'
+        size='sm'
+        className='-mx-2 h-7 px-2 text-xs font-medium text-muted-foreground'
+        onClick={() => toggleSort(field)}
+      >
+        {label}
+        <Icon
+          aria-hidden='true'
+          className={cn('size-3', sortField !== field && 'opacity-50')}
+        />
+      </Button>
     )
   }
 
@@ -368,9 +367,10 @@ export function MonitoringQueryCost() {
 
   return (
     <div className='flex flex-col gap-6'>
-      <PageHeader
+      <MonitoringHeader
+        embedded={embedded}
         title='Query Cost'
-        description='Analyze query resource consumption and cost breakdown.'
+        description='How much CPU, memory and data each query used.'
       />
 
       {metricsQuery.isError ? (
@@ -399,7 +399,7 @@ export function MonitoringQueryCost() {
           <MetricCard
             weight='primary'
             label='Error Count'
-            value={metrics ? formatNumber(metrics.query_err) : '—'}
+            value={compact(metrics?.query_err)}
             icon={AlertTriangle}
             tone='danger'
             hint='Queries that failed in this window'
@@ -407,7 +407,7 @@ export function MonitoringQueryCost() {
           <MetricCard
             weight='primary'
             label='Slow Queries'
-            value={metrics ? formatNumber(metrics.slow_query) : '—'}
+            value={compact(metrics?.slow_query)}
             icon={Clock}
             tone='warning'
             hint='Above the slow-query threshold'
@@ -415,28 +415,28 @@ export function MonitoringQueryCost() {
           <MetricCard
             weight='primary'
             label='Success Rate'
-            value={successRate ? `${successRate}%` : '—'}
+            value={rate == null ? '—' : `${(rate * 100).toFixed(1)}%`}
             icon={CheckCircle}
             tone='success'
-            hint={`${metrics ? formatNumber(metrics.query_success) : '—'} of ${metrics ? formatNumber(metrics.query_total) : '—'} succeeded`}
+            hint={`${compact(metrics?.query_success)} of ${compact(metrics?.query_total)} succeeded`}
           />
           <MetricCard
             weight='compact'
             label='Total Queries'
-            value={metrics ? formatNumber(metrics.query_total) : '—'}
+            value={compact(metrics?.query_total)}
             icon={Activity}
             tone='info'
           />
           <MetricCard
             weight='compact'
             label='Active Connections'
-            value={metrics ? formatNumber(metrics.connection_total) : '—'}
+            value={compact(metrics?.connection_total)}
             icon={Users}
           />
         </div>
       )}
 
-      <Card className='rounded-2xl border-border/70 bg-card/90 shadow-sm'>
+      <Card className='rounded-2xl shadow-sm'>
         <CardContent className='p-6 sm:p-7'>
           <div className='mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between'>
             <div className='flex items-center gap-2'>
@@ -449,7 +449,7 @@ export function MonitoringQueryCost() {
               value={groupBy}
               onValueChange={(v: string) => setGroupBy(v as 'hour' | 'day')}
             >
-              <SelectTrigger className='h-10 w-[132px] rounded-xl border-border/70 bg-background/70'>
+              <SelectTrigger className='h-10 w-[132px] rounded-xl'>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -489,7 +489,7 @@ export function MonitoringQueryCost() {
               className='min-h-[340px] justify-center'
             />
           ) : (
-            <div className='rounded-2xl border border-border/60 bg-background/35 p-3 sm:p-4'>
+            <div className='rounded-2xl border border-border bg-background p-3 sm:p-4'>
               <ResponsiveContainer width='100%' height={340}>
                 <ComposedChart
                   data={aggregation}
@@ -536,7 +536,7 @@ export function MonitoringQueryCost() {
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value: number) => formatNumber(value)}
+                    tickFormatter={(value: number) => compact(value)}
                   />
                   <YAxis
                     yAxisId='right'
@@ -609,217 +609,155 @@ export function MonitoringQueryCost() {
       />
 
       {/* ── Cost History Table ── */}
-      <SimpleTableViewport className='min-h-[320px] shrink-0'>
-        <table className='w-full'>
-          <thead>
-            <tr>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Time
-                <button
-                  type='button'
-                  onClick={() => toggleSort('event_time')}
-                  className='ml-0.5 inline-flex'
-                >
-                  <SortIcon field='event_time' />
-                </button>
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                User
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Database
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                SQL
-              </th>
-              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                <button
-                  type='button'
-                  onClick={() => toggleSort('duration_ms')}
-                  className='inline-flex items-center'
-                >
-                  Duration
-                  <SortIcon field='duration_ms' />
-                </button>
-              </th>
-              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                <button
-                  type='button'
-                  onClick={() => toggleSort('rows_affected')}
-                  className='inline-flex items-center'
-                >
-                  Rows
-                  <SortIcon field='rows_affected' />
-                </button>
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+      <MonitoringTableViewport className='min-h-[320px] shrink-0'>
+        <Table>
+          <MonitoringTableHeader>
+            <TableHead aria-sort={ariaSort('event_time')}>
+              {sortButton('event_time', 'Time')}
+            </TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>Database</TableHead>
+            <TableHead>SQL</TableHead>
+            <TableHead className='text-right' aria-sort={ariaSort('duration_ms')}>
+              {sortButton('duration_ms', 'Duration')}
+            </TableHead>
+            <TableHead className='text-right' aria-sort={ariaSort('rows_affected')}>
+              {sortButton('rows_affected', 'Rows')}
+            </TableHead>
+            <TableHead>Status</TableHead>
+          </MonitoringTableHeader>
+          <TableBody>
             {historyQuery.isLoading ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <LoadingLines rows={5} />
-                </td>
-              </tr>
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <LoadingLines rows={5} />
+              </TableMessageRow>
             ) : historyQuery.isError ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <EmptyState
-                    variant='error'
-                    icon={AlertTriangle}
-                    title='Could not load cost history'
-                    description='The monitoring API did not respond. Check the connection and retry.'
-                    action={
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <EmptyState
+                  variant='error'
+                  icon={AlertTriangle}
+                  title='Could not load cost history'
+                  description='The monitoring API did not respond. Check the connection and retry.'
+                  action={
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={() => void historyQuery.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  }
+                />
+              </TableMessageRow>
+            ) : sortedItems.length === 0 ? (
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <EmptyState
+                  icon={SearchX}
+                  title={
+                    userFilter || databaseFilter
+                      ? 'No queries match these filters'
+                      : 'No cost history yet'
+                  }
+                  description={
+                    userFilter || databaseFilter
+                      ? 'Clear the user or database filter to widen the search.'
+                      : 'Cost history builds from executed queries. Run SQL to populate it.'
+                  }
+                  action={
+                    userFilter || databaseFilter ? (
                       <Button
                         variant='outline'
                         size='sm'
-                        onClick={() => void historyQuery.refetch()}
+                        onClick={() => {
+                          setUserFilter('')
+                          setDatabaseFilter('')
+                          setPage(1)
+                        }}
                       >
-                        Retry
+                        Clear filters
                       </Button>
-                    }
-                  />
-                </td>
-              </tr>
-            ) : sortedItems.length === 0 ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <EmptyState
-                    icon={SearchX}
-                    title={
-                      userFilter || databaseFilter
-                        ? 'No queries match these filters'
-                        : 'No cost history yet'
-                    }
-                    description={
-                      userFilter || databaseFilter
-                        ? 'Clear the user or database filter to widen the search.'
-                        : 'Cost history builds from executed queries. Run SQL to populate it.'
-                    }
-                    action={
-                      userFilter || databaseFilter ? (
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          onClick={() => {
-                            setUserFilter('')
-                            setDatabaseFilter('')
-                            setPage(1)
-                          }}
-                        >
-                          Clear filters
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                </td>
-              </tr>
+                    ) : undefined
+                  }
+                />
+              </TableMessageRow>
             ) : (
               sortedItems.map((item) => (
-                <Fragment key={item.log_id}>
-                  <tr
-                    onClick={() =>
-                      setExpandedRow(
-                        expandedRow === item.log_id ? null : item.log_id
-                      )
-                    }
+                <ExpandableRow
+                  key={item.log_id}
+                  expanded={expandedRow === item.log_id}
+                  onToggle={() =>
+                    setExpandedRow(
+                      expandedRow === item.log_id ? null : item.log_id
+                    )
+                  }
+                  label={`query ${item.query_id || item.log_id}`}
+                  colSpan={COLUMN_COUNT}
+                  detail={
+                    <>
+                      <DetailBlock label='Full SQL Query'>
+                        {item.sql_text}
+                      </DetailBlock>
+                      <DetailFields
+                        fields={[
+                          { label: 'Query ID', value: item.query_id, mono: true },
+                          { label: 'Log ID', value: item.log_id, mono: true },
+                          { label: 'User', value: item.user_name },
+                          { label: 'Database', value: item.database_name },
+                          {
+                            label: 'Duration',
+                            value: formatDuration(item.duration_ms),
+                          },
+                          {
+                            label: 'Rows Affected',
+                            value: formatNumber(item.rows_affected ?? 0),
+                          },
+                        ]}
+                      />
+                    </>
+                  }
+                >
+                  <TableCell className='px-4 py-3 text-xs text-muted-foreground'>
+                    {formatDateTime(item.event_time)}
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <div className='flex items-center gap-1.5'>
+                      <Users className='size-3 text-muted-foreground' />
+                      <span className='text-xs'>{item.user_name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <div className='flex items-center gap-1.5'>
+                      <Database className='size-3 text-muted-foreground' />
+                      <span className='text-xs'>{item.database_name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <code className='rounded bg-muted px-1.5 py-0.5 font-mono text-xs'>
+                      {truncate(item.sql_text)}
+                    </code>
+                  </TableCell>
+                  <TableCell
                     className={cn(
-                      'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                      expandedRow === item.log_id && 'bg-muted/30'
+                      'px-4 py-3 text-right text-xs font-medium',
+                      item.duration_ms > SLOW_QUERY_MS && 'text-warning-strong'
                     )}
                   >
-                    <td className='whitespace-nowrap px-4 py-3 text-xs text-muted-foreground'>
-                      {formatTime(item.event_time)}
-                    </td>
-                    <td className='px-4 py-3 text-sm'>
-                      <div className='flex items-center gap-1.5'>
-                        <Users className='h-3 w-3 text-muted-foreground' />
-                        <span className='text-xs'>{item.user_name}</span>
-                      </div>
-                    </td>
-                    <td className='px-4 py-3 text-sm'>
-                      <div className='flex items-center gap-1.5'>
-                        <Database className='h-3 w-3 text-muted-foreground' />
-                        <span className='text-xs'>{item.database_name}</span>
-                      </div>
-                    </td>
-                    <td className='px-4 py-3 text-sm'>
-                      <code className='rounded bg-muted px-1.5 py-0.5 font-mono text-xs'>
-                        {truncateSql(item.sql_text)}
-                      </code>
-                    </td>
-                    <td className='px-4 py-3 text-right text-xs font-medium'>
-                      <span
-                        className={cn(
-                          item.duration_ms > 5000 &&
-                            'font-semibold text-destructive'
-                        )}
-                      >
-                        {formatDuration(item.duration_ms)}
-                      </span>
-                    </td>
-                    <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                      {(item.rows_affected ?? 0).toLocaleString()}
-                    </td>
-                    <td className='px-4 py-3'>
-                      <StatusBadge tone={statusTone(item.status)}>
-                        {item.status}
-                      </StatusBadge>
-                    </td>
-                  </tr>
-                  {expandedRow === item.log_id && (
-                    <tr className='border-b border-border bg-muted/20'>
-                      <td colSpan={7} className='px-4 py-4'>
-                        <div className='space-y-3'>
-                          <div>
-                            <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                              Full SQL Query
-                            </p>
-                            <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs'>
-                              {item.sql_text}
-                            </pre>
-                          </div>
-                          <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
-                            <div>
-                              <span className='font-medium'>Query ID:</span>{' '}
-                              <span className='font-mono'>{item.query_id}</span>
-                            </div>
-                            <div>
-                              <span className='font-medium'>Log ID:</span>{' '}
-                              <span className='font-mono'>{item.log_id}</span>
-                            </div>
-                            <div>
-                              <span className='font-medium'>User:</span>{' '}
-                              {item.user_name}
-                            </div>
-                            <div>
-                              <span className='font-medium'>Database:</span>{' '}
-                              {item.database_name}
-                            </div>
-                            <div>
-                              <span className='font-medium'>Duration:</span>{' '}
-                              {formatDuration(item.duration_ms)}
-                            </div>
-                            <div>
-                              <span className='font-medium'>
-                                Rows Affected:
-                              </span>{' '}
-                              {(item.rows_affected ?? 0).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
+                    {formatDuration(item.duration_ms)}
+                  </TableCell>
+                  <TableCell className='px-4 py-3 text-right text-xs text-muted-foreground'>
+                    {formatNumber(item.rows_affected ?? 0)}
+                  </TableCell>
+                  <TableCell className='px-4 py-3'>
+                    <StatusBadge tone={statusTone(item.status)}>
+                      {statusLabel(item.status)}
+                    </StatusBadge>
+                  </TableCell>
+                </ExpandableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </SimpleTableViewport>
+          </TableBody>
+        </Table>
+      </MonitoringTableViewport>
 
       {/* ── Pagination ── */}
       <SimpleTablePagination

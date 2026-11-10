@@ -1,4 +1,4 @@
-"""Bounded application state supplied by a Nova surface for one Nove turn."""
+"""Bounded application state supplied by a Nova surface for one Neva turn."""
 
 from __future__ import annotations
 
@@ -130,10 +130,13 @@ class AppEditor(_ContextPart):
     document_id: str | None = Field(default=None, alias="documentId", max_length=256)
     language: str | None = Field(default=None, max_length=40)
     selected_text: str | None = Field(default=None, alias="selectedText", max_length=4096)
+    #: The open document's SQL, so "this query" means something without a
+    #: selection. Bounded, and withheld whole if it carries a credential.
+    text: str | None = Field(default=None, max_length=8192)
     cursor: AppCursor | None = None
     dirty: bool | None = None
 
-    @field_validator("selected_text")
+    @field_validator("selected_text", "text")
     @classmethod
     def scrub_selected_text(cls, value: str | None) -> str | None:
         return _safe_text(value) if value is not None else None
@@ -165,10 +168,14 @@ class AppExecution(_ContextPart):
 class AppView(_ContextPart):
     active_tab: str | None = Field(default=None, alias="activeTab", max_length=128)
     filters: dict[str, Any] = Field(default_factory=dict)
+    #: The values each filter accepts, so Neva sets one the page knows.
+    filter_options: dict[str, Any] = Field(default_factory=dict, alias="filterOptions")
+    #: Small facts the page shows, such as how many rows match.
+    summary: dict[str, Any] = Field(default_factory=dict)
     search: str | None = Field(default=None, max_length=256)
     sort: Any = None
 
-    @field_validator("filters", "sort")
+    @field_validator("filters", "filter_options", "summary", "sort")
     @classmethod
     def scrub_values(cls, value: Any) -> Any:
         return _safe_metadata(value)
@@ -182,7 +189,7 @@ class AppDomain(_ContextPart):
     provider_id: str | None = Field(default=None, alias="providerId", max_length=128)
 
 
-class NoveApplicationEvent(_ContextPart):
+class NevaApplicationEvent(_ContextPart):
     id: str = Field(min_length=1, max_length=128)
     timestamp: datetime
     source: Literal["assistant", "surface", "execution", "user"]
@@ -200,7 +207,7 @@ class NoveApplicationEvent(_ContextPart):
         return _safe_metadata(value)
 
 
-class NoveAppContext(_ContextPart):
+class NevaAppContext(_ContextPart):
     version: Literal[1]
     surface: AppSurface
     entity: AppEntity | None = None
@@ -210,7 +217,7 @@ class NoveAppContext(_ContextPart):
     view: AppView | None = None
     domain: AppDomain | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=32)
-    events: list[NoveApplicationEvent] = Field(default_factory=list, max_length=12)
+    events: list[NevaApplicationEvent] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="before")
     @classmethod
@@ -231,10 +238,10 @@ class NoveAppContext(_ContextPart):
             raise ValueError("Application context has an invalid capability name")
         return list(dict.fromkeys(values))
 
-    def current_events(self) -> list[NoveApplicationEvent]:
+    def current_events(self) -> list[NevaApplicationEvent]:
         current_document = self.editor.document_id if self.editor else None
         current_entity = self.entity.id if self.entity else None
-        visible: list[NoveApplicationEvent] = []
+        visible: list[NevaApplicationEvent] = []
         for event in self.events:
             if event.surface_id is not None and event.surface_id != self.surface.id:
                 continue
@@ -256,7 +263,7 @@ class NoveAppContext(_ContextPart):
         return data
 
 
-def resolve_app_references(request: str, app: NoveAppContext | None) -> dict[str, Any]:
+def resolve_app_references(request: str, app: NevaAppContext | None) -> dict[str, Any]:
     """Give the model bounded references from the current surface, not old turns.
 
     They are always offered: whether "this", "この", or "هذا" points at the screen
@@ -279,4 +286,7 @@ def resolve_app_references(request: str, app: NoveAppContext | None) -> dict[str
         result["lastFailure"] = failure.model_dump(by_alias=True, exclude_none=True)
     if app.editor is not None and app.editor.selected_text:
         result["editorSelection"] = app.editor.selected_text
+    elif app.editor is not None and app.editor.text:
+        # No selection: "this query" is the open document.
+        result["editorText"] = app.editor.text
     return result

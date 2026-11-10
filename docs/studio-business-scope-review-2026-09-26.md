@@ -2,7 +2,7 @@
 
 Tanggal: 26 September 2026. Status: research dan rekomendasi, belum diimplementasikan.
 
-Permintaan: ketika pengguna bertanya “data apa saja yang kamu punya”, Studio menjelaskan Semantic View, tools, dan resource yang terikat pada agent. Pertanyaan ini tidak meminta penelusuran database. Nove tetap menjadi assistant untuk pekerjaan database umum. JEV tetap terbatas pada pemilihan model ringan/berat, agent Smart, tools, dan skills.
+Permintaan: ketika pengguna bertanya “data apa saja yang kamu punya”, Studio menjelaskan Semantic View, tools, dan resource yang terikat pada agent. Pertanyaan ini tidak meminta penelusuran database. Neva tetap menjadi assistant untuk pekerjaan database umum. JEV tetap terbatas pada pemilihan model ringan/berat, agent Smart, tools, dan skills.
 
 ## Kesimpulan
 
@@ -18,9 +18,9 @@ Audit ini berdasarkan pembacaan kode workspace saat ini dan dokumentasi primer. 
 
 2. **Planner belum menerima katalog bisnis agent.** `assistant/planning.py:157` dan payload di baris 285 menyediakan boolean `has_semantic_model`, tool catalog, skills, konteks aplikasi, dan percakapan. Tidak ada katalog view/metric/dimension milik agent. `assistant/service.py:529` memang memuat model yang diizinkan sebelum planning, tetapi pemanggilan planner di baris 644 hanya meneruskan boolean binding. `agents/prompt.py:115` memberi deskripsi kemampuan tool, bukan isi katalog semantic.
 
-3. **Jalur introspeksi yang ada khusus Nove.** `assistant/tools/inspect_agent_configuration.py:67` secara eksplisit menolak pemanggilan dari Studio agent. Tool tersebut membaca konfigurasi owner untuk kebutuhan Nove. Jangan sekadar menghapus guard ini: agent shared dan pemilik konfigurasi mempunyai konteks akses berbeda. Gunakan resolver metadata bersama bila sesuai, dengan proyeksi khusus agent aktif.
+3. **Jalur introspeksi yang ada khusus Neva.** `assistant/tools/inspect_agent_configuration.py:67` secara eksplisit menolak pemanggilan dari Studio agent. Tool tersebut membaca konfigurasi owner untuk kebutuhan Neva. Jangan sekadar menghapus guard ini: agent shared dan pemilik konfigurasi mempunyai konteks akses berbeda. Gunakan resolver metadata bersama bila sesuai, dengan proyeksi khusus agent aktif.
 
-4. **Fallback semantic ke SQL terlalu luas untuk business agent.** `assistant/planning.py:90` dapat mengganti required `semantic_query` dengan `query_execute`; instruksi di baris 237 juga menyarankannya. Perilaku ini tidak membedakan kebijakan Studio dengan Nove. Ketiadaan tool semantic bukan bukti bahwa raw SQL merupakan pengganti bisnis yang sah.
+4. **Fallback semantic ke SQL terlalu luas untuk business agent.** `assistant/planning.py:90` dapat mengganti required `semantic_query` dengan `query_execute`; instruksi di baris 237 juga menyarankannya. Perilaku ini tidak membedakan kebijakan Studio dengan Neva. Ketiadaan tool semantic bukan bukti bahwa raw SQL merupakan pengganti bisnis yang sah.
 
 5. **Raw SQL belum terikat pada resource agent.** `assistant/tools/query_execute.py:150` memeriksa identitas pengguna, klasifikasi SQL, dan mengeksekusi dengan role pengguna. Tidak ada pemeriksaan binding resource agent dalam jalur tersebut. Ini bukan bukti bypass RBAC; ini perbedaan antara izin pengguna dan cakupan tugas agent. Pengguna admin dapat mempunyai akses jauh lebih luas daripada misi agent Sales.
 
@@ -75,7 +75,7 @@ Agent tanpa Semantic View tetap dapat berguna jika mempunyai tools/resource lain
 - Hilangkan fallback semantic-ke-SQL untuk Studio yang dikonfigurasi sebagai business agent. Query bisnis yang tidak tercakup harus mendapat penjelasan keterbatasan atau klarifikasi yang relevan.
 - Raw SQL menjadi kemampuan eksplisit untuk agent yang memang memerlukannya. Pembatasan resource harus ditegakkan server-side, bukan hanya di prompt. Jangan menyisipkan parser allowlist regex sederhana untuk menjanjikan pembatasan SQL kompleks. Tahap awal yang lebih terbatas adalah meniadakan raw SQL dari agent bisnis; kebutuhan SQL terikat ditangani sebagai perubahan berikutnya.
 - Jika search index atau resource connector menjadi sumber agent, deklarasikan resource tersebut secara eksplisit. Untuk tool eksternal yang belum mempunyai kontrak resource, jangan mengklaim seluruh isi sistem eksternal sebagai data agent.
-- Pertahankan satu bounded engine. Perbedaan Studio/Nove berada pada konfigurasi, registry, konteks, dan policy yang diterapkan engine tersebut.
+- Pertahankan satu bounded engine. Perbedaan Studio/Neva berada pada konfigurasi, registry, konteks, dan policy yang diterapkan engine tersebut.
 
 ### JEV tetap empat keputusan
 
@@ -95,7 +95,7 @@ Trajectory tests harus memastikan pemilihan tool, sumber bukti, consent bila dip
 | Pengguna admin bertanya di agent sempit | Katalog tetap sebatas agent |
 | Smart dengan agent mirip atau katalog terpotong | Kepemilikan jelas; tidak mengklaim daftar lengkap jika terpotong |
 | Pengguna meminta sumber di luar cakupan | Batas runtime tetap berlaku |
-| Nove diminta inspeksi database | Perilaku inspeksi yang sah tetap berjalan |
+| Neva diminta inspeksi database | Perilaku inspeksi yang sah tetap berjalan |
 | JEV aktif/nonaktif | Cakupan dan izin identik |
 
 Untuk benchmark sebelum/sesudah JEV, gunakan pertanyaan, konfigurasi agent, resource, data, dan model ringan/berat yang sama. Ulangi pasangan agar variasi model terlihat. Pisahkan perubahan policy Studio dari eksperimen JEV; jangan membandingkan baseline lama dengan JEV plus berbagai perbaikan lain lalu mengatribusikan semuanya ke JEV.

@@ -1,4 +1,4 @@
-"""Studio keeps working when the model planner fails; Nove still stops."""
+"""Studio keeps working when the model planner fails; Neva still stops."""
 
 from __future__ import annotations
 
@@ -76,7 +76,10 @@ async def test_a_studio_agent_without_a_view_falls_back_to_clarification():
     assert "planning_failed" not in joined
 
 
-async def test_nove_still_stops_when_planning_fails():
-    joined, tool, _context = await run("Berapa penjualan bulan ini?", studio=False)
-    assert '"finish_reason":"planning_failed"' in joined
-    assert tool.runs == []
+async def test_neva_falls_back_to_a_read_only_plan_when_planning_fails():
+    # Neva does not stop with nothing: a safe plan of read-only lookups, with
+    # nothing required, replaces the plan the model could not shape.
+    joined, _tool, context = await run("Berapa penjualan bulan ini?", studio=False)
+    assert "planning_failed" not in joined
+    assert any(step.get("planner_fallback") == "direct_answer"
+               for step in context.steps or [])

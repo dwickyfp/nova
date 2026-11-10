@@ -4,8 +4,11 @@ All queries run through ``db.execute_system()`` (admin connection pool)
 so they work regardless of the authenticated user's RBAC privileges.
 """
 
+import asyncio
+import json
 import logging
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Any
 
 from app.core.database import db
 
@@ -14,6 +17,43 @@ if TYPE_CHECKING:
     from app.modules.monitoring.readiness import AuditInput
 
 logger = logging.getLogger(__name__)
+
+#: Databases whose loads are bookkeeping, not data people load: the engine's
+#: statistics collector and Nova's own control plane. They make up nearly all
+#: of the engine's load history.
+_INTERNAL_LOAD_DBS = ("_statistics_", "NOVA_SYSTEM")
+_LOADS_CACHE_KEY = "nova:monitoring:loads:recent"
+_LOADS_REFRESH_LOCK = "nova:monitoring:loads:refreshing"
+#: An answer this recent is served as is; an older one is served while refreshed.
+_LOADS_FRESH_SECONDS = 30
+#: How long a stale answer may still be served before a visit waits again.
+_LOADS_KEEP_SECONDS = 600
+_LOADS_LOCK_SECONDS = 60
+_BACKGROUND: set["asyncio.Task[list[dict]]"] = set()
+#: The history page shows recent loads; older ones stay reachable by database.
+_LOADS_SCAN_LIMIT = 5000
+_LOAD_COLUMNS = (
+    "LABEL, DB_NAME, TABLE_NAME, TYPE, STATE, PROGRESS, CREATE_TIME, LOAD_START_TIME, "
+    "LOAD_COMMIT_TIME, LOAD_FINISH_TIME, ERROR_MSG, SINK_ROWS, SCAN_ROWS"
+)
+
+
+def _load_item(row: tuple) -> dict:
+    return {
+        "label": row[0] or "",
+        "db_name": row[1] or "",
+        "table_name": row[2] or "",
+        "load_type": row[3] or "",
+        "state": row[4] or "",
+        "progress": row[5] or "",
+        "create_time": str(row[6]) if row[6] else "",
+        "load_start_time": str(row[7]) if row[7] else "",
+        "load_commit_time": str(row[8]) if row[8] else "",
+        "load_finish_time": str(row[9]) if row[9] else "",
+        "error_msg": row[10],
+        "sink_rows": row[11] or 0,
+        "scan_rows": row[12] or 0,
+    }
 
 
 class MonitoringRepository:
@@ -552,65 +592,99 @@ class MonitoringRepository:
     ) -> dict:
         """Paginated data load history from information_schema.loads.
 
-        Filters out ``_statistics_`` database by default to exclude
-        internal StarRocks maintenance loads.
+        The engine keeps every load job, including the many small writes of
+        Nova's own control plane and of its statistics collector, and it only
+        narrows its scan for a single ``DB_NAME = ...`` predicate. So:
+
+        * a database filter goes straight to the engine (fast, narrowed scan);
+        * otherwise one scan reads the recent loads into user databases, which
+          is cached briefly and filtered and paged here, instead of two full
+          scans (count and page) per request.
         """
-        conditions = ["DB_NAME NOT IN ('_statistics_')"]
-        params: list = []
-
-        if state:
-            conditions.append("STATE = %s")
-            params.append(state.upper())
         if db_name:
-            conditions.append("DB_NAME = %s")
-            params.append(db_name)
-        if load_type:
-            conditions.append("TYPE = %s")
-            params.append(load_type)
-
-        where = " AND ".join(conditions)
-
-        count_result = await db.execute_system(
-            f"SELECT COUNT(*) FROM information_schema.loads WHERE {where}",
-            params,
-        )
-        total = count_result["rows"][0][0] if count_result["rows"] else 0
-
-        result = await db.execute_system(
-            f"""
-            SELECT LABEL, DB_NAME, TABLE_NAME, TYPE, STATE,
-                   PROGRESS, CREATE_TIME, LOAD_START_TIME,
-                   LOAD_COMMIT_TIME, LOAD_FINISH_TIME,
-                   ERROR_MSG, SINK_ROWS, SCAN_ROWS
-            FROM information_schema.loads
-            WHERE {where}
-            ORDER BY CREATE_TIME DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset],
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "label": row[0] or "",
-                    "db_name": row[1] or "",
-                    "table_name": row[2] or "",
-                    "load_type": row[3] or "",
-                    "state": row[4] or "",
-                    "progress": row[5] or "",
-                    "create_time": str(row[6]) if row[6] else "",
-                    "load_start_time": str(row[7]) if row[7] else "",
-                    "load_commit_time": str(row[8]) if row[8] else "",
-                    "load_finish_time": str(row[9]) if row[9] else "",
-                    "error_msg": row[10],
-                    "sink_rows": row[11] or 0,
-                    "scan_rows": row[12] or 0,
-                }
+            conditions = ["DB_NAME = %s"]
+            params: list = [db_name]
+            if state:
+                conditions.append("STATE = %s")
+                params.append(state.upper())
+            if load_type:
+                conditions.append("TYPE = %s")
+                params.append(load_type)
+            where = " AND ".join(conditions)
+            count_result = await db.execute_system(
+                f"SELECT COUNT(*) FROM information_schema.loads WHERE {where}",
+                params,
             )
+            total = count_result["rows"][0][0] if count_result["rows"] else 0
+            result = await db.execute_system(
+                f"SELECT {_LOAD_COLUMNS} FROM information_schema.loads WHERE {where} "
+                "ORDER BY CREATE_TIME DESC LIMIT %s OFFSET %s",
+                params + [limit, offset],
+            )
+            return {"items": [_load_item(row) for row in result["rows"]], "total": total}
 
-        return {"items": items, "total": total}
+        items = await self._recent_loads()
+        if state:
+            items = [item for item in items if item["state"] == state.upper()]
+        if load_type:
+            items = [item for item in items if item["load_type"] == load_type]
+        return {"items": items[offset : offset + limit], "total": len(items)}
+
+    async def _recent_loads(self) -> list[dict]:
+        """The most recent loads into user databases, from one cached scan.
+
+        Stale-while-revalidate: an answer older than the fresh window is still
+        returned at once while one background scan replaces it, so only the
+        very first visit waits for the engine's slow scan.
+        """
+        from app.core.redis import session_store
+
+        client = session_store._redis
+        if client is None:
+            return await self._scan_recent_loads()
+        try:
+            cached = await client.get(_LOADS_CACHE_KEY)
+        except Exception:  # noqa: BLE001 - a cache fault never blocks the answer
+            logger.debug("Data loads cache read failed", exc_info=True)
+            return await self._scan_recent_loads()
+        if not cached:
+            return await self._refresh_recent_loads(client)
+        entry = json.loads(cached)
+        if not isinstance(entry, dict):
+            return await self._refresh_recent_loads(client)
+        if time.time() - float(entry.get("at", 0)) > _LOADS_FRESH_SECONDS:
+            try:
+                # One refresh at a time across workers.
+                if await client.set(_LOADS_REFRESH_LOCK, "1", nx=True, ex=_LOADS_LOCK_SECONDS):
+                    task = asyncio.create_task(self._refresh_recent_loads(client))
+                    _BACKGROUND.add(task)
+                    task.add_done_callback(_BACKGROUND.discard)
+            except Exception:  # noqa: BLE001
+                logger.debug("Data loads refresh could not start", exc_info=True)
+        return list(entry.get("items", []))
+
+    async def _refresh_recent_loads(self, client: Any) -> list[dict]:
+        items = await self._scan_recent_loads()
+        try:
+            await client.set(
+                _LOADS_CACHE_KEY,
+                json.dumps({"at": time.time(), "items": items}),
+                ex=_LOADS_KEEP_SECONDS,
+            )
+            await client.delete(_LOADS_REFRESH_LOCK)
+        except Exception:  # noqa: BLE001
+            logger.debug("Data loads cache write failed", exc_info=True)
+        return items
+
+    async def _scan_recent_loads(self) -> list[dict]:
+        excluded = ", ".join(f"'{name}'" for name in _INTERNAL_LOAD_DBS)
+        result = await db.execute_system(
+            f"SELECT {_LOAD_COLUMNS} FROM information_schema.loads "
+            f"WHERE DB_NAME NOT IN ({excluded}) "
+            "ORDER BY CREATE_TIME DESC LIMIT %s",
+            [_LOADS_SCAN_LIMIT],
+        )
+        return [_load_item(row) for row in result["rows"]]
 
     async def get_load_stats(self) -> dict:
         """Aggregate stats for the data loads dashboard."""

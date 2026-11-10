@@ -13,6 +13,7 @@ names are cached, never data. Without Redis, every call asks the engine.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable
@@ -110,17 +111,25 @@ def _opener(opener: Opener | None) -> Opener:
 
 
 async def visible_catalogs(user: dict, opener: Opener | None = None) -> list[dict]:
-    """Catalogs the caller can list, each with the databases they can list."""
+    """Catalogs the caller can list, each with the databases they can list.
+
+    Each catalog's databases are cached on their own and asked in parallel, so
+    one slow or failing source costs only its own time: the others stay cached,
+    and only that source is asked again on the next call.
+    """
     open_caller = _opener(opener)
 
     async def load() -> list[dict]:
         async with open_caller(user) as caller:
-            return _answer(caller, [
-                {**catalog, "databases": await caller.databases(catalog["name"])}
-                for catalog in await caller.catalogs()
-            ])
+            return _answer(caller, await caller.catalogs())
 
-    return await _cached(user, "catalogs", load)
+    catalogs = await _cached(user, "catalog-names", load)
+    databases = await asyncio.gather(
+        *(visible_databases(user, catalog["name"], opener) for catalog in catalogs)
+    )
+    return [
+        {**catalog, "databases": names} for catalog, names in zip(catalogs, databases, strict=True)
+    ]
 
 
 async def visible_databases(

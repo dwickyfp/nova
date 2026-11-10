@@ -22,6 +22,16 @@ interface AuthState {
   }
 }
 
+/** Whether two users carry the same principal, roles, active role and context version. */
+function sameIdentity(a: AuthUser | null, b: AuthUser | null): boolean {
+  if (!a || !b) return false
+  return a.username === b.username
+    && (a.activeRole ?? null) === (b.activeRole ?? null)
+    && (a.securityContextVersion ?? null) === (b.securityContextVersion ?? null)
+    && a.roles.length === b.roles.length
+    && a.roles.every((role, index) => role === b.roles[index])
+}
+
 export const useAuthStore = create<AuthState>()((set) => {
   const stored = getCookie(TOKEN_KEY)
   const initToken = stored || ''
@@ -30,12 +40,19 @@ export const useAuthStore = create<AuthState>()((set) => {
     auth: {
       user: null,
       setUser: (user) =>
-        set((state) => ({ ...state, securityEpoch: state.securityEpoch + 1, auth: { ...state.auth, user } })),
+        set((state) => ({
+          ...state,
+          // A repeat of the same identity (a second /auth/me answer) keeps the
+          // epoch, so epoch-keyed queries are not fetched again for nothing.
+          securityEpoch: sameIdentity(state.auth.user, user) ? state.securityEpoch : state.securityEpoch + 1,
+          auth: { ...state.auth, user },
+        })),
       accessToken: initToken,
       setAccessToken: (accessToken) =>
         set((state) => {
           setCookie(TOKEN_KEY, accessToken)
-          return { ...state, securityEpoch: state.securityEpoch + 1, auth: { ...state.auth, accessToken } }
+          const epoch = accessToken === state.auth.accessToken ? state.securityEpoch : state.securityEpoch + 1
+          return { ...state, securityEpoch: epoch, auth: { ...state.auth, accessToken } }
         }),
       resetAccessToken: () =>
         set((state) => {

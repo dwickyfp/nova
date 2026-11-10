@@ -33,7 +33,7 @@ import re
 import time
 from dataclasses import replace
 from dataclasses import replace as dataclass_replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -42,7 +42,13 @@ from app.core.database import configured_timezone
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.compiler import SemanticCompiler
-from app.modules.agents.semantic.coverage import future_period, period_without_data
+from app.modules.agents.semantic.coverage import (
+    DATA_PERIOD,
+    covered_period,
+    future_period,
+    looks_empty,
+    period_without_data,
+)
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import (
     SemanticPlan,
@@ -108,8 +114,9 @@ _PARAMETERS = {
         "semantic_view": {
             "type": "string",
             "description": (
-                "The Semantic View to query, by its name in the agent scope. Omit it when "
-                "the agent has one view."
+                "The Semantic View to query, by its name in the agent scope or in the "
+                "workspace's semantic_views_your_role_can_open. Omit it only when one view "
+                "is available."
             ),
         },
     },
@@ -256,7 +263,13 @@ class SemanticQueryTool:
                 safe_detail=grounding.detail,
                 repair_context={"business_concepts": grounding.repair},
             )
-        semantic_model = await self._resolve_model(context, question, grounding.view_id)
+        semantic_model = await self._resolve_model(
+            context, question, grounding.view_id, guess=_is_agent_turn(context)
+        )
+        if semantic_model is None and not _is_agent_turn(context):
+            choice = await _view_choice(context)
+            if choice is not None:
+                return choice
         if semantic_model is None:
             return ToolOutcome(
                 ok=False,
@@ -331,6 +344,13 @@ class SemanticQueryTool:
                 ))
             elif material:
                 return _clarification(semantic_ir, material)
+            if grounding.status == "none":
+                official = await _official_view(plan, model_id, context)
+                if official is not None:
+                    # The planned measure is, by its exact name, an approved concept
+                    # computed in another view the caller can read: the model asks
+                    # there itself, so its own call names the source it will cite.
+                    return _use_official_view(official, plan)
             notes: list[str] = []
             if first_query and frame is not None:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
@@ -425,6 +445,7 @@ class SemanticQueryTool:
                 + "; ".join(uncovered)[:600]
                 + ". Run those steps with your other tools, or ask another query per part."
             )
+        explanation += _readings_note(semantic_ir, plan)
         # Where the plan came from, not a model's opinion of itself: a verified
         # query is exact, a validated plan is the model's reading of the question.
         plan_source: PlanSource = "verified_query" if verified_hit else (
@@ -581,15 +602,15 @@ class SemanticQueryTool:
             )
 
         last = results[-1] if results else None
-        gap = await period_without_data(
-            plan,
-            list(getattr(last, "columns", None) or []),
-            list(getattr(last, "rows", None) or []),
-            time_context,
-            lambda window_plan: self._window_rows(
+        last_columns = list(getattr(last, "columns", None) or [])
+        last_rows = list(getattr(last, "rows", None) or [])
+
+        def run_window(window_plan: dict[str, Any]) -> Any:
+            return self._window_rows(
                 semantic_ir, window_plan, username, encrypted_password, context, security
-            ),
-        )
+            )
+
+        gap = await period_without_data(plan, last_columns, last_rows, time_context, run_window)
         if gap is not None:
             await _record_usage(
                 security, semantic_model, semantic_ir, plan, execution_duration_ms,
@@ -610,6 +631,9 @@ class SemanticQueryTool:
                         "last": gap.window.last.isoformat(),
                     },
                     "period": gap.period,
+                    # The asked-for days with no data, so an answer saying "2025 has
+                    # no data" is checked against them.
+                    "missing": {"first": gap.start.isoformat(), "last": gap.end.isoformat()},
                 },
                 trace_detail=_semantic_trace(
                     semantic_model,
@@ -621,7 +645,39 @@ class SemanticQueryTool:
                 ),
             )
 
+        covered: dict[str, str] | None = None
+        if not looks_empty(last_columns, last_rows):
+            # An answer over all the data names the dates that is.
+            window = await covered_period(plan, semantic_ir, run_window)
+            if window is not None:
+                covered = {"first": window.first.isoformat(), "last": window.last.isoformat()}
+                explanation += (
+                    f" The data covers {covered['first']} to {covered['last']}. The answer "
+                    "is over all of it: name these dates in the reader's words ("
+                    f"{_spoken_day(window.first)} to {_spoken_day(window.last)}), not only "
+                    "'all available data'."
+                )
+                plan = dataclass_replace(plan, unresolved_concepts=tuple(
+                    item for item in plan.unresolved_concepts if item.type_hint != DATA_PERIOD
+                ))
+        if any(item.type_hint == DATA_PERIOD for item in plan.unresolved_concepts):
+            explanation += " The dates the data covers could not be read for this answer."
+
         table = _table_payload(results, title=question)
+        # The data's own range spans everything there is; a queried range only what was asked.
+        period = {**covered, "scope": "data"} if covered else _queried_period(time_context)
+        if table is not None:
+            units = {
+                name: metric.unit for name in plan.metrics
+                if (metric := semantic_ir.metric(name)) is not None and metric.unit
+                and name in table["columns"]
+            }
+            if units:
+                table["units"] = units
+        if table is not None and period is not None:
+            # The dates the rows are about travel with them, so a year the answer
+            # names from them is checked against the data, not taken on trust.
+            table["period"] = period
         if table is not None:
             # Expose the fetched rows to ``data_to_chart`` in the same turn,
             # with the compiled statement the viz core needs for persistence.
@@ -646,8 +702,11 @@ class SemanticQueryTool:
 
         if hasattr(context, "primary_query_done"):
             context.primary_query_done = True
+        # The view that answered, named in the result: the model may have asked
+        # for another one, and the answer names its source from what it reads.
+        source = str(semantic_model.get("name") or semantic_ir.name)
         summary = _render(
-            question=question, sql=safe_sql, explanation=explanation,
+            question=question, source=source, sql=safe_sql, explanation=explanation,
             confidence=confidence, results=results,
         )
         health = assess_evidence(
@@ -661,6 +720,7 @@ class SemanticQueryTool:
             ok=True,
             summary=_render(
                 question=question,
+                source=source,
                 sql=safe_sql,
                 explanation=explanation,
                 confidence=confidence,
@@ -681,6 +741,7 @@ class SemanticQueryTool:
                 "source": "nova_semantic_view",
                 "business_context": grounding.provenance(),
                 "view_id": model_id,
+                "view_name": source,
                 "version": semantic_model.get("version"),
                 "semantic_model_id": semantic_model.get("semantic_model_id"),
                 "semantic_model_fingerprint": semantic_ir.fingerprint,
@@ -788,7 +849,12 @@ class SemanticQueryTool:
         return list(result.columns or []), [list(row) for row in result.rows or []], None
 
     async def _resolve_model(
-        self, context: Any, question: str, grounded_view: str | None = None
+        self,
+        context: Any,
+        question: str,
+        grounded_view: str | None = None,
+        *,
+        guess: bool = True,
     ) -> dict[str, Any] | None:
         from app.modules.agents.semantic.access import load_authorized_models
 
@@ -819,7 +885,107 @@ class SemanticQueryTool:
             )
             if chosen is not None:
                 return chosen
-        return models[0] if models else None
+        # A Studio agent's first view is its own business. Neva reads every view
+        # the role can open, so the first one is not an answer to anything.
+        return models[0] if models and guess else None
+
+
+async def _official_view(plan: SemanticPlan, model_id: str, context: Any) -> str | None:
+    """Another readable view that computes the plan's measure as an approved concept.
+
+    Used when the question's words named no concept ("how many orders") but the
+    planned metric's own name is one exactly (``order_count`` is the approved
+    Order count). Only a whole metric name counts: ``net_revenue_target`` does
+    not name Net revenue. ``None`` keeps the view the plan was made in.
+    """
+    from app.modules.agents.semantic.access import load_authorized_models
+    from app.modules.ontology.grounding import ground
+    from app.modules.ontology.resolver import normalise
+
+    if not plan.metrics:
+        return None
+    names = {
+        form for metric in plan.metrics
+        for form in (normalise(metric), normalise(metric.replace("_", " ")))
+    }
+    official = await ground(
+        " | ".join(plan.metrics), context, lambda: load_authorized_models(context)
+    )
+    if official.status != "grounded" or not official.view_id or official.view_id == model_id:
+        return None
+    resolution = official.resolution
+    terms = [term for found in (resolution.terms.values() if resolution else []) for term in found]
+    if not terms or any(normalise(term) not in names for term in terms):
+        return None
+    models = await load_authorized_models(context)
+    return next(
+        (str(model.get("name") or model["semantic_model_id"]) for model in models
+         if str(model["semantic_model_id"]) == official.view_id),
+        None,
+    )
+
+
+def _use_official_view(view: str, plan: SemanticPlan) -> ToolOutcome:
+    """Send the question to the view that computes the measure's approved definition."""
+    from app.modules.assistant.plain_language import source_label
+
+    measures = ", ".join(plan.metrics)
+    return ToolOutcome(
+        ok=False,
+        summary="",
+        error="This measure has an approved definition in another Semantic View.",
+        error_class="OFFICIAL_VIEW_REQUIRED",
+        recoverable=True,
+        safe_detail=(
+            f"{measures} is the organisation's approved definition, computed in the "
+            f"Semantic View {view}; the view asked for only has a measure of the same "
+            f"name. Call semantic_query again with semantic_view set to {view}, and name "
+            f"the source to the reader as {source_label(view)} data."
+        ),
+        repair_context={"semantic_view": view, "metrics": list(plan.metrics)},
+    )
+
+
+def _is_agent_turn(context: Any) -> bool:
+    return bool(getattr(context, "agent_scope", None) or getattr(context, "agent_id", None))
+
+
+async def _view_choice(context: Any) -> ToolOutcome | None:
+    """Several views and none named: ask the model to name one, never guess."""
+    from app.modules.agents.semantic.access import load_authorized_models
+
+    models = await load_authorized_models(context)
+    if len(models) < 2:
+        return None
+    return ToolOutcome(
+        ok=False,
+        summary="",
+        error="Several Semantic Views are readable and none was named.",
+        error_class="VIEW_CHOICE_REQUIRED",
+        recoverable=True,
+        safe_detail=(
+            "Call semantic_query again with semantic_view set to the view whose "
+            "metrics answer the question. If no view fits, tell the person which "
+            "business areas are available and ask which one they mean."
+        ),
+        repair_context={"semantic_views": readable_view_summaries(models)},
+    )
+
+
+def readable_view_summaries(models: list[dict[str, Any]], limit: int = 16) -> list[dict[str, Any]]:
+    """Name, purpose and main metrics of each readable view, for choosing one."""
+    from app.modules.agents.tools.describe_agent import semantic_catalog
+
+    try:
+        catalog = semantic_catalog(models)
+    except (KeyError, AttributeError):
+        return []
+    return [{
+        "name": view["name"],
+        "about": view["description"][:240],
+        "metrics": [metric["name"] for metric in view["metrics"][:10]],
+        "dimensions": [field["name"] for field in view["dimensions"][:8]],
+    } for view in catalog[:limit]]
 
 
 def _view_naming_metric(models: list[dict[str, Any]], question: str) -> str | None:
@@ -1001,6 +1167,67 @@ def _multi_step(context: Any) -> bool:
     )
 
 
+def _spoken_day(day: date) -> str:
+    """"2026-05-01" as "1 May 2026", for the model to say in the reader's language."""
+    return f"{day.day} {day:%B} {day.year}"
+
+
+def _queried_period(time_context: Any) -> dict[str, str] | None:
+    """The days a dated query asked for, and its comparison period, as ISO dates."""
+    if time_context is None:
+        return None
+
+    def days(window: Any) -> tuple[str, str]:
+        # Windows are half-open; the last day is the one before the end.
+        last = window.end - timedelta(microseconds=1)
+        return window.start.date().isoformat(), last.date().isoformat()
+
+    period = dict(zip(("first", "last"), days(time_context.current), strict=True))
+    if getattr(time_context, "baseline", None) is not None:
+        period.update(zip(
+            ("compared_first", "compared_last"), days(time_context.baseline), strict=True,
+        ))
+    return period
+
+
+def _readings_note(model: SemanticModelIR, plan: SemanticPlan) -> str:
+    """Tell the answer which reading of a measure word it used, and what else fits.
+
+    The person gets the usual reading answered at once, sees which one it was,
+    and can ask for another; a wrong guess is never presented as the only one.
+    """
+    notes: list[str] = []
+    for reading in plan.readings:
+        others = [name for name in reading.alternatives
+                  if name != reading.metric and model.metric(name) is not None]
+        note = f"'{reading.text}' was read as {_metric_phrase(model, reading.metric)}"
+        if others:
+            note += "; also available: " + ", ".join(
+                _metric_phrase(model, name) for name in others[:4]
+            )
+        notes.append(note)
+    unshown = [
+        item.text for item in plan.unresolved_concepts
+        if not item.material and item.type_hint != DATA_PERIOD
+    ]
+    text = ""
+    if notes:
+        text += (
+            " " + ". ".join(notes) + ". Say in one short sentence, in the user's words, "
+            "which measure the answer uses and offer the others."
+        )
+    if unshown:
+        text += " Not shown by this query: " + "; ".join(unshown)[:400] + "."
+    return text
+
+
+def _metric_phrase(model: SemanticModelIR, name: str) -> str:
+    """A metric named with its description, so the answer can say it in plain words."""
+    metric = model.metric(name)
+    description = " ".join(((metric.description if metric else "") or "").split())[:120]
+    return f"{name} ({description})" if description else name
+
+
 def _clarification(model: SemanticModelIR, unresolved: list[str]) -> ToolOutcome:
     """A request the catalog cannot express is a question back, not a failure."""
     return ToolOutcome(
@@ -1068,11 +1295,20 @@ def _render(
     confidence: Any,
     results: list[Any],
     evidence_health: dict | None = None,
+    source: str | None = None,
 ) -> str:
-    """The bounded text the model reads back: SQL, rows, and honesty markers."""
+    """The bounded text the model reads back: source, SQL, rows, honesty markers."""
     from app.modules.assistant.tools.redaction import redact_rows
 
-    lines = [f"question: {question}", f"sql:\n{sql}"]
+    lines = [f"question: {question}"]
+    if source:
+        from app.modules.assistant.plain_language import source_label
+
+        lines.append(
+            f"source: {source} answered. Name it to the reader as {source_label(source)} "
+            "data, in their language, never by this name or as a Semantic View."
+        )
+    lines.append(f"sql:\n{sql}")
     if explanation:
         lines.append(f"explanation: {explanation}")
     if evidence_health:

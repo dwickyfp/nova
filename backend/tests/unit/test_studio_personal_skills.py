@@ -322,3 +322,33 @@ async def test_skill_update_sql_is_constrained_by_owner(monkeypatch):
     sql, parameters = execute.call_args.args
     assert "WHERE skill_id = %s AND owner_name = %s" in sql
     assert parameters[-2:] == ["s1", "alice"]
+
+
+@pytest.mark.asyncio
+async def test_builtin_tool_seeding_writes_only_missing_or_changed_rows(monkeypatch):
+    from app.modules.agents import studio_router, tool_catalog
+
+    rows = tool_catalog.builtin_rows()
+    stored = [
+        {**row, "tool_id": f"t-{row['name']}", "is_enabled": row["name"] != "ai_search"}
+        for row in rows
+        if row["name"] != "data_to_chart"
+    ]
+    changed = next(row for row in stored if row["name"] == "ai_search")
+    changed["description"] = "an older description"
+    writes: list[dict] = []
+
+    async def list_tools(*, owner_name):
+        return stored
+
+    async def upsert_tool(*, owner_name, fields):
+        writes.append(fields)
+        return fields
+
+    monkeypatch.setattr(studio_router.agent_repository, "list_tools", list_tools)
+    monkeypatch.setattr(studio_router.agent_repository, "upsert_tool", upsert_tool)
+    await studio_router._seed_builtin_tools("alice")
+
+    assert sorted(w["name"] for w in writes) == ["ai_search", "data_to_chart"]
+    # A builtin the owner switched off stays off when its catalog text changes.
+    assert next(w for w in writes if w["name"] == "ai_search")["is_enabled"] is False

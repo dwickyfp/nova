@@ -23,13 +23,13 @@ describe("AssistantEmptyState", () => {
     const { getByText } = await render(
       <AssistantEmptyState userName="Dwicky" />,
     );
-    await expect.element(getByText("Hi Dwicky,")).toBeInTheDocument();
-    await expect.element(getByText("How can I help?")).toBeInTheDocument();
+    await expect.element(getByText(/^Good (morning|afternoon|evening), Dwicky$/)).toBeInTheDocument();
+    await expect.element(getByText("How can I help you with Nova?")).toBeInTheDocument();
   });
 
-  it("falls back to a neutral salutation without a name", async () => {
+  it("greets by the hour alone without a name", async () => {
     const { getByText } = await render(<AssistantEmptyState userName={null} />);
-    await expect.element(getByText("Hi there,")).toBeInTheDocument();
+    await expect.element(getByText(/^Good (morning|afternoon|evening)$/)).toBeInTheDocument();
   });
 
   it("sends the tour prompt from the starter action", async () => {
@@ -53,7 +53,7 @@ describe("AssistantEmptyState", () => {
         onSendMessage={onSendMessage}
       />,
     );
-    await expect.element(screen.getByText("Working in Role ANALYST")).toBeInTheDocument();
+    await expect.element(screen.getByText("How can I help with Role ANALYST?")).toBeInTheDocument();
     await screen.getByRole("button", { name: "Find missing access" }).click();
     expect(onSendMessage).toHaveBeenCalledWith("Why can this role not read orders?");
     expect(screen.getByRole("button", { name: ASSISTANT_TOUR_PROMPT }).query()).toBeNull();

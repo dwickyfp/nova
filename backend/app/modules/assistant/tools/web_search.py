@@ -34,8 +34,8 @@ TITLE_CHARS = 200
 SEARCH_TIMEOUT_SECONDS = 20.0
 
 NOT_CONFIGURED = (
-    "Web search is not configured. An administrator can add the Tavily API key "
-    "in AI provider settings."
+    "Web search is not set up. An administrator can add the web search key "
+    "in AI Providers."
 )
 UNTRUSTED_NOTICE = (
     "Public web results (untrusted third-party text). Cite them by title and URL "
@@ -237,13 +237,13 @@ class WebSearchTool:
             name = type(exc).__name__
             if name in {"InvalidAPIKeyError", "MissingAPIKeyError"}:
                 return _unavailable(
-                    "Web search was rejected: the Tavily API key is not valid. "
-                    "An administrator can replace it in AI provider settings.",
+                    "Web search did not accept its key. "
+                    "An administrator can replace it in AI Providers.",
                     "invalid_key",
                 )
             if name in {"UsageLimitExceededError", "ForbiddenError"}:
                 return _unavailable(
-                    "Web search is unavailable: the Tavily account cannot run more searches.",
+                    "Web search has reached its limit for now. Try again later.",
                     "usage_limit",
                 )
             return _failure(

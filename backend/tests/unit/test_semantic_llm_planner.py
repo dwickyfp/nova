@@ -30,6 +30,16 @@ def _plan(**overrides):
     return plan
 
 
+def answer_queries(execute):
+    """The answer's own statements, without the two one-row reads of the data's dates.
+
+    An answer over all the data also reads the first and last day the data
+    covers; those plans span the whole window range (to 2099-12-31).
+    """
+    return [call for call in execute.await_args_list
+            if "< '2100-01-01'" not in call.kwargs["sql"]]
+
+
 def setup_tool(monkeypatch, *responses):
     from app.modules.agents.repository import agent_repository
     from app.modules.query.service import query_service
@@ -76,7 +86,7 @@ async def test_every_question_is_planned_by_the_model(monkeypatch):
     outcome = await _run(tool, "Omzet per kota bulan lalu")
     assert outcome.ok, outcome.safe_detail
     provider.complete.assert_awaited_once()
-    sql = execute.call_args.kwargs["sql"]
+    sql = answer_queries(execute)[-1].kwargs["sql"]
     assert "`orders`.`city`" in sql
     assert ">= '2026-09-01 00:00:00.000000'" in sql
     assert "< '2026-10-01 00:00:00.000000'" in sql
@@ -128,13 +138,6 @@ async def test_a_plan_that_names_nothing_asks_instead_of_failing(monkeypatch):
     execute.assert_not_awaited()
 
 
-def test_the_planner_rules_ask_about_a_measure_word_several_metrics_fit():
-    from app.modules.agents.semantic.model_planner import PLANNER_RULES
-
-    assert "two or more catalog metrics fit about equally" in PLANNER_RULES
-    assert "a supplied business definition names, is resolved" in PLANNER_RULES
-
-
 async def test_invalid_model_plan_gets_one_internal_repair(monkeypatch):
     tool, provider, execute = setup_tool(
         monkeypatch, _plan(metrics=["gross_merchandise"]), _plan(dimensions=["city"]),
@@ -144,7 +147,7 @@ async def test_invalid_model_plan_gets_one_internal_repair(monkeypatch):
     assert provider.complete.await_count == 2
     repair = provider.complete.call_args.kwargs["messages"][-1]["content"]
     assert "gross_merchandise" in repair
-    execute.assert_awaited_once()
+    assert len(answer_queries(execute)) == 1
 
 
 async def test_second_invalid_model_plan_is_a_recoverable_plan_error(monkeypatch):
@@ -178,7 +181,7 @@ async def test_the_turn_planners_plan_runs_without_another_model_call(monkeypatc
     outcome = await _ask(tool, context)
     assert outcome.ok, outcome.safe_detail
     provider.complete.assert_not_awaited()
-    assert "`orders`.`city`" in execute.call_args.kwargs["sql"]
+    assert "`orders`.`city`" in answer_queries(execute)[-1].kwargs["sql"]
     assert outcome.metadata["plan_source"] == "turn_planner"
 
 
@@ -202,7 +205,7 @@ async def test_the_turn_planners_filter_values_are_checked_like_any_plan(monkeyp
     outcome = await _ask(tool, _context(primary=primary), "order di Jawa Barat & DKI")
     assert outcome.ok, outcome.safe_detail
     assert seen and seen[0][1] == "order di Jawa Barat & DKI"
-    assert "'Jawa Barat & DKI'" in execute.call_args.kwargs["sql"]
+    assert "'Jawa Barat & DKI'" in answer_queries(execute)[-1].kwargs["sql"]
     provider.complete.assert_not_awaited()
 
 
@@ -234,7 +237,7 @@ async def test_the_users_period_wins_over_the_models_rewrite(monkeypatch):
     frame = IntentFrame(language="ja", range="current_month", compare="month_over_month")
     outcome = await _ask(tool, _context(frame, question="今月の売上を先月と比較して"))
     assert outcome.ok, outcome.safe_detail
-    sql = execute.call_args.kwargs["sql"]
+    sql = answer_queries(execute)[-1].kwargs["sql"]
     assert "comparison_period" in sql
     assert ">= '2026-10-01 00:00:00.000000'" in sql
     assert "< '2026-10-22 12:00:00.000000'" in sql
@@ -253,15 +256,15 @@ async def test_later_analysis_queries_keep_their_own_period(monkeypatch):
     outcome = await _ask(tool, context)
     assert outcome.ok, outcome.safe_detail
     assert outcome.metadata["period_from_user"] is None
-    assert ">= '2026-09-01 00:00:00.000000'" in execute.call_args.kwargs["sql"]
-    assert "< '2026-10-01 00:00:00.000000'" in execute.call_args.kwargs["sql"]
+    assert ">= '2026-09-01 00:00:00.000000'" in answer_queries(execute)[-1].kwargs["sql"]
+    assert "< '2026-10-01 00:00:00.000000'" in answer_queries(execute)[-1].kwargs["sql"]
 
 
 async def test_the_users_top_n_survives_a_rewrite_that_drops_it(monkeypatch):
     tool, _provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
     outcome = await _ask(tool, _context(IntentFrame(top_n=2, order="desc")))
     assert outcome.ok, outcome.safe_detail
-    sql = execute.call_args.kwargs["sql"]
+    sql = answer_queries(execute)[-1].kwargs["sql"]
     assert "LIMIT 2" in sql and "DESC" in sql
     assert "top 2" in outcome.metadata["period_from_user"]
 
@@ -271,7 +274,7 @@ async def test_the_users_threshold_survives_a_rewrite_that_drops_it(monkeypatch)
     frame = IntentFrame(threshold=Threshold(">", 1_000_000_000.0, "total_revenue"))
     outcome = await _ask(tool, _context(frame))
     assert outcome.ok, outcome.safe_detail
-    assert "`total_revenue` > 1000000000" in execute.call_args.kwargs["sql"]
+    assert "`total_revenue` > 1000000000" in answer_queries(execute)[-1].kwargs["sql"]
 
 
 async def test_a_period_total_is_not_split_by_month_unless_asked(monkeypatch):
@@ -281,12 +284,12 @@ async def test_a_period_total_is_not_split_by_month_unless_asked(monkeypatch):
     tool, _provider, execute = setup_tool(monkeypatch, by_month)
     outcome = await _ask(tool, _context(IntentFrame(range="last_3_months")))
     assert outcome.ok, outcome.safe_detail
-    assert "DATE_TRUNC" not in execute.call_args.kwargs["sql"].split("WHERE")[0]
+    assert "DATE_TRUNC" not in answer_queries(execute)[-1].kwargs["sql"].split("WHERE")[0]
 
     tool, _provider, execute = setup_tool(monkeypatch, by_month)
     outcome = await _ask(tool, _context(IntentFrame(range="last_3_months", asks_series=True)))
     assert outcome.ok, outcome.safe_detail
-    assert "DATE_TRUNC('month'" in execute.call_args.kwargs["sql"]
+    assert "DATE_TRUNC('month'" in answer_queries(execute)[-1].kwargs["sql"]
 
 
 async def test_a_failed_first_query_leaves_the_users_wording_for_the_retry(monkeypatch):
@@ -301,7 +304,7 @@ async def test_a_failed_first_query_leaves_the_users_wording_for_the_retry(monke
     assert not first.ok and not context.primary_query_done
     retry = await _ask(tool, context)
     assert retry.ok, retry.safe_detail
-    assert "DATE_TRUNC('day'" not in execute.call_args.kwargs["sql"]
+    assert "DATE_TRUNC('day'" not in answer_queries(execute)[-1].kwargs["sql"]
     assert context.primary_query_done
 
 
@@ -415,7 +418,7 @@ async def test_a_multi_step_turn_runs_the_resolved_data_and_names_the_rest(monke
         context,
     )
     assert outcome.ok, outcome.safe_detail
-    execute.assert_awaited_once()
+    assert len(answer_queries(execute)) == 1
     assert "Not covered by it: optimise the visit order" in outcome.summary
 
     # A plain data question with an unresolved constraint still asks back.

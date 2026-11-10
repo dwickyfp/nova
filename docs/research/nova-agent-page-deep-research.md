@@ -57,7 +57,7 @@ Ini penting: user meminta sesuatu yang **tumpang tindih** dengan NOVA-61. Jangan
 | Consent | state machine per-thread, in-memory, read-only grant (E2b) | `backend/app/modules/assistant/consent.py`, `state.py` |
 | Tools | `load_skill` (pure) + `query_execute` (delegate-first, read-only allowlist) | `backend/app/modules/assistant/tools/` |
 | Skills | `skill_library/*.md` (11 skill), frontmatter catalog + progressive disclosure | `backend/app/modules/assistant/skill_library/`, `skill_registry.py` |
-| System prompt | persona "Nove", authoring-vs-executing, scope boundary, writing style anti-slop | `service.py:440-528` |
+| System prompt | persona "Neva", authoring-vs-executing, scope boundary, writing style anti-slop | `service.py:440-528` |
 | API | thread CRUD, grant, messages (SSE), tool-call decision | `backend/app/modules/assistant/router.py:119-375` |
 | Frontend | dock/panel/toggle, transcript, composer, turn hook, event parser | `frontend/src/features/assistant/*` |
 | Chart lib | **recharts 3.8.1** sudah ada | `frontend/package.json` |
@@ -213,7 +213,7 @@ untuk Agent page:
 ```
 1. PLANNING
    - Agent config (instructions + response_style + default_tools + default_skills) di-inject
-     ke system prompt, menggantikan persona global "Nove".
+     ke system prompt, menggantikan persona global "Neva".
    - Emit `plan` frame dari template agent (bukan hardcoded Nova phases).
 2. LOAD SKILL  (progressive disclosure, Anthropic-compatible)
    - Katalog skill agent = default_skills(agent) ∪ user_skills(user) ∪ builtin.

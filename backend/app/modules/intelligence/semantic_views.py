@@ -7,7 +7,7 @@ import builtins
 import hashlib
 import json
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -228,38 +228,46 @@ class SemanticViewService:
         semaphore = asyncio.Semaphore(1 if delegated_connection_for(user["username"]) else 4)
 
         async def check_sources(batch):
+            from app.modules.access_control import passed_checks
             from app.modules.access_control.service import access_control_service
 
             try:
                 async with semaphore:
                     for source in batch:
-                        access = await access_control_service.effective_access(
-                            principal=user["username"],
-                            active_role=user.get("active_role"),
-                            resource=source,
-                        )
-                        if not {"SELECT", "ALL"}.intersection(access["object_access"]):
-                            return False
-                        result = await asyncio.wait_for(
-                            query_service.execute(
-                                # Plan a real SELECT so FE authorization runs without
-                                # fetching data. LIMIT 0 can eliminate the protected scan.
-                                sql="EXPLAIN SELECT * FROM "
-                                + ".".join(f"`{part}`" for part in source.split("."))
-                                + " LIMIT 1",
-                                username=user["username"],
-                                encrypted_password=user["encrypted_password"],
-                                database=source.split(".")[-2],
-                                role=user.get("active_role"),
-                                session_id=user.get("session_id"),
-                                security_context_version=int(
-                                    user.get("security_context_version") or 1
+                        # Parallel requests checking the same source, for the
+                        # same caller and session, share one check in flight.
+                        entry = await passed_checks.key("semantic-source", user, [source])
+
+                        async def check(source: str = source) -> bool:
+                            access = await access_control_service.effective_access(
+                                principal=user["username"],
+                                active_role=cast(str, user.get("active_role")),
+                                resource=source,
+                            )
+                            if not {"SELECT", "ALL"}.intersection(access["object_access"]):
+                                return False
+                            result = await asyncio.wait_for(
+                                query_service.execute(
+                                    # Plan a real SELECT so FE authorization runs without
+                                    # fetching data. LIMIT 0 can eliminate the protected scan.
+                                    sql="EXPLAIN SELECT * FROM "
+                                    + ".".join(f"`{part}`" for part in source.split("."))
+                                    + " LIMIT 1",
+                                    username=user["username"],
+                                    encrypted_password=user["encrypted_password"],
+                                    database=source.split(".")[-2],
+                                    role=user.get("active_role"),
+                                    session_id=user.get("session_id"),
+                                    security_context_version=int(
+                                        user.get("security_context_version") or 1
+                                    ),
+                                    max_rows=0,
                                 ),
-                                max_rows=0,
-                            ),
-                            timeout=10,
-                        )
-                        if result.error:
+                                timeout=10,
+                            )
+                            return not result.error
+
+                        if not await passed_checks.once(entry, check):
                             return False
                     return True
             except Exception:
@@ -467,12 +475,16 @@ class SemanticViewService:
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
             "WHERE status='ACTIVE' AND active_version IS NOT NULL ORDER BY name"
         )
-        visible = []
-        for row in result["rows"]:
-            definition = await self.get_active_for_agent(str(row[0]), user, agent_id=agent_id)
-            if definition:
-                visible.append(definition)
-        return visible
+        # Each view's access is checked as the caller, a few at a time; the
+        # list keeps the catalogue's name order.
+        gate = asyncio.Semaphore(4)
+
+        async def readable(view_id: str) -> dict | None:
+            async with gate:
+                return await self.get_active_for_agent(view_id, user, agent_id=agent_id)
+
+        found = await asyncio.gather(*(readable(str(row[0])) for row in result["rows"]))
+        return [definition for definition in found if definition]
 
     async def _readable_version(self, view_id: str, version: int, user: dict) -> tuple[dict, dict]:
         view = await self._get(view_id)

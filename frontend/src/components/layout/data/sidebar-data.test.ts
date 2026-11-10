@@ -12,6 +12,23 @@ function navUrls() {
 }
 
 describe('sidebar navigation', () => {
+  // The query pages are tabs of one Queries page, and Tasks lives under Data
+  // Management only; Monitoring lists each place once.
+  it('lists the query views once under Monitoring, without Tasks', () => {
+    const monitoring = sidebarData.navGroups
+      .flatMap((group) => group.items)
+      .find((item) => item.title === 'Monitoring')
+    const urls = monitoring && 'items' in monitoring
+      ? (monitoring.items ?? []).map((item) => item.url as string)
+      : []
+
+    expect(urls).toContain('/monitoring/queries')
+    for (const merged of ['/query-history', '/active-query', '/query-cost', '/monitoring/autopilot', '/tasks']) {
+      expect(urls).not.toContain(merged)
+    }
+    expect(navUrls().filter((url) => url === '/tasks')).toHaveLength(1)
+  })
+
   // Stages, Functions, and External Catalogs live inside Database Explorer now;
   // a returning top-level entry would split the navigation again (NOVA-138).
   it('has no top-level entry for the consolidated pages', () => {

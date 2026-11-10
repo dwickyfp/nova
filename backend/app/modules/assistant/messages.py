@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 VERSION = 4
 
 MESSAGES: dict[str, str] = {
-    "render.lead": "Here are the figures.",
+    "render.lead": "Here is what the results show.",
     "render.heading": "Here is the breakdown:",
     "render.no_result": "No authorized query result is available.",
     "render.omitted": "Some result rows or columns were omitted from this preview.",
@@ -35,8 +35,8 @@ MESSAGES: dict[str, str] = {
     "render.unchanged": "unchanged",
     "render.extremes": "highest {high}; lowest {low}",
     "verify.cannot_verify": (
-        "I could not verify every number in the drafted answer against the authorized "
-        "query result. Review the result table below."
+        "I couldn't match every number in my answer to the results, so I won't "
+        "state them. The results are shown as found."
     ),
     "verify.is_highest": "{label} ({value}) is the highest",
     "verify.is_lowest": "{label} ({value}) is the lowest",
@@ -49,6 +49,24 @@ MESSAGES: dict[str, str] = {
         "This request was not run because this agent's rules do not allow it. {reason}"
     ),
     "loop.clarify": "I need one more detail to answer this from the governed data.",
+    "loop.timeout": (
+        "This needed more time than I can spend on one answer, so I stopped without "
+        "guessing. Ask about a narrower part, such as one table, one period or one "
+        "report, and I'll answer that."
+    ),
+    "loop.incomplete": (
+        "I couldn't finish the check this question needs, so I won't guess an answer. "
+        "Try asking again with a little more detail, such as the table, report or "
+        "period you mean."
+    ),
+    "loop.capability_missing": (
+        "I can't do this part from Neva yet, so I won't guess. I can explain where "
+        "to find it in Nova, or help with a related question."
+    ),
+    "loop.lookup_failed": (
+        "I couldn't look this up in Nova just now, so I won't guess. Try again, or "
+        "tell me a little more, such as the name of the table, person or role."
+    ),
     "loop.no_data_window": (
         "There is no data for that period. The governed data covers {first} to {last}."
     ),
@@ -82,7 +100,7 @@ MESSAGES: dict[str, str] = {
 #: Translations that ship with Nova.
 BUILTIN: dict[str, dict[str, str]] = {
     "id": {
-        "render.lead": "Berikut angkanya.",
+        "render.lead": "Berikut yang ditunjukkan hasilnya.",
         "render.heading": "Berikut rinciannya:",
         "render.no_result": "Tidak ada hasil query terotorisasi yang dapat ditampilkan.",
         "render.omitted": "Sebagian baris atau kolom hasil tidak ditampilkan di pratinjau ini.",
@@ -94,8 +112,8 @@ BUILTIN: dict[str, dict[str, str]] = {
         "render.unchanged": "tetap",
         "render.extremes": "tertinggi {high}; terendah {low}",
         "verify.cannot_verify": (
-            "Saya tidak dapat memverifikasi semua angka pada jawaban terhadap hasil query. "
-            "Lihat tabel hasil di bawah."
+            "Saya belum bisa mencocokkan semua angka di jawaban dengan hasilnya, jadi tidak "
+            "saya sebutkan. Hasilnya ditampilkan apa adanya."
         ),
         "verify.is_highest": "{label} ({value}) adalah yang tertinggi",
         "verify.is_lowest": "{label} ({value}) adalah yang terendah",
@@ -109,6 +127,24 @@ BUILTIN: dict[str, dict[str, str]] = {
             "{reason}"
         ),
         "loop.clarify": "Saya butuh satu detail lagi untuk menjawab dari data terkelola.",
+        "loop.timeout": (
+            "Pertanyaan ini butuh waktu lebih lama dari yang bisa saya pakai untuk satu "
+            "jawaban, jadi saya berhenti tanpa menebak. Tanyakan bagian yang lebih sempit, "
+            "misalnya satu tabel, satu periode, atau satu laporan, dan akan saya jawab."
+        ),
+        "loop.incomplete": (
+            "Saya belum bisa menyelesaikan pengecekan yang dibutuhkan pertanyaan ini, "
+            "jadi saya tidak akan menebak jawabannya. Coba tanyakan lagi dengan sedikit "
+            "detail, misalnya tabel, laporan, atau periode yang dimaksud."
+        ),
+        "loop.capability_missing": (
+            "Bagian ini belum bisa saya kerjakan dari Neva, jadi saya tidak akan menebak. "
+            "Saya bisa jelaskan tempatnya di Nova, atau bantu pertanyaan terkait."
+        ),
+        "loop.lookup_failed": (
+            "Saya belum bisa mencarinya di Nova saat ini, jadi saya tidak akan menebak. "
+            "Coba lagi, atau beri sedikit detail, misalnya nama tabel, orang, atau role."
+        ),
         "loop.no_data_window": (
             "Tidak ada data untuk periode itu. Data terkelola mencakup {first} sampai {last}."
         ),

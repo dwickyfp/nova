@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 import { NewsSettings } from "./news-settings";
@@ -97,8 +98,11 @@ it("switches News off at once and keeps the coverage summary until then", async 
     news_config: { ...defaults, cadence_minutes: 30 },
   });
 
+  await screen.getByRole("button", { name: "Coverage" }).click();
   await expect.element(screen.getByText("revenue", { exact: true })).toBeVisible();
   await expect.element(screen.getByText(/within 30 minutes/)).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
   await screen.getByRole("switch", { name: "Publish News from this view" }).click();
 
   expect(save).toHaveBeenCalledWith("retail", { enabled: false });
@@ -115,10 +119,9 @@ it("shows only the state to a reader who cannot manage the view", async () => {
 it("asks for a published version before News can be switched on", async () => {
   const screen = await mount({ ...view, active_version: null });
 
+  const toggle = screen.getByRole("switch", { name: "Publish News from this view" });
+  await expect.element(toggle).toBeDisabled();
   await expect
-    .element(screen.getByText("Publish a version before switching News on."))
-    .toBeVisible();
-  await expect
-    .element(screen.getByRole("switch", { name: "Publish News from this view" }))
-    .toBeDisabled();
+    .element(toggle)
+    .toHaveAccessibleDescription("Publish a version before switching News on.");
 });

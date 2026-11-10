@@ -115,8 +115,7 @@ job, the worker must refuse execution and report the failure.
       every DDL passes through it before reaching a response.
 - [x] `SanitizingJSONResponse` on every endpoint.
 - [x] Engine adapter is **status-only** — no `subprocess`, no shell-out.
-- [x] Execute remains behind `MIGRATION_EXECUTE_ENABLED` and explicit operator
-      acknowledgement.
+- [x] Execute requires explicit omission acknowledgement and confirmation.
 
 ### 3.2 Object enumeration
 
@@ -168,8 +167,8 @@ job, the worker must refuse execution and report the failure.
 ### 3.5 Execute (11-B, gated on #7)
 
 - [x] **`POST /api/v1/migration/execute`** — applies the plan to the target.
-- [x] **Gate on `MIGRATION_EXECUTE_ENABLED`** (default **False**) — refuses with
-      403 until the operator acknowledges a restorable backup exists.
+- [x] **Always on** — the former `MIGRATION_EXECUTE_ENABLED` flag was removed;
+      execute is gated only by acknowledgement, confirmation and preflight.
 - [x] **Omission acknowledgement** — `acknowledge_omissions=true` is mandatory.
 - [x] **Target confirmation** — `confirmation` must equal the target database
       name when `MIGRATION_EXECUTE_REQUIRE_CONFIRMATION` is set.
@@ -304,8 +303,8 @@ what exists.
       (`CREATE DATABASE IF NOT EXISTS`).
 - [x] **Read-only `/plan` endpoint** — operator can review the exact statements
       and the blocked list.
-- [x] **Execute endpoint** (`POST /api/v1/migration/execute`) behind an explicit
-      gate (`MIGRATION_EXECUTE_ENABLED`, default off).
+- [x] **Execute endpoint** (`POST /api/v1/migration/execute`), always on and
+      guarded by acknowledgement and confirmation.
 - [x] **Idempotency / resumability** — every object step carries `IF NOT EXISTS`
       and the database step too; a re-run creates nothing and does not fail.
 - [x] **Omission acknowledgement** — `acknowledge_omissions=true` is required.
@@ -509,7 +508,7 @@ The data-fidelity tests are the acceptance gate for 11-C.
 | **Same database name on source and target is allowed** | They are different clusters; refusing same-name would block the common "keep the DB name" migration | The retargeter still qualifies and strips properties, so same-name is not a no-op | A target-side naming conflict is discovered at execute time |
 | **`replication_num` is remapped, not blindly dropped** | Dropping it lets a target default (often 3) apply and fail on a small cluster | The planner probes the target's backend count; unknown target → drop | The target cannot be probed and an unsatisfiable default applies |
 | **`/plan` is read-only and separate from execute** | The operator must be able to review the exact statements before any cutover, and review must not require the execute gate to open | Two endpoints instead of one; the plan must be recomputed at execute time | Execute incorporates planning so a stale plan cannot be applied |
-| **Execute is off by default and gated by `MIGRATION_EXECUTE_ENABLED`** | Cutover without a restorable backup is irreversible; the flag is the operator's explicit acknowledgement (#7) | The operator owns the backup guarantee — the flag is a gate, not a safety mechanism Nova can enforce | #7 lands and the flag is replaced by a real snapshot check |
+| **Execute is always on (no enable flag)** | Core features ship active; the per-job acknowledgement ("a restorable backup exists") and confirmation phrase carry the operator's intent | The operator still owns the backup guarantee — Nova cannot verify it | #7 lands and a real snapshot check is added to preflight |
 | **Execute runs as the caller, never root** | StarRocks RBAC must be the real authority, and each statement must be audited under the actor | A caller without target grants gets per-object denials rather than a privileged success; `GRANT ALL ON *.*` is insufficient (`CREATE DATABASE` is a separate grant) | A dedicated migration service account is introduced with a scoped grant set |
 | **Every execute step is idempotent (`IF NOT EXISTS`)** | A migration is expected to be re-runnable after a partial failure | An existing object is not altered — a re-run only fills gaps | A target object must be reconciled/updated, not left as-is |
 | **Data moves through a shared stage, not a direct cluster link** | Reuses Nova's existing storage abstraction and needs no new network path or driver; the source and target both already speak `FILES()` | Requires the operator to share object storage between the clusters; a JDBC external catalog would need a driver jar the engine does not bundle | The clusters share no storage and the operator accepts the JDBC-driver setup |

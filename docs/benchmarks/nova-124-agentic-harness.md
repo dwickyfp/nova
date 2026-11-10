@@ -1,6 +1,6 @@
 # Architecture: Agentic Harness (NOVA-124)
 
-> One bounded agent loop serves Nove and every Studio agent; this is its design, its limits, and what it costs.
+> One bounded agent loop serves Neva and every Studio agent; this is its design, its limits, and what it costs.
 
 ---
 
@@ -138,7 +138,7 @@ appears in a regex or a word set under `assistant/`, `agents/`, or
 `stop`, `clarification`, `out_of_scope`, `denied`, `cancelled`, `timeout`,
 `iteration_cap`, `context_overflow`, `consent_timeout`, `client_action_pending`,
 `required_capability_unavailable`, `required_capability_incomplete`,
-`data_evidence_incomplete`, `planning_failed` (Nove only), `unexpected_tool_call`,
+`data_evidence_incomplete`, `planning_failed` (Neva only), `unexpected_tool_call`,
 `error`.
 
 ## Integration Points

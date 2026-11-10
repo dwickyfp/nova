@@ -1,4 +1,4 @@
-"""``create_agent`` — let Nove assemble an Agent Studio agent from a request.
+"""``create_agent`` — let Neva assemble an Agent Studio agent from a request.
 
 A **write** tool (it creates a ``CONFIG_AGENTS`` row), classified
 ``destructive`` so it always needs explicit approval and is never covered by the
@@ -7,7 +7,7 @@ read-only conversation grant.
 The agent references a semantic model by id; the tool validates that the model
 belongs to the caller before binding it, so a prompt cannot point an agent at
 another user's model. The tool descriptions it sets are the same names the
-builder UI writes, so an agent created by Nove behaves identically to one made
+builder UI writes, so an agent created by Neva behaves identically to one made
 by hand.
 """
 
@@ -72,7 +72,7 @@ _PARAMETERS = {
             "description": (
                 "Tools to bundle. Valid: load_skill, semantic_query, "
                 "semantic_search, ai_search, semantic_view_query, feature_lookup, "
-                "data_to_chart, ml_execute. Free-form SQL is available in Nove only."
+                "data_to_chart, ml_execute. Free-form SQL is available in Neva only."
             ),
         },
         "sample_questions": {

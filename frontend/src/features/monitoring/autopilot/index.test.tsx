@@ -153,7 +153,7 @@ it("binds approval to the displayed version and distinguishes estimates from evi
     .element(view.getByText(/Expected gain is an estimate/))
     .toBeVisible();
   await expect
-    .element(view.getByText("expired", { exact: true }))
+    .element(view.getByText("Expired", { exact: true }))
     .toBeVisible();
   await page.getByRole("button", { name: "Approve this version" }).click();
   expect(autopilot.mutate).toHaveBeenCalledWith(
@@ -290,4 +290,20 @@ it("shows structural plan changes with planner estimates and measured outcomes",
   expect(view.container.textContent).toContain(
     "Measured improvement: Unavailable",
   );
+});
+
+it("saves the collection setting from the policy checkbox", async () => {
+  vi.mocked(autopilot.policy).mockResolvedValue(overview.policy);
+  const view = await mount();
+  await view.getByRole("button", { name: "Policies" }).click();
+  const checkbox = page.getByRole("checkbox", {
+    name: "Collect workload observations",
+  });
+  await expect.element(checkbox).toBeChecked();
+  await page.getByText("Collect workload observations").click();
+  await expect.element(checkbox).not.toBeChecked();
+  await page.getByRole("button", { name: "Save policy" }).click();
+  await expect
+    .poll(() => vi.mocked(autopilot.policy).mock.lastCall?.[0])
+    .toMatchObject({ mode: "GOVERNED", collection_enabled: false });
 });

@@ -34,7 +34,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.common.identifiers import check_identifier
-from app.common.sql_guard import redact_sql_credentials
+from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.core.database import configured_timezone, db
 
 from . import securables
@@ -66,8 +66,16 @@ def nova_now() -> datetime:
 
 
 def redact_error(exc: BaseException | str) -> str:
-    """An error message safe to store: credentials redacted, length bounded."""
-    return redact_sql_credentials(str(exc))[:_ERROR_LIMIT]
+    """An error message safe to store: credentials redacted, length bounded.
+
+    When the redactor cannot vouch for the text it refuses it, and the stored
+    message becomes a fixed one rather than the sync run failing on its own
+    error handling.
+    """
+    try:
+        return redact_sql_credentials(str(exc))[:_ERROR_LIMIT]
+    except CredentialsRedactionError:
+        return "The catalog could not be read; the error was withheld because it held credentials."
 
 
 def catalog_kind(engine_type: str) -> str:

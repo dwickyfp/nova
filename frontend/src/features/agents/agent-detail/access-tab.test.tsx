@@ -87,15 +87,15 @@ describe("AgentAccessTab verification", () => {
       .toHaveAttribute("href", "/access-control");
     expect(document.querySelector(".fixed.inset-x-0.bottom-0")).toBeNull();
 
-    const askNove = screen.getByRole("button", {
-      name: "Ask Nove to grant missing access",
+    const askNeva = screen.getByRole("button", {
+      name: "Ask Neva to grant missing access",
     });
-    expect(askNove.element().nextElementSibling).toBe(
+    expect(askNeva.element().nextElementSibling).toBe(
       screen
         .getByRole("button", { name: "Dismiss verification result" })
         .element(),
     );
-    await askNove.click();
+    await askNeva.click();
     expect(mocks.newChatAndSend).toHaveBeenCalledOnce();
     const prompt = mocks.newChatAndSend.mock.calls[0][0] as string;
     expect(prompt).toContain('role "ACCOUNTADMIN"');
@@ -106,8 +106,11 @@ describe("AgentAccessTab verification", () => {
     );
     expect(prompt).toContain("adding a Ranger access policy for it is allowed");
     expect(prompt).toContain(
-      "StarRocks native grants do not satisfy Verify Access",
+      "Engine-level grants alone do not satisfy Verify Access",
     );
+    // The request reads as plain words: no tool names or routes for the
+    // assistant to repeat.
+    expect(prompt).not.toMatch(/inspect_role_access|grant_role_access|HTTP|API|endpoint/i);
     expect(prompt).toContain("ask for my approval before applying them");
   });
 
@@ -146,7 +149,7 @@ describe("AgentAccessTab verification", () => {
     await screen.getByRole("button", { name: "Verify" }).click();
 
     const button = screen.getByRole("button", {
-      name: "Ask Nove to grant missing access",
+      name: "Ask Neva to grant missing access",
     });
     await expect.element(button).toBeVisible();
     expect(

@@ -676,7 +676,7 @@ describe("Nova navigation material", () => {
       });
       const screen = await render(<RouterProvider router={router} />);
       try {
-        await screen.getByRole("button", { name: "Ask Nove" }).click();
+        await screen.getByRole("button", { name: "Ask Neva" }).click();
         await expect
           .element(screen.getByRole("button", { name: "Close assistant" }))
           .toBeVisible();

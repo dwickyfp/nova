@@ -1,5 +1,6 @@
+import { useClientDaypart } from "./use-client-daypart";
 import { threadTitle } from "./thread-title";
-import { clientTimeZone, daypartAt, GREETING, hourIn, type Daypart } from "./greeting";
+import { GREETING } from "./greeting";
 import {
   memo,
   useCallback,
@@ -1081,16 +1082,6 @@ const TurnView = memo(function TurnView({
 
 
 /** The client's daypart, re-read each minute so an open tab crosses noon or 18:00 on time. */
-function useClientDaypart(): Daypart {
-  const read = () => daypartAt(hourIn(new Date(), clientTimeZone()));
-  const [daypart, setDaypart] = useState(read);
-  useEffect(() => {
-    const timer = window.setInterval(() => setDaypart(read()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return daypart;
-}
-
 function Greeting({ displayName }: { displayName?: string | null }) {
   const daypart = useClientDaypart();
   const name = displayName?.trim();

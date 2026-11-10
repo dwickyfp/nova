@@ -89,7 +89,10 @@ async def resolve_terms(
     from app.modules.ontology.resolver import ConceptResolver
 
     resolver = ConceptResolver(ontology_service)
-    return (await resolver.resolve(q, user, release_id=release_id)).public()
+    # A person reads this page, so every visible concept is listed.
+    return (
+        await resolver.resolve(q, user, release_id=release_id, for_model=False)
+    ).public()
 
 
 @router.get("/concepts/{concept_id}")

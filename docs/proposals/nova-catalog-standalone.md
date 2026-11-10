@@ -558,7 +558,7 @@ memuat blok driver Fase 2 tanpa perubahan.
   versi terbaru bila belum ada yang aktif). Link dibangun ulang setiap pass dan
   segera setelah create, versi baru, publish, deprecate, atau drop.
 - **Studio dan agen** memakai tool read-only `catalog_search` di engine
-  assistant bersama (Nove, agen yang memilihnya, dan root Smart). Hasilnya
+  assistant bersama (Neva, agen yang memilihnya, dan root Smart). Hasilnya
   difilter per caller dan ditandai sebagai metadata, bukan instruksi atau bukti
   data.
 - **UI**: kotak pencarian catalog di header Database Explorer (`tag:pii`

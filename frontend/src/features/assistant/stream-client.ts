@@ -1,7 +1,8 @@
+import type { UiAction } from "@/features/studio/intelligent-ui/types";
 import { api, apiBase, authHeaders } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import { parseAssistantEvent, readSseFrames } from "./events";
-import type { NoveAppContext } from "./app-context";
+import type { NevaAppContext } from "./app-context";
 import type {
   AssistantEvent,
   ConsentDecision,
@@ -25,8 +26,14 @@ export type TurnContext = {
   model?: string | null;
   providerId?: string | null;
   /** Versioned, bounded application state for contextual references. */
-  appContext?: NoveAppContext;
+  appContext?: NevaAppContext;
+  /** Files the person attached: text as text, PDFs and images as base64. */
+  files?: SentFile[];
+  /** A button or form of an earlier interactive answer was used. */
+  uiAction?: UiAction;
 };
+
+export type SentFile = { name: string; content: string; mediaType: string };
 
 /**
  * Opens one assistant turn and drives the caller's reducer with typed events.
@@ -51,6 +58,8 @@ export async function streamAssistantTurn(
     model,
     providerId,
     appContext,
+    files,
+    uiAction,
   }: StreamTurnOptions & TurnContext,
 ): Promise<void> {
   const response = await fetch(
@@ -69,6 +78,16 @@ export async function streamAssistantTurn(
         model,
         provider_id: providerId,
         app_context: appContext,
+        ...(uiAction ? { ui_action: uiAction } : {}),
+        ...(files?.length
+          ? {
+              attachments: files.map((file) => ({
+                name: file.name,
+                content: file.content,
+                media_type: file.mediaType,
+              })),
+            }
+          : {}),
       }),
       signal,
     },

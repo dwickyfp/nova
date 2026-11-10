@@ -567,43 +567,41 @@ class TestAuditOnRealEngine:
 
 
 class TestExecuteGateOnRealEngine:
-    async def test_capabilities_declare_execute_gated(self, admin_client):
+    async def test_capabilities_declare_execute(self, admin_client):
         resp = await admin_client.get("/api/v1/migration/capabilities")
         assert resp.status_code == 200
         body = resp.json()
-        # Execute is present but gated; the gate is off in the test environment.
+        # Execute is always on; no enable flag is reported.
         assert "execute" in body["phases"]
-        assert body["execute_gate"] == {"issue": "#7", "name": "backup/restore"}
-        assert body["execute_available"] is False
+        assert body["write_operations"] is True
+        assert "execute_available" not in body
 
-    async def test_execute_refused_while_gate_closed(self, admin_client, source, namespace):
-        """A caller cannot reach the engine while the operator has not opened
-        the #7 gate."""
+    async def test_execute_refused_without_acknowledgement(
+        self, admin_client, source, namespace
+    ):
+        """A caller cannot reach the engine without acknowledging omissions."""
         resp = await admin_client.post(
             "/api/v1/migration/execute",
             json={
                 "source": source,
                 "database": namespace["database"],
                 "target_database": f"{namespace['database']}_exec",
-                "acknowledge_omissions": True,
+                "acknowledge_omissions": False,
                 "confirmation": f"{namespace['database']}_exec",
             },
         )
-        assert resp.status_code == 403, resp.text
-        assert "disabled" in resp.json()["detail"].lower()
+        assert resp.status_code == 422, resp.text
 
-    async def test_execute_applies_when_gate_open(
+    async def test_execute_applies_to_target(
         self, admin_client, source, namespace, monkeypatch
     ):
-        """With the gate open, execute creates the target objects for real.
+        """Execute creates the target objects for real.
 
         Proves the whole 11-B path: plan → execute through the query pipeline →
-        target exists with matching schema. The gate is enabled only for this
-        test via monkeypatch; production starts gated off.
+        target exists with matching schema.
         """
         from app.core.config import settings
 
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
         monkeypatch.setattr(
             settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
         )
@@ -705,7 +703,6 @@ class TestExecuteGateOnRealEngine:
         from app.core.config import settings
         from app.modules.migration import service as service_module
 
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
         monkeypatch.setattr(
             settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
         )
@@ -739,7 +736,6 @@ class TestExecuteGateOnRealEngine:
         """
         from app.core.config import settings
 
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
         monkeypatch.setattr(
             settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
         )
@@ -793,7 +789,6 @@ class TestExecuteGateOnRealEngine:
         """Running execute twice must not fail — the second run is a no-op."""
         from app.core.config import settings
 
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
         monkeypatch.setattr(
             settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
         )
@@ -1019,7 +1014,6 @@ class TestPlanApplyOnRealEngine:
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["execute_available"] is False
         # Dependency order: database, then table(s), then view(s), then MV(s).
         kinds = [step["kind"] for step in body["steps"]]
         assert kinds[0] == "database"

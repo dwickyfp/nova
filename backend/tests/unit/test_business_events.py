@@ -503,6 +503,11 @@ async def test_visible_concept_names_follow_ontology_visibility(monkeypatch):
     created = await world.approved([world.concept(world.finance, "NetRevenue")])
     monkeypatch.setattr(service_module, "ontology_service", world.reads)
     concept_id = world.concept_id(created)
+    # Not released yet: named to its steward only.
+    assert await business_events._visible_concepts({concept_id}, ANALYST) == {}
+    steward = await business_events._visible_concepts({concept_id}, FINANCE_STEWARD)
+    assert steward[concept_id]["qualified_name"] == "Finance.NetRevenue"
+    await world.release()
     names = await business_events._visible_concepts({concept_id}, ANALYST)
     assert names[concept_id]["qualified_name"] == "Finance.NetRevenue"
     assert await business_events._visible_concepts({concept_id}, OUTSIDER) == {}

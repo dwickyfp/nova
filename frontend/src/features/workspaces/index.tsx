@@ -4,6 +4,7 @@ import {
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type SetStateAction,
+  memo,
   startTransition,
   useCallback,
   useDeferredValue,
@@ -27,6 +28,7 @@ import {
   Clock,
   Copy,
   Database,
+  ListOrdered,
   Download,
   FileCode,
   Folder,
@@ -65,9 +67,9 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { Header } from "@/components/layout/header";
 import {
-  defineNoveCapability,
+  defineNevaCapability,
   useAssistant,
-  useNoveSurface,
+  useNevaSurface,
 } from "@/features/assistant";
 import type { TurnContext } from "@/features/assistant";
 import { createThread } from "@/features/assistant/thread-client";
@@ -78,6 +80,7 @@ import {
   type ProposedRewrite,
 } from "@/features/assistant/query-attach";
 import { DatabaseSchemaSelector } from "./database-schema-selector";
+import { RewriteReview } from "./rewrite-review";
 import {
   type CompletionResponse,
   buildStageCompletionPath,
@@ -109,13 +112,22 @@ import {
   getStarterTemplate,
 } from "./starter-templates";
 import { ExplainTreeView } from "./explain-tree";
-import { QueryHistory } from "./query-history";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { QueryHistory } from "./query-history";
+import { splitSqlStatements, statementAtOffset } from "./sql-statements";
+import {
+  editorTextForNeva,
   replaceAttachedSql,
-  safeNoveSql,
-  summarizeQueryForNove,
+  safeNevaSql,
+  summarizeQueryForNeva,
   type WorkspaceExecutionFeedback,
-} from "./nove-feedback";
+} from "./neva-feedback";
 import type {
   HistoryResponse,
   QueryContextResponse,
@@ -169,6 +181,20 @@ const FILE_PANEL_WIDE_FROM = 1024;
 // The editor keeps at least this much height when the results panel is tall.
 const EDITOR_MIN_HEIGHT = 160;
 
+const NO_DATABASES: string[] = [];
+/** Id prefix of SQL Neva suggests for the editor, as opposed to a repair. */
+const NEVA_SUGGESTION = "neva-";
+
+/**
+ * A repair asks Neva to review every run; a suggestion only when its run
+ * fails, since a run that worked needs no follow-up turn.
+ */
+function isNevaSuggestion(id: string): boolean {
+  return id.startsWith(NEVA_SUGGESTION);
+}
+const NO_EXPANDED: Record<string, boolean> = {};
+const NO_SCHEMAS: { name: string }[] = [];
+
 function useElementSize(element: HTMLElement | null) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -197,7 +223,16 @@ function getSqlForExecution(fallbackSql: string) {
       ? (editor.getModel()?.getValueInRange(selection).trim() ?? "")
       : "";
 
-  return selectedSql || fallbackSql.trim();
+  if (selectedSql) return selectedSql;
+  // Without a selection, run the statement at the cursor (the one just
+  // written when the cursor sits after it), not the whole file.
+  const model = editor?.getModel();
+  const position = editor?.getPosition();
+  const source = model ? model.getValue() : fallbackSql;
+  const statements = splitSqlStatements(source);
+  const offset =
+    model && position ? model.getOffsetAt(position) : source.length;
+  return statementAtOffset(statements, offset)?.text ?? fallbackSql.trim();
 }
 
 /**
@@ -678,6 +713,8 @@ export function WorkspacesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = workspacesRoute.useSearch();
+  // The database tree is built once, on first visit, and kept while hidden.
+  const [databasesVisited, setDatabasesVisited] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"workspaces" | "databases">(
     "workspaces",
   );
@@ -721,6 +758,14 @@ export function WorkspacesPage() {
   );
   const [isResizingResults, setIsResizingResults] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<"file" | "all">("file");
+  // While Run all works through a script: which statement of how many.
+  const [runProgress, setRunProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  // The database a run left the session in (a USE moves it).
+  const lastContextRef = useRef<{ database: string | null; schema: string | null } | null>(null);
+  const stopRunAllRef = useRef(false);
   const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(
     () => {
       try {
@@ -812,6 +857,58 @@ export function WorkspacesPage() {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const activeTabIdRef = useRef(activeTabId);
+
+  useEffect(() => {
+    if (sidebarTab === "databases") setDatabasesVisited(true);
+  }, [sidebarTab]);
+  // Stable, so toggling one database re-renders that node, not all of them.
+  const toggleDatabase = useCallback(
+    (name: string) =>
+      setExpandedDatabases((prev) => ({ ...prev, [name]: !prev[name] })),
+    [],
+  );
+  const toggleSchema = useCallback(
+    (key: string) =>
+      setExpandedSchemas((prev) => ({ ...prev, [key]: !prev[key] })),
+    [],
+  );
+
+  // Stable across keystrokes, so the memoized selector does not re-render
+  // while only the SQL text changes.
+  const selectDatabase = useCallback(
+    async (value: string) => {
+      if (!activeTabId) return;
+      const schemas = await api.get<SchemaResponse>(
+        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ""}`,
+      );
+      setSchemasByDatabase((prev) => ({
+        ...prev,
+        [value]: schemas.schemas,
+      }));
+      setTabs((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          ...prev[activeTabId],
+          database: value,
+          schema: schemas.schemas[0]?.name ?? "default",
+        },
+      }));
+    },
+    [activeTabId, sessionRole],
+  );
+  const selectSchema = useCallback(
+    (value: string) => {
+      if (!activeTabId) return;
+      setTabs((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          ...prev[activeTabId],
+          schema: value,
+        },
+      }));
+    },
+    [activeTabId],
+  );
   activeTabIdRef.current = activeTabId;
   const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null);
   const handledTemplateRef = useRef<string | null>(null);
@@ -826,9 +923,9 @@ export function WorkspacesPage() {
     setProposedRewrite,
     collapsedToPersist,
   } = useAssistant();
-  const noveCapabilities = useMemo(
+  const nevaCapabilities = useMemo(
     () => [
-      defineNoveCapability({
+      defineNevaCapability({
         name: "tab.open",
         risk: "safe",
         argsSchema: z
@@ -839,17 +936,61 @@ export function WorkspacesPage() {
           setResultsCollapsed(false);
         },
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: "editor.focus",
         risk: "safe",
         argsSchema: z.object({}).strict(),
         execute: () => activeSqlEditorInstance?.focus(),
       }),
+      // Neva's SQL becomes a suggested change in the open file: the person
+      // sees the diff and accepts or dismisses it. Nothing runs or saves here.
+      defineNevaCapability({
+        name: "editor.propose_sql",
+        risk: "draft",
+        argsSchema: z
+          .object({
+            sql: z.string().trim().min(1).max(20_000),
+            mode: z.enum(["replace", "insert"]),
+          })
+          .strict(),
+        execute: ({ sql, mode }) => {
+          const tabId = activeTabIdRef.current;
+          const tab = tabId ? tabsRef.current[tabId] : undefined;
+          if (!tabId || !tab) throw new Error("Open a SQL file first.");
+          const before = tab.content;
+          const editor = activeSqlEditorInstance;
+          const selection = editor?.getSelection();
+          const model = editor?.getModel();
+          // The file keeps its own ending, so a replace adds no blank line.
+          const ending = before.endsWith("\n") ? "\n" : "";
+          let next: string;
+          if (mode === "replace" && selection && model && !selection.isEmpty()) {
+            // A selection is what the person pointed at: only it changes.
+            const start = model.getOffsetAt(selection.getStartPosition());
+            const end = model.getOffsetAt(selection.getEndPosition());
+            next = before.slice(0, start) + sql + before.slice(end);
+          } else if (mode === "insert" && before.trim()) {
+            next = `${before.trimEnd()}\n\n${sql}${ending}`;
+          } else {
+            next = `${sql}${ending}`;
+          }
+          if (next === before) throw new Error("The SQL is already in the editor.");
+          const id = `${NEVA_SUGGESTION}${crypto.randomUUID()}`;
+          setProposedRewrite({
+            attachmentId: id,
+            tabId,
+            sourceContent: before,
+            sql,
+            hunks: buildRewriteHunks(before, next),
+            sourceMessageId: id,
+          });
+        },
+      }),
     ],
-    [],
+    [setProposedRewrite],
   );
-  const { publishEvent: publishWorkspaceEvent, askNove: askFromWorkspace } =
-    useNoveSurface({
+  const { publishEvent: publishWorkspaceEvent, askNeva: askFromWorkspace } =
+    useNevaSurface({
       id: "workspace.sql",
       route: "/workspaces",
       title: activeTab?.title ?? "SQL Workspace",
@@ -858,7 +999,7 @@ export function WorkspacesPage() {
         const selection = editor?.getSelection();
         const selectedText =
           selection && !selection.isEmpty()
-            ? safeNoveSql(editor?.getModel()?.getValueInRange(selection) ?? "")
+            ? safeNevaSql(editor?.getModel()?.getValueInRange(selection) ?? "")
             : undefined;
         const cursor = editor?.getPosition();
         return {
@@ -873,6 +1014,8 @@ export function WorkspacesPage() {
                   documentId: activeTab.id,
                   language: "sql",
                   selectedText,
+                  // Sent as written, so the cursor's line matches the text.
+                  text: editorTextForNeva(editor?.getModel()?.getValue() ?? activeTab.content ?? ""),
                   cursor: cursor
                     ? { line: cursor.lineNumber, column: cursor.column }
                     : undefined,
@@ -904,7 +1047,7 @@ export function WorkspacesPage() {
           },
         };
       },
-      capabilities: activeTab ? noveCapabilities : [],
+      capabilities: activeTab ? nevaCapabilities : [],
       suggestedActions: activeTab
         ? [
             {
@@ -1500,9 +1643,14 @@ export function WorkspacesPage() {
   }
 
   function generateUniqueFileName(): string {
-    const existingNames = new Set(
-      Object.values(tabs).map((t) => t.title.toLowerCase()),
-    );
+    // Every file at the top level, not only the open tabs: a name an unopened
+    // file already has would point both files at one stored object.
+    const existingNames = new Set([
+      ...Object.values(tabs).map((t) => t.title.toLowerCase()),
+      ...(workspaceTreeQuery.data?.entries ?? [])
+        .filter((entry) => !entry.parent_path)
+        .map((entry) => entry.name.toLowerCase()),
+    ]);
     const base = "Untitled";
     const first = `${base}.sql`;
     if (!existingNames.has(first.toLowerCase())) return first;
@@ -1656,7 +1804,7 @@ export function WorkspacesPage() {
     elapsed: number,
     correlationId?: string,
   ): WorkspaceExecutionFeedback {
-    const feedback = summarizeQueryForNove(executionId, sql, results, elapsed);
+    const feedback = summarizeQueryForNeva(executionId, sql, results, elapsed);
     setLastExecutionByTab((previous) => ({ ...previous, [tabId]: feedback }));
     publishWorkspaceEvent({
       source: "execution",
@@ -1669,6 +1817,63 @@ export function WorkspacesPage() {
     return feedback;
   }
 
+  /**
+   * A USE in the run moves the tab to that database, so the selector shows it
+   * and the next run starts there instead of failing with "No database
+   * selected".
+   */
+  function followSessionContext(tabId: string, response: QueryResponse[]) {
+    const last = [...response]
+      .reverse()
+      .find((result) => result.success && result.context_database !== undefined);
+    if (!last) return;
+    const database = last.context_database ?? null;
+    const schema = last.context_schema ?? null;
+    lastContextRef.current = { database, schema };
+    setTabs((previous) => {
+      const tab = previous[tabId];
+      if (!tab || (tab.database || null) === database) return previous;
+      return {
+        ...previous,
+        [tabId]: { ...tab, database: database ?? "", schema: schema ?? "default" },
+      };
+    });
+  }
+
+  /** Runs every statement of the file one after another, stopping at the first failure. */
+  async function runAll() {
+    if (!activeTab) return;
+    const statements = splitSqlStatements(
+      editorContentRef.current || activeTab.content,
+    );
+    if (!statements.length) return;
+    const tabId = activeTab.id;
+    let context = {
+      database: activeTab.database || null,
+      schema: activeTab.schema || null,
+    };
+    setQueryResults(null);
+    setActiveResultIdx(0);
+    stopRunAllRef.current = false;
+    try {
+      for (const [index, statement] of statements.entries()) {
+        if (stopRunAllRef.current) break;
+        setRunProgress({ current: index + 1, total: statements.length });
+        const outcome = await runQuery(
+          false,
+          statement.text,
+          undefined,
+          { tabId, ...context },
+          { append: true },
+        );
+        if (outcome !== "success") break;
+        context = lastContextRef.current ?? context;
+      }
+    } finally {
+      setRunProgress(null);
+    }
+  }
+
   async function runQuery(
     confirmDestructive = false,
     sqlOverride?: string,
@@ -1678,9 +1883,22 @@ export function WorkspacesPage() {
       database: string | null;
       schema: string | null;
     },
+    options: { append?: boolean } = {},
   ): Promise<
     "success" | "error" | "cancelled" | "pending-confirmation" | undefined
   > {
+    const append = options.append ?? false;
+    const showResults = (results: QueryResponse[]) => {
+      if (!append) {
+        setQueryResults(results);
+        return;
+      }
+      setQueryResults((previous) => {
+        const next = [...(previous ?? []), ...results];
+        setActiveResultIdx(next.length - 1);
+        return next;
+      });
+    };
     if (!activeTab) return;
     const sql =
       sqlOverride?.trim() ||
@@ -1705,8 +1923,11 @@ export function WorkspacesPage() {
       payload: { documentId: activeTab.id },
     });
     setRunning(true);
-    setQueryResults(null);
-    setActiveResultIdx(0);
+    lastContextRef.current = null;
+    if (!append) {
+      setQueryResults(null);
+      setActiveResultIdx(0);
+    }
     setElapsedMs(0);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1739,7 +1960,8 @@ export function WorkspacesPage() {
         return "pending-confirmation";
       }
       if (activeTabIdRef.current === requestSnapshot.tabId)
-        setQueryResults(response);
+        showResults(response);
+      followSessionContext(requestSnapshot.tabId, response);
       const feedback = recordQueryFeedback(
         activeTab.id,
         executionId,
@@ -1765,7 +1987,7 @@ export function WorkspacesPage() {
       return feedback.execution.status === "success" ? "success" : "error";
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        setQueryResults([
+        showResults([
           {
             success: false,
             columns: [],
@@ -1809,7 +2031,7 @@ export function WorkspacesPage() {
           destructive: false,
           needs_confirmation: false,
         };
-        setQueryResults([failedResult]);
+        showResults([failedResult]);
         recordQueryFeedback(
           activeTab.id,
           executionId,
@@ -1926,7 +2148,7 @@ export function WorkspacesPage() {
       endLine,
     });
     if (!assistantOpen) toggleAssistant();
-    toast.success("Query attached to Nove");
+    toast.success("Query attached to Neva");
   }
 
   function askAboutWorkspaceQuery(prompt: string, sourceSql?: string) {
@@ -1934,7 +2156,7 @@ export function WorkspacesPage() {
     const sql =
       sourceSql ??
       getSqlForExecution(editorContentRef.current || activeTab.content);
-    const safeSql = safeNoveSql(sql);
+    const safeSql = safeNevaSql(sql);
     if (!safeSql) {
       void askFromWorkspace(prompt);
       return;
@@ -1991,7 +2213,7 @@ export function WorkspacesPage() {
     if (nextContent === null) {
       setProposedRewrite(null);
       toast.error(
-        "The SQL changed after Nove proposed this rewrite. Request a new fix.",
+        "The SQL changed after Neva proposed this rewrite. Request a new fix.",
       );
       return;
     }
@@ -2033,7 +2255,10 @@ export function WorkspacesPage() {
         rewrite.sql,
         rewrite.sourceMessageId,
       );
-      if (outcome === "success" || outcome === "error") {
+      if (
+        outcome === "error" ||
+        (outcome === "success" && !isNevaSuggestion(rewrite.sourceMessageId))
+      ) {
         await askFromWorkspace(
           "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
         );
@@ -2286,7 +2511,7 @@ export function WorkspacesPage() {
                   </div>
                 </div>
                 <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
-                  {sidebarTab === "workspaces" ? (
+                  <div hidden={sidebarTab !== "workspaces"}>
                     <WorkspaceTree
                       entries={filteredEntries}
                       activeEntryId={activeTabId}
@@ -2330,31 +2555,24 @@ export function WorkspacesPage() {
                       onRename={renameEntry}
                       onDelete={deleteEntry}
                     />
-                  ) : (
-                    <DatabaseExplorer
-                      databases={filteredDatabases}
-                      expandedDatabases={expandedDatabases}
-                      expandedSchemas={expandedSchemas}
-                      onToggleDatabase={(name) =>
-                        setExpandedDatabases((prev) => ({
-                          ...prev,
-                          [name]: !prev[name],
-                        }))
-                      }
-                      onToggleSchema={(key) =>
-                        setExpandedSchemas((prev) => ({
-                          ...prev,
-                          [key]: !prev[key],
-                        }))
-                      }
-                      role={
-                        sessionRole ||
-                        queryContextQuery.data?.defaults.role ||
-                        undefined
-                      }
-                      setSchemasByDatabase={setSchemasByDatabase}
-                    />
-                  )}
+                  </div>
+                  {databasesVisited || sidebarTab === "databases" ? (
+                    <div hidden={sidebarTab !== "databases"}>
+                      <DatabaseExplorer
+                        databases={filteredDatabases}
+                        expandedDatabases={expandedDatabases}
+                        expandedSchemas={expandedSchemas}
+                        onToggleDatabase={toggleDatabase}
+                        onToggleSchema={toggleSchema}
+                        role={
+                          sessionRole ||
+                          queryContextQuery.data?.defaults.role ||
+                          undefined
+                        }
+                        setSchemasByDatabase={setSchemasByDatabase}
+                      />
+                    </div>
+                  ) : null}
                 </ScrollArea>
               </>
             )}
@@ -2388,24 +2606,53 @@ export function WorkspacesPage() {
             <>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                 <div className="flex shrink-0 items-center gap-2">
-                  {running ? (
+                  {running || runProgress ? (
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => abortRef.current?.abort()}
+                      onClick={() => {
+                        stopRunAllRef.current = true;
+                        abortRef.current?.abort();
+                      }}
                     >
                       <Square className="size-4" />
                       Cancel {(elapsedMs / 1000).toFixed(1)}s
                     </Button>
                   ) : (
-                    <Button size="sm" onClick={() => runQuery()}>
-                      <Play className="size-4" />
-                      Run
-                    </Button>
+                    <div className="flex gap-px">
+                      <Button
+                        size="sm"
+                        className="rounded-r-none"
+                        title="Run the selection, or the statement at the cursor (Ctrl+Enter)"
+                        onClick={() => runQuery()}
+                      >
+                        <Play className="size-4" />
+                        Run
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="sm"
+                            className="rounded-l-none px-2"
+                            aria-label="More ways to run"
+                          >
+                            <ChevronDown className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                          <DropdownMenuItem onSelect={() => void runAll()}>
+                            <ListOrdered className="size-4" />
+                            Run all
+                            <DropdownMenuShortcut>⇧⌘↵</DropdownMenuShortcut>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   )}
                   <Button
-                    size="sm"
-                    variant="outline"
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     title="Format SQL (Ctrl+Shift+F)"
                     aria-label="Format SQL"
                     onClick={() => {
@@ -2415,28 +2662,17 @@ export function WorkspacesPage() {
                     }}
                   >
                     <Braces className="size-4" />
-                    <span className="hidden @md/editor:inline">Format</span>
                   </Button>
                   <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      askAboutWorkspaceQuery(
-                        "Explain the selected SQL, or the current query if nothing is selected.",
-                      )
-                    }
-                  >
-                    Explain SQL
-                  </Button>
-                  <button
-                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     aria-label="Version history"
                     title="Version history"
-                    className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => setHistoryOpen(true)}
                   >
                     <History className="size-4" />
-                  </button>
+                  </Button>
                 </div>
                 <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
                   {/*
@@ -2454,40 +2690,16 @@ export function WorkspacesPage() {
                     {sessionRole || "No role"}
                   </span>
                   <DatabaseSchemaSelector
-                    databases={queryContextQuery.data?.databases ?? []}
+                    databases={queryContextQuery.data?.databases ?? NO_DATABASES}
                     selectedDatabase={activeTab.database}
                     schemas={
                       activeTab.database
-                        ? (schemasByDatabase[activeTab.database] ?? [])
-                        : []
+                        ? (schemasByDatabase[activeTab.database] ?? NO_SCHEMAS)
+                        : NO_SCHEMAS
                     }
                     selectedSchema={activeTab.schema}
-                    onSelectDatabase={async (value) => {
-                      const schemas = await api.get<SchemaResponse>(
-                        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ""}`,
-                      );
-                      setSchemasByDatabase((prev) => ({
-                        ...prev,
-                        [value]: schemas.schemas,
-                      }));
-                      setTabs((prev) => ({
-                        ...prev,
-                        [activeTab.id]: {
-                          ...prev[activeTab.id],
-                          database: value,
-                          schema: schemas.schemas[0]?.name ?? "default",
-                        },
-                      }));
-                    }}
-                    onSelectSchema={(value) =>
-                      setTabs((prev) => ({
-                        ...prev,
-                        [activeTab.id]: {
-                          ...prev[activeTab.id],
-                          schema: value,
-                        },
-                      }))
-                    }
+                    onSelectDatabase={selectDatabase}
+                    onSelectSchema={selectSchema}
                   />
                 </div>
               </div>
@@ -2515,6 +2727,7 @@ export function WorkspacesPage() {
                       }));
                     }}
                     onRun={() => runQuery()}
+                    onRunAll={() => void runAll()}
                     onAttachSelection={attachEditorSelectionToAssistant}
                     proposedRewrite={
                       proposedRewrite && proposedRewrite.tabId === activeTab.id
@@ -2570,7 +2783,7 @@ export function WorkspacesPage() {
                         type="button"
                         onClick={() => setResultsTab("results")}
                         className={cn(
-                          "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
+                          "flex items-center gap-1.5 whitespace-nowrap rounded-t-md px-3 py-1 text-xs transition-colors",
                           resultsTab === "results"
                             ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
                             : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
@@ -2582,16 +2795,28 @@ export function WorkspacesPage() {
                             Explain
                           </span>
                         )}
-                        {queryResults && queryResults.length > 0 && (
-                          <span className="text-muted-foreground">
-                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r
-                            •{" "}
+                        {runProgress ? (
+                          <span
+                            role="status"
+                            className="tabular-nums text-muted-foreground"
+                          >
+                            Running {runProgress.current} of {runProgress.total} queries
+                          </span>
+                        ) : queryResults && queryResults.length > 0 ? (
+                          <span className="tabular-nums text-muted-foreground">
+                            {queryResults.length > 1
+                              ? `${queryResults.length} queries · `
+                              : ""}
+                            {queryResults
+                              .reduce((s, r) => s + r.row_count, 0)
+                              .toLocaleString()}{" "}
+                            rows ·{" "}
                             {queryResults
                               .reduce((s, r) => s + r.elapsed_ms, 0)
-                              .toFixed(0)}
+                              .toFixed(0)}{" "}
                             ms
                           </span>
-                        )}
+                        ) : null}
                       </button>
                       <button
                         type="button"
@@ -2709,7 +2934,7 @@ export function WorkspacesPage() {
                                 )
                               }
                             >
-                              Fix with Nove
+                              Fix with Neva
                             </Button>
                           </div>
                         )}
@@ -2861,7 +3086,8 @@ export function WorkspacesPage() {
             ).then((outcome) => {
               if (
                 pending.correlationId &&
-                (outcome === "success" || outcome === "error")
+                (outcome === "error" ||
+                  (outcome === "success" && !isNevaSuggestion(pending.correlationId)))
               )
                 void askFromWorkspace(
                   "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
@@ -3008,7 +3234,7 @@ function renderWorkspaceEntries(
     });
 }
 
-function DatabaseExplorer({
+const DatabaseExplorer = memo(function DatabaseExplorer({
   databases,
   expandedDatabases,
   expandedSchemas,
@@ -3036,7 +3262,11 @@ function DatabaseExplorer({
               key={database.name}
               database={database.name}
               expanded={expandedDatabases[database.name] ?? false}
-              expandedSchemas={expandedSchemas}
+              // Closed databases get one constant, so opening a schema
+              // re-renders only the database that holds it.
+              expandedSchemas={
+                expandedDatabases[database.name] ? expandedSchemas : NO_EXPANDED
+              }
               onToggleDatabase={onToggleDatabase}
               onToggleSchema={onToggleSchema}
               role={role}
@@ -3047,9 +3277,9 @@ function DatabaseExplorer({
       </div>
     </TablePopoverProvider>
   );
-}
+});
 
-function DatabaseNode({
+const DatabaseNode = memo(function DatabaseNode({
   database,
   expanded,
   expandedSchemas,
@@ -3068,24 +3298,6 @@ function DatabaseNode({
     SetStateAction<Record<string, Array<{ name: string }>>>
   >;
 }) {
-  const schemasQuery = useQuery<SchemaResponse>({
-    queryKey: ["db-schemas", database, role],
-    queryFn: () =>
-      api.get<SchemaResponse>(
-        `/objects/databases/${encodeURIComponent(database)}/schemas${role ? `?role=${encodeURIComponent(role)}` : ""}`,
-      ),
-    enabled: expanded,
-  });
-
-  useEffect(() => {
-    if (schemasQuery.data) {
-      setSchemasByDatabase((prev) => ({
-        ...prev,
-        [database]: schemasQuery.data.schemas,
-      }));
-    }
-  }, [database, schemasQuery.data, setSchemasByDatabase]);
-
   return (
     <Collapsible
       open={expanded}
@@ -3108,27 +3320,75 @@ function DatabaseNode({
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub>
-            {schemasQuery.data?.schemas.map((schema) => (
-              <SchemaNode
-                key={`${database}:${schema.name}`}
-                database={database}
-                schema={schema.name}
-                expanded={
-                  expandedSchemas[`${database}:${schema.name}`] ?? false
-                }
-                onToggleSchema={onToggleSchema}
-                role={role}
-              />
-            ))}
-          </SidebarMenuSub>
+          {expanded ? (
+            <DatabaseSchemas
+              database={database}
+              expandedSchemas={expandedSchemas}
+              onToggleSchema={onToggleSchema}
+              role={role}
+              setSchemasByDatabase={setSchemasByDatabase}
+            />
+          ) : null}
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
   );
+});
+
+/**
+ * An open database's schemas. Its query exists only while the database is
+ * open, instead of one idle query per listed database.
+ */
+function DatabaseSchemas({
+  database,
+  expandedSchemas,
+  onToggleSchema,
+  role,
+  setSchemasByDatabase,
+}: {
+  database: string;
+  expandedSchemas: Record<string, boolean>;
+  onToggleSchema: (key: string) => void;
+  role?: string;
+  setSchemasByDatabase: Dispatch<
+    SetStateAction<Record<string, Array<{ name: string }>>>
+  >;
+}) {
+  const schemasQuery = useQuery<SchemaResponse>({
+    queryKey: ["db-schemas", database, role],
+    queryFn: () =>
+      api.get<SchemaResponse>(
+        `/objects/databases/${encodeURIComponent(database)}/schemas${role ? `?role=${encodeURIComponent(role)}` : ""}`,
+      ),
+  });
+
+  useEffect(() => {
+    if (schemasQuery.data) {
+      setSchemasByDatabase((prev) =>
+        prev[database] === schemasQuery.data.schemas
+          ? prev
+          : { ...prev, [database]: schemasQuery.data.schemas },
+      );
+    }
+  }, [database, schemasQuery.data, setSchemasByDatabase]);
+
+  return (
+    <SidebarMenuSub>
+      {schemasQuery.data?.schemas.map((schema) => (
+        <SchemaNode
+          key={`${database}:${schema.name}`}
+          database={database}
+          schema={schema.name}
+          expanded={expandedSchemas[`${database}:${schema.name}`] ?? false}
+          onToggleSchema={onToggleSchema}
+          role={role}
+        />
+      ))}
+    </SidebarMenuSub>
+  );
 }
 
-function SchemaNode({
+const SchemaNode = memo(function SchemaNode({
   database,
   schema,
   expanded,
@@ -3142,14 +3402,6 @@ function SchemaNode({
   role?: string;
 }) {
   const schemaKey = `${database}:${schema}`;
-  const treeQuery = useQuery<SchemaTreeResponse>({
-    queryKey: ["schema-tree", database, schema, role],
-    queryFn: () =>
-      api.get<SchemaTreeResponse>(
-        `/objects/databases/${encodeURIComponent(database)}/schemas/${encodeURIComponent(schema)}/tree${role ? `?role=${encodeURIComponent(role)}` : ""}`,
-      ),
-    enabled: expanded,
-  });
 
   return (
     <Collapsible open={expanded} onOpenChange={() => onToggleSchema(schemaKey)}>
@@ -3170,37 +3422,60 @@ function SchemaNode({
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          {treeQuery.data && (
-            <SidebarMenuSub className="space-y-2 py-1">
-              <ObjectGroup
-                title="Tables"
-                items={treeQuery.data.tables}
-                database={database}
-                schema={schema}
-              />
-              <ObjectGroup
-                title="Views"
-                items={treeQuery.data.views}
-                database={database}
-                schema={schema}
-              />
-              <ObjectGroup
-                title="Materialized Views"
-                items={treeQuery.data.materialized_views}
-                database={database}
-                schema={schema}
-              />
-              <ObjectGroup
-                title="Stages"
-                items={treeQuery.data.stages}
-                database={database}
-                schema={schema}
-              />
-            </SidebarMenuSub>
-          )}
+          {expanded ? (
+            <SchemaObjects database={database} schema={schema} role={role} />
+          ) : null}
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
+  );
+});
+
+/** An open schema's objects; queried only while the schema is open. */
+function SchemaObjects({
+  database,
+  schema,
+  role,
+}: {
+  database: string;
+  schema: string;
+  role?: string;
+}) {
+  const treeQuery = useQuery<SchemaTreeResponse>({
+    queryKey: ["schema-tree", database, schema, role],
+    queryFn: () =>
+      api.get<SchemaTreeResponse>(
+        `/objects/databases/${encodeURIComponent(database)}/schemas/${encodeURIComponent(schema)}/tree${role ? `?role=${encodeURIComponent(role)}` : ""}`,
+      ),
+  });
+  if (!treeQuery.data) return null;
+  return (
+    <SidebarMenuSub className="space-y-2 py-1">
+      <ObjectGroup
+        title="Tables"
+        items={treeQuery.data.tables}
+        database={database}
+        schema={schema}
+      />
+      <ObjectGroup
+        title="Views"
+        items={treeQuery.data.views}
+        database={database}
+        schema={schema}
+      />
+      <ObjectGroup
+        title="Materialized Views"
+        items={treeQuery.data.materialized_views}
+        database={database}
+        schema={schema}
+      />
+      <ObjectGroup
+        title="Stages"
+        items={treeQuery.data.stages}
+        database={database}
+        schema={schema}
+      />
+    </SidebarMenuSub>
   );
 }
 
@@ -3247,7 +3522,13 @@ function ObjectGroup({
   );
 }
 
-function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
+// Memoized: the page re-renders on every keystroke in the editor, and a large
+// result or chart must not be redrawn when only the SQL text changed.
+const QueryResults = memo(function QueryResults({
+  queryResult,
+}: {
+  queryResult: QueryResponse | null;
+}) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
   const [sortCol, setSortCol] = useState<number | null>(null);
@@ -3550,7 +3831,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
         })()}
     </div>
   );
-}
+});
 
 // ── Chart Visualization ─────────────────────────────────────────────
 // Categorical series palette, read from tokens so dark mode stays correct.
@@ -3713,7 +3994,7 @@ function formatAxisTick(value: unknown, maxLength: number = 18) {
   return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
 }
 
-function ChartVisualization({
+const ChartVisualization = memo(function ChartVisualization({
   queryResult,
 }: {
   queryResult: QueryResponse | null;
@@ -4815,7 +5096,7 @@ function ChartVisualization({
       </div>
     </div>
   );
-}
+});
 
 function MonacoSqlEditor({
   value,
@@ -4824,6 +5105,7 @@ function MonacoSqlEditor({
   role,
   onChange,
   onRun,
+  onRunAll,
   onAttachSelection,
   proposedRewrite,
   onApproveRewrite,
@@ -4836,6 +5118,7 @@ function MonacoSqlEditor({
   role: string;
   onChange: (value?: string) => void;
   onRun: () => void;
+  onRunAll: () => void;
   onAttachSelection: () => void;
   proposedRewrite: ProposedRewrite | null;
   onApproveRewrite: () => void;
@@ -4849,6 +5132,8 @@ function MonacoSqlEditor({
   } | null>(null);
   const onRunRef = useRef(onRun);
   onRunRef.current = onRun;
+  const onRunAllRef = useRef(onRunAll);
+  onRunAllRef.current = onRunAll;
   const onAttachSelectionRef = useRef(onAttachSelection);
   onAttachSelectionRef.current = onAttachSelection;
   // Refs for completion provider — prevents stale closure (provider registered once at mount)
@@ -4904,7 +5189,7 @@ function MonacoSqlEditor({
 
   /**
    * Paints the proposed rewrite into the editor: replaced original lines in
-   * red, proposed lines in blue, inserted as whole-line decorations with a
+   * red, proposed lines in green, inserted as whole-line decorations with a
    * margin marker so an empty proposed line still shows. Partial-line rewrites
    * naturally produce single-line hunks, so only the changed lines light up.
    */
@@ -4949,8 +5234,8 @@ function MonacoSqlEditor({
     style.textContent = `
       .nova-rewrite-old-line { background: color-mix(in srgb, var(--destructive) 14%, transparent); }
       .nova-rewrite-old-gutter { border-left: 3px solid var(--destructive); }
-      .nova-rewrite-new-line { background: color-mix(in srgb, var(--info) 16%, transparent); }
-      .nova-rewrite-new-gutter { border-left: 3px solid var(--info); }
+      .nova-rewrite-new-line { background: color-mix(in srgb, var(--success) 14%, transparent); }
+      .nova-rewrite-new-gutter { border-left: 3px solid var(--success); }
     `;
     document.head.appendChild(style);
   }, []);
@@ -5259,11 +5544,11 @@ function MonacoSqlEditor({
       },
     });
 
-    // "Attach to Nove" in the editor's right-click menu, in the navigation
+    // "Attach to Neva" in the editor's right-click menu, in the navigation
     // group so it sits above the native clipboard entries.
     editor.addAction({
       id: "attach-to-nova",
-      label: "Attach to Nove",
+      label: "Attach to Neva",
       contextMenuGroupId: "navigation",
       contextMenuOrder: 1,
       run: () => {
@@ -5279,7 +5564,9 @@ function MonacoSqlEditor({
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
-          onRunRef.current();
+          // Shift runs every statement; plain runs the current one.
+          if (e.shiftKey) onRunAllRef.current();
+          else onRunRef.current();
         }
       };
       editorDomNode.addEventListener("keydown", handler, true);
@@ -5287,7 +5574,15 @@ function MonacoSqlEditor({
   }
 
   return (
-    <div className="relative h-full min-h-0">
+    <div
+      className="relative h-full min-h-0"
+      onKeyDown={(event) => {
+        // Escape dismisses Neva's suggestion, unless the editor used the key
+        // itself (closing its own suggestion list).
+        if (event.key === "Escape" && proposedRewrite && !event.defaultPrevented)
+          onDenyRewrite();
+      }}
+    >
       <Editor
         height="100%"
         language="sql"
@@ -5318,69 +5613,13 @@ function MonacoSqlEditor({
         }}
       />
       {proposedRewrite ? (
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10">
-          <div className="pointer-events-auto max-h-[45%] overflow-auto rounded-lg border bg-background shadow-lg">
-            <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-              <p className="text-xs font-medium">Proposed rewrite from Nove</p>
-              <p className="text-xs text-muted-foreground">
-                {proposedRewrite.hunks.length} change
-                {proposedRewrite.hunks.length === 1 ? "" : "s"}
-              </p>
-            </div>
-            <div className="flex flex-col gap-1.5 p-2">
-              {proposedRewrite.hunks.map((hunk, index) => (
-                <div
-                  key={`${hunk.startLine}-${index}`}
-                  className="grid grid-cols-2 gap-1.5"
-                >
-                  <div className="min-w-0 rounded border border-destructive/30 bg-destructive/10 p-1.5">
-                    <p className="mb-0.5 text-xs font-medium text-destructive">
-                      Before
-                    </p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem] text-muted-foreground">
-                      {hunk.kind === "insert"
-                        ? "(none)"
-                        : value
-                            .split("\n")
-                            .slice(hunk.startLine - 1, hunk.endLine)
-                            .join("\n")}
-                    </pre>
-                  </div>
-                  <div className="min-w-0 rounded border border-info/40 bg-info/10 p-1.5">
-                    <p className="mb-0.5 text-xs font-medium text-info-strong">
-                      After
-                    </p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem]">
-                      {hunk.kind === "delete"
-                        ? "(removed)"
-                        : hunk.lines.join("\n") || "(none)"}
-                    </pre>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onDenyRewrite}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onApproveRewrite}
-              >
-                Apply
-              </Button>
-              <Button type="button" size="sm" onClick={onApproveAndRunRewrite}>
-                Apply &amp; Run
-              </Button>
-            </div>
-          </div>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex flex-col justify-end">
+          <RewriteReview
+            rewrite={proposedRewrite}
+            onCancel={onDenyRewrite}
+            onApply={onApproveRewrite}
+            onApplyAndRun={onApproveAndRunRewrite}
+          />
         </div>
       ) : null}
     </div>

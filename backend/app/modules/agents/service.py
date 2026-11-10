@@ -137,8 +137,8 @@ class AgentService:
             assert_tool_contracts(manifest, registry)
             registry.release_manifest = manifest
 
-        requested_skills = [s for s in (agent.get("default_skills") or []) if s]
-        discoverable_skills = [s for s in (agent.get("discoverable_skills") or []) if s]
+        requested_skills = _agent_skills(agent.get("default_skills"), agent.get("agent_id"))
+        discoverable_skills = _agent_skills(agent.get("discoverable_skills"), agent.get("agent_id"))
         # Every ML-capable agent gets the trusted ML procedure on demand. It is
         # discoverable rather than default, so non-ML turns pay no prompt cost.
         if (
@@ -207,9 +207,12 @@ class AgentService:
             registry.skill_definitions = {
                 item["name"]: SkillDefinition(**{**item, "triggers": tuple(item["triggers"])})
                 for item in dependencies["skills"]
+                if _agent_skills([item["name"]], agent.get("agent_id"))
             }
-            requested_skills = dependencies["default_skills"]
-            discoverable_skills = dependencies["discoverable_skills"]
+            requested_skills = _agent_skills(dependencies["default_skills"], agent.get("agent_id"))
+            discoverable_skills = _agent_skills(
+                dependencies["discoverable_skills"], agent.get("agent_id")
+            )
             skill_bodies = [
                 registry.skill_definitions[name].prompt_body() for name in requested_skills
             ]
@@ -232,6 +235,25 @@ class AgentService:
         budget = loop_limits(agent).time_budget_seconds
         token_budget = _clamp_token_budget(agent.get("budget_tokens"))
         return registry, system_prompt, budget, token_budget
+
+
+def _agent_skills(names: Any, agent_id: Any) -> list[str]:
+    """The configured skill names a Studio agent may load.
+
+    Platform skills written for the Console assistant (SQL authoring, account
+    and stage administration) never reach a Studio agent, even when an older
+    configuration or release still names them. User skills pass through.
+    """
+    kept: list[str] = []
+    for name in names or []:
+        if not name:
+            continue
+        platform = skill_library.get(name)
+        if platform is not None and not platform.for_agents:
+            logger.info("Agent %s: skipping assistant-only skill %s", agent_id, name)
+            continue
+        kept.append(name)
+    return kept
 
 
 def _clamp_token_budget(tokens: Any) -> int | None:

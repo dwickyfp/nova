@@ -403,10 +403,10 @@ describe("StudioApp thread routing", () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it("keeps Studio focused on the agent conversation without the Nove panel", async () => {
+  it("keeps Studio focused on the agent conversation without the Neva panel", async () => {
     const screen = await renderStudio();
     await expect.element(screen.getByRole("main", { name: "Nova Studio chat" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "Ask Nove" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "Ask Neva" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "Nova Studio" })).not.toBeInTheDocument();
   });
 

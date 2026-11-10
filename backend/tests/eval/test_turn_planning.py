@@ -186,7 +186,7 @@ async def test_multilingual_data_turn_executes_required_tool_with_consent(prompt
 
 
 @pytest.mark.asyncio
-async def test_studio_tool_plan_cannot_expose_unregistered_tool():
+async def test_a_plan_naming_an_unregistered_tool_is_replaced_by_a_safe_plan():
     registry = ToolRegistry()
     registry.register(EvalTool("semantic_query"))
     provider = ScriptedProvider(
@@ -212,5 +212,7 @@ async def test_studio_tool_plan_cannot_expose_unregistered_tool():
             )
         ]
     )
-    assert result.finish_reason == "planning_failed"
-    assert "planning_failed" in result.error_codes
+    # The invalid plan is refused; Neva's read-only fallback plan offers only
+    # registered tools, so the unregistered one is never exposed or run.
+    assert result.finish_reason != "planning_failed"
+    assert "query_execute" not in result.tool_calls_proposed

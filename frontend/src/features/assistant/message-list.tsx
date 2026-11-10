@@ -1,12 +1,17 @@
-import { FileCode } from "lucide-react";
+import { BookOpen, Database, FileCode, FileText, ShieldCheck } from "lucide-react";
+import { CitationList, ResultChart } from "@/features/studio/result-cards";
+import { ResultTable } from "@/features/studio/result-table";
 import { cn } from "@/lib/utils";
 import { ActivityTrace } from "./activity-trace";
 import { Markdown } from "./markdown";
 import type { AttachedQuery } from "./query-attach";
 import type { TurnContext } from "./stream-client";
-import type { NoveEventInput } from "./app-context";
+import type { NevaEventInput } from "./app-context";
 import { ToolCallCard, type ToolCallCardProps } from "./tool-call-card";
+import { IntelligentUi } from "@/features/studio/intelligent-ui/renderer";
+import type { UiAction } from "@/features/studio/intelligent-ui/types";
 import type { TranscriptMessage } from "./use-assistant-transcript";
+import type { AnswerSource } from "./types";
 
 export type MessageListProps = {
   messages: TranscriptMessage[];
@@ -17,8 +22,15 @@ export type MessageListProps = {
   statusMessage?: string | null;
   /** Context a SQL code card's Run button executes against. */
   activeContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
+  /** The conversation interactive answers belong to, and how their actions are sent. */
+  uiContext?: UiContext;
+};
+
+export type UiContext = {
+  threadId: string;
+  onAction: (message: string, action: UiAction) => Promise<void>;
 };
 
 export function MessageList({
@@ -28,7 +40,8 @@ export function MessageList({
   statusMessage,
   activeContext,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
+  uiContext,
 }: MessageListProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -43,7 +56,8 @@ export function MessageList({
           busy={decidingToolCallId === message.tool_call_id}
           runContext={activeContext}
           onExecutionEvent={onExecutionEvent}
-          onFixWithNove={onFixWithNove}
+          onFixWithNeva={onFixWithNeva}
+          uiContext={uiContext}
         />
       ))}
     </div>
@@ -96,14 +110,16 @@ function MessageBubble({
   busy,
   runContext,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
+  uiContext,
 }: {
   message: TranscriptMessage;
   onDecide?: ToolCallCardProps["onDecide"];
   busy?: boolean;
   runContext?: TurnContext;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
+  uiContext?: UiContext;
 }) {
   if (message.role === "activity") {
     return <ActivityTrace message={message} />;
@@ -142,6 +158,19 @@ function MessageBubble({
             "border-destructive/40 text-destructive",
         )}
       >
+        {isUser && message.file_names?.length ? (
+          <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Attached files">
+            {message.file_names.map((name) => (
+              <span
+                key={name}
+                className="inline-flex max-w-full items-center gap-1 rounded-md bg-primary-foreground/15 px-1.5 py-0.5 text-xs"
+              >
+                <FileText aria-hidden="true" className="size-3 shrink-0" />
+                <span className="truncate">{name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {isUser && attachments.length > 0 ? (
           <div
             className="mb-2 flex flex-col gap-1.5"
@@ -156,8 +185,9 @@ function MessageBubble({
         {isUser ? (
           text
         ) : (
-          <Markdown runContext={runContext} onExecutionEvent={onExecutionEvent} onFixWithNove={onFixWithNove}>{message.content}</Markdown>
+          <Markdown runContext={runContext} onExecutionEvent={onExecutionEvent} onFixWithNeva={onFixWithNeva}>{message.content}</Markdown>
         )}
+        {!isUser ? <AnswerBlocks message={message} uiContext={uiContext} /> : null}
         {message.turn_state === "streaming" && !isUser ? (
           <span className="mt-1 inline-block h-3 w-1.5 animate-pulse bg-foreground/60 align-middle" />
         ) : null}
@@ -166,7 +196,124 @@ function MessageBubble({
             {marker}
           </span>
         ) : null}
+        {!isUser && message.turn_state === "done" && message.source ? (
+          <SourceLabel source={message.source} />
+        ) : null}
+        {!isUser && message.turn_state !== "streaming" && message.suggestions?.length ? (
+          <FollowUps suggestions={message.suggestions} onAsk={onFixWithNeva} />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+/** The tables, charts and sources an answer produced, in the order they came. */
+function AnswerBlocks({
+  message,
+  uiContext,
+}: {
+  message: TranscriptMessage;
+  uiContext?: UiContext;
+}) {
+  const blocks = message.blocks ?? [];
+  if (!blocks.length) return null;
+  const citations = blocks.flatMap((item) =>
+    item.kind === "citation" ? [item.block] : [],
+  );
+  // A stored answer has its server id; only then can its blocks keep state.
+  const stored = message.turn_state === "done" && !message.message_id.startsWith("assistant-");
+  return (
+    <div className="mt-2 flex min-w-0 flex-col gap-2">
+      {blocks.map((item, index) =>
+        item.kind === "table" ? (
+          <ResultTable key={`table-${index}`} block={item.block} />
+        ) : item.kind === "chart" ? (
+          <ResultChart key={`chart-${index}`} block={item.block} />
+        ) : item.kind === "ui" ? (
+          message.turn_state === "cancelled" ||
+          message.turn_state === "error" ||
+          (message.turn_state === "done" && !item.complete) ? (
+            <Markdown key={item.id} offline>
+              {item.block.fallback}
+            </Markdown>
+          ) : (
+            <IntelligentUi
+              key={item.id}
+              block={item.block}
+              complete={item.complete}
+              source={
+                uiContext && stored
+                  ? {
+                      threadId: uiContext.threadId,
+                      messageId: message.message_id,
+                      contentId: item.id,
+                    }
+                  : undefined
+              }
+              onAction={uiContext?.onAction}
+            />
+          )
+        ) : null,
+      )}
+      <CitationList citations={citations} />
+    </div>
+  );
+}
+
+const SOURCE_TEXT: Record<AnswerSource["kind"], string> = {
+  semantic_view: "From a Semantic View",
+  glossary: "From the business glossary",
+  query: "From a query on your data",
+  catalog: "From the data catalog",
+  guide: "From Nova's guides",
+};
+
+/** Where the answer came from; only governed sources say "Trusted". */
+function SourceLabel({ source }: { source: AnswerSource }) {
+  const Icon = source.trusted
+    ? ShieldCheck
+    : source.kind === "guide"
+      ? BookOpen
+      : Database;
+  return (
+    <p
+      data-testid="answer-source"
+      className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      <Icon
+        aria-hidden="true"
+        className={cn("size-3.5 shrink-0", source.trusted && "text-success-strong")}
+      />
+      {source.trusted ? (
+        <span className="font-medium text-foreground">Trusted</span>
+      ) : null}
+      {source.trusted ? <span aria-hidden="true">·</span> : null}
+      <span>{SOURCE_TEXT[source.kind]}</span>
+    </p>
+  );
+}
+
+/** Questions Neva suggests next; choosing one asks it. */
+function FollowUps({
+  suggestions,
+  onAsk,
+}: {
+  suggestions: string[];
+  onAsk?: (prompt: string) => void;
+}) {
+  if (!onAsk) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Suggested follow-ups">
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion}
+          type="button"
+          onClick={() => onAsk(suggestion)}
+          className="rounded-full border bg-background px-2.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {suggestion}
+        </button>
+      ))}
     </div>
   );
 }

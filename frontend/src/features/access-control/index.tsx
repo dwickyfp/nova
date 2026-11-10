@@ -1,13 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  ChevronsUpDown,
-  CircleAlert,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+import { Check, ChevronsUpDown, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { defineNevaCapability } from "@/features/assistant/surface-registry";
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
@@ -16,7 +13,6 @@ import {
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -36,6 +32,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StateBadge, StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -89,12 +93,24 @@ type EffectiveAccess = {
 };
 
 const PERMISSION_OPTIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"];
-const MASK_OPTIONS = ["MASK", "MASK_HASH", "MASK_NULL"];
+/** What each engine permission lets a person do, in words. */
+const PERMISSION_LABELS: Record<string, string> = {
+  SELECT: "Read",
+  INSERT: "Add rows",
+  UPDATE: "Change rows",
+  DELETE: "Delete rows",
+};
+const MASK_OPTIONS = [
+  { value: "MASK", label: "Show as xxxx" },
+  { value: "MASK_HASH", label: "Replace with a hash" },
+  { value: "MASK_NULL", label: "Show as empty" },
+];
 
+/** A policy's kind in the words the Data access tab uses to create it. */
 function policyKind(policy: Policy) {
-  if (policy.policyType === 1) return "Masking";
-  if (policy.policyType === 2) return "Row filter";
-  return "Permission";
+  if (policy.policyType === 1) return "Hidden column";
+  if (policy.policyType === 2) return "Row limit";
+  return "Table access";
 }
 
 function policyRoles(policy: Policy) {
@@ -213,15 +229,19 @@ function MultiSelectField({
   label,
   values,
   options,
+  labels = {},
   placeholder,
   onChange,
 }: {
   label: string;
   values: string[];
   options: string[];
+  /** Display text per option value; the value is shown when absent. */
+  labels?: Record<string, string>;
   placeholder: string;
   onChange: (values: string[]) => void;
 }) {
+  const shown = (option: string) => labels[option] ?? option;
   const [open, setOpen] = useState(false);
 
   return (
@@ -233,6 +253,7 @@ function MultiSelectField({
             type="button"
             variant="outline"
             role="combobox"
+            aria-label={label}
             aria-expanded={open}
             className="h-9 w-full justify-between px-3 font-normal"
           >
@@ -242,7 +263,7 @@ function MultiSelectField({
                 !values.length && "text-muted-foreground",
               )}
             >
-              {values.length ? values.join(", ") : placeholder}
+              {values.length ? values.map(shown).join(", ") : placeholder}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
           </Button>
@@ -261,7 +282,7 @@ function MultiSelectField({
                   return (
                     <CommandItem
                       key={option}
-                      value={option}
+                      value={shown(option)}
                       onSelect={() =>
                         onChange(
                           selected
@@ -276,7 +297,7 @@ function MultiSelectField({
                           selected ? "opacity-100" : "opacity-0",
                         )}
                       />
-                      {option}
+                      {shown(option)}
                     </CommandItem>
                   );
                 })}
@@ -289,23 +310,111 @@ function MultiSelectField({
   );
 }
 
+function ChoiceField({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={id} className="h-9 w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function Section({
   title,
   description,
+  step,
   children,
 }: {
   title: string;
   description: string;
+  /** Position in a sequence of tasks, shown before the title. */
+  step?: number;
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border bg-background">
-      <div className="border-b px-5 py-4 sm:px-6">
-        <h2 className="text-base font-medium">{title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    <section
+      aria-label={title}
+      className="rounded-lg border bg-background px-5 py-5 sm:px-6"
+    >
+      <div className="flex gap-3">
+        {step ? (
+          <span
+            aria-hidden="true"
+            className="grid size-6 shrink-0 place-items-center rounded-full border text-xs tabular-nums text-muted-foreground"
+          >
+            {step}
+          </span>
+        ) : null}
+        <div className="min-w-0">
+          <h2 className="text-base font-medium">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
       </div>
-      <div className="px-5 py-5 sm:px-6 sm:py-6">{children}</div>
+      <div className="mt-5">{children}</div>
     </section>
+  );
+}
+
+/** One plain sentence that says what a tab is for, above its content. */
+function TabLead({ children }: { children: React.ReactNode }) {
+  return <p className="max-w-3xl text-sm text-muted-foreground">{children}</p>;
+}
+
+/**
+ * Ranger's state as one quiet line next to the page actions: it belongs to the
+ * whole page, so it stays put whichever tab is open.
+ */
+function RangerStatus({ state, loading }: { state?: Health; loading: boolean }) {
+  if (loading && !state) {
+    return <span className="text-sm text-muted-foreground">Checking Ranger…</span>;
+  }
+  const pending = state?.pending_propagation ?? 0;
+  const drift = state?.drift_count ?? 0;
+  return (
+    <div
+      aria-label="Authorization status"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+    >
+      <StatusBadge tone={state?.healthy ? "success" : "warning"} dot>
+        {state?.healthy ? "Ranger healthy" : `Ranger ${state?.reason || "unavailable"}`}
+      </StatusBadge>
+      {pending ? (
+        <span
+          className="text-muted-foreground tabular-nums"
+          title="Changes Ranger has accepted that are still reaching the engine"
+        >
+          {pending} {pending === 1 ? "change" : "changes"} syncing
+        </span>
+      ) : null}
+      {drift ? (
+        <StatusBadge tone="warning">
+          {drift} out of sync
+        </StatusBadge>
+      ) : null}
+    </div>
   );
 }
 
@@ -316,8 +425,8 @@ function PolicyTable({ policies }: { policies: Policy[] }) {
         <TableHeader>
           <TableRow>
             <TableHead className="w-[30%] px-4">Policy</TableHead>
-            <TableHead className="w-36">Type</TableHead>
-            <TableHead>Resource</TableHead>
+            <TableHead className="w-36">Kind</TableHead>
+            <TableHead>Applies to</TableHead>
             <TableHead className="w-[22%] px-4">Roles</TableHead>
           </TableRow>
         </TableHeader>
@@ -326,10 +435,10 @@ function PolicyTable({ policies }: { policies: Policy[] }) {
             <TableRow key={policy.id ?? policy.name}>
               <TableCell className="px-4 font-medium">{policy.name}</TableCell>
               <TableCell>
-                <Badge variant="outline">{policyKind(policy)}</Badge>
+                <StatusBadge>{policyKind(policy)}</StatusBadge>
               </TableCell>
               <TableCell className="max-w-md whitespace-normal text-muted-foreground">
-                {policyResource(policy) || "All managed resources"}
+                {policyResource(policy) || "Everything Nova manages"}
               </TableCell>
               <TableCell className="px-4 whitespace-normal">
                 {policyRoles(policy) || "No role"}
@@ -552,6 +661,46 @@ export function AccessControlPage() {
         .includes(query),
     );
   }, [managedPolicies, policySearch]);
+  useNevaSurface({
+    id: "access_control",
+    route: "/access-control",
+    title: "Data Access",
+    context: () => ({
+      view: {
+        filters: { roleSearch, policySearch },
+        summary: {
+          roles: filteredRoles.length,
+          policies: filteredPolicies.length,
+          healthy: health.data?.healthy ?? null,
+          changesWaitingToApply: health.data?.pending_propagation ?? null,
+          drift: health.data?.drift_count ?? null,
+        },
+      },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
+        execute: () => refreshManagedState(),
+      }),
+      defineNevaCapability({
+        name: "surface.set_filter", risk: "safe",
+        argsSchema: z.object({ filter: z.enum(["roles", "policies"]), value: z.string().max(120) }),
+        execute: ({ filter, value }) => {
+          if (filter === "roles") {
+            setRoleSearch(value);
+            setRolePage(1);
+          } else {
+            setPolicySearch(value);
+            setPolicyPage(1);
+          }
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: "Who can read a table", prompt: "Which roles can read the sales_orders table?" },
+      { label: "Hide a column", prompt: "How do I hide a column from a role?" },
+    ],
+  });
   const visiblePolicies = pageSlice(
     filteredPolicies,
     policyPage,
@@ -573,90 +722,58 @@ export function AccessControlPage() {
       <Main scroll className="flex flex-1 flex-col gap-6 pb-12">
         <PageHeader
           title="Access Control"
-          description="Manage Nova authorization roles and policies enforced by Ranger."
+          description="Decide who can see which data. Ranger enforces every rule you set here."
           actions={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                health.isFetching || policies.isFetching || roles.isFetching
-              }
-              onClick={() =>
-                void Promise.all([
-                  health.refetch(),
-                  policies.refetch(),
-                  roles.refetch(),
-                  users.refetch(),
-                  databases.refetch(),
-                ])
-              }
-            >
-              <RefreshCw
-                className={cn("size-4", health.isFetching && "animate-spin")}
-              />
-              Refresh
-            </Button>
+            <>
+              <RangerStatus state={state} loading={health.isPending} />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  health.isFetching || policies.isFetching || roles.isFetching
+                }
+                onClick={() =>
+                  void Promise.all([
+                    health.refetch(),
+                    policies.refetch(),
+                    roles.refetch(),
+                    users.refetch(),
+                    databases.refetch(),
+                  ])
+                }
+              >
+                <RefreshCw
+                  className={cn("size-4", health.isFetching && "animate-spin")}
+                />
+                Refresh
+              </Button>
+            </>
           }
         />
 
-        <section
-          aria-label="Authorization status"
-          className="grid overflow-hidden rounded-lg border bg-background md:grid-cols-3"
-        >
-          <div className="flex items-center gap-3 px-5 py-4 md:border-r">
-            {state?.healthy ? (
-              <ShieldCheck className="size-5 text-success-strong" />
-            ) : (
-              <CircleAlert className="size-5 text-warning-strong" />
-            )}
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Authorization provider
-              </p>
-              <div className="mt-0.5 flex items-center gap-2">
-                <span className="text-sm font-medium">Ranger</span>
-                <Badge variant={state?.healthy ? "default" : "secondary"}>
-                  {state?.healthy ? "Healthy" : state?.reason || "Unavailable"}
-                </Badge>
-              </div>
-            </div>
-          </div>
-          <div className="border-t px-5 py-4 md:border-t-0 md:border-r">
-            <p className="text-xs text-muted-foreground">Pending propagation</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums">
-              {state?.pending_propagation ?? 0}
-            </p>
-          </div>
-          <div className="border-t px-5 py-4 md:border-t-0">
-            <p className="text-xs text-muted-foreground">Detected drift</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums">
-              {state?.drift_count ?? 0}
-            </p>
-          </div>
-        </section>
-
         <Tabs defaultValue="roles" className="gap-0">
-          <TabsList className="h-auto w-full justify-start rounded-none border-b bg-transparent p-0">
+          <TabsList className="h-auto max-w-full justify-start self-start overflow-x-auto [scrollbar-width:none] [&>[role=tab]]:flex-none">
             {[
               ["roles", "Roles"],
-              ["policies", "Policies"],
               ["data-access", "Data access"],
-              ["effective", "Effective access"],
+              ["policies", "Policies"],
+              ["effective", "Check access"],
             ].map(([value, label]) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="h-10 flex-none rounded-none border-0 border-b-2 border-transparent px-4 shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-              >
+              <TabsTrigger key={value} value={value}>
                 {label}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          <TabsContent value="roles" className="space-y-6 pt-6">
+          <TabsContent value="roles" className="space-y-6 pt-5">
+            <TabLead>
+              A role is a group of people who need the same data, such as
+              Sales Jakarta. People work under one role at a time and see
+              exactly what that role is allowed.
+            </TabLead>
             <Section
-              title="Authorization roles"
-              description="Roles synchronized between StarRocks session markers and Ranger authorization."
+              title="Roles"
+              description="Every role, and how many people have it."
             >
               <div className="space-y-4">
                 <SimpleTableToolbar
@@ -665,7 +782,7 @@ export function AccessControlPage() {
                     setRoleSearch(value);
                     setRolePage(1);
                   }}
-                  searchPlaceholder="Search roles or members..."
+                  searchPlaceholder="Search roles or people"
                   resultLabel={`${filteredRoles.length} ${filteredRoles.length === 1 ? "role" : "roles"}`}
                 />
                 {filteredRoles.length ? (
@@ -677,7 +794,7 @@ export function AccessControlPage() {
                             <TableHead className="w-[30%] px-4">Role</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead className="w-36 px-4 text-right">
-                              Members
+                              People
                             </TableHead>
                           </TableRow>
                         </TableHeader>
@@ -688,7 +805,7 @@ export function AccessControlPage() {
                                 {item.name}
                               </TableCell>
                               <TableCell className="whitespace-normal text-muted-foreground">
-                                {item.description || "Managed by Nova"}
+                                {item.description || "No description"}
                               </TableCell>
                               <TableCell className="px-4 text-right tabular-nums">
                                 {item.users?.length ?? 0}
@@ -718,8 +835,8 @@ export function AccessControlPage() {
                     }
                     description={
                       roleSearch
-                        ? "Try a different role or member name."
-                        : "Create the first role below to begin assigning access."
+                        ? "Try a different role or person."
+                        : "Create the first role below, then give it data on the Data access tab."
                     }
                   />
                 )}
@@ -727,19 +844,21 @@ export function AccessControlPage() {
             </Section>
 
             <Section
-              title="Create role"
-              description="Create the synchronized StarRocks marker and Ranger role in one action."
+              title="Create a role"
+              description="Name the group. Give it data afterwards on the Data access tab."
             >
               <div className="grid gap-4 lg:grid-cols-2">
                 <TextField
                   id="role-name"
                   label="Name"
+                  placeholder="SALES_JAKARTA"
                   value={newRole}
                   onChange={setNewRole}
                 />
                 <TextField
                   id="role-description"
                   label="Description"
+                  placeholder="Sales team in Jakarta"
                   value={newRoleDescription}
                   onChange={setNewRoleDescription}
                 />
@@ -755,10 +874,14 @@ export function AccessControlPage() {
             </Section>
           </TabsContent>
 
-          <TabsContent value="policies" className="pt-6">
+          <TabsContent value="policies" className="space-y-6 pt-5">
+            <TabLead>
+              Policies are the rules Ranger enforces. Nova writes them for you
+              from the Data access tab, so this list is for review.
+            </TabLead>
             <Section
-              title="Nova-managed policies"
-              description="Review object permissions, row filters, and column masks accepted by Ranger."
+              title="Policies"
+              description="Table access, row limits and hidden columns, with the roles they apply to."
             >
               <div className="space-y-4">
                 <SimpleTableToolbar
@@ -767,7 +890,7 @@ export function AccessControlPage() {
                     setPolicySearch(value);
                     setPolicyPage(1);
                   }}
-                  searchPlaceholder="Search policies, roles, or resources..."
+                  searchPlaceholder="Search policies, roles or tables"
                   resultLabel={`${filteredPolicies.length} ${filteredPolicies.length === 1 ? "policy" : "policies"}`}
                 />
                 {filteredPolicies.length ? (
@@ -794,7 +917,7 @@ export function AccessControlPage() {
                     description={
                       policySearch
                         ? "Try a different policy, role, or resource name."
-                        : "Policies created from Data access will appear here."
+                        : "Give a role data on the Data access tab and its policies appear here."
                     }
                   />
                 )}
@@ -802,10 +925,16 @@ export function AccessControlPage() {
             </Section>
           </TabsContent>
 
-          <TabsContent value="data-access" className="space-y-6 pt-6">
+          <TabsContent value="data-access" className="space-y-6 pt-5">
+            <TabLead>
+              Give a role data in up to three steps: let it use a table, then
+              narrow what one person sees, and hide columns that are
+              sensitive.
+            </TabLead>
             <Section
-              title="Grant permission"
-              description="Grant one role access to a table. Every selector is loaded from current metadata."
+              step={1}
+              title="Let a role use a table"
+              description="Without this, the role cannot see the table at all."
             >
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <SelectField
@@ -836,10 +965,11 @@ export function AccessControlPage() {
                   onChange={setAccessTable}
                 />
                 <MultiSelectField
-                  label="Permissions"
+                  label="Allowed to"
                   values={accesses}
                   options={PERMISSION_OPTIONS}
-                  placeholder="Select permissions"
+                  labels={PERMISSION_LABELS}
+                  placeholder="Choose what it may do"
                   onChange={setAccesses}
                 />
               </div>
@@ -854,18 +984,19 @@ export function AccessControlPage() {
                   }
                   onClick={() => grantAccess.mutate()}
                 >
-                  Grant permission
+                  Give access
                 </Button>
               </div>
             </Section>
 
             <Section
-              title="Assign data scope"
-              description="Bind a user's allowed values to one role and table. Comma-separated values are combined with OR."
+              step={2}
+              title="Show a person only some rows"
+              description="Under this role, the person sees only the rows that match their values, such as their own cities."
             >
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <SelectField
-                  label="User"
+                  label="Person"
                   value={scopePrincipal}
                   options={userOptions}
                   placeholder="Select user"
@@ -905,11 +1036,11 @@ export function AccessControlPage() {
                   }}
                 />
                 <SelectField
-                  label="Dimension"
+                  label="Limit by"
                   value={scopeDimension}
                   options={scopeColumns.data ?? []}
                   placeholder={
-                    scopeTable ? "Select dimension" : "Select table first"
+                    scopeTable ? "Select what to limit by" : "Select table first"
                   }
                   disabled={!scopeTable || scopeColumns.isLoading}
                   onChange={(value) => {
@@ -918,7 +1049,7 @@ export function AccessControlPage() {
                   }}
                 />
                 <SelectField
-                  label="Column"
+                  label="Matching column"
                   value={scopeColumn}
                   options={scopeColumns.data ?? []}
                   placeholder={
@@ -930,11 +1061,15 @@ export function AccessControlPage() {
                 <div className="md:col-span-2">
                   <TextField
                     id="scope-values"
-                    label="Values"
+                    label="Allowed values"
                     value={scopeValues}
                     placeholder="Jakarta, Bandung"
                     onChange={setScopeValues}
                   />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Separate values with commas. A row matching any of them is
+                    shown.
+                  </p>
                 </div>
               </div>
               <div className="mt-5 flex justify-end">
@@ -951,14 +1086,15 @@ export function AccessControlPage() {
                   }
                   onClick={() => putScope.mutate()}
                 >
-                  Assign scope
+                  Limit rows
                 </Button>
               </div>
             </Section>
 
             <Section
-              title="Mask column"
-              description="Apply a Ranger masking rule to one role and column."
+              step={3}
+              title="Hide a sensitive column"
+              description="People with this role see the column, but not its real values."
             >
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <SelectField
@@ -1002,11 +1138,11 @@ export function AccessControlPage() {
                   disabled={!maskTable || maskColumns.isLoading}
                   onChange={setMaskColumn}
                 />
-                <SelectField
-                  label="Mask type"
+                <ChoiceField
+                  id="mask-type"
+                  label="Show values as"
                   value={maskType}
                   options={MASK_OPTIONS}
-                  placeholder="Select mask type"
                   onChange={setMaskType}
                 />
               </div>
@@ -1022,27 +1158,32 @@ export function AccessControlPage() {
                   }
                   onClick={() => putMask.mutate()}
                 >
-                  Apply mask
+                  Hide column
                 </Button>
               </div>
             </Section>
           </TabsContent>
 
-          <TabsContent value="effective" className="space-y-6 pt-6">
+          <TabsContent value="effective" className="space-y-6 pt-5">
+            <TabLead>
+              See exactly what one person gets from a table when they work
+              under a role: what they may do, which rows, and which columns
+              are hidden.
+            </TabLead>
             <Section
-              title="Effective access explorer"
-              description="Inspect the resolved Ranger state for one user, active role, and table."
+              title="Check a person's access"
+              description="Pick a person, the role they use, and a table."
             >
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <SelectField
-                  label="User"
+                  label="Person"
                   value={effectivePrincipal}
                   options={userOptions}
                   placeholder="Select user"
                   onChange={setEffectivePrincipal}
                 />
                 <SelectField
-                  label="Active role"
+                  label="Using role"
                   value={effectiveRole}
                   options={roleOptions}
                   placeholder="Select role"
@@ -1080,7 +1221,7 @@ export function AccessControlPage() {
                   }
                   onClick={() => effective.mutate()}
                 >
-                  Inspect access
+                  Check access
                 </Button>
               </div>
             </Section>
@@ -1088,51 +1229,48 @@ export function AccessControlPage() {
             {effective.data ? (
               <>
                 <Section
-                  title="Resolved access"
+                  title="What they get"
                   description={`${effective.data.principal} using ${effective.data.active_role} on ${effective.data.resource}`}
                 >
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    <Badge>{effective.data.authorization_provider}</Badge>
-                    <Badge variant="secondary">
-                      {effective.data.policy_health}
-                    </Badge>
+                  <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    Enforced by {effective.data.authorization_provider}
+                    <StateBadge status={effective.data.policy_health} />
                   </div>
                   <SimpleTableViewport className="max-h-none">
                     <Table className="min-w-[640px]">
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-52 px-4">Control</TableHead>
-                          <TableHead className="px-4">
-                            Effective value
-                          </TableHead>
+                          <TableHead className="w-52 px-4">Rule</TableHead>
+                          <TableHead className="px-4">Result</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         <TableRow>
                           <TableCell className="px-4 font-medium">
-                            Object permissions
+                            Allowed to
                           </TableCell>
                           <TableCell className="px-4 whitespace-normal">
-                            {effective.data.object_access.join(", ") ||
-                              "Denied"}
+                            {effective.data.object_access
+                              .map((access) => PERMISSION_LABELS[access] ?? access)
+                              .join(", ") || "Nothing: no access to this table"}
                           </TableCell>
                         </TableRow>
                         <TableRow>
                           <TableCell className="px-4 font-medium">
-                            Row filters
+                            Rows shown
                           </TableCell>
                           <TableCell className="px-4 whitespace-normal">
                             {effective.data.row_restrictions.join(" AND ") ||
-                              "None"}
+                              "All rows"}
                           </TableCell>
                         </TableRow>
                         <TableRow>
                           <TableCell className="px-4 font-medium">
-                            Column masks
+                            Hidden columns
                           </TableCell>
                           <TableCell className="px-4 whitespace-normal">
                             {Object.entries(effective.data.column_restrictions)
-                              .map(([column, mask]) => `${column}: ${mask}`)
+                              .map(([column, mask]) => `${column} (${(MASK_OPTIONS.find((option) => option.value === mask)?.label ?? mask).toLowerCase()})`)
                               .join(", ") || "None"}
                           </TableCell>
                         </TableRow>
@@ -1142,8 +1280,8 @@ export function AccessControlPage() {
                 </Section>
 
                 <Section
-                  title="Matching policies"
-                  description="Policies contributing to this effective access result."
+                  title="Policies behind this result"
+                  description="The rules that produced what this person gets."
                 >
                   {effectivePolicies.length ? (
                     <>
@@ -1161,16 +1299,16 @@ export function AccessControlPage() {
                     </>
                   ) : (
                     <EmptyState
-                      title="No matching managed policies"
-                      description="The selected user, role, and table have no contributing Nova-managed policy."
+                      title="No policy applies"
+                      description="No Nova policy gives this role anything on this table."
                     />
                   )}
                 </Section>
               </>
             ) : (
               <EmptyState
-                title="Choose an access context"
-                description="Select a user, role, database, and table above to inspect effective access."
+                title="Nothing checked yet"
+                description="Pick a person, a role and a table above, then check their access."
               />
             )}
           </TabsContent>

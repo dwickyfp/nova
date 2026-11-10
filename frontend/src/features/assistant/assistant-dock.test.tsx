@@ -131,7 +131,7 @@ describe("AssistantDock", () => {
       );
 
       await expect
-        .element(getByRole("button", { name: "Ask Nove" }))
+        .element(getByRole("button", { name: "Ask Neva" }))
         .toBeInTheDocument();
       await expect
         .poll(() =>
@@ -151,7 +151,7 @@ describe("AssistantDock", () => {
       );
 
       await expect
-        .element(getByRole("button", { name: "Ask Nove" }))
+        .element(getByRole("button", { name: "Ask Neva" }))
         .toBeInTheDocument();
       expect(
         container.querySelector("#assistant-panel")?.hasAttribute("inert"),
@@ -168,7 +168,7 @@ describe("AssistantDock", () => {
         makeTree({ assistant_collapsed: true }),
       );
 
-      await getByRole("button", { name: "Ask Nove" }).click();
+      await getByRole("button", { name: "Ask Neva" }).click();
       await expect
         .element(getByRole("button", { name: "Close assistant" }))
         .toBeInTheDocument();
@@ -178,7 +178,7 @@ describe("AssistantDock", () => {
 
       await getByRole("button", { name: "Close assistant" }).click();
       await expect
-        .element(getByRole("button", { name: "Ask Nove" }))
+        .element(getByRole("button", { name: "Ask Neva" }))
         .toBeInTheDocument();
       expect(
         container.querySelector("#assistant-panel")?.hasAttribute("inert"),
@@ -203,7 +203,7 @@ describe("AssistantDock", () => {
         </QueryClientProvider>,
       );
 
-      await getByRole("button", { name: "Ask Nove" }).click();
+      await getByRole("button", { name: "Ask Neva" }).click();
       await expect
         .element(getByRole("button", { name: "Close assistant" }))
         .toBeInTheDocument();
@@ -256,19 +256,19 @@ describe("AssistantDock", () => {
       // The toggle anchors to the right edge through a wrapper whose `bottom`
       // is inline (the draggable offset), so the position contract is the
       // wrapper's style rather than a `bottom-4` class.
-      const closed = getByRole("button", { name: "Ask Nove" }).element();
+      const closed = getByRole("button", { name: "Ask Neva" }).element();
       const anchor = closed.closest("div[style]") as HTMLElement | null;
-      // The default `bottom-4` (1rem) plus a zero offset; the browser may order
-      // the two addends either way.
+      // `bottom-4` (1rem) plus the resting offset, which centres the toggle
+      // three quarters of the way down a 900px window (189px).
       expect(anchor?.style.bottom).toContain("1rem");
-      expect(anchor?.style.bottom).toContain("0px");
+      expect(anchor?.style.bottom).toContain("189px");
 
-      await getByRole("button", { name: "Ask Nove" }).click();
+      await getByRole("button", { name: "Ask Neva" }).click();
       // Closing lives in the header; no FAB floats over it.
       await expect
         .poll(
           () =>
-            container.querySelectorAll('button[aria-label="Ask Nove"]').length,
+            container.querySelectorAll('button[aria-label="Ask Neva"]').length,
         )
         .toBe(0);
       await expect
@@ -286,9 +286,9 @@ describe("AssistantDock", () => {
         makeTree({ assistant_collapsed: false }),
         "database-explorer",
       );
-      await wide.getByRole("button", { name: "Ask Nove" }).click();
+      await wide.getByRole("button", { name: "Ask Neva" }).click();
       await expect
-        .element(wide.getByRole("complementary", { name: "Nove" }))
+        .element(wide.getByRole("complementary", { name: "Neva" }))
         .toBeInTheDocument();
       await expect
         .element(wide.getByRole("button", { name: "Close assistant" }))
@@ -301,7 +301,7 @@ describe("AssistantDock", () => {
         "database-explorer",
       );
       await expect.element(narrow.getByRole("dialog")).not.toBeInTheDocument();
-      await narrow.getByRole("button", { name: "Ask Nove" }).click();
+      await narrow.getByRole("button", { name: "Ask Neva" }).click();
       // Below lg the panel is a Sheet overlay with its own close control; the
       // FAB is the trigger that opened it and is inert behind the overlay.
       const dialog = narrow.getByRole("dialog");

@@ -18,14 +18,19 @@ import { useEffect } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import {
-  LoadingLines,
-  LoadingOverlay,
-  RefreshBanner,
-} from '@/components/ui/loading-overlay'
+import { LoadingLines, RefreshBanner } from '@/components/ui/loading-overlay'
 import { MetricCard } from '@/components/ui/metric-card'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatusBadge } from '@/components/ui/status-badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { formatDateTime, formatDuration, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
   countAlive,
@@ -39,17 +44,6 @@ import {
   type RuntimeHealthResponse,
   type RuntimeHealthStatus,
 } from './api'
-
-function formatNumber(value: number | null | undefined) {
-  if (value == null) return '-'
-  return value.toLocaleString()
-}
-
-function formatLatency(value: number | null | undefined) {
-  if (value == null) return '-'
-  if (value < 1000) return `${value.toFixed(0)} ms`
-  return `${(value / 1000).toFixed(2)} s`
-}
 
 function nodeTone(node: NodeRow) {
   if (node.alive === true) return 'success' as const
@@ -232,70 +226,62 @@ function NodeTable({
           />
         </div>
       ) : nodes.length === 0 ? (
-        <div className='px-5 py-4 text-sm text-muted-foreground'>
-          No nodes reported.
+        <div className='px-5 py-4'>
+          <EmptyState
+            icon={Server}
+            title='No nodes reported'
+            description={`The engine returned an empty ${title.toLowerCase()} list.`}
+          />
         </div>
       ) : (
-        <div className='overflow-x-auto'>
-          <table className='w-full'>
-            <thead>
-              <tr className='border-b border-border'>
-                <th className='px-5 py-2.5 text-left text-xs font-medium text-muted-foreground'>
-                  Host
-                </th>
-                <th className='px-5 py-2.5 text-left text-xs font-medium text-muted-foreground'>
-                  Role
-                </th>
-                <th className='px-5 py-2.5 text-left text-xs font-medium text-muted-foreground'>
-                  Port
-                </th>
-                <th className='px-5 py-2.5 text-left text-xs font-medium text-muted-foreground'>
-                  Last heartbeat
-                </th>
-                <th className='px-5 py-2.5 text-right text-xs font-medium text-muted-foreground'>
-                  State
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {nodes.map((node, index) => (
-                <tr
-                  key={`${node.host}-${node.port}-${index}`}
-                  className='border-b border-border last:border-0'
-                >
-                  <td className='px-5 py-2.5 font-mono text-xs'>
-                    {node.host || '-'}
-                  </td>
-                  <td className='px-5 py-2.5'>
-                    {node.role ? (
-                      <Badge variant='secondary'>{node.role}</Badge>
-                    ) : (
-                      <span className='text-xs text-muted-foreground'>-</span>
-                    )}
-                  </td>
-                  <td className='px-5 py-2.5 font-mono text-xs text-muted-foreground'>
-                    {node.port || '-'}
-                  </td>
-                  <td className='px-5 py-2.5 text-xs text-muted-foreground'>
-                    {node.lastHeartbeat
-                      ? new Date(node.lastHeartbeat).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '-'}
-                  </td>
-                  <td className='px-5 py-2.5 text-right'>
-                    <StatusBadge tone={nodeTone(node)} dot>
-                      {nodeStatusLabel(node)}
-                    </StatusBadge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className='hover:bg-transparent'>
+              <TableHead className='px-5 text-xs text-muted-foreground'>
+                Host
+              </TableHead>
+              <TableHead className='px-5 text-xs text-muted-foreground'>
+                Role
+              </TableHead>
+              <TableHead className='px-5 text-xs text-muted-foreground'>
+                Port
+              </TableHead>
+              <TableHead className='px-5 text-xs text-muted-foreground'>
+                Last heartbeat
+              </TableHead>
+              <TableHead className='px-5 text-right text-xs text-muted-foreground'>
+                State
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {nodes.map((node, index) => (
+              <TableRow key={`${node.host}-${node.port}-${index}`}>
+                <TableCell className='px-5 py-2.5 font-mono text-xs'>
+                  {node.host || '—'}
+                </TableCell>
+                <TableCell className='px-5 py-2.5'>
+                  {node.role ? (
+                    <Badge variant='secondary'>{node.role}</Badge>
+                  ) : (
+                    <span className='text-xs text-muted-foreground'>—</span>
+                  )}
+                </TableCell>
+                <TableCell className='px-5 py-2.5 font-mono text-xs text-muted-foreground'>
+                  {node.port || '—'}
+                </TableCell>
+                <TableCell className='px-5 py-2.5 text-xs text-muted-foreground'>
+                  {formatDateTime(node.lastHeartbeat || null)}
+                </TableCell>
+                <TableCell className='px-5 py-2.5 text-right'>
+                  <StatusBadge tone={nodeTone(node)} dot>
+                    {nodeStatusLabel(node)}
+                  </StatusBadge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </section>
   )
@@ -377,7 +363,7 @@ export function ClusterMonitorPage() {
           Frontend health
         </h2>
         {metricsQuery.isLoading ? (
-          <LoadingOverlay label='Reading frontend metrics...' />
+          <LoadingLines rows={2} />
         ) : metricsQuery.isError ? (
           <EmptyState
             variant='error'
@@ -405,7 +391,7 @@ export function ClusterMonitorPage() {
             <MetricCard
               weight='primary'
               label='Success rate'
-              value={rate == null ? '-' : `${(rate * 100).toFixed(1)}%`}
+              value={rate == null ? '—' : `${(rate * 100).toFixed(1)}%`}
               icon={CheckCircle2}
               tone={rate != null && rate >= 0.99 ? 'success' : 'warning'}
               hint={`${formatNumber(metricValue(metrics, 'query_success'))} of ${formatNumber(metricValue(metrics, 'query_total'))} queries`}
@@ -439,13 +425,13 @@ export function ClusterMonitorPage() {
             <MetricCard
               weight='compact'
               label='Avg latency'
-              value={formatLatency(metricValue(metrics, 'query_latency_ms'))}
+              value={formatDuration(metricValue(metrics, 'query_latency_ms'))}
               icon={Gauge}
             />
             <MetricCard
               weight='compact'
               label='p95 latency'
-              value={formatLatency(
+              value={formatDuration(
                 metricValue(metrics, 'query_latency_95th_ms'),
               )}
               icon={Gauge}
@@ -453,7 +439,7 @@ export function ClusterMonitorPage() {
             <MetricCard
               weight='compact'
               label='p99 latency'
-              value={formatLatency(
+              value={formatDuration(
                 metricValue(metrics, 'query_latency_99th_ms'),
               )}
               icon={Gauge}

@@ -15,7 +15,7 @@ from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.auth.service import auth_service
 from app.modules.query.admission import Admitted
-from app.modules.query.service import query_service
+from app.modules.query.service import _context_after, query_service
 from app.proxy.session import parse_role_statement
 
 router = APIRouter()
@@ -141,6 +141,10 @@ class QueryResponse(BaseModel):
     truncated: bool = False
     total_ms: float | None = None
     engine_ms: float | None = None
+    # The database context once this statement ran: a ``USE`` moves it, and
+    # the editor follows it so the next run starts where the script left off.
+    context_database: str | None = None
+    context_schema: str | None = None
     nova_ms: float | None = None
 
 
@@ -221,7 +225,12 @@ async def execute_query(
     )
 
     responses = []
+    context_database, context_schema = req.database, req.schema_name
     for result in results:
+        if result.success:
+            context_database, context_schema = _context_after(
+                result.original_sql, context_database, context_schema
+            )
         # ``success`` is the statement's own verdict, carried explicitly on the
         # result (``QueryResult.error``) rather than inferred from the shape of
         # what came back. The shape heuristic that used to live here —
@@ -255,6 +264,8 @@ async def execute_query(
                 total_ms=result.total_ms,
                 engine_ms=result.engine_ms,
                 nova_ms=result.nova_ms,
+                context_database=context_database,
+                context_schema=context_schema,
             )
         )
     if any(result.error_code == "security_rejection" for result in results):

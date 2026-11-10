@@ -70,6 +70,7 @@ def _chart_registry() -> ToolRegistry:
             "x": {"field": "revenue", "type": "quantitative"},
         },
     })
+    chart._model_intent = AsyncMock(return_value=None)  # type: ignore[method-assign]
     registry = ToolRegistry()
     registry.register(TableQuery(SALES))
     registry.register(chart)

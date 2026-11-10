@@ -8,7 +8,7 @@ Paths below are repository-relative; commands run from `backend/`.
 
 ## Shared engine
 
-- `AssistantLoop` owns provider/tool iteration. Nove and Studio agents compose
+- `AssistantLoop` owns provider/tool iteration. Neva and Studio agents compose
   this engine with their own context and registries.
   Studio orchestration belongs in the sibling agents module; do not fork a loop
   for a new mode, tool, or domain.

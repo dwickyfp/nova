@@ -11,6 +11,7 @@ from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
 from app.modules.assistant.service import LoopContext
 from app.modules.assistant.tools import ToolInvocation
 from tests.unit.test_semantic_guidance_fallback import USER, guided_model, setup_tool
+from tests.unit.test_semantic_llm_planner import answer_queries
 
 #: What the model plans for "the latest month with data", in any language.
 LATEST_MONTH = {
@@ -47,7 +48,7 @@ async def test_latest_month_runs_the_models_plan_with_the_governed_filter(monkey
     )
     assert outcome.ok, outcome.safe_detail or outcome.error
     provider.complete.assert_awaited_once()
-    assert "ORDER BY `order_date` DESC" in execute.call_args.kwargs["sql"]
+    assert "ORDER BY `order_date` DESC" in answer_queries(execute)[-1].kwargs["sql"]
     assert outcome.data["semantic_plan"]["limit"] == 1
     assert outcome.data["semantic_plan"]["named_filters"] == ("completed_order",)
 

@@ -111,7 +111,9 @@ async def test_custom_sql_tool_dispatches_supported_sql_with_caller_context(
     assert call["sql"] == statement.replace("{{value}}", "'O''Brien'") + ";"
     if statement.startswith("SELECT"):
         assert outcome.table == {"title": "", "columns": ["value"], "rows": [["ok"]]}
-        assert context.last_result == {"title": "", "columns": ["value"], "rows": [["ok"]]}
+        assert context.last_result == {
+            "title": "", "columns": ["value"], "rows": [["ok"]], "sql": "",
+        }
 
 
 async def test_insert_then_select_tools_run_in_one_agent_turn(monkeypatch) -> None:
@@ -136,7 +138,7 @@ async def test_insert_then_select_tools_run_in_one_agent_turn(monkeypatch) -> No
     }
     registry = build_registry(agent)
     await add_custom_tools(registry, agent)
-    assert registry.names() == [insert.name, select.name]
+    assert registry.names() == ["load_skill", insert.name, select.name]
     provider = ScriptedProvider(
         script=[
             tool_call_frame("i", name=insert.name, arguments={"value": "abc"}),

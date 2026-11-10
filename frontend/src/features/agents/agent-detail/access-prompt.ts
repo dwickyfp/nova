@@ -26,7 +26,7 @@ export function buildAccessGrantPrompt({
     "Nova Agent Verify Access found these missing Ranger permissions:",
     ...permissions,
     "",
-    "Use Nove's inspect_role_access tool to check the role's effective Ranger access, then use grant_role_access only for permissions still missing. These tools act through Nova's internal access-control service; do not call or display HTTP API routes. StarRocks native grants do not satisfy Verify Access in full Ranger mode.",
+    "First check what this role can already use, then add only the permissions that are still missing. Engine-level grants alone do not satisfy Verify Access.",
     ...(roleName.toUpperCase() === "ACCOUNTADMIN"
       ? [
           "ACCOUNTADMIN is protected against DROP, REVOKE, and ALTER ROLE; adding a Ranger access policy for it is allowed.",

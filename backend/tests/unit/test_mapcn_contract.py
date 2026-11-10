@@ -91,8 +91,12 @@ async def test_observation_endpoint_revalidates_source_before_recording(monkeypa
     from fastapi import HTTPException
 
     router = importlib.import_module("app.modules.agents.router")
+    ui_access = importlib.import_module("app.modules.assistant.ui_access")
+    # Studio proves the thread is the caller's, then the shared check re-reads
+    # the block in the caller's security context before anything is recorded.
+    monkeypatch.setattr(router, "_ui_owner", AsyncMock())
     denied = AsyncMock(side_effect=HTTPException(404, "Unavailable"))
-    monkeypatch.setattr(router, "_ui_source", denied)
+    monkeypatch.setattr(ui_access, "ui_source", denied)
     with pytest.raises(HTTPException):
         await router.record_agent_map_metric(
             "a", "t", "m", "c", UiMapMetricInput(event="ready", elapsed_ms=20),

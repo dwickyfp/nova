@@ -80,11 +80,52 @@ describe("ThreadHistory", () => {
     });
     const view = await renderHistory({ activeThreadId: null, onOpenThread: () => {} });
     await view.getByRole("button", { name: "Chat history" }).click();
-    await expect.element(view.getByRole("button", { name: /Latest question/ })).toBeVisible();
+    await expect.element(view.getByRole("button", { name: /^Latest question/ })).toBeVisible();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("cursor=older"))).toBe(false);
     await view.getByRole("button", { name: "Load more conversations" }).click();
-    await expect.element(view.getByRole("button", { name: /Earlier question/ })).toBeVisible();
-    await expect.element(view.getByRole("button", { name: /Latest question/ })).toBeVisible();
+    await expect.element(view.getByRole("button", { name: /^Earlier question/ })).toBeVisible();
+    await expect.element(view.getByRole("button", { name: /^Latest question/ })).toBeVisible();
     await expect.element(view.getByRole("button", { name: "Load more conversations" })).not.toBeInTheDocument();
+  });
+
+  it("searches, renames and deletes a conversation", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const calls: { url: string; method: string; body?: string }[] = [];
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body as string | undefined });
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (init?.method === "PATCH") return json({ thread_id: "t-1", title: "Monthly revenue",
+        created_at: "2026-09-25T00:00:00Z", updated_at: "2026-09-25T00:00:00Z", message_count: 4 });
+      const searching = url.includes("q=");
+      return json({
+        threads: [{ thread_id: "t-1", title: searching ? "Revenue analysis" : "Revenue analysis",
+          created_at: "2026-09-25T00:00:00Z", updated_at: "2026-09-25T00:00:00Z", message_count: 4 }],
+        count: 1,
+      });
+    });
+    const deleted = vi.fn();
+    const view = await renderHistory({
+      activeThreadId: "t-1", onOpenThread: () => {}, onDeletedThread: deleted,
+    });
+    await view.getByRole("button", { name: "Chat history" }).click();
+    await view.getByRole("textbox", { name: "Search conversations" }).fill("revenue");
+    await expect.poll(() => calls.some((call) => call.url.includes("q=revenue"))).toBe(true);
+
+    await view.getByRole("button", { name: "Actions for Revenue analysis" }).click();
+    await view.getByRole("menuitem", { name: "Rename" }).click();
+    await view.getByRole("textbox", { name: "Conversation name" }).fill("Monthly revenue");
+    await view.getByRole("button", { name: "Save name" }).click();
+    await expect.poll(() => calls.find((call) => call.method === "PATCH")?.body)
+      .toBe(JSON.stringify({ title: "Monthly revenue" }));
+
+    await view.getByRole("button", { name: "Actions for Revenue analysis" }).click();
+    await view.getByRole("menuitem", { name: "Delete" }).click();
+    await expect.element(view.getByRole("alertdialog")).toHaveTextContent("cannot be undone");
+    await view.getByRole("button", { name: "Delete" }).click();
+    await expect.poll(() => deleted.mock.calls.length).toBe(1);
+    expect(deleted).toHaveBeenCalledWith("t-1");
+    expect(calls.some((call) => call.method === "DELETE" && call.url.endsWith("/assistant/threads/t-1")))
+      .toBe(true);
   });
 });

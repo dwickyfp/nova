@@ -113,6 +113,37 @@ def normalize_tool_schema_for_provider(schema: dict[str, Any]) -> tuple[dict[str
     return normalized, compatible
 
 
+def _system_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(part.get("text", "")) for part in content if isinstance(part, dict)
+        )
+    return str(content or "")
+
+
+def _one_system_message(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Send every system instruction as one leading system message.
+
+    Some OpenAI-compatible gateways keep only the first system message and drop
+    the rest without an error, including the page context, the turn plan and
+    the loop's later corrections. The system texts keep their order among
+    themselves, but a correction added mid-turn now sits before the
+    conversation rather than after it; every provider reads it, which matters
+    more than its position.
+    """
+    texts = [
+        _system_text(message.get("content"))
+        for message in messages
+        if message.get("role") == "system"
+    ]
+    if len(texts) <= 1 and (not messages or messages[0].get("role") == "system" or not texts):
+        return messages
+    rest = [message for message in messages if message.get("role") != "system"]
+    return [{"role": "system", "content": "\n\n".join(text for text in texts if text)}, *rest]
+
+
 class AssistantProviderError(NovaException):
     """The provider could not be reached or refused the request.
 
@@ -137,6 +168,23 @@ class ProviderConfig:
 
 class ProviderSelection(TypedDict, total=False):
     provider: ProviderConfig
+
+
+def _plain_status(status: int) -> str:
+    """What a failed AI service call means for the person waiting on it."""
+    if status in (401, 403):
+        return (
+            "The AI service did not accept Nova's access key. "
+            "An administrator can update it in AI Providers."
+        )
+    if status == 429:
+        return "The AI service is busy right now. Try again in a moment."
+    if status == 404:
+        return (
+            "The AI service does not offer the selected model. "
+            "Pick another model or ask an administrator to check AI Providers."
+        )
+    return "The AI service could not answer right now. Try again in a moment."
 
 
 class AssistantProviderClient:
@@ -249,8 +297,8 @@ class AssistantProviderClient:
                 "Pick another model or provider in the assistant panel."
             )
         raise AssistantProviderError(
-            "No active AI provider with an API key is configured. "
-            "Add one under AI Providers before using the assistant."
+            "Nova has no AI service set up yet. "
+            "An administrator can add one in AI Providers."
         )
 
     async def _resolve_model(self, provider_id: str, requested: str | None) -> str:
@@ -284,7 +332,9 @@ class AssistantProviderClient:
         tool_choice: str | dict[str, Any] | None = None,
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {"model": config.model, "messages": messages}
+        first = messages[0] if messages else {}
+        system = first.get("content") if first.get("role") == "system" else None
+        body: dict[str, Any] = {"model": config.model, "messages": _one_system_message(messages)}
         if tools and config.capabilities.supports_tools:
             prepared_tools: list[dict[str, Any]] = []
             for tool in tools:
@@ -304,8 +354,6 @@ class AssistantProviderClient:
                 body["parallel_tool_calls"] = False
         if response_format is not None and config.capabilities.supports_json_schema:
             body["response_format"] = response_format
-        first = messages[0] if messages else {}
-        system = first.get("content") if first.get("role") == "system" else None
         if config.capabilities.supports_prompt_cache_key and isinstance(system, str):
             # The platform and agent prompt is the stable prefix of every call.
             body["prompt_cache_key"] = "nova-" + hashlib.sha256(system.encode()).hexdigest()[:32]
@@ -324,11 +372,12 @@ class AssistantProviderClient:
     def _endpoint_error(exc: BlockedEndpointError) -> AssistantProviderError:
         if exc.retryable:
             return AssistantProviderError(
-                "AI provider hostname could not be resolved. Check DNS and retry."
+                "Nova could not reach the AI service: its address could not be resolved. "
+                "Try again in a moment."
             )
         return AssistantProviderError(
-            "AI provider endpoint is not allowed: use an http(s) URL on the internet "
-            "or your local network"
+            "This AI service address is not allowed. Use an address on the internet "
+            "or your local network."
         )
 
     async def _validate_endpoint(self, config: ProviderConfig) -> None:
@@ -371,7 +420,7 @@ class AssistantProviderClient:
                 response.status_code,
                 config.provider_id,
             )
-            raise AssistantProviderError(f"AI provider returned HTTP {response.status_code}")
+            raise AssistantProviderError(_plain_status(response.status_code))
 
     async def _backoff(self, attempt: int, response: httpx.Response | None = None) -> None:
         """Bound retry delay without exposing provider response content."""

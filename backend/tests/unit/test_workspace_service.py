@@ -62,6 +62,18 @@ class _UnavailableStorageService(WorkspaceService):
     def __init__(self, exc: BaseException):
         super().__init__()
         self._exc = exc
+        real_repo = self._repo
+
+        class _NoEntriesRepo:
+            """The real repository, with an empty workspace for the name check."""
+
+            def __getattr__(self, name):
+                return getattr(real_repo, name)
+
+            async def list_entries(self, username):
+                return []
+
+        self._repo = _NoEntriesRepo()
 
     def _client(self):
         exc = self._exc

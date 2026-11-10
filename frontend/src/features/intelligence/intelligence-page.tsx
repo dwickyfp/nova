@@ -8,8 +8,8 @@ import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { useNoveSurface } from "@/features/assistant/nove-surface-hook";
-import { defineNoveCapability } from "@/features/assistant/surface-registry";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { defineNevaCapability } from "@/features/assistant/surface-registry";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ import { metadataApi } from "@/features/agents/metadata-api";
 import { ColumnField, RelationField } from "./metadata-fields";
 import { useRelationColumns } from "./use-relation-columns";
 import { SemanticViewDetailPanel } from "./semantic-view-detail";
+import { SemanticResultTable, SemanticViewGlance, ValidationSummary, versionStatusWord } from "./semantic-view-glance";
+import { StateBadge } from "@/components/ui/status-badge";
 import { type SemanticDefinition, type SemanticView, type SemanticVersion } from "./semantic-views-api";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
 
@@ -223,7 +225,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
   const pageTitle = tab === "features" ? "Feature Store" : tab === "semantic"
     ? semanticViewId ? selectedSemanticView?.name ?? "Semantic View" : "Semantic Views"
     : tab === "search" ? "AI Search" : "Entities";
-  const { askNove, publishEvent } = useNoveSurface({
+  const { askNeva, publishEvent } = useNevaSurface({
     id: `intelligence.${tab}`,
     route: typeof window === "undefined" ? "/semantic-views" : window.location.pathname,
     title: pageTitle,
@@ -243,7 +245,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
       domain: { database: selectedSemanticView?.database_name ?? null },
     }),
     capabilities: [
-      defineNoveCapability({
+      defineNevaCapability({
         name: "tab.open", risk: "safe", mayChangeSurface: true,
         argsSchema: z.object({ tab: z.enum(["entities", "search", "semantic", "features"]) }),
         execute: ({ tab: next }) => navigate({ to: {
@@ -251,7 +253,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
           semantic: "/semantic-views", features: "/feature-store",
         }[next] }),
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
         execute: () => tab === "semantic" && semanticViewId
           ? semanticDetail.refetch({ throwOnError: true })
@@ -262,7 +264,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
               { throwOnError: true },
             ),
       }),
-      defineNoveCapability({
+      defineNevaCapability({
         name: "surface.select", risk: "safe", argsSchema: z.object({ id: z.string().min(1).max(160) }),
         execute: ({ id }) => {
           if (tab !== "semantic" || !id.trim()) {
@@ -285,7 +287,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
     entities: "Define how a record is identified so search and features can use the same key",
     search: "Find records by their text, then create an index when you need to search another table",
     semantic: semanticViewId
-      ? "Inspect the definition, check a question, and manage published versions"
+      ? "Business definitions agents use to answer questions about this data"
       : "Give business questions a shared meaning. Build a view, check it, then publish it for agents.",
     features: "Turn time-based table columns into reusable inputs for lookups and models",
   }[tab];
@@ -305,11 +307,16 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
             <h1 className="text-lg font-semibold tracking-tight">{pageTitle}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
            </div>
-           <Button variant="outline" size="sm" onClick={() => void askNove(
+           <div className="flex flex-wrap items-center gap-4">
+           {tab === "semantic" && semanticViewId && semanticDetail.data && selectedSemanticView?.status !== "DEPRECATED"
+             ? <NewsSettings view={{ ...semanticDetail.data, id: selectedSemantic }}
+                 onChanged={() => void semanticDetail.refetch()} /> : null}
+           <Button variant="outline" size="sm" onClick={() => void askNeva(
              tab === "semantic" && selectedSemantic
                ? "Explain this Semantic View and suggest any missing relationships."
                : `Help me use ${pageTitle} in Nova.`,
-           )}>Ask Nove</Button>
+           )}>Ask Neva</Button>
+           </div>
          </div>
         {tab === "entities" && (
           <section className="space-y-5" aria-label="Entities">
@@ -532,38 +539,34 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
         </section>}
 
         {tab === "semantic" && semanticViewId && <section className="min-w-0 space-y-6" aria-label="Semantic View details">
-            {semanticDetail.isFetching ? <LoadingOverlay label="Loading Semantic View details" /> : null}
+            {semanticDetail.isPending ? <LoadingOverlay label="Loading Semantic View details" /> : null}
             {semanticDetail.isError ? <div role="alert" className="space-y-2 rounded-lg border border-destructive p-4 text-sm">
               <p>Could not load this Semantic View.</p><Button variant="outline" onClick={() => void semanticDetail.refetch()}>Retry</Button>
             </div> : null}
-            {semanticDetail.data && !semanticDetail.isError && !semanticDetail.isFetching ? <div className="min-w-0 space-y-6">
-              <dl className="grid gap-4 rounded-lg border bg-surface-1 p-4 text-sm sm:grid-cols-3 sm:p-5">
-                <div><dt className="text-muted-foreground">Availability</dt><dd className="mt-1 font-medium">{selectedSemanticView?.status === "DEPRECATED" ? "Deprecated · unavailable to agents"
-                  : selectedSemanticView?.active_version ? "Published for agents" : "Draft · not available to agents"}</dd></div>
-                <div><dt className="text-muted-foreground">Database</dt><dd className="mt-1 break-all font-medium">{selectedSemanticView?.database_name || "Unavailable"}</dd></div>
-                <div><dt className="text-muted-foreground">Published version</dt><dd className="mt-1 font-medium">{selectedSemanticView?.active_version ? `v${selectedSemanticView.active_version}` : "None yet"}</dd></div>
-              </dl>
-              {selectedSemanticView?.status !== "DEPRECATED" ? <NewsSettings
+            {semanticDetail.data && !semanticDetail.isError ? <div className="min-w-0 space-y-6">
+              {currentSemanticVersion ? <SemanticViewGlance
                 view={{ ...semanticDetail.data, id: selectedSemantic }}
-                onChanged={() => void semanticDetail.refetch()} /> : null}
-              {selectedSemanticView?.status !== "DEPRECATED" ? <SemanticBiDatasets
-                viewId={selectedSemantic}
-                published={Boolean(selectedSemanticView?.active_version)}
-                isPrivate={selectedSemanticView?.visibility === "PRIVATE"}
-                canSync={"news_config" in semanticDetail.data} /> : null}
+                version={(semanticDetail.data.versions ?? []).find((item) => item.version === semanticDetail.data?.active_version) ?? currentSemanticVersion}
+                onNext={() => document.getElementById("semantic-versions")?.scrollIntoView({ behavior: "smooth", block: "start" })} /> : null}
               {semanticDetail.data && currentSemanticVersion ? <section className="min-w-0 space-y-4 rounded-lg border bg-background p-4 sm:p-5" aria-label="Inspect a version">
-                <label className="block max-w-xs space-y-1 text-sm">Inspect version
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-base font-medium">Try it and look inside</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Ask a question the way people ask it, or see what this version defines.</p>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">Version
                   <select aria-label="Semantic query version" value={semanticVersion}
                     onChange={(event) => {
                       setSemanticVersion(event.target.value);
                       setSemanticResult(null);
                     }}
-                    className="flex h-10 w-full rounded-md border bg-background px-3 text-sm">
-                    <option value="">Current version</option>
+                    className="h-8 rounded-md border bg-background px-2 text-sm text-foreground">
+                    <option value="">{semanticDetail.data.active_version ? "Live version" : "Latest version"}</option>
                     {semanticDetail.data.versions.map((item) =>
-                      <option key={item.version} value={item.version}>v{item.version} · {item.status}</option>)}
+                      <option key={item.version} value={item.version}>v{item.version} · {versionStatusWord(item.status, semanticDetail.data?.status === "DEPRECATED")}</option>)}
                   </select>
-                </label>
+                  </label>
+                </div>
                 <SemanticViewDetailPanel
                   key={`${selectedSemantic}-${currentSemanticVersion.version}`}
                   view={{ ...semanticDetail.data, id: selectedSemantic }}
@@ -571,52 +574,66 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                   onVersionCreated={(version) => setSemanticVersion(String(version))}
                 />
               </section> : null}
-              <section className="space-y-4 rounded-lg border bg-background p-4 sm:p-5" aria-label="Version history">
-                <div><h2 className="text-lg font-medium">Version history</h2>
-                  <p className="text-sm text-muted-foreground">Validate a draft, review changes to verified questions, then publish it for agents.</p></div>
+              <section id="semantic-versions" className="scroll-mt-4 space-y-4 rounded-lg border bg-background p-4 sm:p-5" aria-label="Version history">
+                <div><h2 className="text-base font-medium">Versions</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Every change is saved as a new version. Check a draft, then make it live so agents use it.</p></div>
               {semanticDetail.data && semanticDetail.data.versions.length === 0 ? <p className="text-sm text-muted-foreground">No versions saved for this View.</p> : null}
-              {(semanticDetail.data?.versions ?? []).map((version) =>
-                <div key={version.version} className="space-y-2 border-t pt-3 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="mr-auto">v{version.version} · {version.status}{version.version === semanticDetail.data?.active_version ? " · Used by agents" : ""}</span>
-                   <Button variant="ghost" onClick={() => {
-                     setSemanticDraft(version.validation?.migration?.raw_definition_preserved
-                       ? JSON.stringify(version.validation.migration.raw_definition ?? version.definition, null, 2)
+              {(() => {
+                const all = semanticDetail.data?.versions ?? [];
+                const retired = semanticDetail.data?.status === "DEPRECATED";
+                // Replaced versions are history; the live one and any newer drafts are what matter.
+                const current = all.filter((version) => version.status !== "DEPRECATED" || version.version === semanticDetail.data?.active_version);
+                const older = all.filter((version) => !current.includes(version));
+                const when = (value: string | null | undefined) => value
+                  ? new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" }) : "";
+                const row = (version: (typeof all)[number]) => {
+                  const legacy = version.validation?.migration?.raw_definition_preserved;
+                  const live = version.version === semanticDetail.data?.active_version;
+                  const meta = live
+                    ? ["Used by agents", when(version.activated_at) && `since ${when(version.activated_at)}`].filter(Boolean).join(" ")
+                    : when(version.created_at) ? `Saved ${when(version.created_at)}` : "";
+                  return <li key={version.version} className="space-y-3 py-4 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <span className="w-8 font-mono text-sm tabular-nums">v{version.version}</span>
+                    <StateBadge status={version.status === "ACTIVE" ? "active" : version.status === "VALIDATED" ? "verified" : version.status === "DRAFT" ? "draft" : "inactive"}>
+                      {versionStatusWord(version.status, retired)}</StateBadge>
+                    {meta ? <span className="text-sm text-muted-foreground">{meta}</span> : null}
+                    <div className="ml-auto flex flex-wrap gap-2">
+                   <Button variant="ghost" size="sm" onClick={() => {
+                     setSemanticDraft(legacy
+                       ? JSON.stringify(version.validation?.migration?.raw_definition ?? version.definition, null, 2)
                        : editableSemanticDefinition(version.definition));
                      setEditDefinitionOpen(true);
                    }}>
-                     {version.validation?.migration?.raw_definition_preserved ? "Copy original to editor" : "Use as draft"}
+                     {legacy ? "Copy original to editor" : "Use as draft"}
                    </Button>
-                   {version.status === "DRAFT" && !version.validation?.migration?.raw_definition_preserved && <Button variant="outline" disabled={busy}
+                   {version.status === "DRAFT" && !legacy && <Button variant="outline" size="sm" disabled={busy}
                      onClick={() => void run(() => api.post(
                        `/semantic-views/${encodeURIComponent(selectedSemantic)}/versions/${version.version}/validate`,
-                     ), "Validation complete")}>Validate</Button>}
-                   {version.status === "VALIDATED" && <Button variant="outline" disabled={busy ||
+                     ), "Check complete")}>Check</Button>}
+                   {version.status === "VALIDATED" && <Button size="sm" disabled={busy ||
                      Boolean(version.validation?.regression && version.validation.regression.changed > 0 && !acknowledgeRegressions)}
                      onClick={() => void run(() => api.post(
                        `/semantic-views/${encodeURIComponent(selectedSemantic)}/versions/${version.version}/publish`,
                        { acknowledge_regressions: acknowledgeRegressions },
-                      ), "Version published. Verify agent access again before running bound agents.")}>Publish</Button>}
-                 </div>
-                  {version.validation?.migration?.raw_definition_preserved ? <p className="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm">Legacy format: add a supported Ossie 0.1.1 version. This imported version is for review only.</p> : null}
-                  {version.validation && <div className="space-y-1 rounded-md bg-muted p-3">
-                   <p>{version.validation.valid ? "Validated" : "Validation failed"}
-                     {version.validation.regression &&
-                       ` · ${version.validation.regression.changed} regression changes`}</p>
-                   {version.validation.errors.map((error, index) =>
-                     <p key={`error-${index}`} className="text-destructive">{error}</p>)}
-                   {version.validation.warnings.map((warning, index) =>
-                     <p key={`warning-${index}`} className="text-muted-foreground">{warning}</p>)}
-                   {version.validation.regression?.cases.map((item) =>
-                     <p key={item.verified_query_id}>{item.question}: {item.status}</p>)}
-                   {version.validation.regression && version.validation.regression.changed > 0 &&
-                     <label className="flex items-center gap-2 pt-2">
-                       <input type="checkbox" checked={acknowledgeRegressions}
-                         onChange={(event) => setAcknowledgeRegressions(event.target.checked)} />
-                       Acknowledge verified-query changes before publishing
-                     </label>}
-                  </div>}
-                </div>)}
+                      ), "Version is live. Verify agent access again before running bound agents.")}>Make live</Button>}
+                    </div>
+                  </div>
+                  {legacy ? <p className="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm sm:ms-11">Legacy format: add a supported Ossie 0.1.1 version. This imported version is for review only.</p> : null}
+                  {version.validation && version.status !== "DEPRECATED" && !legacy ? <div className="rounded-md bg-muted/60 px-3 py-2.5 sm:ms-11">
+                    <ValidationSummary validation={version.validation}
+                      acknowledged={acknowledgeRegressions} onAcknowledge={setAcknowledgeRegressions} />
+                  </div> : null}
+                </li>;
+                };
+                return <>
+                  <ul className="divide-y">{current.map(row)}</ul>
+                  {older.length ? <details className="border-t pt-3 text-sm">
+                    <summary className="cursor-pointer text-muted-foreground">Older versions ({older.length})</summary>
+                    <ul className="mt-3 divide-y">{older.map(row)}</ul>
+                  </details> : null}
+                </>;
+              })()}
               </section>
               <details open={editDefinitionOpen}
                 onToggle={(event) => setEditDefinitionOpen(event.currentTarget.open)}
@@ -632,14 +649,14 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                     { definition: semanticDraft }), "Draft version created")}>Add version</Button>
               </details>
               <section className="space-y-4 rounded-lg border bg-background p-4 sm:p-5" aria-label="Run a published version">
-              <div><h2 className="text-lg font-medium">Run a published version</h2>
-                <p className="text-sm text-muted-foreground">Choose a measure and optional dimensions to see results from the published data.</p></div>
+              <div><h2 className="text-base font-medium">Explore the numbers</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Pick a number and how to break it down to see real results from a live version, under your access.</p></div>
               <div className="grid gap-3 md:grid-cols-2">
-               <ColumnField label="Metrics" value={semanticMetrics} onChange={setSemanticMetrics}
+               <ColumnField label="Numbers" value={semanticMetrics} onChange={setSemanticMetrics}
                  options={semanticMetricNames} multiple />
-               <ColumnField label="Dimensions" value={semanticDimensions} onChange={setSemanticDimensions}
+               <ColumnField label="Break down by" value={semanticDimensions} onChange={setSemanticDimensions}
                  options={semanticDimensionNames} multiple />
-               <ColumnField label="Named filters" value={semanticNamedFilters}
+               <ColumnField label="Filters" value={semanticNamedFilters}
                  onChange={setSemanticNamedFilters} options={semanticNamedFilterNames} multiple />
               </div>
               <Button disabled={busy || !semanticMetrics && !semanticDimensions ||
@@ -650,10 +667,16 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                    named_filters: splitColumns(semanticNamedFilters),
                    version: semanticVersion ? Number(semanticVersion) : null });
                setSemanticResult(result);
-             }, "Semantic query complete")}>Run query</Button>
-             {semanticResult !== null && <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
-               {JSON.stringify(semanticResult, null, 2)}</pre>}
+             }, "Results ready")}>Show results</Button>
+             {currentSemanticVersion && !["ACTIVE", "DEPRECATED"].includes(currentSemanticVersion.status)
+               ? <p className="text-sm text-muted-foreground">Results come from a live version. Make this version live, or pick the live version above.</p> : null}
+             {semanticResult !== null && <SemanticResultTable result={semanticResult} />}
               </section>
+              {selectedSemanticView?.status !== "DEPRECATED" ? <SemanticBiDatasets
+                viewId={selectedSemantic}
+                published={Boolean(selectedSemanticView?.active_version)}
+                isPrivate={selectedSemanticView?.visibility === "PRIVATE"}
+                canSync={"news_config" in semanticDetail.data} /> : null}
               <details className="rounded-lg border bg-background p-4 sm:p-5">
                 <summary className="cursor-pointer font-medium">Manage this view</summary>
                 <p className="mt-2 text-sm text-muted-foreground">Deprecating or deleting a view stops agents from using it.</p>

@@ -184,11 +184,23 @@ class _Ontology:
             self.available = False
 
     def _visible(self) -> dict[str, Any]:
+        from app.modules.ontology import access
         from app.modules.ontology.service import ontology_service
 
         if self.snapshot is None or self.snapshot.release is None:
             return {}
-        return ontology_service.visible_concepts(self.snapshot, self.user)
+        # This context feeds the Dataviz assistant's prompt, so a definition
+        # whose classification keeps it from models is left out here too.
+        domains = self.snapshot.domains
+        return {
+            concept_id: concept
+            for concept_id, concept in ontology_service.visible_concepts(
+                self.snapshot, self.user
+            ).items()
+            if access.model_may_see(
+                concept.classification, domains.get(concept.domain_id), domains, self.user
+            )
+        }
 
     def _view(self, concept: Any) -> dict[str, Any]:
         from app.modules.ontology.service import ontology_service

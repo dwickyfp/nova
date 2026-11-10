@@ -2,12 +2,15 @@ import { useCallback, useRef, useState } from "react";
 import {
   streamAssistantTurn,
   decideToolCall,
+  type SentFile,
   type TurnContext,
 } from "./stream-client";
 import { getThread, resetGrant, setGrant } from "./thread-client";
 import type { ToolCallDecision } from "./tool-call-card";
 import type { AssistantEvent } from "./types";
+import type { UiAction as UiBlockAction } from "@/features/studio/intelligent-ui/types";
 import {
+  restoredMessage,
   useAssistantTranscript,
   type TranscriptMessage,
 } from "./use-assistant-transcript";
@@ -122,7 +125,12 @@ export function useAssistantTurn({
   const uiActionsRef = useRef(new Map<string, UiAction>());
 
   const sendMessage = useCallback(
-    async (message: string, attachments: AttachedQuery[] = []) => {
+    async (
+      message: string,
+      attachments: AttachedQuery[] = [],
+      files: SentFile[] = [],
+      uiAction?: UiBlockAction,
+    ) => {
       if (streaming) return;
       const thread = threadId ?? (await ensureThread());
       if (!thread) {
@@ -132,7 +140,9 @@ export function useAssistantTurn({
       if (thread !== threadId) setThreadId(thread);
 
       const prompt = `${formatAttachmentsForPrompt(attachments)}${message}`;
-      transcript.addUserMessage(prompt, attachments, message);
+      transcript.addUserMessage(
+        prompt, attachments, message, files.map((file) => file.name),
+      );
       const controller = new AbortController();
       abortRef.current = controller;
       uiActionsRef.current.clear();
@@ -152,6 +162,8 @@ export function useAssistantTurn({
           model: context?.model,
            providerId: context?.providerId,
            appContext: turnAppContext,
+           files,
+           uiAction,
            onEvent: (event) => {
              transcript.applyEvent(event);
              if (event.type === "client_action") {
@@ -292,14 +304,7 @@ export function useAssistantTurn({
         if (request !== historyRequestRef.current) return;
         const restored: TranscriptMessage[] = detail.messages
           .filter((message) => message.role !== "tool")
-          .map((message) => ({
-            message_id: message.message_id,
-            role: message.role,
-            content: message.content,
-            tool_call: null,
-            created_at: message.created_at,
-            turn_state: "done",
-          }));
+          .map(restoredMessage);
         transcript.replace(restored);
         setOlderCursor(detail.next_cursor ?? null);
         setThreadId(detail.thread.thread_id);
@@ -326,10 +331,7 @@ export function useAssistantTurn({
       if (request !== historyRequestRef.current) return;
       const restored: TranscriptMessage[] = page.messages
         .filter((message) => message.role !== "tool")
-        .map((message) => ({
-          message_id: message.message_id, role: message.role, content: message.content,
-          tool_call: null, created_at: message.created_at, turn_state: "done",
-        }));
+        .map(restoredMessage);
       const current = transcriptRef.current;
       current.replace([...new Map([...restored, ...current.messages].map((m) => [m.message_id, m])).values()]);
       setOlderCursor(page.next_cursor ?? null);

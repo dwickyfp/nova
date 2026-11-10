@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AssistantProvider } from '@/features/assistant'
 import { MonitoringQueryHistory } from './index'
 
-describe('Query History Nove action', () => {
+describe('Query History Neva action', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('maps the copilot failed status action to the history API ERROR filter', async () => {
@@ -43,7 +43,7 @@ describe('Query History Nove action', () => {
         </AssistantProvider>
       </QueryClientProvider>,
     )
-    await screen.getByRole('button', { name: 'Ask Nove' }).click()
+    await screen.getByRole('button', { name: 'Ask Neva' }).click()
     await vi.waitFor(() => expect(historyUrls.some((url) => url.includes('status=ERROR'))).toBe(true))
   })
 })

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.modules.assistant.app_context import NoveAppContext, NoveApplicationEvent, _safe_text
+from app.modules.assistant.app_context import NevaAppContext, NevaApplicationEvent, _safe_text
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 
@@ -16,19 +16,19 @@ _SECRET_WORD = re.compile(
 )
 
 
-def _current_app(context: Any) -> NoveAppContext | None:
+def _current_app(context: Any) -> NevaAppContext | None:
     if getattr(context, "agent_id", None) is not None:
         return None
     app = getattr(context, "app_context", None)
-    return app if isinstance(app, NoveAppContext) else None
+    return app if isinstance(app, NevaAppContext) else None
 
 
-def _event_execution_id(event: NoveApplicationEvent) -> str | None:
+def _event_execution_id(event: NevaApplicationEvent) -> str | None:
     value = event.execution_id or event.payload.get("executionId")
     return value if isinstance(value, str) else None
 
 
-def _safe_sql(event: NoveApplicationEvent | None) -> str | None:
+def _safe_sql(event: NevaApplicationEvent | None) -> str | None:
     if event is None:
         return None
     value = event.payload.get("sql")
@@ -150,7 +150,7 @@ class InspectQueryErrorTool:
 class VerifyQueryRepairTool:
     name = "verify_query_repair"
     description = (
-        "Verify an applied Nove SQL editor patch from current Workspace events. "
+        "Verify an applied Neva SQL editor patch from current Workspace events. "
         "Requires a correlated successful rerun; an applied patch alone is not success."
     )
     parameters = {
@@ -209,7 +209,7 @@ class VerifyQueryRepairTool:
             return ToolOutcome(
                 ok=False,
                 summary="",
-                error="The current successful query is not linked to a Nove patch.",
+                error="The current successful query is not linked to a Neva patch.",
                 error_class="POSTCONDITION_UNVERIFIED",
             )
         completion_index = events.index(completion)

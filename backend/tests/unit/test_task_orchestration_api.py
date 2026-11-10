@@ -164,6 +164,15 @@ class FakeRepository:
         runs = [r for r in self.graph_runs.values() if r["graph_id"] == graph_id]
         return max(runs, key=lambda r: r.get("started_at") or NOW) if runs else None
 
+    async def latest_graph_runs(self):
+        latest: dict[str, dict] = {}
+        for run in self.graph_runs.values():
+            current = latest.get(run["graph_id"])
+            started = run.get("started_at") or NOW
+            if current is None or started > (current.get("started_at") or NOW):
+                latest[run["graph_id"]] = run
+        return latest
+
     async def list_graph_runs(self, graph_id: str):
         return [r for r in self.graph_runs.values() if r["graph_id"] == graph_id]
 

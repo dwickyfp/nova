@@ -205,3 +205,27 @@ async def test_ranger_semantic_probe_plans_select_under_current_identity(monkeyp
             security_context_version=7,
             max_rows=0,
         )
+
+
+async def test_a_source_check_is_never_reused_across_requests(monkeypatch):
+    # A revoked grant denies on the next request, wherever it was revoked.
+    from app.modules.intelligence.semantic_views import SemanticViewService
+
+    effective = AsyncMock(return_value={"object_access": ["SELECT"]})
+    monkeypatch.setattr(
+        "app.modules.access_control.service.access_control_service.effective_access", effective
+    )
+    probe = AsyncMock(return_value=SimpleNamespace(error=None))
+    monkeypatch.setattr(query_service, "execute", probe)
+    definition = {"datasets": [{"source": "sales.orders"}, {"source": "sales.items"}]}
+    user = {
+        "username": "reader", "encrypted_password": "opaque", "active_role": "ANALYST",
+        "session_id": "current", "security_context_version": 7,
+    }
+
+    assert await SemanticViewService._source_access(definition, user)
+    assert await SemanticViewService._source_access(definition, user)
+    assert probe.await_count == 4  # both sources, checked again on the second request
+
+    probe.return_value = SimpleNamespace(error="denied")
+    assert not await SemanticViewService._source_access(definition, user)

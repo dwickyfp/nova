@@ -99,8 +99,24 @@ class WorkspaceService:
             },
         }
 
+    async def _ensure_free_path(
+        self, username: str, path: str, *, except_id: str | None = None
+    ) -> None:
+        """Refuse a path another entry already uses.
+
+        A file's object key comes from its path, so two entries on one path
+        share one object: creating or renaming onto it would overwrite the
+        other file's content.
+        """
+        for entry in await self._repo.list_entries(username):
+            if entry["path"] == path and entry["id"] != except_id:
+                raise StorageError(
+                    "A file or folder with this name already exists here", status_code=409
+                )
+
     async def create_file(self, username: str, parent_path: str, name: str, content: str) -> dict:
         path = self._repo.build_path(parent_path, name)
+        await self._ensure_free_path(username, path)
         key = self.build_object_key(username, path)
         result = await asyncio.to_thread(self._put_object, key, content.encode("utf-8"))
         entry_id = str(uuid4())
@@ -126,6 +142,7 @@ class WorkspaceService:
         return entry
 
     async def create_folder(self, username: str, parent_path: str, name: str) -> dict:
+        await self._ensure_free_path(username, self._repo.build_path(parent_path, name))
         entry_id = str(uuid4())
         await self._repo.insert_entry(
             entry_id=entry_id,
@@ -268,6 +285,8 @@ class WorkspaceService:
         )
         old_path = entry["path"]
         new_path = self._repo.build_path(target_parent, new_name)
+        if new_path != old_path:
+            await self._ensure_free_path(username, new_path, except_id=entry_id)
         if entry["entry_type"] == "file":
             new_object_key = self.build_object_key(username, new_path)
             await asyncio.to_thread(self._move_object, entry["object_key"], new_object_key)

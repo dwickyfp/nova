@@ -447,7 +447,7 @@ describe("governed lifecycle browser surfaces", () => {
         regression_case_ids: ["case-1"],
       });
       await expect
-        .element(page.getByText(/Evaluate the result before publication/))
+        .element(page.getByText(/Test the draft before you publish it/))
         .toBeVisible();
       assertContained(width);
     },

@@ -722,6 +722,8 @@ export type Skill = {
   scope: "user" | "global";
   source: "builtin" | "user";
   read_only: boolean;
+  /** False for platform skills that serve only the Console assistant. */
+  for_agents?: boolean;
   created_at: string;
   updated_at: string;
 };

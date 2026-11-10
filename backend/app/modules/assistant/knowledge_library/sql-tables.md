@@ -61,8 +61,3 @@ and inspect cluster topology before selecting values. replication_num=1 is a
 single-node development choice, not a production default. Local CRUD state uses
 NOVA_SYSTEM Primary Key tables; never create another persistence database engine.
 
-Implementation references: app/sql_dialect/grammar/StarRocks.g4;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/CREATE_TABLE/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/UPDATE/;
-https://docs.starrocks.io/docs/sql-reference/sql-statements/loading_unloading/INSERT/;
-https://docs.starrocks.io/docs/table_design/data_distribution/expression_partitioning/.

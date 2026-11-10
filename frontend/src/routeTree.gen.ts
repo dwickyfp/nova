@@ -45,6 +45,7 @@ import { Route as AuthenticatedMonitoringAutopilotRouteImport } from './routes/_
 import { Route as AuthenticatedMonitoringClusterRouteImport } from './routes/_authenticated/monitoring/cluster'
 import { Route as AuthenticatedMonitoringHealthRouteImport } from './routes/_authenticated/monitoring/health'
 import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
+import { Route as AuthenticatedMonitoringQueriesRouteImport } from './routes/_authenticated/monitoring/queries'
 import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
 import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
 import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authenticated/roles/$name'
@@ -266,6 +267,12 @@ const AuthenticatedMonitoringLoadsRoute =
     path: '/loads',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
+const AuthenticatedMonitoringQueriesRoute =
+  AuthenticatedMonitoringQueriesRouteImport.update({
+    id: '/queries',
+    path: '/queries',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
 const AuthenticatedMonitoringTasksRoute =
   AuthenticatedMonitoringTasksRouteImport.update({
     id: '/tasks',
@@ -382,6 +389,7 @@ export interface FileRoutesByFullPath {
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
+  '/monitoring/queries': typeof AuthenticatedMonitoringQueriesRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/semantic-views/$viewId': typeof AuthenticatedSemanticViewsViewIdRoute
@@ -433,6 +441,7 @@ export interface FileRoutesByTo {
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
+  '/monitoring/queries': typeof AuthenticatedMonitoringQueriesRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/semantic-views/$viewId': typeof AuthenticatedSemanticViewsViewIdRoute
@@ -487,6 +496,7 @@ export interface FileRoutesById {
   '/_authenticated/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/_authenticated/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/_authenticated/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
+  '/_authenticated/monitoring/queries': typeof AuthenticatedMonitoringQueriesRoute
   '/_authenticated/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
   '/_authenticated/semantic-views_/$viewId': typeof AuthenticatedSemanticViewsViewIdRoute
@@ -541,6 +551,7 @@ export interface FileRouteTypes {
     | '/monitoring/cluster'
     | '/monitoring/health'
     | '/monitoring/loads'
+    | '/monitoring/queries'
     | '/monitoring/tasks'
     | '/roles/$name'
     | '/semantic-views/$viewId'
@@ -592,6 +603,7 @@ export interface FileRouteTypes {
     | '/monitoring/cluster'
     | '/monitoring/health'
     | '/monitoring/loads'
+    | '/monitoring/queries'
     | '/monitoring/tasks'
     | '/roles/$name'
     | '/semantic-views/$viewId'
@@ -645,6 +657,7 @@ export interface FileRouteTypes {
     | '/_authenticated/monitoring/cluster'
     | '/_authenticated/monitoring/health'
     | '/_authenticated/monitoring/loads'
+    | '/_authenticated/monitoring/queries'
     | '/_authenticated/monitoring/tasks'
     | '/_authenticated/roles/$name'
     | '/_authenticated/semantic-views_/$viewId'
@@ -930,6 +943,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringLoadsRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
+    '/_authenticated/monitoring/queries': {
+      id: '/_authenticated/monitoring/queries'
+      path: '/queries'
+      fullPath: '/monitoring/queries'
+      preLoaderRoute: typeof AuthenticatedMonitoringQueriesRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
     '/_authenticated/monitoring/tasks': {
       id: '/_authenticated/monitoring/tasks'
       path: '/tasks'
@@ -1046,6 +1066,7 @@ interface AuthenticatedMonitoringRouteRouteChildren {
   AuthenticatedMonitoringClusterRoute: typeof AuthenticatedMonitoringClusterRoute
   AuthenticatedMonitoringHealthRoute: typeof AuthenticatedMonitoringHealthRoute
   AuthenticatedMonitoringLoadsRoute: typeof AuthenticatedMonitoringLoadsRoute
+  AuthenticatedMonitoringQueriesRoute: typeof AuthenticatedMonitoringQueriesRoute
   AuthenticatedMonitoringTasksRoute: typeof AuthenticatedMonitoringTasksRoute
   AuthenticatedMonitoringIndexRoute: typeof AuthenticatedMonitoringIndexRoute
 }
@@ -1060,6 +1081,7 @@ const AuthenticatedMonitoringRouteRouteChildren: AuthenticatedMonitoringRouteRou
     AuthenticatedMonitoringClusterRoute: AuthenticatedMonitoringClusterRoute,
     AuthenticatedMonitoringHealthRoute: AuthenticatedMonitoringHealthRoute,
     AuthenticatedMonitoringLoadsRoute: AuthenticatedMonitoringLoadsRoute,
+    AuthenticatedMonitoringQueriesRoute: AuthenticatedMonitoringQueriesRoute,
     AuthenticatedMonitoringTasksRoute: AuthenticatedMonitoringTasksRoute,
     AuthenticatedMonitoringIndexRoute: AuthenticatedMonitoringIndexRoute,
   }

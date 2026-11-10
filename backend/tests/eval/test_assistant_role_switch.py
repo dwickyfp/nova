@@ -154,3 +154,53 @@ async def test_role_switch_trajectory(monkeypatch, approved, granted):
         assert result.finish_reason == ("denied" if not approved else "error")
         if not approved:
             switch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_neva_relists_readable_views_for_the_new_role(monkeypatch):
+    # Views listed for the old role are dropped; the new role's own list is
+    # used for the rest of the turn.
+    from app.modules.auth.service import auth_service
+    from app.modules.query.service import query_service
+
+    tool = QueryExecuteTool()
+    monkeypatch.setattr(tool, "_audit", AsyncMock())
+    monkeypatch.setattr(auth_service, "switch_role", AsyncMock(return_value={
+        "active_role": "marketing", "roles": ["finance", "marketing"],
+        "assigned_roles": ["finance", "marketing"], "security_context_version": 2,
+    }))
+    monkeypatch.setattr(query_service, "execute_statements", AsyncMock(return_value=[
+        QueryResult(columns=["value"], rows=[["public"]], row_count=1)
+    ]))
+    import app.modules.agents.semantic.access as access
+
+    monkeypatch.setattr(access, "load_authorized_models", AsyncMock(return_value=[]))
+    seen_roles = []
+
+    async def readable_views(ctx):
+        seen_roles.append(ctx.user["active_role"])
+        return ["marketing-view"]
+
+    registry = ToolRegistry()
+    registry.register(tool)
+    loop = AssistantLoop(
+        provider=ScriptedProvider([
+            tool_call_frame("switch", sql="USE ROLE marketing"),
+            text_frame("Your active role is now marketing."),
+        ]),
+        registry=registry, system_prompt="Execute requested SQL",
+    )
+    ctx = context()
+    ctx.semantic_view_ids = ["finance-view"]
+    ctx.readable_views = readable_views
+
+    async def consent(_invocation, _classification):
+        return True
+
+    frames = [frame async for frame in loop.run(
+        thread=AssistantThread("thread", "alice", "Role views"),
+        user_content="Switch to marketing", context=ctx, resolve_consent=consent,
+    )]
+    assert "role_changed" in TurnResult(frames=frames).events
+    assert seen_roles == ["marketing"]
+    assert ctx.semantic_view_ids == ["marketing-view"]

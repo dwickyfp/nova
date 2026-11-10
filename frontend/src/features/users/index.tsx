@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
+import { useNevaSurface } from "@/features/assistant/neva-surface-hook";
+import { choiceOf, defineNevaCapability } from "@/features/assistant/surface-registry";
 import {
   Database,
   MoreHorizontal,
@@ -335,6 +338,9 @@ function InlineCheckboxList({
   );
 }
 
+/** The access filter values; empty shows everyone. */
+const USER_ACCESS_FILTERS = ["", "Protected", "Standard"] as const;
+
 export function Users() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -513,6 +519,51 @@ export function Users() {
         .includes(query);
     });
   }, [searchUsers, userAccessFilter, visibleUsersList]);
+
+  useNevaSurface({
+    id: "users.list",
+    route: "/users",
+    title: "Users",
+    context: () => ({
+      view: {
+        filters: { search: searchUsers, access: userAccessFilter },
+        filterOptions: { access: USER_ACCESS_FILTERS },
+        summary: { shown: filteredUsers.length, total: visibleUsersList.length },
+      },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
+        execute: () => loadBaseData(false),
+      }),
+      defineNevaCapability({
+        name: "surface.set_filter", risk: "safe",
+        argsSchema: z.object({
+          filter: z.enum(["search", "access"]),
+          value: z.string().max(120),
+        }),
+        execute: ({ filter, value }) => {
+          if (filter === "access")
+            setUserAccessFilter(choiceOf(value, USER_ACCESS_FILTERS, "access filter"));
+          else setSearchUsers(value);
+          setUsersPage(1);
+        },
+      }),
+      defineNevaCapability({
+        name: "surface.select", risk: "safe", mayChangeSurface: true,
+        argsSchema: z.object({ id: z.string().min(1).max(160) }),
+        execute: ({ id }) => {
+          if (!visibleUsersList.some((user) => user.username === id))
+            throw new Error("User is not in the current list");
+          return navigate({ to: "/users/$username", params: { username: id } });
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: "Find a user", prompt: "Help me find a user and see their roles." },
+      { label: "Give access", prompt: "How do I give a user access to a database?" },
+    ],
+  });
 
   const usersPageCount = Math.ceil(filteredUsers.length / usersPageSize);
 

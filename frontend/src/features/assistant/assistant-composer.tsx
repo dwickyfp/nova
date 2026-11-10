@@ -1,15 +1,22 @@
 import { useRef, useState } from "react";
-import { ArrowUp, FileCode, Info, Square, X } from "lucide-react";
+import { ArrowUp, FileCode, FileText, ImageIcon, Info, Plus, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ApprovalModeSelector } from "./approval-mode-selector";
 import type { SelectedModel } from "./assistant-provider";
 import { ModelSelector } from "./model-selector";
+import {
+  ACCEPTED_EXTENSIONS,
+  MAX_FILES,
+  readAttachment,
+  type PendingAttachment,
+} from "@/features/studio/studio-attachments";
+import type { SentFile } from "./stream-client";
 import type { AttachedQuery } from "./query-attach";
 import type { ApprovalMode } from "./use-assistant-turn";
 
 export type AssistantComposerProps = {
-  onSendMessage?: (message: string) => void;
+  onSendMessage?: (message: string, files?: SentFile[]) => void;
   /** True while a turn is streaming; swaps Send for Stop. */
   streaming?: boolean;
   onStop?: () => void;
@@ -49,16 +56,51 @@ export function AssistantComposer({
   onRemoveAttachment,
 }: AssistantComposerProps) {
   const [value, setValue] = useState("");
+  const [files, setFiles] = useState<PendingAttachment[]>([]);
+  const [readingFiles, setReadingFiles] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const canSend =
-    Boolean(value.trim()) && !streaming && !disabled && Boolean(onSendMessage);
+    (Boolean(value.trim()) || files.length > 0) &&
+    !streaming &&
+    !disabled &&
+    !readingFiles &&
+    Boolean(onSendMessage);
   const attached = attachments ?? [];
+
+  const addFiles = async (list: FileList) => {
+    setFileError(null);
+    const room = MAX_FILES - files.length;
+    if (list.length > room) setFileError(`Attach up to ${MAX_FILES} files.`);
+    setReadingFiles(true);
+    const read: PendingAttachment[] = [];
+    for (const file of Array.from(list).slice(0, room)) {
+      try {
+        read.push(await readAttachment(file));
+      } catch (error) {
+        setFileError(error instanceof Error ? error.message : "The file could not be read.");
+      }
+    }
+    setFiles((current) => [...current, ...read].slice(0, MAX_FILES));
+    setReadingFiles(false);
+  };
 
   const submit = () => {
     const message = value.trim();
-    if (!message || streaming || disabled || !onSendMessage) return;
-    onSendMessage(message);
+    if ((!message && !files.length) || streaming || disabled || readingFiles || !onSendMessage)
+      return;
+    if (files.length) {
+      onSendMessage(
+        message,
+        files.map(({ name, content, mediaType }) => ({ name, content, mediaType })),
+      );
+    } else {
+      onSendMessage(message);
+    }
     setValue("");
+    setFiles([]);
+    setFileError(null);
     fieldRef.current?.focus();
   };
 
@@ -72,11 +114,51 @@ export function AssistantComposer({
       ) : null}
       <div
         className={cn(
-          "flex flex-col gap-2 rounded-xl border bg-surface-2 p-2 shadow-xs",
+          "@container/composer flex flex-col gap-2 rounded-xl border bg-surface-2 p-2 shadow-xs",
           "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/40",
           disabled && "opacity-60",
         )}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          hidden
+          accept={ACCEPTED_EXTENSIONS.join(",")}
+          multiple
+          aria-label="Choose files to attach"
+          onChange={(event) => {
+            if (event.currentTarget.files?.length) void addFiles(event.currentTarget.files);
+            event.currentTarget.value = "";
+          }}
+        />
+        {files.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5" aria-label="Files ready to send">
+            {files.map((file) => (
+              <span
+                key={file.id}
+                className="inline-flex max-w-full items-center gap-1 rounded-md border bg-surface-1 px-1.5 py-0.5 text-xs"
+              >
+                {file.mediaType.startsWith("image/") ? (
+                  <ImageIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+                ) : (
+                  <FileText aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+                )}
+                <span className="max-w-40 truncate font-medium" title={file.name}>
+                  {file.name}
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={`Remove ${file.name}`}
+                  disabled={streaming}
+                  onClick={() => setFiles((current) => current.filter((item) => item.id !== file.id))}
+                >
+                  <X aria-hidden="true" className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {attached.length > 0 ? (
           <div className="flex flex-wrap gap-1.5" aria-label="Attached queries">
             {attached.map((attachment) => (
@@ -129,7 +211,23 @@ export function AssistantComposer({
             }
           }}
         />
-        <div className="flex items-center gap-1">
+        {/* A narrow panel shows the selectors as icons (their names stay on
+            the controls for screen readers), so no label is cut mid-word. */}
+        <div className="flex items-center gap-1 [&_[data-slot=select-value]]:hidden @[22rem]/composer:[&_[data-slot=select-value]]:inline">
+          {onSendMessage ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 rounded-full text-muted-foreground"
+              disabled={disabled || streaming || readingFiles || files.length >= MAX_FILES}
+              aria-label="Add file"
+              title="Add a text file, PDF or image (up to 3)"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Plus aria-hidden="true" className="size-4" />
+            </Button>
+          ) : null}
           {onSelectModel ? (
             <ModelSelector
               selected={selectedModel ?? null}
@@ -172,9 +270,14 @@ export function AssistantComposer({
           )}
         </div>
       </div>
+      {fileError ? (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {fileError}
+        </p>
+      ) : null}
       <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-xs leading-4 text-muted-foreground">
         <Info aria-hidden="true" className="size-3.5 shrink-0" />
-        <span>Nove can make mistakes. Check important details.</span>
+        <span>Neva can make mistakes. Check important details.</span>
       </p>
     </div>
   );

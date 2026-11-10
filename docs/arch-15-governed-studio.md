@@ -283,6 +283,32 @@ and supported numbers. Unknown inputs remain visible. Causal strength is
 independent: `arithmetic`, `association`, `supported_effect`, or `unknown`.
 Strong evidence for a query does not establish a causal effect.
 
+A number counts as supported when a result cell, a computation over cells, a
+count, the question, or a date backs it. Years are backed by the result's date
+cells (text or date values), the period the query asked for, or the data range
+it read. A number inside a result label ("Mie Instan Goreng 85g") belongs to
+that name. A wrong figure next to the right name is still refused. Units
+declared by the Semantic View travel with the rows. A declared unit decides
+whether a column is a percentage, so a money `gross_margin` is never written
+with "%".
+
+A comparison with a period that has no rows is settled, not failed. When
+`compute_metrics` is asked for a period (a year, month or day label) that a
+complete, dated result spans but holds no rows for, it returns that the
+comparison is not possible and records the empty period as a fact. "Spans"
+means the query asked for those dates, or the period lies outside the range the
+whole data covers (`period.scope = "data"`). The answer may then name that
+year. A label the result did not ask for, a non-date label, or a cut-off
+result is still an error. A label column named with a note after it
+("order_date 2026 sales; ...") is read as the column it starts with. Any other
+name that is not a result column is refused.
+
+Data answers name their sources the way a reader does. A Semantic View result
+tells the model the label to use (`retail_sales` is "Retail Sales data"). The
+loop also renames the views that answered in the final text, outside code
+blocks, and replaces the words "Semantic View" with "data". The internal name
+stays in the step trace and the evidence envelope.
+
 The bounded `EvidenceEnvelope` composes this health record with published
 semantic identity, metrics, dimensions, exact comparison periods, timezone,
 filter shapes, warnings, and evidence references. The same envelope is persisted
@@ -330,7 +356,7 @@ definition.
 Successful validated semantic execution can derive an `InvestigationSeed` for
 the existing comparison, News, and Investigation owners. Execution first persists
 a concrete timezone-aware time context; SQL and provenance use those same bounds.
-Direct, Nove, evaluations, and scheduled turns receive an explicit timezone
+Direct, Neva, evaluations, and scheduled turns receive an explicit timezone
 from the existing `configured_timezone()` owner of `NOVA_TIMEZONE`. An explicit
 object timezone wins. Persisted execution contexts retain their original timezone
 and clock during retries; configuration changes do not reinterpret historical

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentModelSelect } from "./model-select";
 import { AgentResourceBindings } from "./resource-bindings";
@@ -9,6 +9,7 @@ import { agentVersionsApi } from "../api";
 import { toAgentDraft } from "./agent-draft";
 import { semanticViewsApi, type SemanticView } from "@/features/intelligence/semantic-views-api";
 import { Badge } from "@/components/ui/badge";
+import { StateBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -40,9 +41,11 @@ import {
   type CustomToolDraft,
 } from "@/features/agents/agent-detail/custom-tool-editor";
 
-/** Tools a user agent may bundle; authoring tools are Nove-only. */
+/**
+ * Tools a user agent may bundle; authoring tools are Neva-only. Loading the
+ * agent's skills is always on and so is not listed.
+ */
 const BUNDLEABLE = new Set([
-  "load_skill",
   "semantic_query",
   "semantic_search",
   "data_to_chart",
@@ -76,6 +79,7 @@ export function AgentConfigurationTab({
   const [draft, setDraft] = useState<AgentCreateInput>(() =>
     toAgentDraft(agent),
   );
+  const [isDirty, setIsDirty] = useState(false);
   const base = useRef(agent);
   const dirty = useRef(false);
   useEffect(() => {
@@ -86,6 +90,7 @@ export function AgentConfigurationTab({
   }, [agent]);
   useEffect(() => {
     dirty.current = JSON.stringify(draft) !== JSON.stringify(toAgentDraft(base.current));
+    setIsDirty(dirty.current);
     onDirtyChange?.(dirty.current);
   }, [draft, agent, onDirtyChange]);
 
@@ -95,6 +100,7 @@ export function AgentConfigurationTab({
     onSuccess: (version) => {
       onDirtyChange?.(false);
       dirty.current = false;
+      setIsDirty(false);
       toast.success("Draft saved. Review the changes before publishing.");
       if (onDraftSaved) onDraftSaved(version.version_id); else onSaved();
     },
@@ -107,17 +113,11 @@ export function AgentConfigurationTab({
   ) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="outline" disabled={save.isPending} onClick={() => { base.current = agent; dirty.current = false; setDraft(toAgentDraft(agent)); }}>Discard edits</Button>
-        <Button disabled={save.isPending} onClick={() => save.mutate(draft)}>
-          <Save className="size-4" />
-          Save draft
-        </Button>
-      </div>
-
-      <Tabs defaultValue="general">
-        <TabsList className="h-auto flex-wrap">
+    // The sub-tab row and its actions stay put; the sub-tab's content
+    // scrolls below them, inside the agent page's fixed frame.
+    <Tabs defaultValue="general" className="flex min-h-0 flex-1 flex-col gap-0">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <TabsList className="h-auto max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&>[role=tab]]:flex-none">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
@@ -125,8 +125,29 @@ export function AgentConfigurationTab({
           <TabsTrigger value="skills">Skills</TabsTrigger>
           <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
+        {/* One action. It wakes up when there is something to save, and the
+            state beside it says why; saving makes a draft version to review
+            before it is published. */}
+        <div className="flex items-center gap-3">
+          {isDirty ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
+              Unsaved changes
+            </span>
+          ) : null}
+          <Button
+            size="sm"
+            className="min-w-20"
+            disabled={!isDirty || save.isPending}
+            onClick={() => save.mutate(draft)}
+          >
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
 
-        <TabsContent value="general" className="mt-6 max-w-2xl space-y-5">
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto pb-6">
+        <TabsContent value="general" className="max-w-2xl space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="c-name">Display name</Label>
             <Input
@@ -183,7 +204,7 @@ export function AgentConfigurationTab({
           </div>
         </TabsContent>
 
-        <TabsContent value="instructions" className="mt-6 max-w-3xl space-y-4">
+        <TabsContent value="instructions" className="max-w-3xl space-y-4">
           <AgentModelSelect
             providerId={draft.model_provider_id ?? null}
             modelName={draft.model_name ?? null}
@@ -215,24 +236,24 @@ export function AgentConfigurationTab({
           </div>
         </TabsContent>
 
-        <TabsContent value="tools" className="mt-6">
+        <TabsContent value="tools">
           <ToolsConfig draft={draft} set={set} />
         </TabsContent>
 
-        <TabsContent value="skills" className="mt-6">
+        <TabsContent value="skills">
           <SkillsConfig draft={draft} set={set} />
         </TabsContent>
 
-        <TabsContent value="resources" className="mt-6">
+        <TabsContent value="resources">
           <AgentResourceBindings value={draft.resource_bindings ?? { search_indexes: [], feature_groups: [] }}
             onChange={(value) => set("resource_bindings", value)} />
         </TabsContent>
 
-        <TabsContent value="mcp" className="mt-6 max-w-2xl">
+        <TabsContent value="mcp" className="max-w-2xl">
           <McpConfig />
         </TabsContent>
-      </Tabs>
-    </div>
+      </div>
+    </Tabs>
   );
 }
 
@@ -326,7 +347,7 @@ function ToolsConfig({
       <p className="text-sm text-muted-foreground">
         Choose the tools this agent can use during conversations.
         {" "}Data questions use the agent’s bound Semantic Views and configured tools.
-        {" "}Use Nove for free-form SQL and database exploration.
+        {" "}Use Neva for free-form SQL and database exploration.
       </p>
 
       <WebSearchSwitch checked={webSearchOn} onCheckedChange={() => toggle(WEB_SEARCH)} />
@@ -421,9 +442,7 @@ function ToolsConfig({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{view?.name ?? id}</span>
-                      <Badge variant="outline">
-                        {view?.status ?? "Unavailable"}
-                      </Badge>
+                      <StateBadge status={view?.status ?? "Unavailable"} />
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {view?.database_name ?? "View is no longer accessible"}
@@ -679,27 +698,32 @@ function SkillsConfig({
     queryKey: ["skills"],
     queryFn: () => skillsApi.list(),
   });
-  const skills = skillsQuery.data?.skills ?? [];
+  // Platform skills written for the Console assistant (SQL authoring,
+  // administration) are not offered to Studio agents; the backend ignores
+  // them for agents too.
+  const skills = (skillsQuery.data?.skills ?? []).filter(
+    (skill) => skill.source !== "builtin" || skill.for_agents !== false,
+  );
 
-  const setMode = (name: string, mode: "off" | "default" | "discoverable") => {
-    const defaults = new Set(draft.default_skills ?? []);
-    const discoverable = new Set(draft.discoverable_skills ?? []);
-    defaults.delete(name);
-    discoverable.delete(name);
-    if (mode === "default") defaults.add(name);
-    if (mode === "discoverable") discoverable.add(name);
-    set("default_skills", Array.from(defaults));
-    set("discoverable_skills", Array.from(discoverable));
+  // A skill is either on, loaded only when a question needs it (discoverable),
+  // or off. Turning one on or off also clears an older "load every turn"
+  // (default) choice for it.
+  const toggle = (name: string, on: boolean) => {
+    const defaults = (draft.default_skills ?? []).filter((item) => item !== name);
+    const discoverable = (draft.discoverable_skills ?? []).filter(
+      (item) => item !== name,
+    );
+    set("default_skills", defaults);
+    set("discoverable_skills", on ? [...discoverable, name] : discoverable);
   };
 
   return (
     <div className="max-w-3xl space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium">Skill availability</p>
+          <p className="text-sm font-medium">Skills</p>
           <p className="text-xs text-muted-foreground">
-            Default skills load on every turn. Discoverable skills load only
-            when the router finds them relevant.
+            A skill that is on loads only when a question needs it.
           </p>
         </div>
         <Button asChild size="sm" variant="ghost">
@@ -715,21 +739,26 @@ function SkillsConfig({
       ) : (
         <div className="divide-y rounded-lg border">
           {skills.map((skill) => {
-            const mode = (draft.default_skills ?? []).includes(skill.name)
-              ? "default"
-              : (draft.discoverable_skills ?? []).includes(skill.name)
-                ? "discoverable"
-                : "off";
+            // An agent with ML tools always has the ML playbook on demand
+            // (agents.service), so its switch stays on.
+            const automatic =
+              skill.name === "native-ml" &&
+              (draft.default_tools ?? []).includes("ml_execute");
+            const on =
+              automatic ||
+              (draft.default_skills ?? []).includes(skill.name) ||
+              (draft.discoverable_skills ?? []).includes(skill.name);
+            const id = `skill-${skill.skill_id}`;
             return (
               <div
                 key={skill.skill_id}
-                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex items-start justify-between gap-4 px-4 py-3"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-medium">
+                    <label htmlFor={id} className="font-mono text-xs font-medium">
                       {skill.name}
-                    </span>
+                    </label>
                     <Badge variant="outline">
                       {skill.source === "builtin" ? "Platform" : "User"}
                     </Badge>
@@ -739,28 +768,19 @@ function SkillsConfig({
                       {skill.description}
                     </p>
                   ) : null}
+                  {automatic ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Always on for this agent because it uses ML.
+                    </p>
+                  ) : null}
                 </div>
-                <Select
-                  value={mode}
-                  onValueChange={(value) =>
-                    setMode(
-                      skill.name,
-                      value as "off" | "default" | "discoverable",
-                    )
-                  }
-                >
-                  <SelectTrigger
-                    className="w-full sm:w-40"
-                    aria-label={`${skill.name} mode`}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="off">Not available</SelectItem>
-                    <SelectItem value="default">Default</SelectItem>
-                    <SelectItem value="discoverable">Discoverable</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Switch
+                  id={id}
+                  className="mt-0.5 shrink-0"
+                  checked={on}
+                  disabled={automatic}
+                  onCheckedChange={(checked) => toggle(skill.name, checked)}
+                />
               </div>
             );
           })}
@@ -805,15 +825,7 @@ function McpConfig() {
                 <Badge variant="outline">{server.transport}</Badge>
               </div>
               {server.last_status ? (
-                <Badge
-                  variant={
-                    server.last_status === "connected"
-                      ? "secondary"
-                      : "destructive"
-                  }
-                >
-                  {server.last_status}
-                </Badge>
+                <StateBadge status={server.last_status} />
               ) : null}
             </div>
           ))}

@@ -2,6 +2,9 @@ import { Logo } from '@/assets/logo'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { z } from 'zod'
+import { useNevaSurface } from '@/features/assistant/neva-surface-hook'
+import { defineNevaCapability } from '@/features/assistant/surface-registry'
 import { toast } from 'sonner'
 import {
   ChevronRight,
@@ -640,6 +643,42 @@ export function DatabaseExplorerPage() {
 
   const selectedPath = selectedNode?.path ?? []
   const selectedQualifiedName = useMemo(() => qualifiedNameOf(selectedNode), [selectedNode])
+  useNevaSurface({
+    id: 'database_explorer',
+    route: '/database-explorer',
+    title: selectedQualifiedName ? `Database Explorer: ${selectedQualifiedName}` : 'Database Explorer',
+    context: () => ({
+      ...(selectedNode
+        ? {
+            entity: {
+              type: selectedNode.type,
+              id: selectedQualifiedName || selectedNode.id,
+              name: selectedNode.label,
+              metadata: {
+                catalog: selectedNode.catalog ?? 'default_catalog',
+                database: selectedNode.database ?? null,
+              },
+            },
+          }
+        : {}),
+      view: { filters: { search: searchQuery } },
+    }),
+    capabilities: [
+      defineNevaCapability({
+        name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
+        execute: () => handleRefresh(),
+      }),
+      defineNevaCapability({
+        name: 'surface.set_filter', risk: 'safe',
+        argsSchema: z.object({ filter: z.enum(['search']), value: z.string().max(120) }),
+        execute: ({ value }) => setSearchQuery(value),
+      }),
+    ],
+    suggestedActions: [
+      { label: 'Explain this object', prompt: 'Explain what this object holds and how to query it.' },
+      { label: 'Write a query', prompt: 'Write a SQL query for this object.' },
+    ],
+  })
   const handleCopyPath = useCallback(async () => {
     if (!selectedQualifiedName) return
     try {

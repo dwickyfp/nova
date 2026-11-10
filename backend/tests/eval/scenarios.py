@@ -30,9 +30,10 @@ from io import BytesIO
 
 from PIL import Image
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.attachments import attachment_prompt, validate_attachments
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.messages import say
 from app.modules.assistant.state import AssistantMessage
 from app.modules.assistant.tools import ToolOutcome
 from app.modules.assistant.tools.client_capability import InvokeClientCapabilityTool
@@ -69,7 +70,7 @@ def scenario_surface_filter_avoids_planner() -> Scenario:
             self.runs.append(invocation)
             return await super().run(invocation, context)
 
-    app = NoveAppContext.model_validate({
+    app = NevaAppContext.model_validate({
         "version": 1,
         "surface": {"id": "monitoring.query_history", "route": "/query-history"},
         "capabilities": ["surface.set_filter"],
@@ -1413,10 +1414,10 @@ def _two_calls_announced(result) -> bool | str:
 
 def all_scenarios() -> list[Scenario]:
     """Every golden scenario, in a stable order."""
-    from tests.eval.nove_scenarios import nove_scenarios
+    from tests.eval.neva_scenarios import neva_scenarios
 
     return [
-        *nove_scenarios(),
+        *neva_scenarios(),
         Scenario(
             name="qualitative_data_claim_requires_execution",
             content="Which revenue segment leads this month?",
@@ -1432,7 +1433,12 @@ def all_scenarios() -> list[Scenario]:
                 check(
                     "required execution enforced", finished_with("required_capability_incomplete")
                 ),
-                check("no unsupported text or secrets", lambda result: not result.text),
+                # Only Nova's own fixed "could not finish" words, never the
+                # model's unverified claim.
+                check(
+                    "no unsupported text or secrets",
+                    lambda result: result.text == say("loop.incomplete", "en"),
+                ),
                 check("no query silently executed", did_not_use_tool("query_execute")),
                 check("one repair only", lambda result: result.provider_calls == 2),
             ],

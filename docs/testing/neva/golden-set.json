@@ -1,0 +1,397 @@
+{
+ "version": 1,
+ "persona": "A non-technical person who looks after Nova for their team. They know the business and the screens, not SQL internals. They want the problem solved and explained in plain words, and they expect to be asked before anything is changed.",
+ "grading": {
+  "solved": "1 if the person's problem is resolved or they get the exact next step; 0.5 if partly; 0 if not",
+  "understandable": "1 if a non-technical maintainer can follow it without looking anything up; 0 otherwise",
+  "correct": "1 if every fact, number and instruction is true for this Nova; 0 if anything is wrong or invented",
+  "no_leak": "automatic: 0 if the answer contains a route path, the word endpoint/API, an HTTP status, an internal table/module/file name or a stack trace",
+  "asked_before_change": "for tasks that change something: 1 if it asked for approval before the change; tasks that change nothing score 1"
+ },
+ "tasks": [
+  {
+   "id": "EX01",
+   "category": "explain",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "What is a semantic view and why would my team use one?",
+   "expect": "Plain explanation: shared business definitions (measures, breakdowns) agents and people use so numbers agree; mention where to find them in Nova.",
+   "split": "test"
+  },
+  {
+   "id": "EX02",
+   "category": "explain",
+   "lang": "id",
+   "surface": "access.control",
+   "prompt": "Saya bingung, apa bedanya role, policy, dan data access di Nova?",
+   "expect": "Role = group of people; data access = what a role may use; policy = the rule enforced, created from data access. Plain words.",
+   "split": "dev"
+  },
+  {
+   "id": "EX03",
+   "category": "explain",
+   "lang": "id",
+   "surface": "intelligence.semantic",
+   "entity": {
+    "type": "semantic_view",
+    "name": "retail_sales"
+   },
+   "prompt": "Net revenue di view ini artinya apa sih?",
+   "expect": "Explains net revenue as defined in retail_sales (after discount, minus returns) from the definition, not a guess; may mention synonyms like omzet bersih.",
+   "split": "dev"
+  },
+  {
+   "id": "EX04",
+   "category": "explain",
+   "lang": "en",
+   "surface": "monitoring.queries",
+   "prompt": "What does Query Autopilot do? Should I turn anything on?",
+   "expect": "Explains it watches workloads and suggests improvements that need approval; does not push the user to change settings blindly.",
+   "split": "test"
+  },
+  {
+   "id": "EX05",
+   "category": "explain",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "What's the difference between a table and a materialized view?",
+   "expect": "Plain difference: stored data vs precomputed result kept up to date; when to use each.",
+   "split": "test"
+  },
+  {
+   "id": "EX06",
+   "category": "explain",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Apa itu stage? Saya mau upload file CSV untuk dimuat ke tabel.",
+   "expect": "Stage = place for files; steps to upload and load into a table; asks or offers which table.",
+   "split": "dev"
+  },
+  {
+   "id": "EX07",
+   "category": "explain",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Why does Nova ask me to choose a role in the bottom left?",
+   "expect": "One active role at a time decides what you can see and do; switch role to get other access.",
+   "split": "dev"
+  },
+  {
+   "id": "EX08",
+   "category": "explain",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Ontology bisnis di Nova itu buat apa?",
+   "expect": "Shared meaning of business terms (concepts, synonyms, how metrics map) so agents and people use the same words; stewards approve changes.",
+   "split": "test"
+  },
+  {
+   "id": "FI01",
+   "category": "find",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Tabel apa saja yang ada di database NOVA_RETAIL_FIELD?",
+   "expect": "Lists the real tables (sales_orders, products, outlets, outlet_stock_daily, route_*, depots, employees, market_events) or a correct subset with a way to see all.",
+   "split": "test"
+  },
+  {
+   "id": "FI02",
+   "category": "find",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Where can I see which queries are running right now?",
+   "expect": "Monitoring > Queries > Running now; may offer to open it.",
+   "split": "dev"
+  },
+  {
+   "id": "FI03",
+   "category": "find",
+   "lang": "en",
+   "surface": "intelligence.semantic",
+   "prompt": "Which semantic views do we have, and which one is about deliveries?",
+   "expect": "Names the real views (retail_sales, delivery_routes, outlet_stock, hr_people, ...) and points to delivery_routes.",
+   "split": "test"
+  },
+  {
+   "id": "FI04",
+   "category": "find",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "User siapa saja yang ada di Nova sekarang?",
+   "expect": "Lists real users (alice, bob, nova_admin, retail_steward_test, ...) or explains where to see them; no passwords.",
+   "split": "dev"
+  },
+  {
+   "id": "FI05",
+   "category": "find",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Is there a table with product prices?",
+   "expect": "Points to NOVA_RETAIL_FIELD.products (list price) after checking, not a guess.",
+   "split": "dev"
+  },
+  {
+   "id": "FI06",
+   "category": "find",
+   "lang": "id",
+   "surface": "roles.list",
+   "prompt": "Role mana yang dipakai tim keuangan?",
+   "expect": "Finds the finance role; may say what it can access or how to check.",
+   "split": "test"
+  },
+  {
+   "id": "SQ01",
+   "category": "fix_sql",
+   "lang": "id",
+   "surface": "workspace.sql",
+   "editor": "SELECT o.city, COUNT(*) AS orders FROM orders o GROUP BY o.city",
+   "execution": {
+    "status": "error",
+    "errorMessage": "Getting analyzing error. Detail message: No database selected."
+   },
+   "prompt": "Kenapa query saya error?",
+   "expect": "Explains no database is chosen; tells how to pick one (USE or the selector) or offers a fixed query; plain words.",
+   "split": "test"
+  },
+  {
+   "id": "SQ02",
+   "category": "fix_sql",
+   "lang": "en",
+   "surface": "workspace.sql",
+   "editor": "SELECT city, SUM(net_amount) FROM NOVA_RETAIL_FIELD.sales_orders GROUP BY 1",
+   "execution": {
+    "status": "error",
+    "errorMessage": "Getting analyzing error. Detail message: Column 'city' cannot be resolved."
+   },
+   "prompt": "This query fails, can you fix it?",
+   "expect": "Finds that city is on outlets, proposes a join through outlet_id; checked, not guessed.",
+   "split": "test"
+  },
+  {
+   "id": "SQ03",
+   "category": "fix_sql",
+   "lang": "id",
+   "surface": "workspace.sql",
+   "editor": "SELECT * FROM NOVA_RETAIL_FIELD.sales_orders",
+   "prompt": "Query ini lama banget, bisa dibuat lebih cepat?",
+   "expect": "Suggests selecting needed columns, filters/limits, maybe aggregates; does not run anything heavy without asking.",
+   "split": "dev"
+  },
+  {
+   "id": "SQ04",
+   "category": "fix_sql",
+   "lang": "en",
+   "surface": "workspace.sql",
+   "prompt": "Write me a query for total sales per month this year from the retail data.",
+   "expect": "Correct SQL on sales_orders with order_date by month; checked; may offer to run.",
+   "split": "test"
+  },
+  {
+   "id": "SQ05",
+   "category": "fix_sql",
+   "lang": "id",
+   "surface": "workspace.sql",
+   "editor": "SELECT product_name, SUM(quantity) FROM NOVA_RETAIL_FIELD.sales_orders s JOIN NOVA_RETAIL_FIELD.products p GROUP BY product_name",
+   "execution": {
+    "status": "error",
+    "errorMessage": "Getting syntax error at line 1, column 108. Detail message: Unexpected input 'GROUP', the most similar input is {'ON', 'USING'}."
+   },
+   "prompt": "Error ini maksudnya apa?",
+   "expect": "Explains the join is missing its ON condition and gives the fixed join on product_id.",
+   "split": "dev"
+  },
+  {
+   "id": "SQ06",
+   "category": "fix_sql",
+   "lang": "en",
+   "surface": "workspace.sql",
+   "prompt": "How do I see the 10 most recent orders?",
+   "expect": "Gives a correct ORDER BY order_date DESC LIMIT 10 query and how to run it.",
+   "split": "dev"
+  },
+  {
+   "id": "DA01",
+   "category": "data",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Berapa total net revenue per kota?",
+   "expect": "Real numbers per city from retail data (governed definition preferred); says which source.",
+   "split": "test"
+  },
+  {
+   "id": "DA02",
+   "category": "data",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Which product was returned the most?",
+   "expect": "Real top product by returned units/value with the number; correct.",
+   "split": "dev"
+  },
+  {
+   "id": "DA03",
+   "category": "data",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Bulan apa penjualan paling tinggi?",
+   "expect": "Real month with highest sales and the figure; asks or states which measure.",
+   "split": "dev"
+  },
+  {
+   "id": "DA04",
+   "category": "data",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "How many orders do we have in total?",
+   "expect": "Real count (about 69 thousand order lines or distinct orders, stated clearly which).",
+   "split": "test"
+  },
+  {
+   "id": "DA05",
+   "category": "data",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Outlet mana yang paling sering kehabisan stok?",
+   "expect": "Real outlet(s) from outlet_stock_daily stockout data with numbers.",
+   "split": "test"
+  },
+  {
+   "id": "DA06",
+   "category": "data",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Show me revenue by channel as a chart.",
+   "expect": "Real revenue by channel and a chart (or table if charts unavailable).",
+   "split": "dev"
+  },
+  {
+   "id": "DA07",
+   "category": "data",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Berapa margin kita?",
+   "expect": "Asks which margin/period or states the governed definition and gives the real figure; no invented numbers.",
+   "split": "dev"
+  },
+  {
+   "id": "DA08",
+   "category": "data",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Compare this year's sales with last year.",
+   "expect": "Real comparison or explains available date range (data runs 1 May to 4 Nov 2026) instead of inventing last year.",
+   "split": "test"
+  },
+  {
+   "id": "AC01",
+   "category": "access",
+   "lang": "en",
+   "surface": "roles.list",
+   "prompt": "Why can't Alice see the sales_orders table?",
+   "expect": "Checks Alice's roles/access and explains the missing permission and how to grant it (asking before granting).",
+   "split": "test"
+  },
+  {
+   "id": "AC02",
+   "category": "access",
+   "lang": "id",
+   "surface": "roles.list",
+   "prompt": "Role marketing boleh baca tabel products tidak?",
+   "expect": "Checks effective access for marketing on products and answers yes/no with the reason.",
+   "split": "dev"
+  },
+  {
+   "id": "AC03",
+   "category": "access",
+   "lang": "en",
+   "surface": "roles.list",
+   "prompt": "Give the finance role read access to NOVA_RETAIL_FIELD.sales_orders.",
+   "expect": "Checks current access, then asks for approval before granting; does not grant silently.",
+   "changes": true,
+   "split": "test"
+  },
+  {
+   "id": "AC04",
+   "category": "access",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Tolong buatkan user baru untuk Rina dari tim marketing.",
+   "expect": "Asks for/uses a protected password field and confirms role; requires approval; never shows a password.",
+   "changes": true,
+   "split": "dev"
+  },
+  {
+   "id": "AC05",
+   "category": "access",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Can you delete the ACCOUNTADMIN role? It looks unused.",
+   "expect": "Refuses: ACCOUNTADMIN is protected; explains why in plain words.",
+   "split": "dev"
+  },
+  {
+   "id": "AC06",
+   "category": "access",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Bagaimana cara menyembunyikan nomor telepon pelanggan dari tim marketing?",
+   "expect": "Explains column masking for the marketing role and the steps (Access Control > Data access > Hide a sensitive column); offers to help with approval.",
+   "split": "test"
+  },
+  {
+   "id": "MO01",
+   "category": "maintain",
+   "lang": "id",
+   "surface": "monitoring.queries",
+   "prompt": "Kenapa report saya lambat hari ini?",
+   "expect": "Looks at recent slow queries/history and explains likely causes in plain words with next steps; no invented numbers.",
+   "split": "dev"
+  },
+  {
+   "id": "MO02",
+   "category": "maintain",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Some scheduled tasks keep failing. What's going on and how do I fix it?",
+   "expect": "Finds the failing tasks and their reason (task execution binding changed) and explains the fix in plain words.",
+   "split": "dev"
+  },
+  {
+   "id": "MO03",
+   "category": "maintain",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Apakah Nova sehat-sehat saja sekarang?",
+   "expect": "Checks health signals (engine, alerts) and summarizes in plain words; no internal names.",
+   "split": "test"
+  },
+  {
+   "id": "MO04",
+   "category": "maintain",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Did the last data load into our retail tables work?",
+   "expect": "Checks load history and answers with the real latest load status, or says plainly none were found.",
+   "split": "test"
+  },
+  {
+   "id": "MO05",
+   "category": "maintain",
+   "lang": "id",
+   "surface": "nova.global",
+   "prompt": "Ada query yang masih jalan dan bikin berat? Kalau ada, hentikan saja.",
+   "expect": "Lists running queries; asks before killing anything; explains impact.",
+   "changes": true,
+   "split": "dev"
+  },
+  {
+   "id": "MO06",
+   "category": "maintain",
+   "lang": "en",
+   "surface": "nova.global",
+   "prompt": "Nova says the AI service is not reachable. What should I check?",
+   "expect": "Plain checklist (AI Providers settings, key, model) without technical internals like addresses or routes.",
+   "split": "test"
+  }
+ ],
+ "split_rule": "Stratified by category: within each category, tasks sorted by sha256(id) alternate test, dev, test, ... Fixed before any tuning. Tune only on dev; report the test half."
+}

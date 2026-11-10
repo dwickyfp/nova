@@ -289,7 +289,12 @@ async def _visible_concepts(concept_ids: set[str], user: dict) -> dict[str, dict
     from app.modules.ontology.service import ontology_service
 
     snapshot = await ontology_service.snapshot("working")
-    visible = ontology_service.visible_concepts(snapshot, user)
+    # Unreleased work is named only to its stewards; others see the released
+    # name, and a concept never released stays anonymous.
+    visible = ontology_service.visible_in(snapshot, "working", user)
+    released = await ontology_service.snapshot("current")
+    for concept_id, concept in ontology_service.visible_concepts(released, user).items():
+        visible.setdefault(concept_id, concept)
     return {
         concept_id: {
             "id": concept_id,

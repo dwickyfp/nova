@@ -186,3 +186,59 @@ async def test_studio_tells_an_owner_which_of_their_agents_wait_for_access(monke
 
     grants.return_value = [{"role_name": "analyst", "verified_fingerprint": "current"}]
     assert (await router.list_agents(studio=True, user=_user("analyst"))).needs_access == []
+
+
+def _session_user(role: str = "analyst", **extra) -> dict:
+    return {**_user(role), "session_id": "s-1", "security_context_version": 3, **extra}
+
+
+@pytest.mark.asyncio
+async def test_every_request_checks_access_again(monkeypatch) -> None:
+    # Nothing is reused between requests: a grant revoked anywhere, even
+    # directly in the policy store, denies on the very next request.
+    agent = _agent()
+    grants = AsyncMock(return_value=[{"role_name": "analyst", "verified_fingerprint": "current"}])
+    monkeypatch.setattr(agent_repository, "list_agent_roles", grants)
+    monkeypatch.setattr(access, "access_fingerprint", AsyncMock(return_value="current"))
+    verify = AsyncMock(return_value=[AccessItem("table", "sales.orders", True)])
+    monkeypatch.setattr(access, "verify_access", verify)
+
+    user = _session_user()
+    assert await access.has_verified_access(agent, role_name="analyst", user=user)
+    assert await access.has_verified_access(agent, role_name="analyst", user=user)
+    assert verify.await_count == 2
+
+    verify.return_value = [AccessItem("table", "sales.orders", False)]
+    assert not await access.has_verified_access(agent, role_name="analyst", user=user)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_share_one_access_check(monkeypatch) -> None:
+    import asyncio
+
+    agent = _agent()
+    monkeypatch.setattr(
+        agent_repository,
+        "list_agent_roles",
+        AsyncMock(return_value=[{"role_name": "analyst", "verified_fingerprint": "current"}]),
+    )
+    monkeypatch.setattr(access, "access_fingerprint", AsyncMock(return_value="current"))
+    gate = asyncio.Event()
+    calls = 0
+
+    async def slow_verify(**kwargs):
+        nonlocal calls
+        calls += 1
+        await gate.wait()
+        return [AccessItem("table", "sales.orders", True)]
+
+    monkeypatch.setattr(access, "verify_access", slow_verify)
+    user = _session_user()
+    waiting = [
+        asyncio.create_task(access.has_verified_access(agent, role_name="analyst", user=user))
+        for _ in range(4)
+    ]
+    await asyncio.sleep(0.01)
+    gate.set()
+    assert all(await asyncio.gather(*waiting))
+    assert calls == 1

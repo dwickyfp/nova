@@ -18,6 +18,7 @@ import {
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
 import { Badge } from '@/components/ui/badge'
+import { StateBadge } from '@/components/ui/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -593,12 +594,7 @@ export function ProvidersTab() {
                       </span>
                     </td>
                     <td className='px-4 py-3 text-center'>
-                      <Badge
-                        variant={provider.is_active ? 'default' : 'secondary'}
-                        className='font-normal'
-                      >
-                        {provider.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
+                      <StateBadge status={provider.is_active ? 'active' : 'inactive'} />
                     </td>
                     <td className='px-4 py-3'>
                       <div
@@ -722,18 +718,9 @@ export function ProvidersTab() {
                                           '—')}
                                     </td>
                                     <td className='py-2 pr-4 text-center'>
-                                      <Badge
-                                        variant={
-                                          model.is_active
-                                            ? 'default'
-                                            : 'secondary'
-                                        }
-                                        className='font-normal'
-                                      >
-                                        {model.is_active
-                                          ? 'Active'
-                                          : 'Inactive'}
-                                      </Badge>
+                                      <StateBadge
+                                        status={model.is_active ? 'active' : 'inactive'}
+                                      />
                                     </td>
                                     <td className='py-2 text-right'>
                                       <DropdownMenu>

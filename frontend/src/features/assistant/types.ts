@@ -167,6 +167,8 @@ export type AssistantEvent = (
       total_tokens?: number;
       prompt_tokens?: number;
       completion_tokens?: number;
+      /** Where the answer's facts came from; absent for a general answer. */
+      source?: AnswerSource;
     }
   | { type: "error"; code: string; message: string }
   | { type: "ping" }
@@ -192,3 +194,19 @@ export type ConsentDecisionPayload = "allow_once" | "allow_session" | "deny";
 
 /** Outcome of a turn, so the transcript can mark a cancelled partial answer. */
 export type TurnState = "streaming" | "done" | "cancelled" | "error";
+
+/** The kind of source an answer was built from; only governed ones are trusted. */
+export type AnswerSource = {
+  kind: "semantic_view" | "glossary" | "query" | "catalog" | "guide";
+  trusted: boolean;
+};
+
+const SOURCE_KINDS = new Set(["semantic_view", "glossary", "query", "catalog", "guide"]);
+
+export function answerSource(value: unknown): AnswerSource | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { kind, trusted } = value as { kind?: unknown; trusted?: unknown };
+  return typeof kind === "string" && SOURCE_KINDS.has(kind)
+    ? { kind: kind as AnswerSource["kind"], trusted: trusted === true }
+    : undefined;
+}

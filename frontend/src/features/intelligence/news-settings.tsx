@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import {
   semanticViewsApi,
@@ -232,6 +238,7 @@ export function NewsSettings({
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
   const canManage = "news_config" in view;
   const enabled = view.news_enabled === true;
   const defaults = useQuery({
@@ -247,103 +254,122 @@ export function NewsSettings({
       semanticViewsApi.setNews(view.id, body),
     onSuccess: () => {
       setEditing(false);
+      setShowCoverage(false);
       onChanged();
     },
   });
   const stored = view.news_config;
+  const blocked = canManage && !view.active_version;
   return (
-    <section
-      aria-labelledby="semantic-view-news"
-      className="min-w-0 rounded-lg border bg-background p-4 sm:p-5"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 id="semantic-view-news" className="font-medium">
-            News
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Report material changes in this view&apos;s metrics as stories in
-            Studio. Readers see only what their role can read.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <StatusBadge tone={enabled ? "success" : "neutral"}>
-            {enabled ? "On" : "Off"}
-          </StatusBadge>
-          {canManage && (
-            <Switch
-              checked={enabled}
-              disabled={save.isPending || !view.active_version}
-              aria-label="Publish News from this view"
-              onCheckedChange={(on) => {
-                if (on) setEditing(true);
-                else save.mutate({ enabled: false });
-              }}
-            />
-          )}
-        </div>
-      </div>
-      {canManage && !view.active_version && (
-        <p className="mt-3 text-sm text-muted-foreground">
+    // A compact header control: the switch, and the coverage behind a dialog.
+    <div className="flex items-center gap-2" aria-labelledby="semantic-view-news">
+      <span id="semantic-view-news" className="text-sm">
+        News
+      </span>
+      {canManage ? (
+        <Switch
+          checked={enabled}
+          disabled={save.isPending || !view.active_version}
+          aria-label="Publish News from this view"
+          title={blocked ? "Publish a version before switching News on." : undefined}
+          aria-describedby={blocked ? "semantic-view-news-blocked" : undefined}
+          onCheckedChange={(on) => {
+            if (on) setEditing(true);
+            else save.mutate({ enabled: false });
+          }}
+        />
+      ) : (
+        <span className="text-sm text-muted-foreground">{enabled ? "On" : "Off"}</span>
+      )}
+      {canManage && enabled && stored ? (
+        <Button variant="ghost" size="sm" onClick={() => setShowCoverage(true)}>
+          Coverage
+        </Button>
+      ) : null}
+      {blocked ? (
+        <span id="semantic-view-news-blocked" className="sr-only">
           Publish a version before switching News on.
-        </p>
-      )}
-      {save.isError && (
-        <p role="alert" className="mt-3 text-sm text-destructive">
-          {save.error instanceof Error
-            ? save.error.message
-            : "News settings could not be saved."}
-        </p>
-      )}
-      {canManage && enabled && stored && !editing && (
-        <div className="mt-4 space-y-3 text-sm">
-          <dl className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <dt className="text-muted-foreground">Metrics</dt>
-              <dd className="mt-1 break-words">
-                {stored.metrics.map(humanize).join(", ")}
-              </dd>
+        </span>
+      ) : null}
+      <Dialog
+        open={editing || showCoverage || save.isError}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditing(false);
+            setShowCoverage(false);
+            save.reset();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>News from this view</DialogTitle>
+            <DialogDescription>
+              Material changes in this view&apos;s numbers become stories in Studio.
+              Readers see only what their role can read.
+            </DialogDescription>
+          </DialogHeader>
+          {save.isError && (
+            <p role="alert" className="text-sm text-destructive">
+              {save.error instanceof Error
+                ? save.error.message
+                : "News settings could not be saved."}
+            </p>
+          )}
+          {showCoverage && !editing && stored ? (
+            <div className="space-y-4 text-sm">
+              <dl className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <dt className="text-muted-foreground">Numbers watched</dt>
+                  <dd className="mt-1 break-words">{stored.metrics.map(humanize).join(", ")}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Broken down by</dt>
+                  <dd className="mt-1 break-words">
+                    {stored.slice_dimensions.map(humanize).join(", ") || "Totals only"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Read as role</dt>
+                  <dd className="mt-1 break-all">{stored.execution_role}</dd>
+                </div>
+              </dl>
+              <p className="text-muted-foreground">
+                A new edition is pressed on schedule; the first one follows within{" "}
+                {stored.cadence_minutes ?? 60} minutes of switching on.
+              </p>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  Change coverage
+                </Button>
+              </div>
             </div>
-            <div>
-              <dt className="text-muted-foreground">Broken down by</dt>
-              <dd className="mt-1 break-words">
-                {stored.slice_dimensions.map(humanize).join(", ") || "Totals only"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Produced by role</dt>
-              <dd className="mt-1 break-all">{stored.execution_role}</dd>
-            </div>
-          </dl>
-          <p className="text-muted-foreground">
-            A new edition is pressed on schedule; the first one follows within{" "}
-            {stored.cadence_minutes ?? 60} minutes of switching on.
-          </p>
-          <Button variant="outline" onClick={() => setEditing(true)}>
-            Change coverage
-          </Button>
-        </div>
-      )}
-      {editing &&
-        (defaults.isError ? (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            The view&apos;s metrics could not be loaded.{" "}
-            <Button variant="link" className="h-auto p-0" onClick={() => void defaults.refetch()}>
-              Retry
-            </Button>
-          </p>
-        ) : defaults.data ? (
-          <Coverage
-            defaults={{ ...defaults.data, ...(stored ?? {}), available: defaults.data.available }}
-            saving={save.isPending}
-            onSave={(config) => save.mutate({ enabled: true, config })}
-            onCancel={() => setEditing(false)}
-          />
-        ) : (
-          <p role="status" className="mt-3 text-sm text-muted-foreground">
-            Loading the view&apos;s metrics…
-          </p>
-        ))}
-    </section>
+          ) : null}
+          {editing &&
+            (defaults.isError ? (
+              <p role="alert" className="text-sm text-destructive">
+                The view&apos;s metrics could not be loaded.{" "}
+                <Button variant="link" className="h-auto p-0" onClick={() => void defaults.refetch()}>
+                  Retry
+                </Button>
+              </p>
+            ) : defaults.data ? (
+              <Coverage
+                defaults={{ ...defaults.data, ...(stored ?? {}), available: defaults.data.available }}
+                saving={save.isPending}
+                onSave={(config) => save.mutate({ enabled: true, config })}
+                onCancel={() => {
+                  setEditing(false);
+                  setShowCoverage(false);
+                }}
+              />
+            ) : (
+              <p role="status" className="text-sm text-muted-foreground">
+                Loading the view&apos;s metrics…
+              </p>
+            ))}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

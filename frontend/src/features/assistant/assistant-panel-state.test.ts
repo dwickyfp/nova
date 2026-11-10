@@ -9,6 +9,7 @@ import {
   assistantCollapsedToPersist,
   clampAssistantOffsetY,
   clampAssistantWidth,
+  assistantRestOffsetY,
   parseAssistantOffsetY,
   parseAssistantWidth,
 } from "./assistant-panel-state";
@@ -95,5 +96,12 @@ describe("assistant toggle vertical offset", () => {
     expect(clampAssistantOffsetY(Number.NaN, restRect, viewport)).toBe(
       ASSISTANT_DEFAULT_OFFSET_Y,
     );
+  });
+
+  it("rests the toggle three quarters of the way down the window", () => {
+    // 900px window: centre at 675px, so bottom edge 205px up, offset 189px.
+    expect(assistantRestOffsetY(900)).toBe(189);
+    expect(assistantRestOffsetY(100)).toBe(0);
+    expect(assistantRestOffsetY(0)).toBe(ASSISTANT_DEFAULT_OFFSET_Y);
   });
 });

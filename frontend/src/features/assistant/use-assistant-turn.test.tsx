@@ -17,6 +17,9 @@ vi.mock("./thread-client", () => ({
   setGrant: (...args: unknown[]) => setGrant(...args),
   getThread: (...args: unknown[]) => getThread(...args),
   listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
+  searchThreads: vi.fn(async () => ({ threads: [], count: 0 })),
+  renameThread: vi.fn(),
+  deleteThread: vi.fn(),
 }));
 
 type Turn = ReturnType<typeof useAssistantTurn>;
@@ -111,7 +114,7 @@ afterEach(() => {
 });
 
 describe("useAssistantTurn", () => {
-  it("parses only Nove UI action previews", () => {
+  it("parses only Neva UI action previews", () => {
     expect(
       uiActionFromPreview(
         "call_ui_operation",

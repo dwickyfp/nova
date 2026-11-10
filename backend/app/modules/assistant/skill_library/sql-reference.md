@@ -36,7 +36,7 @@ fabricate a table, column, privilege, count or successful result.
 Use query_execute for approved reads and standalone role switches, query_mutate
 for explicitly requested writes with per-call approval, and typed internal
 functions for non-SQL operations. provision_user collects protected input.
-Never invoke generic API tools or present HTTP routes as the user's solution.
+Never present Nova's internal web addresses as the user's solution.
 Tool availability does not confer database privileges.
 
 Give complete SQL and a short explanation of prerequisites and effect. Keep

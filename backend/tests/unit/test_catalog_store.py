@@ -498,18 +498,19 @@ async def test_visibility_is_cached_per_security_context(monkeypatch):
     opened: list[str] = []
     opener = _opener(opened)
 
+    # One session lists the catalogs, one lists each catalog's databases.
     await visibility.visible_catalogs(ADMIN, opener)
     await visibility.visible_catalogs(ADMIN, opener)
-    assert opened == ["ACCOUNTADMIN"]
+    assert opened == ["ACCOUNTADMIN"] * 2
 
     # Another role, or a newer security context, never reads that answer.
     await visibility.visible_catalogs(ANALYST, opener)
     await visibility.visible_catalogs({**ADMIN, "security_context_version": 2}, opener)
-    assert opened == ["ACCOUNTADMIN", "marketing", "ACCOUNTADMIN"]
+    assert opened == ["ACCOUNTADMIN"] * 2 + ["marketing"] * 2 + ["ACCOUNTADMIN"] * 2
 
     await visibility.bump()
     await visibility.visible_catalogs(ADMIN, opener)
-    assert opened[-1] == "ACCOUNTADMIN" and len(opened) == 4
+    assert opened[-1] == "ACCOUNTADMIN" and len(opened) == 8
     assert all("SECRET" not in value for value in redis.data.values())
 
 
@@ -518,7 +519,7 @@ async def test_without_redis_every_call_asks_the_engine(monkeypatch):
     opened: list[str] = []
     await visibility.visible_catalogs(ADMIN, _opener(opened))
     await visibility.visible_catalogs(ADMIN, _opener(opened))
-    assert len(opened) == 2
+    assert len(opened) == 4  # catalogs and their databases, asked every time
 
 
 async def test_a_session_without_an_active_role_is_refused(monkeypatch):
@@ -1028,7 +1029,44 @@ async def test_an_unreachable_source_is_not_cached_as_empty(monkeypatch):
 
     assert first[0]["databases"] == []
     assert second[0]["databases"] == third[0]["databases"] == ["SALES"]
-    assert len(opened) == 2  # asked again after the failure, then cached
+    # The catalog names are cached at once; the failed databases are asked
+    # again on the next call, then cached.
+    assert len(opened) == 3
+
+
+async def test_a_failing_source_does_not_uncache_the_others(monkeypatch):
+    """One unreachable catalog is asked again; the reachable ones stay cached."""
+    redis = FakeRedis()
+    monkeypatch.setattr(visibility.session_store, "_redis", redis)
+    monkeypatch.setattr(visibility.settings, "CATALOG_VISIBILITY_CACHE_SECONDS", 60)
+    asked: list[str] = []
+
+    class Caller:
+        unreachable = False
+
+        async def catalogs(self):
+            return [
+                {"name": "default_catalog", "type": "Internal", "comment": None},
+                {"name": "sf", "type": "Jdbc", "comment": None},
+            ]
+
+        async def databases(self, catalog):
+            asked.append(catalog)
+            if catalog == "sf":
+                self.unreachable = True
+                return []
+            return ["analytics"]
+
+    @contextlib.asynccontextmanager
+    async def opener(user):
+        yield Caller()
+
+    first = await visibility.visible_catalogs(ADMIN, opener)
+    await visibility.visible_catalogs(ADMIN, opener)
+
+    assert first[0]["databases"] == ["analytics"] and first[1]["databases"] == []
+    assert asked.count("default_catalog") == 1
+    assert asked.count("sf") == 2
 
 
 async def test_a_refusal_is_a_real_answer_and_an_outage_is_not():

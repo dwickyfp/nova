@@ -164,8 +164,8 @@ def test_seed_prompt_is_preserved_verbatim_and_first():
     assert not prompt.startswith(EXCERPT_OPEN)
 
 
-def test_seed_prompt_names_the_assistant_nove():
-    assert "Nove" in _DEFAULT_SYSTEM_PROMPT
+def test_seed_prompt_names_the_assistant_neva():
+    assert "Neva" in _DEFAULT_SYSTEM_PROMPT
 
 
 def test_seed_prompt_permits_authoring_account_ddl():
@@ -223,7 +223,7 @@ def test_primer_carries_the_scope_boundary_section():
 
 
 def test_seed_prompt_carries_the_writing_style_rules():
-    """Nove's prose must not read as AI slop.
+    """Neva's prose must not read as AI slop.
 
     Every answer is prose, so the anti-slop rules live in the seed (shipped with
     every turn), not only in the load-on-demand library. This pins the parts
@@ -274,7 +274,7 @@ def test_native_ml_skill_is_packaged_and_covers_the_runtime_contract():
         assert contract_term in skill.body
 
 
-def test_nove_selects_native_ml_without_a_global_skill_catalog():
+def test_neva_selects_native_ml_without_a_global_skill_catalog():
     registry = build_registry()
     assert set(registry.discoverable_skills) == set(skill_library.names())
     assert registry.skill_definitions["native-ml"].trust_level == "platform_skill"

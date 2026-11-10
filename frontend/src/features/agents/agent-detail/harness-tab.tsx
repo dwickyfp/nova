@@ -39,21 +39,21 @@ import { toAgentDraft } from "./agent-draft";
 
 const COMPONENT_LABEL: Record<HarnessComponent["key"], string> = {
   instructions: "Instructions",
-  standing_rules: "Standing rules",
-  tool_guidance: "Tool guidance",
+  standing_rules: "Rules it always follows",
+  tool_guidance: "Tips for each tool",
   skills: "Skills",
   procedures: "Procedures",
-  guards: "Guards",
+  guards: "Safety rules",
   memory: "Memory",
-  budget: "Budget",
+  budget: "Effort limit",
 };
 
 const LOAD_LABEL: Record<HarnessComponent["load"], string> = {
-  always: "Every turn, in the prompt",
-  on_demand: "Only when used",
-  in_loop: "Inside the tool loop",
-  retrieved: "Retrieved per turn",
-  every_turn: "Every turn, as limits",
+  always: "On every question",
+  on_demand: "Only when needed",
+  in_loop: "Enforced on every action",
+  retrieved: "Looked up per question",
+  every_turn: "Limits on every question",
 };
 
 const VERDICT_TONE: Record<EditRow["verdict"], StatusTone> = {
@@ -154,12 +154,12 @@ export function AgentHarnessTab({ agentId }: { agentId: string }) {
       <section aria-labelledby="harness-surface-heading" className="space-y-3">
         <div className="space-y-1">
           <h2 id="harness-surface-heading" className="text-base font-medium">
-            Harness
+            What shapes this agent
           </h2>
           <p className="text-sm text-muted-foreground">
-            Everything around the model that shapes how this agent works. Text that is
-            in the prompt on every turn is capped; a guard acts inside the tool loop,
-            so the model cannot skip it.
+            Everything that guides how this agent answers. Instructions it reads
+            on every question have a size limit; safety rules are enforced, so
+            the agent cannot skip them.
           </p>
         </div>
         {surface.isPending ? (
@@ -198,8 +198,8 @@ function SurfaceSummary({ surface }: { surface: HarnessSurface }) {
           <caption className="sr-only">Harness components</caption>
           <thead className="bg-muted text-left text-muted-foreground">
             <tr>
-              <th scope="col" className="px-4 py-2 font-medium">Component</th>
-              <th scope="col" className="px-4 py-2 font-medium">Loaded</th>
+              <th scope="col" className="px-4 py-2 font-medium">Part</th>
+              <th scope="col" className="px-4 py-2 font-medium">When it applies</th>
               <th scope="col" className="px-4 py-2 text-right font-medium">Items</th>
               <th scope="col" className="px-4 py-2 font-medium">Detail</th>
             </tr>
@@ -226,14 +226,14 @@ function SurfaceSummary({ surface }: { surface: HarnessSurface }) {
       </div>
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span>Always-on harness text</span>
+          <span>Instructions read on every question</span>
           <span className="tabular-nums text-muted-foreground">
             {harness_chars.toLocaleString()} of {harness_cap.toLocaleString()} characters
           </span>
         </div>
         <div
           role="meter"
-          aria-label="Always-on harness text"
+          aria-label="Instructions read on every question"
           aria-valuemin={0}
           aria-valuemax={harness_cap}
           aria-valuenow={harness_chars}
@@ -248,7 +248,7 @@ function SurfaceSummary({ surface }: { surface: HarnessSurface }) {
       {surface.issues.length === 0 ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <CircleCheck className="size-4 text-success-strong" aria-hidden />
-          No harness problems found.
+          No problems found.
         </p>
       ) : (
         <ul className="divide-y rounded-lg border" aria-label="Harness problems">
@@ -336,7 +336,7 @@ function PolicyEditor({ agent, surface }: { agent: Agent; surface: HarnessSurfac
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h2 id={`${prefix}-policy`} className="text-base font-medium">
-            Rules and guards
+            Rules it follows
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
             Changes are saved as a draft version. Platform policy, permissions and
@@ -355,7 +355,7 @@ function PolicyEditor({ agent, surface }: { agent: Agent; surface: HarnessSurfac
             disabled={!dirty || save.isPending || problems.length > 0}
             onClick={() => save.mutate()}
           >
-            {save.isPending ? "Saving…" : "Save draft"}
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>
@@ -375,7 +375,7 @@ function PolicyEditor({ agent, surface }: { agent: Agent; surface: HarnessSurfac
       ) : null}
 
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Standing rules</h3>
+        <h3 className="text-sm font-medium">Rules it always follows</h3>
         {policy.standing_rules.length === 0 ? (
           <p className="text-sm text-muted-foreground">No standing rules.</p>
         ) : (
@@ -423,7 +423,7 @@ function PolicyEditor({ agent, surface }: { agent: Agent; surface: HarnessSurfac
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Tool guidance</h3>
+        <h3 className="text-sm font-medium">Tips for each tool</h3>
         {Object.entries(policy.tool_guidance).map(([tool, text]) => (
           <div key={tool} className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
@@ -494,7 +494,7 @@ function PolicyEditor({ agent, surface }: { agent: Agent; surface: HarnessSurfac
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Guards</h3>
+        <h3 className="text-sm font-medium">Safety rules</h3>
         <ul className="divide-y rounded-lg border" aria-label="Platform guards">
           {platformGuards.map((guard) => (
             <li key={guard.rule_id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
@@ -650,7 +650,12 @@ function Experiments({ agentId }: { agentId: string }) {
   const [caseIds, setCaseIds] = useState<string[]>([]);
   const [budget, setBudget] = useState("400000");
   const [openId, setOpenId] = useState("");
-  const activeVersion = versions.data?.active_version_id ?? "";
+  // Only a saved version can be run; an agent that never saved one has none.
+  const activeVersion = versions.data?.versions?.some(
+    (item) => item.version_id === versions.data?.active_version_id,
+  )
+    ? (versions.data?.active_version_id ?? "")
+    : "";
   const chosenVersion = versionId || activeVersion;
   const items = experiments.data?.experiments ?? [];
   const caseItems = cases.data?.items ?? [];
@@ -683,13 +688,13 @@ function Experiments({ agentId }: { agentId: string }) {
     <section aria-labelledby={`${prefix}-experiments`} className="space-y-4">
       <div className="space-y-1">
         <h2 id={`${prefix}-experiments`} className="text-base font-medium">
-          Refine with an experiment
+          Let Nova try an improvement
         </h2>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Runs the selected cases on the current harness, proposes two independent
-          changes (how the agent works, and what it knows about the data), runs
-          each, composes the best evidence into one harness, and keeps the baseline
-          unless a candidate improves without any regression. Nothing is published.
+          Nova runs your test questions, tries two kinds of change (how the
+          agent works, and what it knows about the data), and keeps a change
+          only if it helps without breaking any test. The result is saved as a
+          draft; nothing is published.
         </p>
       </div>
       <div className="space-y-4 rounded-lg border p-4">
@@ -986,7 +991,7 @@ function Lessons({ agentId }: { agentId: string }) {
     <section aria-labelledby={`${prefix}-lessons`} className="space-y-3">
       <div className="space-y-1">
         <h2 id={`${prefix}-lessons`} className="text-base font-medium">
-          Lesson library
+          What these tries taught
         </h2>
         <p className="max-w-2xl text-sm text-muted-foreground">
           One lesson at most per experiment, written only when measured results

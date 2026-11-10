@@ -59,6 +59,20 @@ describe("toConsentPayload", () => {
     await streamAssistantTurn("thread", "Continue", {onEvent});
     expect(onEvent.mock.calls.map(([event]) => event.text)).toEqual(["First", "Second"]);
   });
+  it("sends attached files with the turn in the server's shape", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("", {status: 200, headers: {"Content-Type": "text/event-stream"}}));
+    await streamAssistantTurn("thread", "How many orders?", {
+      onEvent: vi.fn(),
+      files: [{name: "orders.csv", content: "city,orders\n", mediaType: "text/plain"}],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.attachments).toEqual([
+      {name: "orders.csv", content: "city,orders\n", media_type: "text/plain"},
+    ]);
+    fetchMock.mockResolvedValueOnce(new Response("", {status: 200, headers: {"Content-Type": "text/event-stream"}}));
+    await streamAssistantTurn("thread", "No files", {onEvent: vi.fn()});
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).not.toHaveProperty("attachments");
+  });
   it("drops duplicate UI program chunks during journal replay", async () => {
     const chunk =
       'event: ui_delta\ndata: {"run_id":"run-ui","sequence":2,"content_index":1,"content_id":"content-1","text":"root = Col([])"}\n\n';

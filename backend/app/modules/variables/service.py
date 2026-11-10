@@ -26,28 +26,13 @@ import re
 
 from app.modules.query.service import query_service
 
-from .schemas import PasswordPolicy, VariableScope, VariableSetRequest
+from .schemas import VariableScope, VariableSetRequest
 
 log = logging.getLogger(__name__)
 
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 #: A value that Nova renders bare. Anything else is quoted as a string literal.
 _BARE_VALUE = re.compile(r"^-?[0-9]+(\.[0-9]+)?$|^(true|false)$|^NULL$", re.IGNORECASE)
-
-#: The password-policy variables `docs/22-variables-settings.md` documents, in
-#: the order the settings page lists them.
-PASSWORD_POLICY_VARIABLES: tuple[str, ...] = (
-    "password_lifetime",
-    "password_history",
-    "failed_login_attempts",
-    "password_lock_time",
-    "validate_password",
-    "validate_password_length",
-    "validate_password_mixed_case_count",
-    "validate_password_number_count",
-    "validate_password_special_char_count",
-)
-
 
 class VariableError(ValueError):
     """A variable operation the service refused before or after the engine."""
@@ -190,52 +175,6 @@ class VariableService:
             "value": None if request.reset else rendered,
             "message": f"{name} {'reset to default' if request.reset else 'updated'}",
         }
-
-    async def get_password_policy(
-        self,
-        *,
-        username: str,
-        encrypted_password: str,
-        session_id: str | None,
-        role: str | None = None,
-    ) -> dict:
-        """Read the documented password-policy variables from global scope."""
-        result = await self._query(
-            "SHOW GLOBAL VARIABLES",
-            username=username,
-            encrypted_password=encrypted_password,
-            session_id=session_id,
-            role=role,
-        )
-        by_name = {item["name"].lower(): item["value"] for item in self._rows_to_items(result)}
-        return {name: by_name.get(name, "") for name in PASSWORD_POLICY_VARIABLES}
-
-    async def set_password_policy(
-        self,
-        policy: PasswordPolicy,
-        *,
-        username: str,
-        encrypted_password: str,
-        session_id: str | None,
-        role: str | None = None,
-    ) -> dict:
-        """Write only the fields the caller supplied, each as ``SET GLOBAL``."""
-        statements: list[str] = []
-        for name in PASSWORD_POLICY_VARIABLES:
-            value = getattr(policy, name)
-            if value is None:
-                continue
-            rendered = "true" if value is True else "false" if value is False else str(value)
-            statements.append(f"SET GLOBAL {name} = {rendered}")
-        for statement in statements:
-            await self._run(
-                statement,
-                username=username,
-                encrypted_password=encrypted_password,
-                session_id=session_id,
-                role=role,
-            )
-        return {"success": True, "updated": len(statements)}
 
     @staticmethod
     def _rows_to_items(result, *, scope: VariableScope | None = None) -> list[dict]:

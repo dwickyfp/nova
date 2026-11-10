@@ -220,19 +220,15 @@ class PlanResponse(BaseModel):
     steps: list[PlanStepResponse]
     blocked: list[BlockedObjectResponse]
     step_count: int
-    #: Mirrors the operator's execute gate in ``capabilities``.
-    execute_available: bool = False
 
 
 class ExecuteRequest(BaseModel):
     """Apply a plan to the target database.
 
-    Gated: the endpoint returns 403 unless the operator has enabled execute
-    (``MIGRATION_EXECUTE_ENABLED``) — the explicit acknowledgement that a
-    restorable backup exists (#7). When the plan contains lossy or blocked
-    objects, ``acknowledge_omissions`` must be true; the caller is confirming it
-    has read the report. ``confirmation`` must equal the target database name
-    when confirmation is required, so a mis-typed run cannot proceed.
+    When the plan contains lossy or blocked objects, ``acknowledge_omissions``
+    must be true; the caller is confirming it has read the report.
+    ``confirmation`` must equal the target database name when confirmation is
+    required, so a mis-typed run cannot proceed.
     """
 
     source: str = Field(..., min_length=1, max_length=256)

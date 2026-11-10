@@ -116,8 +116,8 @@ describe("CodeCard", () => {
       elapsed_ms: 5, columns: [], warnings: [],
     }]), { status: 200, headers: { "Content-Type": "application/json" } }));
     const onExecutionEvent = vi.fn();
-    const onFixWithNove = vi.fn();
-    const screen = await renderCard({ onExecutionEvent, onFixWithNove });
+    const onFixWithNeva = vi.fn();
+    const screen = await renderCard({ onExecutionEvent, onFixWithNeva });
     await screen.getByRole("button", { name: "Run statement" }).click();
     await expect.element(screen.getByText("Failed")).toBeInTheDocument();
     expect(onExecutionEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -127,8 +127,8 @@ describe("CodeCard", () => {
       type: "query_failed", status: "failure",
       payload: expect.objectContaining({ sql: "CREATE TABLE t (id BIGINT);", errorMessage: "Table does not exist" }),
     }));
-    await screen.getByRole("button", { name: "Fix with Nove" }).click();
-    expect(onFixWithNove).toHaveBeenCalledWith(expect.stringContaining("Fix the failed SQL"));
+    await screen.getByRole("button", { name: "Fix with Neva" }).click();
+    expect(onFixWithNeva).toHaveBeenCalledWith(expect.stringContaining("Fix the failed SQL"));
   });
 
   it("runs without a native confirmation prompt", async () => {

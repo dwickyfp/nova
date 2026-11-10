@@ -19,10 +19,10 @@ import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { QueryResponse } from "@/features/workspaces/types";
 import {
-  safeNoveSql,
-  summarizeQueryForNove,
-} from "@/features/workspaces/nove-feedback";
-import type { NoveEventInput } from "./app-context";
+  safeNevaSql,
+  summarizeQueryForNeva,
+} from "@/features/workspaces/neva-feedback";
+import type { NevaEventInput } from "./app-context";
 import type { TurnContext } from "./stream-client";
 
 export type CodeCardStatus = "idle" | "running" | "success" | "error";
@@ -37,8 +37,8 @@ export type CodeCardProps = {
   runContext?: TurnContext;
   /** Whether this is a SQL card (the only kind that can be run). */
   runnable?: boolean;
-  onExecutionEvent?: (event: NoveEventInput) => void;
-  onFixWithNove?: (prompt: string) => void;
+  onExecutionEvent?: (event: NevaEventInput) => void;
+  onFixWithNeva?: (prompt: string) => void;
 };
 
 function useCopy() {
@@ -69,7 +69,7 @@ export function CodeCard({
   runContext,
   runnable,
   onExecutionEvent,
-  onFixWithNove,
+  onFixWithNeva,
 }: CodeCardProps) {
   const { copied, copy } = useCopy();
   const [status, setStatus] = useState<CodeCardStatus>("idle");
@@ -83,7 +83,7 @@ export function CodeCard({
     code,
   );
   const [artifactId] = useState(
-    () => `nove-code-${Date.now()}-${++codeCardSequence}`,
+    () => `neva-code-${Date.now()}-${++codeCardSequence}`,
   );
 
   const canRun = Boolean(runnable && runContext);
@@ -113,10 +113,10 @@ export function CodeCard({
       setDetail(null);
       setTable(null);
       const startedAt = Date.now();
-      const executionId = `nove-card-${startedAt}`;
+      const executionId = `neva-card-${startedAt}`;
       const surfaceId = runContext?.appContext?.surface.id ?? "nova.global";
       const documentId = runContext?.appContext?.editor?.documentId;
-      const safeSql = safeNoveSql(code);
+      const safeSql = safeNevaSql(code);
       const evidence = {
         executionId,
         ...(documentId ? { documentId } : {}),
@@ -149,7 +149,7 @@ export function CodeCard({
           confirm_destructive: confirmed,
         });
         const first = results?.[0];
-        const feedback = summarizeQueryForNove(
+        const feedback = summarizeQueryForNeva(
           executionId,
           code,
           results ?? [],
@@ -173,7 +173,7 @@ export function CodeCard({
           setStatus("error");
           setDetail(
             failed?.error
-              ? (safeNoveSql(failed.error) ?? "Error details omitted.")
+              ? (safeNevaSql(failed.error) ?? "Error details omitted.")
               : "The statement failed.",
           );
           return;
@@ -199,11 +199,11 @@ export function CodeCard({
           status: "failure",
           payload: {
             ...evidence,
-            errorMessage: safeNoveSql(message) ?? "Error details omitted.",
+            errorMessage: safeNevaSql(message) ?? "Error details omitted.",
           },
         });
         setStatus("error");
-        setDetail(safeNoveSql(message) ?? "Error details omitted.");
+        setDetail(safeNevaSql(message) ?? "Error details omitted.");
       } finally {
         runningRef.current = false;
       }
@@ -303,19 +303,19 @@ export function CodeCard({
           )}
         >
           <p>{detail}</p>
-          {status === "error" && onFixWithNove && safeNoveSql(code) ? (
+          {status === "error" && onFixWithNeva && safeNevaSql(code) ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
               className="mt-1"
               onClick={() =>
-                onFixWithNove(
-                  "Fix the failed SQL from this Nove code card. Explain the proposed change and verify it after I run it.",
+                onFixWithNeva(
+                  "Fix the failed SQL from this Neva code card. Explain the proposed change and verify it after I run it.",
                 )
               }
             >
-              Fix with Nove
+              Fix with Neva
             </Button>
           ) : null}
         </div>

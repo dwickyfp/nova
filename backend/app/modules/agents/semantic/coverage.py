@@ -9,19 +9,24 @@ plans, so row filters and masks apply exactly as they did to the result, and
 a requested period that lies wholly outside that window is reported instead
 of the empty result.
 
-The check runs only on an empty result, so a normal answer costs nothing.
+The check runs only on an empty result. An answer over all the data reads the
+same window, so it can name the dates it covers.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
+from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
 from app.modules.agents.semantic.time_ranges import resolve_time_range
 
+#: The planner's mark for a request to see which dates the data covers.
+DATA_PERIOD = "data_period"
 #: Wide enough for any business history; the planner's own range is still bounded.
 WINDOW_RANGE = "2000-01-01..2099-12-31"
 
@@ -79,20 +84,26 @@ def looks_empty(columns: Sequence[Any], rows: Sequence[Sequence[Any]]) -> bool:
                for index in range(width))
 
 
-def window_plans(plan: SemanticPlan) -> list[dict[str, Any]] | None:
-    """The plans that read the first and the last dated observation of the plan's metric."""
-    if not plan.metrics or plan.time is None or not plan.time.dimension:
+def window_plans(
+    plan: SemanticPlan, dimension: str | None = None
+) -> list[dict[str, Any]] | None:
+    """The plans that read the first and the last dated observation of the plan's metric.
+
+    ``dimension`` is the time field to read; by default the plan's own.
+    """
+    dimension = dimension or (plan.time.dimension if plan.time else None)
+    if not plan.metrics or not dimension:
         return None
     base = {
         "metrics": [plan.metrics[0]],
         "dimensions": [],
         "filters": [],
         "named_filters": list(plan.named_filters),
-        "time": {"dimension": plan.time.dimension, "grain": "day", "range": WINDOW_RANGE},
+        "time": {"dimension": dimension, "grain": "day", "range": WINDOW_RANGE},
         "limit": 1,
     }
     return [
-        {**base, "order_by": [{"field": plan.time.dimension, "direction": direction}]}
+        {**base, "order_by": [{"field": dimension, "direction": direction}]}
         for direction in ("asc", "desc")
     ]
 
@@ -108,19 +119,20 @@ def _day(value: Any) -> date | None:
         return None
 
 
-async def data_window(plan: SemanticPlan, run_plan: RunPlan) -> DataWindow | None:
+async def data_window(
+    plan: SemanticPlan, run_plan: RunPlan, dimension: str | None = None
+) -> DataWindow | None:
     """The first and last day with data for the plan's metric, as the caller sees them."""
-    plans = window_plans(plan)
+    plans = window_plans(plan, dimension)
     if plans is None:
         return None
+    field = plans[0]["time"]["dimension"]
     days: list[date] = []
-    for window_plan in plans:
-        columns, rows, error = await run_plan(window_plan)
+    # The first and the last day are independent one-row reads: run them together.
+    for columns, rows, error in await asyncio.gather(*(run_plan(item) for item in plans)):
         if error or not rows:
             return None
-        index = next(
-            (i for i, name in enumerate(columns) if str(name) == plan.time.dimension), 0
-        ) if plan.time else 0
+        index = next((i for i, name in enumerate(columns) if str(name) == field), 0)
         day = _day(rows[0][index]) if rows[0] else None
         if day is None:
             return None
@@ -172,3 +184,25 @@ async def period_without_data(
         if getattr(time_context, "baseline", None) is not None else None
     )
     return coverage_gap(window, current, baseline)
+
+
+async def covered_period(
+    plan: SemanticPlan, model: SemanticModelIR, run_plan: RunPlan
+) -> DataWindow | None:
+    """The days the data covers, for an answer over all the data.
+
+    A plan without a requested period answers for everything there is, so the
+    answer says which dates that is ("1 May to 4 November 2026") instead of
+    leaving the reader to guess or saying it could not be confirmed. A dated
+    question already names its period and reads nothing more. The metric's own
+    time field is read as the caller, through two one-row governed plans.
+    """
+    if not plan.metrics or (plan.time is not None and plan.time.range):
+        return None
+    metric = model.metric(plan.metrics[0])
+    dimension = (plan.time.dimension if plan.time else None) or (
+        metric.default_time_dimension if metric is not None else None
+    )
+    if not dimension:
+        return None
+    return await data_window(plan, run_plan, dimension)

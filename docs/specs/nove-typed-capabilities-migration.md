@@ -1,6 +1,6 @@
-# Nove capability boundary
+# Neva capability boundary
 
-> Nove invokes bounded Nova capabilities, not HTTP routes selected from OpenAPI.
+> Neva invokes bounded Nova capabilities, not HTTP routes selected from OpenAPI.
 
 ## Finding
 
@@ -13,8 +13,8 @@ names and request shapes in conversation traces. Knowing a route is not an
 authorization bypass; the model-controlled breadth and generic argument shape
 are the risks addressed here.
 
-The default Nove registry no longer registers either generic operation tool.
-Nove cannot invoke the old bridge, even if the model proposes its name. The
+The default Neva registry no longer registers either generic operation tool.
+Neva cannot invoke the old bridge, even if the model proposes its name. The
 legacy module remains for existing isolated tests and is not a runtime tool.
 
 ## Current replacement
@@ -35,7 +35,7 @@ support.
 
 ## Migration map
 
-| UI domain | Preferred Nove capability | Status |
+| UI domain | Preferred Neva capability | Status |
 | --- | --- | --- |
 | Agent role access | Typed Ranger inspect/grant tools | Available |
 | Data reads and schema inspection | Caller-scoped `query_execute` | Available |
@@ -45,7 +45,7 @@ support.
 | Workspace files, stages, uploads | Typed storage tools with browser file handoff | Pending |
 | ML, tasks, monitoring, and configuration | Domain service tools; SQL only where Nova implements it | Pending |
 
-Pending domains are unavailable to Nove after removal of the generic bridge.
+Pending domains are unavailable to Neva after removal of the generic bridge.
 The UI and its authenticated APIs still function. Do not restore a generic
 route-calling fallback to fill these gaps. Each new tool needs a bounded schema,
 caller/role checks, consent classification, audit entry, redacted preview, and

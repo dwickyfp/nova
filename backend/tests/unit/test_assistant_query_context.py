@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.modules.agents.registry import KNOWN_TOOLS
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.registry import build_registry
 from app.modules.assistant.tools import ToolInvocation, requires_consent
 from app.modules.assistant.tools.query_context import (
@@ -35,7 +35,7 @@ def _event(
 
 
 def _context(status: str, execution_id: str, events: list[dict]) -> SimpleNamespace:
-    app = NoveAppContext.model_validate(
+    app = NevaAppContext.model_validate(
         {
             "version": 1,
             "surface": {"id": "workspace.sql", "route": "/workspaces"},
@@ -58,7 +58,7 @@ def _call(name: str, **arguments) -> ToolInvocation:
     return ToolInvocation("call-1", name, arguments)
 
 
-def test_query_context_tools_are_nove_only_and_need_no_consent() -> None:
+def test_query_context_tools_are_neva_only_and_need_no_consent() -> None:
     names = build_registry().names()
     assert {"inspect_query_error", "verify_query_repair"} <= set(names)
     assert not {"inspect_query_error", "verify_query_repair"} & KNOWN_TOOLS
@@ -119,7 +119,7 @@ async def test_inspect_query_error_uses_latest_assistant_artifact_run() -> None:
         errorMessage="Unknown column bad",
     )
     failed_card["artifactId"] = "card-1"
-    app = NoveAppContext.model_validate({
+    app = NevaAppContext.model_validate({
         "version": 1,
         "surface": {"id": "workspace.sql", "route": "/workspaces"},
         "editor": {"documentId": "file-1", "language": "sql"},
@@ -134,7 +134,7 @@ async def test_inspect_query_error_uses_latest_assistant_artifact_run() -> None:
 
     completed_card = _event("card-success", "query_completed", "card-rerun")
     completed_card["artifactId"] = "card-1"
-    app = NoveAppContext.model_validate({
+    app = NevaAppContext.model_validate({
         "version": 1,
         "surface": {"id": "workspace.sql", "route": "/workspaces"},
         "editor": {"documentId": "file-1", "language": "sql"},

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -13,18 +13,31 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
-import { cn } from '@/lib/utils'
+import { formatDateTime, formatDuration, formatNumber, truncate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { LoadingLines, RefreshBanner } from '@/components/ui/loading-overlay'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { statusLabel, statusTone } from '@/components/ui/status-tone'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+} from '@/components/ui/table'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
-  SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
-import { statusTone } from '../components/status-tone'
+import {
+  DetailBlock,
+  DetailFields,
+  ExpandableRow,
+  MonitoringTableHeader,
+  MonitoringTableViewport,
+  TableMessageRow,
+} from '../components/expandable-row'
 
 interface AuditItem {
   log_id: string
@@ -52,6 +65,8 @@ interface AuditResponse {
 
 const EVENT_TYPE_OPTIONS = ['query', 'workspace', 'login']
 const STATUS_OPTIONS = ['SUCCESS', 'ERROR']
+/** Seven data columns plus the details toggle. */
+const COLUMN_COUNT = 8
 
 const EVENT_ICON: Record<string, React.ElementType> = {
   query: Code,
@@ -69,28 +84,6 @@ function buildQueryString(params: Record<string, string | number>) {
   }
 
   return queryString.toString()
-}
-
-function formatTime(iso: string) {
-  const date = new Date(iso)
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
-
-function formatDuration(durationMs: number | null | undefined) {
-  if (durationMs == null) return '—'
-  if (durationMs < 1000) return `${durationMs}ms`
-  return `${(durationMs / 1000).toFixed(2)}s`
-}
-
-function truncateText(value: string, maxLength: number = 80) {
-  if (value.length <= maxLength) return value
-  return `${value.slice(0, maxLength).trim()}...`
 }
 
 /** Event type is a category, not a health state, so it stays informational. */
@@ -164,6 +157,12 @@ export function MonitoringAuditTrail() {
   }, [queryItems, searchQuery])
 
   const total = auditQuery.data?.total ?? 0
+  const hasFilters = Boolean(searchQuery || eventType || status || userName)
+  // Search runs over the page already loaded, so while it is active the
+  // label counts matches on this page instead of the server total.
+  const resultLabel = searchQuery.trim()
+    ? `${filteredItems.length} of ${queryItems.length} on this page`
+    : `${total} ${total === 1 ? 'event' : 'events'}`
 
   const userOptions = useMemo(() => {
     return [
@@ -199,7 +198,7 @@ export function MonitoringAuditTrail() {
           setExpandedRow(null)
         }}
         searchPlaceholder='Search action, object, SQL...'
-        resultLabel={`${total} ${total === 1 ? 'event' : 'events'}`}
+        resultLabel={resultLabel}
         filters={[
           {
             label: 'Event Type',
@@ -225,227 +224,168 @@ export function MonitoringAuditTrail() {
         ]}
       />
 
-      <SimpleTableViewport>
+      <MonitoringTableViewport>
         {auditQuery.isFetching && !auditQuery.isLoading ? (
           <RefreshBanner label='Loading audit events...' />
         ) : null}
 
-        <table className='w-full'>
-          <thead>
-            <tr>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Time
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                User
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Event
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Action
-              </th>
-              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                Status
-              </th>
-              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                Duration
-              </th>
-              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                Rows
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <MonitoringTableHeader>
+            <TableHead>Time</TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>Event</TableHead>
+            <TableHead>Action</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className='text-right'>Duration</TableHead>
+            <TableHead className='text-right'>Rows</TableHead>
+          </MonitoringTableHeader>
+          <TableBody>
             {auditQuery.isLoading ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <LoadingLines rows={5} />
-                </td>
-              </tr>
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <LoadingLines rows={5} />
+              </TableMessageRow>
             ) : auditQuery.isError ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <EmptyState
-                    variant='error'
-                    icon={AlertCircle}
-                    title='Could not load the audit trail'
-                    description='The monitoring API did not respond. Check the connection and retry.'
-                    action={
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <EmptyState
+                  variant='error'
+                  icon={AlertCircle}
+                  title='Could not load the audit trail'
+                  description='The monitoring API did not respond. Check the connection and retry.'
+                  action={
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={() => void auditQuery.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  }
+                />
+              </TableMessageRow>
+            ) : filteredItems.length === 0 ? (
+              <TableMessageRow colSpan={COLUMN_COUNT}>
+                <EmptyState
+                  icon={SearchX}
+                  title={
+                    hasFilters
+                      ? 'No events match these filters'
+                      : 'No audit events recorded yet'
+                  }
+                  description={
+                    hasFilters
+                      ? 'Clear the event type, status, or user filter to widen the search.'
+                      : 'Events appear here as soon as someone queries, logs in, or changes a workspace.'
+                  }
+                  action={
+                    hasFilters ? (
                       <Button
                         variant='outline'
                         size='sm'
-                        onClick={() => void auditQuery.refetch()}
+                        onClick={() => {
+                          setSearchQuery('')
+                          setEventType('')
+                          setStatus('')
+                          setUserName('')
+                          setPage(1)
+                        }}
                       >
-                        Retry
+                        Clear filters
                       </Button>
-                    }
-                  />
-                </td>
-              </tr>
-            ) : filteredItems.length === 0 ? (
-              <tr>
-                <td colSpan={7} className='px-4 py-6'>
-                  <EmptyState
-                    icon={SearchX}
-                    title={
-                      searchQuery || eventType || status || userName
-                        ? 'No events match these filters'
-                        : 'No audit events recorded yet'
-                    }
-                    description={
-                      searchQuery || eventType || status || userName
-                        ? 'Clear the event type, status, or user filter to widen the search.'
-                        : 'Events appear here as soon as someone queries, logs in, or changes a workspace.'
-                    }
-                    action={
-                      searchQuery || eventType || status || userName ? (
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          onClick={() => {
-                            setSearchQuery('')
-                            setEventType('')
-                            setStatus('')
-                            setUserName('')
-                            setPage(1)
-                          }}
-                        >
-                          Clear filters
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                </td>
-              </tr>
+                    ) : undefined
+                  }
+                />
+              </TableMessageRow>
             ) : (
               filteredItems.map((item) => {
                 const EventIcon = EVENT_ICON[item.event_type] ?? Activity
 
                 return (
-                  <Fragment key={item.log_id}>
-                    <tr
-                      onClick={() =>
-                        setExpandedRow(
-                          expandedRow === item.log_id ? null : item.log_id
-                        )
-                      }
-                      className={cn(
-                        'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                        expandedRow === item.log_id && 'bg-muted/30'
-                      )}
-                    >
-                      <td className='px-4 py-3 text-xs text-muted-foreground whitespace-nowrap'>
-                        {formatTime(item.event_time)}
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <div className='flex items-center gap-1.5'>
-                          <User className='h-3 w-3 text-muted-foreground' />
-                          <span className='text-xs'>
-                            {item.user_name || '—'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className='px-4 py-3'>
-                        <StatusBadge tone={eventTone(item.event_type)}>
-                          <EventIcon className='h-3 w-3' />
-                          {item.event_type}
-                        </StatusBadge>
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <div className='space-y-1'>
-                          <p className='text-xs font-medium'>{item.action}</p>
-                          <p className='text-xs text-muted-foreground'>
-                            {item.object_name
-                              ? `${item.object_type} ${truncateText(item.object_name, 32)}`
-                              : item.object_type || '—'}
-                          </p>
-                        </div>
-                      </td>
-                      <td className='px-4 py-3'>
-                        <StatusBadge tone={statusTone(item.status)}>
-                          {item.status}
-                        </StatusBadge>
-                      </td>
-                      <td className='px-4 py-3 text-right text-xs font-medium'>
-                        {formatDuration(item.duration_ms)}
-                      </td>
-                      <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                        {(item.rows_affected ?? 0).toLocaleString()}
-                      </td>
-                    </tr>
-                    {expandedRow === item.log_id ? (
-                      <tr className='border-b border-border bg-muted/20'>
-                        <td colSpan={7} className='px-4 py-4'>
-                          <div className='space-y-3'>
-                            {item.sql_text ? (
-                              <div>
-                                <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                                  SQL Text
-                                </p>
-                                <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
-                                  {item.sql_text}
-                                </pre>
-                              </div>
-                            ) : null}
-
-                            {item.error_message ? (
-                              <div>
-                                <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
-                                  <AlertCircle className='h-3 w-3' />
-                                  Error Message
-                                </p>
-                                <pre className='rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
-                                  {item.error_message}
-                                </pre>
-                              </div>
-                            ) : null}
-
-                            <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
-                              <div>
-                                <span className='font-medium'>Log ID:</span>{' '}
-                                {item.log_id}
-                              </div>
-                              <div>
-                                <span className='font-medium'>Session:</span>{' '}
-                                {item.session_id || '—'}
-                              </div>
-                              <div>
-                                <span className='font-medium'>IP Address:</span>{' '}
-                                {item.ip_address || '—'}
-                              </div>
-                              <div>
-                                <span className='font-medium'>Database:</span>{' '}
-                                {item.database_name || '—'}
-                              </div>
-                              <div>
-                                <span className='font-medium'>Schema:</span>{' '}
-                                {item.schema_name || '—'}
-                              </div>
-                            </div>
-
-                            {item.database_name || item.schema_name ? (
-                              <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
-                                <Database className='h-3 w-3' />
-                                <span>
-                                  {item.database_name || '—'}
-                                  {item.schema_name
-                                    ? `.${item.schema_name}`
-                                    : ''}
-                                </span>
-                              </div>
-                            ) : null}
+                  <ExpandableRow
+                    key={item.log_id}
+                    expanded={expandedRow === item.log_id}
+                    onToggle={() =>
+                      setExpandedRow(
+                        expandedRow === item.log_id ? null : item.log_id
+                      )
+                    }
+                    label={`${item.event_type} event ${item.log_id}`}
+                    colSpan={COLUMN_COUNT}
+                    detail={
+                      <>
+                        {item.sql_text ? (
+                          <DetailBlock label='SQL Text'>
+                            {item.sql_text}
+                          </DetailBlock>
+                        ) : null}
+                        {item.error_message ? (
+                          <DetailBlock label='Error Message' tone='error'>
+                            {item.error_message}
+                          </DetailBlock>
+                        ) : null}
+                        <DetailFields
+                          fields={[
+                            { label: 'Log ID', value: item.log_id },
+                            { label: 'Session', value: item.session_id },
+                            { label: 'IP Address', value: item.ip_address },
+                            { label: 'Database', value: item.database_name },
+                            { label: 'Schema', value: item.schema_name },
+                          ]}
+                        />
+                        {item.database_name || item.schema_name ? (
+                          <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                            <Database className='size-3' />
+                            <span>
+                              {item.database_name || '—'}
+                              {item.schema_name ? `.${item.schema_name}` : ''}
+                            </span>
                           </div>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
+                        ) : null}
+                      </>
+                    }
+                  >
+                    <TableCell className='px-4 py-3 text-xs text-muted-foreground'>
+                      {formatDateTime(item.event_time, { seconds: true })}
+                    </TableCell>
+                    <TableCell className='px-4 py-3'>
+                      <div className='flex items-center gap-1.5'>
+                        <User className='size-3 text-muted-foreground' />
+                        <span className='text-xs'>{item.user_name || '—'}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className='px-4 py-3'>
+                      <StatusBadge tone={eventTone(item.event_type)}>
+                        <EventIcon className='size-3' />
+                        {item.event_type}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell className='px-4 py-3'>
+                      <div className='space-y-1'>
+                        <p className='text-xs font-medium'>{item.action}</p>
+                        <p className='text-xs text-muted-foreground'>
+                          {item.object_name
+                            ? `${item.object_type} ${truncate(item.object_name, 32)}`
+                            : item.object_type || '—'}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className='px-4 py-3'>
+                      <StatusBadge tone={statusTone(item.status)}>
+                        {statusLabel(item.status)}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell className='px-4 py-3 text-right text-xs font-medium'>
+                      {formatDuration(item.duration_ms)}
+                    </TableCell>
+                    <TableCell className='px-4 py-3 text-right text-xs text-muted-foreground'>
+                      {formatNumber(item.rows_affected ?? 0)}
+                    </TableCell>
+                  </ExpandableRow>
                 )
               })
             )}
-          </tbody>
-        </table>
-      </SimpleTableViewport>
+          </TableBody>
+        </Table>
+      </MonitoringTableViewport>
 
       <SimpleTablePagination
         page={page}

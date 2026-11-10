@@ -111,5 +111,36 @@ def build_registry() -> ToolRegistry:
     return registry
 
 
-#: Process-wide registry the router's loop uses.
+#: Process-wide registry of the console tools (the capability inventory).
 tool_registry = build_registry()
+
+
+def build_neva_registry() -> ToolRegistry:
+    """Neva's tools: every console tool, plus governed business answers.
+
+    ``semantic_query`` answers metric questions from the Semantic Views the
+    caller's active role can open, with ontology grounding; free SQL, fixes and
+    administration stay available through the console tools.
+    """
+    registry = ToolRegistry()
+    for tool in tool_registry._tools.values():  # noqa: SLF001 - copy the inventory
+        registry.register(tool)
+    from app.modules.agents.tools.semantic_query import semantic_query_tool
+    from app.modules.assistant.tools.semantic_views import list_semantic_views_tool
+
+    registry.register(semantic_query_tool)
+    registry.register(list_semantic_views_tool)
+    # The business glossary: what a term officially means, the release in use,
+    # and proposals the person files or withdraws (each with consent).
+    from app.modules.agents.tools.ontology import (
+        knowledge_propose_tool,
+        knowledge_withdraw_tool,
+        ontology_explain_tool,
+        ontology_resolve_tool,
+        ontology_status_tool,
+    )
+
+    for tool in (ontology_resolve_tool, ontology_explain_tool, ontology_status_tool,
+                 knowledge_propose_tool, knowledge_withdraw_tool):
+        registry.register(tool)
+    return registry

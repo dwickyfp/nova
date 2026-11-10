@@ -147,7 +147,6 @@ def environment(monkeypatch):
     monkeypatch.setattr(jobs.aioredis, "from_url", lambda *args, **kwargs: redis)
     monkeypatch.setattr(job_worker, "session_store", sessions)
     monkeypatch.setattr(jobs.settings, "SECRET_KEY", "migration-test-key")
-    monkeypatch.setattr(router.settings, "MIGRATION_EXECUTE_ENABLED", True)
 
     async def audit(**kwargs):
         return "audit-id"

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from app.modules.assistant.app_context import NoveApplicationEvent
+from app.modules.assistant.app_context import NevaApplicationEvent
 
 _MAX_THREADS = 1024
 _MAX_PENDING = 32
@@ -20,7 +20,7 @@ class _ThreadFeedback:
     user_name: str
     updated_at: float
     pending: dict[str, tuple[str, str]] = field(default_factory=dict)
-    events: list[NoveApplicationEvent] = field(default_factory=list)
+    events: list[NevaApplicationEvent] = field(default_factory=list)
 
 
 class ApplicationEventBroker:
@@ -66,7 +66,7 @@ class ApplicationEventBroker:
                 del entry.pending[next(iter(entry.pending))]
 
     def publish(
-        self, thread_id: str, user_name: str, event: NoveApplicationEvent
+        self, thread_id: str, user_name: str, event: NevaApplicationEvent
     ) -> Literal["verified", "failed", "unmatched"]:
         verification: Literal["verified", "failed", "unmatched"] = "unmatched"
         with self._lock:
@@ -99,7 +99,7 @@ class ApplicationEventBroker:
 
     def recent_events(
         self, thread_id: str, user_name: str, surface_id: str
-    ) -> list[NoveApplicationEvent]:
+    ) -> list[NevaApplicationEvent]:
         with self._lock:
             entry = self._threads.get(thread_id)
             if entry is None or entry.user_name != user_name:

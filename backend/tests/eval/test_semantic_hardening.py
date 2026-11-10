@@ -1,7 +1,9 @@
 """Text-only providers retain the engine's consent and evidence boundaries."""
 
+import json
 from dataclasses import replace
 
+from app.modules.assistant.messages import say
 from app.modules.assistant.provider_capabilities import ProviderCapabilities
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
@@ -91,5 +93,12 @@ async def test_invalid_text_only_action_cannot_run_or_answer_with_data():
         )
     ]
     assert tool.runs == 0
-    assert not any(frame.startswith("event: text_delta") for frame in frames)
+    # The model's unverified prose never reaches the person; only Nova's own
+    # fixed "could not finish" words do.
+    shown = "".join(
+        json.loads(frame.split("data: ", 1)[1]).get("text", "")
+        for frame in frames if frame.startswith("event: text_delta")
+    )
+    assert shown == say("loop.incomplete", "en")
+    assert "Revenue rose" not in shown
     assert any("required_capability_incomplete" in frame for frame in frames)

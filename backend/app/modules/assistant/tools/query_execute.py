@@ -110,7 +110,11 @@ class QueryExecuteTool:
         "To list SQL views, SELECT TABLE_NAME FROM information_schema.views with "
         "TABLE_SCHEMA filtered to the requested database; SHOW VIEWS is unsupported. "
         "Use SHOW CREATE VIEW db.view_name to inspect a view definition. "
+        "Queries run as the active role the user picked in Nova. "
         "USE ROLE or SET ROLE switches the session to one granted role after approval. "
+        "When access is denied and another of the user's assigned_roles may allow "
+        "it, offer that switch, run it alone, then retry; never a role outside "
+        "assigned_roles, and say which role is active now. "
         "Destructive and DDL statements are refused."
     )
     parameters = _TOOL_PARAMETERS
@@ -169,7 +173,7 @@ class QueryExecuteTool:
             detail = (
                 "Free-form SQL is unavailable in Studio business agents. Use describe_agent "
                 "for available data, a bound Semantic View for business metrics, or a "
-                "configured business tool. Use Nove for database exploration."
+                "configured business tool. Use Neva for database exploration."
             )
             await self._audit(
                 context=context, username=username, sql=_safe_redact(sql), status="DENIED",

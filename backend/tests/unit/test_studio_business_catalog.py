@@ -1,4 +1,4 @@
-"""Business catalog projections and planner isolation from Nove."""
+"""Business catalog projections and planner isolation from Neva."""
 
 import json
 from pathlib import Path
@@ -135,9 +135,9 @@ def test_studio_does_not_substitute_raw_sql_for_semantic_tool():
                               {"describe_agent", "query_execute"})
     assert plan.route.required_capabilities == ("semantic_query",)
     assert not plan.selected_tools
-    nove = validate_turn_plan({"intent": "semantic_analytics", "tools": [],
+    neva = validate_turn_plan({"intent": "semantic_analytics", "tools": [],
                                "required_tools": ["semantic_query"]}, {"query_execute"})
-    assert nove.route.required_capabilities == ("query_execute",)
+    assert neva.route.required_capabilities == ("query_execute",)
 
 
 def test_catalog_plan_cannot_execute_data_or_skills():

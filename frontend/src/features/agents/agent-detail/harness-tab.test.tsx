@@ -147,9 +147,9 @@ describe("AgentHarnessTab", () => {
     mockApi();
     const screen = await setup();
     await expect.element(screen.getByRole("table", { name: /harness components/i })).toBeVisible();
-    await expect.element(screen.getByRole("rowheader", { name: "Guards" })).toBeVisible();
+    await expect.element(screen.getByRole("rowheader", { name: "Safety rules" })).toBeVisible();
     await expect.element(screen.getByText(/320,000 tokens per turn/)).toBeVisible();
-    await expect.element(screen.getByRole("meter", { name: /always-on/i })).toHaveAttribute(
+    await expect.element(screen.getByRole("meter", { name: /read on every question/i })).toHaveAttribute(
       "aria-valuenow",
       "34",
     );
@@ -196,7 +196,7 @@ describe("AgentHarnessTab", () => {
     mockApi();
     const screen = await setup();
     await userEvent.click(screen.getByRole("button", { name: "Add guard" }));
-    const save = screen.getByRole("button", { name: "Save draft" });
+    const save = screen.getByRole("button", { name: "Save" });
     await expect.element(save).toBeDisabled();
     const problems = screen.getByRole("list", { name: "Fix before saving" });
     await expect.element(problems).toHaveTextContent(/add at least one phrase to match/);

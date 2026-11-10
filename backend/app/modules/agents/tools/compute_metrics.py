@@ -12,6 +12,8 @@ the user can see, and it never guesses a missing value.
 
 from __future__ import annotations
 
+import re
+from datetime import date, timedelta
 from decimal import Decimal, DivisionByZero, InvalidOperation, localcontext
 from typing import Any
 
@@ -80,6 +82,87 @@ PARAMETERS: dict[str, Any] = {
 
 class ComputeError(ValueError):
     pass
+
+
+class PeriodWithoutData(ComputeError):
+    """A period the computation needs has no rows, though the result spans it."""
+
+    def __init__(self, label: str, days: tuple[date, date]) -> None:
+        super().__init__(f"No data for {label}.")
+        self.label = label
+        #: The days without data, so an answer may name their year.
+        self.period = {"first": days[0].isoformat(), "last": days[1].isoformat()}
+
+
+_ISO_DAY = re.compile(r"(\d{4})(?:-(\d{2})-(\d{2}))?")
+
+
+def _day(text: str) -> tuple[date, date] | None:
+    """The days a label names: "2025" is the whole year, "2025-01-01" one day."""
+    match = _ISO_DAY.fullmatch(text.strip()[:10] if len(text.strip()) > 4 else text.strip())
+    if match is None:
+        return None
+    try:
+        if match.group(2) is None:
+            year = int(match.group(1))
+            return date(year, 1, 1), date(year, 12, 31)
+        day = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        return None
+    return day, day
+
+
+def _widen(days: tuple[date, date], grain: str) -> tuple[date, date]:
+    """The whole year or month the first of ``days`` falls in."""
+    first = days[0]
+    if grain == "year":
+        return date(first.year, 1, 1), max(days[1], date(first.year, 12, 31))
+    following = date(first.year + first.month // 12, first.month % 12 + 1, 1)
+    return date(first.year, first.month, 1), max(days[1], following - timedelta(days=1))
+
+
+def _without_data(
+    label: str, labels: list[str], table: dict[str, Any],
+) -> tuple[date, date] | None:
+    """The days of ``label`` when it is a period the result spans but holds no rows for.
+
+    Only a complete, dated result decides: its rows must all be dates, and the
+    label must overlap the dates it was asked for, or lie outside the dates
+    the whole data covers. A row with the same year as a year label is data.
+    """
+    period = table.get("period")
+    asked = _day(label)
+    if asked is None or not isinstance(period, dict) or table.get("truncated"):
+        return None
+    parsed = [_day(item) for item in labels]
+    rows = [row for row in parsed if row is not None]
+    if not rows or len(rows) != len(parsed):
+        return None
+    # Rows at the start of a year or month stand for that year or month, and
+    # so does a label of that grain: March is inside a yearly row's year.
+    starts = [row[0] for row in rows if row[0] == row[1]]
+    if len(starts) == len(rows) and all((day.month, day.day) == (1, 1) for day in starts):
+        rows = [_widen(row, "year") for row in rows]
+        asked = _widen(asked, "year")
+    elif len(starts) == len(rows) and all(day.day == 1 for day in starts):
+        rows = [_widen(row, "month") for row in rows]
+        asked = _widen(asked, "month")
+    if any(row[0] <= asked[1] and asked[0] <= row[1] for row in rows):
+        return None
+    spans = []
+    for first, last in (("first", "last"), ("compared_first", "compared_last")):
+        start, end = _day(str(period.get(first) or "")), _day(str(period.get(last) or ""))
+        if start and end:
+            spans.append((start[0], end[1]))
+    if not spans:
+        return None
+    if period.get("scope") == "data":
+        # The whole data lies within its range: a period outside has no rows.
+        outside = all(asked[1] < start or end < asked[0] for start, end in spans)
+        return asked if outside else None
+    # A queried range: any asked day the query covered would have had a row.
+    asked_for = any(start <= asked[1] and asked[0] <= end for start, end in spans)
+    return asked if asked_for else None
 
 
 def _decimal(value: Any, *, column: str) -> Decimal:
@@ -180,6 +263,20 @@ def combine(
     }
 
 
+def _named_column(given: str, columns: list[str]) -> str:
+    """The result column ``given`` names, also when a note follows the name.
+
+    "sales_orders.order_date 2026 sales; ..." names ``sales_orders.order_date``:
+    the longest column the text starts with, followed by a space or "...".
+    Anything else is returned unchanged and refused by the caller.
+    """
+    if given in columns:
+        return given
+    named = [column for column in columns
+             if given.startswith(column) and given[len(column):][:1] in {" ", "."}]
+    return max(named, key=len) if named else given
+
+
 def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     """Pure computation; returns ``{"columns", "rows", "summary"}``."""
     columns = [str(column) for column in table.get("columns") or []]
@@ -197,6 +294,7 @@ def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     value_index = columns.index(value_column)
     label_column = arguments.get("label_column")
     if label_column:
+        label_column = _named_column(str(label_column), columns)
         if label_column not in columns:
             raise ComputeError(f"Label column {label_column!r} is not in the result.")
         label_index: int | None = columns.index(str(label_column))
@@ -224,6 +322,9 @@ def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
             # "2026-02-01" names the row "2026-02-01 00:00:00"; case is not meaningful.
             wanted = _label_key(label)
             matches = [index for index, item in enumerate(labels) if _label_key(item) == wanted]
+        empty = None if matches else _without_data(label, labels, table)
+        if empty is not None:
+            raise PeriodWithoutData(label, empty)
         if len(matches) != 1:
             available = ", ".join(repr(item) for item in labels[:20])
             raise ComputeError(
@@ -442,6 +543,22 @@ class ComputeMetricsTool:
                 result = combine(table, other, args.get("label_column"))
             else:
                 result = compute(table, args)
+        except PeriodWithoutData as exc:
+            # Settled, not failed: the result shows the period has no data, so
+            # the change cannot exist. The answer says so instead of guessing.
+            return ToolOutcome(
+                ok=True,
+                summary=(
+                    f"No data for {exc.label}: the result spans it and holds no rows for "
+                    f"it, so {args.get('operation')} cannot be computed. Say plainly that "
+                    f"the comparison is not possible because there is no data for "
+                    f"{exc.label}; missing data is not zero. State only figures the "
+                    "results hold."
+                ),
+                evidence={"source": "computed_from_authorized_result"},
+                metadata={"operation": args.get("operation"), "evidence_kind": "derived",
+                          "period_without_data": exc.period},
+            )
         except ComputeError as exc:
             return ToolOutcome(
                 ok=False, summary="", error=str(exc), error_class="INVALID_TOOL_ARGUMENTS",

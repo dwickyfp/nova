@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { boundAppContext } from "./app-context";
-import { defineNoveCapability, NoveApplicationEvents, NoveSurfaceRegistry } from "./surface-registry";
+import {
+  choiceOf,
+  defineNevaCapability,
+  NevaApplicationEvents,
+  NevaSurfaceRegistry,
+} from "./surface-registry";
 
-describe("Nove application context", () => {
+describe("Neva application context", () => {
   it("bounds event evidence, redacts secrets, and keeps the active object", () => {
     const context = boundAppContext({
       version: 1,
@@ -37,16 +42,16 @@ describe("Nove application context", () => {
   });
 });
 
-describe("Nove surface registry", () => {
+describe("Neva surface registry", () => {
   it("uses the mounted page and revokes stale capabilities on navigation", async () => {
-    const registry = new NoveSurfaceRegistry();
+    const registry = new NevaSurfaceRegistry();
     const changed = vi.fn();
     const stopListening = registry.subscribe(changed);
     const roleAction = vi.fn();
     const unregisterRole = registry.register(() => ({
       id: "roles.detail", route: "/roles/ANALYST", title: "Role ANALYST",
       context: () => ({ entity: { type: "role", id: "ANALYST" } }),
-      capabilities: [defineNoveCapability({
+      capabilities: [defineNevaCapability({
         name: "surface.refresh", risk: "safe", argsSchema: z.object({}), execute: roleAction,
       })],
     }));
@@ -67,17 +72,17 @@ describe("Nove surface registry", () => {
   });
 
   it("rejects malformed and privileged client actions before executing", async () => {
-    const registry = new NoveSurfaceRegistry();
+    const registry = new NevaSurfaceRegistry();
     const mutate = vi.fn();
     registry.register(() => ({
       id: "roles.detail", route: "/roles/ANALYST", context: () => ({}),
       capabilities: [
-        defineNoveCapability({
+        defineNevaCapability({
           name: "surface.set_filter", risk: "safe",
           argsSchema: z.object({ filter: z.literal("scope"), value: z.string().max(10) }),
           execute: mutate,
         }),
-        defineNoveCapability({
+        defineNevaCapability({
           name: "grant.role", risk: "privileged", argsSchema: z.object({}), execute: mutate,
         }),
       ],
@@ -88,10 +93,10 @@ describe("Nove surface registry", () => {
   });
 
   it("allows declared navigation to replace the page while rejecting an unexpected switch", async () => {
-    const registry = new NoveSurfaceRegistry();
+    const registry = new NevaSurfaceRegistry();
     registry.register(() => ({
       id: "roles.list", route: "/roles", context: () => ({}),
-      capabilities: [defineNoveCapability({
+      capabilities: [defineNevaCapability({
         name: "surface.select", risk: "safe", mayChangeSurface: true,
         argsSchema: z.object({ id: z.literal("ANALYST") }),
         execute: () => {
@@ -102,10 +107,10 @@ describe("Nove surface registry", () => {
     await expect(registry.executeAction({ capability: "surface.select", args: { id: "ANALYST" }, surfaceId: "roles.list" })).resolves.toBeUndefined();
     expect(registry.buildContext({}, []).surface.id).toBe("roles.detail");
 
-    const strictRegistry = new NoveSurfaceRegistry();
+    const strictRegistry = new NevaSurfaceRegistry();
     strictRegistry.register(() => ({
       id: "monitoring.query_history", route: "/query-history", context: () => ({}),
-      capabilities: [defineNoveCapability({
+      capabilities: [defineNevaCapability({
         name: "surface.refresh", risk: "safe", argsSchema: z.object({}),
         execute: () => {
           strictRegistry.register(() => ({ id: "roles.detail", route: "/roles/ANALYST", context: () => ({}) }));
@@ -116,8 +121,8 @@ describe("Nove surface registry", () => {
   });
 
   it("keeps only bounded same-page events in turn context", () => {
-    const registry = new NoveSurfaceRegistry();
-    const events = new NoveApplicationEvents();
+    const registry = new NevaSurfaceRegistry();
+    const events = new NevaApplicationEvents();
     registry.register(() => ({ id: "roles.detail", route: "/roles/ANALYST", context: () => ({}) }));
     for (let index = 0; index < 20; index += 1) {
       events.publish({ source: "surface", type: "entity_updated", surfaceId: index % 2 ? "roles.detail" : "workspace.sql", payload: { entityId: "ANALYST" } });
@@ -125,5 +130,21 @@ describe("Nove surface registry", () => {
     const context = registry.buildContext({}, events.getRecent());
     expect(context.events?.length).toBeLessThanOrEqual(8);
     expect(context.events?.every((event) => event.surfaceId === "roles.detail")).toBe(true);
+  });
+});
+
+describe("choiceOf", () => {
+  const options = ["", "Protected", "Standard"] as const;
+
+  it("returns the page's spelling whatever case Neva used", () => {
+    expect(choiceOf("protected", options, "access filter")).toBe("Protected");
+    expect(choiceOf(" STANDARD ", options, "access filter")).toBe("Standard");
+    expect(choiceOf("", options, "access filter")).toBe("");
+  });
+
+  it("refuses a value the page does not offer", () => {
+    expect(() => choiceOf("admins", options, "access filter")).toThrow(
+      "Unsupported access filter",
+    );
   });
 });

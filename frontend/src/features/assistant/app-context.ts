@@ -1,5 +1,5 @@
-/** The bounded application state Nove receives with each turn. */
-export type NoveAppContext = {
+/** The bounded application state Neva receives with each turn. */
+export type NevaAppContext = {
   version: 1;
   surface: { id: string; route: string; title?: string | null };
   entity?: {
@@ -18,6 +18,8 @@ export type NoveAppContext = {
     documentId?: string | null;
     language?: string | null;
     selectedText?: string | null;
+    /** The open document's SQL, so "this query" works without a selection. */
+    text?: string | null;
     cursor?: { line?: number; column?: number };
     dirty?: boolean;
   };
@@ -34,6 +36,10 @@ export type NoveAppContext = {
   view?: {
     activeTab?: string | null;
     filters?: Record<string, unknown>;
+    /** The values each filter accepts, so Neva sets one the page knows. */
+    filterOptions?: Record<string, readonly string[]>;
+    /** Small facts the page shows, such as how many rows match. */
+    summary?: Record<string, unknown>;
     search?: string | null;
     sort?: string | null;
   };
@@ -45,14 +51,14 @@ export type NoveAppContext = {
     providerId?: string | null;
   };
   capabilities: string[];
-  events?: NoveApplicationEvent[];
+  events?: NevaApplicationEvent[];
 };
 
-export type NoveSurfaceContext = Partial<
-  Omit<NoveAppContext, "version" | "surface" | "capabilities" | "events">
+export type NevaSurfaceContext = Partial<
+  Omit<NevaAppContext, "version" | "surface" | "capabilities" | "events">
 >;
 
-export type NoveApplicationEvent = {
+export type NevaApplicationEvent = {
   id: string;
   timestamp: string;
   source: "assistant" | "surface" | "execution" | "user";
@@ -65,9 +71,12 @@ export type NoveApplicationEvent = {
   payload?: Record<string, unknown>;
 };
 
-export type NoveEventInput = Omit<NoveApplicationEvent, "id" | "timestamp">;
+export type NevaEventInput = Omit<NevaApplicationEvent, "id" | "timestamp">;
 
 const MAX_CONTEXT_BYTES = 16_384;
+/** Longest SQL a page sends Neva; longer SQL is withheld whole, never cut. */
+export const MAX_NEVA_SQL_CHARS = 4_000;
+const MAX_EDITOR_TEXT = MAX_NEVA_SQL_CHARS;
 const MAX_EVENTS = 8;
 const SENSITIVE_TEXT =
   /password|passwd|passphrase|secret|token|credential|api[\s._-]*key|access[\s._-]*key|private[\s._-]*key|account[\s._-]*key|authorization|authentication|bearer|identified\s+by|cookie/i;
@@ -86,6 +95,21 @@ function clip(value: unknown, limit = 240): string | undefined {
 
 function clipSensitiveText(value: unknown, limit: number): string | undefined {
   return clip(value, limit);
+}
+
+/** Each filter's allowed values: a few short strings per key. */
+function optionRecord(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const result: Record<string, string[]> = {};
+  for (const [key, entry] of Object.entries(value).slice(0, 12)) {
+    const safeKey = clip(key, 64);
+    if (!safeKey || containsSensitiveText(key) || !Array.isArray(entry)) continue;
+    result[safeKey] = entry
+      .filter((item): item is string => typeof item === "string")
+      .slice(0, 16)
+      .map((item) => clip(item, 64) ?? "");
+  }
+  return result;
 }
 
 function scalarRecord(
@@ -113,8 +137,8 @@ function scalarRecord(
 }
 
 /** Only named fields cross the model boundary; unknown surface state is discarded. */
-export function boundAppContext(context: NoveAppContext): NoveAppContext {
-  const current: NoveAppContext = {
+export function boundAppContext(context: NevaAppContext): NevaAppContext {
+  const current: NevaAppContext = {
     version: 1,
     surface: {
       id: clip(context.surface.id, 96) || "nova",
@@ -146,6 +170,7 @@ export function boundAppContext(context: NoveAppContext): NoveAppContext {
       documentId: clip(context.editor.documentId, 160),
       language: clip(context.editor.language, 32),
       selectedText: clipSensitiveText(context.editor.selectedText, 2_000),
+      text: clipSensitiveText(context.editor.text, MAX_EDITOR_TEXT),
       cursor: context.editor.cursor
         ? {
             line: Number.isSafeInteger(context.editor.cursor.line)
@@ -186,6 +211,8 @@ export function boundAppContext(context: NoveAppContext): NoveAppContext {
     current.view = {
       activeTab: clip(context.view.activeTab, 80),
       filters: scalarRecord(context.view.filters),
+      filterOptions: optionRecord(context.view.filterOptions),
+      summary: scalarRecord(context.view.summary),
       search: clip(context.view.search, 240),
       sort: clip(context.view.sort, 80),
     };
@@ -214,6 +241,11 @@ export function boundAppContext(context: NoveAppContext): NoveAppContext {
     new TextEncoder().encode(JSON.stringify(current)).length > MAX_CONTEXT_BYTES
   ) {
     if (current.events?.length) current.events.shift();
+    else if (current.editor?.text)
+      // The whole document goes first: a selection is what the person meant.
+      current.editor.text = current.editor.text.length > 200
+        ? current.editor.text.slice(0, Math.floor(current.editor.text.length / 2))
+        : null;
     else if (current.selection?.text)
       current.selection.text = current.selection.text.slice(
         0,
@@ -231,6 +263,8 @@ export function boundAppContext(context: NoveAppContext): NoveAppContext {
       );
     else if (current.entity?.metadata) delete current.entity.metadata;
     else if (current.selection?.metadata) delete current.selection.metadata;
+    else if (current.view?.summary) delete current.view.summary;
+    else if (current.view?.filterOptions) delete current.view.filterOptions;
     else if (current.view?.filters) delete current.view.filters;
     else if (current.execution?.resultSchema)
       delete current.execution.resultSchema;
@@ -244,8 +278,8 @@ export function boundAppContext(context: NoveAppContext): NoveAppContext {
 
 let eventSequence = 0;
 export function createApplicationEvent(
-  input: NoveEventInput,
-): NoveApplicationEvent {
+  input: NevaEventInput,
+): NevaApplicationEvent {
   eventSequence += 1;
   return {
     ...input,

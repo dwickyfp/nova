@@ -1,26 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowUpRight, MessageSquarePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Badge } from "@/components/ui/badge";
+import { StateBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { agentsApi } from "./api";
+import { semanticViewsApi } from "@/features/intelligence/semantic-views-api";
+import { agentAccessApi, agentsApi, observabilityApi, toolsApi } from "./api";
 import { AgentOverviewTab } from "./agent-detail/overview-tab";
 import { AgentConfigurationTab } from "./agent-detail/configuration-tab";
 import { AgentAccessTab } from "./agent-detail/access-tab";
 import { AgentObservabilityTab } from "./agent-detail/observability-tab";
 import { AgentVersionHistory } from "./agent-detail/version-history";
 import { AgentImproveTab } from "./agent-detail/improve-tab";
-import { AgentAutomationsTab } from "./agent-detail/automations-tab";
+
+/** A tab's own scroll region below the fixed tab row. */
+const SCROLL = "mt-6 min-h-0 flex-1 overflow-y-auto pb-6";
+/** A tab that fits the frame itself, like a paged table that scrolls its rows. */
+const FIT = "mt-6 flex min-h-0 flex-1 flex-col pb-6";
 
 /**
- * Agent detail: Overview, Configuration, Access, Observability, Improve, and
- * Automations. The header is shared; each tab owns its own data and layout.
+ * Agent detail: Overview, Configuration, Access, Observability, and Improve. The header is shared; each tab owns its own data and layout.
  */
 export function AgentBuilderPage() {
   const { agentId } = useParams({ from: "/_authenticated/agents/$agentId" });
@@ -34,6 +38,21 @@ export function AgentBuilderPage() {
     queryKey: ["agents", "detail", agentId],
     queryFn: () => agentsApi.get(agentId),
   });
+
+  // Warm every tab's data as soon as the page opens, so switching tabs shows
+  // content instead of a loading state. The tabs read the same query keys.
+  useEffect(() => {
+    void queryClient.prefetchQuery({ queryKey: ["tools"], queryFn: () => toolsApi.list() });
+    void queryClient.prefetchQuery({ queryKey: ["semantic-views"], queryFn: semanticViewsApi.list });
+    void queryClient.prefetchQuery({
+      queryKey: ["agents", "access", agentId],
+      queryFn: () => agentAccessApi.list(agentId),
+    });
+    void queryClient.prefetchQuery({
+      queryKey: ["agents", "observability", "sessions", agentId],
+      queryFn: () => observabilityApi.sessions(agentId, 200),
+    });
+  }, [agentId, queryClient]);
 
   const remove = useMutation({
     mutationFn: () => agentsApi.remove(agentId),
@@ -74,21 +93,25 @@ export function AgentBuilderPage() {
     <>
       <Header fixed />
       <Main fixed>
-        <div className="mb-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="mb-6 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-lg font-semibold tracking-tight">
                 {agent.name}
               </h1>
-              <Badge variant="outline">Active</Badge>
+              <StateBadge status="active" />
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground tabular-nums">
               {(agent.semantic_view_ids ?? []).length > 0
                 ? `${agent.semantic_view_ids?.length} Semantic View${
                     agent.semantic_view_ids?.length === 1 ? "" : "s"
                   } · `
                 : "No Semantic View · "}
-              Updated {new Date(agent.updated_at).toLocaleString()}
+              Updated{" "}
+              {new Date(agent.updated_at).toLocaleString(undefined, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -109,20 +132,26 @@ export function AgentBuilderPage() {
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 overflow-y-auto">
-          <TabsList className="h-auto flex-wrap">
+        {/* The page header and the tab row stay put; only the open tab's
+            content scrolls. Configuration keeps its own sub-tab row fixed
+            and scrolls below it. */}
+        <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
+          <TabsList className="h-auto max-w-full shrink-0 justify-start self-start overflow-x-auto [scrollbar-width:none] [&>[role=tab]]:flex-none">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
             <TabsTrigger value="access">Access</TabsTrigger>
             <TabsTrigger value="observability">Observability</TabsTrigger>
             <TabsTrigger value="improve">Improve</TabsTrigger>
-            <TabsTrigger value="automations">Automations</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="mt-6">
+          <TabsContent value="overview" className={SCROLL}>
             <AgentOverviewTab agentId={agentId} />
           </TabsContent>
-          <TabsContent value="configuration" forceMount className="mt-6 data-[state=inactive]:hidden">
+          <TabsContent
+            value="configuration"
+            forceMount
+            className="mt-4 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          >
             <AgentConfigurationTab
               agent={agent}
               onDirtyChange={setHasUnsavedEdits}
@@ -134,18 +163,18 @@ export function AgentBuilderPage() {
               }
             />
           </TabsContent>
-          <TabsContent value="access" className="mt-6">
+          <TabsContent value="access" className={SCROLL}>
             <AgentAccessTab agentId={agentId} agentName={agent.name}
               hasSemanticViews={(agent.semantic_view_ids ?? []).length > 0} />
           </TabsContent>
-          <TabsContent value="observability" className="mt-6">
+          <TabsContent value="observability" className={FIT}>
             <AgentObservabilityTab agentId={agentId} />
           </TabsContent>
-          <TabsContent value="improve" className="mt-6">
-            <AgentImproveTab agentId={agentId} />
-          </TabsContent>
-          <TabsContent value="automations" className="mt-6">
-            <AgentAutomationsTab agentId={agentId} />
+          <TabsContent value="improve" className={FIT}>
+            <AgentImproveTab
+              agentId={agentId}
+              onOpenConfiguration={() => setTab("configuration")}
+            />
           </TabsContent>
         </Tabs>
       </Main>

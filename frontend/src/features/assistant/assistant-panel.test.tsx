@@ -17,7 +17,7 @@ describe("AssistantPanel", () => {
       const { getByRole } = await render(
         <AssistantPanel open onOpenChange={() => {}} />,
       );
-      const panel = getByRole("complementary", { name: "Nove" });
+      const panel = getByRole("complementary", { name: "Neva" });
       await expect.element(panel).toBeInTheDocument();
     } finally {
       await page.viewport(375, 800);
@@ -28,7 +28,7 @@ describe("AssistantPanel", () => {
     const { getByText, getByRole } = await render(
       <AssistantPanel open onOpenChange={() => {}} />,
     );
-    await expect.element(getByText("How can I help?")).toBeInTheDocument();
+    await expect.element(getByText("How can I help you with Nova?")).toBeInTheDocument();
     await expect
       .element(getByRole("button", { name: "Close assistant" }))
       .toBeInTheDocument();
@@ -41,7 +41,7 @@ describe("AssistantPanel", () => {
       </AssistantPanel>,
     );
     await expect.element(getByText("SELECT 1")).toBeInTheDocument();
-    expect(container.textContent).not.toContain("How can I help?");
+    expect(container.textContent).not.toContain("How can I help you with Nova?");
   });
 
   it("submits a trimmed message and clears the composer", async () => {
@@ -100,7 +100,7 @@ describe("AssistantPanel", () => {
       const { getByRole } = await render(
         <AssistantPanel open onOpenChange={() => {}} />,
       );
-      const header = getByRole("heading", { name: "Nove" }).element()
+      const header = getByRole("heading", { name: "Neva" }).element()
         .parentElement as HTMLElement;
       expect(header.className).not.toContain("border-b");
     } finally {
@@ -144,7 +144,7 @@ describe("AssistantPanel", () => {
     const { getByText } = await render(
       <AssistantPanel open onOpenChange={() => {}} userName="Dwicky" />,
     );
-    await expect.element(getByText("Hi Dwicky,")).toBeInTheDocument();
+    await expect.element(getByText(/^Good (morning|afternoon|evening), Dwicky$/)).toBeInTheDocument();
   });
 
   it("offers New chat in the header and fires it", async () => {
@@ -191,7 +191,7 @@ describe("AssistantPanel", () => {
     await expect
       .element(getByText("Revenue is grouped by region."))
       .toBeInTheDocument();
-    expect(container.textContent).not.toContain("How can I help?");
+    expect(container.textContent).not.toContain("How can I help you with Nova?");
   });
 
   it("swaps Send for Stop while streaming and fires onStop", async () => {

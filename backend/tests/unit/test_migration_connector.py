@@ -656,13 +656,13 @@ class TestNoCredentialLeak:
 
 
 class TestHttpContract:
-    def test_capabilities_declares_execute_gated(self, client):
+    def test_capabilities_declares_execute(self, client):
         resp = client.get("/api/v1/migration/capabilities")
         assert resp.status_code == 200
         body = resp.json()
-        # Execute exists but is off by default — the gate, not absence, is the
-        # contract now (issue #7).
-        assert body["execute_available"] is False
+        # Execute is always on; there is no enable flag to report.
+        assert body["write_operations"] is True
+        assert "execute_available" not in body
         assert body["source_required"] is True
         assert "dry_run" in body["phases"]
         assert "execute" in body["phases"]
@@ -724,12 +724,10 @@ class TestHttpContract:
 
 
 class TestExecuteGated:
-    """Execute exists but refuses unless the operator opened the gate.
+    """Execute is always on but refuses an unconfirmed run.
 
-    The gate is ``MIGRATION_EXECUTE_ENABLED`` (default False), the caller must
-    acknowledge omissions, and — when required — confirm the target database
-    name. These tests pin the refusals; a caller cannot reach the engine while
-    the gate is closed.
+    The caller must acknowledge omissions and — when required — confirm the
+    target database name. These tests pin the refusals.
     """
 
     PAYLOAD = {
@@ -740,23 +738,12 @@ class TestExecuteGated:
         "confirmation": "db1",
     }
 
-    def test_execute_disabled_returns_403(self, fake_repo, fake_audit, client, monkeypatch):
-        from app.modules.migration import service as service_module
+    def test_execute_has_no_enable_flag(self):
+        from app.core.config import Settings
 
-        monkeypatch.setattr(
-            service_module.settings, "MIGRATION_EXECUTE_ENABLED", False, raising=False
-        )
-        _seed_all(fake_repo)
-        resp = client.post("/api/v1/migration/execute", json=self.PAYLOAD)
-        assert resp.status_code == 403, resp.text
-        assert "disabled" in resp.json()["detail"].lower()
+        assert "MIGRATION_EXECUTE_ENABLED" not in Settings.model_fields
 
-    def test_execute_requires_acknowledgement(self, fake_repo, fake_audit, client, monkeypatch):
-        from app.modules.migration import service as service_module
-
-        monkeypatch.setattr(
-            service_module.settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False
-        )
+    def test_execute_requires_acknowledgement(self, fake_repo, fake_audit, client):
         _seed_all(fake_repo)
         payload = dict(self.PAYLOAD, acknowledge_omissions=False)
         resp = client.post("/api/v1/migration/execute", json=payload)
@@ -765,9 +752,6 @@ class TestExecuteGated:
     def test_execute_requires_target_confirmation(self, fake_repo, fake_audit, client, monkeypatch):
         from app.modules.migration import service as service_module
 
-        monkeypatch.setattr(
-            service_module.settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False
-        )
         monkeypatch.setattr(
             service_module.settings,
             "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION",
@@ -779,12 +763,10 @@ class TestExecuteGated:
         resp = client.post("/api/v1/migration/execute", json=payload)
         assert resp.status_code == 422, resp.text
 
-    def test_capabilities_report_gate_state(self, client):
+    def test_capabilities_report_no_gate(self, client):
         body = client.get("/api/v1/migration/capabilities").json()
-        # Execute is declared but its availability reflects the gate.
         assert "execute" in body["phases"]
-        assert body["execute_gate"] == {"issue": "#7", "name": "backup/restore"}
-        assert body["execute_available"] is False  # default: disabled
+        assert "execute_gate" not in body
 
     def test_no_module_shells_out(self):
         """Execution goes through the query pipeline, never a subprocess."""

@@ -11,7 +11,7 @@ Implementasi dan pengujian lokal selesai. Uji jawaban dengan provider nyata masi
 - Validator membatasi intent tersebut ke `describe_agent` saja dan mewajibkan hasil tool sebelum jawaban selesai. JEV tidak dapat menambahkan eksekusi bisnis atau menghapus kebutuhan bukti katalog.
 - Smart membaca katalog specialist yang diizinkan tanpa spawning. Identitas pemilik metric dipertahankan. Daftar memakai pagination; rincian yang terpotong ditandai.
 - Data katalog membedakan binding yang tidak tersedia dari konfigurasi kosong. Ekspresi SQL, tabel fisik, dan metric internal tidak disertakan dalam proyeksi Semantic View.
-- Fallback semantic ke SQL tidak berlaku pada registry Studio. SQL bebas tidak terdaftar dalam runtime Studio, dan `query_execute` juga menolak langsung konteks Studio dengan audit. Nove tetap dapat menjalankan inspeksi SQL yang diizinkan.
+- Fallback semantic ke SQL tidak berlaku pada registry Studio. SQL bebas tidak terdaftar dalam runtime Studio, dan `query_execute` juga menolak langsung konteks Studio dengan audit. Neva tetap dapat menjalankan inspeksi SQL yang diizinkan.
 - Konfigurasi UI tidak menawarkan SQL bebas. Saat konfigurasi lama disimpan, pilihan tersebut dibersihkan; pilihan tools bisnis dipertahankan. Konfigurasi tersimpan tidak dimigrasikan secara massal.
 - Query semantic terkompilasi, custom/MCP tools yang dipasang, dan proses ML menggunakan jalur existing. Engine tetap satu; cakupan JEV tetap empat keputusan.
 

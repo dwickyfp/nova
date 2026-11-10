@@ -132,3 +132,24 @@ def test_load_skill_never_requires_consent_but_query_execute_does():
 
     assert requires_consent(LoadSkillTool()) is False
     assert requires_consent(query_execute_tool) is True
+
+
+def test_only_agent_audience_skills_are_offered_to_studio_agents():
+    from app.modules.agents.skill_catalog import builtin_skill_rows
+
+    for_agents = {row["name"] for row in builtin_skill_rows() if row["for_agents"]}
+    assert for_agents == {"native-ml"}
+    assert skill_library.get("create-table").audience == frozenset({"assistant"})
+    assert skill_library.get("native-ml").audience == frozenset({"assistant", "agents"})
+
+
+def test_skill_with_an_unknown_audience_is_refused(tmp_path, monkeypatch):
+    from app.modules.assistant import skill_registry as module
+
+    (tmp_path / "odd.md").write_text(
+        "---\nname: odd\ntitle: T\nsummary: S\naudience: everyone\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "_SKILL_DIR", tmp_path)
+    with pytest.raises(SkillLibraryError):
+        module.SkillLibrary()

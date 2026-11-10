@@ -34,7 +34,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.modules.assistant.app_context import NoveAppContext
+from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.guards import GuardChain
 from app.modules.assistant.service import AssistantLoop, LoopContext
@@ -196,7 +196,7 @@ class Scenario:
     history_messages: list[AssistantMessage] = field(default_factory=list)
     attachments: list[dict[str, Any]] = field(default_factory=list)
     routing_content: str | None = None
-    app_context: NoveAppContext | None = None
+    app_context: NevaAppContext | None = None
     system_prompt: str = "eval system prompt"
     context_manager: ContextManager | None = None
     max_iterations: int = 8
