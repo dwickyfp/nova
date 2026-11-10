@@ -54,18 +54,26 @@ class WorkspaceService:
         clean_path = relative_path.strip("/")
         return "/".join(part for part in [base_prefix, username, clean_path] if part)
 
-    def _version_object_key(self, username: str, entry_id: str, version: int) -> str:
+    def _version_object_key(
+        self, username: str, entry_id: str, version: int, *, extension: str = "sql"
+    ) -> str:
         """Object key for one saved snapshot.
 
         Kept under a ``.versions`` folder so the live file key is never
         touched by the history path and a rename of the file does not have to
         move its snapshot history. The key is derived from the immutable
-        ``entry_id`` plus the monotonic ``version`` number.
+        ``entry_id`` plus the monotonic ``version`` number; the extension
+        follows the file's kind (``sql`` for worksheets, ``ipynb`` for
+        notebooks).
         """
         base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
         return "/".join(
-            [base_prefix, username, ".versions", entry_id, f"{version}.sql"]
+            [base_prefix, username, ".versions", entry_id, f"{version}.{extension}"]
         )
+
+    @staticmethod
+    def _snapshot_extension(name: str) -> str:
+        return "ipynb" if name.lower().endswith(".ipynb") else "sql"
 
     async def get_tree(self, username: str) -> dict:
         # ``_repo`` translates NOVA_SYSTEM bootstrap failures (missing table,
@@ -168,7 +176,7 @@ class WorkspaceService:
         if not entry:
             raise StorageError("Workspace entry not found", status_code=404)
         if entry["entry_type"] != "file":
-            raise StorageError("Only SQL files can be opened", status_code=400)
+            raise StorageError("Only files can be opened", status_code=400)
         content = await asyncio.to_thread(self._read_object, entry["object_key"])
         return entry, content.decode("utf-8")
 
@@ -223,7 +231,9 @@ class WorkspaceService:
             return
 
         version = await self._repo.next_version_number(username, entry_id)
-        key = self._version_object_key(username, entry_id, version)
+        key = self._version_object_key(
+            username, entry_id, version, extension=self._snapshot_extension(entry["name"])
+        )
         result = await asyncio.to_thread(self._put_object, key, current)
         await self._repo.insert_version(
             version_id=str(uuid4()),
@@ -242,7 +252,7 @@ class WorkspaceService:
         if not entry:
             raise StorageError("Workspace entry not found", status_code=404)
         if entry["entry_type"] != "file":
-            raise StorageError("Only SQL files have versions", status_code=400)
+            raise StorageError("Only files have versions", status_code=400)
         return await self._repo.list_versions(username, entry_id, limit)
 
     async def get_file_version(self, username: str, entry_id: str, version: int) -> str:

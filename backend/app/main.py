@@ -58,6 +58,7 @@ from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
 from app.modules.ml_engine.router import router as ml_router
 from app.modules.monitoring.router import router as monitoring_router
+from app.modules.notebooks.router import router as notebooks_router
 from app.modules.objects.router import router as objects_router
 from app.modules.ontology.router import router as ontology_router
 from app.modules.ontology.schema import ensure_ontology_schema
@@ -478,6 +479,7 @@ def create_app() -> FastAPI:
         superset_internal_router, prefix=f"{prefix}/internal/superset", tags=["internal"]
     )
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
+    app.include_router(notebooks_router, prefix=f"{prefix}/notebooks", tags=["notebooks"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
     # Resource groups / warehouses (roadmap #16). Quota enforcement is the
