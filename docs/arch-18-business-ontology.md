@@ -559,10 +559,12 @@ answered 5,000 orders where the retail business has 6,758
 **Presentation requests.** A part of the question about how the result is
 shown (keeping ties, an extra note) never blocks the data: the plan lists it as
 not material and the result names what it does not show. A request for the
-dates the data covers is marked `data_period`; Nova then reads the first and
-last day for the metric as the caller (two governed plans, the same ones the
-empty-result check uses) and the result states them. Ordinary answers do not
-pay for those two queries.
+dates the data covers is marked `data_period`. Every answer over all the data
+(a plan with no requested period) reads the first and last day for the metric
+as the caller. The two governed one-row plans run together and are the same
+ones the empty-result check uses. The result states the dates, and the answer
+names them instead of saying they could not be confirmed. A dated question
+already names its period and reads nothing more.
 
 ## Release pins
 

@@ -299,7 +299,9 @@ comparison is not possible and records the empty period as a fact. "Spans"
 means the query asked for those dates, or the period lies outside the range the
 whole data covers (`period.scope = "data"`). The answer may then name that
 year. A label the result did not ask for, a non-date label, or a cut-off
-result is still an error.
+result is still an error. A label column named with a note after it
+("order_date 2026 sales; ...") is read as the column it starts with. Any other
+name that is not a result column is refused.
 
 Data answers name their sources the way a reader does. A Semantic View result
 tells the model the label to use (`retail_sales` is "Retail Sales data"). The

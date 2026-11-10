@@ -76,6 +76,7 @@ def test_no_answering_view_changes_nothing():
 def test_neva_is_told_to_name_sources_plainly():
     assert "Never write a view's internal name, the words Semantic View" in NEVA_GROUNDING
     assert "SQL the person asked to see or edit keeps its own words" in NEVA_GROUNDING
+    assert "could not be verified unless they asked" in NEVA_GROUNDING
     assert not find_technical_leaks(plain_data_sources("Per **retail_sales**.", VIEWS, "en"))
 
 

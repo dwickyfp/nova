@@ -89,3 +89,20 @@ async def test_the_tool_reports_the_missing_period_and_settles():
     assert "comparison is not possible" in outcome.summary
     assert outcome.metadata["period_without_data"] == {"first": "2025-01-01",
                                                        "last": "2025-12-31"}
+
+
+@pytest.mark.parametrize("given", [
+    "order_date 2026 sales; prior-year comparison unavailable when 2025 absent",
+    "order_date...",
+])
+def test_a_note_after_the_label_column_name_still_names_it(given):
+    table = yearly({"first": "2025-01-01", "last": "2026-11-10"})
+    with pytest.raises(PeriodWithoutData):
+        compute(table, {**GROWTH, "label_column": given})
+
+
+@pytest.mark.parametrize("given", ["order", "order_dates", "the order_date"])
+def test_a_label_column_that_is_not_a_column_is_still_refused(given):
+    table = yearly({"first": "2025-01-01", "last": "2026-11-10"})
+    with pytest.raises(Exception, match="is not in the result"):
+        compute(table, {**GROWTH, "label_column": given})

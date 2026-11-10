@@ -9,12 +9,13 @@ plans, so row filters and masks apply exactly as they did to the result, and
 a requested period that lies wholly outside that window is reported instead
 of the empty result.
 
-The check runs only on an empty result. A question that asks which dates the
-data covers reads the same window, so its answer can name them.
+The check runs only on an empty result. An answer over all the data reads the
+same window, so it can name the dates it covers.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -127,8 +128,8 @@ async def data_window(
         return None
     field = plans[0]["time"]["dimension"]
     days: list[date] = []
-    for window_plan in plans:
-        columns, rows, error = await run_plan(window_plan)
+    # The first and the last day are independent one-row reads: run them together.
+    for columns, rows, error in await asyncio.gather(*(run_plan(item) for item in plans)):
         if error or not rows:
             return None
         index = next((i for i, name in enumerate(columns) if str(name) == field), 0)
@@ -188,15 +189,15 @@ async def period_without_data(
 async def covered_period(
     plan: SemanticPlan, model: SemanticModelIR, run_plan: RunPlan
 ) -> DataWindow | None:
-    """The days the data covers, when the question asks for them.
+    """The days the data covers, for an answer over all the data.
 
-    Only a plan that asks (an unresolved ``data_period`` request) and has no
-    requested period reads it: a dated question already names its period, and
-    the two window plans are not run for answers that do not need them. The
-    metric's own time field is read as the caller.
+    A plan without a requested period answers for everything there is, so the
+    answer says which dates that is ("1 May to 4 November 2026") instead of
+    leaving the reader to guess or saying it could not be confirmed. A dated
+    question already names its period and reads nothing more. The metric's own
+    time field is read as the caller, through two one-row governed plans.
     """
-    asked = any(item.type_hint == DATA_PERIOD for item in plan.unresolved_concepts)
-    if not asked or not plan.metrics or (plan.time is not None and plan.time.range):
+    if not plan.metrics or (plan.time is not None and plan.time.range):
         return None
     metric = model.metric(plan.metrics[0])
     dimension = (plan.time.dimension if plan.time else None) or (

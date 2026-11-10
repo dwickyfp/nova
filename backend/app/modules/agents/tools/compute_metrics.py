@@ -263,6 +263,20 @@ def combine(
     }
 
 
+def _named_column(given: str, columns: list[str]) -> str:
+    """The result column ``given`` names, also when a note follows the name.
+
+    "sales_orders.order_date 2026 sales; ..." names ``sales_orders.order_date``:
+    the longest column the text starts with, followed by a space or "...".
+    Anything else is returned unchanged and refused by the caller.
+    """
+    if given in columns:
+        return given
+    named = [column for column in columns
+             if given.startswith(column) and given[len(column):][:1] in {" ", "."}]
+    return max(named, key=len) if named else given
+
+
 def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     """Pure computation; returns ``{"columns", "rows", "summary"}``."""
     columns = [str(column) for column in table.get("columns") or []]
@@ -280,6 +294,7 @@ def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     value_index = columns.index(value_column)
     label_column = arguments.get("label_column")
     if label_column:
+        label_column = _named_column(str(label_column), columns)
         if label_column not in columns:
             raise ComputeError(f"Label column {label_column!r} is not in the result.")
         label_index: int | None = columns.index(str(label_column))

@@ -1,4 +1,4 @@
-# Phase 6b–6d checkpoint: governed queries answer the usual reading
+# Phase 6b–6e checkpoint: governed queries answer the usual reading
 
 Date: 2026-11-10. Code: `feat/dataviz` after 12ec775. Same provider, runner and
 lay-user rubric as [phase 6](phase-6-checkpoint.md), on all eight data tasks of
@@ -111,12 +111,45 @@ a true rate as low as 0.86 is still possible (one-sided 97.5% exact bound).
 Latency is higher because DA08 now runs the computations to the end instead of
 stopping, and because of provider variance between runs.
 
+## Phase 6e: answers name the dates, no "could not be confirmed"
+
+DA05 and DA08 told the reader that the date range "could not be confirmed".
+Neva is told to say which dates an answer covers, but the tool read the
+data's dates only when the question asked for them. So the model had nothing
+to name.
+
+| Problem | Fix |
+|---|---|
+| Dates unknown for an answer over all the data | Every plan with no requested period reads the first and last day for the metric as the caller. These are the same two one-row governed plans the empty-result check uses, now run together. The result states the dates in spoken form ("1 May 2026 to 4 November 2026") for the answer to use. |
+| Caveats nobody asked for | Neva does not tell the person that dates or freshness could not be verified unless they asked about them. |
+| DA08 still stopped once: the model wrote a note after the label column name ("sales_orders.order_date 2026 sales; ...") | A label column named with a note after it is read as the column it starts with. Any other name is still refused. |
+
+Evidence: `runs/phase-6e-dates.jsonl` (24 turns, before the label-column fix),
+`runs/phase-6e-da08.jsonl` (DA08 × 5 after it), and
+`judgments/phase-6e-dates.jsonl`. One independent LLM judge checked every
+figure on the engine with read-only SQL.
+
+| Measure | Phase 6d | **Phase 6e (24)** |
+|---|---|---|
+| Solved | 1.00 | **0.96** (23 of 24; the miss is the label-column case, fixed after) |
+| Correct | 1.00 | **1.00** |
+| Understandable | 1.00 | **1.00** |
+| Wrong and confident | 0 | **0** |
+| Answers saying dates could not be confirmed | 5 | **0** |
+| Answers naming the dates covered | — | 8 of 24 |
+| Latency p50 / p95 | 35.5 / 74.7 s | **31.6 / 79.8 s** |
+
+DA08 after the label-column fix: 5 of 5 solved, all figures correct, and 2 of 5
+name the dates. The two date reads add about 1–2 s per undated query. Most of a
+turn is model time: planning is about 10 s per query.
+
 ## What still fails
 
-1. **"Could not confirm the date range"** (DA05 all runs, DA08 runs 0 and 1).
-   The tool reads the data's dates only when the model asks for them.
-2. **Business English inside Indonesian answers**: "net revenue" and
-   "stockout" are left untranslated. "Hari-produk" is accurate but needs its
-   explanation, which Neva gives.
+1. **Dates named in only 10 of 29 answers.** The rest say "all available
+   data", or name the year only (DA08: "2026"), which hides that 2026 runs from
+   May to early November. That is not wrong, but it is less clear than it
+   could be.
+2. **Business English inside Indonesian answers**: "net revenue" (DA01) and
+   "stockout" (DA05). "Hari-produk" is accurate and Neva explains it.
 3. **DA06 states its figures only in the chart.** That is correct, but the
    text gives no headline figure.

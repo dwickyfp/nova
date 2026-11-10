@@ -647,13 +647,15 @@ class SemanticQueryTool:
 
         covered: dict[str, str] | None = None
         if not looks_empty(last_columns, last_rows):
-            # Only a question that asks which dates the data covers reads them.
+            # An answer over all the data names the dates that is.
             window = await covered_period(plan, semantic_ir, run_window)
             if window is not None:
                 covered = {"first": window.first.isoformat(), "last": window.last.isoformat()}
                 explanation += (
-                    f" The data covers {covered['first']} to {covered['last']}; say which "
-                    "period the answer covers."
+                    f" The data covers {covered['first']} to {covered['last']}. The answer "
+                    "is over all of it: name these dates in the reader's words ("
+                    f"{_spoken_day(window.first)} to {_spoken_day(window.last)}), not only "
+                    "'all available data'."
                 )
                 plan = dataclass_replace(plan, unresolved_concepts=tuple(
                     item for item in plan.unresolved_concepts if item.type_hint != DATA_PERIOD
@@ -1163,6 +1165,11 @@ def _multi_step(context: Any) -> bool:
         or route.get("ml_task") or route.get("needs_ml") or route.get("needs_chart")
         or _RESULT_STEPS & set(getattr(context, "selected_tools", None) or ())
     )
+
+
+def _spoken_day(day: date) -> str:
+    """"2026-05-01" as "1 May 2026", for the model to say in the reader's language."""
+    return f"{day.day} {day:%B} {day.year}"
 
 
 def _queried_period(time_context: Any) -> dict[str, str] | None:

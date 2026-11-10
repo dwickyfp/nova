@@ -158,13 +158,23 @@ async def test_the_dates_the_data_covers_are_read_when_asked():
     assert [item["time"]["dimension"] for item in calls] == ["order_date", "order_date"]
 
 
+async def test_an_answer_over_all_the_data_reads_its_dates_unasked():
+    run, calls = _window_runner("2025-01-03", "2026-10-31")
+    window = await covered_period(SemanticPlan.from_dict(_plan()), sales_model(), run)
+    assert (window.first, window.last) == (date(2025, 1, 3), date(2026, 10, 31))
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize("plan", [
-    # Not asked: an ordinary answer does not pay for two more queries.
-    _plan(),
     # A dated question already names its period.
     _plan(unresolved_concepts=[ASKS_PERIOD], time={
         "dimension": "order_date", "grain": None, "range": "previous_month", "compare": None,
     }),
+    _plan(time={
+        "dimension": "order_date", "grain": None, "range": "previous_month", "compare": None,
+    }),
+    # Nothing to read the dates of.
+    _plan(metrics=[], dimensions=["city"]),
 ])
 async def test_the_dates_are_not_read_when_not_needed(plan):
     run, calls = _window_runner("2025-01-03", "2026-10-31")
@@ -192,6 +202,7 @@ async def test_the_answer_says_which_dates_the_data_covers_when_asked(monkeypatc
     outcome = await _run(tool, "Revenue per city")
     assert outcome.ok, outcome.safe_detail
     assert "The data covers 2025-01-03 to 2026-10-31" in outcome.summary
+    assert "(3 January 2025 to 31 October 2026)" in outcome.summary
     assert outcome.table["period"] == {"first": "2025-01-03", "last": "2026-10-31",
                                        "scope": "data"}
     assert "Not shown by this query" not in outcome.summary

@@ -10,7 +10,7 @@ from app.modules.assistant.service import LoopContext
 from app.modules.assistant.tools import ToolInvocation
 from app.modules.query.repository import QueryResult
 from tests.unit.test_semantic_guidance_fallback import USER
-from tests.unit.test_semantic_llm_planner import _plan, setup_tool
+from tests.unit.test_semantic_llm_planner import _plan, answer_queries, setup_tool
 
 
 @pytest.mark.parametrize("failure", [None, "result", "exception"])
@@ -27,7 +27,7 @@ async def test_current_thread_opt_out_suppresses_all_execution_telemetry(monkeyp
         ToolInvocation("usage", "semantic_query", {"question": "Revenue"}), context
     )
     assert outcome.ok == (failure is None)
-    execute.assert_awaited_once()
+    assert len(answer_queries(execute)) == 1
     provider.complete.assert_awaited_once()
     learning.assert_awaited_once_with("thread", user_name="alice")
     agent_repository.record_semantic_usage.assert_not_awaited()
