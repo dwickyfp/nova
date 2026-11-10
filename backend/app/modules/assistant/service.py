@@ -1961,6 +1961,7 @@ class AssistantLoop:
                             "unsupported_count": len(answer_check.unsupported_hypotheses),
                         }
                     answer_text = verified_answer.text
+                    answer_text = _named_sources_plainly(answer_text, evidence, language)
                 context.quality_facts["task_completeness"] = {
                     "completed": not denials,
                     "required_capabilities": sorted(required_capabilities),
@@ -2818,6 +2819,7 @@ class AssistantLoop:
                 provenance = outcome.evidence or {}
                 evidence_metadata.update({
                     "semantic_model_id": provenance.get("semantic_model_id"),
+                    "view_name": provenance.get("view_name"),
                     "model_fingerprint": provenance.get("semantic_model_fingerprint"),
                     "metrics": provenance.get("metrics") or [],
                     "dimensions": provenance.get("dimensions") or [],
@@ -2964,6 +2966,10 @@ class AssistantLoop:
                 )
             )
             completed_capabilities.add(invocation.tool_name)
+            empty_period = (outcome.metadata or {}).get("period_without_data")
+            if invocation.tool_name == "compute_metrics" and isinstance(empty_period, dict):
+                # A period the results span without rows backs the year it names.
+                context.period_facts.append(empty_period)
             if invocation.tool_name == "validate_sql" and (outcome.data or {}).get("valid"):
                 context.checked_sql.add(normalize_sql(str(invocation.arguments.get("sql") or "")))
             settled = _settled_capabilities(
@@ -3585,6 +3591,17 @@ def _follow_up_suggestions(context: LoopContext, question: str) -> list[str]:
         if ir is not None and all(ir.metric(name) for name in plan.metrics):
             return suggest_follow_ups(plan, ir, language=_turn_language(context))
     return []
+
+
+def _named_sources_plainly(answer: str, evidence: Any, language: str) -> str:
+    """``answer`` naming the Semantic Views that answered by their label."""
+    from app.modules.assistant.plain_language import plain_data_sources
+
+    views = [
+        str(item.metadata["view_name"]) for item in evidence.items
+        if item.tool == "semantic_query" and item.metadata.get("view_name")
+    ]
+    return plain_data_sources(answer, views, language)
 
 
 def _turn_language(context: LoopContext) -> str:

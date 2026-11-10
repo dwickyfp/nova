@@ -192,7 +192,8 @@ async def test_the_answer_says_which_dates_the_data_covers_when_asked(monkeypatc
     outcome = await _run(tool, "Revenue per city")
     assert outcome.ok, outcome.safe_detail
     assert "The data covers 2025-01-03 to 2026-10-31" in outcome.summary
-    assert outcome.table["period"] == {"first": "2025-01-03", "last": "2026-10-31"}
+    assert outcome.table["period"] == {"first": "2025-01-03", "last": "2026-10-31",
+                                       "scope": "data"}
     assert "Not shown by this query" not in outcome.summary
     assert not outcome.data["semantic_plan"]["unresolved_concepts"]
     assert execute.await_count == 3

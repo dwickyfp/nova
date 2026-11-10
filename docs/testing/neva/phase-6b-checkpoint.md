@@ -1,4 +1,4 @@
-# Phase 6b checkpoint: governed queries answer the usual reading
+# Phase 6b–6d checkpoint: governed queries answer the usual reading
 
 Date: 2026-11-10. Code: `feat/dataviz` after 12ec775. Same provider, runner and
 lay-user rubric as [phase 6](phase-6-checkpoint.md), on all eight data tasks of
@@ -77,14 +77,46 @@ Solved per task: DA01 to DA07 3 of 3, DA08 2 of 3. The DA08 failure is a model
 call the provider held for 145 s. The turn ended plainly within its time
 budget, without guessing.
 
+## Phase 6d: sources in plain words, comparisons with no data
+
+The 6c answers named their sources as a lay reader would not: "Semantic View
+**retail_sales**", "tampilan semantik **outlet_stock**". The reason was that
+the result line and Neva's instructions both used those words, and the
+instructions asked Neva to say which kind of source answered.
+
+| Problem | Fix |
+|---|---|
+| Internal view names and "Semantic View" in answers | The result line gives the label to use ("Retail Sales data"), and Neva is told to name data by what it holds, in the reader's language. In the final text, the loop renames the views that answered and replaces "Semantic View" with "data", outside code blocks. |
+| DA08 ended "couldn't finish" in 2 of 3 runs of the first 6d run | The question asks for a growth figure, so a computation was required. Last year has no rows, so every computation failed and the turn stopped. Now a computation for a period that a dated result spans without rows returns "no data for 2025, the comparison is not possible". The empty year is recorded so the answer may name it. |
+
+The first 6d run (code with the source fix only) had 0 of 24 answers with
+jargon of this kind, but DA08 failed twice as above. After the second fix, all
+24 turns were run again. One independent LLM judge applied the same rubric and
+checked every stated figure on the engine with read-only SQL. Evidence:
+`runs/phase-6d-sources.jsonl`, `judgments/phase-6d-sources.jsonl`.
+
+| Measure | Phase 6c | **Phase 6d (all 24)** |
+|---|---|---|
+| Solved | 0.96 (0.88–1.00) | **1.00** (24 of 24) |
+| Correct | 1.00 | **1.00** |
+| Understandable | 0.96 | **1.00** |
+| Wrong and confident | 0 | **0** |
+| pass^3 | 0.88 | **1.00** (8 of 8 tasks) |
+| Turns with internal names or "Semantic View" | 21 of 24 | **0** |
+| Turns with any technical word | — | 7 (net revenue 3, stockout 3, hari-produk 2, distinct orders 1) |
+| Latency p50 / p95 | 27.1 / 66.7 s | 35.5 / 74.7 s |
+
+With 24 of 24 solved, the bootstrap interval collapses to 1.00. With n = 24,
+a true rate as low as 0.86 is still possible (one-sided 97.5% exact bound).
+Latency is higher because DA08 now runs the computations to the end instead of
+stopping, and because of provider variance between runs.
+
 ## What still fails
 
-1. **Terse fallback (DA01 run 1, DA07 run 1).** Neva's draft stated a figure
-   the check could not back: a year for a whole-history answer that did not
-   ask for its dates, or a rounded figure with a claim shape the run did not
-   record. The answer was then rebuilt from cells. The figures are correct,
-   but the reply is bare.
-2. **"Could not confirm the date range"** (DA05, DA08). The tool reads the
-   data's dates only when the model asks for them.
-3. **Jargon.** "Semantic View" and view names such as `retail_sales` appear in
-   almost every reply (phase 6 item 4).
+1. **"Could not confirm the date range"** (DA05 all runs, DA08 runs 0 and 1).
+   The tool reads the data's dates only when the model asks for them.
+2. **Business English inside Indonesian answers**: "net revenue" and
+   "stockout" are left untranslated. "Hari-produk" is accurate but needs its
+   explanation, which Neva gives.
+3. **DA06 states its figures only in the chart.** That is correct, but the
+   text gives no headline figure.

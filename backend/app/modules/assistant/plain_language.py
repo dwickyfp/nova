@@ -400,3 +400,59 @@ def plain_frames():  # noqa: ANN201 - returns a small stateful filter
 
     apply.flush = flush  # type: ignore[attr-defined]
     return apply
+
+
+def source_label(view_name: str) -> str:
+    """The name a reader sees for a governed data source: ``retail_sales`` -> "Retail Sales"."""
+    words = [word for word in re.split(r"[_\-\s]+", str(view_name or "")) if word]
+    return " ".join(word if word.isupper() else word.capitalize() for word in words)
+
+
+#: Words that name the governing layer rather than the data a reader asked about.
+_LAYER = r"(?:semantic\s+views?|tampilan\s+semantik)"
+
+
+def plain_data_sources(text: str, view_names: list[str] | tuple[str, ...], language: str) -> str:
+    """A data answer that names its sources the way a reader does.
+
+    The views that answered are named by their label ("Retail Sales data",
+    "data Retail Sales"), and "Semantic View" becomes "data". Only the views
+    that answered this turn are renamed, code blocks are left as written, and a
+    plain-word view name ("sales") is renamed only where it is marked as a
+    name or next to the word view, so ordinary prose is never rewritten.
+    """
+    if not text or not view_names:
+        return text
+    indonesian = str(language or "").casefold().split("-")[0].split("_")[0] == "id"
+    parts = text.split("```")
+    return "```".join(
+        part if index % 2 else _plain_sources(part, view_names, indonesian)
+        for index, part in enumerate(parts)
+    )
+
+
+def _plain_sources(text: str, view_names: list[str] | tuple[str, ...], indonesian: bool) -> str:
+    for view in sorted({str(name) for name in view_names if name}, key=len, reverse=True):
+        label = source_label(view)
+        name = rf"(?P<mark>\*\*|`)?{re.escape(view)}(?:\*\*|`)?(?![\w])"
+
+        def named(match: re.Match[str], label: str = label) -> str:
+            shown = f"**{label}**" if match.group("mark") == "**" else label
+            if indonesian:
+                return f"data {shown}"
+            return f"{match.group('article') or ''}{shown} data"
+
+        layer_before = rf"(?P<article>\bthe\s+)?(?:{_LAYER}|\btampilan|\bview)\s+{name}"
+        layer_after = rf"(?P<article>\bthe\s+)?(?<![\w]){name}\s+(?:{_LAYER}|view\b)"
+        text = re.sub(layer_before, named, text, flags=re.I)
+        text = re.sub(layer_after, named, text, flags=re.I)
+        # A bare name: always when it cannot be an ordinary word, else only marked.
+        plain_word = re.fullmatch(r"[A-Za-z]+", view) is not None
+        bare = rf"(?P<mark>\*\*|`){re.escape(view)}(?:\*\*|`)" if plain_word else (
+            rf"(?<![\w])(?P<mark>\*\*|`)?{re.escape(view)}(?:\*\*|`)?(?![\w])"
+        )
+        def shown(match: re.Match[str], label: str = label) -> str:
+            return f"**{label}**" if match.group("mark") == "**" else label
+
+        text = re.sub(bare, shown, text)
+    return re.sub(rf"\b{_LAYER}\b", "data", text, flags=re.I)

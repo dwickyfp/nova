@@ -662,7 +662,8 @@ class SemanticQueryTool:
             explanation += " The dates the data covers could not be read for this answer."
 
         table = _table_payload(results, title=question)
-        period = covered or _queried_period(time_context)
+        # The data's own range spans everything there is; a queried range only what was asked.
+        period = {**covered, "scope": "data"} if covered else _queried_period(time_context)
         if table is not None:
             units = {
                 name: metric.unit for name in plan.metrics
@@ -738,6 +739,7 @@ class SemanticQueryTool:
                 "source": "nova_semantic_view",
                 "business_context": grounding.provenance(),
                 "view_id": model_id,
+                "view_name": source,
                 "version": semantic_model.get("version"),
                 "semantic_model_id": semantic_model.get("semantic_model_id"),
                 "semantic_model_fingerprint": semantic_ir.fingerprint,
@@ -923,6 +925,8 @@ async def _official_view(plan: SemanticPlan, model_id: str, context: Any) -> str
 
 def _use_official_view(view: str, plan: SemanticPlan) -> ToolOutcome:
     """Send the question to the view that computes the measure's approved definition."""
+    from app.modules.assistant.plain_language import source_label
+
     measures = ", ".join(plan.metrics)
     return ToolOutcome(
         ok=False,
@@ -934,7 +938,7 @@ def _use_official_view(view: str, plan: SemanticPlan) -> ToolOutcome:
             f"{measures} is the organisation's approved definition, computed in the "
             f"Semantic View {view}; the view asked for only has a measure of the same "
             f"name. Call semantic_query again with semantic_view set to {view}, and name "
-            f"{view} as the source."
+            f"the source to the reader as {source_label(view)} data."
         ),
         repair_context={"semantic_view": view, "metrics": list(plan.metrics)},
     )
@@ -1291,7 +1295,12 @@ def _render(
 
     lines = [f"question: {question}"]
     if source:
-        lines.append(f"source: {source} (the Semantic View that answered)")
+        from app.modules.assistant.plain_language import source_label
+
+        lines.append(
+            f"source: {source} answered. Name it to the reader as {source_label(source)} "
+            "data, in their language, never by this name or as a Semantic View."
+        )
     lines.append(f"sql:\n{sql}")
     if explanation:
         lines.append(f"explanation: {explanation}")

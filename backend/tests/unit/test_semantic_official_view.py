@@ -70,7 +70,7 @@ async def test_the_model_is_sent_to_the_official_view_before_anything_runs(monke
     outcome = await _run(tool, "How many orders do we have in total?")
     assert outcome.error_class == "OFFICIAL_VIEW_REQUIRED" and outcome.recoverable
     assert "semantic_view set to retail_sales" in outcome.safe_detail
-    assert "name retail_sales as the source" in outcome.safe_detail
+    assert "name the source to the reader as Retail Sales data" in outcome.safe_detail
     assert outcome.repair_context == {"semantic_view": "retail_sales",
                                       "metrics": ["total_revenue"]}
     provider.complete.assert_awaited_once()
@@ -81,7 +81,8 @@ async def test_every_answer_names_the_view_that_answered(monkeypatch):
     tool, _provider, _execute = setup_tool(monkeypatch, _plan())
     outcome = await _run(tool, "Revenue")
     assert outcome.ok, outcome.safe_detail
-    assert "source: sales (the Semantic View that answered)" in outcome.summary
+    assert "source: sales answered. Name it to the reader as Sales data" in outcome.summary
+    assert outcome.evidence["view_name"] == "sales"
 
 
 async def test_a_question_the_glossary_grounds_is_never_moved(monkeypatch):

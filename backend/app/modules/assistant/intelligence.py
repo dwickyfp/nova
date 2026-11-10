@@ -277,6 +277,8 @@ class EvidenceTracker:
                 # range): the years in them are data the answer may name.
                 kept = {key: period[key] for key in _PERIOD_KEYS
                         if isinstance(period.get(key), str) and _ISO_DAY.fullmatch(period[key])}
+                if kept and period.get("scope") == "data":
+                    kept["scope"] = "data"
                 if kept:
                     stored["period"] = kept
             if isinstance(table.get("sql"), str) and table["sql"].strip():

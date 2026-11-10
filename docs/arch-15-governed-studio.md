@@ -292,6 +292,21 @@ declared by the Semantic View travel with the rows. A declared unit decides
 whether a column is a percentage, so a money `gross_margin` is never written
 with "%".
 
+A comparison with a period that has no rows is settled, not failed. When
+`compute_metrics` is asked for a period (a year, month or day label) that a
+complete, dated result spans but holds no rows for, it returns that the
+comparison is not possible and records the empty period as a fact. "Spans"
+means the query asked for those dates, or the period lies outside the range the
+whole data covers (`period.scope = "data"`). The answer may then name that
+year. A label the result did not ask for, a non-date label, or a cut-off
+result is still an error.
+
+Data answers name their sources the way a reader does. A Semantic View result
+tells the model the label to use (`retail_sales` is "Retail Sales data"). The
+loop also renames the views that answered in the final text, outside code
+blocks, and replaces the words "Semantic View" with "data". The internal name
+stays in the step trace and the evidence envelope.
+
 The bounded `EvidenceEnvelope` composes this health record with published
 semantic identity, metrics, dimensions, exact comparison periods, timezone,
 filter shapes, warnings, and evidence references. The same envelope is persisted

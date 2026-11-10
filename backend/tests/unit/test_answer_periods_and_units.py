@@ -119,6 +119,13 @@ def test_evidence_keeps_declared_units_and_dates_but_nothing_else():
     assert stored["period"] == {"first": "2026-05-01"}
 
 
+@pytest.mark.parametrize(("scope", "kept"), [("data", {"scope": "data"}), ("everything", {})])
+def test_evidence_keeps_only_the_whole_data_scope(scope, kept):
+    stored = _stored({"columns": ["n"], "rows": [["1"]],
+                      "period": {"first": "2026-05-01", "last": "2026-11-04", "scope": scope}})
+    assert stored["period"] == {"first": "2026-05-01", "last": "2026-11-04", **kept}
+
+
 def test_evidence_without_units_or_dates_keeps_the_old_shape():
     assert set(_stored({"columns": ["a"], "rows": [["1"]], "units": {}})) == {
         "columns", "rows", "truncated",
