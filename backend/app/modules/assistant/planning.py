@@ -46,6 +46,8 @@ _DATA_INTENTS = frozenset(
 _REFERENCE_TOOLS = frozenset({
     "load_skill", "search_knowledge", "inspect_agent_configuration",
     "inspect_query_error", "verify_query_repair", "validate_sql",
+    # Reads the notebook on the person's screen (cells, results, errors).
+    "notebook_context",
 })
 _DISCOVERY_TOOLS = frozenset({"load_skill", "search_knowledge"})
 _PLAN_SCHEMA: dict[str, Any] = {
@@ -442,6 +444,14 @@ def _neva_instructions() -> str:
         "client action is pending until an application outcome event confirms it. "
         "For questions about the agent currently open in Studio, use "
         "inspect_agent_configuration when available; do not act as that agent. "
+        "On a notebook page (application_context.capabilities advertises "
+        "notebook.propose_cell): to explain the notebook, a result or an error, use "
+        "capability_help with notebook_context; to write, change or fix a cell, use "
+        "ui_operation with notebook_context, catalog_search and validate_sql when the "
+        "cell queries Nova, and invoke_client_capability as the required tool "
+        "(notebook.propose_cell puts the cell in for the person to accept); to run a "
+        "cell use ui_operation with notebook_run_cell required, and to add a package "
+        "notebook_install_package; both ask the person first. "
         "For a failed query on the current SQL surface, use inspect_query_error "
         "to read the bounded error and SQL evidence before proposing a repair. "
         "After an editor patch and a new query execution, use verify_query_repair "

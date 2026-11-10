@@ -18,7 +18,7 @@ import pytest
 
 from app.modules.query.repository import QueryResult
 from app.proxy import protocol as p
-from app.proxy.executor import ProxyQueryExecutor
+from app.proxy.executor import PrepareRefused, ProxyQueryExecutor
 from app.proxy.session import SessionState, is_read_only_transaction_start
 
 
@@ -76,7 +76,6 @@ async def test_a_prepared_query_is_described_with_limit_zero(service):
     "sql",
     [
         "INSERT INTO t VALUES (1)",
-        "SHOW TABLES",
         "WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x",
         "SELECT * FROM t INTO OUTFILE '/tmp/x'",
     ],
@@ -90,13 +89,36 @@ async def test_statements_that_are_not_plain_reads_describe_nothing(service, sql
     assert service.calls == []
 
 
-async def test_a_refused_describe_falls_back_to_no_columns(monkeypatch):
-    fake = RecordingQueryService(QueryResult(error="Access denied"))
+async def test_a_prepared_show_is_described_by_running_it(service):
+    executor = ProxyQueryExecutor(SessionState())
+    described = await executor.describe_columns(
+        "SHOW DATABASES", username="a", connection=object(), session_id=None
+    )
+    assert [c.name for c in described] == ["id", "name"]
+    assert service.calls == ["SHOW DATABASES"]
+
+
+async def test_a_failed_describe_falls_back_to_no_columns(monkeypatch):
+    fake = RecordingQueryService(QueryResult(error="Syntax error"))
     monkeypatch.setattr("app.proxy.executor.query_service", fake)
     executor = ProxyQueryExecutor(SessionState())
     assert await executor.describe_columns(
-        "SELECT secret FROM t", username="a", connection=object(), session_id=None
+        "SELECT a FROM t ORDER BY 1", username="a", connection=object(), session_id=None
     ) == []
+
+
+async def test_a_describe_the_caller_may_not_read_is_refused_at_prepare(monkeypatch):
+    fake = RecordingQueryService(
+        QueryResult(error="Access denied; you need the SELECT privilege", engine_error_code=5204)
+    )
+    monkeypatch.setattr("app.proxy.executor.query_service", fake)
+    executor = ProxyQueryExecutor(SessionState())
+    with pytest.raises(PrepareRefused) as refused:
+        await executor.describe_columns(
+            "SELECT secret FROM t", username="a", connection=object(), session_id=None
+        )
+    assert refused.value.part.error_code == 5204
+    assert "Access denied" in (refused.value.part.error or "")
 
 
 @pytest.mark.parametrize(

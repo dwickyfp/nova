@@ -524,6 +524,49 @@ NOVA_SUPERSET_WORKER_CONTAINER=nova-superset-worker \
 uv run pytest tests/integration/test_superset_governed.py -v -rs
 ```
 
+### Nova Notebook di Workspaces
+
+File `.ipynb` di Workspaces terbuka sebagai notebook: sel Python, SQL, dan
+Markdown yang berjalan di runtime terisolasi, satu container OpenSandbox per
+notebook aktif ([arsitektur](docs/arch-20-nova-notebook.md)). DuckDB di dalam
+kernel membaca data Nova lewat proxy MySQL dengan role aktif user, read-only.
+
+Sekali saja:
+
+```bash
+cd docker
+# docker/.env: NOVA_OPENSANDBOX_API_KEY=   (openssl rand -hex 32)
+docker build -t nova-notebook-runtime:dev notebook-runtime
+docker compose -p docker -f docker-compose-engine.yml up -d --no-deps opensandbox-server
+```
+
+Lalu di `backend/.env` (lihat `backend/.env.example`):
+
+```bash
+OPENSANDBOX_API_KEY=            # sama dengan NOVA_OPENSANDBOX_API_KEY
+NOTEBOOK_PROXY_ADDRESS=         # IP host dilihat dari container, OrbStack: 0.250.250.254
+NOTEBOOK_SANDBOX_NETWORKS=      # OrbStack: 127.0.0.1/32,0.250.250.0/24
+```
+
+Runtime dijalankan oleh `nova-worker` (langkah 5), jadi worker harus hidup.
+Buka **Workspaces → Notebook**, lalu **Start** pada pil runtime. Sel pertama
+siap kira-kira 10–20 detik setelah start. Tes kernel berjalan di dalam image:
+
+```bash
+docker run --rm --entrypoint python nova-notebook-runtime:dev -m pytest -q -p no:cacheprovider /opt/nova/tests
+```
+
+Cek ujung ke ujung terhadap stack dev yang sedang berjalan. Skrip membuat
+notebook `live-check-*.ipynb` di Workspace user, menjalankan sel DuckDB, Nova,
+dan Python, lalu menghentikan runtime; password dibaca dari environment dan
+tidak dicetak:
+
+```bash
+cd backend
+read -rs NOVA_PASSWORD && export NOVA_PASSWORD
+NOVA_USER=nova_admin uv run --no-sync python scripts/notebook_live_check.py
+```
+
 ---
 
 ## 4. Jalankan nova-scheduler

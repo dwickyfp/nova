@@ -465,3 +465,20 @@ jobs:
           -v "$PWD/superset/tests:/app/nova-tests:ro"
           --entrypoint python nova-superset:ci
           -m unittest discover -s /app/nova-tests -v
+
+  notebook-runtime:
+    name: Notebook runtime image (build, kernel tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The kernel helpers run against the pinned DuckDB, Jupyter and Python
+      # stack in the image, so their tests run there too. No Nova or network
+      # is needed: Nova reads are covered by the backend and live checks.
+      - name: Build the notebook runtime image
+        run: docker build -t nova-notebook-runtime:ci docker/notebook-runtime
+
+      - name: Kernel tests
+        run: >-
+          docker run --rm --entrypoint python nova-notebook-runtime:ci
+          -m pytest -q -p no:cacheprovider /opt/nova/tests

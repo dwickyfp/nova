@@ -101,6 +101,23 @@ is what drivers do when they do not request a cursor.
 The engine's own prepared protocol is not used because StarRocks 4.1.4 rejects
 `INSERT` and unsigned parameter types through it.
 
+A prepared read announces its result columns at prepare time, as MySQL does:
+the statement is described through the governed path as
+`SELECT * FROM (…) LIMIT 0` (a `SHOW`/`DESCRIBE` is run to learn its columns),
+so no rows are read. A statement the caller may not read is refused at prepare
+with the engine's error. Clients that bind results at prepare time (DuckDB's
+`mysql` scanner, server-side-prepare JDBC) depend on both.
+
+### Notebook connections
+
+A Nova Notebook's DuckDB logs in with a notebook data token
+(`access_control/data_tokens.py`) from `NOTEBOOK_SANDBOX_NETWORKS` only. Every
+statement on that connection must be read-only (MySQL error 1792 otherwise,
+audited), and `START TRANSACTION READ ONLY` is answered by the proxy. The
+scanner's catalog queries follow Nova's catalog rule rather than raw
+`information_schema` (`notebook_metadata.py`); see
+[the notebook architecture](../../../docs/arch-20-nova-notebook.md#proxy-compatibility).
+
 ### User variables
 
 `SET @x = 1` is stored on the session and `@x` is substituted into later

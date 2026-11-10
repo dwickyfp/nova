@@ -52,7 +52,12 @@ async def wait_runtime(client, notebook_id: str, want: set[str], timeout: float 
     deadline = time.monotonic() + timeout
     last: dict = {}
     while time.monotonic() < deadline:
-        last = (await client.get(f"{BASE}/notebooks/{notebook_id}/runtime")).json()["runtime"]
+        response = await client.get(f"{BASE}/notebooks/{notebook_id}/runtime")
+        if response.status_code != 200:
+            print(f"      runtime status read failed: {response.status_code} {response.text[:200]}")
+            await asyncio.sleep(1.5)
+            continue
+        last = response.json()["runtime"]
         if last.get("status") in want:
             return last
         if last.get("status") in {"FAILED", "LOST"}:

@@ -10,13 +10,12 @@ import json
 import math
 
 import duckdb
+import nova_runtime
 import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pytest
 from IPython.core.interactiveshell import InteractiveShell
-
-import nova_runtime
 from nova_runtime import refs, tables
 from nova_runtime.jsonsafe import cell_value
 
@@ -184,3 +183,23 @@ def test_install_refuses_malformed_requests():
     out = _data(nova_runtime.install(json.dumps(
         {"packages": [{"name": "polars", "specifier": "==1; echo"}]})))
     assert out["ok"] is False
+
+
+def test_nova_previews_keep_the_query_order():
+    from nova_runtime.kernel import _nova_preview
+
+    assert _nova_preview("SELECT a FROM t ORDER BY a", 5) == "SELECT a FROM t ORDER BY a\nLIMIT 6"
+    assert _nova_preview("-- note\nWITH x AS (SELECT 1) SELECT * FROM x", 5).endswith("\nLIMIT 6")
+    assert _nova_preview("SELECT a FROM t LIMIT 3", 5).startswith("SELECT * FROM (")
+    assert _nova_preview("SHOW TABLES", 5) == "SHOW TABLES"
+    assert _nova_preview("/* x */ describe t", 5) == "/* x */ describe t"
+
+
+def test_a_nova_cell_that_writes_is_explained_before_it_reaches_nova(shell, monkeypatch):
+    from nova_runtime import kernel
+
+    monkeypatch.setattr(kernel._STATE, "nova_attached", True)
+    out = _data(nova_runtime.run_sql(json.dumps(
+        {"source": "CREATE TABLE t (x INT)", "engine": "nova"})))
+    assert out["error"]["name"] == "PermissionError"
+    assert "read-only" in out["error"]["message"]

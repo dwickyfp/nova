@@ -675,6 +675,7 @@ class NotebookRuntimeWorker:
                 "variables": variables,
                 "source_revision": job["source_revision"],
                 "generation": runtime.generation,
+                "runtime_id": runtime.id,
             },
         )
         await _audit(

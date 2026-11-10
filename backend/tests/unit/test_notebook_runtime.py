@@ -510,7 +510,11 @@ async def test_unapproved_packages_are_refused_before_anything_runs(env):
         await env["service"].install(env["user"], "nb-1", name="scipy", version="1; rm -rf /")
 
 
-async def test_event_stream_replays_after_the_last_seen_event(env):
+async def test_event_stream_replays_after_the_last_seen_event(env, monkeypatch):
+    async def shared():
+        return env["redis"], False
+
+    monkeypatch.setattr(events, "open_stream_client", shared)
     first = await events.publish("nb-1", "cell.queued", {"n": 1})
     await events.publish("nb-1", "cell.started", {"n": 2})
 

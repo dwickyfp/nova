@@ -16,6 +16,7 @@ returned by :func:`end`.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -106,10 +107,8 @@ def _read_credential(path: str | None) -> dict[str, Any] | None:
         with open(path, encoding="utf-8") as handle:
             return json.load(handle)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.remove(path)
-        except FileNotFoundError:
-            pass
 
 
 def _attach_nova(con: duckdb.DuckDBPyConnection, credential: dict[str, Any]) -> None:
@@ -337,7 +336,9 @@ def run_sql(payload_json: str) -> Payload:
     payload = json.loads(payload_json)
     con = _STATE.con
     if con is None:
-        return Payload({"error": {"name": "RuntimeNotReady", "message": "The runtime is not ready"}})
+        return Payload(
+            {"error": {"name": "RuntimeNotReady", "message": "The runtime is not ready"}}
+        )
     source = str(payload.get("source") or "").strip()
     name = payload.get("name") or None
     engine = payload.get("engine") or "duckdb"
@@ -348,14 +349,23 @@ def run_sql(payload_json: str) -> Payload:
     try:
         if engine == "nova":
             if not _STATE.nova_attached:
-                raise RuntimeError(_STATE.nova_error or "Nova data is not available in this runtime")
+                raise RuntimeError(
+                    _STATE.nova_error or "Nova data is not available in this runtime"
+                )
             text = source.rstrip().rstrip(";")
+            if not (_READ_START.match(text) or _METADATA_START.match(text)):
+                # The proxy refuses it anyway; say why in plain words.
+                raise PermissionError(
+                    "Nova data is read-only in a notebook. A Nova SQL cell runs a query "
+                    "(SELECT, WITH, SHOW or DESCRIBE); to change data, use Workspaces SQL."
+                )
             relation = con.sql("SELECT * FROM mysql_query('nova', ?)", params=[text])
             head = con.sql(
-                "SELECT * FROM mysql_query('nova', ?)",
-                params=[f"SELECT * FROM ({text}) AS nova_preview LIMIT {limit + 1}"],
+                "SELECT * FROM mysql_query('nova', ?)", params=[_nova_preview(text, limit)]
             )
-            result = _named_result(con, shell, relation, head, name=name, limit=limit, origin="nova")
+            result = _named_result(
+                con, shell, relation, head, name=name, limit=limit, origin="nova"
+            )
             return Payload(result)
 
         resolved = refs.resolve(source, shell.user_ns)
@@ -398,9 +408,36 @@ def run_sql(payload_json: str) -> Payload:
         return Payload({"error": {"name": type(exc).__name__, "message": _clean_error(exc)}})
 
 
+_TRAILING_LIMIT = re.compile(r"\bLIMIT\s+\d+(?:\s*(?:,|OFFSET)\s*\d+)?\s*$", re.I)
+_METADATA_START = re.compile(
+    r"^\s*(?:(?:--[^\n]*\n|/\*.*?\*/)\s*)*(?:SHOW|DESCRIBE|DESC)\b", re.I | re.S
+)
+_READ_START = re.compile(
+    r"^\s*(?:(?:--[^\n]*\n|/\*.*?\*/)\s*)*\(*\s*(?:SELECT|WITH)\b", re.I | re.S
+)
+
+
+def _nova_preview(text: str, limit: int) -> str:
+    """The bounded query a Nova SQL cell previews with, keeping its order.
+
+    Nova (like MySQL) ignores ORDER BY inside a derived table, so a query is
+    limited in place when it has no LIMIT of its own; one that has a LIMIT, or
+    that is not a plain query, is wrapped. ``SHOW`` and ``DESCRIBE`` cannot sit
+    in a derived table; they run as written (their answers are small).
+    """
+    if _METADATA_START.match(text):
+        return text
+    if _READ_START.match(text) and not _TRAILING_LIMIT.search(text):
+        return f"{text}\nLIMIT {limit + 1}"
+    return f"SELECT * FROM ({text}) AS nova_preview LIMIT {limit + 1}"
+
+
 def _named_result(con, shell, relation, head, *, name, limit, origin) -> dict[str, Any]:
     table = head.to_arrow_table()
-    schema = [{"name": n, "type": str(t)} for n, t in zip(relation.columns, relation.types)]
+    schema = [
+        {"name": n, "type": str(t)}
+        for n, t in zip(relation.columns, relation.types, strict=False)
+    ]
     truncated = table.num_rows > limit
     preview_table = table.slice(0, limit)
     columns = [preview_table.column(i).to_pylist() for i in range(preview_table.num_columns)]
@@ -483,7 +520,9 @@ def install(spec_json: str) -> Payload:
         print(line, end="", flush=True)
     code = process.wait()
     if code != 0:
-        return Payload({"ok": False, "exit_code": code, "error": "pip could not install the request"})
+        return Payload(
+            {"ok": False, "exit_code": code, "error": "pip could not install the request"}
+        )
     import importlib
     import site
 

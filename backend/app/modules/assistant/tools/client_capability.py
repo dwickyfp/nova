@@ -18,10 +18,27 @@ _ARGUMENTS: dict[str, dict[str, type]] = {
     # SQL put into the person's editor as a change they review and accept;
     # nothing is run or saved until they do.
     "editor.propose_sql": {"sql": str, "mode": str},
+    # A notebook cell the person reviews and accepts; nothing runs until they
+    # do. ``cell_id`` is the cell to replace or to insert below.
+    "notebook.propose_cell": {
+        "cell_id": str,
+        "kind": str,
+        "engine": str,
+        "source": str,
+        "mode": str,
+    },
+    "notebook.focus_cell": {"cell_id": str},
 }
 #: Longest value per argument; anything not listed is a short name.
-_LIMITS = {"sql": 20_000}
-_CHOICES = {"mode": {"replace", "insert"}}
+_LIMITS = {"sql": 20_000, "source": 20_000}
+_CHOICES = {
+    "mode": {"replace", "insert"},
+    "kind": {"python", "sql", "markdown"},
+    "engine": {"duckdb", "nova", "none"},
+}
+_CAPABILITY_CHOICES = {
+    "notebook.propose_cell": {"mode": {"replace", "insert_below"}},
+}
 #: What the person reads on the action card, instead of the capability name.
 _PLAIN = {
     "surface.refresh": "Refresh this page",
@@ -30,6 +47,8 @@ _PLAIN = {
     "tab.open": "Open a tab on this page",
     "editor.focus": "Move to the SQL editor",
     "editor.propose_sql": "Put the SQL in your editor for you to review",
+    "notebook.propose_cell": "Put a cell in your notebook for you to review",
+    "notebook.focus_cell": "Move to a cell in your notebook",
 }
 
 
@@ -43,6 +62,13 @@ _SENT = {
         "it in the editor. Do not call it pending or unconfirmed, and do not repeat the "
         "whole SQL or the check results."
     ),
+    "notebook.propose_cell": (
+        "The notebook shows the cell as a suggested change; it takes effect only if the "
+        "person accepts it, and nothing has run. Finish with a short answer in the "
+        "person's language: what the cell does and that they can accept, accept and "
+        "run, or dismiss it in the notebook. Do not call it pending or unconfirmed, and "
+        "do not repeat the whole code."
+    ),
 }
 #: The words a person reads when Neva acts on the page without the model.
 SENT_PLAINLY = "I asked this page to do that; it confirms when done."
@@ -52,14 +78,35 @@ def _valid_arguments(capability: str, args: Any) -> bool:
     fields = _ARGUMENTS.get(capability)
     if fields is None or not isinstance(args, dict) or set(args) != set(fields):
         return False
+    choices = {**_CHOICES, **_CAPABILITY_CHOICES.get(capability, {})}
     return all(
         isinstance(args[name], kind)
         # A filter value may be empty: that clears the filter.
         and (name == "value" or bool(args[name].strip()))
         and len(args[name]) <= _LIMITS.get(name, 128)
-        and (name not in _CHOICES or args[name] in _CHOICES[name])
+        and (name not in choices or args[name] in choices[name])
         for name, kind in fields.items()
     )
+
+
+def _cell_problem(args: Any) -> str | None:
+    """Why a proposed notebook cell cannot go to the page, or ``None``.
+
+    Python must parse; Nova SQL must have passed validate_sql in this turn (the
+    caller checks that); DuckDB SQL and Markdown are the person's to review.
+    """
+    if not isinstance(args, dict):
+        return None
+    if args.get("kind") == "python":
+        import ast
+
+        try:
+            ast.parse(str(args.get("source") or ""))
+        except SyntaxError as exc:
+            return f"The Python does not parse (line {exc.lineno}): fix it, then propose it."
+    if args.get("kind") == "sql" and args.get("engine") not in {"duckdb", "nova"}:
+        return "A SQL cell runs on engine duckdb or nova."
+    return None
 
 
 def _normalize(sql: str) -> str:
@@ -77,7 +124,14 @@ def _shape(capability: str) -> str:
         "id": "an item id shown on the page",
         "tab": "a tab name on the page",
         "sql": "the SQL",
-        "mode": "replace or insert",
+        "mode": (
+            "replace or insert_below" if capability == "notebook.propose_cell"
+            else "replace or insert"
+        ),
+        "cell_id": "a cell id from the notebook context",
+        "kind": "python, sql or markdown",
+        "engine": "duckdb or nova for SQL, none otherwise",
+        "source": "the cell's code or text",
     }
     return "{" + ", ".join(f'"{name}": {hints.get(name, "text")}' for name in fields) + "}"
 
@@ -91,8 +145,11 @@ class InvokeClientCapabilityTool:
         "the person asked you to write, change or speed up into their editor as a "
         "change they review and accept: check it with validate_sql first; mode "
         "'replace' swaps the editor's SQL (or their selection) for it, 'insert' "
-        "adds it below. The action is pending until a matching application outcome "
-        "event arrives. Never claim it completed from this tool result."
+        "adds it below. In a notebook, notebook.propose_cell puts a Python, SQL or "
+        "Markdown cell in as a change they review: mode 'replace' changes the cell "
+        "named by cell_id, 'insert_below' adds one after it; check Nova-engine SQL "
+        "with validate_sql first. The action is pending until a matching application "
+        "outcome event arrives. Never claim it completed from this tool result."
     )
     parameters = {
         "type": "object",
@@ -123,11 +180,24 @@ class InvokeClientCapabilityTool:
                 ok=False, summary="", error="That capability is unavailable on the current surface."
             )
         checked = getattr(context, "checked_sql", None)
-        if (
-            capability == "editor.propose_sql"
-            and isinstance(checked, set)
+        proposed_sql = None
+        if capability == "editor.propose_sql" and isinstance(args, dict):
+            proposed_sql = str(args.get("sql") or "")
+        elif (
+            capability == "notebook.propose_cell"
             and isinstance(args, dict)
-            and _normalize(str(args.get("sql") or "")) not in checked
+            and args.get("kind") == "sql"
+            and args.get("engine") == "nova"
+        ):
+            proposed_sql = str(args.get("source") or "")
+        if capability == "notebook.propose_cell":
+            problem = _cell_problem(args)
+            if problem:
+                return ToolOutcome(ok=False, summary="", recoverable=True, error=problem)
+        if (
+            proposed_sql is not None
+            and isinstance(checked, set)
+            and _normalize(proposed_sql) not in checked
         ):
             # Only SQL that passed validate_sql in this turn reaches the editor.
             return ToolOutcome(

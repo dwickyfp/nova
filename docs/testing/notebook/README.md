@@ -68,13 +68,42 @@ Gate: **passed**. The native path (`ATTACH` to the governed proxy) is the design
 
 Lesson: the probe's first draft built a SQL literal without escaping, and the engine error echoed the documented default password. Every literal the runtime builds is now escaped, and error text is masked.
 
+## Phases 1–7: built and checked (2026-11-10)
+
+| Phase | Evidence |
+|---|---|
+| 1 Documents | `test_notebook_document.py` (33): codec, validation, revisioned edits, 409 on a stale base, outputs stripped |
+| 2 Runtime | `test_notebook_runtime.py` (21, fake provider + fakeredis): FIFO per runtime, lease, cancel, timeout → restart, idempotent run, reconcile |
+| 3 Kernel | 21 tests inside `nova-notebook-runtime:dev`: bootstrap, `{{ref}}` scanner, previews, variables, displays |
+| 4 Governance | `test_notebook_data_tokens.py`, `test_mysql_proxy_readonly_and_describe.py`: purpose namespaces, peer gate, runtime binding, revoke on stop, writes refused (1792) and audited; Superset token tests unchanged |
+| 5 Packages, files | `test_notebook_outputs_and_files.py` (20): allowlist and specifiers, manifest only after import check, upload type/size/path checks |
+| 6 UI | `notebook.test.tsx` (12): sandboxed HTML, honest preview labels, keyboard moves, Stop while running, engine switch, stale outputs, SSE resume |
+| 7 Neva, Dataviz | `test_notebook_neva_tools.py` (13), eval scenarios (54/54, 189/189 checks): proposals checked (Python parses, Nova SQL validated first), run and install need approval |
+
+Live, against the dev stack with OpenSandbox 1.2.0 on OrbStack:
+
+- `scripts/notebook_live_check.py`: all checks passed: three notebooks got three sandboxes, `db.sql('SELECT 1')` with no setup, governed `nova.*` read as the active role, a write refused, `{{name}}` from SQL into Python and back, matplotlib PNG, metrics, stop.
+- Runtime start to first ready cell: about 10–20 s (image cached). A cell after bootstrap: about 0.7 s (heavy imports moved into bootstrap).
+- Browser: reorder by pointer and keyboard, undo, order kept after reload; Neva proposed a chart cell, Apply & Run drew it.
+- Dataviz capability: a Nova-engine SQL cell is `SUPPORTED`; a DuckDB cell is `NO_PROVENANCE` and shows no button.
+
+Two users, same cells, concurrently (`nova_admin` as ACCOUNTADMIN, `retail_steward_test` as `retail_steward`), each in its own sandbox:
+
+| Cell (Nova engine unless noted) | ACCOUNTADMIN | retail_steward |
+|---|---|---|
+| `SELECT CURRENT_USER(), CURRENT_ROLE()` | own user and role | own user and role |
+| `SHOW DATABASES` | 40+ databases, no `NOVA_SYSTEM` | none (same as its `SHOW DATABASES` anywhere in Nova) |
+| DuckDB: schemas of the `nova` attach | same list as `SHOW DATABASES` | none |
+| `SELECT COUNT(*) FROM NOVA_DEMO.customers` | succeeds | refused by Ranger, with Ranger's message |
+
+The first run of this check found that a role Ranger refuses `information_schema` could not run any Nova query in a notebook, because the scanner reads the catalog first. The proxy now answers the scanner's catalog queries with Nova's catalog rule (see arch-20, Proxy compatibility); tests in `test_mysql_proxy_notebook_catalog.py`.
+
+A cross-user check (`retail_steward_test` against a `nova_admin` notebook) returned 404 on every route (read, edit, export, runtime, start, run, latest, packages, upload) and left the document unchanged.
+
+Not yet run: a two-role check where both roles read the same table under different Ranger row filters or masks. It needs dedicated Ranger policies; the governed integration suite is the place for it.
+
+Known limits: macOS `runc` is not hostile-tenant isolation; Plotly shows as text; no notebook sharing; on OrbStack the proxy sees sandbox traffic as `127.0.0.1`, so the local `NOTEBOOK_SANDBOX_NETWORKS` includes it (deployments behind a real bridge must not).
+
 ## Next checkpoints
 
-- Phase 1: notebook documents in Workspaces
-- Phase 2: runtime service, queue, worker, SSE
-- Phase 3: `nova_runtime`
-- Phase 4: notebook tokens (governed, read-only), Ranger two-role acceptance
-- Phase 5: packages and files
-- Phase 6: notebook UI
-- Phase 7: Neva and Dataviz
-- Phase 8: live acceptance demo
+- Phase 8: upload and package install from the UI, screenshots and UI review; row-filter/mask two-role check in the governed integration suite

@@ -48,6 +48,14 @@ from app.modules.query.admission import (
 )
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import query_service
+from app.proxy.notebook_metadata import (
+    COLUMN_FIELDS,
+    MAX_DESCRIBED_TABLES,
+    ScannerQuery,
+    column_row,
+    quote_identifier,
+    scanner_query,
+)
 from app.proxy.protocol import (
     CHARSET_UTF8,
     TYPE_BLOB,
@@ -87,6 +95,9 @@ logger = logging.getLogger(__name__)
 #: A statement whose result columns a prepare can announce: a query, with or
 #: without a CTE or parentheses (``describe_columns``).
 _DESCRIBABLE = re.compile(r"^\(*\s*(?:SELECT|WITH)\b", re.IGNORECASE)
+#: Metadata statements a prepare may run to learn their columns: they read
+#: no table data, and a MySQL client preparing one expects a result set.
+_METADATA_STATEMENT = re.compile(r"^(?:SHOW|DESCRIBE|DESC)\b", re.IGNORECASE)
 
 #: Session settings a read-only client (a notebook's DuckDB) sends while it
 #: connects. They shape the connection only; ``SET PASSWORD``, ``SET ROLE``,
@@ -338,6 +349,18 @@ class ResponseSink(Protocol):
     async def end_rows(self, *, more: bool) -> None: ...
 
 
+#: MySQL/StarRocks error numbers for "the caller may not read this".
+_ACCESS_REFUSALS = frozenset({1044, 1142, 1143, 1227, 5203, 5204})
+
+
+class PrepareRefused(Exception):
+    """A prepared statement the caller may not run; ``part`` is the refusal."""
+
+    def __init__(self, part: WireResult) -> None:
+        super().__init__(part.error)
+        self.part = part
+
+
 class CollectingSink:
     """Collects responses into a ``WireResult`` chain (``preceding`` + final)."""
 
@@ -549,6 +572,15 @@ class ProxyQueryExecutor:
                 session_id=session_id,
             )
 
+        if self._session.read_only_connection:
+            catalog_query = scanner_query(statement)
+            if catalog_query is not None:
+                part = await self._scanner_catalog(
+                    catalog_query, statement, username=username, connection=connection,
+                    session_id=session_id,
+                )
+                return await self._emit(sink, part, more)
+
         # The read half of ``SET @x = …``: substitution happens here, after the
         # statements before it applied their assignments (NOVA-25).
         substituted = (
@@ -628,24 +660,109 @@ class ProxyQueryExecutor:
         clients that bind results at prepare time depend on it. The statement is
         wrapped in ``SELECT * … LIMIT 0`` and run through the same governed path
         (guard, role, Ranger, audit) as any other statement, so no rows are read
-        and a statement the caller may not run describes nothing. Anything that
-        is not a plain read, or that the wrapper cannot express, returns ``[]``
-        and the columns arrive with the execute response as before.
+        and no rows are read. Anything that is not a plain read, or that the
+        wrapper cannot express, returns ``[]`` and the columns arrive with the
+        execute response as before.
+
+        A statement the caller may not read is refused here, as a MySQL server
+        refuses it at prepare (:class:`PrepareRefused`), so the client reports
+        the refusal instead of a statement with no result.
         """
         text = strip_sql_comments(sql).strip().rstrip(";").strip()
-        if not _DESCRIBABLE.match(text) or not is_allowed_statement(text):
+        identity = {"username": username, "connection": connection, "session_id": session_id}
+        if _METADATA_STATEMENT.match(text) and is_allowed_statement(text):
+            result = await self._collect(text, **identity)
+        elif _DESCRIBABLE.match(text) and is_allowed_statement(text):
+            result = await self._collect(
+                f"SELECT * FROM ({text}) AS nova_prepare_describe LIMIT 0", **identity
+            )
+        else:
             return []
-        probe = f"SELECT * FROM ({text}) AS nova_prepare_describe LIMIT 0"
+        if result.error is not None and result.error_code in _ACCESS_REFUSALS:
+            raise PrepareRefused(result)
+        return list(result.columns) if result.is_resultset else []
+
+    async def _collect(
+        self, sql: str, *, username: str, connection, session_id: str | None
+    ) -> WireResult:
+        """Run ``sql`` through the governed path and return its last response."""
         sink = CollectingSink()
         try:
             await self.execute_to(
-                probe, sink, username=username, connection=connection, session_id=session_id
+                sql, sink, username=username, connection=connection, session_id=session_id
             )
-        except Exception:
-            logger.debug("Prepared statement could not be described", exc_info=True)
-            return []
-        result = sink.result()
-        return list(result.columns) if result.is_resultset else []
+        except Exception:  # noqa: BLE001 - an internal read failing is an error answer
+            logger.debug("Internal proxy read failed", exc_info=True)
+            return WireResult(error="Query execution failed", error_code=1064)
+        return sink.result()
+
+    async def _scanner_catalog(
+        self,
+        query: ScannerQuery,
+        statement: str,
+        *,
+        username: str,
+        connection,
+        session_id: str | None,
+    ) -> WireResult:
+        """Answer a DuckDB scanner catalog query (see ``notebook_metadata``)."""
+        identity = {"username": username, "connection": connection, "session_id": session_id}
+        if query.kind == "schemas":
+            shown = await self._collect("SHOW DATABASES", **identity)
+            if not shown.is_resultset:
+                return shown
+            return WireResult(
+                columns=[_column_definition("schema_name", [])],
+                rows=[[row[0]] for row in shown.rows],
+            )
+        if query.kind == "indexes":
+            return WireResult(
+                columns=[_column_definition("TABLE_NAME", []),
+                         _column_definition("INDEX_NAME", [])],
+            )
+        if query.kind == "size":
+            return WireResult(
+                columns=[_column_definition("SUM(data_length + index_length)", [])],
+                rows=[[None]],
+            )
+        sink = CollectingSink()
+        await self.run_engine_statement(statement, sink, more=False, **identity)
+        direct = sink.result()
+        if direct.error is None:
+            return direct
+        return await self._described_columns(query, direct, identity)
+
+    async def _described_columns(
+        self, query: ScannerQuery, refused: WireResult, identity: dict
+    ) -> WireResult:
+        """Columns from ``SHOW FULL COLUMNS`` when ``information_schema`` was refused."""
+        schema = quote_identifier(query.schema)
+        if query.table is not None:
+            tables = [query.table]
+        else:
+            listed = await self._collect(f"SHOW TABLES FROM {schema}", **identity)
+            if not listed.is_resultset:
+                return refused
+            tables = sorted(str(row[0]) for row in listed.rows)[:MAX_DESCRIBED_TABLES]
+        rows: list[list] = []
+        for table in tables:
+            described = await self._collect(
+                f"SHOW FULL COLUMNS FROM {schema}.{quote_identifier(table)}", **identity
+            )
+            if not described.is_resultset:
+                if query.table is not None:
+                    return refused
+                continue
+            names = [column.name for column in described.columns]
+            for raw in described.rows:
+                row = column_row(dict(zip(names, raw, strict=False)))
+                rows.append(row if query.table is not None else [table, *row])
+        names = list(COLUMN_FIELDS) if query.table is not None else ["table_name", *COLUMN_FIELDS]
+        columns = [
+            _column_definition(name, [row[index] for row in rows[:50]])
+            for index, name in enumerate(names)
+        ]
+        return WireResult(columns=columns, rows=rows)
 
     async def run_engine_statement(
         self,

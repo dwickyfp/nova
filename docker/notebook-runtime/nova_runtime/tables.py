@@ -52,7 +52,8 @@ def preview(value: Any, *, limit: int, origin: str = "python_memory") -> dict[st
         head = value.limit(limit + 1).to_arrow_table()
         schema, rows, truncated = _arrow_preview(head, limit)
         schema = [
-            {"name": name, "type": str(dtype)} for name, dtype in zip(value.columns, value.types)
+            {"name": name, "type": str(dtype)}
+            for name, dtype in zip(value.columns, value.types, strict=False)
         ]
         if not truncated:
             total = len(rows)

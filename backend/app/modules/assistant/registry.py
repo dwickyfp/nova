@@ -143,4 +143,10 @@ def build_neva_registry() -> ToolRegistry:
     for tool in (ontology_resolve_tool, ontology_explain_tool, ontology_status_tool,
                  knowledge_propose_tool, knowledge_withdraw_tool):
         registry.register(tool)
+    # The notebook the person has open: read it, and — with approval each
+    # time — run a cell or add an approved package.
+    from app.modules.assistant.tools.notebook import TOOLS as notebook_tools
+
+    for tool in notebook_tools:
+        registry.register(tool)
     return registry

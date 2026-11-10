@@ -42,7 +42,7 @@ from app.proxy.auth import (
     StarRocksLogin,
     open_starrocks_login,
 )
-from app.proxy.executor import ProxyQueryExecutor, WireResult
+from app.proxy.executor import PrepareRefused, ProxyQueryExecutor, WireResult
 from app.proxy.protocol import (
     CLIENT_DEPRECATE_EOF,
     CLIENT_MULTI_RESULTS,
@@ -680,7 +680,11 @@ class ProxyConnection:
             await self._write_error(1064, str(exc))
             return
         num_params = len(placeholder_spans(sql))
-        columns = await self._describe_prepared(sql, num_params)
+        try:
+            columns = await self._describe_prepared(sql, num_params)
+        except PrepareRefused as refused:
+            await self._write_error(refused.part.error_code, refused.part.error or "Access denied")
+            return
         self._next_statement_id += 1
         statement_id = self._next_statement_id
         self._statements[statement_id] = PreparedStatement(sql, num_params)
