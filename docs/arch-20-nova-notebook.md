@@ -76,6 +76,8 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
   and trusted users, not hostile tenants (see Limits).
 - **Audit.** Runtime start/stop, every execution (source revision, not source),
   package installs, notebook proxy logins refused and statements refused.
+- **Kernel names.** `db`, `duckdb` and `novaduck` are in every kernel; the
+  image pins `pytz`, which DuckDB needs for TIMESTAMP WITH TIME ZONE values.
 - **Shared notebooks.** A notebook in a shared workspace (see below) is one
   file, but each person who runs it gets their own runtime, queue, events and
   results: runtime keys are per notebook *and* person
@@ -201,6 +203,12 @@ DuckDB's `mysql` scanner needed these proxy changes:
   its own tables: schemas come from `SHOW DATABASES` (hidden databases
   removed); columns from the scanner's own query, or `SHOW FULL COLUMNS` per
   table when that is refused; indexes and size are answered locally.
+- Binary columns (`VARBINARY`, BLOB) carry `BINARY_FLAG` (and `BLOB_FLAG`) as a
+  MySQL server sends them; without it the scanner reads them as VARCHAR and
+  refuses bytes that are not UTF-8.
+- The scanner pushes timestamps down as `TIMESTAMP '...'`. Nova's grammar
+  accepts that literal and the native planner lowers it to `DATETIME '...'`,
+  the engine's spelling (`app/sql_frontend/literals.py`).
 
 ## Packages and files
 

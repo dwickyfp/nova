@@ -258,6 +258,19 @@ def test_novaduck_is_the_notebook_connection(novaduck_con, shell):
     assert [c["alias"] for c in novaduck_con.catalogs()] == ["nova", "pg_shop"]
 
 
+def test_novaduck_needs_no_import(shell):
+    con = shell.user_ns["novaduck"].connect()
+    assert con.duckdb is shell.user_ns["db"].duckdb
+
+
+def test_timezone_timestamps_reach_python(shell):
+    """DuckDB needs pytz for TIMESTAMP WITH TIME ZONE values."""
+    [(value,)] = shell.user_ns["db"].sql(
+        "SELECT TIMESTAMPTZ '2026-01-01 10:00:00+00'"
+    ).fetchall()
+    assert value.year == 2026 and value.tzinfo is not None
+
+
 def test_merge_into_sends_the_rows_and_the_resolved_target(novaduck_con):
     import pyarrow.parquet  # noqa: F401
 

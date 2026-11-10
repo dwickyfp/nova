@@ -78,6 +78,33 @@ async def test_native_is_unchanged_and_never_binds(sql):
     assert binder.mock_calls == []
 
 
+@pytest.mark.parametrize(
+    "sql,engine_sql",
+    [
+        (
+            "SELECT city, TIMESTAMP '2026-11-10 15:49:55.008816' AS t FROM orders",
+            "SELECT city, DATETIME '2026-11-10 15:49:55.008816' AS t FROM orders",
+        ),
+        (
+            "SELECT * FROM t WHERE ts >= timestamp '2026-01-01' AND label = 'TIMESTAMP'",
+            "SELECT * FROM t WHERE ts >= DATETIME '2026-01-01' AND label = 'TIMESTAMP'",
+        ),
+        ("SELECT DATE '2026-01-01', DATETIME '2026-01-01 00:00:00'",
+         "SELECT DATE '2026-01-01', DATETIME '2026-01-01 00:00:00'"),
+        ("SELECT `timestamp` FROM t", "SELECT `timestamp` FROM t"),
+    ],
+)
+async def test_timestamp_literals_reach_the_engine_as_datetime(sql, engine_sql):
+    """DuckDB's MySQL scanner pushes timestamps down as ``TIMESTAMP '...'``."""
+    plan = await SQLPlanner().plan(
+        statement(sql),
+        PlanningContext(binder=AsyncMock(), confirm_destructive=True,
+                        capabilities=EngineCapabilities()),
+    )
+    assert isinstance(plan, EngineSqlPlan)
+    assert plan.engine_sql == engine_sql
+
+
 async def test_stage_rule_adds_safe_per_reference_descriptors():
     plan = await SQLPlanner().plan(
         statement("SELECT * FROM @s.a.csv JOIN @s.b.csv USING(id)"), PlanningContext()

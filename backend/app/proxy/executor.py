@@ -57,15 +57,21 @@ from app.proxy.notebook_metadata import (
     scanner_query,
 )
 from app.proxy.protocol import (
+    BINARY_FLAG,
+    BLOB_FLAG,
+    CHARSET_BINARY,
     CHARSET_UTF8,
     TYPE_BLOB,
     TYPE_DATE,
     TYPE_DATETIME,
     TYPE_DOUBLE,
+    TYPE_LONG_BLOB,
     TYPE_LONGLONG,
+    TYPE_MEDIUM_BLOB,
     TYPE_NEWDECIMAL,
     TYPE_STRING,
     TYPE_TIME,
+    TYPE_TINY_BLOB,
     TYPE_VAR_STRING,
     ColumnDefinition,
 )
@@ -156,6 +162,19 @@ class WireResult:
         return not self.columns and self.error is None
 
 
+def _binary_flags(type_code: int) -> int:
+    """Flags a MySQL server sets on a binary column.
+
+    Clients tell bytes from text by these, not by the charset alone: DuckDB's
+    MySQL scanner reads a BLOB without ``BINARY_FLAG`` as VARCHAR and then
+    refuses bytes that are not UTF-8.
+    """
+    return BINARY_FLAG | (BLOB_FLAG if type_code in _BLOB_TYPES else 0)
+
+
+_BLOB_TYPES = frozenset({TYPE_TINY_BLOB, TYPE_MEDIUM_BLOB, TYPE_LONG_BLOB, TYPE_BLOB})
+
+
 def _column_definition(
     name: str, sample_values: list, native_description: str | None = None
 ) -> ColumnDefinition:
@@ -185,9 +204,10 @@ def _column_definition(
             return ColumnDefinition(
                 name=name,
                 type_code=type_code,
-                charset=63 if binary else CHARSET_UTF8,
+                charset=CHARSET_BINARY if binary else CHARSET_UTF8,
                 column_length=max(0, min(int(1024 if length is None else length), 2**32 - 1)),
                 decimals=max(0, min(int(scale or 0), 255)),
+                flags=_binary_flags(type_code) if binary else 0,
             )
         except (ValueError, TypeError, SyntaxError):
             pass
@@ -210,7 +230,10 @@ def _column_definition(
         if isinstance(value, datetime.timedelta):
             return ColumnDefinition(name=name, type_code=TYPE_TIME, charset=CHARSET_UTF8)
         if isinstance(value, (bytes, bytearray)):
-            return ColumnDefinition(name=name, type_code=TYPE_BLOB, charset=63)
+            return ColumnDefinition(
+                name=name, type_code=TYPE_BLOB, charset=CHARSET_BINARY,
+                flags=_binary_flags(TYPE_BLOB),
+            )
         if isinstance(value, datetime.time):
             return ColumnDefinition(name=name, type_code=TYPE_TIME, charset=CHARSET_UTF8)
         break

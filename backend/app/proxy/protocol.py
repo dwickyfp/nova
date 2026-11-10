@@ -160,8 +160,11 @@ TYPE_VAR_STRING = 0xFD
 TYPE_STRING = 0xFE
 
 NOT_NULL_FLAG = 1 << 0
+BLOB_FLAG = 1 << 4
 UNSIGNED_FLAG = 1 << 5
 BINARY_FLAG = 1 << 7
+#: Binary data: the charset clients read as "bytes, not text".
+CHARSET_BINARY = 63
 
 # ── MySQL error codes ─────────────────────────────────────────────────────
 

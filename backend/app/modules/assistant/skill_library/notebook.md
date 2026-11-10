@@ -17,9 +17,10 @@ in their terms: the result they are after, not the machinery.
 - Cells run in order in one Python kernel that belongs to this notebook. A
   variable defined in one cell is there for the next, until the kernel
   restarts. Another notebook has its own kernel; nothing is shared.
-- `import novaduck` then `con = novaduck.connect()` gives the notebook's
-  DuckDB connection, already connected to Nova (`db` and `duckdb.sql(...)`
-  are the same connection). Nobody connects or signs in.
+- `con = novaduck.connect()` gives the notebook's DuckDB connection, already
+  connected to Nova; `novaduck` is ready in every notebook without an import
+  (`db` and `duckdb.sql(...)` are the same connection). Nobody connects or
+  signs in.
 - A SQL cell runs in that DuckDB. It joins catalogs and files freely: Nova
   tables, Postgres and Snowflake tables, files in the notebook's folder
   (`read_csv('data/sales.csv')`, `read_parquet(...)`), and earlier results by

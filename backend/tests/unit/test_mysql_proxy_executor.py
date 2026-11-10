@@ -482,6 +482,20 @@ class TestColumnTypeInference:
         samples = value if isinstance(value, list) else [value]
         return _column_definition("c", samples).type_code
 
+    def test_binary_columns_carry_the_binary_flags(self):
+        """DuckDB's MySQL scanner reads a BLOB without BINARY_FLAG as VARCHAR."""
+        from app.proxy.executor import _column_definition
+        from app.proxy.protocol import BINARY_FLAG, BLOB_FLAG, TYPE_BLOB, TYPE_VAR_STRING
+
+        native = _column_definition("raw", [None], str((TYPE_BLOB, 1024, 0)))
+        assert native.charset == 63
+        assert native.flags == BINARY_FLAG | BLOB_FLAG
+        varbinary = _column_definition("raw", [b"\xca\xfe"], str((TYPE_VAR_STRING, 16, 0)))
+        assert varbinary.flags == BINARY_FLAG
+        sampled = _column_definition("raw", [b"\x00\xff"])
+        assert sampled.flags == BINARY_FLAG | BLOB_FLAG
+        assert _column_definition("name", ["Ani"], str((TYPE_VAR_STRING, 64, 0))).flags == 0
+
     def test_decimal_maps_to_newdecimal(self):
         from decimal import Decimal
 

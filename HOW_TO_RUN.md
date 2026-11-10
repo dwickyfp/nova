@@ -549,7 +549,7 @@ NOTEBOOK_SANDBOX_NETWORKS=      # OrbStack: 127.0.0.1/32,0.250.250.0/24
 ```
 
 Runtime dijalankan oleh `nova-worker` (langkah 5), jadi worker harus hidup.
-Di notebook, `import novaduck` lalu `con = novaduck.connect()` sudah terhubung
+Di notebook, `con = novaduck.connect()` (tanpa import) sudah terhubung
 ke semua catalog yang dilihat role aktif (`nova`, Postgres, Snowflake). Contoh
 lengkap (baca tiga catalog, transformasi, merge ke Nova dan Postgres) ada di
 [`docs/examples/novaduck-tour.ipynb`](docs/examples/novaduck-tour.ipynb); upload

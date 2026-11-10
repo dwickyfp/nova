@@ -3267,7 +3267,11 @@ literalExpression
     : number                                                                              #numericLiteral
     | NULL                                                                                #nullLiteral
     | booleanValue                                                                        #booleanLiteral
-    | (DATE | DATETIME) string                                                            #dateLiteral
+    // NOVA-BEGIN (Nova Notebook): `TIMESTAMP '...'` as well as DATE/DATETIME.
+    // DuckDB's MySQL scanner pushes timestamps down in that form; the engine
+    // only knows DATETIME, so `NativePlanner` lowers the keyword to DATETIME.
+    | (DATE | DATETIME | TIMESTAMP) string                                                #dateLiteral
+    // NOVA-END
     | string                                                                              #stringLiteral
     | interval                                                                            #intervalLiteral
     | binary                                                                              #binaryLiteral

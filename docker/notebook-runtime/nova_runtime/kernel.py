@@ -408,8 +408,12 @@ def bootstrap(config_json: str) -> Payload:
 
     from . import novaduck
 
+    import novaduck as public_novaduck
+
     shell = _ipython()
     shell.user_ns["db"] = novaduck.connect()
+    # `con = novaduck.connect()` works in the first cell without an import.
+    shell.user_ns["novaduck"] = public_novaduck
     shell.user_ns["duckdb"] = duckdb
     _install_display_hooks()
     _install_render_hook()
