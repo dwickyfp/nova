@@ -107,7 +107,7 @@ def catalog(monkeypatch):
 
 async def _run(sql: str, *, notebook: bool = True):
     session = SessionState(active_role="retail_steward")
-    session.read_only_connection = notebook
+    session.notebook_connection = notebook
     sink = CollectingSink()
     await ProxyQueryExecutor(session).execute_to(
         sql, sink, username="steward", connection=object(), session_id="s"

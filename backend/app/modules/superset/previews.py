@@ -279,11 +279,12 @@ NOTEBOOK_PREFIX = "notebook:"
 
 
 async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
-    """A Nova-engine SQL cell's table, read back from the notebook's own record.
+    """A SQL cell's table, read back from the notebook's own record.
 
-    Only a SQL cell that ran on Nova has a governed statement Dataviz can run
-    again: the cell's saved source, unchanged since the run, under the same
-    role. DuckDB or Python results are computed in the notebook and have none.
+    Only a cell whose query reads Nova catalogs alone has a governed statement
+    Dataviz can run again: the Nova SQL the worker checked when the cell ran
+    (``nova_sql`` on the table), with the cell unchanged since, under the same
+    role. Results built from local files or Python values have none.
     """
     import json as _json
 
@@ -319,14 +320,14 @@ async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedP
         dict(zip(columns, values, strict=False))
         for values in ((table or {}).get("rows") or [])[:200]
     ]
-    nova_sql = row.get("sql_engine") == "nova" and (table or {}).get("origin") == "nova"
+    nova_sql = str((table or {}).get("nova_sql") or "").strip()
     unchanged = cell.source_revision == row.get("source_revision")
     issue = None
     if not nova_sql:
         issue = (
-            "This result was computed in the notebook (DuckDB or Python), not read by a "
-            "Nova query, so Dataviz cannot keep it up to date. Run the query on Nova in a "
-            "SQL cell to add it."
+            "This result uses data only the notebook has (local files, Python values or "
+            "DuckDB-only SQL), so Dataviz cannot keep it up to date. A SQL cell that reads "
+            "only Nova catalogs can be added."
         )
     elif not unchanged:
         issue = "The cell changed since it ran. Run it again to add this result."
@@ -334,7 +335,7 @@ async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedP
         locator=locator,
         render_kind="table",
         title=cell.name or entry.get("name", "Notebook result").removesuffix(".ipynb"),
-        sql=cell.source.strip().rstrip(";").strip() if nova_sql and unchanged else None,
+        sql=nova_sql if nova_sql and unchanged else None,
         provenance="tool_step" if nova_sql and unchanged else "none",
         producer_tool="query_execute" if nova_sql else "notebook",
         columns=columns,

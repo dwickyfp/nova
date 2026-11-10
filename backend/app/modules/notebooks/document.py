@@ -41,6 +41,7 @@ MAX_CELLS = 2000
 MAX_CELL_SOURCE_BYTES = 256 * 1024
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_NAME_LENGTH = 64
+MAX_TITLE_LENGTH = 120
 
 #: A cell result name: a plain identifier, usable from Python and as
 #: ``{{name}}`` in a SQL cell.
@@ -49,7 +50,7 @@ _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CELL_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 #: Names a cell may not take: the runtime's own globals and Python builtins.
 RESERVED_NAMES = frozenset(
-    {"db", "duckdb", "nova", "display", "get_ipython", "In", "Out", "exit", "quit"}
+    {"db", "duckdb", "nova", "novaduck", "display", "get_ipython", "In", "Out", "exit", "quit"}
     | {name for name in dir(builtins) if not name.startswith("_")}
 )
 
@@ -73,6 +74,8 @@ class Cell:
     source: str = ""
     name: str | None = None
     engine: SqlEngine = "duckdb"
+    #: A short heading the person gives the cell; not part of what runs.
+    title: str | None = None
     #: Jupyter metadata Nova does not interpret, kept as it was read.
     extra_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -91,6 +94,7 @@ class Cell:
             "source": self.source,
             "name": self.name,
             "engine": self.engine if self.kind == "sql" else None,
+            "title": self.title,
             "source_revision": self.source_revision,
         }
 
@@ -138,6 +142,18 @@ def validate_name(name: str | None, *, kind: str) -> str | None:
     return name
 
 
+def validate_title(title: Any) -> str | None:
+    """A cell title is optional, one line of plain text."""
+    if title is None:
+        return None
+    if not isinstance(title, str):
+        raise NotebookFormatError("A cell title is text")
+    title = " ".join(title.split())
+    if len(title) > MAX_TITLE_LENGTH:
+        raise NotebookFormatError(f"A cell title holds at most {MAX_TITLE_LENGTH} characters")
+    return title or None
+
+
 def _validate_source(source: str) -> str:
     if not isinstance(source, str):
         raise NotebookFormatError("Cell source must be text")
@@ -153,6 +169,7 @@ def make_cell(
     name: str | None = None,
     engine: str | None = None,
     cell_id: str | None = None,
+    title: str | None = None,
 ) -> Cell:
     if kind not in CELL_KINDS:
         raise NotebookFormatError("A cell is Python, SQL or Markdown")
@@ -166,6 +183,7 @@ def make_cell(
         source=_validate_source(source),
         name=validate_name(name, kind=kind),
         engine=(engine or "duckdb") if kind == "sql" else "duckdb",  # type: ignore[arg-type]
+        title=validate_title(title),
     )
 
 
@@ -246,12 +264,18 @@ def parse_ipynb(text: str) -> NotebookDocument:
             name = validate_name(name, kind=kind)
         except NotebookFormatError:
             name = None
+        raw_title = cell_nova.get("title", cell_meta.get("title"))
+        try:
+            title = validate_title(raw_title if isinstance(raw_title, str) else None)
+        except NotebookFormatError:
+            title = None
         cell = Cell(
             id=cell_id,
             kind=kind,  # type: ignore[arg-type]
             source=_validate_source(_join_source(raw_cell.get("source", ""))),
             name=name,
             engine=(engine or "duckdb") if kind == "sql" else "duckdb",  # type: ignore[arg-type]
+            title=title,
             extra_metadata={k: v for k, v in cell_meta.items() if k != "nova"},
         )
         document.cells.append(cell)
@@ -278,6 +302,8 @@ def to_ipynb(document: NotebookDocument) -> str:
         nova: dict[str, Any] = {"kind": cell.kind}
         if cell.name:
             nova["name"] = cell.name
+        if cell.title:
+            nova["title"] = cell.title
         if cell.kind == "sql":
             nova["engine"] = cell.engine
         meta["nova"] = nova
@@ -340,8 +366,8 @@ def apply_edits(document: NotebookDocument, edits: list[EditOp]) -> list[str]:
 
     Supported operations:
 
-    * ``insert``: ``{index, cell: {kind, source?, name?, engine?, id?}}``
-    * ``update``: ``{cell_id, source?, name?, kind?, engine?}``
+    * ``insert``: ``{index, cell: {kind, source?, name?, title?, engine?, id?}}``
+    * ``update``: ``{cell_id, source?, name?, title?, kind?, engine?}``
     * ``delete``: ``{cell_id}``
     * ``move``: ``{cell_id, index}`` (the index in the list after removal)
 
@@ -369,6 +395,7 @@ def apply_edits(document: NotebookDocument, edits: list[EditOp]) -> list[str]:
                 name=spec.get("name"),
                 engine=spec.get("engine"),
                 cell_id=cell_id,
+                title=spec.get("title"),
             )
             index = _bounded_index(edit.get("index", len(document.cells)), len(document.cells))
             document.cells.insert(index, cell)
@@ -391,6 +418,8 @@ def apply_edits(document: NotebookDocument, edits: list[EditOp]) -> list[str]:
                 cell.source = _validate_source(edit["source"])
             if "name" in edit:
                 cell.name = validate_name(edit["name"], kind=cell.kind)
+            if "title" in edit:
+                cell.title = validate_title(edit["title"])
             if cell.source_revision != before:
                 changed.append(cell.id)
         elif op == "delete":
@@ -416,6 +445,7 @@ def copy_document(document: NotebookDocument) -> NotebookDocument:
                 source=c.source,
                 name=c.name,
                 engine=c.engine,
+                title=c.title,
                 extra_metadata=dict(c.extra_metadata),
             )
             for c in document.cells

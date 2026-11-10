@@ -318,19 +318,25 @@ class NotebookRuntimeService:
         username = user["username"]
         await _require_notebook(username, notebook_id)
         rows = await notebook_repository.latest_executions(username, notebook_id)
+        # Smallest outputs first, so many cells show theirs; the largest (an
+        # interactive chart) are left for the page to fetch one by one.
         budget = _LATEST_OUTPUT_BUDGET
-
-        async def load_outputs(row: dict[str, Any]) -> None:
-            nonlocal budget
+        loaded: list[dict[str, Any]] = []
+        for row in sorted(rows, key=lambda item: int(item.get("output_bytes") or 0)):
             key = row.get("output_key")
             size = int(row.get("output_bytes") or 0)
-            if not key or size > budget:
-                row["outputs"] = None if key else []
-                return
-            budget -= size
-            row["outputs"] = await _read_outputs(key)
+            if not key:
+                row["outputs"] = []
+            elif size > budget:
+                row["outputs"] = None
+            else:
+                budget -= size
+                loaded.append(row)
 
-        await asyncio.gather(*(load_outputs(row) for row in rows))
+        async def load_outputs(row: dict[str, Any]) -> None:
+            row["outputs"] = await _read_outputs(row["output_key"])
+
+        await asyncio.gather(*(load_outputs(row) for row in loaded))
         inflight = []
         for cell_id, execution_id in (
             await state.redis().hgetall(state.inflight_key(notebook_id))

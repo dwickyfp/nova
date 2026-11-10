@@ -74,6 +74,7 @@ from app.proxy.session import (
     PreparedSQL,
     SessionState,
     bind_placeholders,
+    external_catalog,
     handle_set_statement,
     is_catalog_switch,
     is_read_only_transaction_start,
@@ -99,9 +100,8 @@ _DESCRIBABLE = re.compile(r"^\(*\s*(?:SELECT|WITH)\b", re.IGNORECASE)
 #: no table data, and a MySQL client preparing one expects a result set.
 _METADATA_STATEMENT = re.compile(r"^(?:SHOW|DESCRIBE|DESC)\b", re.IGNORECASE)
 
-#: Session settings a read-only client (a notebook's DuckDB) sends while it
-#: connects. They shape the connection only; ``SET PASSWORD``, ``SET ROLE``,
-#: ``SET GLOBAL`` and anything else stay refused on a read-only connection.
+#: Session settings a notebook's DuckDB sends while it connects. They shape
+#: the connection only, so they count as reads for an external catalog.
 _SESSION_SETTING = re.compile(
     r"^\s*SET\s+(?:SESSION\s+|@@SESSION\.|@@|LOCAL\s+)?"
     r"(?:autocommit|sql_mode|time_zone|names|character_set_[a-z_]+|collation_connection|"
@@ -112,8 +112,8 @@ _SESSION_SETTING = re.compile(
 )
 
 
-def _read_only_statement(sql: str) -> bool:
-    """True when a read-only connection may run ``sql``."""
+def _reads_only(sql: str) -> bool:
+    """True when ``sql`` reads (or only shapes the connection)."""
     text = strip_sql_comments(sql).strip()
     if _SESSION_SETTING.match(text) and ";" not in text.rstrip(";"):
         return True
@@ -544,6 +544,13 @@ class ProxyQueryExecutor:
         if read_only is not None:
             return await self._emit(sink, read_only, more)
 
+        if self._session.notebook_connection:
+            answered = await self._notebook_statement(
+                statement, username=username, session_id=session_id
+            )
+            if answered is not None:
+                return await self._emit(sink, answered, more)
+
         use_result = await self._handle_use(
             statement, username=username, connection=connection, session_id=session_id
         )
@@ -572,7 +579,7 @@ class ProxyQueryExecutor:
                 session_id=session_id,
             )
 
-        if self._session.read_only_connection:
+        if self._session.notebook_connection:
             catalog_query = scanner_query(statement)
             if catalog_query is not None:
                 part = await self._scanner_catalog(
@@ -599,7 +606,37 @@ class ProxyQueryExecutor:
             hide_databases=is_show_databases(statement),
         )
 
-    async def _audit_read_only_refusal(self, username: str, session_id: str | None) -> None:
+    async def _notebook_statement(
+        self, statement: str, *, username: str, session_id: str | None
+    ) -> WireResult | None:
+        """What the proxy answers itself on a notebook connection, or ``None``.
+
+        DuckDB opens a transaction around every write. StarRocks explicit
+        transactions refuse DDL and Nova's MERGE, so the proxy answers the
+        scanner's ``START TRANSACTION``/``COMMIT``/``ROLLBACK`` and each
+        statement commits as it runs (a ``ROLLBACK`` undoes nothing).
+
+        StarRocks cannot write to a JDBC catalog (Postgres, Snowflake), so a
+        write sent through such a catalog's attach is refused with where writes
+        go instead: the notebook's write-back calls, which Nova governs.
+        """
+        if transaction_control(statement) is not None:
+            return WireResult()
+        catalog = external_catalog(self._session.database)
+        if catalog is None or _reads_only(statement):
+            return None
+        await self._audit_notebook_refusal(username, session_id, catalog)
+        return WireResult(
+            error=(
+                f"{catalog} is read through this connection. Write to it with "
+                f"con.write(...) or con.merge_into(...)"
+            ),
+            error_code=1235,
+        )
+
+    async def _audit_notebook_refusal(
+        self, username: str, session_id: str | None, catalog: str
+    ) -> None:
         from app.common.audit import write_audit_log
 
         try:
@@ -607,10 +644,10 @@ class ProxyQueryExecutor:
                 event_type="notebook_proxy",
                 user_name=username,
                 action="QUERY_REFUSED",
-                object_type="NOTEBOOK",
-                object_name="read-only connection",
+                object_type="CATALOG",
+                object_name=catalog,
                 status="DENIED",
-                error_message="A notebook connection may only read",
+                error_message="Writes to an external catalog go through write-back",
                 session_id=session_id,
                 active_role=self._session.active_role,
                 security_context_version=self._session.security_context_version,
@@ -777,14 +814,6 @@ class ProxyQueryExecutor:
         hide_databases: bool = False,
     ) -> bool:
         """Run one statement through ``QueryService``, streaming its rows."""
-        if self._session.read_only_connection and not _read_only_statement(sql):
-            await self._audit_read_only_refusal(username, session_id)
-            part = WireResult(
-                error="Nova data in a notebook is read-only; this statement changes data",
-                error_code=1792,
-            )
-            await sink.emit(part, more=False)
-            return False
         row_limit = settings.PROXY_MAX_ROWS
         stream = StatementStream(
             sink,

@@ -293,6 +293,18 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS (
 DISTRIBUTED BY HASH(connection_name) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- The credential notebook write-back uses (Postgres, Snowflake). The engine's
+-- JDBC catalog keeps its read credential and stays read-only.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_WRITE_CREDENTIALS (
+    connection_name  VARCHAR(256) NOT NULL,
+    username_enc     STRING NOT NULL,
+    password_enc     STRING NOT NULL,
+    updated_by       VARCHAR(128),
+    updated_at       DATETIME
+) PRIMARY KEY(connection_name)
+DISTRIBUTED BY HASH(connection_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 -- Nova Catalog business metadata (phase 3). Securable ids are stable per
 -- catalog, database, relation, and column; tags, annotations, lineage, and
 -- Semantic View/entity links attach to them and outlive a drop. Mirrors

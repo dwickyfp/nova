@@ -15,9 +15,15 @@ contracts. Architecture: [arch-20](../../../../docs/arch-20-nova-notebook.md).
 - Code sent to a kernel is built in `runtime/kernel_calls.py`: user text only
   travels inside JSON quoted by `repr`. Credentials never travel in code or
   environment; they go through a one-time file.
-- Nova data in a notebook is read-only and governed by the proxy: a notebook
-  data token (`access_control/data_tokens.py`, purpose `notebook`) bound to the
-  session and the runtime. Do not give a runtime another credential.
+- Nova data in a notebook is governed by the proxy: a notebook data token
+  (`access_control/data_tokens.py`, purpose `notebook`) bound to the session
+  and the runtime. Do not give a runtime another credential; catalog
+  credentials never enter the sandbox.
+- Writes the kernel cannot do through the proxy (stages, Postgres, Snowflake,
+  large Nova writes) are requests the worker does as the runtime's user
+  (`runtime/rpc.py`). Add new request kinds there, through the owning service
+  and its authorization (stage access, Ranger write-back), never with a
+  service account.
 - The kernel side is `docker/notebook-runtime/nova_runtime`; its tests run in
   the image: `docker build -t nova-notebook-runtime:dev docker/notebook-runtime`
   then `docker run --rm --entrypoint python nova-notebook-runtime:dev -m pytest

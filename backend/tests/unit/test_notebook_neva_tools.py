@@ -8,7 +8,6 @@ import pytest
 
 from app.modules.assistant.app_context import NevaAppContext
 from app.modules.assistant.tools import ToolInvocation
-from app.modules.assistant.tools import client_capability as capability_module
 from app.modules.assistant.tools import notebook as notebook_tools
 from app.modules.assistant.tools.client_capability import invoke_client_capability_tool
 from app.modules.notebooks.document import NotebookDocument, make_cell
@@ -34,7 +33,7 @@ def _context(app=None, checked=None):
 
 
 def _propose(**args):
-    base = {"cell_id": "c1", "kind": "python", "engine": "none", "source": "x = 1",
+    base = {"cell_id": "c1", "kind": "python", "title": "", "source": "x = 1",
             "mode": "insert_below"}
     base.update(args)
     return ToolInvocation(tool_call_id="t1", tool_name="invoke_client_capability",
@@ -54,26 +53,19 @@ async def test_python_that_does_not_parse_is_sent_back():
     assert not outcome.ok and outcome.recoverable and "parse" in outcome.error
 
 
-async def test_nova_sql_must_be_checked_first_and_duckdb_sql_need_not(monkeypatch):
-    monkeypatch.setattr(capability_module, "_normalize", lambda sql: sql.strip().lower())
-    unchecked = await invoke_client_capability_tool.run(
-        _propose(kind="sql", engine="nova", source="SELECT 1"), _context()
-    )
-    assert not unchecked.ok and "validate_sql" in unchecked.error
-    checked = await invoke_client_capability_tool.run(
-        _propose(kind="sql", engine="nova", source="SELECT 1"), _context(checked={"select 1"})
-    )
-    assert checked.ok
-    local = await invoke_client_capability_tool.run(
-        _propose(kind="sql", engine="duckdb", source="SELECT * FROM read_csv('a.csv')"),
+async def test_sql_over_nova_catalogs_and_a_title_go_to_the_page():
+    outcome = await invoke_client_capability_tool.run(
+        _propose(kind="sql", title="Orders by region",
+                 source="SELECT region, count(*) FROM pg_shop.public.orders GROUP BY 1"),
         _context(),
     )
-    assert local.ok
+    assert outcome.ok
+    assert outcome.metadata["client_action"]["args"]["title"] == "Orders by region"
 
 
 @pytest.mark.parametrize(
     "args",
-    [{"mode": "append"}, {"kind": "rust"}, {"engine": "spark"}, {"kind": "sql", "engine": "none"}],
+    [{"mode": "append"}, {"kind": "rust"}, {"title": "x" * 121}, {"source": "  "}],
 )
 async def test_malformed_proposals_are_sent_back(args):
     outcome = await invoke_client_capability_tool.run(_propose(**args), _context())

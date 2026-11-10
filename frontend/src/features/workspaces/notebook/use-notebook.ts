@@ -135,6 +135,25 @@ export function useNotebook(notebookId: string) {
         }
         setRuns(next);
         setVariables(latest.variables);
+        // Large outputs (interactive charts) come one by one, after the page shows.
+        const deferred = Object.entries(next).filter(([, run]) => run.outputsPending);
+        void (async () => {
+          for (const [cellId, run] of deferred) {
+            try {
+              const record = await notebookApi.execution(notebookId, run.executionId);
+              setRuns((current) =>
+                current[cellId]?.executionId === run.executionId
+                  ? {
+                      ...current,
+                      [cellId]: { ...current[cellId], outputs: record.outputs ?? [], outputsPending: false },
+                    }
+                  : current,
+              );
+            } catch {
+              // The cell keeps its "run again" note.
+            }
+          }
+        })();
       }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "The notebook could not be opened");
@@ -195,6 +214,7 @@ export function useNotebook(notebookId: string) {
               edit.source !== undefined &&
               edit.kind === undefined &&
               edit.name === undefined &&
+              edit.title === undefined &&
               edit.engine === undefined;
             if (textOnly) {
               if (!pendingSources.current.has(edit.cell_id)) {
@@ -259,7 +279,10 @@ export function useNotebook(notebookId: string) {
   );
 
   const updateCell = useCallback(
-    (cellId: string, patch: { name?: string | null; kind?: CellKind; engine?: SqlEngine }) => {
+    (
+      cellId: string,
+      patch: { name?: string | null; title?: string | null; kind?: CellKind; engine?: SqlEngine },
+    ) => {
       setCells((current) =>
         current.map((cell) =>
           cell.id === cellId
@@ -293,6 +316,7 @@ export function useNotebook(notebookId: string) {
       source = "",
       name: string | null = null,
       engine: SqlEngine = "duckdb",
+      title: string | null = null,
     ): string => {
       const id = newCellId();
       const usedNames = new Set(cellsRef.current.map((c) => c.name).filter(Boolean));
@@ -308,6 +332,7 @@ export function useNotebook(notebookId: string) {
         source,
         name: cellName,
         engine: kind === "sql" ? engine : null,
+        title,
         source_revision: "",
       };
       setCells((current) => {
@@ -319,7 +344,14 @@ export function useNotebook(notebookId: string) {
         {
           op: "insert",
           index,
-          cell: { id, kind, source, name: cellName, ...(kind === "sql" ? { engine } : {}) },
+          cell: {
+            id,
+            kind,
+            source,
+            name: cellName,
+            ...(title ? { title } : {}),
+            ...(kind === "sql" ? { engine } : {}),
+          },
         },
       ]);
       pushUndo({ label: "Add cell", edits: [{ op: "delete", cell_id: id }], cells: [] });
@@ -349,6 +381,7 @@ export function useNotebook(notebookId: string) {
               kind: restored.kind,
               source: restored.source,
               name: restored.name,
+              ...(restored.title ? { title: restored.title } : {}),
               ...(restored.engine ? { engine: restored.engine } : {}),
             },
           },
@@ -391,7 +424,7 @@ export function useNotebook(notebookId: string) {
       const index = cellsRef.current.findIndex((c) => c.id === cellId);
       if (index < 0) return;
       const cell = cellsRef.current[index];
-      return insertCell(cell.kind, index + 1, cell.source, null);
+      return insertCell(cell.kind, index + 1, cell.source, null, cell.engine ?? "duckdb", cell.title ?? null);
     },
     [insertCell],
   );

@@ -148,9 +148,9 @@ class SessionState:
     #: The active role follows a Nova session (Superset data-token login), so
     #: role statements on this connection are refused rather than applied.
     role_locked: bool = False
-    #: Every statement must be read-only (a notebook runtime's connection):
-    #: anything else is refused before it reaches the engine.
-    read_only_connection: bool = False
+    #: A notebook runtime's DuckDB (notebook data token). Its scanner's
+    #: catalog queries and transaction control are answered by the proxy.
+    notebook_connection: bool = False
 
     def set_database(self, database: str) -> None:
         self.database = database or None
@@ -538,6 +538,14 @@ def connect_database(name: str | None) -> str | None:
     if name.endswith(".") and name[:-1].strip("`").lower() == "default_catalog":
         return None
     return name
+
+
+def external_catalog(database: str | None) -> str | None:
+    """The catalog a ``catalog.`` / ``catalog.db`` context names, unless default."""
+    if not database or "." not in database:
+        return None
+    catalog = database.split(".", 1)[0].strip("`")
+    return None if catalog.lower() == "default_catalog" else catalog
 
 
 def parse_use_statement(statement: str) -> str | None:

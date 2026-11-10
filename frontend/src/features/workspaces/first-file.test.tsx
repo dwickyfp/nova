@@ -116,7 +116,7 @@ describe("Workspaces first file", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(page.getByRole("button", { name: "New File", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "SQL file", exact: true }));
 
     await expect.element(page.getByRole("textbox", { name: "Editor content" })).toBeVisible();
     // Give a runaway effect time to show itself before checking the log.

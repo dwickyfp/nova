@@ -104,6 +104,56 @@ Not yet run: a two-role check where both roles read the same table under differe
 
 Known limits: macOS `runc` is not hostile-tenant isolation; Plotly shows as text; no notebook sharing; on OrbStack the proxy sees sandbox traffic as `127.0.0.1`, so the local `NOTEBOOK_SANDBOX_NETWORKS` includes it (deployments behind a real bridge must not).
 
+## Notebook v2: novaduck, writes, frameless cells (2026-11-10)
+
+Asked for: Monaco with line numbers on a grey surface, cleaner cells, rich
+Python output (ML images, PyGWalker), one SQL engine with
+`con = novaduck.connect()` reaching every catalog, writes to stages and
+MERGE into Nova/Postgres/Snowflake tables, cell titles, up/down moves,
+isolation between notebooks, and working package installs.
+
+Engine facts found first (StarRocks 4.1.4, live):
+
+- A JDBC catalog refuses every write: `INSERT/UPDATE/DELETE INTO pg_shop.…`
+  fail with "fail to begin transaction"; Nova's MERGE writes Nova tables only.
+  Hence governed write-back (arch-20, Catalogs and writes).
+- DuckDB wraps writes in `START TRANSACTION`; StarRocks explicit transactions
+  refuse DDL and MERGE. The proxy now answers transaction control on notebook
+  connections; each statement commits as it runs.
+- DuckDB lists every attached catalog's schemas when it reads any; an engine
+  catalog that fails (`sf_sales`, `sr_remote` here) broke all of them. The
+  worker now checks each catalog at start and leaves broken ones unattached.
+- execd drops a kernel result of several MB (a 4.6 MB display vanished, 2.9 MB
+  passed). Displays over 1 MB now travel as files read through the files API.
+- `pip install pygwalker` pulled DuckDB 1.5.6 into the user site, which would
+  shadow 2.0 at the next start and break the runtime. Installs now run under
+  pins of everything the image ships; PyGWalker installs without its stale
+  `duckdb<2` and telemetry `dateutil` pins and is patched for DuckDB 2.0 (one
+  `fetchone()` call).
+- PyGWalker stops in an opaque-origin frame (it uses localStorage); interactive
+  frames get in-memory storage stand-ins instead of `allow-same-origin`.
+
+Live checks (dev stack, OrbStack):
+
+| Check | Result |
+|---|---|
+| `novaduck.connect()` as nova_admin | `nova`, `pg_shop`, `sf_pat` attached; `sf_sales`, `sr_remote` listed with their engine errors |
+| One query over Nova + Postgres; Snowflake table list | pass |
+| `con.write` + `con.merge_into` into a Nova PK table; DuckDB `INSERT INTO nova.…` | pass |
+| `con.put(…, "@nb_landing/out/events.parquet")`, then `con.nova("SELECT count(*) FROM @nb_landing/…")` | pass (4 rows) |
+| DuckDB `INSERT INTO pg_shop.…` | refused with the write-back pointer |
+| Postgres write-back SQL on the PG 16 fixture (merge, append, duplicate key, merge-delete, unreachable table) | pass; the host-run dev backend reached the fixture by its OrbStack name, the in-notebook call needs the containerised backend (compose-only host) |
+| Same cells as `retail_steward_test` | only `nova` attached; Nova write refused by Ranger (5204); `pg_shop` "not a catalog your role sees" |
+| Two notebooks of one user | separate containers and hostnames, no shared variable, file or process, uid 1000 |
+| Packages: pygwalker 0.5.0.1, plotly 7.1.0, scikit-learn 1.9.1 | install; DuckDB stays 2.0.0 after restart; restored from the manifest on a new runtime |
+| Rich output: scikit-learn fit plot, `pyg.walk(df)`, `px.bar(...).show()` | image; 2.9 MB explorer page; 4.8 MB plotly chart; explorer verified working in the exact sandbox and policy the notebook uses |
+| Cell UI at 1440 in dark and light | frameless cells, grey line-numbered code, title saved inline, toolbar on hover, active accent |
+
+Unit and image tests: write-back (19), kernel requests and display handover
+(15), Dataviz provenance (5), proxy (catalog and transactions), titles, Neva,
+35 kernel tests in the image, 16 notebook component tests.
+
 ## Next checkpoints
 
-- Phase 8: upload and package install from the UI, screenshots and UI review; row-filter/mask two-role check in the governed integration suite
+- Row-filter/mask two-role check and write-back against a writable Snowflake role in the governed integration suite
+- Snowflake write-back live (the trial fixture's role is read-only)

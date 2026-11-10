@@ -4,6 +4,8 @@
   POST   /connections                       → register a connection
   GET    /connections/{name}                → one connection
   PUT    /connections/{name}/credentials    → enter credentials (write-only)
+  PUT    /connections/{name}/write-credentials → enter the notebook write-back credential
+  DELETE /connections/{name}/write-credentials → remove it
   DELETE /connections/{name}                → drop an unused connection
   POST   /foreign-catalogs                  → create a catalog from a connection
 
@@ -93,6 +95,32 @@ async def set_connection_credentials(name: str, body: ConnectionCredentials, use
         updated = await connection_service.set_credentials(
             name, body.username, body.password, user
         )
+    except CatalogError as exc:
+        raise _http(exc) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
+    return updated
+
+
+@router.put("/connections/{name}/write-credentials", response_model=ConnectionSummary,
+            response_class=SanitizingJSONResponse)
+async def set_connection_write_credentials(
+    name: str, body: ConnectionCredentials, user: CurrentUser
+):
+    return await _write_credentials(name, body.username, body.password, user)
+
+
+@router.delete("/connections/{name}/write-credentials", response_model=ConnectionSummary,
+               response_class=SanitizingJSONResponse)
+async def clear_connection_write_credentials(name: str, user: CurrentUser):
+    return await _write_credentials(name, None, None, user)
+
+
+async def _write_credentials(
+    name: str, username: str | None, password: str | None, user: dict
+) -> ConnectionSummary:
+    try:
+        updated = await connection_service.set_write_credentials(name, username, password, user)
     except CatalogError as exc:
         raise _http(exc) from exc
     if updated is None:

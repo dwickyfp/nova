@@ -23,18 +23,19 @@ _ARGUMENTS: dict[str, dict[str, type]] = {
     "notebook.propose_cell": {
         "cell_id": str,
         "kind": str,
-        "engine": str,
+        "title": str,
         "source": str,
         "mode": str,
     },
     "notebook.focus_cell": {"cell_id": str},
 }
 #: Longest value per argument; anything not listed is a short name.
-_LIMITS = {"sql": 20_000, "source": 20_000}
+_LIMITS = {"sql": 20_000, "source": 20_000, "title": 120}
+#: Arguments that may be empty: a filter value (clears it), a cell title (none).
+_MAY_BE_EMPTY = frozenset({"value", "title"})
 _CHOICES = {
     "mode": {"replace", "insert"},
     "kind": {"python", "sql", "markdown"},
-    "engine": {"duckdb", "nova", "none"},
 }
 _CAPABILITY_CHOICES = {
     "notebook.propose_cell": {"mode": {"replace", "insert_below"}},
@@ -81,8 +82,7 @@ def _valid_arguments(capability: str, args: Any) -> bool:
     choices = {**_CHOICES, **_CAPABILITY_CHOICES.get(capability, {})}
     return all(
         isinstance(args[name], kind)
-        # A filter value may be empty: that clears the filter.
-        and (name == "value" or bool(args[name].strip()))
+        and (name in _MAY_BE_EMPTY or bool(args[name].strip()))
         and len(args[name]) <= _LIMITS.get(name, 128)
         and (name not in choices or args[name] in choices[name])
         for name, kind in fields.items()
@@ -92,8 +92,8 @@ def _valid_arguments(capability: str, args: Any) -> bool:
 def _cell_problem(args: Any) -> str | None:
     """Why a proposed notebook cell cannot go to the page, or ``None``.
 
-    Python must parse; Nova SQL must have passed validate_sql in this turn (the
-    caller checks that); DuckDB SQL and Markdown are the person's to review.
+    Python must parse; SQL (DuckDB, over the notebook's attached Nova catalogs)
+    and Markdown are the person's to review before anything runs.
     """
     if not isinstance(args, dict):
         return None
@@ -104,8 +104,6 @@ def _cell_problem(args: Any) -> str | None:
             ast.parse(str(args.get("source") or ""))
         except SyntaxError as exc:
             return f"The Python does not parse (line {exc.lineno}): fix it, then propose it."
-    if args.get("kind") == "sql" and args.get("engine") not in {"duckdb", "nova"}:
-        return "A SQL cell runs on engine duckdb or nova."
     return None
 
 
@@ -130,7 +128,7 @@ def _shape(capability: str) -> str:
         ),
         "cell_id": "a cell id from the notebook context",
         "kind": "python, sql or markdown",
-        "engine": "duckdb or nova for SQL, none otherwise",
+        "title": "a short title shown above the cell, or empty",
         "source": "the cell's code or text",
     }
     return "{" + ", ".join(f'"{name}": {hints.get(name, "text")}' for name in fields) + "}"
@@ -147,9 +145,9 @@ class InvokeClientCapabilityTool:
         "'replace' swaps the editor's SQL (or their selection) for it, 'insert' "
         "adds it below. In a notebook, notebook.propose_cell puts a Python, SQL or "
         "Markdown cell in as a change they review: mode 'replace' changes the cell "
-        "named by cell_id, 'insert_below' adds one after it; check Nova-engine SQL "
-        "with validate_sql first. The action is pending until a matching application "
-        "outcome event arrives. Never claim it completed from this tool result."
+        "named by cell_id, 'insert_below' adds one after it. The action is pending "
+        "until a matching application outcome event arrives. Never claim it "
+        "completed from this tool result."
     )
     parameters = {
         "type": "object",
@@ -183,13 +181,6 @@ class InvokeClientCapabilityTool:
         proposed_sql = None
         if capability == "editor.propose_sql" and isinstance(args, dict):
             proposed_sql = str(args.get("sql") or "")
-        elif (
-            capability == "notebook.propose_cell"
-            and isinstance(args, dict)
-            and args.get("kind") == "sql"
-            and args.get("engine") == "nova"
-        ):
-            proposed_sql = str(args.get("source") or "")
         if capability == "notebook.propose_cell":
             problem = _cell_problem(args)
             if problem:

@@ -20,6 +20,11 @@ COPY requirements.lock /opt/nova/requirements.lock
 RUN python -m pip install --require-hashes --no-deps -r /opt/nova/requirements.lock \
  && python -m ipykernel install --sys-prefix --name nova-python --display-name "Python (Nova)"
 
+# Packages a notebook adds may not replace the runtime's own libraries (a user
+# DuckDB 1.x would shadow 2.0 at the next start and break the runtime): every
+# install runs under these pins.
+RUN python -m pip freeze --all > /opt/nova/runtime-constraints.txt
+
 # DuckDB extensions are code: install the approved set at build time from the
 # official repository; the kernel never auto-installs or loads others.
 RUN python - <<'PY'
@@ -34,6 +39,7 @@ print(con.sql("select extension_name, installed, extension_version from duckdb_e
 PY
 
 COPY nova_runtime /opt/nova/lib/nova_runtime
+COPY novaduck /opt/nova/lib/novaduck
 COPY tests /opt/nova/tests
 COPY entrypoint.sh /opt/nova/entrypoint.sh
 

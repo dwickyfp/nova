@@ -15,6 +15,7 @@ class NotebookCell(BaseModel):
     source: str
     name: str | None = None
     engine: Literal["duckdb", "nova"] | None = None
+    title: str | None = None
     source_revision: str
 
 

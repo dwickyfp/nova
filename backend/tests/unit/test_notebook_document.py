@@ -264,3 +264,29 @@ async def test_non_notebook_files_are_not_opened_as_notebooks(workspace):
     workspace.files["e2"] = {"entry": {"id": "e2", "name": "query.sql"}, "content": "SELECT 1"}
     with pytest.raises(Exception, match="not a notebook"):
         await NotebookDocumentService().get("ana", "e2")
+
+
+def test_a_cell_title_round_trips_and_does_not_make_output_stale():
+    from app.modules.notebooks.document import apply_edits, make_cell, parse_ipynb, to_ipynb
+
+    document = NotebookDocument(cells=[make_cell(kind="sql", source="SELECT 1", cell_id="c1")])
+    before = document.cells[0].source_revision
+    changed = apply_edits(document, [{"op": "update", "cell_id": "c1",
+                                      "title": "  Revenue   by region "}])
+    assert document.cells[0].title == "Revenue by region" and changed == []
+    assert document.cells[0].source_revision == before
+    again = parse_ipynb(to_ipynb(document))
+    assert again.cells[0].title == "Revenue by region"
+    assert again.cells[0].to_api()["title"] == "Revenue by region"
+    apply_edits(document, [{"op": "update", "cell_id": "c1", "title": ""}])
+    assert document.cells[0].title is None
+
+
+def test_a_title_is_one_short_line():
+    from app.modules.notebooks.document import validate_title
+
+    assert validate_title("a\nb") == "a b"
+    with pytest.raises(NotebookFormatError):
+        validate_title("x" * 121)
+    with pytest.raises(NotebookFormatError):
+        validate_title(3)

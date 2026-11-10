@@ -3,7 +3,7 @@ import { render } from "vitest-browser-react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { NotebookCellView } from "./cell";
-import { cellForFile, formatCell, formatDuration } from "./helpers";
+import { cellForFile, formatCell, formatDuration, INTERACTIVE_POLICY, needsScripts } from "./helpers";
 import { isEditableName, isNotebookName, nextNotebookName } from "./names";
 import { CellOutputs } from "./outputs";
 import { parseSseBlock } from "./stream";
@@ -89,7 +89,7 @@ describe("event stream frames", () => {
 describe("cell outputs", () => {
   it("shows HTML only in a sandboxed frame without scripts or same origin", async () => {
     const outputs: CellOutput[] = [
-      { type: "html", html: "<script>parent.alert(1)</script><b>hi</b>", text: "hi" },
+      { type: "html", html: '<b>hi</b><img src="x" onerror="parent.alert(1)">', text: "hi" },
     ];
     const screen = await render(<CellOutputs outputs={outputs} />);
     const frame = screen.container.querySelector("iframe");
@@ -97,6 +97,28 @@ describe("cell outputs", () => {
     expect(frame?.getAttribute("sandbox")).toBe("");
     expect(frame?.getAttribute("srcdoc")).toContain("default-src 'none'");
     expect(screen.container.querySelector("script")).toBeNull();
+  });
+
+  it("lets interactive output run its scripts only in an opaque, offline frame", async () => {
+    const outputs: CellOutput[] = [
+      { type: "html", html: "<div id=gw></div><script>window.x = 1</script>", text: "" },
+    ];
+    const screen = await render(<CellOutputs outputs={outputs} />);
+    const frame = screen.container.querySelector("iframe");
+    expect(frame?.getAttribute("sandbox")).toBe("allow-scripts allow-downloads");
+    expect(frame?.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame?.getAttribute("srcdoc")).toContain(INTERACTIVE_POLICY);
+    expect(INTERACTIVE_POLICY).toContain("default-src 'none'");
+    expect(INTERACTIVE_POLICY).not.toMatch(/https?:/);
+    // Storage stand-ins run before the output's own scripts.
+    const srcdoc = frame?.getAttribute("srcdoc") ?? "";
+    expect(srcdoc.indexOf("localStorage")).toBeGreaterThan(-1);
+    expect(srcdoc.indexOf("localStorage")).toBeLessThan(srcdoc.indexOf('<div id=gw>'));
+  });
+
+  it("treats a nested frame (PyGWalker) as interactive and plain markup as static", () => {
+    expect(needsScripts('<iframe srcdoc="&lt;script&gt;x&lt;/script&gt;"></iframe>')).toBe(true);
+    expect(needsScripts("<b>scripted</b> text about <scripts>")).toBe(false);
   });
 
   it("labels a preview honestly and where it was computed", async () => {
@@ -187,10 +209,33 @@ describe("cell", () => {
     expect(onCommand).toHaveBeenCalledWith("c1", "ask-neva");
   });
 
-  it("switches a SQL cell between DuckDB and Nova", async () => {
+  it("moves up and down from its toolbar, never past the ends", async () => {
+    const { screen, onCommand } = await renderCell();
+    await screen.getByRole("button", { name: "Move up" }).click();
+    await screen.getByRole("button", { name: "Move down" }).click();
+    expect(onCommand).toHaveBeenNthCalledWith(1, "c1", "move-up");
+    expect(onCommand).toHaveBeenNthCalledWith(2, "c1", "move-down");
+    const first = await renderCell({ index: 0 });
+    const up = first.screen.container.querySelector<HTMLButtonElement>('button[aria-label="Move up"]');
+    expect(up?.disabled).toBe(true);
+  });
+
+  it("saves a title on Enter and keeps SQL without an engine choice", async () => {
+    const onTitle = vi.fn();
+    const { screen } = await renderCell({ onTitle, active: true });
+    const title = screen.getByRole("textbox", { name: "Cell title" });
+    await title.fill("Revenue by region");
+    await title.element().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    (title.element() as HTMLInputElement).blur();
+    expect(onTitle).toHaveBeenCalledWith("c1", "Revenue by region");
+    expect(screen.container.querySelector("[role=radio]")).toBeNull();
+    await expect.element(screen.getByRole("textbox", { name: "Result name" })).toHaveValue("result_1");
+  });
+
+  it("offers to move an older Nova SQL cell to DuckDB", async () => {
     const onEngine = vi.fn();
-    const { screen } = await renderCell({ onEngine });
-    await screen.getByRole("radio", { name: "Nova" }).click();
-    expect(onEngine).toHaveBeenCalledWith("c1", "nova");
+    const { screen } = await renderCell({ cell: cell({ engine: "nova" }), onEngine });
+    await screen.getByRole("button", { name: "Run in DuckDB" }).click();
+    expect(onEngine).toHaveBeenCalledWith("c1", "duckdb");
   });
 });

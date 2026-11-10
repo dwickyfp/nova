@@ -83,11 +83,11 @@ def _summarize_outputs(outputs: list[dict[str, Any]] | None) -> list[dict[str, A
 class NotebookContextTool:
     name = "notebook_context"
     description = (
-        "Read the notebook the person has open: its cells in order (kind, result name, "
-        "SQL engine, source), the runtime state, the role Nova data is read as, the last "
-        "result or error of each cell, and the variables defined. Use it before you "
-        "explain, fix or extend the notebook. Pass cell_id to name the cell the person "
-        "is asking about; its full last result is included."
+        "Read the notebook the person has open: its cells in order (kind, title, result "
+        "name, source), the runtime state, the Nova catalogs it reaches, the role Nova "
+        "data is read as, the last result or error of each cell, and the variables "
+        "defined. Use it before you explain, fix or extend the notebook. Pass cell_id "
+        "to name the cell the person is asking about; its full last result is included."
     )
     parameters = {
         "type": "object",
@@ -125,7 +125,7 @@ class NotebookContextTool:
                     "cell_id": cell.id,
                     "kind": cell.kind,
                     "name": cell.name,
-                    "engine": cell.engine if cell.kind == "sql" else None,
+                    "title": cell.title,
                     "source": cell.source[:_MAX_SOURCE],
                     "last_run": None
                     if run is None
@@ -150,11 +150,15 @@ class NotebookContextTool:
             },
             "variables": (latest.get("variables") or [])[:60],
             "how_it_works": (
-                "SQL cells run in DuckDB (engine duckdb: local data, files under /workspace, "
-                "governed Nova tables as nova.<database>.<table>, {{name}} references to "
-                "earlier results) or in Nova (engine nova: plain Nova SQL, pushed down, "
-                "read-only). A named SQL result is a DuckDB relation in Python; `db` is the "
-                "DuckDB connection."
+                "SQL cells run in the notebook's DuckDB. con = novaduck.connect() (also `db`) "
+                "has every catalog the role sees attached: nova.<database>.<table> for Nova, "
+                "then each external catalog by its name (pg_shop.public.orders). Files "
+                "under /workspace, and earlier results as {{name}}, work too. Writes run as "
+                "the person: SQL INSERT/CREATE TABLE on nova.*, con.write(data, "
+                "'catalog.schema.table'), con.merge_into(target, data, on=[...]) for Nova, "
+                "Postgres and Snowflake tables, con.put(data, '@stage/path/file.parquet') "
+                "for stages, con.nova(sql) for Nova-only SQL. A named SQL result is a "
+                "DuckDB relation in Python."
             ),
         }
         return ToolOutcome(

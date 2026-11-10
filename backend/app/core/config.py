@@ -286,15 +286,23 @@ class Settings(BaseSettings):
     NOTEBOOK_INTERRUPT_GRACE_SECONDS: int = Field(default=15, ge=1, le=300)
     #: Budget for creating a sandbox and bootstrapping its kernel.
     NOTEBOOK_START_TIMEOUT_SECONDS: int = Field(default=180, ge=30, le=1800)
-    #: Output kept for one execution; more is truncated with a marker.
-    NOTEBOOK_OUTPUT_MAX_BYTES: int = Field(default=2 * 1024 * 1024, ge=65_536, le=64 * 1024**2)
+    #: Output kept for one execution; more is truncated with a marker. Room
+    #: for interactive charts, which embed their library (plotly is ~4.5 MB).
+    NOTEBOOK_OUTPUT_MAX_BYTES: int = Field(default=16 * 1024 * 1024, ge=65_536, le=64 * 1024**2)
     #: Rows a table output previews.
     NOTEBOOK_PREVIEW_ROWS: int = Field(default=100, ge=10, le=1000)
     #: Packages users may add to a notebook, as ``name`` or ``name<specifier>``
     #: (comma-separated). Anything else is refused before pip runs.
     NOTEBOOK_PACKAGE_ALLOWLIST: str = (
         "scikit-learn,scipy,statsmodels,seaborn,plotly,altair,openpyxl,xlsxwriter,"
-        "pyyaml,tabulate,tqdm,networkx,sqlglot,prophet,xgboost,lightgbm"
+        "pyyaml,tabulate,tqdm,networkx,sqlglot,prophet,xgboost,lightgbm,pygwalker,bokeh,"
+        "folium,polars"
+    )
+    #: Largest dataset one notebook write (con.write, con.merge_into, con.put)
+    #: hands to Nova, in rows and in Parquet bytes.
+    NOTEBOOK_WRITE_MAX_ROWS: int = Field(default=1_000_000, ge=1_000, le=50_000_000)
+    NOTEBOOK_WRITE_MAX_BYTES: int = Field(
+        default=200 * 1024**2, ge=1024**2, le=4 * 1024**3
     )
     #: Package indexes a sandbox may reach while an approved install runs.
     NOTEBOOK_PACKAGE_INDEX_HOSTS: str = "pypi.org,files.pythonhosted.org"

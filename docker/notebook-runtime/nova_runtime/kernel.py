@@ -5,7 +5,9 @@ runs the user's cells. They are conveniences, not a security boundary: user
 code can read and change anything in its own kernel. What protects data is
 outside the sandbox: the network policy lets the kernel reach only Nova's
 MySQL proxy, and the proxy runs every statement as the signed-in user under
-their active role, read-only.
+their active role. Writes that need Nova itself (stage files, Postgres or
+Snowflake tables) are requests the worker carries out as that user
+(:mod:`nova_runtime.novaduck`).
 
 Each call returns a :class:`Payload`, whose display bundle carries JSON under
 ``application/vnd.nova.payload+json``. execd forwards ``execute_result``
@@ -23,6 +25,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from typing import Any
 
 import duckdb
@@ -42,6 +45,9 @@ _KEPT_MIMES = (
     "text/plain",
 )
 _MAX_DISPLAY_BYTES = 10 * 1024 * 1024
+#: Displays larger than this are handed over as files (see :func:`end`).
+_INLINE_DISPLAY_BYTES = 1024 * 1024
+DISPLAY_DIR = "/tmp/nova/displays"
 _MAX_DISPLAYS = 50
 _HIDDEN_NAMES = frozenset(
     {"In", "Out", "exit", "quit", "get_ipython", "db", "duckdb", "open", "display"}
@@ -69,6 +75,10 @@ class _State:
         self.started = 0.0
         self.nova_attached = False
         self.nova_error: str | None = None
+        #: Nova catalogs attached to the connection: name, alias, type, attached, error.
+        self.catalogs: list[dict[str, Any]] = []
+        #: How long a write request waits for Nova (the cell timeout).
+        self.request_timeout = 300.0
         self.original_publish = None
 
 
@@ -111,19 +121,54 @@ def _read_credential(path: str | None) -> dict[str, Any] | None:
             os.remove(path)
 
 
+def _alias(name: str) -> str:
+    return "nova" if name == "default_catalog" else name
+
+
 def _attach_nova(con: duckdb.DuckDBPyConnection, credential: dict[str, Any]) -> None:
-    """(Re)attach the ``nova`` catalog through the governed proxy, read-only."""
-    _exec(
-        con,
-        "CREATE OR REPLACE TEMPORARY SECRET __nova_secret (TYPE mysql, "
-        f"HOST {_sql_literal(credential['host'])}, PORT {int(credential['port'])}, "
-        f"USER {_sql_literal(credential['user'])}, "
-        f"PASSWORD {_sql_literal(credential['token'])}, SSL_MODE 'disabled')"
-    )
+    """(Re)attach every catalog the role sees through the governed proxy.
+
+    Each catalog is its own attach (``nova`` for Nova's tables, then each
+    external catalog under its Nova name), selected at login with the
+    handshake database ``<catalog>.``. A catalog that fails to attach is
+    reported and skipped; ``nova`` failing means Nova data is unavailable.
+    """
+    catalogs = credential.get("catalogs") or [{"name": "default_catalog", "type": "Internal"}]
     attached = {row[0] for row in _exec(con, "SELECT database_name FROM duckdb_databases()")}
-    if "nova" in attached:
-        _exec(con, "DETACH nova")
-    _exec(con, "ATTACH '' AS nova (TYPE mysql, SECRET __nova_secret, READ_ONLY)")
+    for previous in _STATE.catalogs:
+        if previous["alias"] in attached:
+            _exec(con, f'DETACH "{previous["alias"]}"')
+    states: list[dict[str, Any]] = []
+    for index, catalog in enumerate(catalogs):
+        name = str(catalog.get("name") or "")
+        alias = _alias(name)
+        if not name or not re.fullmatch(r"[A-Za-z_][\w$-]{0,127}", alias):
+            continue
+        item = {"name": name, "alias": alias, "type": str(catalog.get("type") or ""),
+                "attached": False, "error": catalog.get("error")}
+        if item["error"] and name != "default_catalog":
+            states.append(item)
+            continue
+        database = "" if name == "default_catalog" else f"{name}."
+        try:
+            _exec(
+                con,
+                f"CREATE OR REPLACE TEMPORARY SECRET __nova_secret_{index} (TYPE mysql, "
+                f"HOST {_sql_literal(credential['host'])}, PORT {int(credential['port'])}, "
+                f"USER {_sql_literal(credential['user'])}, "
+                f"PASSWORD {_sql_literal(credential['token'])}, "
+                f"DATABASE {_sql_literal(database)}, SSL_MODE 'disabled')",
+            )
+            _exec(con, f'ATTACH \'\' AS "{alias}" (TYPE mysql, SECRET __nova_secret_{index})')
+            item["attached"] = True
+        except Exception as exc:  # noqa: BLE001 - one catalog failing leaves the rest
+            item["error"] = _clean_error(exc)
+            if name == "default_catalog":
+                states.append(item)
+                _STATE.catalogs = states
+                raise
+        states.append(item)
+    _STATE.catalogs = states
     _exec(con, "CALL mysql_clear_cache()")
     _STATE.nova_attached = True
     _STATE.nova_error = None
@@ -177,6 +222,147 @@ def _install_display_hooks() -> None:
         formatter.for_type_by_name(module, name, _table_formatter)
 
 
+# ── Rich output for libraries made for JupyterLab ─────────────────────────
+#
+# PyGWalker shows a Jupyter widget and plotly a MIME type only JupyterLab
+# renders. When either is imported, it is set to produce self-contained HTML
+# instead, which the notebook shows in a sandboxed frame with no network.
+
+
+def _patch_pygwalker(module: Any) -> None:
+    with contextlib.suppress(Exception):
+        _patch_pygwalker_parser()
+    with contextlib.suppress(Exception):
+        # Usage events could not leave the sandbox anyway; do not try.
+        from pygwalker.services.global_var import GlobalVarManager
+
+        GlobalVarManager.set_privacy("offline")
+    to_html = getattr(module, "to_html", None)
+    if to_html is None or getattr(module.walk, "__nova__", False):
+        return
+    keep = {"spec", "theme_key", "appearance", "default_tab", "field_specs"}
+
+    def walk(dataset: Any, *args: Any, **kwargs: Any) -> None:
+        from IPython.display import HTML, display
+
+        options = {k: v for k, v in kwargs.items() if k in keep}
+        display(HTML(_pygwalker_page(dataset, options) or to_html(dataset, **options)))
+
+    walk.__nova__ = True  # type: ignore[attr-defined]
+    walk.__doc__ = "Explore a DataFrame interactively (shown in the notebook)."
+    module.walk = walk
+
+
+def _pygwalker_page(dataset: Any, options: dict[str, Any]) -> str | None:
+    """PyGWalker's explorer as one page, without the inner frame ``to_html`` adds.
+
+    The notebook already shows it in a sandboxed frame; a second frame inside
+    would not get the storage the page needs (see the output frame's shim).
+    Built as ``pygwalker.to_html`` builds it: data in the page, computed in the
+    browser, no cloud or save tools.
+    """
+    try:
+        from pygwalker.api.pygwalker import PygWalker
+        from pygwalker.utils.randoms import generate_hash_code
+
+        walker = PygWalker(
+            gid=generate_hash_code(),
+            dataset=dataset,
+            field_specs=options.get("field_specs") or [],
+            spec=options.get("spec", ""),
+            source_invoke_code="",
+            theme_key=options.get("theme_key", "g2"),
+            appearance=options.get("appearance", "media"),
+            show_cloud_tool=False,
+            use_preview=False,
+            kernel_computation=False,
+            use_save_tool=False,
+            gw_mode="explore",
+            is_export_dataframe=False,
+            kanaries_api_key="",
+            default_tab=options.get("default_tab", "vis"),
+            cloud_computation=False,
+        )
+        return str(walker.to_html_without_iframe())
+    except Exception:  # noqa: BLE001 - fall back to the library's own HTML
+        return None
+
+
+def _patch_pygwalker_parser() -> None:
+    """PyGWalker reads one row with ``fetchone()``, which DuckDB 2.0 relations lack."""
+    import functools
+
+    from pygwalker.data_parsers import base
+
+    parser = base.BaseDataFrameDataParser
+
+    def field_metas(self: Any) -> list[dict[str, str]]:
+        duckdb.register("pygwalker_mid_table", self._duckdb_df)
+        result = duckdb.sql("SELECT * FROM pygwalker_mid_table LIMIT 1")
+        rows = result.fetchall()
+        if not rows:
+            return []
+        return base.get_data_meta_type(dict(zip(result.columns, rows[0], strict=False)))
+
+    parser.field_metas = property(functools.lru_cache(maxsize=None)(field_metas))
+
+
+def _patch_plotly_io(module: Any) -> None:
+    from plotly.io._base_renderers import MimetypeRenderer
+
+    class NovaRenderer(MimetypeRenderer):
+        def to_mimebundle(self, fig_dict):  # noqa: ANN001, ANN201
+            return {
+                "text/html": module.to_html(
+                    fig_dict, include_plotlyjs=True, full_html=False, validate=False
+                )
+            }
+
+    module.renderers["nova"] = NovaRenderer()
+    module.renderers.default = "nova"
+
+
+_PATCHES = {"pygwalker": _patch_pygwalker, "plotly.io": _patch_plotly_io}
+
+
+class _RenderHook:
+    """Patches a library right after it is first imported (a meta path finder)."""
+
+    def find_spec(self, name: str, path: Any, target: Any = None) -> Any:
+        patch = _PATCHES.get(name)
+        if patch is None:
+            return None
+        for finder in sys.meta_path:
+            if finder is self or not hasattr(finder, "find_spec"):
+                continue
+            spec = finder.find_spec(name, path, target)
+            if spec is not None:
+                break
+        else:
+            return None
+        loader = spec.loader
+        original = getattr(loader, "exec_module", None)
+        if original is None:
+            return spec
+
+        def exec_module(module: Any) -> None:
+            original(module)
+            with contextlib.suppress(Exception):
+                patch(module)
+
+        loader.exec_module = exec_module
+        return spec
+
+
+def _install_render_hook() -> None:
+    if not any(isinstance(finder, _RenderHook) for finder in sys.meta_path):
+        sys.meta_path.insert(0, _RenderHook())
+    for name, patch in _PATCHES.items():
+        if name in sys.modules:
+            with contextlib.suppress(Exception):
+                patch(sys.modules[name])
+
+
 def bootstrap(config_json: str) -> Payload:
     """Prepare the kernel: DuckDB as ``db`` and the default, ``nova`` attached.
 
@@ -185,6 +371,7 @@ def bootstrap(config_json: str) -> Payload:
     """
     config = json.loads(config_json)
     _STATE.preview_rows = int(config.get("preview_rows", 100))
+    _STATE.request_timeout = float(config.get("request_timeout", 300))
     os.makedirs("/tmp/nova/duckdb", exist_ok=True)
     workspace = config.get("workspace", "/workspace")
     os.makedirs(workspace, exist_ok=True)
@@ -219,21 +406,22 @@ def bootstrap(config_json: str) -> Payload:
     import pandas  # noqa: F401
     import pyarrow  # noqa: F401
 
+    from . import novaduck
+
     shell = _ipython()
-    shell.user_ns["db"] = con
+    shell.user_ns["db"] = novaduck.connect()
     shell.user_ns["duckdb"] = duckdb
     _install_display_hooks()
+    _install_render_hook()
 
     credential = _read_credential(config.get("credential_path"))
     nova: dict[str, Any] = {"attached": False}
     if credential:
         try:
             _attach_nova(con, credential)
-            schemas = _exec(
-                con,
-                "SELECT count(*) FROM information_schema.schemata WHERE catalog_name = 'nova'",
-            )[0][0]
-            nova = {"attached": True, "schemas": int(schemas)}
+            # Ask Nova alone: listing schemas here would read every catalog.
+            _exec(con, "SELECT * FROM mysql_query('nova', 'SELECT 1')")
+            nova = {"attached": True}
         except Exception as exc:  # noqa: BLE001 - reported, not raised
             _STATE.nova_attached = False
             _STATE.nova_error = _clean_error(exc)
@@ -246,7 +434,7 @@ def bootstrap(config_json: str) -> Payload:
             "ready": bool(ready),
             "python": sys.version.split()[0],
             "duckdb": duckdb.__version__,
-            "nova": nova,
+            "nova": {**nova, "catalogs": _STATE.catalogs},
         }
     )
 
@@ -259,7 +447,7 @@ def rotate(config_json: str) -> Payload:
         return Payload({"rotated": False})
     try:
         _attach_nova(_STATE.con, credential)
-        return Payload({"rotated": True})
+        return Payload({"rotated": True, "catalogs": _STATE.catalogs})
     except Exception as exc:  # noqa: BLE001
         _STATE.nova_attached = False
         _STATE.nova_error = _clean_error(exc)
@@ -274,13 +462,32 @@ def begin(meta_json: str) -> Payload:
     _STATE.dropped_displays = 0
     _STATE.started = time.time()
     _STATE.capturing = True
+    # Files of the previous execution's large displays were read by now.
+    with contextlib.suppress(FileNotFoundError):
+        for name in os.listdir(DISPLAY_DIR):
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(DISPLAY_DIR, name))
     return Payload({"started": True})
 
 
 def end() -> Payload:
     """Stop capturing; return the displays and the variables now defined."""
+    # Output the cell printed last may still sit in the stream buffers.
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            stream.flush()
     _STATE.capturing = False
     displays, _STATE.displays = _STATE.displays, []
+    # A display past ~1 MB travels as a file: execd drops a result event of
+    # several MB, and interactive charts (plotly) are that large.
+    os.makedirs(DISPLAY_DIR, exist_ok=True)
+    for index, display in enumerate(displays):
+        body = json.dumps(display["data"], default=str)
+        if len(body) > _INLINE_DISPLAY_BYTES:
+            path = f"{DISPLAY_DIR}/{uuid.uuid4().hex}.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(body)
+            displays[index] = {"t": display["t"], "file": path, "bytes": len(body)}
     return Payload(
         {
             "execution_id": _STATE.execution_id,
@@ -354,10 +561,11 @@ def run_sql(payload_json: str) -> Payload:
                 )
             text = source.rstrip().rstrip(";")
             if not (_READ_START.match(text) or _METADATA_START.match(text)):
-                # The proxy refuses it anyway; say why in plain words.
-                raise PermissionError(
-                    "Nova data is read-only in a notebook. A Nova SQL cell runs a query "
-                    "(SELECT, WITH, SHOW or DESCRIBE); to change data, use Workspaces SQL."
+                # mysql_query returns rows; a change has to go another way.
+                raise ValueError(
+                    "A Nova SQL cell runs a query (SELECT, WITH, SHOW or DESCRIBE). To "
+                    "change data, write SQL on nova.<schema>.<table> in a SQL cell, or "
+                    "use con.write(...) / con.merge_into(...)."
                 )
             relation = con.sql("SELECT * FROM mysql_query('nova', ?)", params=[text])
             head = con.sql(
@@ -390,10 +598,13 @@ def run_sql(payload_json: str) -> Payload:
         if types[-1] == "SELECT":
             relation = con.sql(last.query, params=params or None)
             head = relation.limit(limit + 1)
-            return Payload(
-                _named_result(con, shell, relation, head, name=name, limit=limit,
-                              origin="local_duckdb")
-            )
+            result = _named_result(con, shell, relation, head, name=name, limit=limit,
+                                   origin="local_duckdb")
+            if len(statements) == 1 and not resolved.relations and not params:
+                candidate = nova_sql_candidate(last.query)
+                if candidate:
+                    result["nova_candidate"] = candidate
+            return Payload(result)
         affected = None
         try:
             fetched = _exec(con, last.query, params or None)
@@ -415,6 +626,44 @@ _METADATA_START = re.compile(
 _READ_START = re.compile(
     r"^\s*(?:(?:--[^\n]*\n|/\*.*?\*/)\s*)*\(*\s*(?:SELECT|WITH)\b", re.I | re.S
 )
+
+
+def nova_sql_candidate(sql: str) -> str | None:
+    """This query as Nova SQL, when it reads only Nova catalogs, else ``None``.
+
+    Dataviz re-runs a result in Nova, so a SQL cell qualifies only when every
+    table it reads is in an attached Nova catalog. The catalog names are
+    already Nova's except ``nova`` (Nova's own tables), which becomes
+    ``default_catalog``; strings and comments are left alone. The worker then
+    checks the statement in Nova before anything relies on it.
+    """
+    aliases = {item["alias"]: item["name"] for item in _STATE.catalogs if item.get("attached")}
+    try:
+        names = duckdb.get_table_names(sql, qualified=True)
+        tokens = duckdb.tokenize(sql)
+    except Exception:  # noqa: BLE001 - local files, Python values: not a Nova query
+        return None
+    if not names:
+        return None
+    for qualified in names:
+        parts = [part.strip('"') for part in qualified.split(" AS ")[0].split(".")]
+        if len(parts) != 3 or parts[0] not in aliases:
+            return None
+    pieces: list[str] = []
+    position = 0
+    bounds = [start for start, _ in tokens] + [len(sql)]
+    for index, (start, kind) in enumerate(tokens):
+        if str(kind).endswith("identifier"):
+            raw = sql[start:bounds[index + 1]]
+            word = raw.strip()
+            following = sql[start + len(word):bounds[index + 1] + 1].lstrip()
+            name = word.strip('"')
+            if name in aliases and aliases[name] != name and following.startswith("."):
+                pieces.append(sql[position:start])
+                pieces.append(aliases[name])
+                position = start + len(word)
+    pieces.append(sql[position:])
+    return "".join(pieces)
 
 
 def _nova_preview(text: str, limit: int) -> str:
@@ -508,25 +757,26 @@ def install(spec_json: str) -> Payload:
     if not requirements:
         return Payload({"ok": False, "error": "No packages requested"})
     already = sorted(module for module in imports if module in sys.modules)
-    command = [
-        sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check",
-        "--no-input", "--progress-bar", "off", *requirements,
-    ]
-    process = subprocess.Popen(  # noqa: S603 - fixed argv, validated requirements
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    )
-    assert process.stdout is not None
-    for line in process.stdout:
-        print(line, end="", flush=True)
-    code = process.wait()
-    if code != 0:
-        return Payload(
-            {"ok": False, "exit_code": code, "error": "pip could not install the request"}
-        )
-    import importlib
     import site
 
     user_site = site.getusersitepackages()
+    code = 0
+    for requirement in requirements:
+        code = _pip_install(requirement, user_site)
+        if code != 0:
+            return Payload(
+                {
+                    "ok": False,
+                    "exit_code": code,
+                    "error": (
+                        "pip could not install the request. A package that needs a different "
+                        "version of the runtime's own libraries (DuckDB, pandas, numpy, "
+                        "pyarrow and others) cannot be added."
+                    ),
+                }
+            )
+    import importlib
+
     if user_site not in sys.path:
         sys.path.append(user_site)
     importlib.invalidate_caches()
@@ -546,6 +796,76 @@ def install(spec_json: str) -> Payload:
             "restart_recommended": already,
         }
     )
+
+
+#: Pins of every library the image ships; installs may not change them.
+RUNTIME_CONSTRAINTS = "/opt/nova/runtime-constraints.txt"
+#: Packages whose declared pins are stricter than what they need here. They
+#: are installed without those pins and patched where the runtime's newer
+#: library differs (see ``_patch_pygwalker``):
+#: ``skip`` requirements the runtime already provides in a newer version;
+#: ``no_deps`` dependencies installed without their own (stale) pins.
+#: Every other requirement still installs under the runtime pins.
+_RELAXED_REQUIREMENTS: dict[str, dict[str, frozenset[str]]] = {
+    "pygwalker": {
+        "skip": frozenset({"duckdb", "python-dateutil"}),
+        "no_deps": frozenset({"kanaries-track", "segment-analytics-python"}),
+    },
+}
+
+
+def _pip(*args: str) -> int:
+    command = [
+        sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check",
+        "--no-input", "--progress-bar", "off",
+    ]
+    if os.path.exists(RUNTIME_CONSTRAINTS):
+        command += ["--constraint", RUNTIME_CONSTRAINTS]
+    process = subprocess.Popen(  # noqa: S603 - fixed argv, validated requirements
+        [*command, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    return process.wait()
+
+
+def _canonical(name: str) -> str:
+    return re.split(r"[\[<>=!~ ;]", name, maxsplit=1)[0].strip().lower().replace("_", "-")
+
+
+def _pip_install(requirement: str, user_site: str) -> int:
+    """Install one requirement under the runtime pins (see ``_RELAXED_REQUIREMENTS``)."""
+    rules = _RELAXED_REQUIREMENTS.get(_canonical(requirement))
+    if rules is None:
+        return _pip(requirement)
+    import importlib
+    from importlib import metadata
+
+    from packaging.requirements import Requirement
+
+    if user_site not in sys.path:
+        sys.path.append(user_site)
+    pending, done, needed = [requirement], set(), []
+    while pending:
+        current = pending.pop()
+        code = _pip("--no-deps", current)
+        if code != 0:
+            return code
+        done.add(_canonical(current))
+        importlib.invalidate_caches()
+        for raw in metadata.requires(_canonical(current)) or []:
+            dependency = Requirement(raw)
+            name = _canonical(dependency.name)
+            if dependency.marker is not None and not dependency.marker.evaluate({"extra": ""}):
+                continue
+            if name in rules["skip"] or name in done:
+                continue
+            if name in rules["no_deps"]:
+                pending.append(str(dependency).split(";")[0].strip())
+            else:
+                needed.append(str(dependency).split(";")[0].strip())
+    return _pip(*needed) if needed else 0
 
 
 def _installed_versions(names: list[str]) -> dict[str, str]:

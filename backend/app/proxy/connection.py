@@ -433,8 +433,8 @@ class ProxyConnection:
             active_role=active_role,
         )
         self._ctx.session.role_locked = self._ctx.bi_binding is not None
-        self._ctx.session.read_only_connection = bool(
-            self._ctx.bi_binding is not None and self._ctx.bi_binding.read_only
+        self._ctx.session.notebook_connection = bool(
+            self._ctx.bi_binding is not None and self._ctx.bi_binding.notebook
         )
 
         database = connect_database(response.database)

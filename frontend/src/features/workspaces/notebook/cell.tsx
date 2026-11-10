@@ -22,6 +22,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -115,49 +118,94 @@ type CellProps = {
   onSource: (cellId: string, source: string) => void;
   onKind: (cellId: string, kind: CellKind) => void;
   onName: (cellId: string, name: string | null) => void;
+  onTitle?: (cellId: string, title: string | null) => void;
   onEngine: (cellId: string, engine: SqlEngine) => void;
   onKey: (cellId: string, action: CellKeyAction) => void;
   onCommand: (cellId: string, command: CellCommand) => void;
   tableActions?: (cell: NotebookCell, output: Extract<CellOutput, { type: "table" }>) => React.ReactNode;
 };
 
-function NameField({
-  name,
+/** Text that commits on blur or Enter and reverts on Escape. */
+function InlineField({
+  value,
+  label,
+  placeholder,
+  valid = () => true,
   onCommit,
+  className,
+  disabled,
 }: {
-  name: string | null;
-  onCommit: (name: string | null) => void;
+  value: string | null;
+  label: string;
+  placeholder: string;
+  valid?: (draft: string) => boolean;
+  onCommit: (value: string | null) => void;
+  className?: string;
+  disabled?: boolean;
 }) {
-  const [draft, setDraft] = useState(name ?? "");
-  useEffect(() => setDraft(name ?? ""), [name]);
-  const valid = draft === "" || /^[A-Za-z_][A-Za-z0-9_]*$/.test(draft);
+  const [draft, setDraft] = useState(value ?? "");
+  useEffect(() => setDraft(value ?? ""), [value]);
+  const ok = valid(draft);
   return (
     <input
-      aria-label="Result name"
-      title="Name of this result in Python and in {{name}} references"
+      aria-label={label}
       value={draft}
       spellCheck={false}
+      disabled={disabled}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
-        if (!valid) {
-          setDraft(name ?? "");
+        if (!ok) {
+          setDraft(value ?? "");
           return;
         }
-        if ((draft || null) !== name) onCommit(draft || null);
+        const next = draft.trim() || null;
+        if (next !== (value ?? null)) onCommit(next);
       }}
       onKeyDown={(event) => {
+        event.stopPropagation();
         if (event.key === "Enter") (event.target as HTMLInputElement).blur();
         if (event.key === "Escape") {
-          setDraft(name ?? "");
+          setDraft(value ?? "");
           (event.target as HTMLInputElement).blur();
         }
       }}
-      placeholder="name"
+      placeholder={placeholder}
       className={cn(
-        "h-6 w-24 min-w-0 rounded border @lg/cellhead:w-36  border-transparent bg-transparent px-1.5 font-mono text-xs text-foreground outline-none hover:border-surface-border focus:border-ring",
-        !valid && "border-destructive",
+        "min-w-0 rounded bg-transparent outline-none placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
+        !ok && "text-destructive",
+        className,
       )}
     />
+  );
+}
+
+const RESULT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function ToolbarButton({
+  label,
+  shortcut,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="size-7 text-muted-foreground hover:text-foreground"
+      aria-label={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -175,17 +223,23 @@ export const NotebookCellView = memo(function NotebookCellView({
   onSource,
   onKind,
   onName,
+  onTitle,
   onEngine,
   onKey,
   onCommand,
   tableActions,
 }: CellProps) {
   const running = run?.status === "running" || run?.status === "queued";
+  const failed = run?.status === "failed" && !stale;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: cell.id, disabled: running || !canEdit });
   const executable = cell.kind !== "markdown";
   const showEditor = cell.kind !== "markdown" || editing;
   const label = KIND_LABEL[cell.kind];
+  const pinned = active || running || failed;
+  const status = statusLine(run, stale, runtimeReady);
+  const first = index === 0;
+  const last = index === count - 1;
 
   return (
     <div
@@ -194,7 +248,7 @@ export const NotebookCellView = memo(function NotebookCellView({
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn("group/cell relative flex gap-2", isDragging && "z-20 opacity-60")}
     >
-      <div className="flex w-12 shrink-0 flex-col items-end gap-1 pt-2.5">
+      <div className="flex w-12 shrink-0 flex-col items-end gap-1 pt-1">
         <button
           ref={setActivatorNodeRef}
           type="button"
@@ -217,8 +271,8 @@ export const NotebookCellView = memo(function NotebookCellView({
             };
             const action = move[event.key];
             if (!action || running || !canEdit) return;
-            if ((action === "move-up" || action === "move-top") && index === 0) return;
-            if ((action === "move-down" || action === "move-bottom") && index === count - 1) return;
+            if ((action === "move-up" || action === "move-top") && first) return;
+            if ((action === "move-down" || action === "move-bottom") && last) return;
             event.preventDefault();
             event.stopPropagation();
             onCommand(cell.id, action);
@@ -245,73 +299,43 @@ export const NotebookCellView = memo(function NotebookCellView({
       </div>
 
       <div
-        className={cn(
-          "@container/cellbody min-w-0 flex-1 rounded-lg border bg-card transition-colors",
-          active ? "border-ring/60" : "border-surface-border",
-          run?.status === "failed" && !stale && "border-destructive/40",
-        )}
+        className="@container/cellbody relative min-w-0 flex-1 pb-2 pl-3"
         onMouseDown={() => onSelect(cell.id, false)}
       >
-        <div className="@container/cellhead flex h-9 min-w-0 items-center gap-2 border-b border-surface-border px-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild disabled={!canEdit}>
-              <button
-                type="button"
-                className="flex h-6 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={`Cell type: ${label}`}
-              >
-                {label}
-                <ChevronDown className="size-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {(["python", "sql", "markdown"] as const).map((kind) => (
-                <DropdownMenuItem key={kind} onSelect={() => onKind(cell.id, kind)}>
-                  {KIND_LABEL[kind]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {cell.kind === "sql" ? (
-            <>
-              <NameField name={cell.name} onCommit={(name) => onName(cell.id, name)} />
-              <div
-                role="radiogroup"
-                aria-label="Run this SQL in"
-                className="flex shrink-0 rounded-md bg-muted p-0.5"
-              >
-                {(["duckdb", "nova"] as const).map((engine) => (
-                  <button
-                    key={engine}
-                    type="button"
-                    role="radio"
-                    aria-checked={(cell.engine ?? "duckdb") === engine}
-                    disabled={!canEdit}
-                    title={
-                      engine === "duckdb"
-                        ? "Run in this notebook's DuckDB: local data, nova.* tables and {{name}} references"
-                        : "Send the whole query to Nova: it runs next to the data, read-only, as your role"
-                    }
-                    onClick={() => onEngine(cell.id, engine)}
-                    className={cn(
-                      "rounded px-2 py-0.5 text-xs transition-colors",
-                      (cell.engine ?? "duckdb") === engine
-                        ? "bg-background text-foreground shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {engine === "duckdb" ? "DuckDB" : "Nova"}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : cell.kind === "python" && cell.name ? (
-            <span className="font-mono text-xs text-muted-foreground">{cell.name}</span>
-          ) : null}
-          <span className="ml-1 hidden min-w-0 flex-1 truncate text-xs text-muted-foreground @md/cellhead:block">
-            {statusLine(run, stale, runtimeReady)}
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-1 bottom-2 left-0 w-0.5 rounded-full transition-colors",
+            failed ? "bg-destructive/70" : active ? "bg-ring" : "bg-transparent",
+          )}
+        />
+        <div className="@container/cellhead relative flex h-8 min-w-0 items-center gap-2">
+          {onTitle ? (
+            <InlineField
+              value={cell.title ?? null}
+              label="Cell title"
+              placeholder="Add a title"
+              disabled={!canEdit}
+              onCommit={(title) => onTitle(cell.id, title)}
+              className={cn(
+                "h-7 w-full max-w-md flex-1 px-1 text-sm font-medium text-foreground",
+                !cell.title && !active && "opacity-0 group-hover/cell:opacity-100 focus:opacity-100",
+              )}
+            />
+          ) : (
+            <span className="flex-1" />
+          )}
+          <span className="ml-auto hidden min-w-0 shrink truncate text-xs text-muted-foreground @md/cellhead:block">
+            {status}
           </span>
-          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 transition-opacity",
+              pinned
+                ? "opacity-100"
+                : "absolute top-0 right-0 h-8 bg-background pl-2 opacity-0 group-focus-within/cell:opacity-100 group-hover/cell:opacity-100",
+            )}
+          >
             {run?.status === "failed" && !running ? (
               <Button
                 size="sm"
@@ -324,30 +348,36 @@ export const NotebookCellView = memo(function NotebookCellView({
             ) : null}
             {executable ? (
               running ? (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7"
-                  aria-label="Stop this cell"
-                  title="Stop"
-                  onClick={() => onCommand(cell.id, "stop")}
-                >
+                <ToolbarButton label="Stop this cell" onClick={() => onCommand(cell.id, "stop")}>
                   <Square className="size-3.5" />
-                </Button>
+                </ToolbarButton>
               ) : (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 text-muted-foreground hover:text-foreground"
-                  aria-label="Run this cell"
-                  title="Run (Ctrl+Enter)"
+                <ToolbarButton
+                  label="Run this cell"
+                  shortcut="Ctrl+Enter"
                   disabled={!canEdit}
                   onClick={() => onCommand(cell.id, "run")}
                 >
                   <Play className="size-3.5" />
-                </Button>
+                </ToolbarButton>
               )
             ) : null}
+            <ToolbarButton
+              label="Move up"
+              shortcut="Ctrl+Shift+Up"
+              disabled={first || running || !canEdit}
+              onClick={() => onCommand(cell.id, "move-up")}
+            >
+              <ChevronUp className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Move down"
+              shortcut="Ctrl+Shift+Down"
+              disabled={last || running || !canEdit}
+              onClick={() => onCommand(cell.id, "move-down")}
+            >
+              <ChevronDown className="size-4" />
+            </ToolbarButton>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -360,6 +390,20 @@ export const NotebookCellView = memo(function NotebookCellView({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Cell type
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={cell.kind}
+                  onValueChange={(kind) => onKind(cell.id, kind as CellKind)}
+                >
+                  {(["python", "sql", "markdown"] as const).map((kind) => (
+                    <DropdownMenuRadioItem key={kind} value={kind} disabled={!canEdit}>
+                      {KIND_LABEL[kind]}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
                 {executable ? (
                   <>
                     <DropdownMenuItem disabled={!canEdit} onSelect={() => onCommand(cell.id, "run-above")}>
@@ -373,19 +417,11 @@ export const NotebookCellView = memo(function NotebookCellView({
                     <DropdownMenuSeparator />
                   </>
                 ) : null}
-                <DropdownMenuItem disabled={index === 0 || running || !canEdit} onSelect={() => onCommand(cell.id, "move-up")}>
-                  <ChevronUp className="size-4" />
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={index === count - 1 || running || !canEdit} onSelect={() => onCommand(cell.id, "move-down")}>
-                  <ChevronDown className="size-4" />
-                  Move down
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={index === 0 || running || !canEdit} onSelect={() => onCommand(cell.id, "move-top")}>
+                <DropdownMenuItem disabled={first || running || !canEdit} onSelect={() => onCommand(cell.id, "move-top")}>
                   <ArrowUpToLine className="size-4" />
                   Move to top
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={index === count - 1 || running || !canEdit} onSelect={() => onCommand(cell.id, "move-bottom")}>
+                <DropdownMenuItem disabled={last || running || !canEdit} onSelect={() => onCommand(cell.id, "move-bottom")}>
                   <ArrowDownToLine className="size-4" />
                   Move to bottom
                 </DropdownMenuItem>
@@ -414,10 +450,8 @@ export const NotebookCellView = memo(function NotebookCellView({
           </div>
         </div>
 
-        {run ? (
-          <p className="truncate border-b border-surface-border px-3 py-1 text-xs text-muted-foreground @md/cellbody:hidden">
-            {statusLine(run, stale, runtimeReady)}
-          </p>
+        {status ? (
+          <p className="truncate pb-1 text-xs text-muted-foreground @md/cellbody:hidden">{status}</p>
         ) : null}
         {showEditor ? (
           <CellEditor
@@ -435,7 +469,7 @@ export const NotebookCellView = memo(function NotebookCellView({
             role="button"
             tabIndex={-1}
             aria-label="Edit Markdown cell"
-            className="cursor-text px-4 py-3 text-sm"
+            className="cursor-text px-1 py-1 text-sm"
             onDoubleClick={() => onSelect(cell.id, true)}
           >
             {cell.source.trim() ? (
@@ -446,20 +480,43 @@ export const NotebookCellView = memo(function NotebookCellView({
           </div>
         )}
 
+        {cell.kind === "sql" ? (
+          <div className="flex h-7 min-w-0 items-center gap-2 font-mono text-xs text-muted-foreground">
+            <span aria-hidden>→</span>
+            <InlineField
+              value={cell.name}
+              label="Result name"
+              placeholder="name"
+              disabled={!canEdit}
+              valid={(draft) => draft === "" || RESULT_NAME.test(draft)}
+              onCommit={(name) => onName(cell.id, name)}
+              className="h-6 w-40 px-1 font-mono text-xs text-muted-foreground focus:text-foreground"
+            />
+            {cell.engine === "nova" ? (
+              <span className="flex min-w-0 items-center gap-2 font-sans">
+                <span className="truncate">Runs in Nova</span>
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  className="shrink-0 rounded text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onEngine(cell.id, "duckdb")}
+                >
+                  Run in DuckDB
+                </button>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
         {executable && run && run.outputs.length > 0 ? (
-          <div
-            className={cn(
-              "border-t border-surface-border px-3 py-3",
-              stale && "opacity-70",
-            )}
-          >
+          <div className={cn("pt-2", stale && "opacity-70")}>
             <CellOutputs
               outputs={run.outputs}
               tableActions={tableActions ? (output) => tableActions(cell, output) : undefined}
             />
           </div>
         ) : executable && run?.outputsPending ? (
-          <p className="border-t border-surface-border px-3 py-2 text-xs text-muted-foreground">
+          <p className="pt-2 text-xs text-muted-foreground">
             The last output is large; run the cell to see it again
           </p>
         ) : null}

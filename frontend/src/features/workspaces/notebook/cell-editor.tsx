@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import { useTheme } from "@/context/theme-provider";
 import { cn } from "@/lib/utils";
-import { applyNovaSqlTheme } from "../monaco-theme";
+import { applyNovaCellTheme } from "../monaco-theme";
 import type { CellKind } from "./types";
 
 type MonacoEditor = Parameters<OnMount>[0];
@@ -10,6 +10,8 @@ type MonacoEditor = Parameters<OnMount>[0];
 const LINE_HEIGHT = 20;
 const PADDING = 8;
 const MAX_HEIGHT = 560;
+/** Width of the line-number gutter, shared by Monaco and the static preview. */
+const GUTTER_CHARS = 3;
 
 export type CellKeyAction = "run" | "run-next" | "run-insert" | "escape";
 
@@ -63,7 +65,7 @@ export function CellEditor({
 
   const handleMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
-    applyNovaSqlTheme(monaco, resolvedTheme === "dark");
+    applyNovaCellTheme(monaco, resolvedTheme === "dark");
     editor.onDidContentSizeChange((event) => {
       setHeight(Math.min(MAX_HEIGHT, Math.max(LINE_HEIGHT + PADDING * 2, event.contentHeight)));
     });
@@ -80,6 +82,7 @@ export function CellEditor({
   };
 
   if (!mounted) {
+    const lines = (value || (kind === "sql" ? "SELECT …" : kind === "python" ? "# Python" : "Text")).split("\n");
     return (
       <button
         type="button"
@@ -88,22 +91,39 @@ export function CellEditor({
         onClick={onActivate}
         onFocus={onActivate}
         className={cn(
-          "block w-full cursor-text overflow-hidden text-left font-mono text-xs leading-5 break-words whitespace-pre-wrap text-foreground",
+          "grid w-full cursor-text grid-cols-[auto_1fr] overflow-hidden rounded-md bg-muted text-left font-mono text-xs leading-5",
           !value && "text-muted-foreground",
         )}
-        style={{ minHeight: height, maxHeight: MAX_HEIGHT, padding: `${PADDING}px 12px` }}
+        style={{ minHeight: height, maxHeight: MAX_HEIGHT, paddingBlock: PADDING }}
       >
-        {value || (kind === "sql" ? "SELECT …" : kind === "python" ? "# Python" : "Text")}
+        <span
+          aria-hidden
+          className="pr-3 pl-2 text-right text-muted-foreground tabular-nums select-none"
+          style={{ minWidth: `calc(${GUTTER_CHARS}ch + 20px)` }}
+        >
+          {lines.map((_, index) => (
+            <span key={index} className="block">
+              {index + 1}
+            </span>
+          ))}
+        </span>
+        <span className="min-w-0 pr-3 break-words whitespace-pre-wrap text-foreground">
+          {lines.map((line, index) => (
+            <span key={index} className="block min-h-5">
+              {line}
+            </span>
+          ))}
+        </span>
       </button>
     );
   }
 
   return (
-    <div style={{ height }} className="min-w-0" onFocusCapture={onActivate}>
+    <div style={{ height }} className="min-w-0 overflow-hidden rounded-md bg-muted" onFocusCapture={onActivate}>
       <Editor
         height="100%"
         language={language}
-        theme={resolvedTheme === "dark" ? "nova-dark" : "nova-light"}
+        theme={resolvedTheme === "dark" ? "nova-cell-dark" : "nova-cell-light"}
         value={value}
         onChange={(next) => onChange(next ?? "")}
         onMount={handleMount}
@@ -113,11 +133,11 @@ export function CellEditor({
           fontSize: 12,
           fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
           lineHeight: LINE_HEIGHT,
-          lineNumbers: "off",
+          lineNumbers: "on",
           glyphMargin: false,
           folding: false,
           lineDecorationsWidth: 12,
-          lineNumbersMinChars: 0,
+          lineNumbersMinChars: GUTTER_CHARS,
           automaticLayout: true,
           wordWrap: "on",
           scrollBeyondLastLine: false,

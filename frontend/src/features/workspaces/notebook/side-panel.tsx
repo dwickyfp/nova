@@ -10,7 +10,35 @@ import { notebookApi } from "./api";
 import type { NotebookEvent } from "./stream";
 import type { VariableInfo } from "./types";
 
-export type SidePanelTab = "variables" | "packages";
+export type SidePanelTab = "outline" | "variables" | "packages";
+
+export type OutlineItem = { id: string; label: string; titled: boolean; active: boolean };
+
+function OutlineTab({ items, onJump }: { items: OutlineItem[]; onJump: (cellId: string) => void }) {
+  if (!items.length) {
+    return <p className="px-4 py-3 text-sm text-muted-foreground">No cells yet</p>;
+  }
+  return (
+    <ol className="flex flex-col gap-0.5 p-2">
+      {items.map((item, index) => (
+        <li key={item.id}>
+          <button
+            type="button"
+            onClick={() => onJump(item.id)}
+            aria-current={item.active ? "true" : undefined}
+            className={cn(
+              "flex h-8 w-full items-center gap-3 rounded-md px-2 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+              item.active ? "bg-muted text-foreground" : "text-muted-foreground",
+            )}
+          >
+            <span className="w-5 shrink-0 text-right font-mono text-xs tabular-nums">{index + 1}</span>
+            <span className={cn("truncate", item.titled && "text-foreground")}>{item.label}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 function VariablesTab({
   variables,
@@ -267,6 +295,8 @@ export function NotebookSidePanel({
   ready,
   packageEvents,
   overlay,
+  outline,
+  onJump,
 }: {
   tab: SidePanelTab;
   onTab: (tab: SidePanelTab) => void;
@@ -276,6 +306,8 @@ export function NotebookSidePanel({
   ready: boolean;
   packageEvents: NotebookEvent[];
   overlay: boolean;
+  outline: OutlineItem[];
+  onJump: (cellId: string) => void;
 }) {
   return (
     <aside
@@ -286,7 +318,7 @@ export function NotebookSidePanel({
       )}
     >
       <div className="flex h-11 items-center gap-1 border-b border-surface-border px-2">
-        {(["variables", "packages"] as const).map((value) => (
+        {(["outline", "variables", "packages"] as const).map((value) => (
           <button
             key={value}
             type="button"
@@ -297,7 +329,7 @@ export function NotebookSidePanel({
               tab === value ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {value === "variables" ? "Variables" : "Packages"}
+            {value === "outline" ? "Outline" : value === "variables" ? "Variables" : "Packages"}
           </button>
         ))}
         <Button
@@ -311,7 +343,9 @@ export function NotebookSidePanel({
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "variables" ? (
+        {tab === "outline" ? (
+          <OutlineTab items={outline} onJump={onJump} />
+        ) : tab === "variables" ? (
           <VariablesTab variables={variables} ready={ready} />
         ) : (
           <PackagesTab notebookId={notebookId} ready={ready} packageEvents={packageEvents} />

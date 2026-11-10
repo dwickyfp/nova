@@ -15,6 +15,8 @@ export type ConnectionSummary = {
   /** `managed`: entered through Nova. `external`: a secret store reference. */
   credential_source: 'managed' | 'external' | string
   has_credentials: boolean
+  /** A write credential is set: notebooks may write to its catalogs where Ranger allows. */
+  writable?: boolean
   owner: string | null
   comment: string | null
   catalogs: string[]
@@ -65,6 +67,21 @@ export function setConnectionCredentials(name: string, credentials: ConnectionCr
     credentials
   )
 }
+
+/** The account notebooks write to this source with (Postgres, Snowflake). */
+export function setConnectionWriteCredentials(name: string, credentials: ConnectionCredentials) {
+  return api.put<ConnectionSummary>(
+    `${BASE}/${encodeURIComponent(name)}/write-credentials`,
+    credentials
+  )
+}
+
+export function clearConnectionWriteCredentials(name: string) {
+  return api.delete<ConnectionSummary>(`${BASE}/${encodeURIComponent(name)}/write-credentials`)
+}
+
+/** Source types Nova can write to from notebooks. */
+export const WRITABLE_TYPES = new Set(['postgres', 'snowflake'])
 
 export function deleteConnection(name: string) {
   return api.delete<{ success: boolean; message: string }>(

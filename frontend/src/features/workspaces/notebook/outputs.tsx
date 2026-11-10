@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Copy, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { readToken } from "@/lib/read-token";
 import { cn } from "@/lib/utils";
 import { ChartVisualization } from "../chart-visualization";
 import type { QueryResponse } from "../types";
-import { formatCell } from "./helpers";
+import { formatCell, INTERACTIVE_POLICY, needsScripts, STORAGE_SHIM } from "./helpers";
 import type { CellOutput, TablePayload } from "./types";
 
 const ORIGIN_LABEL: Record<string, string> = {
@@ -227,21 +227,54 @@ function ErrorOutput({ output }: { output: Extract<CellOutput, { type: "error" }
 
 /**
  * HTML and SVG produced by notebook code. It never runs in Nova's page: it is
- * shown in a sandboxed frame with no scripts and an opaque origin, under a
- * policy that loads nothing from the network.
+ * shown in a sandboxed frame with an opaque origin, under a policy that loads
+ * nothing from the network. Markup without scripts gets no script permission
+ * at all; interactive output (PyGWalker, plotly) may run its own inline
+ * scripts, still without Nova's origin, cookies or any network access.
  */
 function SandboxedMarkup({ markup, title }: { markup: string; title: string }) {
   const foreground = readToken("--foreground", "#1e293b");
   const background = readToken("--card", "#ffffff");
   const border = readToken("--border", "#e0e5ec");
-  const page = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><style>body{margin:8px;font:13px/1.45 system-ui,sans-serif;color:${foreground};background:${background}}table{border-collapse:collapse}td,th{border:1px solid ${border};padding:2px 6px}</style></head><body>${markup}</body></html>`;
+  const interactive = needsScripts(markup);
+  const frame = useRef<HTMLIFrameElement | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!interactive) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frame.current?.contentWindow) return;
+      const value = (event.data as { novaFrameHeight?: unknown } | null)?.novaFrameHeight;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        setHeight(Math.max(160, Math.min(900, Math.ceil(value))));
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [interactive]);
+
+  const policy = interactive
+    ? INTERACTIVE_POLICY
+    : "default-src 'none'; img-src data:; style-src 'unsafe-inline'";
+  const sizing = interactive
+    ? "<script>(function(){var send=function(){parent.postMessage({novaFrameHeight:" +
+      "document.documentElement.scrollHeight},'*')};new ResizeObserver(send)" +
+      ".observe(document.documentElement);window.addEventListener('load',send)})()</script>"
+    : "";
+  const shim = interactive ? `<script>${STORAGE_SHIM}</script>` : "";
+  const page = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}">${shim}<style>body{margin:8px;font:13px/1.45 system-ui,sans-serif;color:${foreground};background:${background}}table{border-collapse:collapse}td,th{border:1px solid ${border};padding:2px 6px}</style></head><body>${markup}${sizing}</body></html>`;
   return (
     <iframe
+      ref={frame}
       title={title}
-      sandbox=""
+      sandbox={interactive ? "allow-scripts allow-downloads" : ""}
       srcDoc={page}
       referrerPolicy="no-referrer"
-      className="h-64 w-full resize-y rounded-md border border-surface-border bg-card"
+      style={interactive ? { height: height ?? 480 } : undefined}
+      className={cn(
+        "w-full resize-y rounded-md border border-surface-border bg-card",
+        !interactive && "h-64",
+      )}
     />
   );
 }

@@ -30,7 +30,7 @@ def shell(tmp_path_factory):
     workspace = tmp_path_factory.mktemp("workspace")
     ready = _data(nova_runtime.bootstrap(json.dumps({"workspace": str(workspace),
                                                      "preview_rows": 5})))
-    assert ready["ready"] is True and ready["nova"] == {"attached": False}
+    assert ready["ready"] is True and ready["nova"] == {"attached": False, "catalogs": []}
     # The very first user query after bootstrap: no trusted statement may leave
     # the connection busy (DuckDB 2.0 keeps it busy until a result is read).
     result = ip.run_cell("db.sql('SELECT 1 AS ready').fetchall()[0][0]")
@@ -195,11 +195,182 @@ def test_nova_previews_keep_the_query_order():
     assert _nova_preview("/* x */ describe t", 5) == "/* x */ describe t"
 
 
-def test_a_nova_cell_that_writes_is_explained_before_it_reaches_nova(shell, monkeypatch):
+def test_a_nova_query_cell_that_writes_points_to_the_write_calls(shell, monkeypatch):
     from nova_runtime import kernel
 
     monkeypatch.setattr(kernel._STATE, "nova_attached", True)
     out = _data(nova_runtime.run_sql(json.dumps(
         {"source": "CREATE TABLE t (x INT)", "engine": "nova"})))
-    assert out["error"]["name"] == "PermissionError"
-    assert "read-only" in out["error"]["message"]
+    assert out["error"]["name"] == "ValueError"
+    assert "con.write" in out["error"]["message"]
+
+
+# ── novaduck ──────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def novaduck_con(shell, monkeypatch):
+    import novaduck
+    from nova_runtime import kernel
+
+    monkeypatch.setattr(kernel._STATE, "catalogs", [
+        {"name": "default_catalog", "alias": "nova", "type": "Internal", "attached": True},
+        {"name": "pg_shop", "alias": "pg_shop", "type": "Jdbc", "attached": True},
+    ])
+    monkeypatch.setattr(kernel._STATE, "request_timeout", 5.0)
+    return novaduck.connect()
+
+
+def _answer_requests(result: dict, seen: list):
+    """Stand in for the worker: answer the next request file once."""
+    import os
+    import threading
+    import time
+
+    from nova_runtime.novaduck import RPC_DIR
+
+    def serve():
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            for name in os.listdir(RPC_DIR) if os.path.isdir(RPC_DIR) else []:
+                if name.endswith(".json") and not name.endswith(".result.json"):
+                    with open(os.path.join(RPC_DIR, name)) as handle:
+                        request = json.load(handle)
+                    data = os.path.join(RPC_DIR, request["data"])
+                    if data.endswith(".parquet"):
+                        seen.append((request, pa.parquet.read_table(data).to_pylist()))
+                    else:
+                        with open(data, "rb") as handle:
+                            seen.append((request, handle.read()))
+                    with open(os.path.join(RPC_DIR, name[:-5] + ".result.json"), "w") as out:
+                        json.dump(result, out)
+                    return
+            time.sleep(0.01)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return thread
+
+
+def test_novaduck_is_the_notebook_connection(novaduck_con, shell):
+    assert novaduck_con.duckdb is shell.user_ns["db"].duckdb
+    assert novaduck_con.sql("SELECT 41 + 1").fetchall() == [(42,)]
+    assert [c["alias"] for c in novaduck_con.catalogs()] == ["nova", "pg_shop"]
+
+
+def test_merge_into_sends_the_rows_and_the_resolved_target(novaduck_con):
+    import pyarrow.parquet  # noqa: F401
+
+    seen: list = []
+    thread = _answer_requests({"ok": True, "rows": 2}, seen)
+    frame = pd.DataFrame({"id": [1, 2], "v": ["a", "b"]})
+    result = novaduck_con.merge_into("pg_shop.public.orders", frame, on="id")
+    thread.join()
+    request, rows = seen[0]
+    assert result == {"rows": 2}
+    assert request["op"] == "merge" and request["on"] == ["id"]
+    assert request["target"] == {"catalog": "pg_shop", "schema": "public", "table": "orders"}
+    assert rows == [{"id": 1, "v": "a"}, {"id": 2, "v": "b"}]
+
+
+def test_write_maps_nova_and_two_part_names_to_the_default_catalog(novaduck_con):
+    import pyarrow.parquet  # noqa: F401
+
+    seen: list = []
+    thread = _answer_requests({"ok": True, "inserted": 3}, seen)
+    novaduck_con.write("SELECT range AS n FROM range(3)", "sales.daily", mode="overwrite")
+    thread.join()
+    request, rows = seen[0]
+    assert request["target"]["catalog"] == "default_catalog" and request["mode"] == "overwrite"
+    assert [row["n"] for row in rows] == [0, 1, 2]
+
+
+def test_a_refused_request_raises_with_novas_message(novaduck_con):
+    import novaduck
+
+    seen: list = []
+    thread = _answer_requests({"ok": False, "error": "Role analyst may not INSERT"}, seen)
+    with pytest.raises(novaduck.NovaError, match="may not INSERT"):
+        novaduck_con.write(pl.DataFrame({"a": [1]}), "nova.s.t")
+    thread.join()
+
+
+def test_put_saves_in_the_format_the_name_says_and_copies_files(novaduck_con, tmp_path):
+    seen: list = []
+    thread = _answer_requests({"ok": True, "bytes": 1}, seen)
+    novaduck_con.put(pa.table({"a": [1, 2]}), "@landing/daily/out.csv")
+    thread.join()
+    request, body = seen[0]
+    assert request["op"] == "put" and request["data"].endswith(".csv")
+    assert body.decode().splitlines() == ["a", "1", "2"]
+    model = tmp_path / "model.pkl"
+    model.write_bytes(b"\x80binary")
+    thread = _answer_requests({"ok": True}, seen)
+    novaduck_con.put(str(model), "@landing/models/model.pkl")
+    thread.join()
+    assert seen[1][1] == b"\x80binary"
+
+
+@pytest.mark.parametrize(
+    ("call", "message"),
+    [
+        (lambda con: con.write("SELECT 1", "nowhere.s.t"), "not a catalog"),
+        (lambda con: con.write("SELECT 1", "t"), "catalog.schema.table"),
+        (lambda con: con.write("SELECT 1", "nova.s.t", mode="upsert"), "append"),
+        (lambda con: con.put("SELECT 1", "landing/x.parquet"), "@stage"),
+        (lambda con: con.put("SELECT 1", "@landing/x.xlsx"), ".parquet"),
+    ],
+)
+def test_bad_requests_are_refused_in_the_kernel(novaduck_con, call, message):
+    with pytest.raises(Exception, match=message):
+        call(novaduck_con)
+
+
+def test_a_query_over_nova_catalogs_becomes_nova_sql(novaduck_con):
+    from nova_runtime.kernel import nova_sql_candidate
+
+    sql = ("SELECT r.region, n.total FROM \"nova\".sales.orders n "
+           "JOIN pg_shop.public.regions r ON n.rid = r.id WHERE n.note <> 'nova.x' -- nova.y")
+    assert nova_sql_candidate(sql) == (
+        "SELECT r.region, n.total FROM default_catalog.sales.orders n "
+        "JOIN pg_shop.public.regions r ON n.rid = r.id WHERE n.note <> 'nova.x' -- nova.y"
+    )
+    assert nova_sql_candidate("SELECT * FROM t") is None  # a local table
+    assert nova_sql_candidate("SELECT * FROM read_csv('missing.csv')") is None
+    assert nova_sql_candidate("SELECT * FROM other.s.t") is None  # not attached
+
+
+def test_pygwalker_walk_is_shown_as_self_contained_html(shell, tmp_path, monkeypatch):
+    import sys
+
+    package = tmp_path / "pygwalker"
+    package.mkdir()
+    (package / "__init__.py").write_text(
+        "def to_html(df, **kwargs):\n"
+        "    return '<div id=gw>' + str(len(df)) + '</div><script>1</script>'\n"
+        "def walk(df, **kwargs):\n"
+        "    raise RuntimeError('the widget path must not run')\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("pygwalker", None)
+    nova_runtime.begin(json.dumps({"execution_id": "e-gw"}))
+    run(shell, "import pandas as pd, pygwalker as pyg\npyg.walk(pd.DataFrame({'a': [1, 2, 3]}))")
+    displays = _data(nova_runtime.end())["displays"]
+    sys.modules.pop("pygwalker", None)
+    assert displays and "<div id=gw>3</div>" in displays[-1]["data"]["text/html"]
+
+
+def test_a_large_display_is_handed_over_as_a_file(shell):
+    import os
+
+    nova_runtime.begin(json.dumps({"execution_id": "e-big"}))
+    run(shell, "from IPython.display import display, HTML\n"
+               "display(HTML('<p>' + 'x' * 1_200_000 + '</p>'))")
+    displays = _data(nova_runtime.end())["displays"]
+    handed = displays[-1]
+    assert "data" not in handed and handed["bytes"] > 1_200_000
+    with open(handed["file"], encoding="utf-8") as body:
+        assert json.load(body)["text/html"].startswith("<p>xxx")
+    nova_runtime.begin(json.dumps({"execution_id": "e-next"}))
+    assert not os.path.exists(handed["file"])
+    nova_runtime.end()

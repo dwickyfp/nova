@@ -15,19 +15,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import hashlib
 import json
 import logging
+import re
 import secrets
 import socket
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.common.audit import write_audit_log
 from app.core.config import settings
 from app.modules.access_control import data_tokens
 from app.modules.notebooks.repository import notebook_repository
-from app.modules.notebooks.runtime import events, kernel_calls, state
+from app.modules.notebooks.runtime import events, kernel_calls, rpc, state
 from app.modules.notebooks.runtime.outputs import OutputCollector, payload_of, summary
 from app.modules.notebooks.runtime.provider import (
     KernelEvent,
@@ -52,6 +55,71 @@ def owner_hash(user: str) -> str:
 
 def proxy_port() -> int:
     return settings.NOTEBOOK_PROXY_PORT or settings.PROXY_PORT
+
+
+#: Where the kernel leaves displays too large for its result (``end()``).
+DISPLAY_FILE = re.compile(r"/tmp/nova/displays/[0-9a-f]{32}\.json")
+#: Catalogs a runtime attaches at most; the rest stay reachable via con.nova().
+MAX_ATTACHED_CATALOGS = 20
+#: How long a runtime start waits for one external catalog to answer.
+CATALOG_CHECK_SECONDS = 20
+
+
+async def visible_catalogs(session: data_tokens.BiSession) -> list[dict[str, str]]:
+    """The catalogs the user's role sees, as ``SHOW CATALOGS`` answers it for them."""
+    from app.modules.query.service import query_service
+
+    try:
+        results = await query_service.execute_statements(
+            sql="SHOW CATALOGS",
+            username=session.username,
+            encrypted_password=session.encrypted_password,
+            role=session.active_role,
+            security_context_version=session.security_context_version,
+            session_id=session.session_id,
+            source="notebook",
+        )
+    except Exception:  # noqa: BLE001 - Nova data still works without extra catalogs
+        logger.warning("Could not list catalogs for a notebook runtime", exc_info=True)
+        return [{"name": "default_catalog", "type": "Internal"}]
+    last = results[-1] if results else None
+    rows = (last.rows if last is not None and not last.error else None) or []
+    catalogs = [{"name": str(row[0]), "type": str(row[1] if len(row) > 1 else "")}
+                for row in rows if row and row[0]]
+    if not any(item["name"] == "default_catalog" for item in catalogs):
+        catalogs.insert(0, {"name": "default_catalog", "type": "Internal"})
+    catalogs = catalogs[:MAX_ATTACHED_CATALOGS]
+
+    async def check(item: dict[str, str]) -> None:
+        # DuckDB lists every attached catalog when it reads any catalog's
+        # schemas, so a catalog the engine cannot reach would break them all:
+        # it is listed with its error instead of attached.
+        if item["name"] == "default_catalog":
+            return
+        name = item["name"].replace("`", "``")
+        try:
+            answer = await asyncio.wait_for(
+                query_service.execute_statements(
+                    sql=f"SHOW DATABASES FROM `{name}`",
+                    username=session.username,
+                    encrypted_password=session.encrypted_password,
+                    role=session.active_role,
+                    security_context_version=session.security_context_version,
+                    session_id=session.session_id,
+                    source="notebook",
+                ),
+                timeout=CATALOG_CHECK_SECONDS,
+            )
+            failed = next((result.error for result in answer if result.error), None)
+        except TimeoutError:
+            failed = "did not answer in time"
+        except Exception as exc:  # noqa: BLE001
+            failed = type(exc).__name__
+        if failed:
+            item["error"] = str(failed).splitlines()[0][:200]
+
+    await asyncio.gather(*(check(item) for item in catalogs))
+    return catalogs
 
 
 class RunFailed(Exception):
@@ -195,12 +263,24 @@ class NotebookRuntimeWorker:
     def handle_of(self, runtime: state.RuntimeState) -> SandboxHandle:
         return SandboxHandle(sandbox_id=runtime.sandbox_id, context_id=runtime.context_id)
 
-    async def call(self, runtime: state.RuntimeState, code: str) -> dict[str, Any]:
-        """Run a trusted ``nova_runtime`` call and return its payload."""
+    async def call(
+        self,
+        runtime: state.RuntimeState,
+        code: str,
+        on_stream: Callable[[KernelEvent], Awaitable[None]] | None = None,
+    ) -> dict[str, Any]:
+        """Run a trusted ``nova_runtime`` call and return its payload.
+
+        ``on_stream`` receives stdout/stderr that arrives during the call: the
+        kernel can flush a cell's last output after the cell reports done.
+        """
         payload: dict[str, Any] = {}
         error: dict[str, Any] = {}
 
         async def sink(event: KernelEvent) -> None:
+            if event.type in {"stdout", "stderr"} and on_stream is not None:
+                await on_stream(event)
+                return
             if event.type == "result":
                 found = payload_of(event.bundle)
                 if found is not None:
@@ -241,6 +321,7 @@ class NotebookRuntimeWorker:
                 "port": proxy_port(),
                 "user": issued.username,
                 "token": issued.token,
+                "catalogs": await visible_catalogs(session),
             }
         ).encode()
         await self._provider.write_file(self.handle_of(runtime), path, body)
@@ -267,6 +348,7 @@ class NotebookRuntimeWorker:
                     "preview_rows": settings.NOTEBOOK_PREVIEW_ROWS,
                     "memory_limit": settings.NOTEBOOK_DUCKDB_MEMORY_LIMIT,
                     "threads": settings.NOTEBOOK_DUCKDB_THREADS,
+                    "request_timeout": settings.NOTEBOOK_CELL_TIMEOUT_SECONDS,
                     "credential_path": path,
                 }
             ),
@@ -599,8 +681,20 @@ class NotebookRuntimeWorker:
             status, message = await self._run_user_code(runtime, job, collector)
             if status != "lost":
                 try:
-                    finished = await self.call(runtime, kernel_calls.end())
-                    collector.displays(finished.get("displays") or [])
+                    async def late_output(event: KernelEvent) -> None:
+                        live = collector.accept(event)
+                        if live is not None:
+                            await events.publish(
+                                runtime.notebook_id,
+                                "cell.output",
+                                {"execution_id": execution_id, "cell_id": job["cell_id"],
+                                 "output": {k: v for k, v in live.items() if k != "_t"}},
+                            )
+
+                    finished = await self.call(runtime, kernel_calls.end(), late_output)
+                    collector.displays(
+                        await self._read_display_files(runtime, finished.get("displays") or [])
+                    )
                     variables = finished.get("variables")
                     if variables is not None:
                         await client.set(
@@ -717,6 +811,8 @@ class NotebookRuntimeWorker:
         else:
             code = job["source"]
 
+        markers = rpc.MarkerReader()
+
         async def sink(event: KernelEvent) -> None:
             if event.type == "init" and event.text:
                 await state.set_execution(execution_id, kernel_execution_id=event.text)
@@ -725,6 +821,17 @@ class NotebookRuntimeWorker:
                 if found is not None:
                     sql_result.update(found)
                     return
+            if event.type == "stderr":
+                text, requests = markers.feed(event.text)
+                for request_id in requests:
+                    # The kernel waits for this result, so the stream waits too.
+                    await rpc.handle(
+                        self._provider, self.handle_of(runtime),
+                        job.get("session_id") or runtime.session_id, request_id,
+                    )
+                if not text:
+                    return
+                event = dataclasses.replace(event, text=text)
             live = collector.accept(event)
             if live is not None:
                 await events.publish(
@@ -784,8 +891,11 @@ class NotebookRuntimeWorker:
                 return "failed", str(error.get("message"))
             kind = sql_result.get("kind")
             if kind == "table" and isinstance(sql_result.get("table"), dict):
-                record = {"type": "table", "table": sql_result["table"],
-                          "name": sql_result.get("name")}
+                table = dict(sql_result["table"])
+                nova_sql = await self._nova_sql(job, sql_result, table)
+                if nova_sql:
+                    table["nova_sql"] = nova_sql
+                record = {"type": "table", "table": table, "name": sql_result.get("name")}
                 collector.record(record, at=time.time())
             elif kind == "status":
                 affected = sql_result.get("affected_rows")
@@ -799,6 +909,59 @@ class NotebookRuntimeWorker:
                 "Cancelled" if outcome[0] == "cancelled" else "Timeout", outcome[1]
             )
         return outcome
+
+    async def _read_display_files(
+        self, runtime: state.RuntimeState, displays: list[Any]
+    ) -> list[Any]:
+        """Displays the kernel handed over as files (large ones), read back in place."""
+        out = []
+        for display in displays:
+            path = display.get("file") if isinstance(display, dict) else None
+            if not path:
+                out.append(display)
+                continue
+            if not DISPLAY_FILE.fullmatch(str(path)):
+                continue
+            if int(display.get("bytes") or 0) > settings.NOTEBOOK_OUTPUT_MAX_BYTES:
+                out.append({"t": display.get("t"), "data": {
+                    "text/plain": "Output too large to show"}})
+                continue
+            try:
+                body = await self._provider.read_file(self.handle_of(runtime), str(path))
+                out.append({"t": display.get("t"), "data": json.loads(body)})
+            except (ProviderError, ValueError):
+                logger.info("A large display of runtime %s could not be read", runtime.id)
+        return out
+
+    async def _nova_sql(
+        self, job: dict[str, Any], sql_result: dict[str, Any], table: dict[str, Any]
+    ) -> str | None:
+        """The Nova statement that reproduces this table, checked in Nova, or ``None``.
+
+        Dataviz keeps a result up to date by running it again in Nova, so only
+        a statement Nova accepts as this user, under this role, qualifies.
+        """
+        if job.get("engine") == "nova" and table.get("origin") == "nova":
+            return str(job["source"]).strip().rstrip(";").strip()
+        candidate = str(sql_result.get("nova_candidate") or "").strip().rstrip(";").strip()
+        if not candidate:
+            return None
+        from app.modules.query.service import query_service
+
+        try:
+            session = await data_tokens.resolve_session(job.get("session_id") or "")
+            results = await query_service.execute_statements(
+                sql=f"SELECT * FROM ({candidate}) AS nova_check LIMIT 0",
+                username=session.username,
+                encrypted_password=session.encrypted_password,
+                role=session.active_role,
+                security_context_version=session.security_context_version,
+                session_id=session.session_id,
+                source="notebook",
+            )
+        except Exception:  # noqa: BLE001 - the table stays usable in the notebook
+            return None
+        return candidate if results and not any(result.error for result in results) else None
 
     # ── Fleet hygiene ─────────────────────────────────────────────────────
 

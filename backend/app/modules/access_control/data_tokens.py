@@ -54,8 +54,6 @@ class TokenPurpose:
     name: str
     #: Redis key prefix of this purpose, e.g. ``nova:bi:``.
     prefix: str
-    #: Connections opened with the token may only read.
-    read_only: bool = False
     #: When set, the token holds only while ``<subject_key_prefix><subject>``
     #: exists (the notebook runtime's live state).
     subject_key_prefix: str | None = None
@@ -74,9 +72,7 @@ class TokenPurpose:
 
 
 BI = TokenPurpose(name="bi", prefix="nova:bi:")
-NOTEBOOK = TokenPurpose(
-    name="notebook", prefix="nova:nb:", read_only=True, subject_key_prefix="nova:nb:rt:"
-)
+NOTEBOOK = TokenPurpose(name="notebook", prefix="nova:nb:", subject_key_prefix="nova:nb:rt:")
 PURPOSES = {BI.name: BI, NOTEBOOK.name: NOTEBOOK}
 
 
@@ -117,8 +113,8 @@ class TokenBinding:
     subject: str = ""
 
     @property
-    def read_only(self) -> bool:
-        return PURPOSES[self.purpose].read_only
+    def notebook(self) -> bool:
+        return self.purpose == NOTEBOOK.name
 
 
 def _redis():

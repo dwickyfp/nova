@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
 import { defineNevaCapability, useNevaSurface } from "@/features/assistant";
 import { buildRewriteHunks, type ProposedRewrite } from "@/features/assistant/query-attach";
-import type { CellKind, NotebookCell, SqlEngine } from "./types";
+import type { CellKind, NotebookCell } from "./types";
 import type { NotebookModel } from "./use-notebook";
 
 /** A cell Neva proposed, waiting for the person to accept or dismiss it. */
@@ -12,7 +12,7 @@ export type CellProposal = {
   targetCellId: string;
   mode: "replace" | "insert_below";
   kind: CellKind;
-  engine: SqlEngine | null;
+  title: string | null;
   source: string;
   rewrite: ProposedRewrite;
 };
@@ -32,7 +32,7 @@ const LANGUAGE: Record<CellKind, string> = { python: "python", sql: "sql", markd
 
 function proposalFor(
   cells: NotebookCell[],
-  args: { cell_id: string; kind: CellKind; engine: string; source: string; mode: "replace" | "insert_below" },
+  args: { cell_id: string; kind: CellKind; title: string; source: string; mode: "replace" | "insert_below" },
 ): CellProposal {
   const target = cells.find((cell) => cell.id === args.cell_id) ?? cells[cells.length - 1];
   if (!target && args.mode === "replace") throw new Error("That cell is not in this notebook.");
@@ -46,7 +46,7 @@ function proposalFor(
     targetCellId: target?.id ?? "",
     mode: args.mode,
     kind: args.kind,
-    engine: args.kind === "sql" ? (args.engine === "nova" ? "nova" : "duckdb") : null,
+    title: args.title.trim() || null,
     source: args.source,
     rewrite: {
       attachmentId: id,
@@ -94,7 +94,7 @@ export function NotebookNevaSurface({
           .object({
             cell_id: z.string().min(1).max(64),
             kind: z.enum(["python", "sql", "markdown"]),
-            engine: z.enum(["duckdb", "nova", "none"]),
+            title: z.string().max(120),
             source: z.string().min(1).max(20_000),
             mode: z.enum(["replace", "insert_below"]),
           })
@@ -161,7 +161,7 @@ export function NotebookNevaSurface({
           runtime: model.runtime.status,
           novaDataRole: model.runtime.active_role ?? null,
           cellKind: active?.kind ?? null,
-          sqlEngine: active?.kind === "sql" ? active.engine : null,
+          cellTitle: active?.title ?? null,
           resultName: active?.name ?? null,
         },
       },

@@ -1,10 +1,12 @@
-"""Notebook data tokens: the runtime's governed, read-only proxy password.
+"""Notebook data tokens: the runtime's governed proxy password.
 
 A notebook runtime's DuckDB logs in to the MySQL proxy with a token minted for
 the signed-in user's Nova session and the runtime. These tests pin that the
 token lives in its own namespace, dies with the runtime and with the session's
-role, is accepted only from sandbox networks, and that every statement on such
-a connection is read-only.
+role, is accepted only from sandbox networks, and how the proxy answers a notebook
+connection: writes reach Nova as the user, the scanner's transaction control is
+answered by the proxy, and a write through a Postgres/Snowflake attach is sent
+to write-back.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from app.core.redis import session_store
 from app.core.security import encrypt_password
 from app.modules.access_control import data_tokens
 from app.modules.superset import access
-from app.proxy.executor import ProxyQueryExecutor, _read_only_statement
+from app.proxy.executor import ProxyQueryExecutor, _reads_only
 from app.proxy.protocol import scramble_native_password
 from app.proxy.session import SessionState
 from tests.unit.test_superset_bridge import FakeRedis
@@ -61,9 +63,9 @@ async def test_notebook_tokens_live_in_their_own_namespace(redis):
     response = scramble_native_password(issued.token, scramble)
     # Not a BI token…
     assert await data_tokens.match("alice", scramble, response, purpose=data_tokens.BI) is None
-    # …but a notebook one, bound to the runtime and read-only.
+    # …but a notebook one, bound to the runtime.
     binding = await data_tokens.match("alice", scramble, response, purpose=data_tokens.NOTEBOOK)
-    assert binding is not None and binding.subject == "rt-1" and binding.read_only
+    assert binding is not None and binding.subject == "rt-1" and binding.notebook
 
 
 async def test_the_token_is_reused_per_runtime_and_not_across_runtimes(redis):
@@ -131,8 +133,8 @@ def test_notebook_tokens_are_accepted_only_from_sandbox_networks(monkeypatch):
         "SET character_set_results = NULL",
     ],
 )
-def test_reads_and_connection_settings_are_allowed(sql):
-    assert _read_only_statement(sql)
+def test_reads_and_connection_settings_count_as_reads(sql):
+    assert _reads_only(sql)
 
 
 @pytest.mark.parametrize(
@@ -148,33 +150,78 @@ def test_reads_and_connection_settings_are_allowed(sql):
         "GRANT SELECT ON t TO u",
     ],
 )
-def test_writes_and_other_settings_are_refused(sql):
-    assert not _read_only_statement(sql)
+def test_writes_and_other_settings_are_writes(sql):
+    assert not _reads_only(sql)
 
 
-async def test_a_read_only_connection_refuses_writes_before_the_engine(monkeypatch):
-    calls = []
+class _Service:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
 
-    class Service:
-        async def preflight_script(self, statements, **kwargs):
-            return None
+    async def preflight_script(self, statements, **kwargs):
+        return None
 
-        async def execute_statements(self, **kwargs):
-            calls.append(kwargs["sql"])
-            from app.modules.query.repository import QueryResult
+    async def execute_statements(self, **kwargs):
+        self.calls.append(kwargs["sql"])
+        from app.modules.query.repository import QueryResult
 
-            return [QueryResult(columns=["n"], rows=[[1]])]
+        return [QueryResult(columns=["n"], rows=[[1]])]
 
-    audits = []
+
+@pytest.fixture
+def engine(monkeypatch):
+    service = _Service()
+    audits: list[dict] = []
 
     async def audit(**kwargs):
         audits.append(kwargs)
 
-    monkeypatch.setattr("app.proxy.executor.query_service", Service())
+    monkeypatch.setattr("app.proxy.executor.query_service", service)
     monkeypatch.setattr("app.common.audit.write_audit_log", audit)
-    executor = ProxyQueryExecutor(SessionState(read_only_connection=True, active_role="analyst"))
-    refused = await executor.execute("DELETE FROM t", username="alice", connection=object())
-    assert refused.error_code == 1792 and calls == []
-    assert audits and audits[0]["status"] == "DENIED"
-    read = await executor.execute("SELECT n FROM t", username="alice", connection=object())
-    assert read.is_resultset and calls == ["SELECT n FROM t"]
+    return service, audits
+
+
+def _notebook(database: str | None = None) -> ProxyQueryExecutor:
+    session = SessionState(notebook_connection=True, active_role="analyst")
+    session.set_database(database or "")
+    return ProxyQueryExecutor(session)
+
+
+async def test_a_notebook_writes_to_nova_as_the_user(engine):
+    service, _ = engine
+    written = await _notebook().execute(
+        "DELETE FROM sales.t WHERE id = 1", username="alice", connection=object()
+    )
+    assert written.error is None and service.calls == ["DELETE FROM sales.t WHERE id = 1"]
+
+
+async def test_the_scanner_transaction_is_answered_and_each_statement_commits(engine):
+    service, _ = engine
+    executor = _notebook()
+    for statement in ("START TRANSACTION", "INSERT INTO sales.t VALUES (1)", "COMMIT",
+                      "BEGIN", "ROLLBACK"):
+        result = await executor.execute(statement, username="alice", connection=object())
+        assert result.error is None
+    assert service.calls == ["INSERT INTO sales.t VALUES (1)"]
+    assert not executor._session.in_transaction
+
+
+async def test_a_write_through_an_external_catalog_points_to_write_back(engine):
+    service, audits = engine
+    executor = _notebook("pg_shop.")
+    refused = await executor.execute(
+        "INSERT INTO `public`.`orders` VALUES (1)", username="alice", connection=object()
+    )
+    assert refused.error_code == 1235 and "con.write" in (refused.error or "")
+    assert service.calls == [] and audits[0]["status"] == "DENIED"
+    read = await executor.execute(
+        "SELECT * FROM `public`.`orders`", username="alice", connection=object()
+    )
+    assert read.is_resultset and service.calls == ["SELECT * FROM `public`.`orders`"]
+
+
+async def test_other_clients_keep_engine_transactions(engine):
+    service, _ = engine
+    session = SessionState(active_role="analyst")
+    await ProxyQueryExecutor(session).execute("BEGIN", username="alice", connection=object())
+    assert service.calls == ["BEGIN"] and session.in_transaction

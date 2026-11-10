@@ -549,6 +549,11 @@ NOTEBOOK_SANDBOX_NETWORKS=      # OrbStack: 127.0.0.1/32,0.250.250.0/24
 ```
 
 Runtime dijalankan oleh `nova-worker` (langkah 5), jadi worker harus hidup.
+Di notebook, `con = novaduck.connect()` sudah terhubung ke semua catalog yang
+dilihat role aktif (`nova`, Postgres, Snowflake). `con.write(...)`,
+`con.merge_into(...)` dan `con.put(df, "@stage/path/file.parquet")` menulis
+sebagai user tersebut. Menulis ke Postgres/Snowflake butuh *write credential*
+di connection-nya: Catalog → Connections → ⋯ → Notebook writes.
 Buka **Workspaces → Notebook**, lalu **Start** pada pil runtime. Sel pertama
 siap kira-kira 10–20 detik setelah start. Tes kernel berjalan di dalam image:
 

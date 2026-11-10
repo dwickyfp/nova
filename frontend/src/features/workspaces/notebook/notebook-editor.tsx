@@ -208,8 +208,8 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   );
 
   const addCell = useCallback(
-    (kind: CellKind, index: number, source = "", engine: "duckdb" | "nova" = "duckdb") => {
-      const id = insertCell(kind, index, source, null, engine);
+    (kind: CellKind, index: number, source = "", title: string | null = null) => {
+      const id = insertCell(kind, index, source, null, "duckdb", title);
       setActiveId(id);
       setEditing(kind !== "markdown" || !source);
       return id;
@@ -267,6 +267,12 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       if (event.key === "Enter" && meta && cell) {
         event.preventDefault();
         onCellKey(cell.id, "run");
+        return;
+      }
+      if (meta && event.shiftKey && cell && canEdit && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        event.preventDefault();
+        const up = event.key === "ArrowUp";
+        if (up ? index > 0 : index < cells.length - 1) command(cell.id, up ? "move-up" : "move-down");
         return;
       }
       if (meta || event.altKey) return;
@@ -450,16 +456,16 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       let cellId = proposal.targetCellId;
       const target = cells.find((c) => c.id === proposal.targetCellId);
       if (proposal.mode === "replace" && target) {
-        if (target.kind !== proposal.kind || (proposal.engine && target.engine !== proposal.engine)) {
+        if (target.kind !== proposal.kind || (proposal.title && proposal.title !== target.title)) {
           model.updateCell(target.id, {
             kind: proposal.kind,
-            ...(proposal.engine ? { engine: proposal.engine } : {}),
+            ...(proposal.title ? { title: proposal.title } : {}),
           });
         }
         model.updateSource(target.id, proposal.source);
       } else {
         const index = target ? cells.findIndex((c) => c.id === target.id) + 1 : cells.length;
-        cellId = addCell(proposal.kind, index, proposal.source, proposal.engine ?? "duckdb");
+        cellId = addCell(proposal.kind, index, proposal.source, proposal.title);
         setEditing(false);
       }
       setProposal(null);
@@ -468,15 +474,15 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     [addCell, cells, model, proposal, runCells],
   );
 
-  // A table read by a Nova-engine SQL cell can become a Dataviz chart; the
-  // button shows only when Nova confirms it can keep that result up to date.
+  // A table whose query reads only Nova catalogs can become a Dataviz chart:
+  // the worker checked that Nova runs it (``nova_sql``), and Dataviz confirms
+  // again before showing the button.
   const tableActions = useCallback(
     (cell: NotebookCell, output: Extract<CellOutput, { type: "table" }>) => {
       const run = runs[cell.id];
       if (
         cell.kind !== "sql" ||
-        cell.engine !== "nova" ||
-        output.table.origin !== "nova" ||
+        !output.table.nova_sql ||
         !run ||
         run.status !== "succeeded" ||
         stale.has(cell.id)
@@ -494,6 +500,22 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       );
     },
     [notebookId, runs, stale],
+  );
+
+  const outline = useMemo(
+    () =>
+      cells.map((cell, index) => {
+        const heading =
+          cell.kind === "markdown" ? cell.source.match(/^\s*#{1,6}\s+(.+)$/m)?.[1]?.trim() : undefined;
+        const fallback = `${cell.kind === "sql" ? "SQL" : cell.kind === "python" ? "Python" : "Note"} cell ${index + 1}`;
+        return {
+          id: cell.id,
+          label: cell.title || heading || fallback,
+          titled: Boolean(cell.title || heading),
+          active: cell.id === activeId,
+        };
+      }),
+    [activeId, cells],
   );
 
   const narrow = width > 0 && width < 900;
@@ -651,10 +673,10 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
             size="icon"
             variant={panel ? "secondary" : "ghost"}
             className="size-8 text-muted-foreground"
-            aria-label="Variables and packages"
-            title="Variables and packages"
+            aria-label="Outline, variables and packages"
+            title="Outline, variables and packages"
             aria-pressed={!!panel}
-            onClick={() => setPanel((current) => (current ? null : "variables"))}
+            onClick={() => setPanel((current) => (current ? null : "outline"))}
           >
             <PanelRight className="size-4" />
           </Button>
@@ -745,6 +767,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                         onSource={model.updateSource}
                         onKind={(id, kind) => model.updateCell(id, { kind })}
                         onName={(id, name) => model.updateCell(id, { name })}
+                        onTitle={(id, title) => model.updateCell(id, { title })}
                         onEngine={(id, engine) => model.updateCell(id, { engine })}
                         onKey={onCellKey}
                         onCommand={command}
@@ -781,6 +804,8 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
             ready={ready}
             packageEvents={model.packageEvents}
             overlay={narrow}
+            outline={outline}
+            onJump={focusCell}
           />
         ) : null}
       </div>
@@ -824,7 +849,7 @@ function ProposalReview({
     <div className="my-2 ml-14 flex flex-col gap-1">
       <p className="text-xs text-muted-foreground">
         {label}
-        {proposal.kind === "sql" ? `, run in ${proposal.engine === "nova" ? "Nova" : "DuckDB"}` : ""}
+        {proposal.title ? `: ${proposal.title}` : ""}
       </p>
       <RewriteReview
         rewrite={proposal.rewrite}

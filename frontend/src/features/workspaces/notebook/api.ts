@@ -1,5 +1,6 @@
 import { api } from "@/lib/api-client";
 import type {
+  ExecutionRecord,
   LatestResponse,
   NotebookEdit,
   NotebookEditResponse,
@@ -64,6 +65,8 @@ export const notebookApi = {
     }),
   latest: (id: string) =>
     api.get<LatestResponse>(`${base(id)}/executions/latest`),
+  execution: (id: string, executionId: string) =>
+    api.get<ExecutionRecord>(`${base(id)}/executions/${encodeURIComponent(executionId)}`),
   packages: (id: string) => api.get<PackagesResponse>(`${base(id)}/packages`),
   install: (id: string, name: string, version?: string) =>
     api.post<{ operation_id: string }>(`${base(id)}/packages`, {

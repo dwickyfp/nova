@@ -9,6 +9,8 @@ export type NotebookCell = {
   source: string;
   name: string | null;
   engine: SqlEngine | null;
+  /** A short heading the person gives the cell; not part of what runs. */
+  title?: string | null;
   source_revision: string;
 };
 
@@ -28,7 +30,15 @@ export type NotebookEditResponse = NotebookResponse & {
 
 export type NotebookEdit =
   | { op: "insert"; index: number; cell: Partial<NotebookCell> & { kind: CellKind } }
-  | { op: "update"; cell_id: string; source?: string; name?: string | null; kind?: CellKind; engine?: SqlEngine }
+  | {
+      op: "update";
+      cell_id: string;
+      source?: string;
+      name?: string | null;
+      title?: string | null;
+      kind?: CellKind;
+      engine?: SqlEngine;
+    }
   | { op: "delete"; cell_id: string }
   | { op: "move"; cell_id: string; index: number };
 
@@ -75,6 +85,8 @@ export type TablePayload = {
   total_rows: number | null;
   truncated: boolean;
   origin: "local_duckdb" | "nova" | "python_memory" | string;
+  /** The Nova statement that reproduces this table, checked by Nova when it ran. */
+  nova_sql?: string | null;
 };
 
 export type CellOutput =

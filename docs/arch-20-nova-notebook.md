@@ -7,6 +7,9 @@ Status: implemented on `feat/nova-notebook` (2026-11-10). Design source:
 A notebook is a Jupyter document in the user's Workspace whose Python and SQL
 cells run in a governed, isolated runtime: one OpenSandbox container per active
 notebook, a persistent Python kernel, and DuckDB connected natively to Nova.
+`con = novaduck.connect()` is that DuckDB with every catalog the user's role
+sees attached (Nova, Postgres, Snowflake), and it writes back to Nova tables,
+stages and, through governed write-back, Postgres and Snowflake tables.
 
 ## Shape
 
@@ -20,8 +23,10 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
                                                     │ one container per active runtime
                                                     ▼
           nova-notebook-runtime: Jupyter kernel + execd + nova_runtime (+ egress sidecar)
-             db = DuckDB ── ATTACH 'nova' (TYPE mysql, READ_ONLY) ──► MySQL proxy :4406
-                                         notebook data token, read-only, as the user's role
+      con = novaduck ── ATTACH nova, pg_shop, sf_… (TYPE mysql) ──► MySQL proxy :4406
+                         one attach per catalog, notebook data token, as the user's role
+      con.write / merge_into / put ── request file + stderr marker ──► worker (as the user)
+                         Nova: QueryService · stage: stage service · Postgres/Snowflake: write-back
 ```
 
 | Piece | Owner | Notes |
@@ -34,7 +39,9 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
 | Durable rows | `notebooks/repository.py` | `CONFIG_NOTEBOOK_RUNTIMES`, `CONFIG_NOTEBOOK_EXECUTIONS` (written once per execution), `CONFIG_NOTEBOOK_PACKAGES`. Output payloads are objects beside the Workspace (`.notebook-outputs/`). |
 | Data tokens | `access_control/data_tokens.py` | Session-bound proxy passwords by purpose (`bi`, `notebook`). |
 | UI | `frontend/src/features/workspaces/notebook/` | Notebook tab in Workspaces. |
-| Neva | `assistant/tools/notebook.py`, `client_capability.py`, `skill_library/notebook.md` | Reads the open notebook, proposes cells, runs cells and installs packages only with approval. |
+| Neva | `assistant/tools/notebook.py`, `client_capability.py`, `skill_library/notebook.md` | Reads the open notebook, proposes cells (with a title), runs cells and installs packages only with approval. |
+| Kernel requests | `notebooks/runtime/rpc.py`, `nova_runtime/novaduck.py` | `con.write`, `con.merge_into`, `con.put`: the kernel asks, the worker does it as the user. |
+| Write-back | `catalog/writeback.py`, `catalog/sources/writes.py`, `sources/postgres.py`, `sources/snowflake.py` | Governed writes to Postgres and Snowflake catalogs with a separate write credential. |
 
 ## Governance
 
@@ -43,10 +50,15 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
   session (principal, role, security-context version) **and** to the runtime:
   it stops working when the runtime stops, the role changes, or the session
   ends. The proxy re-checks the binding before every command.
-- **Read-only.** A notebook token only logs in from `NOTEBOOK_SANDBOX_NETWORKS`,
-  and every statement on such a connection must be read-only (session settings
-  DuckDB sends are allowed; writes are refused with MySQL error 1792 and
-  audited). DuckDB also attaches `nova` as `READ_ONLY`.
+- **Writes run as written.** A notebook token only logs in from
+  `NOTEBOOK_SANDBOX_NETWORKS`. Running a cell is the request, as with any SQL
+  client: what the role may change is Ranger's decision, the SQL guard and
+  `ACCOUNTADMIN` protections apply, and every statement is audited. Neva still
+  needs the person's approval to run a cell.
+- **Transactions.** DuckDB opens a transaction around writes; StarRocks
+  explicit transactions refuse DDL and MERGE, so the proxy answers
+  `START TRANSACTION`/`COMMIT`/`ROLLBACK` on a notebook connection itself and
+  each statement commits as it runs (a `ROLLBACK` undoes nothing).
 - **No secret in the sandbox environment.** The Jupyter token is the only
   environment value. The data token travels in a one-time file the kernel reads
   and deletes; DuckDB redacts it in `duckdb_secrets()`. User code can still read
@@ -65,6 +77,51 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
 - **Audit.** Runtime start/stop, every execution (source revision, not source),
   package installs, notebook proxy logins refused and statements refused.
 
+## Catalogs and writes (novaduck)
+
+- **Attaches.** At runtime start the worker lists the catalogs the role sees
+  (`SHOW CATALOGS` as the user) and checks each external one
+  (`SHOW DATABASES FROM <catalog>`, 20 s). The kernel attaches every catalog
+  that answers, under its Nova name (`nova` for `default_catalog`), each with
+  the handshake database `<catalog>.`. A catalog that does not answer is
+  listed in `con.catalogs()` with its error and not attached: DuckDB reads
+  every attached catalog's schemas when it lists any, so one broken catalog
+  would otherwise break them all.
+- **Nova tables.** Plain DuckDB SQL writes through the attach
+  (`INSERT INTO nova.db.t …`, `CREATE TABLE nova.db.t AS …`). `con.write` and
+  `con.merge_into` hand larger data to the worker, which writes it as the user
+  through QueryService: batched `INSERT` / `INSERT OVERWRITE`, and Nova's
+  `MERGE INTO` (primary-key tables) with a literal source, values rendered by
+  the proxy's escaping `sql_literal`.
+- **Stages.** `con.put(data, "@stage/path/file.parquet|csv|json")` (or a local
+  file) — the worker resolves the stage like SQL does, checks
+  `check_stage_access(..., "write")` for the role, uploads through the stage
+  service and audits (`notebook_put`).
+- **Postgres and Snowflake.** StarRocks 4.1.4 JDBC catalogs refuse every write
+  ("fail to begin transaction"), so a DuckDB write through such an attach is
+  refused by the proxy with a pointer, and `con.write` / `con.merge_into` go to
+  **write-back** (`catalog/writeback.py`):
+  1. Ranger first: `role_allows` for the exact `catalog.schema.table` and
+     action (INSERT to append; INSERT and UPDATE to merge; DELETE to overwrite
+     or delete matches); deny items win.
+  2. A separate **write credential** on the connection (security admin,
+     Catalog → Connections → Notebook writes, stored encrypted in
+     `CATALOG_CONNECTION_WRITE_CREDENTIALS`). The engine's catalog keeps its
+     read credential. Without one, writes are refused.
+  3. One transaction on the source: rows load into a session table (Postgres
+     `COPY`, Snowflake bound inserts), then append, overwrite (delete and
+     insert) or `MERGE` (Postgres 15+). Identifiers are quoted by the driver,
+     values never spliced; duplicate keys refuse the merge.
+  4. Audited (`catalog_writeback`) with row counts; driver errors are masked
+     (the write credential's values and credential-shaped text removed).
+- **Requests.** The kernel writes the data and a request file under
+  `/tmp/nova/rpc/` and prints one stderr marker; the worker reading the cell's
+  output strips it, does the request as the runtime's user (session re-checked)
+  and writes the result file the kernel waits for. A request carries no
+  identity, so a forged one is the user asking for their own rights.
+  Limits: `NOTEBOOK_WRITE_MAX_ROWS` (1 M) and `NOTEBOOK_WRITE_MAX_BYTES`
+  (200 MB) per request.
+
 ## Execution
 
 1. The UI saves pending edits, then `POST /notebooks/{id}/executions` with the
@@ -81,15 +138,13 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
    `cell.finished`. A reload reads the latest execution per cell and anything
    still in flight, then resumes the event stream — nothing re-runs.
 
-SQL cells run on one of two engines:
-
-- **DuckDB** (default): in the kernel, with local files, `nova.<db>.<table>`
-  (filter pushdown through the attach), and `{{name}}` references to earlier
-  results or Python values (scalars bind as parameters, frames register under
-  generated names; nothing is spliced as text).
-- **Nova**: the whole statement goes to Nova through `mysql_query`, so it runs
-  next to the data under Nova's SQL (stages included), read-only. The preview
-  keeps the query's order by limiting in place.
+SQL cells run in the kernel's DuckDB, with local files, every attached
+catalog (filter pushdown through each attach) and `{{name}}` references to
+earlier results or Python values (scalars bind as parameters, frames register
+under generated names; nothing is spliced as text). Nova-only SQL (stage
+reads, Nova functions) runs through `con.nova(sql)`. Notebooks saved with the
+earlier per-cell engine choice keep running: an `engine: nova` cell still
+sends its statement to Nova, and the cell offers to move to DuckDB.
 
 A named SQL result is a lazy DuckDB relation in Python. Previews are bounded
 (`NOTEBOOK_PREVIEW_ROWS`), never counted with an extra query.
@@ -129,11 +184,32 @@ DuckDB's `mysql` scanner needed these proxy changes:
   `notebook_context`, proposes cells through `notebook.propose_cell` (the
   person accepts, accepts and runs, or dismisses a diff), and runs a cell or
   adds a package only after approval each time.
-- **Add to Dataviz** is offered for tables of Nova-engine SQL cells whose source
-  is unchanged since the run, under the same role. The Dataviz resolver reads
-  the notebook record (`thread_id` `notebook:<id>`), so capability check, plan
-  and publish are the existing ones. DuckDB and Python results report
-  `NO_PROVENANCE`: they have no governed query to keep up to date.
+- **Add to Dataviz** is offered for a SQL cell that reads only attached Nova
+  catalogs (no local files, Python values or `{{refs}}`). The kernel lists the
+  tables the query reads (`duckdb.get_table_names`), rewrites the `nova`
+  qualifier to `default_catalog` with DuckDB's tokenizer, and the worker checks
+  the statement in Nova as the user (`SELECT * FROM (…) LIMIT 0`); only then
+  does the table carry `nova_sql`. The Dataviz resolver (`thread_id`
+  `notebook:<id>`) uses it when the cell is unchanged since the run and the
+  role is the same. Other results report `NO_PROVENANCE`.
+
+## The notebook page
+
+- Cells are frameless: the active cell shows a thin accent on its left, the
+  toolbar (run, move up, move down, more) shows on hover and stays on the
+  active, running or failed cell. Code sits on a grey Monaco surface with line
+  numbers; a static preview with the same gutter shows until a cell is edited.
+- Each cell can have a title (`metadata.nova.title`, not part of what runs);
+  titles feed the Outline in the side panel. A SQL cell's result name sits
+  under it as `→ name`.
+- Moves: drag handle, the toolbar, Ctrl/⌘+Shift+↑/↓, or the handle's arrow
+  keys.
+- Outputs: images, tables (Table/Chart), Markdown. HTML runs in a sandboxed
+  frame with an opaque origin and a policy that loads nothing from the
+  network; HTML that carries scripts (PyGWalker, plotly) may run its own inline
+  scripts in that frame. The kernel shows `pygwalker.walk(df)` as its
+  self-contained HTML and sets plotly to embed plotly.js. Libraries that load
+  their code from a CDN (altair, bokeh, folium) do not render.
 
 ## Configuration
 
@@ -151,6 +227,12 @@ runtime says runtimes are not set up.
   should validate gVisor or Kata with DuckDB, Arrow and pip.
 - Notebooks are per user, like Workspace files: no sharing, viewer or runner
   roles yet.
+- Notebook writes autocommit per statement; a write-back call is one
+  transaction on the source, a Nova `con.write` of many batches is not.
+- Write-back needs the backend to reach the source's host. A host-run dev
+  backend cannot reach compose-only hosts (the `catalog-test-postgres`
+  fixture); the containerised backend can.
+- Altair, bokeh and folium need CDN scripts, which output frames do not load.
 - Not built: terminal, scratchpad, dependency graph, run descendants, Git,
   HTML export, Plotly rendering (Plotly figures show as their text form; use
   matplotlib), server-side filter/sort over a live result, real-time

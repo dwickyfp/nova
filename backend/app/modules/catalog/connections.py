@@ -118,6 +118,12 @@ _CONNECTION_COLUMNS = (
 )
 
 
+def _credential_table(write: bool) -> str:
+    return (
+        "CATALOG_CONNECTION_WRITE_CREDENTIALS" if write else "CATALOG_CONNECTION_CREDENTIALS"
+    )
+
+
 def _columns(columns: tuple[str, ...]) -> str:
     return ", ".join(f"`{name}`" for name in columns)
 
@@ -162,28 +168,38 @@ class ConnectionRepository:
             "DELETE FROM NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS WHERE connection_name = %s",
             [name],
         )
+        await self.delete_write_credentials(name)
 
-    async def has_credentials(self, name: str) -> bool:
+    async def has_credentials(self, name: str, *, write: bool = False) -> bool:
         result = await db.execute_system(
-            "SELECT connection_name FROM NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS "
+            f"SELECT connection_name FROM NOVA_SYSTEM.{_credential_table(write)} "
             "WHERE connection_name = %s",
             [name],
         )
         return bool(result.get("rows"))
 
-    async def put_credentials(self, name: str, username: str, password: str, by: str) -> None:
+    async def put_credentials(
+        self, name: str, username: str, password: str, by: str, *, write: bool = False
+    ) -> None:
         """Store an entered credential, encrypted. Fails closed on encryption."""
         await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS "
+            f"INSERT INTO NOVA_SYSTEM.{_credential_table(write)} "
             "(connection_name, username_enc, password_enc, updated_by, updated_at) "
             "VALUES (%s, %s, %s, %s, %s)",
             [name, encrypt(username), encrypt(password), by, nova_now()],
         )
 
-    async def read_credentials(self, name: str) -> tuple[str, str] | None:
+    async def delete_write_credentials(self, name: str) -> None:
+        await db.execute_system(
+            "DELETE FROM NOVA_SYSTEM.CATALOG_CONNECTION_WRITE_CREDENTIALS "
+            "WHERE connection_name = %s",
+            [name],
+        )
+
+    async def read_credentials(self, name: str, *, write: bool = False) -> tuple[str, str] | None:
         """Decrypt a stored credential for engine use only. Never returned to a client."""
         result = await db.execute_system(
-            "SELECT username_enc, password_enc FROM NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS "
+            f"SELECT username_enc, password_enc FROM NOVA_SYSTEM.{_credential_table(write)} "
             "WHERE connection_name = %s",
             [name],
         )
@@ -279,6 +295,7 @@ class ConnectionService:
             connector_type=row["connector_type"],
             credential_source="managed" if managed else "external",
             has_credentials=(not managed) or await self.repo.has_credentials(row["name"]),
+            writable=await self.repo.has_credentials(row["name"], write=True),
             owner=row.get("owner"),
             comment=row.get("comment"),
             catalogs=sorted(catalogs),
@@ -380,6 +397,46 @@ class ConnectionService:
             raise
         await _audit(user, "SET_CONNECTION_CREDENTIALS", name, "SUCCESS", None)
         return await self.describe(name, user)
+
+    async def set_write_credentials(
+        self, name: str, username: str | None, password: str | None, user: dict
+    ) -> ConnectionSummary | None:
+        """Enter, or clear with empty values, the credential notebook writes use.
+
+        Only Postgres and Snowflake connections take one: the engine cannot
+        write through their catalogs, so Nova writes with this credential after
+        Ranger allows the caller (:mod:`app.modules.catalog.writeback`).
+        """
+        name = safe_name(name)
+        security = await self._authorize(user, "SET_CONNECTION_WRITE_CREDENTIALS", name)
+        try:
+            row = await self.repo.get(name)
+            if row is None:
+                raise CatalogConnectionError(f"Connection '{name}' does not exist")
+            source = SOURCES.get(row["connector_type"])
+            if source is None or not source.supports_writeback:
+                raise CatalogConnectionError(
+                    f"{row['connector_type']} connections do not take a write credential"
+                )
+            if not username and not password:
+                await self.repo.delete_write_credentials(name)
+            elif not username or not password:
+                raise CatalogConnectionError("Enter both a username and a password")
+            else:
+                await self.repo.delete_write_credentials(name)
+                await self.repo.put_credentials(
+                    name, username, password, security.principal, write=True
+                )
+        except Exception as exc:
+            await _audit(user, "SET_CONNECTION_WRITE_CREDENTIALS", name, "ERROR", str(exc))
+            raise
+        await _audit(user, "SET_CONNECTION_WRITE_CREDENTIALS", name, "SUCCESS", None)
+        return await self.describe(name, user)
+
+    async def write_credentials(self, connection: dict) -> Credentials | None:
+        """A connection's write credential, or ``None``. Call only after authorization."""
+        stored = await self.repo.read_credentials(connection["name"], write=True)
+        return Credentials(*stored) if stored else None
 
     async def drop(self, name: str, user: dict, *, if_exists: bool = False) -> bool:
         """Remove a connection no live catalog uses. Returns whether one was dropped."""
