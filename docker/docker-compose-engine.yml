@@ -446,6 +446,31 @@ services:
     networks:
       - nova
 
+  # ── OpenSandbox server (Nova Notebook runtimes) ──────────────────
+  # Trusted control plane: the only container with the Docker socket. It
+  # creates one sibling sandbox per active notebook runtime from the pinned
+  # nova-notebook-runtime image (docker/notebook-runtime). Published on
+  # loopback only; the backend is its sole caller (docs/arch-20-nova-notebook.md).
+  opensandbox-server:
+    logging: *default-logging
+    image: opensandbox/server:release-1.2.0@sha256:25bebdcf1cf7724eb923faecbdbbf82d4038c6ab35c736151574726d14006f30
+    container_name: nova-opensandbox-server
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+      OPENSANDBOX_SERVER_API_KEY: ${NOVA_OPENSANDBOX_API_KEY:?set NOVA_OPENSANDBOX_API_KEY in docker/.env}
+      TZ: ${TZ:-Asia/Jakarta}
+    ports:
+      - "127.0.0.1:${OPENSANDBOX_PORT:-8090}:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./opensandbox/config.toml:/etc/opensandbox/config.toml:ro
+      - opensandbox_data:/var/lib/opensandbox
+    restart: unless-stopped
+    networks:
+      - nova
+
   # ── Redis (session store + cache) ─────────────────────────────────
   redis:
     logging: *default-logging
@@ -632,3 +657,5 @@ volumes:
     name: docker_redis_data
   superset_db_data:
     name: docker_superset_db_data
+  opensandbox_data:
+    name: docker_opensandbox_data

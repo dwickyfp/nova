@@ -35,6 +35,8 @@ dependencies = [
     "psycopg[binary]>=3.2,<4",
     "snowflake-connector-python>=4.0,<5",
     "tavily-python>=0.7",
+    "opensandbox==1.2.0",
+    "opensandbox-code-interpreter==1.2.0",
 ]
 
 [dependency-groups]

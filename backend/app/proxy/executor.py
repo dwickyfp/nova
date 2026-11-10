@@ -25,6 +25,7 @@ import datetime
 import decimal
 import logging
 import math
+import re
 from ast import literal_eval
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -32,12 +33,13 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from app.common.sql_guard import redact_sql_credentials
+from app.common.sql_guard import redact_sql_credentials, strip_sql_comments
 from app.core.config import settings
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
+from app.modules.assistant.tools.policy import is_allowed_statement
 from app.modules.query.admission import (
     REFUSAL,
     QueryCapacityError,
@@ -66,6 +68,7 @@ from app.proxy.session import (
     bind_placeholders,
     handle_set_statement,
     is_catalog_switch,
+    is_read_only_transaction_start,
     is_show_databases,
     parse_prepared_statement,
     parse_role_statement,
@@ -80,6 +83,10 @@ from app.sql_frontend.parser import run_sql_cpu
 from app.sql_frontend.session_functions import CORRELATION_SESSION
 
 logger = logging.getLogger(__name__)
+
+#: A statement whose result columns a prepare can announce: a query, with or
+#: without a CTE or parentheses (``describe_columns``).
+_DESCRIBABLE = re.compile(r"^\(*\s*(?:SELECT|WITH)\b", re.IGNORECASE)
 
 _INTEGER_COLUMNS = frozenset(
     {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "largeint"}
@@ -490,6 +497,10 @@ class ProxyQueryExecutor:
                 )
             return await self._emit(sink, part, more)
 
+        read_only = self._read_only_transaction(statement)
+        if read_only is not None:
+            return await self._emit(sink, read_only, more)
+
         use_result = await self._handle_use(
             statement, username=username, connection=connection, session_id=session_id
         )
@@ -535,6 +546,67 @@ class ProxyQueryExecutor:
             catalog_switch=is_catalog_switch(statement),
             hide_databases=is_show_databases(statement),
         )
+
+    def _read_only_transaction(self, statement: str) -> WireResult | None:
+        """Answer a client-declared read-only transaction without the engine.
+
+        ``START TRANSACTION READ ONLY`` opens it and the next ``COMMIT`` or
+        ``ROLLBACK`` closes it; inside it a statement that is not read-only is
+        refused with MySQL's own error. ``None`` means the statement is not one
+        the proxy answers here.
+        """
+        session = self._session
+        if is_read_only_transaction_start(statement):
+            if session.in_transaction:
+                return WireResult(
+                    error="A transaction is already open on this connection", error_code=1568
+                )
+            session.read_only_transaction = True
+            return WireResult()
+        if not session.read_only_transaction:
+            return None
+        if transaction_control(statement) == "end":
+            session.read_only_transaction = False
+            return WireResult()
+        if not is_allowed_statement(statement):
+            return WireResult(
+                error="Cannot execute statement in a READ ONLY transaction.",
+                error_code=1792,
+            )
+        return None
+
+    async def describe_columns(
+        self,
+        sql: str,
+        *,
+        username: str,
+        connection,
+        session_id: str | None,
+    ) -> list[ColumnDefinition]:
+        """The result columns of a row-returning statement, read without rows.
+
+        A MySQL server announces a prepared query's columns before it runs;
+        clients that bind results at prepare time depend on it. The statement is
+        wrapped in ``SELECT * … LIMIT 0`` and run through the same governed path
+        (guard, role, Ranger, audit) as any other statement, so no rows are read
+        and a statement the caller may not run describes nothing. Anything that
+        is not a plain read, or that the wrapper cannot express, returns ``[]``
+        and the columns arrive with the execute response as before.
+        """
+        text = strip_sql_comments(sql).strip().rstrip(";").strip()
+        if not _DESCRIBABLE.match(text) or not is_allowed_statement(text):
+            return []
+        probe = f"SELECT * FROM ({text}) AS nova_prepare_describe LIMIT 0"
+        sink = CollectingSink()
+        try:
+            await self.execute_to(
+                probe, sink, username=username, connection=connection, session_id=session_id
+            )
+        except Exception:
+            logger.debug("Prepared statement could not be described", exc_info=True)
+            return []
+        result = sink.result()
+        return list(result.columns) if result.is_resultset else []
 
     async def run_engine_statement(
         self,

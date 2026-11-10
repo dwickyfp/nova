@@ -658,12 +658,30 @@ class ProxyConnection:
         except ValueError as exc:
             await self._write_error(1064, str(exc))
             return
+        num_params = len(placeholder_spans(sql))
+        columns = await self._describe_prepared(sql, num_params)
         self._next_statement_id += 1
         statement_id = self._next_statement_id
-        num_params = len(placeholder_spans(sql))
         self._statements[statement_id] = PreparedStatement(sql, num_params)
         await self._write_payloads(
-            build_prepare_ok(statement_id, num_params, capabilities=self._ctx.capabilities)
+            build_prepare_ok(
+                statement_id, num_params, capabilities=self._ctx.capabilities, columns=columns
+            )
+        )
+
+    async def _describe_prepared(self, sql: str, num_params: int) -> list:
+        """Announce a prepared query's columns; parameters describe as NULL."""
+        if self._ctx.user is None:
+            return []
+        try:
+            described = bind_placeholders(sql, ["NULL"] * num_params) if num_params else sql
+        except (ValueError, IndexError):
+            return []
+        return await self._executor.describe_columns(
+            described,
+            username=self._ctx.user.username,
+            connection=self._ctx.connection,
+            session_id=self._ctx.session_id,
         )
 
     def _on_stmt_long_data(self, body: bytes) -> None:

@@ -704,17 +704,26 @@ def build_resultset(
 # ── Prepared statements (binary protocol) ─────────────────────────────────
 
 
-def build_prepare_ok(statement_id: int, num_params: int, *, capabilities: int) -> list[bytes]:
-    """``COM_STMT_PREPARE_OK`` plus one definition per parameter.
+def build_prepare_ok(
+    statement_id: int,
+    num_params: int,
+    *,
+    capabilities: int,
+    columns: list[ColumnDefinition] | None = None,
+) -> list[bytes]:
+    """``COM_STMT_PREPARE_OK``, one definition per parameter, then the columns.
 
-    No column definitions are announced: the columns are known only once the
-    statement runs, and the execute response carries them, which every client
-    reads before rows.
+    ``columns`` announces the result columns of a row-returning statement, as a
+    MySQL server does. Clients that bind a result before executing (DuckDB's
+    ``mysql`` scanner, server-side-prepare JDBC) read them here; without them a
+    query looks like a statement that returns no rows. The execute response
+    carries the column definitions again.
     """
+    columns = columns or []
     payloads = [
         b"\x00"
         + struct.pack("<I", statement_id)
-        + struct.pack("<H", 0)
+        + struct.pack("<H", len(columns))
         + struct.pack("<H", num_params)
         + b"\x00"
         + struct.pack("<H", 0)
@@ -724,6 +733,10 @@ def build_prepare_ok(statement_id: int, num_params: int, *, capabilities: int) -
             build_column_definition(ColumnDefinition(name="?", type_code=TYPE_VAR_STRING))
             for _ in range(num_params)
         )
+        if not capabilities & CLIENT_DEPRECATE_EOF:
+            payloads.append(build_eof_packet())
+    if columns:
+        payloads.extend(build_column_definition(column) for column in columns)
         if not capabilities & CLIENT_DEPRECATE_EOF:
             payloads.append(build_eof_packet())
     return payloads
