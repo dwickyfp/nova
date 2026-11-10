@@ -28,12 +28,13 @@ import asyncmy
 
 from app.common.audit import write_audit_log
 from app.core.security import decrypt_password
+from app.modules.access_control import data_tokens
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
 from app.modules.superset import tokens as bi_tokens
-from app.modules.superset.access import peer_allowed
+from app.modules.superset.access import notebook_peer_allowed, peer_allowed
 from app.observability.metrics import PROXY_QUERIES
 from app.proxy.auth import (
     AuthenticatedUser,
@@ -41,7 +42,7 @@ from app.proxy.auth import (
     StarRocksLogin,
     open_starrocks_login,
 )
-from app.proxy.executor import ProxyQueryExecutor, WireResult
+from app.proxy.executor import PrepareRefused, ProxyQueryExecutor, WireResult
 from app.proxy.protocol import (
     CLIENT_DEPRECATE_EOF,
     CLIENT_MULTI_RESULTS,
@@ -432,6 +433,9 @@ class ProxyConnection:
             active_role=active_role,
         )
         self._ctx.session.role_locked = self._ctx.bi_binding is not None
+        self._ctx.session.notebook_connection = bool(
+            self._ctx.bi_binding is not None and self._ctx.bi_binding.notebook
+        )
 
         database = connect_database(response.database)
         self._ctx.user = AuthenticatedUser(
@@ -463,19 +467,29 @@ class ProxyConnection:
     async def _match_bi_token(
         self, username: str, scramble: bytes, auth_response: bytes
     ) -> bi_tokens.TokenBinding | None:
-        """Return the Superset data token this response was computed from, if any.
+        """Return the data token this response was computed from, if any.
 
-        Only clients on a Superset service network are considered; anything
-        else, or any lookup failure, falls through to the ordinary relay, where
-        StarRocks refuses a token it has never seen.
+        A Superset token is considered only from a Superset service network and
+        a notebook token only from a notebook sandbox network. Anything else, or
+        any lookup failure, falls through to the ordinary relay, where StarRocks
+        refuses a token it has never seen.
         """
-        if not peer_allowed(self._peer_host):
-            return None
-        try:
-            return await bi_tokens.match_data_token(username, scramble, auth_response)
-        except Exception:
-            logger.warning("[%s] BI token lookup failed", self._ctx.connection_id)
-            return None
+        purposes = []
+        if peer_allowed(self._peer_host):
+            purposes.append(data_tokens.BI)
+        if notebook_peer_allowed(self._peer_host):
+            purposes.append(data_tokens.NOTEBOOK)
+        for purpose in purposes:
+            try:
+                binding = await data_tokens.match(
+                    username, scramble, auth_response, purpose=purpose
+                )
+            except Exception:
+                logger.warning("[%s] data token lookup failed", self._ctx.connection_id)
+                continue
+            if binding is not None:
+                return binding
+        return None
 
     async def _open_delegated_session(
         self, bi_session: bi_tokens.BiSession, *, sequence: int
@@ -501,13 +515,20 @@ class ProxyConnection:
     async def _audit_bi_refusal(
         self, username: str, binding: bi_tokens.TokenBinding, reason: str
     ) -> None:
-        logger.info("[%s] BI login refused for %r: %s", self._ctx.connection_id, username, reason)
+        notebook = binding.purpose == data_tokens.NOTEBOOK.name
+        logger.info(
+            "[%s] %s login refused for %r: %s",
+            self._ctx.connection_id,
+            "Notebook" if notebook else "BI",
+            username,
+            reason,
+        )
         with contextlib.suppress(Exception):
             await write_audit_log(
-                event_type="bi_proxy_login",
+                event_type="notebook_proxy_login" if notebook else "bi_proxy_login",
                 user_name=username,
-                action="BI_PROXY_LOGIN",
-                object_type="SUPERSET",
+                action="NOTEBOOK_PROXY_LOGIN" if notebook else "BI_PROXY_LOGIN",
+                object_type="NOTEBOOK" if notebook else "SUPERSET",
                 object_name=binding.active_role or "-",
                 status="DENIED",
                 error_message=reason,
@@ -658,12 +679,34 @@ class ProxyConnection:
         except ValueError as exc:
             await self._write_error(1064, str(exc))
             return
+        num_params = len(placeholder_spans(sql))
+        try:
+            columns = await self._describe_prepared(sql, num_params)
+        except PrepareRefused as refused:
+            await self._write_error(refused.part.error_code, refused.part.error or "Access denied")
+            return
         self._next_statement_id += 1
         statement_id = self._next_statement_id
-        num_params = len(placeholder_spans(sql))
         self._statements[statement_id] = PreparedStatement(sql, num_params)
         await self._write_payloads(
-            build_prepare_ok(statement_id, num_params, capabilities=self._ctx.capabilities)
+            build_prepare_ok(
+                statement_id, num_params, capabilities=self._ctx.capabilities, columns=columns
+            )
+        )
+
+    async def _describe_prepared(self, sql: str, num_params: int) -> list:
+        """Announce a prepared query's columns; parameters describe as NULL."""
+        if self._ctx.user is None:
+            return []
+        try:
+            described = bind_placeholders(sql, ["NULL"] * num_params) if num_params else sql
+        except (ValueError, IndexError):
+            return []
+        return await self._executor.describe_columns(
+            described,
+            username=self._ctx.user.username,
+            connection=self._ctx.connection,
+            session_id=self._ctx.session_id,
         )
 
     def _on_stmt_long_data(self, body: bytes) -> None:

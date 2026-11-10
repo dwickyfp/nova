@@ -116,6 +116,7 @@ class MemoryConnections:
     def __init__(self):
         self.rows: dict[str, dict] = {}
         self.secrets: dict[str, tuple[str, str]] = {}
+        self.write_secrets: dict[str, tuple[str, str]] = {}
         self.reads = 0
 
     async def list(self):
@@ -131,15 +132,21 @@ class MemoryConnections:
         self.rows.pop(name, None)
         self.secrets.pop(name, None)
 
-    async def has_credentials(self, name):
-        return name in self.secrets
+    def _store(self, write):
+        return self.write_secrets if write else self.secrets
 
-    async def put_credentials(self, name, username, password, by):
-        self.secrets[name] = (username, password)
+    async def has_credentials(self, name, *, write=False):
+        return name in self._store(write)
 
-    async def read_credentials(self, name):
+    async def put_credentials(self, name, username, password, by, *, write=False):
+        self._store(write)[name] = (username, password)
+
+    async def delete_write_credentials(self, name):
+        self.write_secrets.pop(name, None)
+
+    async def read_credentials(self, name, *, write=False):
         self.reads += 1
-        return self.secrets.get(name)
+        return self._store(write).get(name)
 
 
 class MemoryCatalogs:
@@ -633,3 +640,30 @@ async def test_catalog_ddl_runs_through_query_service_and_proxy(monkeypatch, pro
     called.assert_awaited_once()
     # Nova statements never reach the engine as typed.
     repository.execute_as_user.assert_not_awaited()
+
+
+async def test_a_write_credential_is_kept_apart_and_never_shown(audits):
+    svc = _service()
+    await _managed(svc)
+    summary = await svc.set_write_credentials("pg_shop", "writer", "w-" + PASSWORD, ADMIN)
+    assert summary is not None and summary.writable
+    assert "w-" + PASSWORD not in summary.model_dump_json()
+    assert svc.repo.write_secrets["pg_shop"] == ("writer", "w-" + PASSWORD)
+    assert svc.repo.secrets["pg_shop"][0] != "writer"  # the read credential is untouched
+    row = await svc.repo.get("pg_shop")
+    assert (await svc.write_credentials(row)).username == "writer"
+    cleared = await svc.set_write_credentials("pg_shop", None, None, ADMIN)
+    assert cleared is not None and not cleared.writable
+
+
+async def test_only_an_admin_sets_a_write_credential_and_only_where_writes_exist(audits):
+    svc = _service()
+    await _managed(svc)
+    with pytest.raises(service.CatalogAccessDenied):
+        await svc.set_write_credentials("pg_shop", "w", "p", ANALYST)
+    await svc.create(name="sr_shop", connector_type="starrocks", endpoint="sr-fe:9031",
+                     secret_ref="aws://nova/sr_shop", user=ADMIN)
+    with pytest.raises(CatalogError, match="do not take a write credential"):
+        await svc.set_write_credentials("sr_shop", "w", "p", ADMIN)
+    with pytest.raises(CatalogError, match="both"):
+        await svc.set_write_credentials("pg_shop", "w", None, ADMIN)

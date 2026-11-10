@@ -488,3 +488,17 @@ async def test_no_databases_means_no_source_round_trip(connector_type):
     source = SOURCES[connector_type]
     endpoint = Endpoint("h", source.default_port, "db", {"warehouse": "WH"})
     assert await source.read_objects(endpoint, CREDENTIALS, []) == {}
+
+
+def test_direct_host_maps_only_what_this_process_dials(monkeypatch):
+    from app.core.config import settings
+    from app.modules.catalog.sources.base import Endpoint
+
+    monkeypatch.setattr(
+        settings, "CATALOG_DIRECT_HOSTS", {"catalog-test-postgres": "pg.orb.local"}
+    )
+    mapped = Endpoint(host="catalog-test-postgres", port=5432)
+    assert mapped.direct_host == "pg.orb.local"
+    # The engine (JDBC URL) keeps the address it knows.
+    assert mapped.host == "catalog-test-postgres"
+    assert Endpoint(host="db.example.com", port=5432).direct_host == "db.example.com"

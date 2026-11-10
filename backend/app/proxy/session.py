@@ -75,6 +75,22 @@ _TRANSACTION_END = re.compile(
 )
 
 
+#: ``START TRANSACTION READ ONLY`` (optionally with a consistent snapshot): a
+#: client declaring that what follows only reads. The engine runs each statement
+#: in autocommit, so the proxy answers it itself (see ``SessionState``).
+_READ_ONLY_TRANSACTION_START = re.compile(
+    r"^\s*START\s+TRANSACTION\s+"
+    r"(?:WITH\s+CONSISTENT\s+SNAPSHOT\s*,\s*)?READ\s+ONLY"
+    r"(?:\s*,\s*WITH\s+CONSISTENT\s+SNAPSHOT)?\s*;?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def is_read_only_transaction_start(statement: str) -> bool:
+    """True for ``START TRANSACTION READ ONLY`` and its snapshot variants."""
+    return bool(_READ_ONLY_TRANSACTION_START.match(strip_sql_comments(statement)))
+
+
 def transaction_control(statement: str) -> str | None:
     """``"begin"`` or ``"end"`` for explicit transaction control, else ``None``."""
     text = strip_sql_comments(statement)
@@ -124,9 +140,17 @@ class SessionState:
     #: An explicit engine transaction (``BEGIN`` … ``COMMIT``/``ROLLBACK``) is open
     #: on this connection's engine session.
     in_transaction: bool = False
+    #: A ``START TRANSACTION READ ONLY`` is open. It is answered by the proxy,
+    #: not the engine: the engine has no read-only transaction to open, and
+    #: each read already runs on its own. Writes are refused until the client
+    #: ends it with ``COMMIT``/``ROLLBACK``, which the proxy also answers.
+    read_only_transaction: bool = False
     #: The active role follows a Nova session (Superset data-token login), so
     #: role statements on this connection are refused rather than applied.
     role_locked: bool = False
+    #: A notebook runtime's DuckDB (notebook data token). Its scanner's
+    #: catalog queries and transaction control are answered by the proxy.
+    notebook_connection: bool = False
 
     def set_database(self, database: str) -> None:
         self.database = database or None
@@ -514,6 +538,14 @@ def connect_database(name: str | None) -> str | None:
     if name.endswith(".") and name[:-1].strip("`").lower() == "default_catalog":
         return None
     return name
+
+
+def external_catalog(database: str | None) -> str | None:
+    """The catalog a ``catalog.`` / ``catalog.db`` context names, unless default."""
+    if not database or "." not in database:
+        return None
+    catalog = database.split(".", 1)[0].strip("`")
+    return None if catalog.lower() == "default_catalog" else catalog
 
 
 def parse_use_statement(statement: str) -> str | None:

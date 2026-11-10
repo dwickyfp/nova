@@ -25,6 +25,7 @@ import datetime
 import decimal
 import logging
 import math
+import re
 from ast import literal_eval
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -32,12 +33,13 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from app.common.sql_guard import redact_sql_credentials
+from app.common.sql_guard import redact_sql_credentials, strip_sql_comments
 from app.core.config import settings
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
+from app.modules.assistant.tools.policy import is_allowed_statement
 from app.modules.query.admission import (
     REFUSAL,
     QueryCapacityError,
@@ -46,16 +48,30 @@ from app.modules.query.admission import (
 )
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import query_service
+from app.proxy.notebook_metadata import (
+    COLUMN_FIELDS,
+    MAX_DESCRIBED_TABLES,
+    ScannerQuery,
+    column_row,
+    quote_identifier,
+    scanner_query,
+)
 from app.proxy.protocol import (
+    BINARY_FLAG,
+    BLOB_FLAG,
+    CHARSET_BINARY,
     CHARSET_UTF8,
     TYPE_BLOB,
     TYPE_DATE,
     TYPE_DATETIME,
     TYPE_DOUBLE,
+    TYPE_LONG_BLOB,
     TYPE_LONGLONG,
+    TYPE_MEDIUM_BLOB,
     TYPE_NEWDECIMAL,
     TYPE_STRING,
     TYPE_TIME,
+    TYPE_TINY_BLOB,
     TYPE_VAR_STRING,
     ColumnDefinition,
 )
@@ -64,8 +80,10 @@ from app.proxy.session import (
     PreparedSQL,
     SessionState,
     bind_placeholders,
+    external_catalog,
     handle_set_statement,
     is_catalog_switch,
+    is_read_only_transaction_start,
     is_show_databases,
     parse_prepared_statement,
     parse_role_statement,
@@ -80,6 +98,32 @@ from app.sql_frontend.parser import run_sql_cpu
 from app.sql_frontend.session_functions import CORRELATION_SESSION
 
 logger = logging.getLogger(__name__)
+
+#: A statement whose result columns a prepare can announce: a query, with or
+#: without a CTE or parentheses (``describe_columns``).
+_DESCRIBABLE = re.compile(r"^\(*\s*(?:SELECT|WITH)\b", re.IGNORECASE)
+#: Metadata statements a prepare may run to learn their columns: they read
+#: no table data, and a MySQL client preparing one expects a result set.
+_METADATA_STATEMENT = re.compile(r"^(?:SHOW|DESCRIBE|DESC)\b", re.IGNORECASE)
+
+#: Session settings a notebook's DuckDB sends while it connects. They shape
+#: the connection only, so they count as reads for an external catalog.
+_SESSION_SETTING = re.compile(
+    r"^\s*SET\s+(?:SESSION\s+|@@SESSION\.|@@|LOCAL\s+)?"
+    r"(?:autocommit|sql_mode|time_zone|names|character_set_[a-z_]+|collation_connection|"
+    r"transaction_isolation|tx_isolation|transaction_read_only|tx_read_only|"
+    r"net_(?:read|write)_timeout|wait_timeout|interactive_timeout|query_timeout|"
+    r"sql_select_limit|max_execution_time)\b(?![^=]*;\s*\S)",
+    re.IGNORECASE,
+)
+
+
+def _reads_only(sql: str) -> bool:
+    """True when ``sql`` reads (or only shapes the connection)."""
+    text = strip_sql_comments(sql).strip()
+    if _SESSION_SETTING.match(text) and ";" not in text.rstrip(";"):
+        return True
+    return is_allowed_statement(text)
 
 _INTEGER_COLUMNS = frozenset(
     {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "largeint"}
@@ -118,6 +162,19 @@ class WireResult:
         return not self.columns and self.error is None
 
 
+def _binary_flags(type_code: int) -> int:
+    """Flags a MySQL server sets on a binary column.
+
+    Clients tell bytes from text by these, not by the charset alone: DuckDB's
+    MySQL scanner reads a BLOB without ``BINARY_FLAG`` as VARCHAR and then
+    refuses bytes that are not UTF-8.
+    """
+    return BINARY_FLAG | (BLOB_FLAG if type_code in _BLOB_TYPES else 0)
+
+
+_BLOB_TYPES = frozenset({TYPE_TINY_BLOB, TYPE_MEDIUM_BLOB, TYPE_LONG_BLOB, TYPE_BLOB})
+
+
 def _column_definition(
     name: str, sample_values: list, native_description: str | None = None
 ) -> ColumnDefinition:
@@ -147,9 +204,10 @@ def _column_definition(
             return ColumnDefinition(
                 name=name,
                 type_code=type_code,
-                charset=63 if binary else CHARSET_UTF8,
+                charset=CHARSET_BINARY if binary else CHARSET_UTF8,
                 column_length=max(0, min(int(1024 if length is None else length), 2**32 - 1)),
                 decimals=max(0, min(int(scale or 0), 255)),
+                flags=_binary_flags(type_code) if binary else 0,
             )
         except (ValueError, TypeError, SyntaxError):
             pass
@@ -172,7 +230,10 @@ def _column_definition(
         if isinstance(value, datetime.timedelta):
             return ColumnDefinition(name=name, type_code=TYPE_TIME, charset=CHARSET_UTF8)
         if isinstance(value, (bytes, bytearray)):
-            return ColumnDefinition(name=name, type_code=TYPE_BLOB, charset=63)
+            return ColumnDefinition(
+                name=name, type_code=TYPE_BLOB, charset=CHARSET_BINARY,
+                flags=_binary_flags(TYPE_BLOB),
+            )
         if isinstance(value, datetime.time):
             return ColumnDefinition(name=name, type_code=TYPE_TIME, charset=CHARSET_UTF8)
         break
@@ -309,6 +370,18 @@ class ResponseSink(Protocol):
     async def rows(self, rows: list[list], columns: list[ColumnDefinition]) -> None: ...
 
     async def end_rows(self, *, more: bool) -> None: ...
+
+
+#: MySQL/StarRocks error numbers for "the caller may not read this".
+_ACCESS_REFUSALS = frozenset({1044, 1142, 1143, 1227, 5203, 5204})
+
+
+class PrepareRefused(Exception):
+    """A prepared statement the caller may not run; ``part`` is the refusal."""
+
+    def __init__(self, part: WireResult) -> None:
+        super().__init__(part.error)
+        self.part = part
 
 
 class CollectingSink:
@@ -490,6 +563,17 @@ class ProxyQueryExecutor:
                 )
             return await self._emit(sink, part, more)
 
+        read_only = self._read_only_transaction(statement)
+        if read_only is not None:
+            return await self._emit(sink, read_only, more)
+
+        if self._session.notebook_connection:
+            answered = await self._notebook_statement(
+                statement, username=username, session_id=session_id
+            )
+            if answered is not None:
+                return await self._emit(sink, answered, more)
+
         use_result = await self._handle_use(
             statement, username=username, connection=connection, session_id=session_id
         )
@@ -518,6 +602,15 @@ class ProxyQueryExecutor:
                 session_id=session_id,
             )
 
+        if self._session.notebook_connection:
+            catalog_query = scanner_query(statement)
+            if catalog_query is not None:
+                part = await self._scanner_catalog(
+                    catalog_query, statement, username=username, connection=connection,
+                    session_id=session_id,
+                )
+                return await self._emit(sink, part, more)
+
         # The read half of ``SET @x = …``: substitution happens here, after the
         # statements before it applied their assignments (NOVA-25).
         substituted = (
@@ -535,6 +628,201 @@ class ProxyQueryExecutor:
             catalog_switch=is_catalog_switch(statement),
             hide_databases=is_show_databases(statement),
         )
+
+    async def _notebook_statement(
+        self, statement: str, *, username: str, session_id: str | None
+    ) -> WireResult | None:
+        """What the proxy answers itself on a notebook connection, or ``None``.
+
+        DuckDB opens a transaction around every write. StarRocks explicit
+        transactions refuse DDL and Nova's MERGE, so the proxy answers the
+        scanner's ``START TRANSACTION``/``COMMIT``/``ROLLBACK`` and each
+        statement commits as it runs (a ``ROLLBACK`` undoes nothing).
+
+        StarRocks cannot write to a JDBC catalog (Postgres, Snowflake), so a
+        write sent through such a catalog's attach is refused with where writes
+        go instead: the notebook's write-back calls, which Nova governs.
+        """
+        if transaction_control(statement) is not None:
+            return WireResult()
+        catalog = external_catalog(self._session.database)
+        if catalog is None or _reads_only(statement):
+            return None
+        await self._audit_notebook_refusal(username, session_id, catalog)
+        return WireResult(
+            error=(
+                f"{catalog} is read through this connection. Write to it with "
+                f"con.write(...) or con.merge_into(...)"
+            ),
+            error_code=1235,
+        )
+
+    async def _audit_notebook_refusal(
+        self, username: str, session_id: str | None, catalog: str
+    ) -> None:
+        from app.common.audit import write_audit_log
+
+        try:
+            await write_audit_log(
+                event_type="notebook_proxy",
+                user_name=username,
+                action="QUERY_REFUSED",
+                object_type="CATALOG",
+                object_name=catalog,
+                status="DENIED",
+                error_message="Writes to an external catalog go through write-back",
+                session_id=session_id,
+                active_role=self._session.active_role,
+                security_context_version=self._session.security_context_version,
+            )
+        except Exception:  # noqa: BLE001 - the refusal stands without its audit row
+            logger.warning("Could not audit a refused notebook statement")
+
+    def _read_only_transaction(self, statement: str) -> WireResult | None:
+        """Answer a client-declared read-only transaction without the engine.
+
+        ``START TRANSACTION READ ONLY`` opens it and the next ``COMMIT`` or
+        ``ROLLBACK`` closes it; inside it a statement that is not read-only is
+        refused with MySQL's own error. ``None`` means the statement is not one
+        the proxy answers here.
+        """
+        session = self._session
+        if is_read_only_transaction_start(statement):
+            if session.in_transaction:
+                return WireResult(
+                    error="A transaction is already open on this connection", error_code=1568
+                )
+            session.read_only_transaction = True
+            return WireResult()
+        if not session.read_only_transaction:
+            return None
+        if transaction_control(statement) == "end":
+            session.read_only_transaction = False
+            return WireResult()
+        if not is_allowed_statement(statement):
+            return WireResult(
+                error="Cannot execute statement in a READ ONLY transaction.",
+                error_code=1792,
+            )
+        return None
+
+    async def describe_columns(
+        self,
+        sql: str,
+        *,
+        username: str,
+        connection,
+        session_id: str | None,
+    ) -> list[ColumnDefinition]:
+        """The result columns of a row-returning statement, read without rows.
+
+        A MySQL server announces a prepared query's columns before it runs;
+        clients that bind results at prepare time depend on it. The statement is
+        wrapped in ``SELECT * … LIMIT 0`` and run through the same governed path
+        (guard, role, Ranger, audit) as any other statement, so no rows are read
+        and no rows are read. Anything that is not a plain read, or that the
+        wrapper cannot express, returns ``[]`` and the columns arrive with the
+        execute response as before.
+
+        A statement the caller may not read is refused here, as a MySQL server
+        refuses it at prepare (:class:`PrepareRefused`), so the client reports
+        the refusal instead of a statement with no result.
+        """
+        text = strip_sql_comments(sql).strip().rstrip(";").strip()
+        identity = {"username": username, "connection": connection, "session_id": session_id}
+        if _METADATA_STATEMENT.match(text) and is_allowed_statement(text):
+            result = await self._collect(text, **identity)
+        elif _DESCRIBABLE.match(text) and is_allowed_statement(text):
+            result = await self._collect(
+                f"SELECT * FROM ({text}) AS nova_prepare_describe LIMIT 0", **identity
+            )
+        else:
+            return []
+        if result.error is not None and result.error_code in _ACCESS_REFUSALS:
+            raise PrepareRefused(result)
+        return list(result.columns) if result.is_resultset else []
+
+    async def _collect(
+        self, sql: str, *, username: str, connection, session_id: str | None
+    ) -> WireResult:
+        """Run ``sql`` through the governed path and return its last response."""
+        sink = CollectingSink()
+        try:
+            await self.execute_to(
+                sql, sink, username=username, connection=connection, session_id=session_id
+            )
+        except Exception:  # noqa: BLE001 - an internal read failing is an error answer
+            logger.debug("Internal proxy read failed", exc_info=True)
+            return WireResult(error="Query execution failed", error_code=1064)
+        return sink.result()
+
+    async def _scanner_catalog(
+        self,
+        query: ScannerQuery,
+        statement: str,
+        *,
+        username: str,
+        connection,
+        session_id: str | None,
+    ) -> WireResult:
+        """Answer a DuckDB scanner catalog query (see ``notebook_metadata``)."""
+        identity = {"username": username, "connection": connection, "session_id": session_id}
+        if query.kind == "schemas":
+            shown = await self._collect("SHOW DATABASES", **identity)
+            if not shown.is_resultset:
+                return shown
+            return WireResult(
+                columns=[_column_definition("schema_name", [])],
+                rows=[[row[0]] for row in shown.rows],
+            )
+        if query.kind == "indexes":
+            return WireResult(
+                columns=[_column_definition("TABLE_NAME", []),
+                         _column_definition("INDEX_NAME", [])],
+            )
+        if query.kind == "size":
+            return WireResult(
+                columns=[_column_definition("SUM(data_length + index_length)", [])],
+                rows=[[None]],
+            )
+        sink = CollectingSink()
+        await self.run_engine_statement(statement, sink, more=False, **identity)
+        direct = sink.result()
+        if direct.error is None:
+            return direct
+        return await self._described_columns(query, direct, identity)
+
+    async def _described_columns(
+        self, query: ScannerQuery, refused: WireResult, identity: dict
+    ) -> WireResult:
+        """Columns from ``SHOW FULL COLUMNS`` when ``information_schema`` was refused."""
+        schema = quote_identifier(query.schema)
+        if query.table is not None:
+            tables = [query.table]
+        else:
+            listed = await self._collect(f"SHOW TABLES FROM {schema}", **identity)
+            if not listed.is_resultset:
+                return refused
+            tables = sorted(str(row[0]) for row in listed.rows)[:MAX_DESCRIBED_TABLES]
+        rows: list[list] = []
+        for table in tables:
+            described = await self._collect(
+                f"SHOW FULL COLUMNS FROM {schema}.{quote_identifier(table)}", **identity
+            )
+            if not described.is_resultset:
+                if query.table is not None:
+                    return refused
+                continue
+            names = [column.name for column in described.columns]
+            for raw in described.rows:
+                row = column_row(dict(zip(names, raw, strict=False)))
+                rows.append(row if query.table is not None else [table, *row])
+        names = list(COLUMN_FIELDS) if query.table is not None else ["table_name", *COLUMN_FIELDS]
+        columns = [
+            _column_definition(name, [row[index] for row in rows[:50]])
+            for index, name in enumerate(names)
+        ]
+        return WireResult(columns=columns, rows=rows)
 
     async def run_engine_statement(
         self,

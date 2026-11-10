@@ -27,63 +27,24 @@ Redis layout (all keys expire on their own):
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
-import time
 import uuid
-from dataclasses import dataclass
-
-from cryptography.fernet import InvalidToken
 
 from app.core.config import settings
 from app.core.redis import session_store
-from app.core.security import decrypt_password, encrypt_password
-from app.proxy.protocol import scramble_native_password
+from app.modules.access_control import data_tokens
+from app.modules.access_control.data_tokens import (
+    DELEGATED,
+    BiCredentialError,
+    BiSession,
+    DataToken,
+    TokenBinding,
+    resolve_session,
+    verify_binding,
+)
 
 _HANDLE_PREFIX = "nova:bi:handle:"
-_TOKEN_PREFIX = "nova:bi:token:"
-_INDEX_PREFIX = "nova:bi:tokens:"
-_BIND_PREFIX = "nova:bi:bind:"
-_DELEGATED_PREFIX = "nova:bi:delegated:"
-DELEGATED = "delegated:"
-
-
-class BiCredentialError(Exception):
-    """A BI handle or data token no longer maps to a usable Nova session."""
-
-
-@dataclass(frozen=True)
-class BiSession:
-    """The Nova session a BI credential resolves to, as of this check."""
-
-    session_id: str
-    username: str
-    active_role: str
-    security_context_version: int
-    encrypted_password: str
-    #: A background run's session: the owner under their default role, reached
-    #: through the worker account's impersonation rather than a password.
-    delegated: bool = False
-
-
-@dataclass(frozen=True)
-class DataToken:
-    """A data token as handed to Superset's connection mutator."""
-
-    username: str
-    token: str
-    expires_in: int
-
-
-@dataclass(frozen=True)
-class TokenBinding:
-    """What a verified data token is bound to, for the proxy."""
-
-    token_id: str
-    session_id: str
-    username: str
-    active_role: str
-    security_context_version: int
+_DELEGATED_PREFIX = data_tokens.DELEGATED_PREFIX
 
 
 def _redis():
@@ -99,50 +60,6 @@ def _handle_key(handle: str) -> str:
 
 def _text(value: object) -> str:
     return value.decode() if isinstance(value, bytes) else str(value or "")
-
-
-async def resolve_session(session_id: str) -> BiSession:
-    """Return the session's current security state, or raise.
-
-    A session without an explicit active role, or whose stored password no
-    longer decrypts (key rotation), is not usable for BI.
-    """
-    if session_id.startswith(DELEGATED):
-        return await _delegated_session(session_id)
-    session = await session_store.get(session_id)
-    if not session:
-        raise BiCredentialError("Nova session has ended")
-    username = session.get("username") or ""
-    active_role = session.get("active_role") or ""
-    if not username or not active_role:
-        raise BiCredentialError("Nova session has no active role")
-    encrypted_password = session.get("encrypted_password") or ""
-    try:
-        decrypt_password(encrypted_password)
-    except (InvalidToken, TypeError, ValueError) as exc:
-        raise BiCredentialError("Nova session is no longer readable") from exc
-    return BiSession(
-        session_id=session_id,
-        username=username,
-        active_role=active_role,
-        security_context_version=int(session.get("security_context_version") or 1),
-        encrypted_password=encrypted_password,
-    )
-
-
-async def _delegated_session(session_id: str) -> BiSession:
-    stored = await _redis().hgetall(_DELEGATED_PREFIX + session_id[len(DELEGATED) :])
-    fields = {_text(k): _text(v) for k, v in stored.items()}
-    if not fields.get("username") or not fields.get("active_role"):
-        raise BiCredentialError("The delegated BI session has ended")
-    return BiSession(
-        session_id=session_id,
-        username=fields["username"],
-        active_role=fields["active_role"],
-        security_context_version=int(fields.get("version") or 1),
-        encrypted_password="",
-        delegated=True,
-    )
 
 
 async def create_delegated_session(username: str, active_role: str) -> str:
@@ -202,118 +119,25 @@ async def session_for_handle(handle: str) -> BiSession:
 
 
 # ── Data tokens (the proxy password) ─────────────────────────────────────
+# Owned by :mod:`app.modules.access_control.data_tokens`; BI uses the ``bi``
+# purpose, whose Redis keys are the ``nova:bi:token:*`` family documented above.
 
 
 async def mint_data_token(bi_session: BiSession) -> DataToken:
-    """Return a data token for ``bi_session``, reusing a fresh one if it exists.
-
-    A token is reused only while it is bound to the same role and context
-    version and has more than half its lifetime left, so a connection opened
-    with it cannot outlive the binding by more than one TTL.
-    """
-    redis = _redis()
-    ttl = settings.SUPERSET_DATA_TOKEN_TTL_SECONDS
-    now = time.time()
-
-    current_id = _text(await redis.get(_BIND_PREFIX + bi_session.session_id))
-    if current_id:
-        stored = await redis.hgetall(_TOKEN_PREFIX + current_id)
-        fields = {_text(k): _text(v) for k, v in stored.items()}
-        remaining = float(fields.get("expires_at") or 0) - now
-        if (
-            fields
-            and fields.get("active_role") == bi_session.active_role
-            and int(fields.get("version") or 0) == bi_session.security_context_version
-            and remaining > ttl / 2
-        ):
-            try:
-                token = decrypt_password(fields["token"])
-            except (InvalidToken, KeyError, TypeError, ValueError):
-                token = ""
-            if token:
-                return DataToken(bi_session.username, token, int(remaining))
-
-    token = secrets.token_urlsafe(32)
-    token_id = uuid.uuid4().hex
-    expires_at = now + ttl
-    index = _INDEX_PREFIX + bi_session.username
-    await redis.hset(
-        _TOKEN_PREFIX + token_id,
-        mapping={
-            "session_id": bi_session.session_id,
-            "username": bi_session.username,
-            "active_role": bi_session.active_role,
-            "version": str(bi_session.security_context_version),
-            "expires_at": f"{expires_at:.3f}",
-            "token": encrypt_password(token),
-        },
+    """Return Superset's data token for ``bi_session`` (see ``data_tokens.mint``)."""
+    return await data_tokens.mint(
+        bi_session,
+        purpose=data_tokens.BI,
+        ttl=settings.SUPERSET_DATA_TOKEN_TTL_SECONDS,
+        max_per_principal=settings.SUPERSET_MAX_TOKENS_PER_PRINCIPAL,
     )
-    await redis.expire(_TOKEN_PREFIX + token_id, ttl)
-    await redis.set(_BIND_PREFIX + bi_session.session_id, token_id, ex=ttl)
-    await redis.zadd(index, {token_id: expires_at})
-    await redis.zremrangebyscore(index, "-inf", now)
-    excess = await redis.zcard(index) - settings.SUPERSET_MAX_TOKENS_PER_PRINCIPAL
-    if excess > 0:
-        for evicted, _score in await redis.zpopmin(index, excess):
-            await redis.delete(_TOKEN_PREFIX + _text(evicted))
-    await redis.expire(index, ttl)
-    return DataToken(bi_session.username, token, ttl)
 
 
 async def match_data_token(
     username: str, scramble: bytes, auth_response: bytes
 ) -> TokenBinding | None:
-    """Return the binding whose token produced ``auth_response``, if any.
-
-    ``auth_response`` is a ``mysql_native_password`` response to ``scramble``;
-    it is recomputed from each live token of ``username`` and compared in
-    constant time. Only bounded, unexpired tokens are tried. The binding is
-    returned as stored; :func:`verify_binding` decides whether it still holds.
-    """
-    if len(auth_response) != 20 or not username:
-        return None
-    redis = _redis()
-    index = _INDEX_PREFIX + username
-    now = time.time()
-    for raw_id in await redis.zrangebyscore(index, now, "+inf"):
-        token_id = _text(raw_id)
-        stored = await redis.hgetall(_TOKEN_PREFIX + token_id)
-        if not stored:
-            await redis.zrem(index, token_id)
-            continue
-        fields = {_text(k): _text(v) for k, v in stored.items()}
-        if fields.get("username") != username:
-            continue
-        try:
-            token = decrypt_password(fields["token"])
-        except (InvalidToken, KeyError, TypeError, ValueError):
-            continue
-        expected = scramble_native_password(token, scramble)
-        if hmac.compare_digest(expected, auth_response):
-            return TokenBinding(
-                token_id=token_id,
-                session_id=fields.get("session_id", ""),
-                username=username,
-                active_role=fields.get("active_role", ""),
-                security_context_version=int(fields.get("version") or 0),
-            )
-    return None
-
-
-async def verify_binding(binding: TokenBinding) -> BiSession:
-    """Return the bound session if the binding still holds, else raise.
-
-    Holds only while the session exists for the same principal, with the same
-    active role and the same security-context version as at issue time.
-    """
-    bi_session = await resolve_session(binding.session_id)
-    if (
-        bi_session.username != binding.username
-        or bi_session.active_role != binding.active_role
-        or bi_session.security_context_version != binding.security_context_version
-    ):
-        raise BiCredentialError("Nova session changed since this connection was opened")
-    return bi_session
+    """Return the Superset token binding ``auth_response`` was computed from."""
+    return await data_tokens.match(username, scramble, auth_response, purpose=data_tokens.BI)
 
 
 __all__ = [

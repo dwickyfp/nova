@@ -1,5 +1,33 @@
 import type { Monaco } from '@monaco-editor/react'
-import { readModeToken } from '@/lib/read-token'
+import { readModeToken, readToken } from '@/lib/read-token'
+
+const LIGHT_RULES = [
+  { token: 'keyword', foreground: 'd04738', fontStyle: 'bold' },
+  { token: 'keyword.sql', foreground: 'd04738', fontStyle: 'bold' },
+  { token: 'predefined.sql', foreground: 'd04738' },
+  { token: 'operator.sql', foreground: 'd04738' },
+  { token: 'string', foreground: '1a8974' },
+  { token: 'string.sql', foreground: '1a8974' },
+  { token: 'number', foreground: 'c9662e' },
+  { token: 'comment', foreground: '8e99a4', fontStyle: 'italic' },
+  { token: 'type', foreground: '6b46c1' },
+  { token: 'identifier', foreground: '2c3e50' },
+  { token: 'predefined', foreground: 'd04738' },
+]
+
+const DARK_RULES = [
+  { token: 'keyword', foreground: 'f36b5b', fontStyle: 'bold' },
+  { token: 'keyword.sql', foreground: 'f36b5b', fontStyle: 'bold' },
+  { token: 'predefined.sql', foreground: 'f36b5b' },
+  { token: 'operator.sql', foreground: 'f36b5b' },
+  { token: 'string', foreground: '2cc6b6' },
+  { token: 'string.sql', foreground: '2cc6b6' },
+  { token: 'number', foreground: 'f0ad3d' },
+  { token: 'comment', foreground: '6b7a8d', fontStyle: 'italic' },
+  { token: 'type', foreground: 'a78bfa' },
+  { token: 'identifier', foreground: 'e2e8f0' },
+  { token: 'predefined', foreground: 'f36b5b' },
+]
 
 /**
  * Registers the two Nova SQL themes on a Monaco namespace and selects one.
@@ -18,19 +46,7 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
   monaco.editor.defineTheme('nova-light', {
     base: 'vs',
     inherit: true,
-    rules: [
-      { token: 'keyword', foreground: 'd04738', fontStyle: 'bold' },
-      { token: 'keyword.sql', foreground: 'd04738', fontStyle: 'bold' },
-      { token: 'predefined.sql', foreground: 'd04738' },
-      { token: 'operator.sql', foreground: 'd04738' },
-      { token: 'string', foreground: '1a8974' },
-      { token: 'string.sql', foreground: '1a8974' },
-      { token: 'number', foreground: 'c9662e' },
-      { token: 'comment', foreground: '8e99a4', fontStyle: 'italic' },
-      { token: 'type', foreground: '6b46c1' },
-      { token: 'identifier', foreground: '2c3e50' },
-      { token: 'predefined', foreground: 'd04738' },
-    ],
+    rules: LIGHT_RULES,
     colors: {
       'editor.background': readModeToken('--card', 'light', '#ffffff'),
       'editor.foreground': readModeToken('--foreground', 'light', '#2c3e50'),
@@ -42,19 +58,7 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
   monaco.editor.defineTheme('nova-dark', {
     base: 'vs-dark',
     inherit: true,
-    rules: [
-      { token: 'keyword', foreground: 'f36b5b', fontStyle: 'bold' },
-      { token: 'keyword.sql', foreground: 'f36b5b', fontStyle: 'bold' },
-      { token: 'predefined.sql', foreground: 'f36b5b' },
-      { token: 'operator.sql', foreground: 'f36b5b' },
-      { token: 'string', foreground: '2cc6b6' },
-      { token: 'string.sql', foreground: '2cc6b6' },
-      { token: 'number', foreground: 'f0ad3d' },
-      { token: 'comment', foreground: '6b7a8d', fontStyle: 'italic' },
-      { token: 'type', foreground: 'a78bfa' },
-      { token: 'identifier', foreground: 'e2e8f0' },
-      { token: 'predefined', foreground: 'f36b5b' },
-    ],
+    rules: DARK_RULES,
     colors: {
       'editor.background': readModeToken('--card', 'dark', '#0f1117'),
       'editor.foreground': readModeToken('--foreground', 'dark', '#e2e8f0'),
@@ -64,4 +68,38 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
     },
   })
   monaco.editor.setTheme(dark ? 'nova-dark' : 'nova-light')
+}
+
+/**
+ * Notebook cell themes: the SQL theme's syntax colors on a transparent editor,
+ * so the cell's own surface (the muted token, set in CSS) shows through in
+ * either mode. Only the current mode is (re)defined, from the live page: read
+ * per mode, a light theme built while the page is dark would get dark values.
+ * Call again when the theme changes; pass the returned name to the editor.
+ */
+let cellThemeVersion = 0
+
+export function applyNovaCellTheme(monaco: Monaco, dark: boolean): string {
+  const mode = dark ? 'dark' : 'light'
+  const clear = readToken('--editor-surface-clear', '#00000000')
+  // A new name each time: Monaco does not repaint when the active theme is
+  // redefined under the same name.
+  cellThemeVersion += 1
+  const name = `nova-cell-${mode}-${cellThemeVersion}`
+  monaco.editor.defineTheme(name, {
+    base: dark ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: dark ? DARK_RULES : LIGHT_RULES,
+    colors: {
+      'editor.background': clear,
+      'editorGutter.background': clear,
+      'editor.lineHighlightBackground': clear,
+      'editor.lineHighlightBorder': clear,
+      'editorLineNumber.foreground': readToken('--muted-foreground', '#6b7685'),
+      'editorLineNumber.activeForeground': readToken('--foreground', '#2c3e50'),
+      'editor.foreground': readToken('--foreground', '#2c3e50'),
+    },
+  })
+  monaco.editor.setTheme(name)
+  return name
 }

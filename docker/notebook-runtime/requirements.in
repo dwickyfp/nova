@@ -1,0 +1,14 @@
+# Nova Notebook runtime: base packages every notebook kernel starts with.
+# Regenerate the lock with docker/notebook-runtime/lock.sh after editing.
+jupyter_server==2.21.1
+ipykernel==7.4.0
+duckdb==2.0.0
+pandas==3.1.1
+pyarrow==26.0.1
+polars==2.1.0
+numpy==2.5.4
+matplotlib==3.11.2
+# DuckDB needs it to hand TIMESTAMP WITH TIME ZONE values to Python; pandas 3
+# no longer pulls it in.
+pytz==2025.2
+pytest==9.2.0

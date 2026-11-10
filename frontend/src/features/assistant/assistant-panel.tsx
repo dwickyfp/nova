@@ -83,7 +83,6 @@ export type AssistantPanelProps = {
   /** Recent conversations listed in the empty state; omitted hides the section. */
   recentThreads?: ThreadView[];
   suggestedActions?: readonly NevaSuggestedAction[];
-  clientActionStatus?: string | null;
   onExecutionEvent?: (event: NevaEventInput) => void;
   onFixWithNeva?: (prompt: string) => void;
 };
@@ -115,7 +114,6 @@ function AssistantBody({
   activeThreadId,
   recentThreads,
   suggestedActions,
-  clientActionStatus,
   onExecutionEvent,
   onFixWithNeva,
   uiContext,
@@ -198,11 +196,6 @@ function AssistantBody({
           )}
         </div>
       </ScrollArea>
-      {clientActionStatus ? (
-        <p role="status" className="border-t px-3 py-2 text-xs text-muted-foreground">
-          {clientActionStatus}
-        </p>
-      ) : null}
       <AssistantComposer
         onSendMessage={onSendMessage}
         streaming={streaming}

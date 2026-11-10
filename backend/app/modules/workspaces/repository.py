@@ -41,6 +41,12 @@ _SELECT_ENTRY = f"""
     WHERE id = %s AND user_name = %s AND is_deleted = false
 """
 
+_SELECT_ENTRY_NAMESPACE = """
+    SELECT user_name
+    FROM NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES
+    WHERE id = %s AND is_deleted = false
+"""
+
 _INSERT_ENTRY = """
     INSERT INTO NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES
     (id, user_name, parent_path, name, entry_type, object_key,
@@ -168,6 +174,12 @@ class WorkspaceRepository:
             return None
         row = result["rows"][0]
         return _to_entry(row, self.build_path(row[2], row[3]))
+
+    async def namespace_of(self, entry_id: str) -> str | None:
+        """Whose files an entry belongs to: a username or ``~ws/<id>``."""
+        result = await _system_query(db.execute_system(_SELECT_ENTRY_NAMESPACE, [entry_id]))
+        rows = result["rows"]
+        return str(rows[0][0]) if rows else None
 
     async def insert_entry(
         self,

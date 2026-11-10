@@ -8,6 +8,7 @@ from app.common.sql_guard import redact_sql_credentials
 from app.sql_frontend.analysis.semantics import StatementSemanticsRegistry, semantics_registry
 from app.sql_frontend.ast import statements as ast
 from app.sql_frontend.context import PlanningContext
+from app.sql_frontend.literals import LiteralRewrite, typed_literal_rewrites
 from app.sql_frontend.planning.execution import (
     ActionKind,
     EngineSqlPlan,
@@ -55,7 +56,9 @@ class NativePlanner:
                 )
                 for index, ref in enumerate(stages.stage_refs)
             )
-        replacements: list[StageBinding | PrivateSqlBinding] = [*bindings, *private]
+        replacements: list[StageBinding | PrivateSqlBinding | LiteralRewrite] = [
+            *bindings, *private, *typed_literal_rewrites(logical.statement.parsed)
+        ]
         replacements.sort(key=lambda binding: binding.start)
         if any(a.end > b.start for a, b in zip(replacements, replacements[1:], strict=False)):
             raise ValueError("Overlapping SQL template slots")

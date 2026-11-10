@@ -128,6 +128,29 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- Shared workspaces and the roles they are shared with. Files of a shared
+-- workspace live in CONFIG_WORKSPACE_ENTRIES under the namespace ~ws/<id>.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACES (
+  id           VARCHAR(64) NOT NULL,
+  name         VARCHAR(256) NOT NULL,
+  owner        VARCHAR(128) NOT NULL,
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  is_deleted   BOOLEAN DEFAULT "false"
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_SHARES (
+  workspace_id VARCHAR(64) NOT NULL,
+  role_name    VARCHAR(128) NOT NULL,
+  permission   VARCHAR(16) NOT NULL,
+  granted_by   VARCHAR(128),
+  granted_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(workspace_id, role_name)
+DISTRIBUTED BY HASH(workspace_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS (
   id          VARCHAR(64) NOT NULL,
   entry_id    VARCHAR(64) NOT NULL,
@@ -284,6 +307,18 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 -- Credentials entered through Nova for a connection whose secret_ref is
 -- nova://<name>. Fernet ciphertext only; never read back to a client.
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS (
+    connection_name  VARCHAR(256) NOT NULL,
+    username_enc     STRING NOT NULL,
+    password_enc     STRING NOT NULL,
+    updated_by       VARCHAR(128),
+    updated_at       DATETIME
+) PRIMARY KEY(connection_name)
+DISTRIBUTED BY HASH(connection_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+-- The credential notebook write-back uses (Postgres, Snowflake). The engine's
+-- JDBC catalog keeps its read credential and stays read-only.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_WRITE_CREDENTIALS (
     connection_name  VARCHAR(256) NOT NULL,
     username_enc     STRING NOT NULL,
     password_enc     STRING NOT NULL,

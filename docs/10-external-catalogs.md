@@ -262,6 +262,27 @@ masks.
   ON ... WHEN [NOT] MATCHED ...` ([MERGE INTO](02-sql-worksheet.md#merge-into)).
   A MERGE reads the source through the caller's Ranger policies like any query;
   lineage records the external table as the source of the Nova table.
+- **Writing to Postgres and Snowflake from a notebook (write-back).** The
+  engine cannot write through a JDBC catalog (StarRocks 4.1.4 refuses INSERT,
+  UPDATE and DELETE), and SQL keeps the catalog read-only. A Nova Notebook can
+  write with `con.write(...)` and `con.merge_into(...)`, which Nova carries out
+  itself ([notebook architecture](arch-20-nova-notebook.md#catalogs-and-writes-novaduck)):
+  - a security admin gives the connection a **write credential** (Catalog →
+    Connections → ⋯ → Notebook writes, or
+    `PUT /api/v1/catalog/connections/{name}/write-credentials`). It is stored
+    encrypted in `CATALOG_CONNECTION_WRITE_CREDENTIALS`, separate from the read
+    credential the catalog uses, and never returned. Use an account limited to
+    the tables notebooks may change;
+  - each write is checked against Ranger for the caller's active role on the
+    exact `catalog.schema.table` before the credential is read: INSERT to
+    append, INSERT and UPDATE to merge, DELETE to overwrite or delete matches;
+  - the write is one transaction on the source and is audited
+    (`catalog_writeback`) with its row counts;
+  - Nova opens this connection itself, not the engine. When the backend
+    reaches the source by another name than the engine does (a backend run on
+    the host against a compose-network source), `CATALOG_DIRECT_HOSTS` maps the
+    host for Nova's own connections (write-back and metadata reads) and leaves
+    the engine's JDBC URL unchanged.
 - **Catalog metadata.** Foreign-catalog tables, views, and materialized views
   are Nova catalog objects: they can be described, owned, tagged, classified,
   searched, and appear in lineage, the same as Nova tables.

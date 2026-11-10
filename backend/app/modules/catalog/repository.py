@@ -140,6 +140,20 @@ DISTRIBUTED BY HASH(connection_name) BUCKETS 1
 {_PK_PROPERTIES}
 """
 
+#: The credential notebook write-back uses for a connection, kept apart from
+#: the read credential the engine's catalog holds (the catalog stays read-only).
+CATALOG_CONNECTION_WRITE_CREDENTIALS_DDL = f"""
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_CONNECTION_WRITE_CREDENTIALS (
+    connection_name  VARCHAR(256) NOT NULL,
+    username_enc     STRING NOT NULL,
+    password_enc     STRING NOT NULL,
+    updated_by       VARCHAR(128),
+    updated_at       DATETIME
+) PRIMARY KEY(connection_name)
+DISTRIBUTED BY HASH(connection_name) BUCKETS 1
+{_PK_PROPERTIES}
+"""
+
 CATALOG_DDLS = (
     CATALOG_CATALOGS_DDL,
     CATALOG_OBJECTS_DDL,
@@ -147,6 +161,7 @@ CATALOG_DDLS = (
     CATALOG_SYNC_RUNS_DDL,
     CATALOG_CONNECTIONS_DDL,
     CATALOG_CONNECTION_CREDENTIALS_DDL,
+    CATALOG_CONNECTION_WRITE_CREDENTIALS_DDL,
 )
 
 _CATALOG_COLUMNS = (

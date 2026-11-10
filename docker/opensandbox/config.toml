@@ -1,0 +1,54 @@
+# OpenSandbox lifecycle server for Nova Notebook runtimes.
+#
+# Pinned to OpenSandbox release-1.2.0. The server is a trusted control plane:
+# it alone holds the Docker socket and creates one sibling container per active
+# notebook runtime. Notebook sandboxes never receive the socket or host binds.
+# The API key comes from OPENSANDBOX_SERVER_API_KEY (docker/.env); the server
+# refuses to start without it. Reference:
+# https://github.com/opensandbox-group/OpenSandbox/blob/release-1.2.0/server/configuration.md
+
+[server]
+host = "0.0.0.0"
+port = 8090
+# A runtime lives at most NOTEBOOK_MAX_LIFETIME_SECONDS (4 h by default) plus
+# a margin; the backend stops it before this hard limit.
+max_sandbox_timeout_seconds = 18000
+
+[proxy]
+# The server runs on the compose network while sandboxes use Docker's default
+# bridge, so it reaches them through host-published ports, not bridge IPs.
+resolve_internal = false
+
+[log]
+level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "opensandbox/execd:release-1.2.0@sha256:c75836c46ef4302afccec182d5d7339eb2f905f51e3d73b7aa17bb76c832526c"
+
+[storage]
+# Notebook sandboxes get no host bind mounts.
+allowed_host_paths = ["/nonexistent-nova-no-host-binds"]
+
+[store]
+type = "sqlite"
+path = "/var/lib/opensandbox/opensandbox.db"
+
+[docker]
+network_mode = "bridge"
+host_ip = "host.docker.internal"
+port_range_min = 40000
+port_range_max = 40999
+drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
+no_new_privileges = true
+pids_limit = 1024
+seccomp_profile = ""
+
+[ingress]
+mode = "direct"
+
+[egress]
+image = "opensandbox/egress:release-1.2.0@sha256:a3d30246e557525f3fa44d16226258268cea175532e652822bd1eb4e83e0f54d"
+# dns+nft enforces IP and CIDR rules too; dns alone filters only name lookups.
+mode = "dns+nft"
+readiness_timeout_seconds = 30.0

@@ -34,6 +34,7 @@ from .base import (
     ObjectKind,
     ObjectKinds,
 )
+from .writes import LOAD_TABLE, WriteRefused, WriteRequest, WriteResult, match_columns
 
 _DOMAIN = ".snowflakecomputing.com"
 
@@ -167,3 +168,131 @@ class SnowflakeSource(CatalogSource):
         finally:
             connection.close()
         return kinds
+
+    # ── Notebook write-back ──────────────────────────────────────
+
+    supports_writeback = True
+
+    async def write_rows(
+        self, endpoint: Endpoint, credentials: Credentials, request: WriteRequest
+    ) -> WriteResult:
+        return await asyncio.to_thread(self._write_rows, endpoint, credentials, request)
+
+    def _write_rows(
+        self, endpoint: Endpoint, credentials: Credentials, request: WriteRequest
+    ) -> WriteResult:
+        """Load the rows into a temporary table with bound parameters, then
+        append, overwrite or ``MERGE`` into the target, in one transaction on
+        the connection's warehouse."""
+        import snowflake.connector
+
+        connection = snowflake.connector.connect(
+            account=endpoint.host,
+            user=credentials.username,
+            password=credentials.password,
+            role=endpoint.options.get("role"),
+            warehouse=endpoint.options.get("warehouse"),
+            database=endpoint.database,
+            login_timeout=self.connect_timeout,
+            network_timeout=self.connect_timeout * 4,
+            application="Nova",
+            client_session_keep_alive=False,
+            autocommit=False,
+        )
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = %s",
+                (int(request.timeout_seconds),),
+            )
+            database = quote_identifier(endpoint.database or "")
+            cursor.execute(
+                f"SELECT column_name FROM {database}.INFORMATION_SCHEMA.COLUMNS "
+                "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
+                (request.schema, request.table),
+            )
+            existing = [str(row[0]) for row in cursor.fetchall()]
+            if not existing:
+                raise WriteRefused(
+                    f"{request.schema}.{request.table} does not exist or the write "
+                    "connection cannot see it"
+                )
+            columns = match_columns(request.columns, existing)
+            keys = match_columns(request.keys, existing) if request.keys else []
+            target = ".".join(
+                quote_identifier(part) for part in (endpoint.database or "", request.schema,
+                                                    request.table)
+            )
+            load = quote_identifier(LOAD_TABLE)
+            names = ", ".join(quote_identifier(column) for column in columns)
+            # DDL commits on its own in Snowflake: the session-scoped load
+            # table is made and filled first, and only the target change is
+            # one transaction.
+            cursor.execute(
+                f"CREATE TEMPORARY TABLE {load} AS SELECT {names} FROM {target} WHERE 1 = 0"
+            )
+            placeholders = ", ".join(["%s"] * len(columns))
+            rows = [tuple(row) for row in request.rows]
+            for start in range(0, len(rows), 5000):
+                cursor.executemany(
+                    f"INSERT INTO {load} ({names}) VALUES ({placeholders})",
+                    rows[start : start + 5000],
+                )
+            cursor.execute("BEGIN")
+            result = self._apply(cursor, request, target, load, columns, keys)
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _apply(cursor, request, target, load, columns, keys) -> WriteResult:
+        names = ", ".join(quote_identifier(column) for column in columns)
+        insert = f"INSERT INTO {target} ({names}) SELECT {names} FROM {load}"
+        if request.mode == "append":
+            cursor.execute(insert)
+            return WriteResult(inserted=int(cursor.rowcount or 0))
+        if request.mode == "overwrite":
+            cursor.execute(f"DELETE FROM {target}")
+            deleted = int(cursor.rowcount or 0)
+            cursor.execute(insert)
+            return WriteResult(inserted=int(cursor.rowcount or 0), deleted=deleted)
+
+        key_list = ", ".join(quote_identifier(key) for key in keys)
+        cursor.execute(
+            f"SELECT 1 FROM {load} GROUP BY {key_list} HAVING COUNT(*) > 1 LIMIT 1"
+        )
+        if cursor.fetchone():
+            raise WriteRefused("The data has more than one row for the same key")
+        on = " AND ".join(
+            f"t.{quote_identifier(key)} = s.{quote_identifier(key)}" for key in keys
+        )
+        clauses = []
+        values = [column for column in columns if column not in keys]
+        if request.when_matched == "update" and values:
+            clauses.append(
+                "WHEN MATCHED THEN UPDATE SET "
+                + ", ".join(f"{quote_identifier(c)} = s.{quote_identifier(c)}" for c in values)
+            )
+        elif request.when_matched == "delete":
+            clauses.append("WHEN MATCHED THEN DELETE")
+        if request.when_not_matched == "insert":
+            clauses.append(
+                f"WHEN NOT MATCHED THEN INSERT ({names}) VALUES ("
+                + ", ".join(f"s.{quote_identifier(c)}" for c in columns)
+                + ")"
+            )
+        if not clauses:
+            return WriteResult()
+        cursor.execute(f"MERGE INTO {target} t USING {load} s ON {on} {' '.join(clauses)}")
+        row = cursor.fetchone() or ()
+        labels = [str(column[0]).lower() for column in cursor.description or []]
+        counts = dict(zip(labels, row, strict=False))
+        return WriteResult(
+            inserted=int(counts.get("number of rows inserted") or 0),
+            updated=int(counts.get("number of rows updated") or 0),
+            deleted=int(counts.get("number of rows deleted") or 0),
+        )

@@ -27,6 +27,8 @@ import {
   createForeignCatalog,
   deleteConnection,
   setConnectionCredentials,
+  setConnectionWriteCredentials,
+  clearConnectionWriteCredentials,
   type ConnectionSummary,
 } from './api'
 import {
@@ -353,11 +355,15 @@ export function CredentialsDialog({
   connection,
   onOpenChange,
   onSaved,
+  purpose = 'read',
 }: {
   connection: ConnectionSummary | null
   onOpenChange: (open: boolean) => void
   onSaved?: () => void
+  /** `write`: the separate account notebooks write to this source with. */
+  purpose?: 'read' | 'write'
 }) {
+  const writing = purpose === 'write'
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -372,11 +378,13 @@ export function CredentialsDialog({
     if (!connection || !username.trim() || !password) return
     setSubmitting(true)
     try {
-      await setConnectionCredentials(connection.name, {
-        username: username.trim(),
-        password,
-      })
-      toast.success(`Credentials for "${connection.name}" saved`)
+      const save = writing ? setConnectionWriteCredentials : setConnectionCredentials
+      await save(connection.name, { username: username.trim(), password })
+      toast.success(
+        writing
+          ? `Notebooks can write through "${connection.name}"`
+          : `Credentials for "${connection.name}" saved`
+      )
       onOpenChange(false)
       onSaved?.()
     } catch (err) {
@@ -386,14 +394,30 @@ export function CredentialsDialog({
     }
   }
 
+  const handleRemove = async () => {
+    if (!connection) return
+    setSubmitting(true)
+    try {
+      await clearConnectionWriteCredentials(connection.name)
+      toast.success(`Notebooks no longer write through "${connection.name}"`)
+      onOpenChange(false)
+      onSaved?.()
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not remove the write credential'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <Dialog open={!!connection} onOpenChange={onOpenChange}>
       <DialogContent className='sm:max-w-lg'>
         <DialogHeader>
-          <DialogTitle>Enter credentials</DialogTitle>
+          <DialogTitle>{writing ? 'Notebook writes' : 'Enter credentials'}</DialogTitle>
           <DialogDescription>
-            New credentials for {connection?.name} replace the current ones.
-            They are stored encrypted and never shown again.
+            {writing
+              ? `Notebooks write to ${connection?.name ?? 'this source'} with this account, only where Ranger lets the person write. Use an account limited to the tables notebooks may change. It is stored encrypted and never shown again.`
+              : `New credentials for ${connection?.name ?? 'this connection'} replace the current ones. They are stored encrypted and never shown again.`}
           </DialogDescription>
         </DialogHeader>
         <div className='py-2'>
@@ -403,16 +427,26 @@ export function CredentialsDialog({
             password={password}
             onUsername={setUsername}
             onPassword={setPassword}
-            idPrefix='credentials'
+            idPrefix={writing ? 'write-credentials' : 'credentials'}
           />
         </div>
         <DialogFooter>
+          {writing && connection?.writable ? (
+            <Button
+              variant='ghost'
+              className='mr-auto text-destructive hover:text-destructive'
+              onClick={handleRemove}
+              disabled={submitting}
+            >
+              Stop notebook writes
+            </Button>
+          ) : null}
           <Button variant='outline' onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!username.trim() || !password || submitting}>
             {submitting ? <Loader2 className='mr-2 h-4 w-4 animate-spin' /> : null}
-            Save credentials
+            {writing ? 'Save write account' : 'Save credentials'}
           </Button>
         </DialogFooter>
       </DialogContent>

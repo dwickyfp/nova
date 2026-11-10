@@ -290,8 +290,14 @@ class TestCrudMethodsNeverReturnBare500:
         ],
         ids=["get-file", "update-file"],
     )
-    def test_storage_down_is_not_a_bare_500(self, workspace_client, call):
+    def test_storage_down_is_not_a_bare_500(self, workspace_client, call, monkeypatch):
         service = _UnavailableStorageService(_endpoint_down())
+        from app.modules.workspaces import router as workspace_router
+
+        async def own_workspace(user, entry_id, *, edit=False):
+            return workspace_router.space_service.personal(user)
+
+        monkeypatch.setattr(workspace_router.space_service, "for_entry", own_workspace)
 
         # Read/update first resolve the entry from NOVA_SYSTEM; supply one so the
         # code reaches the storage call instead of short-circuiting on 404.

@@ -214,6 +214,9 @@ class ConnectionSummary(BaseModel):
     connector_type: str
     credential_source: str
     has_credentials: bool
+    #: A write credential is set: notebooks may write to its catalogs, where
+    #: Ranger allows the caller.
+    writable: bool = False
     owner: str | None = None
     comment: str | None = None
     catalogs: list[str] = Field(default_factory=list)

@@ -130,6 +130,13 @@ async def _run() -> None:
         build_automation_worker(client).run_forever(stop_event),
         name="nova-worker-automations",
     )
+    from app.modules.notebooks.runtime.opensandbox_provider import OpenSandboxProvider
+    from app.modules.notebooks.runtime.worker import NotebookRuntimeWorker
+
+    notebook_task = asyncio.create_task(
+        NotebookRuntimeWorker(OpenSandboxProvider()).run_forever(stop_event),
+        name="nova-worker-notebook-runtimes",
+    )
     from app.modules.query_autopilot.jobs import AutopilotWorker
     from app.modules.query_autopilot.service import AutopilotService
 
@@ -151,6 +158,8 @@ async def _run() -> None:
             await automation_task
         with contextlib.suppress(asyncio.CancelledError):
             await autopilot_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await notebook_task
         await heartbeat.close()
         await session_store.close()
         await client.aclose()

@@ -50,6 +50,9 @@ TOOL_NAMES = frozenset(
         "knowledge_propose",
         "ontology_status",
         "knowledge_withdraw",
+        "notebook_context",
+        "notebook_run_cell",
+        "notebook_install_package",
     }
 )
 

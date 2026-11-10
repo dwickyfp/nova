@@ -26,8 +26,10 @@ from typing import ClassVar
 from urllib.parse import parse_qsl, urlencode
 
 from app.common.sql_guard import is_credential_property
+from app.core.config import settings
 
 from ..errors import CatalogError, safe_catalog_name
+from .writes import WriteRefused, WriteRequest, WriteResult
 
 #: Where the FE and BE images keep bundled JDBC drivers. StarRocks loads the
 #: driver from ``driver_url`` on both: the FE to read metadata, every BE to scan.
@@ -75,6 +77,11 @@ class Endpoint:
     port: int
     database: str | None = None
     options: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def direct_host(self) -> str:
+        """The host this process connects to itself; the engine keeps ``host``."""
+        return settings.CATALOG_DIRECT_HOSTS.get(self.host, self.host)
 
 
 @dataclass(frozen=True)
@@ -229,6 +236,18 @@ class CatalogSource(ABC):
             f"{engine_literal(key)} = {engine_literal(value)}" for key, value in params.items()
         )
         return f"CREATE EXTERNAL CATALOG {safe_catalog_name(name)} {clause}PROPERTIES ({values})"
+
+    # ── Notebook write-back ──────────────────────────────────────
+
+    #: Whether Nova can write to this source with a connection's write
+    #: credential (the engine's JDBC catalog cannot).
+    supports_writeback: ClassVar[bool] = False
+
+    async def write_rows(
+        self, endpoint: Endpoint, credentials: Credentials, request: WriteRequest
+    ) -> WriteResult:
+        """Write ``request`` to the source in one transaction."""
+        raise WriteRefused(f"Nova cannot write to {self.label} catalogs")
 
     # ── Source metadata ──────────────────────────────────────────
 

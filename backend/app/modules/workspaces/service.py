@@ -12,6 +12,7 @@ from app.common.audit import write_audit_log
 from app.core.config import get_storage_connection, load_nova_app_config
 from app.core.exceptions import StorageError
 from app.modules.query.dialect.injector import resolve_storage_credentials
+from app.modules.workspaces.actor import acting_user
 from app.modules.workspaces.repository import workspace_repository
 from app.modules.workspaces.storage_errors import classify_storage_error
 
@@ -54,18 +55,26 @@ class WorkspaceService:
         clean_path = relative_path.strip("/")
         return "/".join(part for part in [base_prefix, username, clean_path] if part)
 
-    def _version_object_key(self, username: str, entry_id: str, version: int) -> str:
+    def _version_object_key(
+        self, username: str, entry_id: str, version: int, *, extension: str = "sql"
+    ) -> str:
         """Object key for one saved snapshot.
 
         Kept under a ``.versions`` folder so the live file key is never
         touched by the history path and a rename of the file does not have to
         move its snapshot history. The key is derived from the immutable
-        ``entry_id`` plus the monotonic ``version`` number.
+        ``entry_id`` plus the monotonic ``version`` number; the extension
+        follows the file's kind (``sql`` for worksheets, ``ipynb`` for
+        notebooks).
         """
         base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
         return "/".join(
-            [base_prefix, username, ".versions", entry_id, f"{version}.sql"]
+            [base_prefix, username, ".versions", entry_id, f"{version}.{extension}"]
         )
+
+    @staticmethod
+    def _snapshot_extension(name: str) -> str:
+        return "ipynb" if name.lower().endswith(".ipynb") else "sql"
 
     async def get_tree(self, username: str) -> dict:
         # ``_repo`` translates NOVA_SYSTEM bootstrap failures (missing table,
@@ -133,13 +142,67 @@ class WorkspaceService:
         entry = await self._repo.get_entry(username, entry_id)
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="create_file",
             object_type="workspace_file",
             object_name=path,
             status="SUCCESS",
         )
         return entry
+
+    async def create_file_bytes(
+        self, username: str, parent_path: str, name: str, data: bytes, *, replace: bool = False
+    ) -> dict:
+        """Store an uploaded or generated file (CSV, Parquet, images, …).
+
+        Unlike :meth:`create_file` the content is bytes and is never opened as
+        text. ``replace`` overwrites an existing file at the same path (used to
+        copy a runtime's output files back), keeping its entry id.
+        """
+        path = self._repo.build_path(parent_path, name)
+        existing = None
+        for entry in await self._repo.list_entries(username):
+            if entry["path"] == path:
+                existing = entry
+                break
+        if existing is not None and not (replace and existing["entry_type"] == "file"):
+            raise StorageError(
+                "A file or folder with this name already exists here", status_code=409
+            )
+        key = self.build_object_key(username, path)
+        result = await asyncio.to_thread(self._put_object, key, data)
+        etag = result.get("ETag", "").strip('"')
+        if existing is not None:
+            await self._repo.update_entry(
+                entry_id=existing["id"],
+                username=username,
+                parent_path=existing["parent_path"],
+                name=existing["name"],
+                object_key=key,
+                size_bytes=len(data),
+                etag=etag,
+            )
+            return await self._repo.get_entry(username, existing["id"])
+        entry_id = str(uuid4())
+        await self._repo.insert_entry(
+            entry_id=entry_id,
+            username=username,
+            parent_path=parent_path.strip("/"),
+            name=name,
+            entry_type="file",
+            object_key=key,
+            size_bytes=len(data),
+            etag=etag,
+        )
+        await write_audit_log(
+            event_type="workspace",
+            user_name=acting_user(username),
+            action="upload_file",
+            object_type="workspace_file",
+            object_name=path,
+            status="SUCCESS",
+        )
+        return await self._repo.get_entry(username, entry_id)
 
     async def create_folder(self, username: str, parent_path: str, name: str) -> dict:
         await self._ensure_free_path(username, self._repo.build_path(parent_path, name))
@@ -155,7 +218,7 @@ class WorkspaceService:
         entry = await self._repo.get_entry(username, entry_id)
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="create_folder",
             object_type="workspace_folder",
             object_name=entry["path"],
@@ -168,7 +231,7 @@ class WorkspaceService:
         if not entry:
             raise StorageError("Workspace entry not found", status_code=404)
         if entry["entry_type"] != "file":
-            raise StorageError("Only SQL files can be opened", status_code=400)
+            raise StorageError("Only files can be opened", status_code=400)
         content = await asyncio.to_thread(self._read_object, entry["object_key"])
         return entry, content.decode("utf-8")
 
@@ -223,7 +286,9 @@ class WorkspaceService:
             return
 
         version = await self._repo.next_version_number(username, entry_id)
-        key = self._version_object_key(username, entry_id, version)
+        key = self._version_object_key(
+            username, entry_id, version, extension=self._snapshot_extension(entry["name"])
+        )
         result = await asyncio.to_thread(self._put_object, key, current)
         await self._repo.insert_version(
             version_id=str(uuid4()),
@@ -242,7 +307,7 @@ class WorkspaceService:
         if not entry:
             raise StorageError("Workspace entry not found", status_code=404)
         if entry["entry_type"] != "file":
-            raise StorageError("Only SQL files have versions", status_code=400)
+            raise StorageError("Only files have versions", status_code=400)
         return await self._repo.list_versions(username, entry_id, limit)
 
     async def get_file_version(self, username: str, entry_id: str, version: int) -> str:
@@ -344,7 +409,7 @@ class WorkspaceService:
         renamed = await self._repo.get_entry(username, entry_id)
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="rename",
             object_type=f"workspace_{entry['entry_type']}",
             object_name=f"{old_path} -> {renamed['path']}",
@@ -369,7 +434,7 @@ class WorkspaceService:
             await self._repo.soft_delete_entry(username, item["id"])
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="delete",
             object_type=f"workspace_{entry['entry_type']}",
             object_name=entry["path"],
@@ -419,6 +484,36 @@ class WorkspaceService:
             await self._repo.set_preference(username, self.PREF_LAST_SCHEMA, last_schema)
         if last_role is not None:
             await self._repo.set_preference(username, self.PREF_LAST_ROLE, last_role)
+
+    # ── Internal objects beside the tree (notebook outputs) ──────────────
+
+    def internal_object_key(self, username: str, *parts: str) -> str:
+        """Key under the user's area for data that is not a tree entry.
+
+        Kept under a dot folder (like ``.versions``) so it never appears in the
+        Workspace tree and a rename never has to move it.
+        """
+        clean = [part.strip("/") for part in parts if part and part.strip("/")]
+        if any(part in {".", ".."} or "/.." in part or "../" in part for part in clean):
+            raise StorageError("Invalid internal object path", status_code=400)
+        base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
+        return "/".join([p for p in [base_prefix, username, *clean] if p])
+
+    async def put_internal_object(self, key: str, body: bytes) -> None:
+        await asyncio.to_thread(self._put_object, key, body)
+
+    async def read_internal_object(self, key: str) -> bytes:
+        return await asyncio.to_thread(self._read_object, key)
+
+    async def read_entry_bytes(self, username: str, entry_id: str) -> tuple[dict, bytes]:
+        """A file entry and its raw content, for copying into a runtime."""
+        entry = await self._repo.get_entry(username, entry_id)
+        if not entry or entry["entry_type"] != "file":
+            raise StorageError("Workspace entry not found", status_code=404)
+        return entry, await asyncio.to_thread(self._read_object, entry["object_key"])
+
+    async def list_entries(self, username: str) -> list[dict]:
+        return await self._repo.list_entries(username)
 
     def _put_object(self, key: str, body: bytes) -> dict:
         try:

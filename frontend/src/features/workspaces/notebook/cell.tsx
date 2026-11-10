@@ -1,0 +1,528 @@
+import { memo, useEffect, useState } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Eraser,
+  GripVertical,
+  ListEnd,
+  ListStart,
+  MoreHorizontal,
+  Play,
+  Square,
+  Trash2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Markdown } from "@/features/assistant/markdown";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { CellEditor, type CellKeyAction } from "./cell-editor";
+import { formatDuration } from "./helpers";
+import { CellOutputs } from "./outputs";
+import type { CellOutput, CellKind, NotebookCell, SqlEngine } from "./types";
+import type { CellRun } from "./use-notebook";
+
+const KIND_LABEL: Record<CellKind, string> = {
+  python: "Python",
+  sql: "SQL",
+  markdown: "Markdown",
+};
+
+function gutterLabel(run: CellRun | undefined): string {
+  if (!run) return "[ ]";
+  if (run.status === "running" || run.status === "queued") return "[*]";
+  if (run.executionCount) return `[${run.executionCount}]`;
+  return "[ ]";
+}
+
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <span className="tabular-nums">{((now - since) / 1000).toFixed(1)}s</span>;
+}
+
+function statusLine(run: CellRun | undefined, stale: boolean, runtimeReady: boolean) {
+  if (!run) return runtimeReady ? null : null;
+  switch (run.status) {
+    case "queued":
+      return <span>Queued</span>;
+    case "running":
+      return (
+        <span className="text-info-strong">
+          Running {run.startedAt ? <Elapsed since={run.startedAt} /> : null}
+        </span>
+      );
+    case "succeeded":
+      return (
+        <span className={stale ? "text-warning-strong" : undefined}>
+          {stale ? "Out of date, run again to update" : `Ran in ${formatDuration(run.durationMs)}`}
+        </span>
+      );
+    case "failed":
+      return <span className="text-destructive">Failed{stale ? ", code changed since" : ""}</span>;
+    case "timeout":
+      return <span className="text-destructive">Stopped: took too long</span>;
+    case "cancelled":
+      return <span>{run.message ?? "Stopped"}</span>;
+    case "skipped":
+      return <span>Skipped because an earlier cell failed</span>;
+    case "lost":
+      return <span className="text-destructive">The runtime stopped while this ran</span>;
+    default:
+      return null;
+  }
+}
+
+export type CellCommand =
+  | "run"
+  | "run-above"
+  | "run-below"
+  | "stop"
+  | "move-up"
+  | "move-down"
+  | "move-top"
+  | "move-bottom"
+  | "duplicate"
+  | "clear"
+  | "ask-neva"
+  | "delete";
+
+type CellProps = {
+  cell: NotebookCell;
+  index: number;
+  count: number;
+  run: CellRun | undefined;
+  stale: boolean;
+  active: boolean;
+  editing: boolean;
+  runtimeReady: boolean;
+  canEdit: boolean;
+  canRun: boolean;
+  onSelect: (cellId: string, edit: boolean) => void;
+  onSource: (cellId: string, source: string) => void;
+  onKind: (cellId: string, kind: CellKind) => void;
+  onName: (cellId: string, name: string | null) => void;
+  onTitle?: (cellId: string, title: string | null) => void;
+  onEngine: (cellId: string, engine: SqlEngine) => void;
+  onKey: (cellId: string, action: CellKeyAction) => void;
+  onCommand: (cellId: string, command: CellCommand) => void;
+  tableActions?: (cell: NotebookCell, output: Extract<CellOutput, { type: "table" }>) => React.ReactNode;
+};
+
+/** Text that commits on blur or Enter and reverts on Escape. */
+function InlineField({
+  value,
+  label,
+  placeholder,
+  valid = () => true,
+  onCommit,
+  className,
+  disabled,
+}: {
+  value: string | null;
+  label: string;
+  placeholder: string;
+  valid?: (draft: string) => boolean;
+  onCommit: (value: string | null) => void;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  useEffect(() => setDraft(value ?? ""), [value]);
+  const ok = valid(draft);
+  return (
+    <input
+      aria-label={label}
+      value={draft}
+      spellCheck={false}
+      disabled={disabled}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (!ok) {
+          setDraft(value ?? "");
+          return;
+        }
+        const next = draft.trim() || null;
+        if (next !== (value ?? null)) onCommit(next);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+        if (event.key === "Escape") {
+          setDraft(value ?? "");
+          (event.target as HTMLInputElement).blur();
+        }
+      }}
+      placeholder={placeholder}
+      className={cn(
+        "min-w-0 rounded bg-transparent outline-none placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
+        !ok && "text-destructive",
+        className,
+      )}
+    />
+  );
+}
+
+const RESULT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function ToolbarButton({
+  label,
+  shortcut,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="size-7 text-muted-foreground hover:text-foreground"
+      aria-label={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+export const NotebookCellView = memo(function NotebookCellView({
+  cell,
+  index,
+  count,
+  run,
+  stale,
+  active,
+  editing,
+  runtimeReady,
+  canEdit,
+  canRun,
+  onSelect,
+  onSource,
+  onKind,
+  onName,
+  onTitle,
+  onEngine,
+  onKey,
+  onCommand,
+  tableActions,
+}: CellProps) {
+  const running = run?.status === "running" || run?.status === "queued";
+  const failed = run?.status === "failed" && !stale;
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: cell.id, disabled: running || !canEdit });
+  const executable = cell.kind !== "markdown";
+  const showEditor = cell.kind !== "markdown" || editing;
+  const label = KIND_LABEL[cell.kind];
+  const pinned = active || running || failed;
+  const status = statusLine(run, stale, runtimeReady);
+  const first = index === 0;
+  const last = index === count - 1;
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-cell-id={cell.id}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn("group/cell relative flex gap-2", isDragging && "z-20 opacity-60")}
+    >
+      <div className="flex w-12 shrink-0 flex-col items-end gap-1 pt-1">
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-roledescription="Movable cell"
+          aria-keyshortcuts="ArrowUp ArrowDown Home End"
+          aria-label={`Move ${label} cell ${index + 1} of ${count}`}
+          title={
+            running
+              ? "A running cell cannot be moved"
+              : "Drag to move, or press the arrow keys, Home or End"
+          }
+          onKeyDown={(event) => {
+            const move: Record<string, CellCommand> = {
+              ArrowUp: "move-up",
+              ArrowDown: "move-down",
+              Home: "move-top",
+              End: "move-bottom",
+            };
+            const action = move[event.key];
+            if (!action || running || !canEdit) return;
+            if ((action === "move-up" || action === "move-top") && first) return;
+            if ((action === "move-down" || action === "move-bottom") && last) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onCommand(cell.id, action);
+          }}
+          disabled={running || !canEdit}
+          className={cn(
+            "flex size-6 cursor-grab items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing disabled:cursor-not-allowed group-hover/cell:opacity-100",
+            active && "opacity-100",
+          )}
+        >
+          <GripVertical className="size-4" />
+        </button>
+        {executable ? (
+          <span
+            className={cn(
+              "font-mono text-xs tabular-nums",
+              running ? "text-info-strong" : "text-muted-foreground",
+            )}
+            aria-label={running ? "Running" : run?.executionCount ? `Execution ${run.executionCount}` : "Not run"}
+          >
+            {gutterLabel(run)}
+          </span>
+        ) : null}
+      </div>
+
+      <div
+        className="@container/cellbody relative min-w-0 flex-1 pb-2 pl-3"
+        onMouseDown={() => onSelect(cell.id, false)}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-1 bottom-2 left-0 w-0.5 rounded-full transition-colors",
+            failed ? "bg-destructive/70" : active ? "bg-ring" : "bg-transparent",
+          )}
+        />
+        <div className="@container/cellhead relative flex h-8 min-w-0 items-center gap-2">
+          {onTitle ? (
+            <InlineField
+              value={cell.title ?? null}
+              label="Cell title"
+              placeholder="Add a title"
+              disabled={!canEdit}
+              onCommit={(title) => onTitle(cell.id, title)}
+              className={cn(
+                "h-7 w-full max-w-md flex-1 px-1 text-sm font-medium text-foreground",
+                !cell.title && !active && "opacity-0 group-hover/cell:opacity-100 focus:opacity-100",
+              )}
+            />
+          ) : (
+            <span className="flex-1" />
+          )}
+          <span className="ml-auto hidden min-w-0 shrink truncate text-xs text-muted-foreground @md/cellhead:block">
+            {status}
+          </span>
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 transition-opacity",
+              pinned
+                ? "opacity-100"
+                : "absolute top-0 right-0 h-8 bg-background pl-2 opacity-0 group-focus-within/cell:opacity-100 group-hover/cell:opacity-100",
+            )}
+          >
+            {run?.status === "failed" && !running ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => onCommand(cell.id, "ask-neva")}
+              >
+                Ask Neva
+              </Button>
+            ) : null}
+            {executable ? (
+              running ? (
+                <ToolbarButton label="Stop this cell" onClick={() => onCommand(cell.id, "stop")}>
+                  <Square className="size-3.5" />
+                </ToolbarButton>
+              ) : (
+                <ToolbarButton
+                  label="Run this cell"
+                  shortcut="Ctrl+Enter"
+                  disabled={!canRun}
+                  onClick={() => onCommand(cell.id, "run")}
+                >
+                  <Play className="size-3.5" />
+                </ToolbarButton>
+              )
+            ) : null}
+            <ToolbarButton
+              label="Move up"
+              shortcut="Ctrl+Shift+Up"
+              disabled={first || running || !canEdit}
+              onClick={() => onCommand(cell.id, "move-up")}
+            >
+              <ChevronUp className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Move down"
+              shortcut="Ctrl+Shift+Down"
+              disabled={last || running || !canEdit}
+              onClick={() => onCommand(cell.id, "move-down")}
+            >
+              <ChevronDown className="size-4" />
+            </ToolbarButton>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 text-muted-foreground hover:text-foreground"
+                  aria-label="Cell actions"
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Cell type
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={cell.kind}
+                  onValueChange={(kind) => onKind(cell.id, kind as CellKind)}
+                >
+                  {(["python", "sql", "markdown"] as const).map((kind) => (
+                    <DropdownMenuRadioItem key={kind} value={kind} disabled={!canEdit}>
+                      {KIND_LABEL[kind]}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                {executable ? (
+                  <>
+                    <DropdownMenuItem disabled={!canRun} onSelect={() => onCommand(cell.id, "run-above")}>
+                      <ListStart className="size-4" />
+                      Run cells above
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={!canRun} onSelect={() => onCommand(cell.id, "run-below")}>
+                      <ListEnd className="size-4" />
+                      Run this and below
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+                <DropdownMenuItem disabled={first || running || !canEdit} onSelect={() => onCommand(cell.id, "move-top")}>
+                  <ArrowUpToLine className="size-4" />
+                  Move to top
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={last || running || !canEdit} onSelect={() => onCommand(cell.id, "move-bottom")}>
+                  <ArrowDownToLine className="size-4" />
+                  Move to bottom
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!canEdit} onSelect={() => onCommand(cell.id, "duplicate")}>
+                  <Copy className="size-4" />
+                  Duplicate
+                </DropdownMenuItem>
+                {executable ? (
+                  <DropdownMenuItem disabled={!run || running} onSelect={() => onCommand(cell.id, "clear")}>
+                    <Eraser className="size-4" />
+                    Clear output
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem
+                  disabled={running || !canEdit}
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => onCommand(cell.id, "delete")}
+                >
+                  <Trash2 className="size-4" />
+                  Delete
+                  <DropdownMenuShortcut>D D</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {status ? (
+          <p className="truncate pb-1 text-xs text-muted-foreground @md/cellbody:hidden">{status}</p>
+        ) : null}
+        {showEditor ? (
+          <CellEditor
+            cellId={cell.id}
+            kind={cell.kind}
+            value={cell.source}
+            active={active && editing}
+            readOnly={!canEdit}
+            onActivate={() => onSelect(cell.id, true)}
+            onChange={(value) => onSource(cell.id, value)}
+            onKey={(action) => onKey(cell.id, action)}
+          />
+        ) : (
+          <div
+            role="button"
+            tabIndex={-1}
+            aria-label="Edit Markdown cell"
+            className="cursor-text px-1 py-1 text-sm"
+            onDoubleClick={() => onSelect(cell.id, true)}
+          >
+            {cell.source.trim() ? (
+              <Markdown offline>{cell.source}</Markdown>
+            ) : (
+              <p className="text-muted-foreground">Double-click to write notes</p>
+            )}
+          </div>
+        )}
+
+        {cell.kind === "sql" ? (
+          <div className="flex h-7 min-w-0 items-center gap-2 font-mono text-xs text-muted-foreground">
+            <span aria-hidden>→</span>
+            <InlineField
+              value={cell.name}
+              label="Result name"
+              placeholder="name"
+              disabled={!canEdit}
+              valid={(draft) => draft === "" || RESULT_NAME.test(draft)}
+              onCommit={(name) => onName(cell.id, name)}
+              className="h-6 w-40 px-1 font-mono text-xs text-muted-foreground focus:text-foreground"
+            />
+            {cell.engine === "nova" ? (
+              <span className="flex min-w-0 items-center gap-2 font-sans">
+                <span className="truncate">Runs in Nova</span>
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  className="shrink-0 rounded text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onEngine(cell.id, "duckdb")}
+                >
+                  Run in DuckDB
+                </button>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {executable && run && run.outputs.length > 0 ? (
+          <div className={cn("pt-2", stale && "opacity-70")}>
+            <CellOutputs
+              outputs={run.outputs}
+              tableActions={tableActions ? (output) => tableActions(cell, output) : undefined}
+            />
+          </div>
+        ) : executable && run?.outputsPending ? (
+          <p className="pt-2 text-xs text-muted-foreground">
+            The last output is large; run the cell to see it again
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+});

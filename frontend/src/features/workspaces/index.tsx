@@ -23,45 +23,23 @@ import {
   BarChart3,
   Braces,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
   Copy,
   Database,
   ListOrdered,
   Download,
-  FileCode,
   Folder,
   GripHorizontal,
-  Hash,
   History,
   Play,
-  Plus,
   RefreshCw,
   Square,
   Search,
-  Type,
   UserRoundCog,
-  X,
   AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
@@ -79,6 +57,16 @@ import {
   type AttachedQuery,
   type ProposedRewrite,
 } from "@/features/assistant/query-attach";
+import { ChartVisualization } from "./chart-visualization";
+import { NewItemButton } from "./explorer/new-item-button";
+import { PERSONAL, type WorkspaceSpace } from "./explorer/api";
+import { useExplorerController, type Place } from "./explorer/controller";
+import { freeName } from "./explorer/tree-data";
+import { WorkspaceExplorer } from "./explorer/workspace-explorer";
+import { notebookApi } from "./notebook/api";
+import { isEditableName, isNotebookName, nextNotebookName } from "./notebook/names";
+import { NOVA_TABLE_MIME } from "./notebook/helpers";
+import { NotebookEditor } from "./notebook/notebook-editor";
 import { DatabaseSchemaSelector } from "./database-schema-selector";
 import { RewriteReview } from "./rewrite-review";
 import {
@@ -94,7 +82,6 @@ import {
   shouldTriggerStageSuggestions,
 } from "./stage-completion";
 import { useTheme } from "@/context/theme-provider";
-import { readToken } from "@/lib/read-token";
 import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
 import { WorkspaceTabStrip } from "./workspace-tab-strip";
@@ -140,17 +127,8 @@ import type {
   WorkspaceTreeResponse,
 } from "./types";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Collapsible,
@@ -739,9 +717,6 @@ export function WorkspacesPage() {
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({});
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<
-    Record<string, boolean>
-  >({ "": true });
   const [expandedDatabases, setExpandedDatabases] = useState<
     Record<string, boolean>
   >({});
@@ -764,7 +739,10 @@ export function WorkspacesPage() {
     total: number;
   } | null>(null);
   // The database a run left the session in (a USE moves it).
-  const lastContextRef = useRef<{ database: string | null; schema: string | null } | null>(null);
+  const lastContextRef = useRef<{
+    database: string | null;
+    schema: string | null;
+  } | null>(null);
   const stopRunAllRef = useRef(false);
   const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(
     () => {
@@ -810,13 +788,6 @@ export function WorkspacesPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [renameEntryTarget, setRenameEntryTarget] =
-    useState<WorkspaceEntry | null>(null);
-  const [renameEntryName, setRenameEntryName] = useState("");
-  const [renamingEntry, setRenamingEntry] = useState(false);
-  const [deleteEntryTarget, setDeleteEntryTarget] =
-    useState<WorkspaceEntry | null>(null);
-  const [deletingEntry, setDeletingEntry] = useState(false);
   const [pendingDestructiveSql, setPendingDestructiveSql] =
     useState<QuerySnapshot | null>(null);
 
@@ -964,7 +935,12 @@ export function WorkspacesPage() {
           // The file keeps its own ending, so a replace adds no blank line.
           const ending = before.endsWith("\n") ? "\n" : "";
           let next: string;
-          if (mode === "replace" && selection && model && !selection.isEmpty()) {
+          if (
+            mode === "replace" &&
+            selection &&
+            model &&
+            !selection.isEmpty()
+          ) {
             // A selection is what the person pointed at: only it changes.
             const start = model.getOffsetAt(selection.getStartPosition());
             const end = model.getOffsetAt(selection.getEndPosition());
@@ -974,7 +950,8 @@ export function WorkspacesPage() {
           } else {
             next = `${sql}${ending}`;
           }
-          if (next === before) throw new Error("The SQL is already in the editor.");
+          if (next === before)
+            throw new Error("The SQL is already in the editor.");
           const id = `${NEVA_SUGGESTION}${crypto.randomUUID()}`;
           setProposedRewrite({
             attachmentId: id,
@@ -1015,7 +992,9 @@ export function WorkspacesPage() {
                   language: "sql",
                   selectedText,
                   // Sent as written, so the cursor's line matches the text.
-                  text: editorTextForNeva(editor?.getModel()?.getValue() ?? activeTab.content ?? ""),
+                  text: editorTextForNeva(
+                    editor?.getModel()?.getValue() ?? activeTab.content ?? "",
+                  ),
                   cursor: cursor
                     ? { line: cursor.lineNumber, column: cursor.column }
                     : undefined,
@@ -1255,6 +1234,20 @@ export function WorkspacesPage() {
     queryKey: ["workspace-tree"],
     queryFn: () => api.get<WorkspaceTreeResponse>("/workspaces/tree"),
   });
+
+  const username = useAuthStore((state) => state.auth.user?.username ?? "");
+  const personalSpace = useMemo<WorkspaceSpace>(
+    () =>
+      workspaceTreeQuery.data?.space ?? {
+        id: PERSONAL,
+        name: "Personal Workspace",
+        kind: "personal",
+        owner: username,
+        permission: "owner",
+      },
+    [workspaceTreeQuery.data?.space, username],
+  );
+  const explorer = useExplorerController(personalSpace);
 
   const queryContextQuery = useQuery<QueryContextResponse>({
     queryKey: ["query-context"],
@@ -1577,6 +1570,23 @@ export function WorkspacesPage() {
   ]);
 
   async function openTab(id: string) {
+    const entry = workspaceTreeQuery.data?.entries.find((item) => item.id === id);
+    if (entry && isNotebookName(entry.name)) {
+      // A notebook loads its own document; the SQL editor state stays empty
+      // so the worksheet autosave never writes to the notebook file.
+      setTabs((prev) => ({
+        ...prev,
+        [id]: {
+          ...(prev[id] ?? { database: "", schema: "default", role: sessionRole }),
+          id,
+          title: entry.name,
+          content: "",
+          savedContent: "",
+          loaded: true,
+        } as WorkspaceTabState,
+      }));
+      return;
+    }
     const file = await api.get<WorkspaceFileResponse>(
       `/workspaces/files/${id}`,
     );
@@ -1604,6 +1614,7 @@ export function WorkspacesPage() {
           "default",
         role: sessionRole,
         loaded: true,
+        readOnly: file.space?.permission === "view",
       },
     }));
   }
@@ -1615,6 +1626,7 @@ export function WorkspacesPage() {
     schema: string,
     role: string,
   ) {
+    if (tabs[id]?.readOnly) return false;
     if (conflictedFilesRef.current.has(id)) {
       toast.error(
         "Copy your local SQL edits, then reload this file before saving.",
@@ -1642,35 +1654,35 @@ export function WorkspacesPage() {
     return true;
   }
 
-  function generateUniqueFileName(): string {
-    // Every file at the top level, not only the open tabs: a name an unopened
-    // file already has would point both files at one stored object.
-    const existingNames = new Set([
-      ...Object.values(tabs).map((t) => t.title.toLowerCase()),
-      ...(workspaceTreeQuery.data?.entries ?? [])
-        .filter((entry) => !entry.parent_path)
-        .map((entry) => entry.name.toLowerCase()),
-    ]);
-    const base = "Untitled";
-    const first = `${base}.sql`;
-    if (!existingNames.has(first.toLowerCase())) return first;
-    let i = 2;
-    while (existingNames.has(`${base}-${i}.sql`.toLowerCase())) i++;
-    return `${base}-${i}.sql`;
+
+  function entriesIn(space: WorkspaceSpace): WorkspaceEntry[] {
+    if (space.kind === "personal") return workspaceTreeQuery.data?.entries ?? [];
+    return (
+      queryClient.getQueryData<WorkspaceTreeResponse>(["workspace-space-tree", space.id])
+        ?.entries ?? []
+    );
   }
 
-  async function createNewFile() {
-    const fileName = generateUniqueFileName();
+  function refreshSpace(space: WorkspaceSpace) {
+    return queryClient.invalidateQueries({
+      queryKey:
+        space.kind === "personal" ? ["workspace-tree"] : ["workspace-space-tree", space.id],
+    });
+  }
+
+  async function createNewFile(place: Place = explorer.place) {
+    const fileName = freeName(entriesIn(place.space), place.parentPath, "Untitled", ".sql");
     try {
       const response = await api.post<WorkspaceFileResponse>(
         "/workspaces/files",
         {
           name: fileName,
-          parent_path: "",
+          parent_path: place.parentPath,
           content: "",
+          space: place.space.id,
         },
       );
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      await refreshSpace(place.space);
       startTransition(() => {
         setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
         setActiveTabId(response.entry.id);
@@ -1704,60 +1716,55 @@ export function WorkspacesPage() {
     }
   }
 
-  function renameEntry(entry: WorkspaceEntry) {
-    setRenameEntryTarget(entry);
-    setRenameEntryName(entry.name);
-  }
-
-  async function confirmRenameEntry() {
-    const target = renameEntryTarget;
-    const name = renameEntryName.trim();
-    if (!target || !name || name === target.name) return;
-    setRenamingEntry(true);
+  async function createNewNotebook(place: Place = explorer.place) {
+    const name = nextNotebookName(
+      entriesIn(place.space)
+        .filter((entry) => entry.parent_path === place.parentPath)
+        .map((entry) => entry.name),
+    );
     try {
-      await api.post<{ entry: WorkspaceEntry }>("/workspaces/rename", {
-        id: target.id,
+      const response = await notebookApi.create(
         name,
-        parent_path: target.parent_path,
+        place.parentPath,
+        undefined,
+        place.space.id,
+      );
+      await refreshSpace(place.space);
+      startTransition(() => {
+        setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
+        setActiveTabId(response.entry.id);
+        setTabs((prev) => ({
+          ...prev,
+          [response.entry.id]: {
+            id: response.entry.id,
+            title: response.entry.name,
+            content: "",
+            savedContent: "",
+            database: activeTab?.database ?? "",
+            schema: activeTab?.schema ?? "default",
+            role: sessionRole,
+            loaded: true,
+          },
+        }));
       });
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
-      setRenameEntryTarget(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to rename entry.",
+        error instanceof Error ? error.message : "The notebook could not be created",
       );
-    } finally {
-      setRenamingEntry(false);
     }
   }
 
-  function deleteEntry(entry: WorkspaceEntry) {
-    setDeleteEntryTarget(entry);
-  }
-
-  async function confirmDeleteEntry() {
-    const target = deleteEntryTarget;
-    if (!target) return;
-    setDeletingEntry(true);
-    try {
-      await api.delete<{ success: boolean }>(`/workspaces/files/${target.id}`);
-      setLastExecutionByTab((previous) => {
-        const next = { ...previous };
-        delete next[target.id];
-        return next;
-      });
-      setOpenTabIds((prev) => prev.filter((id) => id !== target.id));
-      if (activeTabId === target.id) {
-        setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null);
-      }
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
-      setDeleteEntryTarget(null);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to delete entry.",
-      );
-    } finally {
-      setDeletingEntry(false);
+  /** Tabs of files that were deleted (with a folder or a workspace) close. */
+  function closeDeletedTabs(entryIds: string[]) {
+    const gone = new Set(entryIds);
+    setLastExecutionByTab((previous) => {
+      const next = { ...previous };
+      for (const id of entryIds) delete next[id];
+      return next;
+    });
+    setOpenTabIds((prev) => prev.filter((id) => !gone.has(id)));
+    if (activeTabId && gone.has(activeTabId)) {
+      setActiveTabId(openTabIds.find((id) => !gone.has(id)) ?? null);
     }
   }
 
@@ -1825,7 +1832,9 @@ export function WorkspacesPage() {
   function followSessionContext(tabId: string, response: QueryResponse[]) {
     const last = [...response]
       .reverse()
-      .find((result) => result.success && result.context_database !== undefined);
+      .find(
+        (result) => result.success && result.context_database !== undefined,
+      );
     if (!last) return;
     const database = last.context_database ?? null;
     const schema = last.context_schema ?? null;
@@ -1835,7 +1844,11 @@ export function WorkspacesPage() {
       if (!tab || (tab.database || null) === database) return previous;
       return {
         ...previous,
-        [tabId]: { ...tab, database: database ?? "", schema: schema ?? "default" },
+        [tabId]: {
+          ...tab,
+          database: database ?? "",
+          schema: schema ?? "default",
+        },
       };
     });
   }
@@ -2439,15 +2452,11 @@ export function WorkspacesPage() {
               </div>
               {filePanelOpen && sidebarTab === "workspaces" && (
                 <div className="mt-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full justify-center gap-2"
-                    onClick={() => void createNewFile()}
-                  >
-                    <Plus className="size-4" />
-                    New File
-                  </Button>
+                  <NewItemButton
+                    controller={explorer}
+                    onSqlFile={(place) => void createNewFile(place)}
+                    onNotebook={(place) => void createNewNotebook(place)}
+                  />
                 </div>
               )}
             </div>
@@ -2512,18 +2521,24 @@ export function WorkspacesPage() {
                 </div>
                 <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
                   <div hidden={sidebarTab !== "workspaces"}>
-                    <WorkspaceTree
-                      entries={filteredEntries}
+                    <WorkspaceExplorer
+                      personal={personalSpace}
+                      personalEntries={filteredEntries}
+                      search={deferredWorkspaceSearch}
                       activeEntryId={activeTabId}
-                      expandedPaths={expandedWorkspacePaths}
-                      onTogglePath={(path) =>
-                        setExpandedWorkspacePaths((prev) => ({
-                          ...prev,
-                          [path]: !prev[path],
-                        }))
-                      }
-                      onOpen={(entry) => {
+                      controller={explorer}
+                      onNewSqlFile={(place) => void createNewFile(place)}
+                      onNewNotebook={(place) => void createNewNotebook(place)}
+                      onDeleted={closeDeletedTabs}
+                      onOpenFile={(entry) => {
                         if (entry.entry_type !== "file") return;
+                        if (!isEditableName(entry.name)) {
+                          toast.message(`${entry.name} is a data file`, {
+                            description:
+                              "Read it from a notebook in the same folder, for example with read_csv or read_parquet",
+                          });
+                          return;
+                        }
                         if (filePanelOverlay) setOverlayPanelOpen(false);
                         setOpenTabIds((prev) => [
                           ...new Set([...prev, entry.id]),
@@ -2552,8 +2567,6 @@ export function WorkspacesPage() {
                             } satisfies WorkspaceTabState),
                         }));
                       }}
-                      onRename={renameEntry}
-                      onDelete={deleteEntry}
                     />
                   </div>
                   {databasesVisited || sidebarTab === "databases" ? (
@@ -2602,7 +2615,9 @@ export function WorkspacesPage() {
             />
           </div>
 
-          {activeTab ? (
+          {activeTab && isNotebookName(activeTab.title) ? (
+            <NotebookEditor key={activeTab.id} notebookId={activeTab.id} />
+          ) : activeTab ? (
             <>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                 <div className="flex shrink-0 items-center gap-2">
@@ -2690,7 +2705,9 @@ export function WorkspacesPage() {
                     {sessionRole || "No role"}
                   </span>
                   <DatabaseSchemaSelector
-                    databases={queryContextQuery.data?.databases ?? NO_DATABASES}
+                    databases={
+                      queryContextQuery.data?.databases ?? NO_DATABASES
+                    }
                     selectedDatabase={activeTab.database}
                     schemas={
                       activeTab.database
@@ -2712,6 +2729,7 @@ export function WorkspacesPage() {
                   <MonacoSqlEditor
                     key={activeTab.id}
                     value={activeTab.content}
+                    readOnly={activeTab.readOnly}
                     database={activeTab.database}
                     schema={activeTab.schema}
                     role={sessionRole}
@@ -2800,7 +2818,8 @@ export function WorkspacesPage() {
                             role="status"
                             className="tabular-nums text-muted-foreground"
                           >
-                            Running {runProgress.current} of {runProgress.total} queries
+                            Running {runProgress.current} of {runProgress.total}{" "}
+                            queries
                           </span>
                         ) : queryResults && queryResults.length > 0 ? (
                           <span className="tabular-nums text-muted-foreground">
@@ -2958,8 +2977,7 @@ export function WorkspacesPage() {
                                   aria-label="Failed"
                                 />
                               ) : null}
-                              Result{" "}
-                              {idx + 1}
+                              Result {idx + 1}
                             </button>
                           ))}
                         </div>
@@ -3023,54 +3041,6 @@ export function WorkspacesPage() {
         entryId={activeTab?.id ?? null}
         fileName={activeTab?.title ?? ""}
       />
-      <ConfirmDialog
-        open={renameEntryTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRenameEntryTarget(null);
-        }}
-        title="Rename entry"
-        desc={
-          renameEntryTarget
-            ? `Enter a new name for “${renameEntryTarget.name}”.`
-            : "Enter a new name."
-        }
-        confirmText="Rename"
-        disabled={
-          !renameEntryName.trim() ||
-          renameEntryName.trim() === renameEntryTarget?.name
-        }
-        isLoading={renamingEntry}
-        handleConfirm={() => void confirmRenameEntry()}
-      >
-        <Input
-          aria-label="New entry name"
-          autoFocus
-          value={renameEntryName}
-          onChange={(event) => setRenameEntryName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void confirmRenameEntry();
-            }
-          }}
-        />
-      </ConfirmDialog>
-      <ConfirmDialog
-        open={deleteEntryTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteEntryTarget(null);
-        }}
-        title="Delete entry?"
-        desc={
-          deleteEntryTarget
-            ? `“${deleteEntryTarget.name}” will be deleted.`
-            : "This entry will be deleted."
-        }
-        confirmText="Delete entry"
-        destructive
-        isLoading={deletingEntry}
-        handleConfirm={() => void confirmDeleteEntry()}
-      />
       <QueryConfirmationDialog
         pending={pendingDestructiveSql}
         onAssistantOpenChange={setAssistantOpen}
@@ -3087,7 +3057,8 @@ export function WorkspacesPage() {
               if (
                 pending.correlationId &&
                 (outcome === "error" ||
-                  (outcome === "success" && !isNevaSuggestion(pending.correlationId)))
+                  (outcome === "success" &&
+                    !isNevaSuggestion(pending.correlationId)))
               )
                 void askFromWorkspace(
                   "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
@@ -3101,137 +3072,6 @@ export function WorkspacesPage() {
       />
     </div>
   );
-}
-
-function WorkspaceTree({
-  entries,
-  activeEntryId,
-  expandedPaths,
-  onTogglePath,
-  onOpen,
-  onRename,
-  onDelete,
-}: {
-  entries: WorkspaceEntry[];
-  activeEntryId: string | null;
-  expandedPaths: Record<string, boolean>;
-  onTogglePath: (path: string) => void;
-  onOpen: (entry: WorkspaceEntry) => void;
-  onRename: (entry: WorkspaceEntry) => void;
-  onDelete: (entry: WorkspaceEntry) => void;
-}) {
-  return (
-    <div className="px-2 py-3">
-      <SidebarMenu>
-        {renderWorkspaceEntries(
-          "",
-          entries,
-          activeEntryId,
-          expandedPaths,
-          onTogglePath,
-          onOpen,
-          onRename,
-          onDelete,
-        )}
-      </SidebarMenu>
-    </div>
-  );
-}
-
-function renderWorkspaceEntries(
-  parentPath: string,
-  entries: WorkspaceEntry[],
-  activeEntryId: string | null,
-  expandedPaths: Record<string, boolean>,
-  onTogglePath: (path: string) => void,
-  onOpen: (entry: WorkspaceEntry) => void,
-  onRename: (entry: WorkspaceEntry) => void,
-  onDelete: (entry: WorkspaceEntry) => void,
-): React.ReactNode {
-  return entries
-    .filter((entry) => entry.parent_path === parentPath)
-    .sort((a, b) =>
-      a.entry_type === b.entry_type
-        ? a.name.localeCompare(b.name)
-        : a.entry_type === "folder"
-          ? -1
-          : 1,
-    )
-    .map((entry) => {
-      const isFolder = entry.entry_type === "folder";
-      const isOpen = expandedPaths[entry.path] ?? false;
-
-      if (isFolder) {
-        return (
-          <Collapsible
-            key={entry.id}
-            open={isOpen}
-            onOpenChange={() => onTogglePath(entry.path)}
-          >
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <ChevronRight
-                    className={cn(
-                      "size-4 shrink-0 transition-transform duration-200",
-                      isOpen && "rotate-90",
-                    )}
-                  />
-                  <Folder
-                    className={cn(
-                      "size-4 shrink-0 text-primary",
-                      isOpen && "text-primary/80",
-                    )}
-                  />
-                  <span className="truncate">{entry.name}</span>
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {renderWorkspaceEntries(
-                    entry.path,
-                    entries,
-                    activeEntryId,
-                    expandedPaths,
-                    onTogglePath,
-                    onOpen,
-                    onRename,
-                    onDelete,
-                  )}
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </SidebarMenuItem>
-          </Collapsible>
-        );
-      }
-
-      return (
-        <SidebarMenuItem key={entry.id}>
-          <button
-            type="button"
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
-              entry.id === activeEntryId &&
-                "bg-primary/10 font-medium text-primary",
-            )}
-            onClick={() => onOpen(entry)}
-          >
-            <FileCode
-              className={cn(
-                "size-4 shrink-0",
-                entry.id === activeEntryId
-                  ? "text-primary"
-                  : "text-muted-foreground",
-              )}
-            />
-            <span className="truncate">{entry.name}</span>
-          </button>
-        </SidebarMenuItem>
-      );
-    });
 }
 
 const DatabaseExplorer = memo(function DatabaseExplorer({
@@ -3499,7 +3339,23 @@ function ObjectGroup({
       </div>
       <div className="space-y-0.5">
         {items.map((item) => (
-          <SidebarMenuSubItem key={item.name}>
+          <SidebarMenuSubItem
+            key={item.name}
+            draggable
+            title="Drag into a notebook to add a preview query"
+            onDragStart={(event) => {
+              // A notebook turns this into a preview query; nothing is copied.
+              event.dataTransfer.effectAllowed = "copy";
+              event.dataTransfer.setData(
+                NOVA_TABLE_MIME,
+                JSON.stringify({ database, schema, name: item.name }),
+              );
+              event.dataTransfer.setData(
+                "text/plain",
+                [database, schema, item.name].filter(Boolean).join("."),
+              );
+            }}
+          >
             {isTables ? (
               <TableItemWithPopover
                 name={item.name}
@@ -3702,7 +3558,9 @@ const QueryResults = memo(function QueryResults({
                     }
                   >
                     {cell === null ? (
-                      <span className="font-mono text-xs text-muted-foreground">NULL</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        NULL
+                      </span>
                     ) : (
                       String(cell)
                     )}
@@ -3836,1270 +3694,10 @@ const QueryResults = memo(function QueryResults({
 // ── Chart Visualization ─────────────────────────────────────────────
 // Categorical series palette, read from tokens so dark mode stays correct.
 // Literal calls keep each read inside the gate's A2 exemption.
-function readSeriesPalette() {
-  return [
-    readToken("--chart-4", "#4f7ee8"),
-    readToken("--chart-2", "#14a89a"),
-    readToken("--chart-3", "#e89b17"),
-    readToken("--chart-1", "#f05a47"),
-    readToken("--chart-6", "#a78bfa"),
-    readToken("--chart-7", "#f472b6"),
-    readToken("--chart-8", "#38bdf8"),
-    readToken("--chart-9", "#34d399"),
-  ];
-}
-
-function readTonePalette() {
-  return [
-    readToken("--chart-tone-1", "#5b8def"),
-    readToken("--chart-tone-2", "#76a0ef"),
-    readToken("--chart-tone-3", "#90b4f2"),
-    readToken("--chart-tone-4", "#aac7f5"),
-    readToken("--chart-tone-5", "#c4daf8"),
-    readToken("--chart-tone-6", "#deedfb"),
-  ];
-}
-const CHART_EMPTY_OPTION = "__none__";
-const CHART_TYPE_OPTIONS = [
-  { value: "bar", label: "Bar chart" },
-  { value: "stacked-bar", label: "Stacked bar chart" },
-  { value: "line", label: "Line chart" },
-  { value: "area", label: "Area chart" },
-  { value: "pie", label: "Pie chart" },
-] as const;
-const AGGREGATE_OPTIONS = [
-  { value: "none", label: "None" },
-  { value: "count", label: "Count" },
-  { value: "min", label: "Min" },
-  { value: "max", label: "Max" },
-  { value: "sum", label: "Sum" },
-  { value: "median", label: "Median" },
-  { value: "average", label: "Average" },
-] as const;
-const SORT_OPTIONS = [
-  { value: "none", label: "None" },
-  { value: "x-asc", label: "X ascending" },
-  { value: "x-desc", label: "X descending" },
-  { value: "y-desc", label: "Y descending" },
-  { value: "y-asc", label: "Y ascending" },
-] as const;
-const COLOR_OPTIONS = [
-  { value: "palette", label: "Palette" },
-  { value: "single", label: "Single tone" },
-] as const;
-
-type ColumnType = "number" | "date" | "text" | "boolean" | "null";
-type ChartType = (typeof CHART_TYPE_OPTIONS)[number]["value"];
-type AggregateType = (typeof AGGREGATE_OPTIONS)[number]["value"];
-type SortMode = (typeof SORT_OPTIONS)[number]["value"];
-type ColorMode = (typeof COLOR_OPTIONS)[number]["value"];
-type ChartRecord = Record<string, string | number | boolean | null>;
-type ChartSeries = {
-  key: string;
-  label: string;
-  color: string;
-};
-
-function inferColumnType(
-  rows: QueryResponse["rows"],
-  colIndex: number,
-): ColumnType {
-  for (let i = 0; i < Math.min(rows.length, 20); i++) {
-    const val = rows[i]?.[colIndex];
-    if (val === null || val === undefined) continue;
-    if (typeof val === "number") return "number";
-    if (typeof val === "boolean") return "boolean";
-    if (typeof val === "string") {
-      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return "date";
-      if (/^[\d.,]+$/.test(val)) return "number";
-      return "text";
-    }
-  }
-  return "null";
-}
-
-function parseNumericValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const normalized = value.replace(/,/g, "").trim();
-    if (!normalized) return null;
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function formatChartLabel(value: unknown) {
-  if (value === null || value === undefined || value === "") return "Unknown";
-  return String(value);
-}
-
-function summarizeValues(values: number[], aggregate: AggregateType) {
-  if (values.length === 0) return 0;
-
-  switch (aggregate) {
-    case "count":
-      return values.length;
-    case "min":
-      return Math.min(...values);
-    case "max":
-      return Math.max(...values);
-    case "average":
-      return values.reduce((sum, value) => sum + value, 0) / values.length;
-    case "median": {
-      const sorted = [...values].sort((a, b) => a - b);
-      const midpoint = Math.floor(sorted.length / 2);
-      return sorted.length % 2 === 0
-        ? (sorted[midpoint - 1] + sorted[midpoint]) / 2
-        : sorted[midpoint];
-    }
-    case "sum":
-    default:
-      return values.reduce((sum, value) => sum + value, 0);
-  }
-}
-
-function formatNumberCompact(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: Math.abs(value) >= 1000 ? "compact" : "standard",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function getSeriesColors(colorMode: ColorMode, count: number) {
-  const palette =
-    colorMode === "single" ? readTonePalette() : readSeriesPalette();
-
-  return Array.from(
-    { length: count },
-    (_, index) => palette[index % palette.length],
-  );
-}
-
-function compareChartValues(
-  left: string | number | boolean | null | undefined,
-  right: string | number | boolean | null | undefined,
-) {
-  const leftNumber = parseNumericValue(left);
-  const rightNumber = parseNumericValue(right);
-
-  if (leftNumber != null && rightNumber != null)
-    return leftNumber - rightNumber;
-
-  return formatChartLabel(left).localeCompare(formatChartLabel(right));
-}
-
-function formatAxisTick(value: unknown, maxLength: number = 18) {
-  const label = formatChartLabel(value);
-  return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
-}
-
-const ChartVisualization = memo(function ChartVisualization({
-  queryResult,
-}: {
-  queryResult: QueryResponse | null;
-}) {
-  const { resolvedTheme } = useTheme();
-  // Re-read whenever the theme flips: tokens resolve to different values. Declared
-  // with the other hooks, above the empty-result early return, so the hook order
-  // is identical whether or not the current result has rows.
-  const chartTheme = useMemo(
-    () => ({
-      mutedForeground: readToken("--muted-foreground", "#5c6e87"),
-      border: readToken("--border", "#e0e5ec"),
-      popover: readToken("--popover", "#ffffff"),
-      foreground: readToken("--foreground", "#1e293b"),
-      background: readToken("--background", "#ffffff"),
-    }),
-    [resolvedTheme],
-  );
-  const [builderCollapsed, setBuilderCollapsed] = useState(false);
-  const [chartType, setChartType] = useState<ChartType>("bar");
-  const [xCol, setXCol] = useState("");
-  const [yCols, setYCols] = useState<string[]>([]);
-  const [aggregate, setAggregate] = useState<AggregateType>("none");
-  const [groupBy, setGroupBy] = useState("");
-  const [sortMode, setSortMode] = useState<SortMode>("none");
-  const [colorMode, setColorMode] = useState<ColorMode>("palette");
-  const [showXAxisLabel, setShowXAxisLabel] = useState(true);
-  const [showYAxisLabel, setShowYAxisLabel] = useState(true);
-  const [xAxisLabel, setXAxisLabel] = useState("");
-  const [yAxisLabel, setYAxisLabel] = useState("");
-
-  const columnTypes = useMemo(() => {
-    if (!queryResult?.columns.length) return [];
-    return queryResult.columns.map((_, i) =>
-      inferColumnType(queryResult.rows, i),
-    );
-  }, [queryResult]);
-
-  const rawRecords = useMemo<ChartRecord[]>(() => {
-    if (!queryResult) return [];
-
-    return queryResult.rows.map((row) => {
-      const record: ChartRecord = {};
-      queryResult.columns.forEach((column, index) => {
-        const rawValue = row[index];
-        const columnType = columnTypes[index];
-
-        if (columnType === "number") {
-          record[column] = parseNumericValue(rawValue);
-        } else {
-          record[column] = rawValue;
-        }
-      });
-      return record;
-    });
-  }, [columnTypes, queryResult]);
-
-  const xCandidates = useMemo(
-    () =>
-      queryResult?.columns.filter(
-        (_, index) => columnTypes[index] !== "null",
-      ) ?? [],
-    [columnTypes, queryResult],
-  );
-
-  const numericCandidates = useMemo(
-    () =>
-      queryResult?.columns.filter(
-        (_, index) => columnTypes[index] === "number",
-      ) ?? [],
-    [columnTypes, queryResult],
-  );
-
-  // Auto-detect best chart config on new results
-  useEffect(() => {
-    if (!queryResult?.columns.length) return;
-
-    const textColumns = queryResult.columns.filter(
-      (_, index) => columnTypes[index] === "text",
-    );
-    const dateColumns = queryResult.columns.filter(
-      (_, index) => columnTypes[index] === "date",
-    );
-    const numberColumns = queryResult.columns.filter(
-      (_, index) => columnTypes[index] === "number",
-    );
-
-    const nextXColumn =
-      dateColumns[0] ??
-      textColumns[0] ??
-      queryResult.columns.find((column) => !numberColumns.includes(column)) ??
-      queryResult.columns[0] ??
-      "";
-
-    const nextYColumns =
-      numberColumns.length > 0
-        ? numberColumns.slice(0, dateColumns.length > 0 ? 2 : 3)
-        : queryResult.columns.slice(1, 2);
-
-    if (dateColumns.length >= 1 && numberColumns.length >= 1) {
-      setChartType("line");
-    } else if (numberColumns.length >= 1) {
-      setChartType("bar");
-    } else {
-      setChartType("pie");
-    }
-
-    setXCol(nextXColumn);
-    setYCols(nextYColumns);
-    setAggregate("none");
-    setGroupBy("");
-    setSortMode("none");
-    setColorMode("palette");
-    setShowXAxisLabel(true);
-    setShowYAxisLabel(true);
-    setXAxisLabel(nextXColumn);
-    setYAxisLabel(nextYColumns[0] ?? "");
-  }, [columnTypes, queryResult]);
-
-  useEffect(() => {
-    if (chartType === "pie" && yCols.length > 1) {
-      setYCols((current) => current.slice(0, 1));
-    }
-  }, [chartType, yCols]);
-
-  useEffect(() => {
-    if (groupBy && groupBy === xCol) {
-      setGroupBy("");
-    }
-  }, [groupBy, xCol]);
-
-  const effectiveYColumns = useMemo(() => {
-    if (numericCandidates.length === 0) return [];
-
-    const normalized = yCols.filter(
-      (column, index) =>
-        column &&
-        numericCandidates.includes(column) &&
-        yCols.indexOf(column) === index,
-    );
-
-    return chartType === "pie" ? normalized.slice(0, 1) : normalized;
-  }, [chartType, numericCandidates, yCols]);
-
-  const activeAggregate = useMemo<AggregateType>(() => {
-    if (aggregate !== "none") return aggregate;
-    if (chartType === "pie") return "sum";
-    if (groupBy) return "sum";
-    return "none";
-  }, [aggregate, chartType, groupBy]);
-
-  const chartModel = useMemo(() => {
-    if (!queryResult || !xCol) {
-      return {
-        data: [] as Array<Record<string, string | number>>,
-        series: [] as ChartSeries[],
-        emptyReason:
-          "Select an X-axis and at least one numeric metric to build the chart.",
-      };
-    }
-
-    if (numericCandidates.length === 0) {
-      return {
-        data: [] as Array<Record<string, string | number>>,
-        series: [] as ChartSeries[],
-        emptyReason:
-          "This result set has no numeric columns that can be visualized.",
-      };
-    }
-
-    if (effectiveYColumns.length === 0 && activeAggregate !== "count") {
-      return {
-        data: [] as Array<Record<string, string | number>>,
-        series: [] as ChartSeries[],
-        emptyReason:
-          "Pick at least one numeric Y-axis column to render the chart.",
-      };
-    }
-
-    const sortData = (rows: Array<Record<string, string | number>>) => {
-      if (sortMode === "none") return rows;
-
-      const primarySeriesKey = Object.keys(rows[0] ?? {}).filter(
-        (key) => key !== xCol,
-      );
-
-      return [...rows].sort((left, right) => {
-        if (sortMode === "x-asc")
-          return compareChartValues(left[xCol], right[xCol]);
-        if (sortMode === "x-desc")
-          return compareChartValues(right[xCol], left[xCol]);
-
-        const leftTotal = primarySeriesKey.reduce(
-          (sum, key) => sum + (parseNumericValue(left[key]) ?? 0),
-          0,
-        );
-        const rightTotal = primarySeriesKey.reduce(
-          (sum, key) => sum + (parseNumericValue(right[key]) ?? 0),
-          0,
-        );
-
-        return sortMode === "y-asc"
-          ? leftTotal - rightTotal
-          : rightTotal - leftTotal;
-      });
-    };
-
-    if (groupBy) {
-      const primaryMetric = effectiveYColumns[0];
-      if (!primaryMetric) {
-        return {
-          data: [] as Array<Record<string, string | number>>,
-          series: [] as ChartSeries[],
-          emptyReason: "Grouped charts need one numeric Y-axis metric.",
-        };
-      }
-
-      const groupValues = Array.from(
-        new Set(rawRecords.map((record) => formatChartLabel(record[groupBy]))),
-      ).slice(0, 8);
-
-      const bucketMap = new Map<string, Record<string, number[]>>();
-      rawRecords.forEach((record) => {
-        const xValue = formatChartLabel(record[xCol]);
-        const groupValue = formatChartLabel(record[groupBy]);
-        if (!groupValues.includes(groupValue)) return;
-
-        const metricValue = parseNumericValue(record[primaryMetric]);
-        if (metricValue == null && activeAggregate !== "count") return;
-
-        const bucketKey = `${xValue}:::${groupValue}`;
-        const existing = bucketMap.get(bucketKey) ?? {};
-        existing[groupValue] = [
-          ...(existing[groupValue] ?? []),
-          metricValue ?? 0,
-        ];
-        bucketMap.set(bucketKey, existing);
-      });
-
-      const xValues = Array.from(
-        new Set(rawRecords.map((record) => formatChartLabel(record[xCol]))),
-      );
-
-      const seriesColors = getSeriesColors(colorMode, groupValues.length);
-      const data = sortData(
-        xValues.map((xValue) => {
-          const row: Record<string, string | number> = { [xCol]: xValue };
-
-          groupValues.forEach((groupValue) => {
-            const bucket = bucketMap.get(`${xValue}:::${groupValue}`);
-            const values = bucket?.[groupValue] ?? [];
-            row[groupValue] =
-              activeAggregate === "count"
-                ? values.length
-                : summarizeValues(values, activeAggregate);
-          });
-
-          return row;
-        }),
-      );
-
-      return {
-        data,
-        series: groupValues.map((groupValue, index) => ({
-          key: groupValue,
-          label: groupValue,
-          color: seriesColors[index],
-        })),
-        emptyReason: "",
-      };
-    }
-
-    if (activeAggregate !== "none" || chartType === "pie") {
-      const groupedRows = new Map<
-        string,
-        {
-          xLabel: string;
-          metrics: Record<string, number[]>;
-        }
-      >();
-
-      rawRecords.forEach((record) => {
-        const xValue = formatChartLabel(record[xCol]);
-        const bucket = groupedRows.get(xValue) ?? {
-          xLabel: xValue,
-          metrics: {},
-        };
-
-        if (activeAggregate === "count") {
-          bucket.metrics.__count__ = [...(bucket.metrics.__count__ ?? []), 1];
-        } else {
-          effectiveYColumns.forEach((column) => {
-            const numericValue = parseNumericValue(record[column]);
-            if (numericValue == null) return;
-            bucket.metrics[column] = [
-              ...(bucket.metrics[column] ?? []),
-              numericValue,
-            ];
-          });
-        }
-
-        groupedRows.set(xValue, bucket);
-      });
-
-      const seriesKeys =
-        activeAggregate === "count" ? ["__count__"] : effectiveYColumns;
-      const seriesColors = getSeriesColors(colorMode, seriesKeys.length);
-      const data = sortData(
-        Array.from(groupedRows.values()).map((bucket) => {
-          const row: Record<string, string | number> = {
-            [xCol]: bucket.xLabel,
-          };
-
-          seriesKeys.forEach((key) => {
-            const values = bucket.metrics[key] ?? [];
-            row[key] =
-              activeAggregate === "count"
-                ? values.length
-                : summarizeValues(values, activeAggregate);
-          });
-
-          return row;
-        }),
-      );
-
-      return {
-        data,
-        series: seriesKeys.map((key, index) => ({
-          key,
-          label: key === "__count__" ? "Count" : key,
-          color: seriesColors[index],
-        })),
-        emptyReason: "",
-      };
-    }
-
-    const seriesColors = getSeriesColors(colorMode, effectiveYColumns.length);
-    const data = sortData(
-      rawRecords.map((record) => {
-        const row: Record<string, string | number> = {
-          [xCol]: formatChartLabel(record[xCol]),
-        };
-
-        effectiveYColumns.forEach((column) => {
-          row[column] = parseNumericValue(record[column]) ?? 0;
-        });
-
-        return row;
-      }),
-    );
-
-    return {
-      data,
-      series: effectiveYColumns.map((column, index) => ({
-        key: column,
-        label: column,
-        color: seriesColors[index],
-      })),
-      emptyReason: "",
-    };
-  }, [
-    activeAggregate,
-    colorMode,
-    effectiveYColumns,
-    groupBy,
-    numericCandidates,
-    queryResult,
-    rawRecords,
-    resolvedTheme,
-    sortMode,
-    xCol,
-    chartType,
-  ]);
-
-  if (!queryResult?.columns.length || !queryResult.rows.length) {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
-        Run a query with results to visualize as a chart.
-      </div>
-    );
-  }
-
-  const availableMetricOptions = numericCandidates;
-  const canAddMetric =
-    chartType !== "pie" &&
-    !groupBy &&
-    availableMetricOptions.some(
-      (column) => !effectiveYColumns.includes(column),
-    ) &&
-    effectiveYColumns.length < 4;
-  const chartTitle =
-    CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ??
-    "Chart";
-  const hasChartData =
-    chartModel.data.length > 0 && chartModel.series.length > 0;
-  const axisTickStyle = {
-    fontSize: 11,
-    fill: chartTheme.mutedForeground,
-  };
-  const axisLineStyle = {
-    stroke: chartTheme.border,
-  };
-  const gridStroke = chartTheme.border;
-  const tooltipContentStyle = {
-    backgroundColor: chartTheme.popover,
-    border: `1px solid ${chartTheme.border}`,
-    borderRadius: 12,
-    color: chartTheme.foreground,
-    fontSize: 12,
-    boxShadow: "var(--inset-shadow)",
-  };
-  const tooltipLabelStyle = {
-    color: chartTheme.foreground,
-    fontWeight: 600,
-  };
-  const tooltipItemStyle = {
-    color: chartTheme.mutedForeground,
-  };
-  const hoverCursorStyle = {
-    fill: chartTheme.border,
-  };
-
-  return (
-    <div className="flex h-full min-h-0 flex-col lg:flex-row">
-      <div
-        className={cn(
-          "relative border-b border-border bg-background transition-[width] duration-200 lg:border-b-0 lg:border-r",
-          builderCollapsed ? "lg:w-14" : "lg:w-[320px]",
-        )}
-      >
-        <button
-          type="button"
-          aria-label={
-            builderCollapsed ? "Open chart builder" : "Collapse chart builder"
-          }
-          className="absolute right-2 top-2 z-10 inline-flex size-8 items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
-          onClick={() => setBuilderCollapsed((current) => !current)}
-        >
-          <ChevronLeft
-            className={cn(
-              "size-4 transition-transform",
-              builderCollapsed && "rotate-180",
-            )}
-          />
-        </button>
-
-        {builderCollapsed ? (
-          <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 px-2 py-12">
-            <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted/20">
-              <BarChart3 className="size-4 text-muted-foreground" />
-            </div>
-            <div className="-rotate-180 text-xs font-medium text-muted-foreground [writing-mode:vertical-rl]">
-              Chart
-            </div>
-          </div>
-        ) : (
-          <ScrollArea className="h-full">
-            <div className="space-y-5 p-4">
-              <div className="space-y-1 pr-10">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Chart Builder
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Built directly from the current query result set. No
-                  additional query is executed.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Chart type
-                  </label>
-                  <Select
-                    value={chartType}
-                    onValueChange={(value) => setChartType(value as ChartType)}
-                  >
-                    <SelectTrigger className="h-10 bg-muted/30">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CHART_TYPE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="border-t border-border pt-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      X-axis
-                    </label>
-                    <Select value={xCol} onValueChange={setXCol}>
-                      <SelectTrigger className="h-10 bg-muted/30">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Type className="size-3.5 text-muted-foreground" />
-                          <SelectValue />
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {xCandidates.map((column) => (
-                          <SelectItem key={column} value={column}>
-                            {column}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Sort
-                    </label>
-                    <Select
-                      value={sortMode}
-                      onValueChange={(value) => setSortMode(value as SortMode)}
-                    >
-                      <SelectTrigger className="h-10 bg-muted/30">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SORT_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="border-t border-border pt-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Y-axis
-                    </label>
-                    {canAddMetric ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => {
-                          const nextMetric = availableMetricOptions.find(
-                            (column) => !effectiveYColumns.includes(column),
-                          );
-                          if (!nextMetric) return;
-                          setYCols((current) => [...current, nextMetric]);
-                        }}
-                      >
-                        <Plus className="mr-1 size-3.5" />
-                        Add column
-                      </Button>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-2 space-y-2">
-                    {effectiveYColumns.map((column, index) => (
-                      <div
-                        key={`${column}-${index}`}
-                        className="flex items-center gap-2"
-                      >
-                        <Select
-                          value={column}
-                          onValueChange={(value) =>
-                            setYCols((current) => {
-                              const next = [...current];
-                              next[index] = value;
-                              return next;
-                            })
-                          }
-                        >
-                          <SelectTrigger className="h-10 flex-1 bg-muted/30">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <Hash className="size-3.5 text-muted-foreground" />
-                              <SelectValue />
-                            </div>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableMetricOptions.map((metric) => (
-                              <SelectItem key={metric} value={metric}>
-                                {metric}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {effectiveYColumns.length > 1 ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-9 shrink-0"
-                            onClick={() =>
-                              setYCols((current) =>
-                                current.filter(
-                                  (_, metricIndex) => metricIndex !== index,
-                                ),
-                              )
-                            }
-                          >
-                            <X className="size-3.5" />
-                          </Button>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-
-                  {groupBy ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Grouped charts use the first Y-axis metric as the measure
-                      for each split series.
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="space-y-4 border-t border-border pt-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Aggregate
-                    </label>
-                    <Select
-                      value={aggregate}
-                      onValueChange={(value) =>
-                        setAggregate(value as AggregateType)
-                      }
-                    >
-                      <SelectTrigger className="h-10 bg-muted/30">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {AGGREGATE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Group by
-                    </label>
-                    <Select
-                      value={groupBy || CHART_EMPTY_OPTION}
-                      onValueChange={(value) =>
-                        setGroupBy(value === CHART_EMPTY_OPTION ? "" : value)
-                      }
-                    >
-                      <SelectTrigger className="h-10 bg-muted/30">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={CHART_EMPTY_OPTION}>None</SelectItem>
-                        {xCandidates
-                          .filter((column) => column !== xCol)
-                          .map((column) => (
-                            <SelectItem key={column} value={column}>
-                              {column}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Color
-                    </label>
-                    <Select
-                      value={colorMode}
-                      onValueChange={(value) =>
-                        setColorMode(value as ColorMode)
-                      }
-                    >
-                      <SelectTrigger className="h-10 bg-muted/30">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COLOR_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-4 border-t border-border pt-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        X-axis label
-                      </label>
-                      <Switch
-                        checked={showXAxisLabel}
-                        onCheckedChange={setShowXAxisLabel}
-                      />
-                    </div>
-                    <Input
-                      value={xAxisLabel}
-                      onChange={(event) => setXAxisLabel(event.target.value)}
-                      placeholder={xCol}
-                      disabled={!showXAxisLabel}
-                      className="h-10"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Y-axis label
-                      </label>
-                      <Switch
-                        checked={showYAxisLabel}
-                        onCheckedChange={setShowYAxisLabel}
-                      />
-                    </div>
-                    <Input
-                      value={yAxisLabel}
-                      onChange={(event) => setYAxisLabel(event.target.value)}
-                      placeholder={effectiveYColumns[0] ?? "Value"}
-                      disabled={!showYAxisLabel}
-                      className="h-10"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </ScrollArea>
-        )}
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col bg-background">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="size-4 text-primary" />
-              <h3 className="text-sm font-semibold text-foreground">
-                {chartTitle}
-              </h3>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {queryResult.row_count.toLocaleString()} rows in result •{" "}
-              {chartModel.data.length.toLocaleString()} plotted groups
-            </p>
-          </div>
-
-          {chartModel.series.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {chartModel.series.map((series) => (
-                <div
-                  key={series.key}
-                  className="inline-flex items-center gap-2 text-xs text-muted-foreground"
-                >
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: series.color }}
-                  />
-                  <span className="max-w-[140px] truncate">{series.label}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="min-h-0 flex-1 p-5">
-          <div className="h-full rounded-xl border border-border/80 bg-muted/10 p-4">
-            {hasChartData ? (
-              <ResponsiveContainer width="100%" height="100%">
-                {chartType === "line" ? (
-                  <LineChart data={chartModel.data}>
-                    <CartesianGrid
-                      stroke={gridStroke}
-                      opacity={0.7}
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey={xCol}
-                      tick={axisTickStyle}
-                      axisLine={axisLineStyle}
-                      tickLine={axisLineStyle}
-                      tickFormatter={(value) => formatAxisTick(value)}
-                      minTickGap={18}
-                      label={
-                        showXAxisLabel && xAxisLabel
-                          ? {
-                              value: xAxisLabel,
-                              position: "insideBottom",
-                              offset: -6,
-                              style: {
-                                fill: axisTickStyle.fill,
-                                fontSize: 12,
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    <YAxis
-                      tick={axisTickStyle}
-                      axisLine={axisLineStyle}
-                      tickLine={axisLineStyle}
-                      tickFormatter={(value) =>
-                        formatNumberCompact(Number(value))
-                      }
-                      width={68}
-                      label={
-                        showYAxisLabel && yAxisLabel
-                          ? {
-                              value: yAxisLabel,
-                              angle: -90,
-                              position: "insideLeft",
-                              style: {
-                                fill: axisTickStyle.fill,
-                                fontSize: 12,
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
-                      contentStyle={tooltipContentStyle}
-                      labelStyle={tooltipLabelStyle}
-                      itemStyle={tooltipItemStyle}
-                      cursor={{
-                        stroke: chartTheme.mutedForeground,
-                        strokeWidth: 1,
-                      }}
-                    />
-                    {chartModel.series.map((series) => (
-                      <Line
-                        key={series.key}
-                        type="monotone"
-                        dataKey={series.key}
-                        stroke={series.color}
-                        strokeWidth={2.5}
-                        dot={{ r: 0 }}
-                        activeDot={{
-                          r: 4,
-                          fill: series.color,
-                          stroke: chartTheme.background,
-                          strokeWidth: 2,
-                        }}
-                      />
-                    ))}
-                  </LineChart>
-                ) : chartType === "area" ? (
-                  <AreaChart data={chartModel.data}>
-                    <defs>
-                      {chartModel.series.map((series) => (
-                        <linearGradient
-                          key={series.key}
-                          id={`area-gradient-${series.key}`}
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="0%"
-                            stopColor={series.color}
-                            stopOpacity={0.55}
-                          />
-                          <stop
-                            offset="100%"
-                            stopColor={series.color}
-                            stopOpacity={0.04}
-                          />
-                        </linearGradient>
-                      ))}
-                    </defs>
-                    <CartesianGrid
-                      stroke={gridStroke}
-                      opacity={0.7}
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey={xCol}
-                      tick={axisTickStyle}
-                      axisLine={axisLineStyle}
-                      tickLine={axisLineStyle}
-                      tickFormatter={(value) => formatAxisTick(value)}
-                      minTickGap={18}
-                      label={
-                        showXAxisLabel && xAxisLabel
-                          ? {
-                              value: xAxisLabel,
-                              position: "insideBottom",
-                              offset: -6,
-                              style: {
-                                fill: axisTickStyle.fill,
-                                fontSize: 12,
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    <YAxis
-                      tick={axisTickStyle}
-                      axisLine={axisLineStyle}
-                      tickLine={axisLineStyle}
-                      tickFormatter={(value) =>
-                        formatNumberCompact(Number(value))
-                      }
-                      width={68}
-                      label={
-                        showYAxisLabel && yAxisLabel
-                          ? {
-                              value: yAxisLabel,
-                              angle: -90,
-                              position: "insideLeft",
-                              style: {
-                                fill: axisTickStyle.fill,
-                                fontSize: 12,
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
-                      contentStyle={tooltipContentStyle}
-                      labelStyle={tooltipLabelStyle}
-                      itemStyle={tooltipItemStyle}
-                      cursor={{
-                        stroke: chartTheme.mutedForeground,
-                        strokeWidth: 1,
-                      }}
-                    />
-                    {chartModel.series.map((series) => (
-                      <Area
-                        key={series.key}
-                        type="monotone"
-                        dataKey={series.key}
-                        stroke={series.color}
-                        strokeWidth={2.5}
-                        fill={`url(#area-gradient-${series.key})`}
-                        fillOpacity={1}
-                      />
-                    ))}
-                  </AreaChart>
-                ) : chartType === "pie" ? (
-                  <PieChart>
-                    <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
-                      contentStyle={tooltipContentStyle}
-                      labelStyle={tooltipLabelStyle}
-                      itemStyle={tooltipItemStyle}
-                    />
-                    <Pie
-                      data={chartModel.data}
-                      dataKey={chartModel.series[0]?.key}
-                      nameKey={xCol}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="48%"
-                      outerRadius="74%"
-                      paddingAngle={2}
-                      stroke={chartTheme.background}
-                      strokeWidth={2}
-                    >
-                      {chartModel.data.map((_, index) => (
-                        <Cell
-                          key={`pie-cell-${index}`}
-                          fill={
-                            chartModel.series.length > 1
-                              ? chartModel.series[
-                                  index % chartModel.series.length
-                                ]?.color
-                              : getSeriesColors(
-                                  colorMode,
-                                  chartModel.data.length,
-                                )[index]
-                          }
-                        />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                ) : (
-                  <BarChart data={chartModel.data} barGap={10}>
-                    <defs>
-                      {chartModel.series.map((series) => (
-                        <linearGradient
-                          key={series.key}
-                          id={`bar-gradient-${series.key}`}
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="0%"
-                            stopColor={series.color}
-                            stopOpacity={0.95}
-                          />
-                          <stop
-                            offset="100%"
-                            stopColor={series.color}
-                            stopOpacity={0.75}
-                          />
-                        </linearGradient>
-                      ))}
-                    </defs>
-                    <CartesianGrid
-                      stroke={gridStroke}
-                      opacity={0.7}
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey={xCol}
-                      tick={axisTickStyle}
-                      axisLine={axisLineStyle}
-                      tickLine={axisLineStyle}
-                      tickFormatter={(value) => formatAxisTick(value)}
-                      minTickGap={16}
-                      angle={chartModel.data.length > 8 ? -90 : 0}
-                      textAnchor={chartModel.data.length > 8 ? "end" : "middle"}
-                      height={chartModel.data.length > 8 ? 92 : 46}
-                      label={
-                        showXAxisLabel && xAxisLabel
-                          ? {
-                              value: xAxisLabel,
-                              position: "insideBottom",
-                              offset: chartModel.data.length > 8 ? -2 : -6,
-                              style: {
-                                fill: axisTickStyle.fill,
-                                fontSize: 12,
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    <YAxis
-                      tick={axisTickStyle}
-                      axisLine={axisLineStyle}
-                      tickLine={axisLineStyle}
-                      tickFormatter={(value) =>
-                        formatNumberCompact(Number(value))
-                      }
-                      width={68}
-                      label={
-                        showYAxisLabel && yAxisLabel
-                          ? {
-                              value: yAxisLabel,
-                              angle: -90,
-                              position: "insideLeft",
-                              style: {
-                                fill: axisTickStyle.fill,
-                                fontSize: 12,
-                              },
-                            }
-                          : undefined
-                      }
-                    />
-                    <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
-                      contentStyle={tooltipContentStyle}
-                      labelStyle={tooltipLabelStyle}
-                      itemStyle={tooltipItemStyle}
-                      cursor={hoverCursorStyle}
-                    />
-                    {chartModel.series.map((series) => (
-                      <Bar
-                        key={series.key}
-                        dataKey={series.key}
-                        fill={`url(#bar-gradient-${series.key})`}
-                        radius={[8, 8, 0, 0]}
-                        stackId={
-                          chartType === "stacked-bar"
-                            ? "chart-stack"
-                            : undefined
-                        }
-                        maxBarSize={chartType === "stacked-bar" ? 44 : 56}
-                      />
-                    ))}
-                  </BarChart>
-                )}
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {chartModel.emptyReason}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
 
 function MonacoSqlEditor({
   value,
+  readOnly = false,
   database,
   schema,
   role,
@@ -5113,6 +3711,7 @@ function MonacoSqlEditor({
   onDenyRewrite,
 }: {
   value: string;
+  readOnly?: boolean;
   database: string;
   schema: string;
   role: string;
@@ -5579,7 +4178,11 @@ function MonacoSqlEditor({
       onKeyDown={(event) => {
         // Escape dismisses Neva's suggestion, unless the editor used the key
         // itself (closing its own suggestion list).
-        if (event.key === "Escape" && proposedRewrite && !event.defaultPrevented)
+        if (
+          event.key === "Escape" &&
+          proposedRewrite &&
+          !event.defaultPrevented
+        )
           onDenyRewrite();
       }}
     >
@@ -5591,6 +4194,7 @@ function MonacoSqlEditor({
         onChange={onChange}
         onMount={handleMount}
         options={{
+          readOnly,
           minimap: { enabled: false },
           fontSize: 12,
           fontFamily:

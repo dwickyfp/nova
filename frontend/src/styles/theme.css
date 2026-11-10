@@ -1,4 +1,7 @@
 :root {
+  /* Monaco takes hex colors only: a transparent editor surface lets a
+     notebook cell's own muted background show through in both modes. */
+  --editor-surface-clear: #00000000;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   /* Slate rather than near-black: 14.6:1 on white, well above AA, without

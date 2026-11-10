@@ -84,6 +84,13 @@ administrative form is never reported as read-only. Classification checks task c
 task submission, and prediction/forecast forms before ordinary queries.
 `EXPLAIN` remains an engine request.
 
+Nova accepts the standard `TIMESTAMP '...'` literal alongside the engine's
+`DATE '...'` and `DATETIME '...'` (a marked region of `dateLiteral`).
+`NativePlanner` replaces only that keyword's source span with `DATETIME`
+(`app/sql_frontend/literals.py`), the same span mechanism stage and private
+bindings use, so string contents and identifiers named `timestamp` stay as
+written.
+
 ### Effects and plans
 
 `PlanEffects` includes `reads_data`, `writes_data`, `deletes_rows`,

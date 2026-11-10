@@ -5,6 +5,7 @@ import {
   Database,
   KeyRound,
   MoreHorizontal,
+  PenLine,
   Plug,
   Plus,
   RefreshCw,
@@ -23,7 +24,7 @@ import { LoadingLines } from '@/components/ui/loading-overlay'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
-import { fetchConnections, type ConnectionSummary } from './api'
+import { fetchConnections, WRITABLE_TYPES, type ConnectionSummary } from './api'
 import { sourceLabel } from './sources'
 import {
   AddCatalogDialog,
@@ -39,9 +40,12 @@ function typeLabel(value: string) {
 function CredentialStatus({ connection }: { connection: ConnectionSummary }) {
   if (!connection.has_credentials) return <StatusBadge tone='warning'>Missing</StatusBadge>
   return (
-    <StatusBadge tone='neutral'>
-      {connection.credential_source === 'managed' ? 'Stored in Nova' : 'Secret store'}
-    </StatusBadge>
+    <span className='flex flex-wrap items-center gap-1'>
+      <StatusBadge tone='neutral'>
+        {connection.credential_source === 'managed' ? 'Stored in Nova' : 'Secret store'}
+      </StatusBadge>
+      {connection.writable ? <StatusBadge tone='neutral'>Writes allowed</StatusBadge> : null}
+    </span>
   )
 }
 
@@ -55,6 +59,7 @@ export function ConnectionsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [catalogFrom, setCatalogFrom] = useState<string | null>(null)
   const [credentialsFor, setCredentialsFor] = useState<ConnectionSummary | null>(null)
+  const [writeFor, setWriteFor] = useState<ConnectionSummary | null>(null)
   const [dropTarget, setDropTarget] = useState<ConnectionSummary | null>(null)
 
   const { data, isLoading, isFetching, error, refetch } = useQuery({
@@ -209,6 +214,12 @@ export function ConnectionsPage() {
                             <KeyRound className='mr-2 h-3.5 w-3.5' />
                             Enter credentials
                           </DropdownMenuItem>
+                          {WRITABLE_TYPES.has(connection.connector_type) ? (
+                            <DropdownMenuItem onClick={() => setWriteFor(connection)}>
+                              <PenLine className='mr-2 h-3.5 w-3.5' />
+                              Notebook writes
+                            </DropdownMenuItem>
+                          ) : null}
                           <DropdownMenuItem onClick={() => setDropTarget(connection)}>
                             <Trash2 className='mr-2 h-3.5 w-3.5' />
                             Remove
@@ -239,6 +250,14 @@ export function ConnectionsPage() {
         connection={credentialsFor}
         onOpenChange={(open) => {
           if (!open) setCredentialsFor(null)
+        }}
+        onSaved={changed}
+      />
+      <CredentialsDialog
+        purpose='write'
+        connection={writeFor}
+        onOpenChange={(open) => {
+          if (!open) setWriteFor(null)
         }}
         onSaved={changed}
       />

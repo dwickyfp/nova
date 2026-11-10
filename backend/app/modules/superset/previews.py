@@ -273,6 +273,78 @@ def _ui_node(block: dict, wanted: dict[str, Any]) -> DataNode | None:
     return matches[0] if len(matches) == 1 else None
 
 
+#: A notebook result: ``thread_id`` is ``notebook:<notebook id>`` and
+#: ``message_id`` the execution that produced the table.
+NOTEBOOK_PREFIX = "notebook:"
+
+
+async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
+    """A SQL cell's table, read back from the notebook's own record.
+
+    Only a cell whose query reads Nova catalogs alone has a governed statement
+    Dataviz can run again: the Nova SQL the worker checked when the cell ran
+    (``nova_sql`` on the table), with the cell unchanged since, under the same
+    role. Results built from local files or Python values have none.
+    """
+    import json as _json
+
+    from app.modules.notebooks.document import NotebookFormatError
+    from app.modules.notebooks.documents import notebook_documents
+    from app.modules.notebooks.repository import notebook_repository
+    from app.modules.workspaces.service import workspace_service
+
+    notebook_id = locator.thread_id[len(NOTEBOOK_PREFIX):]
+    username = str(user.get("username") or "")
+    row = await notebook_repository.get_execution(username, notebook_id, locator.message_id)
+    if row is None or row.get("status") != "succeeded" or row.get("cell_kind") != "sql":
+        raise PreviewError("That notebook result is no longer available.")
+    if (row.get("active_role") or "") != (user.get("active_role") or ""):
+        raise PreviewError(
+            "This result was produced under another role. Run the cell again under your "
+            "current role to use it."
+        )
+    try:
+        entry, document = await notebook_documents.get_for(user, notebook_id)
+        cell = document.cell(str(row["cell_id"]))
+    except (NotebookFormatError, Exception) as exc:  # noqa: BLE001 - one safe message
+        raise PreviewError("That notebook cell is no longer there.") from exc
+    outputs: list[dict[str, Any]] = []
+    if row.get("output_key"):
+        try:
+            outputs = _json.loads(await workspace_service.read_internal_object(row["output_key"]))
+        except Exception:  # noqa: BLE001
+            outputs = []
+    table = next((o.get("table") for o in outputs if o.get("type") == "table"), None)
+    columns = [str(c.get("name")) for c in (table or {}).get("schema", []) if c.get("name")]
+    rows = [
+        dict(zip(columns, values, strict=False))
+        for values in ((table or {}).get("rows") or [])[:200]
+    ]
+    nova_sql = str((table or {}).get("nova_sql") or "").strip()
+    unchanged = cell.source_revision == row.get("source_revision")
+    issue = None
+    if not nova_sql:
+        issue = (
+            "This result uses data only the notebook has (local files, Python values or "
+            "DuckDB-only SQL), so Dataviz cannot keep it up to date. A SQL cell that reads "
+            "only Nova catalogs can be added."
+        )
+    elif not unchanged:
+        issue = "The cell changed since it ran. Run it again to add this result."
+    return ResolvedPreview(
+        locator=locator,
+        render_kind="table",
+        title=cell.name or entry.get("name", "Notebook result").removesuffix(".ipynb"),
+        sql=nova_sql if nova_sql and unchanged else None,
+        provenance="tool_step" if nova_sql and unchanged else "none",
+        producer_tool="query_execute" if nova_sql else "notebook",
+        columns=columns,
+        visualization={"kind": "table", "columns": columns},
+        provenance_issue=issue,
+        rows=rows,
+    )
+
+
 async def resolve(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
     """Read the located result back from Nova's own record of it."""
     from app.modules.assistant.security import (
@@ -280,6 +352,9 @@ async def resolve(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
         same_ui_context,
         session_security,
     )
+
+    if locator.thread_id.startswith(NOTEBOOK_PREFIX):
+        return await _resolve_notebook(locator, user)
 
     steps, stamp, agent_id = await _message(locator, user)
     current = observation_context(session_security(user))
