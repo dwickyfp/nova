@@ -3,7 +3,7 @@ import { render } from "vitest-browser-react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { NotebookCellView } from "./cell";
-import { cellForFile, formatCell, formatDuration, INTERACTIVE_POLICY, needsScripts } from "./helpers";
+import { cellForFile, columnKind, formatCell, formatDuration, INTERACTIVE_POLICY, needsScripts } from "./helpers";
 import { isEditableName, isNotebookName, nextNotebookName } from "./names";
 import { CellOutputs } from "./outputs";
 import { parseSseBlock } from "./stream";
@@ -119,6 +119,49 @@ describe("cell outputs", () => {
   it("treats a nested frame (PyGWalker) as interactive and plain markup as static", () => {
     expect(needsScripts('<iframe srcdoc="&lt;script&gt;x&lt;/script&gt;"></iframe>')).toBe(true);
     expect(needsScripts("<b>scripted</b> text about <scripts>")).toBe(false);
+  });
+
+  it("names column types by kind, whichever engine reported them", () => {
+    expect(["BIGINT", "DECIMAL(18,2)", "double", "int64", "Float64", "HUGEINT"].map(columnKind)).toEqual(
+      Array(6).fill("number"),
+    );
+    expect(["VARCHAR", "str", "object", "Utf8", "UUID"].map(columnKind)).toEqual(Array(5).fill("text"));
+    expect(columnKind("DATE")).toBe("date");
+    expect(columnKind("TIMESTAMP WITH TIME ZONE")).toBe("timestamp");
+    expect(columnKind("datetime64[ns]")).toBe("timestamp");
+    expect(columnKind("TIME")).toBe("time");
+    expect(columnKind("BOOLEAN")).toBe("boolean");
+    expect(columnKind("STRUCT(a INTEGER)")).toBe("nested");
+    expect(columnKind("INTEGER[]")).toBe("nested");
+    expect(columnKind("BLOB")).toBe("binary");
+    expect(columnKind("GEOMETRY")).toBe("other");
+  });
+
+  it("shows a type icon, keeps the exact type in the tooltip, and lines between columns", async () => {
+    const outputs: CellOutput[] = [
+      {
+        type: "table",
+        table: {
+          schema: [
+            { name: "month", type: "DATE" },
+            { name: "revenue", type: "DOUBLE" },
+          ],
+          rows: [["2026-07-01", 1482356955]],
+          total_rows: 1,
+          truncated: false,
+          origin: "nova",
+        },
+      },
+    ];
+    const screen = await render(<CellOutputs outputs={outputs} />);
+    const headers = screen.container.querySelectorAll("th");
+    expect(headers[0].getAttribute("title")).toBe("DATE");
+    expect(headers[1].getAttribute("title")).toBe("DOUBLE");
+    expect(headers[0].textContent).not.toContain("date ");
+    expect(headers[0].querySelector("svg")).not.toBeNull();
+    expect(headers[1].className).toContain("text-right");
+    expect(headers[0].className).toContain("border-r");
+    expect(screen.container.querySelector("td")?.className).toContain("border-r");
   });
 
   it("labels a preview honestly and where it was computed", async () => {

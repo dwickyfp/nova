@@ -1,5 +1,5 @@
 import type { Monaco } from '@monaco-editor/react'
-import { readModeToken } from '@/lib/read-token'
+import { readModeToken, readToken } from '@/lib/read-token'
 
 const LIGHT_RULES = [
   { token: 'keyword', foreground: 'd04738', fontStyle: 'bold' },
@@ -71,37 +71,35 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
 }
 
 /**
- * Notebook cell themes: the SQL theme's colors on the muted surface, so a cell's
- * code reads as a grey block on the page, with a quiet line-number gutter.
+ * Notebook cell themes: the SQL theme's syntax colors on a transparent editor,
+ * so the cell's own surface (the muted token, set in CSS) shows through in
+ * either mode. Only the current mode is (re)defined, from the live page: read
+ * per mode, a light theme built while the page is dark would get dark values.
+ * Call again when the theme changes; pass the returned name to the editor.
  */
-export function applyNovaCellTheme(monaco: Monaco, dark: boolean) {
-  applyNovaSqlTheme(monaco, dark)
-  const palette = {
-    light: {
-      surface: readModeToken('--muted', 'light', '#f4f6f8'),
-      number: readModeToken('--muted-foreground', 'light', '#6b7685'),
-      active: readModeToken('--foreground', 'light', '#2c3e50'),
+let cellThemeVersion = 0
+
+export function applyNovaCellTheme(monaco: Monaco, dark: boolean): string {
+  const mode = dark ? 'dark' : 'light'
+  const clear = readToken('--editor-surface-clear', '#00000000')
+  // A new name each time: Monaco does not repaint when the active theme is
+  // redefined under the same name.
+  cellThemeVersion += 1
+  const name = `nova-cell-${mode}-${cellThemeVersion}`
+  monaco.editor.defineTheme(name, {
+    base: dark ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: dark ? DARK_RULES : LIGHT_RULES,
+    colors: {
+      'editor.background': clear,
+      'editorGutter.background': clear,
+      'editor.lineHighlightBackground': clear,
+      'editor.lineHighlightBorder': clear,
+      'editorLineNumber.foreground': readToken('--muted-foreground', '#6b7685'),
+      'editorLineNumber.activeForeground': readToken('--foreground', '#2c3e50'),
+      'editor.foreground': readToken('--foreground', '#2c3e50'),
     },
-    dark: {
-      surface: readModeToken('--muted', 'dark', '#171d26'),
-      number: readModeToken('--muted-foreground', 'dark', '#9ca8b8'),
-      active: readModeToken('--foreground', 'dark', '#e2e8f0'),
-    },
-  }
-  for (const mode of ['light', 'dark'] as const) {
-    const colors = palette[mode]
-    monaco.editor.defineTheme(`nova-cell-${mode}`, {
-      base: mode === 'dark' ? 'vs-dark' : 'vs',
-      inherit: true,
-      rules: mode === 'dark' ? DARK_RULES : LIGHT_RULES,
-      colors: {
-        'editor.background': colors.surface,
-        'editorGutter.background': colors.surface,
-        'editor.lineHighlightBackground': colors.surface,
-        'editorLineNumber.foreground': colors.number,
-        'editorLineNumber.activeForeground': colors.active,
-      },
-    })
-  }
-  monaco.editor.setTheme(dark ? 'nova-cell-dark' : 'nova-cell-light')
+  })
+  monaco.editor.setTheme(name)
+  return name
 }

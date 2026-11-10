@@ -230,7 +230,7 @@ export function WorkspaceTabStrip({
           "flex min-w-0 flex-1 items-center rounded-t-md py-1.5 text-sm",
           isActive
             ? "-mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
-            : "border-b border-b-border bg-muted/40 text-muted-foreground hover:bg-muted/60",
+            : "border border-border/80 bg-muted/40 text-muted-foreground hover:bg-muted/60",
         );
         return (
           <div
@@ -242,6 +242,9 @@ export function WorkspaceTabStrip({
             style={tabStyle}
             className={cn(
               "group relative flex min-w-[120px] max-w-[260px] shrink-0 items-center",
+              // Neighbours share one outline instead of doubling it.
+              index > 0 && "-ml-px",
+              isActive && "z-10",
               preview && "will-change-transform",
               preview &&
                 (!isDragging || preview.settling) &&

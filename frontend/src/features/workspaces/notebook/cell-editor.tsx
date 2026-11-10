@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import { useTheme } from "@/context/theme-provider";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,26 @@ export function CellEditor({
   const [mounted, setMounted] = useState(active);
   const [height, setHeight] = useState(() => heightFor(value));
   const editorRef = useRef<MonacoEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const appliedDark = useRef<boolean | null>(null);
+  const [themeName, setThemeName] = useState(resolvedTheme === "dark" ? "vs-dark" : "vs");
+
+  // Follow the page's own light/dark class (what its colors come from), and
+  // rebuild the cell theme from its tokens whenever that class changes.
+  const syncTheme = useCallback(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    const pageDark = document.documentElement.classList.contains("dark");
+    if (appliedDark.current === pageDark) return;
+    appliedDark.current = pageDark;
+    setThemeName(applyNovaCellTheme(monaco, pageDark));
+  }, []);
+
+  useEffect(() => {
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, [syncTheme]);
   const keyHandler = useRef(onKey);
   keyHandler.current = onKey;
 
@@ -65,7 +85,9 @@ export function CellEditor({
 
   const handleMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
-    applyNovaCellTheme(monaco, resolvedTheme === "dark");
+    monacoRef.current = monaco;
+    appliedDark.current = null;
+    syncTheme();
     editor.onDidContentSizeChange((event) => {
       setHeight(Math.min(MAX_HEIGHT, Math.max(LINE_HEIGHT + PADDING * 2, event.contentHeight)));
     });
@@ -123,7 +145,7 @@ export function CellEditor({
       <Editor
         height="100%"
         language={language}
-        theme={resolvedTheme === "dark" ? "nova-cell-dark" : "nova-cell-light"}
+        theme={themeName}
         value={value}
         onChange={(next) => onChange(next ?? "")}
         onMount={handleMount}

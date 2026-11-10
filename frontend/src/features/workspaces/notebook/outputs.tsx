@@ -1,5 +1,19 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Copy, Download } from "lucide-react";
+import {
+  Binary,
+  Braces,
+  Calendar,
+  CalendarClock,
+  CaseSensitive,
+  ChevronRight,
+  CircleDashed,
+  Clock,
+  Copy,
+  Download,
+  Hash,
+  ToggleLeft,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/features/assistant/markdown";
@@ -7,7 +21,14 @@ import { readToken } from "@/lib/read-token";
 import { cn } from "@/lib/utils";
 import { ChartVisualization } from "../chart-visualization";
 import type { QueryResponse } from "../types";
-import { formatCell, INTERACTIVE_POLICY, needsScripts, STORAGE_SHIM } from "./helpers";
+import {
+  columnKind,
+  formatCell,
+  INTERACTIVE_POLICY,
+  needsScripts,
+  STORAGE_SHIM,
+  type ColumnKind,
+} from "./helpers";
 import type { CellOutput, TablePayload } from "./types";
 
 const ORIGIN_LABEL: Record<string, string> = {
@@ -140,18 +161,32 @@ const TableOutput = memo(function TableOutput({
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-card">
               <tr>
-                {table.schema.map((column) => (
-                  <th
-                    key={column.name}
-                    scope="col"
-                    className="border-b border-surface-border px-3 py-2 text-left align-bottom font-medium whitespace-nowrap"
-                  >
-                    <span className="block text-foreground">{column.name}</span>
-                    <span className="block font-mono text-xs font-normal text-muted-foreground">
-                      {column.type.toLowerCase()}
-                    </span>
-                  </th>
-                ))}
+                {table.schema.map((column) => {
+                  const kind = columnKind(column.type);
+                  const Icon = KIND_ICON[kind];
+                  return (
+                    <th
+                      key={column.name}
+                      scope="col"
+                      title={column.type}
+                      className={cn(
+                        "border-r border-b border-surface-border px-3 py-2 align-bottom font-medium whitespace-nowrap last:border-r-0",
+                        kind === "number" ? "text-right" : "text-left",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1.5 text-foreground",
+                          kind === "number" && "flex-row-reverse",
+                        )}
+                      >
+                        <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span>{column.name}</span>
+                        <span className="sr-only">({column.type})</span>
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="viz-numerals">
@@ -161,7 +196,7 @@ const TableOutput = memo(function TableOutput({
                     <td
                       key={columnIndex}
                       className={cn(
-                        "max-w-80 truncate border-b border-surface-border px-3 py-1.5 whitespace-nowrap",
+                        "max-w-80 truncate border-r border-b border-surface-border px-3 py-1.5 whitespace-nowrap last:border-r-0",
                         typeof value === "number" && "text-right tabular-nums",
                         value === null && "text-muted-foreground",
                       )}
@@ -278,6 +313,19 @@ function SandboxedMarkup({ markup, title }: { markup: string; title: string }) {
     />
   );
 }
+
+/** One icon per kind of column; the exact type is in the header's tooltip. */
+const KIND_ICON: Record<ColumnKind, LucideIcon> = {
+  number: Hash,
+  text: CaseSensitive,
+  date: Calendar,
+  timestamp: CalendarClock,
+  time: Clock,
+  boolean: ToggleLeft,
+  nested: Braces,
+  binary: Binary,
+  other: CircleDashed,
+};
 
 export function CellOutputs({
   outputs,

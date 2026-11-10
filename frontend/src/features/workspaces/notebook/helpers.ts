@@ -98,3 +98,29 @@ export const STORAGE_SHIM =
   "forEach(function(n){try{window[n].length}catch(e){Object.defineProperty(window,n,{value:" +
   "m(),configurable:true})}});try{document.cookie}catch(e){Object.defineProperty(document," +
   "'cookie',{get:function(){return ''},set:function(){},configurable:true})}})();";
+
+export type ColumnKind = "number" | "text" | "date" | "timestamp" | "time" | "boolean" | "nested" | "binary" | "other";
+
+/**
+ * What kind of values a column holds, from the type name DuckDB, Arrow,
+ * pandas or polars reports (BIGINT, DECIMAL(18,2), int64, VARCHAR, str,
+ * TIMESTAMP WITH TIME ZONE, datetime64[ns], STRUCT(...), ...).
+ */
+export function columnKind(type: string): ColumnKind {
+  const t = type.trim().toLowerCase();
+  if (/^(struct|map|union|list|array|json)\b|\[\]$|^(dict|list)$/.test(t)) return "nested";
+  if (/^(bool|boolean|logical)$/.test(t)) return "boolean";
+  if (/^(timestamp|datetime)/.test(t)) return "timestamp";
+  if (/^date/.test(t)) return "date";
+  if (/^(time|interval|timedelta|duration)/.test(t)) return "time";
+  if (
+    /^(u?int|u?tinyint|u?smallint|u?bigint|hugeint|uhugeint|integer|largeint|decimal|numeric|float|double|real|number)/.test(
+      t,
+    )
+  ) {
+    return "number";
+  }
+  if (/^(varchar|char|text|string|str|object|uuid|enum|category|large_string|utf8)/.test(t)) return "text";
+  if (/^(blob|binary|bytea|bytes|varbinary)/.test(t)) return "binary";
+  return "other";
+}
