@@ -53,19 +53,29 @@ def _networks(raw: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, 
         try:
             parsed.append(ipaddress.ip_network(entry, strict=False))
         except ValueError:
-            logger.error("Ignoring invalid SUPERSET_SERVICE_NETWORKS entry %r", entry)
+            logger.error("Ignoring invalid network entry %r", entry)
     return tuple(parsed)
 
 
-def peer_allowed(host: str) -> bool:
-    """True when ``host`` is inside ``SUPERSET_SERVICE_NETWORKS``. Fail closed."""
+def peer_in(host: str, networks: str) -> bool:
+    """True when ``host`` is inside the comma-separated CIDRs. Fail closed."""
     try:
         address = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
         return False
     if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
         address = address.ipv4_mapped
-    return any(address in network for network in _networks(settings.SUPERSET_SERVICE_NETWORKS))
+    return any(address in network for network in _networks(networks))
+
+
+def peer_allowed(host: str) -> bool:
+    """True when ``host`` is inside ``SUPERSET_SERVICE_NETWORKS``. Fail closed."""
+    return peer_in(host, settings.SUPERSET_SERVICE_NETWORKS)
+
+
+def notebook_peer_allowed(host: str) -> bool:
+    """True when ``host`` is inside ``NOTEBOOK_SANDBOX_NETWORKS``. Fail closed."""
+    return peer_in(host, settings.NOTEBOOK_SANDBOX_NETWORKS)
 
 
 def require_superset_service(request: Request) -> None:

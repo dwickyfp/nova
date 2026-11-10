@@ -10,8 +10,9 @@
 [server]
 host = "0.0.0.0"
 port = 8090
-# Notebook runtimes renew while active; a single create never asks for more.
-max_sandbox_timeout_seconds = 14400
+# A runtime lives at most NOTEBOOK_MAX_LIFETIME_SECONDS (4 h by default) plus
+# a margin; the backend stops it before this hard limit.
+max_sandbox_timeout_seconds = 18000
 
 [proxy]
 # The server runs on the compose network while sandboxes use Docker's default

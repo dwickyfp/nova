@@ -148,6 +148,9 @@ class SessionState:
     #: The active role follows a Nova session (Superset data-token login), so
     #: role statements on this connection are refused rather than applied.
     role_locked: bool = False
+    #: Every statement must be read-only (a notebook runtime's connection):
+    #: anything else is refused before it reaches the engine.
+    read_only_connection: bool = False
 
     def set_database(self, database: str) -> None:
         self.database = database or None

@@ -238,6 +238,66 @@ class Settings(BaseSettings):
     #: Lifetime of a delegated BI session for one background run (alerts,
     #: reports, cache warmup); each run asks for a new one.
     SUPERSET_DELEGATION_TTL_SECONDS: int = Field(default=900, ge=60, le=86_400)
+
+    # ── Nova Notebook runtimes (docs/arch-20-nova-notebook.md) ─────────────
+    #: The OpenSandbox lifecycle server that creates one sandbox per active
+    #: notebook runtime (``host:port``). Only the backend talks to it.
+    OPENSANDBOX_DOMAIN: str = "127.0.0.1:8090"
+    #: API key of that server (``NOVA_OPENSANDBOX_API_KEY`` in docker/.env).
+    #: No default: unset means notebook runtimes cannot start (fail closed).
+    OPENSANDBOX_API_KEY: str = ""
+    #: Reach sandboxes through the server's proxy (topology: the backend does
+    #: not need routes to sandbox ports). Set false when the backend can reach
+    #: the published sandbox endpoints directly.
+    OPENSANDBOX_USE_SERVER_PROXY: bool = True
+    #: The runtime image every notebook sandbox starts from; pin a digest in
+    #: deployment (docker/notebook-runtime).
+    NOTEBOOK_RUNTIME_IMAGE: str = "nova-notebook-runtime:dev"
+    #: The address a sandbox uses to reach Nova's MySQL proxy: an IP, because a
+    #: sandbox's network policy refuses every other name and address. Docker's
+    #: host gateway as seen from a container: 0.250.250.254 on OrbStack,
+    #: 192.168.65.254 on Docker Desktop, the bridge gateway on Linux.
+    NOTEBOOK_PROXY_ADDRESS: str = ""
+    #: The proxy port sandboxes connect to (the proxy's own port by default).
+    NOTEBOOK_PROXY_PORT: int = Field(default=0, ge=0, le=65535)
+    #: Networks notebook sandboxes connect to the proxy from. A notebook data
+    #: token is accepted only from these addresses. Comma-separated CIDRs.
+    NOTEBOOK_SANDBOX_NETWORKS: str = "0.250.250.0/24,192.168.65.0/24,172.17.0.0/16"
+    #: Lifetime of a notebook data token. The runtime renews it before it runs
+    #: a cell, so a long-lived runtime never holds an old one.
+    NOTEBOOK_DATA_TOKEN_TTL_SECONDS: int = Field(default=1800, ge=300, le=3600)
+    #: Live runtimes on this deployment and per user; each holds a container.
+    NOTEBOOK_MAX_ACTIVE_RUNTIMES: int = Field(default=3, ge=1, le=200)
+    NOTEBOOK_MAX_RUNTIMES_PER_USER: int = Field(default=2, ge=1, le=50)
+    #: Resources of one runtime sandbox (Docker CPU quota and memory limit).
+    NOTEBOOK_RUNTIME_CPU: str = "1"
+    NOTEBOOK_RUNTIME_MEMORY: str = "1Gi"
+    #: DuckDB memory budget inside a runtime; keep it below the sandbox memory.
+    NOTEBOOK_DUCKDB_MEMORY_LIMIT: str = "512MB"
+    NOTEBOOK_DUCKDB_THREADS: int = Field(default=2, ge=1, le=64)
+    #: A runtime with no execution for this long is stopped (files and the
+    #: package list stay; variables are cleared).
+    NOTEBOOK_IDLE_TIMEOUT_SECONDS: int = Field(default=1200, ge=120, le=86_400)
+    #: Longest a runtime lives, active or not.
+    NOTEBOOK_MAX_LIFETIME_SECONDS: int = Field(default=14_400, ge=600, le=86_400)
+    #: Longest one cell runs before it is interrupted; a kernel that does not
+    #: stop within the grace period is restarted.
+    NOTEBOOK_CELL_TIMEOUT_SECONDS: int = Field(default=300, ge=10, le=86_400)
+    NOTEBOOK_INTERRUPT_GRACE_SECONDS: int = Field(default=15, ge=1, le=300)
+    #: Budget for creating a sandbox and bootstrapping its kernel.
+    NOTEBOOK_START_TIMEOUT_SECONDS: int = Field(default=180, ge=30, le=1800)
+    #: Output kept for one execution; more is truncated with a marker.
+    NOTEBOOK_OUTPUT_MAX_BYTES: int = Field(default=2 * 1024 * 1024, ge=65_536, le=64 * 1024**2)
+    #: Rows a table output previews.
+    NOTEBOOK_PREVIEW_ROWS: int = Field(default=100, ge=10, le=1000)
+    #: Packages users may add to a notebook, as ``name`` or ``name<specifier>``
+    #: (comma-separated). Anything else is refused before pip runs.
+    NOTEBOOK_PACKAGE_ALLOWLIST: str = (
+        "scikit-learn,scipy,statsmodels,seaborn,plotly,altair,openpyxl,xlsxwriter,"
+        "pyyaml,tabulate,tqdm,networkx,sqlglot,prophet,xgboost,lightgbm"
+    )
+    #: Package indexes a sandbox may reach while an approved install runs.
+    NOTEBOOK_PACKAGE_INDEX_HOSTS: str = "pypi.org,files.pythonhosted.org"
     #: Superset's PostgreSQL metadata database, dumped with NOVA_SYSTEM
     #: snapshots (Phase 5). The password comes from the environment only.
     SUPERSET_DB_HOST: str = "superset-db"

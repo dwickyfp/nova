@@ -88,6 +88,26 @@ logger = logging.getLogger(__name__)
 #: without a CTE or parentheses (``describe_columns``).
 _DESCRIBABLE = re.compile(r"^\(*\s*(?:SELECT|WITH)\b", re.IGNORECASE)
 
+#: Session settings a read-only client (a notebook's DuckDB) sends while it
+#: connects. They shape the connection only; ``SET PASSWORD``, ``SET ROLE``,
+#: ``SET GLOBAL`` and anything else stay refused on a read-only connection.
+_SESSION_SETTING = re.compile(
+    r"^\s*SET\s+(?:SESSION\s+|@@SESSION\.|@@|LOCAL\s+)?"
+    r"(?:autocommit|sql_mode|time_zone|names|character_set_[a-z_]+|collation_connection|"
+    r"transaction_isolation|tx_isolation|transaction_read_only|tx_read_only|"
+    r"net_(?:read|write)_timeout|wait_timeout|interactive_timeout|query_timeout|"
+    r"sql_select_limit|max_execution_time)\b(?![^=]*;\s*\S)",
+    re.IGNORECASE,
+)
+
+
+def _read_only_statement(sql: str) -> bool:
+    """True when a read-only connection may run ``sql``."""
+    text = strip_sql_comments(sql).strip()
+    if _SESSION_SETTING.match(text) and ";" not in text.rstrip(";"):
+        return True
+    return is_allowed_statement(text)
+
 _INTEGER_COLUMNS = frozenset(
     {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "largeint"}
 )
@@ -547,6 +567,25 @@ class ProxyQueryExecutor:
             hide_databases=is_show_databases(statement),
         )
 
+    async def _audit_read_only_refusal(self, username: str, session_id: str | None) -> None:
+        from app.common.audit import write_audit_log
+
+        try:
+            await write_audit_log(
+                event_type="notebook_proxy",
+                user_name=username,
+                action="QUERY_REFUSED",
+                object_type="NOTEBOOK",
+                object_name="read-only connection",
+                status="DENIED",
+                error_message="A notebook connection may only read",
+                session_id=session_id,
+                active_role=self._session.active_role,
+                security_context_version=self._session.security_context_version,
+            )
+        except Exception:  # noqa: BLE001 - the refusal stands without its audit row
+            logger.warning("Could not audit a refused notebook statement")
+
     def _read_only_transaction(self, statement: str) -> WireResult | None:
         """Answer a client-declared read-only transaction without the engine.
 
@@ -621,6 +660,14 @@ class ProxyQueryExecutor:
         hide_databases: bool = False,
     ) -> bool:
         """Run one statement through ``QueryService``, streaming its rows."""
+        if self._session.read_only_connection and not _read_only_statement(sql):
+            await self._audit_read_only_refusal(username, session_id)
+            part = WireResult(
+                error="Nova data in a notebook is read-only; this statement changes data",
+                error_code=1792,
+            )
+            await sink.emit(part, more=False)
+            return False
         row_limit = settings.PROXY_MAX_ROWS
         stream = StatementStream(
             sink,

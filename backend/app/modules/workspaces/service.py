@@ -149,6 +149,60 @@ class WorkspaceService:
         )
         return entry
 
+    async def create_file_bytes(
+        self, username: str, parent_path: str, name: str, data: bytes, *, replace: bool = False
+    ) -> dict:
+        """Store an uploaded or generated file (CSV, Parquet, images, …).
+
+        Unlike :meth:`create_file` the content is bytes and is never opened as
+        text. ``replace`` overwrites an existing file at the same path (used to
+        copy a runtime's output files back), keeping its entry id.
+        """
+        path = self._repo.build_path(parent_path, name)
+        existing = None
+        for entry in await self._repo.list_entries(username):
+            if entry["path"] == path:
+                existing = entry
+                break
+        if existing is not None and not (replace and existing["entry_type"] == "file"):
+            raise StorageError(
+                "A file or folder with this name already exists here", status_code=409
+            )
+        key = self.build_object_key(username, path)
+        result = await asyncio.to_thread(self._put_object, key, data)
+        etag = result.get("ETag", "").strip('"')
+        if existing is not None:
+            await self._repo.update_entry(
+                entry_id=existing["id"],
+                username=username,
+                parent_path=existing["parent_path"],
+                name=existing["name"],
+                object_key=key,
+                size_bytes=len(data),
+                etag=etag,
+            )
+            return await self._repo.get_entry(username, existing["id"])
+        entry_id = str(uuid4())
+        await self._repo.insert_entry(
+            entry_id=entry_id,
+            username=username,
+            parent_path=parent_path.strip("/"),
+            name=name,
+            entry_type="file",
+            object_key=key,
+            size_bytes=len(data),
+            etag=etag,
+        )
+        await write_audit_log(
+            event_type="workspace",
+            user_name=username,
+            action="upload_file",
+            object_type="workspace_file",
+            object_name=path,
+            status="SUCCESS",
+        )
+        return await self._repo.get_entry(username, entry_id)
+
     async def create_folder(self, username: str, parent_path: str, name: str) -> dict:
         await self._ensure_free_path(username, self._repo.build_path(parent_path, name))
         entry_id = str(uuid4())
@@ -429,6 +483,36 @@ class WorkspaceService:
             await self._repo.set_preference(username, self.PREF_LAST_SCHEMA, last_schema)
         if last_role is not None:
             await self._repo.set_preference(username, self.PREF_LAST_ROLE, last_role)
+
+    # ── Internal objects beside the tree (notebook outputs) ──────────────
+
+    def internal_object_key(self, username: str, *parts: str) -> str:
+        """Key under the user's area for data that is not a tree entry.
+
+        Kept under a dot folder (like ``.versions``) so it never appears in the
+        Workspace tree and a rename never has to move it.
+        """
+        clean = [part.strip("/") for part in parts if part and part.strip("/")]
+        if any(part in {".", ".."} or "/.." in part or "../" in part for part in clean):
+            raise StorageError("Invalid internal object path", status_code=400)
+        base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
+        return "/".join([p for p in [base_prefix, username, *clean] if p])
+
+    async def put_internal_object(self, key: str, body: bytes) -> None:
+        await asyncio.to_thread(self._put_object, key, body)
+
+    async def read_internal_object(self, key: str) -> bytes:
+        return await asyncio.to_thread(self._read_object, key)
+
+    async def read_entry_bytes(self, username: str, entry_id: str) -> tuple[dict, bytes]:
+        """A file entry and its raw content, for copying into a runtime."""
+        entry = await self._repo.get_entry(username, entry_id)
+        if not entry or entry["entry_type"] != "file":
+            raise StorageError("Workspace entry not found", status_code=404)
+        return entry, await asyncio.to_thread(self._read_object, entry["object_key"])
+
+    async def list_entries(self, username: str) -> list[dict]:
+        return await self._repo.list_entries(username)
 
     def _put_object(self, key: str, body: bytes) -> dict:
         try:

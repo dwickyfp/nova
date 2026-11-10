@@ -186,6 +186,15 @@ async def _bootstrap_control_plane() -> None:
     except Exception as e:
         logger.warning("Could not ensure catalog store schema: %s", e)
 
+    # Nova Notebook runtimes, executions and package manifests. Best-effort:
+    # without them notebooks still open and edit; running cells reports why.
+    try:
+        from app.modules.notebooks.repository import notebook_repository
+
+        await notebook_repository.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure notebook schema: %s", e)
+
     # Migration Connector source registry (Phase 11 v1). Best-effort, same
     # reasoning: a missing mirror table only degrades the source list, not the
     # read-only assessment path.
