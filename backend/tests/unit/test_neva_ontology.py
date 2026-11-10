@@ -38,7 +38,8 @@ def test_neva_has_the_glossary_and_grounds_terms_in_order():
     assert "ask" in prompt and "proposed, never changed" in prompt
     # Ambiguity: the data's own period is checked before asking which period
     # is meant.
-    assert "check what period the data covers" in prompt
+    assert "answer for the period the data covers" in prompt
+    assert "reports those dates itself" in prompt
     assert "Never ask permission for a read-only lookup" in prompt
 
 

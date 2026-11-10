@@ -175,6 +175,9 @@ class Evidence:
 
 
 #: ml_execute summaries read "<task> completed with <algorithm>; N rows processed (run ...)".
+#: The dates a result table may carry: asked for, or the data's own range.
+_PERIOD_KEYS = ("first", "last", "compared_first", "compared_last")
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 _ML_SUMMARY = re.compile(r"^([a-z_]+) completed with ")
 _ML_TITLES = {
     "route_optimization": "Optimised delivery routes",
@@ -253,11 +256,29 @@ class EvidenceTracker:
             ))
             and table
         ):
-            stored = {
-                "columns": list(table.get("columns") or [])[:100],
+            columns = list(table.get("columns") or [])[:100]
+            stored: dict[str, Any] = {
+                "columns": columns,
                 "rows": list(table.get("rows") or [])[:200],
                 "truncated": bool(table.get("truncated")),
             }
+            units = table.get("units")
+            if isinstance(units, dict):
+                # Declared units decide how a cell is written (money, not percent).
+                declared = {
+                    str(column): str(unit)[:40] for column, unit in units.items()
+                    if column in columns and isinstance(unit, str) and unit.strip()
+                }
+                if declared:
+                    stored["units"] = declared
+            period = table.get("period")
+            if isinstance(period, dict):
+                # The dates the rows are about (asked for, or the data's own
+                # range): the years in them are data the answer may name.
+                kept = {key: period[key] for key in _PERIOD_KEYS
+                        if isinstance(period.get(key), str) and _ISO_DAY.fullmatch(period[key])}
+                if kept:
+                    stored["period"] = kept
             if isinstance(table.get("sql"), str) and table["sql"].strip():
                 # The statement travels with its rows: a chart another participant
                 # builds from them can still be saved as a live view.

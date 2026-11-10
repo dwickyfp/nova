@@ -92,8 +92,9 @@ NEVA_GROUNDING = (
     "Never ask permission for a read-only lookup or calculation. A glossary suggestion "
     "(knowledge_propose) is only proposed until a steward approves it and a release is "
     "published: say proposed, never changed.\n"
-    "Periods: before asking which period is meant, check what period the data covers and "
-    "answer for it, saying which dates it spans; if the comparison asked for is not "
+    "Periods: before asking which period is meant, answer for the period the data covers, "
+    "saying which dates it spans; a Semantic View answer over all the data reports those "
+    "dates itself, so ask it for the measure only. If the comparison asked for is not "
     "possible (no data for last year), say so plainly."
 )
 

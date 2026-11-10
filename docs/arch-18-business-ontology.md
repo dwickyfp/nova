@@ -526,13 +526,30 @@ split reading; a value only one other searchable dimension holds moves the
 filter there ("Salesman" is a role, not an employee name). The planner adds a
 dimension only for a grouping the question asks for.
 
-**Vague measures.** The planner treats a measure word that several catalog
-metrics fit about equally ("sales" with net, gross and before-returns sales) as
-unresolved and lists the candidates, so the turn becomes a clarification. A
-measure a metric names, or that an approved definition names, is resolved: an
-approved alias is a business decision and outranks vagueness. A plan that names
-nothing at all is a clarification too, never an execution error. Measured
-effect: [Phase E checkpoint](testing/supernova/phase-e-checkpoint.md).
+**Vague measures.** A measure word that several catalog metrics fit ("sales"
+with net, gross and before-returns sales; "returned the most" with returned
+units and returned value) is answered with its usual reading: the metric the
+word names, otherwise the net figure for a money word, the unit count for what
+sold or returned most, and the occurrence or day count for "how often". The
+plan records the reading and the other fitting metrics (`readings`), and the
+result tells the answer to state which one it used and offer the others.
+Readings explain a plan without changing what it computes, so they do not
+affect plan equality or verified-query matches. A measure no metric reasonably
+fits stays unresolved and becomes a clarification, as does a plan that names
+nothing. An approved definition outranks both: a term with two approved
+definitions is still asked back by the ontology, never read. Earlier, every
+vague measure was a clarification ([Phase E
+checkpoint](testing/supernova/phase-e-checkpoint.md)); data questions then
+asked back in four of eight Neva tasks
+([Neva phase 6](testing/neva/phase-6-checkpoint.md)).
+
+**Presentation requests.** A part of the question about how the result is
+shown (keeping ties, an extra note) never blocks the data: the plan lists it as
+not material and the result names what it does not show. A request for the
+dates the data covers is marked `data_period`; Nova then reads the first and
+last day for the metric as the caller (two governed plans, the same ones the
+empty-result check uses) and the result states them. Ordinary answers do not
+pay for those two queries.
 
 ## Release pins
 

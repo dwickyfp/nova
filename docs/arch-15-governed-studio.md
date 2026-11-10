@@ -283,6 +283,15 @@ and supported numbers. Unknown inputs remain visible. Causal strength is
 independent: `arithmetic`, `association`, `supported_effect`, or `unknown`.
 Strong evidence for a query does not establish a causal effect.
 
+A number counts as supported when a result cell, a computation over cells, a
+count, the question, or a date backs it. Years are backed by the result's date
+cells (text or date values), the period the query asked for, or the data range
+it read. A number inside a result label ("Mie Instan Goreng 85g") belongs to
+that name. A wrong figure next to the right name is still refused. Units
+declared by the Semantic View travel with the rows. A declared unit decides
+whether a column is a percentage, so a money `gross_margin` is never written
+with "%".
+
 The bounded `EvidenceEnvelope` composes this health record with published
 semantic identity, metrics, dimensions, exact comparison periods, timezone,
 filter shapes, warnings, and evidence references. The same envelope is persisted

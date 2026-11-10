@@ -6,6 +6,7 @@ import calendar
 import re
 from collections import deque
 from dataclasses import asdict, dataclass
+from dataclasses import field as dataclass_field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,19 @@ class UnresolvedConcept:
     text: str
     type_hint: str = "unknown"
     material: bool = True
+
+
+@dataclass(frozen=True)
+class SemanticReading:
+    """How the plan read a measure word that more than one metric fits.
+
+    The answer states it, so the person sees the reading and the other metrics
+    they could ask for instead of being asked first.
+    """
+
+    text: str
+    metric: str
+    alternatives: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -106,6 +120,9 @@ class SemanticPlan:
     fiscal_start_month: int = 1
     week_start: int = 0
     distinct: bool = False
+    #: The reading of an ambiguous measure word; it explains the plan, it does not
+    #: change what is computed, so two plans that compute the same thing are equal.
+    readings: tuple[SemanticReading, ...] = dataclass_field(default=(), compare=False)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> SemanticPlan:
@@ -172,6 +189,17 @@ class SemanticPlan:
                 partition_by=tuple(str(item) for item in raw_top.get("partition_by") or []),
                 metric=str(raw_top.get("metric") or ""),
             )
+        readings = tuple(
+            SemanticReading(
+                text=str(item.get("text") or ""),
+                metric=str(item.get("metric") or ""),
+                alternatives=tuple(
+                    dict.fromkeys(str(name) for name in item.get("alternatives") or [] if name)
+                ),
+            )
+            for item in value.get("readings") or []
+            if isinstance(item, dict) and item.get("text") and item.get("metric")
+        )
         plan = cls(
             metrics=tuple(str(item) for item in value.get("metrics") or []),
             dimensions=tuple(str(item) for item in value.get("dimensions") or []),
@@ -190,6 +218,7 @@ class SemanticPlan:
             fiscal_start_month=value.get("fiscal_start_month", 1),
             week_start=value.get("week_start", 0),
             distinct=value.get("distinct", False),
+            readings=readings,
         )
         if not plan.metrics and not plan.dimensions and not any(
             item.material for item in plan.unresolved_concepts
@@ -204,7 +233,7 @@ class SemanticPlan:
         for key, default in (
             ("offset", 0), ("calculations", ()), ("time_output", None),
             ("fiscal_start_month", 1), ("week_start", 0),
-            ("distinct", False),
+            ("distinct", False), ("readings", ()),
         ):
             if result[key] == default:
                 result.pop(key)
@@ -301,6 +330,15 @@ def validate_plan(model: SemanticModelIR, plan: SemanticPlan) -> list[str]:
         field = model.field(name)
         if field is None or field.kind.value != "dimension":
             errors.append(f"Unknown dimension {name!r}.")
+    for reading in plan.readings:
+        if reading.metric not in plan.metrics:
+            errors.append(
+                f"The reading of {reading.text!r} names {reading.metric!r}, which is not a "
+                "selected metric."
+            )
+        for name in reading.alternatives:
+            if model.metric(name) is None:
+                errors.append(f"Unknown alternative metric {name!r}.")
     for item in plan.filters:
         if model.field(item.field) is None:
             errors.append(f"Unknown filter field {item.field!r}.")

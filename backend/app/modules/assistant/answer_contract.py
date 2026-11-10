@@ -14,6 +14,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, localcontext
 from functools import lru_cache, partial
 from typing import Any
@@ -37,6 +38,8 @@ _DATE = re.compile(
     r"\b(?:19|20)\d{2}-\d{2}(?:-\d{2})?(?:[ T]\d{2}:\d{2}(?::\d{2})?)?\b"
     r"|\b\d{1,2}:\d{2}(?::\d{2})?\b"
 )
+#: A year as written in prose: four digits, no separators.
+_YEAR_TEXT = re.compile(r"(?:19|20)\d{2}")
 _CLAIMS_BLOCK = re.compile(r"\s*<claims>(.*?)</claims>\s*$", re.S)
 _SPACES = re.compile(r"\s+", re.UNICODE)
 
@@ -44,6 +47,9 @@ _SPACES = re.compile(r"\s+", re.UNICODE)
 _PERCENT_IDENTIFIERS = frozenset({"pct", "percent", "percentage", "rate", "ratio", "margin"})
 #: Unit suffixes that do not tell two percent columns apart (margin_pct vs growth_pct).
 _UNIT_SUFFIX_IDENTIFIERS = frozenset({"pct", "percent", "percentage", "rate", "ratio"})
+#: Declared units that leave the percent question to the column name: a ratio
+#: (0.05 or 5%) is written either way.
+_NAME_DECIDES_UNITS = frozenset({"ratio", "share", "fraction"})
 _COUNT_IDENTIFIERS = frozenset({"count", "quantity", "units", "qty"})
 _MONEY_IDENTIFIERS = frozenset({
     "revenue", "amount", "profit", "cost", "price", "spend", "value", "total", "sales",
@@ -207,9 +213,17 @@ def _percent_cell(value: Any) -> Decimal | None:
 
 
 def is_percent_column(column: str, table: dict[str, Any] | None = None) -> bool:
+    """Whether a column holds percentages.
+
+    A unit the Semantic View declares decides: "IDR" makes ``gross_margin``
+    money, whatever its name says. A ratio, or no unit, falls back to the name.
+    """
     units = (table or {}).get("units") or {}
-    if str(units.get(column) or "").casefold() in {"percent", "%", "pct"}:
+    unit = str(units.get(column) or "").strip().casefold()
+    if unit in {"percent", "%", "pct"}:
         return True
+    if unit and unit not in _NAME_DECIDES_UNITS:
+        return False
     return bool(set(str(column).casefold().split("_")) & _PERCENT_IDENTIFIERS)
 
 
@@ -295,6 +309,29 @@ def _spoken_date(language: str) -> re.Pattern[str]:
     )
 
 
+def _mask_labels(answer: str, tables: dict[str, dict[str, Any]]) -> str:
+    """Blank result labels that contain digits ("Mie Instan Goreng 85g", "Gudang 2").
+
+    A number inside a name the result shows is part of that name, not a figure
+    to verify. Positions are preserved; matching ignores case.
+    """
+    labels = {
+        cell.strip() for table in tables.values()
+        for row in (table.get("rows") or [])[:200] if isinstance(row, (list, tuple))
+        for cell in row
+        if isinstance(cell, str) and 1 < len(cell.strip()) <= 80
+        and any(ch.isdigit() for ch in cell) and any(ch.isalpha() for ch in cell)
+        and _number(cell) is None and _percent_cell(cell) is None
+        and not _DATE.fullmatch(cell.strip())
+    }
+    for label in sorted(labels, key=len, reverse=True):
+        answer = re.sub(
+            rf"(?<!\w){re.escape(label)}(?!\w)",
+            lambda match: " " * len(match.group(0)), answer, flags=re.I,
+        )
+    return answer
+
+
 def _mask_dates(answer: str, language: str = "en") -> str:
     """Blank ISO dates, clock times and spoken day numbers; positions are preserved."""
     answer = _DATE.sub(lambda match: " " * len(match.group(0)), answer)
@@ -357,13 +394,23 @@ def _figure(text: str, language: str) -> str:
 
 
 def _table_years(tables: dict[str, dict[str, Any]]) -> set[Decimal]:
-    """Years that appear in result labels ("2026-08-01", "2025-Q2") are data, not claims."""
+    """Years in result labels ("2026-08-01", "2025-Q2") or in the period the data
+    covers are data, not claims."""
     years: set[Decimal] = set()
     for table in tables.values():
-        for row in (table.get("rows") or [])[:200]:
-            for cell in row if isinstance(row, (list, tuple)) else []:
-                if isinstance(cell, str):
-                    years.update(Decimal(item) for item in re.findall(r"(?:19|20)\d{2}", cell))
+        texts = [
+            cell for row in (table.get("rows") or [])[:200]
+            for cell in (row if isinstance(row, (list, tuple)) else [])
+        ]
+        period = table.get("period")
+        if isinstance(period, dict):
+            texts.extend(period.values())
+        for text in texts:
+            if isinstance(text, (date, datetime)):
+                # A driver returns a date column as dates, not text.
+                years.add(Decimal(text.year))
+            elif isinstance(text, str):
+                years.update(Decimal(item) for item in re.findall(r"(?:19|20)\d{2}", text))
     return years
 
 
@@ -725,7 +772,7 @@ def _check_numeric_answer(
         found.append(NumericClaim(token.text, evidence_id, column))
         good_spans.append((token.start, token.end))
 
-    for token in number_tokens(_mask_dates(answer, language), language):
+    for token in number_tokens(_mask_dates(_mask_labels(answer, tables), language), language):
         queue = (
             by_text.get(_key(token.text)) or by_text.get(_key(token.core))
             or by_figure.get(_figure(token.text, language)) or []
@@ -820,7 +867,10 @@ def _check_numeric_answer(
             if match is not None:
                 accept(token, match.evidence_id, match.column)
                 continue
-        if kind is None and token.scale is None and integers & years:
+        if kind is None and token.scale is None and integers & years and _YEAR_TEXT.fullmatch(
+            token.text
+        ):
+            # A year the result's dates show; "2.026 units" is a figure, not a year.
             accept(token, None, None)
             continue
         reject(token)
@@ -1108,7 +1158,7 @@ def finalize_verified_answer(
         text = answer.rstrip() + ("\n\n" + "\n".join(leaders) if leaders else "")
         return VerifiedAnswer(text, check, False, comparison)
     data_claims = [claim for claim in check.claims if claim.evidence_id]
-    tokens = number_tokens(_mask_dates(answer, language), language)
+    tokens = number_tokens(_mask_dates(_mask_labels(answer, tables), language), language)
     headline = tokens[0].text if tokens else None
     if (
         data_claims

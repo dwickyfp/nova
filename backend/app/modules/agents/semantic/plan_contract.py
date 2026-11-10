@@ -110,13 +110,25 @@ def semantic_plan_schema() -> dict[str, Any]:
                 ),
             },
             "top_n_per_group": top_n,
+            "readings": {
+                "type": "array",
+                "items": _object(
+                    {
+                        "text": {"type": "string"},
+                        "metric": {"type": "string"},
+                        "alternatives": strings,
+                    }
+                ),
+            },
         }
     )
 
 
 #: Keys added after the first contract. A plan stored or generated before them
 #: is still valid; the defaults mean "not used".
-_OPTIONAL_DEFAULTS: dict[str, Any] = {"having": [], "transforms": [], "top_n_per_group": None}
+_OPTIONAL_DEFAULTS: dict[str, Any] = {
+    "having": [], "transforms": [], "top_n_per_group": None, "readings": [],
+}
 
 
 def validate_generated_plan(value: dict[str, Any]) -> None:

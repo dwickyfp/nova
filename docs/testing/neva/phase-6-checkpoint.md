@@ -84,6 +84,7 @@ figure, instead of the benchmark view's 5,000.
    asks which measure is meant when the person's words do not match a metric
    exactly (DA02, DA03, DA05, DA07), even when one reading is the usual one.
    The fix belongs in the governed query planner, not in Neva's prompt.
+   *Fixed in [phase 6b](phase-6b-checkpoint.md): data tasks now solve 0.88.*
 2. **Health questions (MO03).** Neva has no tool that reads system health; it
    points to the right pages instead.
 3. **Optimizing SQL is shallow.** PW02 keeps results identical but only tidies

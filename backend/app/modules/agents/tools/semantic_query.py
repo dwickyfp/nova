@@ -33,7 +33,7 @@ import re
 import time
 from dataclasses import replace
 from dataclasses import replace as dataclass_replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -42,7 +42,13 @@ from app.core.database import configured_timezone
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.compiler import SemanticCompiler
-from app.modules.agents.semantic.coverage import future_period, period_without_data
+from app.modules.agents.semantic.coverage import (
+    DATA_PERIOD,
+    covered_period,
+    future_period,
+    looks_empty,
+    period_without_data,
+)
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import (
     SemanticPlan,
@@ -432,6 +438,7 @@ class SemanticQueryTool:
                 + "; ".join(uncovered)[:600]
                 + ". Run those steps with your other tools, or ask another query per part."
             )
+        explanation += _readings_note(semantic_ir, plan)
         # Where the plan came from, not a model's opinion of itself: a verified
         # query is exact, a validated plan is the model's reading of the question.
         plan_source: PlanSource = "verified_query" if verified_hit else (
@@ -588,15 +595,15 @@ class SemanticQueryTool:
             )
 
         last = results[-1] if results else None
-        gap = await period_without_data(
-            plan,
-            list(getattr(last, "columns", None) or []),
-            list(getattr(last, "rows", None) or []),
-            time_context,
-            lambda window_plan: self._window_rows(
+        last_columns = list(getattr(last, "columns", None) or [])
+        last_rows = list(getattr(last, "rows", None) or [])
+
+        def run_window(window_plan: dict[str, Any]) -> Any:
+            return self._window_rows(
                 semantic_ir, window_plan, username, encrypted_password, context, security
-            ),
-        )
+            )
+
+        gap = await period_without_data(plan, last_columns, last_rows, time_context, run_window)
         if gap is not None:
             await _record_usage(
                 security, semantic_model, semantic_ir, plan, execution_duration_ms,
@@ -628,7 +635,36 @@ class SemanticQueryTool:
                 ),
             )
 
+        covered: dict[str, str] | None = None
+        if not looks_empty(last_columns, last_rows):
+            # Only a question that asks which dates the data covers reads them.
+            window = await covered_period(plan, semantic_ir, run_window)
+            if window is not None:
+                covered = {"first": window.first.isoformat(), "last": window.last.isoformat()}
+                explanation += (
+                    f" The data covers {covered['first']} to {covered['last']}; say which "
+                    "period the answer covers."
+                )
+                plan = dataclass_replace(plan, unresolved_concepts=tuple(
+                    item for item in plan.unresolved_concepts if item.type_hint != DATA_PERIOD
+                ))
+        if any(item.type_hint == DATA_PERIOD for item in plan.unresolved_concepts):
+            explanation += " The dates the data covers could not be read for this answer."
+
         table = _table_payload(results, title=question)
+        period = covered or _queried_period(time_context)
+        if table is not None:
+            units = {
+                name: metric.unit for name in plan.metrics
+                if (metric := semantic_ir.metric(name)) is not None and metric.unit
+                and name in table["columns"]
+            }
+            if units:
+                table["units"] = units
+        if table is not None and period is not None:
+            # The dates the rows are about travel with them, so a year the answer
+            # names from them is checked against the data, not taken on trust.
+            table["period"] = period
         if table is not None:
             # Expose the fetched rows to ``data_to_chart`` in the same turn,
             # with the compiled statement the viz core needs for persistence.
@@ -1055,6 +1091,62 @@ def _multi_step(context: Any) -> bool:
         or route.get("ml_task") or route.get("needs_ml") or route.get("needs_chart")
         or _RESULT_STEPS & set(getattr(context, "selected_tools", None) or ())
     )
+
+
+def _queried_period(time_context: Any) -> dict[str, str] | None:
+    """The days a dated query asked for, and its comparison period, as ISO dates."""
+    if time_context is None:
+        return None
+
+    def days(window: Any) -> tuple[str, str]:
+        # Windows are half-open; the last day is the one before the end.
+        last = window.end - timedelta(microseconds=1)
+        return window.start.date().isoformat(), last.date().isoformat()
+
+    period = dict(zip(("first", "last"), days(time_context.current), strict=True))
+    if getattr(time_context, "baseline", None) is not None:
+        period.update(zip(
+            ("compared_first", "compared_last"), days(time_context.baseline), strict=True,
+        ))
+    return period
+
+
+def _readings_note(model: SemanticModelIR, plan: SemanticPlan) -> str:
+    """Tell the answer which reading of a measure word it used, and what else fits.
+
+    The person gets the usual reading answered at once, sees which one it was,
+    and can ask for another; a wrong guess is never presented as the only one.
+    """
+    notes: list[str] = []
+    for reading in plan.readings:
+        others = [name for name in reading.alternatives
+                  if name != reading.metric and model.metric(name) is not None]
+        note = f"'{reading.text}' was read as {_metric_phrase(model, reading.metric)}"
+        if others:
+            note += "; also available: " + ", ".join(
+                _metric_phrase(model, name) for name in others[:4]
+            )
+        notes.append(note)
+    unshown = [
+        item.text for item in plan.unresolved_concepts
+        if not item.material and item.type_hint != DATA_PERIOD
+    ]
+    text = ""
+    if notes:
+        text += (
+            " " + ". ".join(notes) + ". Say in one short sentence, in the user's words, "
+            "which measure the answer uses and offer the others."
+        )
+    if unshown:
+        text += " Not shown by this query: " + "; ".join(unshown)[:400] + "."
+    return text
+
+
+def _metric_phrase(model: SemanticModelIR, name: str) -> str:
+    """A metric named with its description, so the answer can say it in plain words."""
+    metric = model.metric(name)
+    description = " ".join(((metric.description if metric else "") or "").split())[:120]
+    return f"{name} ({description})" if description else name
 
 
 def _clarification(model: SemanticModelIR, unresolved: list[str]) -> ToolOutcome:

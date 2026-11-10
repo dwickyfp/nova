@@ -128,13 +128,6 @@ async def test_a_plan_that_names_nothing_asks_instead_of_failing(monkeypatch):
     execute.assert_not_awaited()
 
 
-def test_the_planner_rules_ask_about_a_measure_word_several_metrics_fit():
-    from app.modules.agents.semantic.model_planner import PLANNER_RULES
-
-    assert "two or more catalog metrics fit about equally" in PLANNER_RULES
-    assert "a supplied business definition names, is resolved" in PLANNER_RULES
-
-
 async def test_invalid_model_plan_gets_one_internal_repair(monkeypatch):
     tool, provider, execute = setup_tool(
         monkeypatch, _plan(metrics=["gross_merchandise"]), _plan(dimensions=["city"]),
