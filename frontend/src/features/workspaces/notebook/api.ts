@@ -15,11 +15,12 @@ import type { WorkspaceEntry } from "../types";
 const base = (id: string) => `/notebooks/${encodeURIComponent(id)}`;
 
 export const notebookApi = {
-  create: (name: string, parentPath = "", content?: string) =>
+  create: (name: string, parentPath = "", content?: string, space?: string) =>
     api.post<NotebookResponse>("/notebooks", {
       name,
       parent_path: parentPath,
       ...(content !== undefined ? { content } : {}),
+      ...(space ? { space } : {}),
     }),
   get: (id: string) => api.get<NotebookResponse>(base(id)),
   edit: (id: string, baseRevision: number, edits: NotebookEdit[]) =>

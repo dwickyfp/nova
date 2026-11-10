@@ -12,6 +12,7 @@ from app.common.audit import write_audit_log
 from app.core.config import get_storage_connection, load_nova_app_config
 from app.core.exceptions import StorageError
 from app.modules.query.dialect.injector import resolve_storage_credentials
+from app.modules.workspaces.actor import acting_user
 from app.modules.workspaces.repository import workspace_repository
 from app.modules.workspaces.storage_errors import classify_storage_error
 
@@ -141,7 +142,7 @@ class WorkspaceService:
         entry = await self._repo.get_entry(username, entry_id)
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="create_file",
             object_type="workspace_file",
             object_name=path,
@@ -195,7 +196,7 @@ class WorkspaceService:
         )
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="upload_file",
             object_type="workspace_file",
             object_name=path,
@@ -217,7 +218,7 @@ class WorkspaceService:
         entry = await self._repo.get_entry(username, entry_id)
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="create_folder",
             object_type="workspace_folder",
             object_name=entry["path"],
@@ -408,7 +409,7 @@ class WorkspaceService:
         renamed = await self._repo.get_entry(username, entry_id)
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="rename",
             object_type=f"workspace_{entry['entry_type']}",
             object_name=f"{old_path} -> {renamed['path']}",
@@ -433,7 +434,7 @@ class WorkspaceService:
             await self._repo.soft_delete_entry(username, item["id"])
         await write_audit_log(
             event_type="workspace",
-            user_name=username,
+            user_name=acting_user(username),
             action="delete",
             object_type=f"workspace_{entry['entry_type']}",
             object_name=entry["path"],

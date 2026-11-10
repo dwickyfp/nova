@@ -62,6 +62,8 @@ export default defineConfig(({ command }) => ({
     include: [
       "react", "react-dom/client", "react-top-loading-bar", "recharts",
       "@openuidev/lang-core", "@openuidev/react-lang", "@terraformer/wkt",
+      // Pre-bundled so a cold test run does not re-optimize mid-run and load React twice.
+      "@radix-ui/react-context-menu", "@radix-ui/react-collapsible",
     ],
   },
   server: {

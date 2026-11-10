@@ -16,7 +16,7 @@ stages and, through governed write-back, Postgres and Snowflake tables.
 ```
 Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis queue + per-runtime lease
         ▲ SSE (Last-Event-ID)              │                         │
-        └── Redis stream nova:nb:ev:<nb> ◄─┴── notebook runtime worker (nova-worker)
+        └── Redis stream nova:nb:ev:<nb>@<person> ◄─┴── notebook runtime worker (nova-worker)
                                                     │ OpenSandbox SDK 1.2.0
                                                     ▼
                                   opensandbox-server (compose, only holder of docker.sock)
@@ -76,6 +76,42 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
   and trusted users, not hostile tenants (see Limits).
 - **Audit.** Runtime start/stop, every execution (source revision, not source),
   package installs, notebook proxy logins refused and statements refused.
+- **Shared notebooks.** A notebook in a shared workspace (see below) is one
+  file, but each person who runs it gets their own runtime, queue, events and
+  results: runtime keys are per notebook *and* person
+  (`state.channel(notebook_id, username)`, a hash of the username). Nobody runs
+  under another person's identity or sees their outputs. A person who may only
+  view the workspace can still run the notebook under their own role; their
+  runs leave no files in the workspace.
+
+## Shared workspaces
+
+The Workspaces sidebar is a file tree (`frontend/src/features/workspaces/explorer/`,
+built on the AI Elements File Tree pattern in `components/ai-elements/file-tree.tsx`).
+Its first root is **Personal Workspace**, the person's own files. Below it are
+the shared workspaces they own or that are shared with one of their roles.
+
+- **Storage.** A shared workspace is a namespace `~ws/<id>` in
+  `CONFIG_WORKSPACE_ENTRIES.user_name`, so files, versions, notebooks and
+  outputs reuse `WorkspaceService` unchanged. `CONFIG_WORKSPACES` holds its
+  name and owner; `CONFIG_WORKSPACE_SHARES` holds role grants (`view` or
+  `edit`).
+- **Access.** `workspaces/spaces.py` (`SpaceService`) resolves every request:
+  the owner manages it; a person sees it when **any** role assigned to them
+  has a share (not only the active role), and gets the strongest permission
+  among those roles. No access answers "not found"; a viewer who tries to
+  change something gets 403. Only the owner shares, renames or deletes it.
+  Roles offered for sharing are validated against the engine's roles.
+- **Sharing is files only.** Queries and notebooks still run as the person
+  who runs them, under their own active role; Ranger decides what data they
+  see. The audit actor of a change in a shared workspace is the person
+  (`workspaces/actor.py`), not the namespace.
+- **UI.** The split button creates a SQL file (main half) or, from its menu, a
+  notebook, a folder or a shared workspace, in the place last selected in the
+  tree. Right-click (or the row's ⋯) opens create, rename, move, delete and,
+  on a shared workspace the person owns, Share with roles. Files in a
+  view-only workspace open read-only; notebooks there can be run but not
+  edited.
 
 ## Catalogs and writes (novaduck)
 
@@ -176,6 +212,12 @@ DuckDB's `mysql` scanner needed these proxy changes:
   Python) with type, size and content checks; the folder is copied into
   `/workspace` at start and on upload. Files the code writes to
   `/workspace/outputs` are copied back when the runtime stops.
+
+A worked example, `docs/examples/novaduck-tour.ipynb`, reads Nova, Postgres
+and Snowflake in one notebook, unions and aggregates them, upserts the result
+into a Nova primary-key table (created with `CALL mysql_execute('nova', ...)`)
+and a Postgres table, and checks both match. Upserting again updates the same
+rows.
 
 ## Neva and Dataviz
 

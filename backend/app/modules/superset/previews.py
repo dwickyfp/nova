@@ -304,7 +304,7 @@ async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedP
             "current role to use it."
         )
     try:
-        entry, document = await notebook_documents.get(username, notebook_id)
+        entry, document = await notebook_documents.get_for(user, notebook_id)
         cell = document.cell(str(row["cell_id"]))
     except (NotebookFormatError, Exception) as exc:  # noqa: BLE001 - one safe message
         raise PreviewError("That notebook cell is no longer there.") from exc

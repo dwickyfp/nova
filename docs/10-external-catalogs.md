@@ -277,7 +277,12 @@ masks.
     exact `catalog.schema.table` before the credential is read: INSERT to
     append, INSERT and UPDATE to merge, DELETE to overwrite or delete matches;
   - the write is one transaction on the source and is audited
-    (`catalog_writeback`) with its row counts.
+    (`catalog_writeback`) with its row counts;
+  - Nova opens this connection itself, not the engine. When the backend
+    reaches the source by another name than the engine does (a backend run on
+    the host against a compose-network source), `CATALOG_DIRECT_HOSTS` maps the
+    host for Nova's own connections (write-back and metadata reads) and leaves
+    the engine's JDBC URL unchanged.
 - **Catalog metadata.** Foreign-catalog tables, views, and materialized views
   are Nova catalog objects: they can be described, owned, tagged, classified,
   searched, and appear in lineage, the same as Nova tables.

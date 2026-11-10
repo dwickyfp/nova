@@ -109,7 +109,7 @@ class NotebookContextTool:
         if not user or not notebook_id:
             return _fail("No notebook is open on this page.")
         try:
-            entry, document = await notebook_documents.get(user["username"], notebook_id)
+            entry, document = await notebook_documents.get_for(user, notebook_id)
             status = await notebook_runtime_service.status(user, notebook_id)
             latest = await notebook_runtime_service.latest(user, notebook_id)
         except Exception:  # noqa: BLE001 - one safe message for every failure
@@ -217,7 +217,7 @@ class NotebookRunCellTool:
             return _fail("No notebook is open on this page.")
         cell_id = str(invocation.arguments.get("cell_id") or "")
         try:
-            _entry, document = await notebook_documents.get(user["username"], notebook_id)
+            _entry, document = await notebook_documents.get_for(user, notebook_id)
             document.cell(cell_id)
         except Exception:  # noqa: BLE001
             return _fail("That cell is not in the open notebook.", recoverable=True)

@@ -122,7 +122,7 @@ def notebook(monkeypatch):
         assert notebook_id == "nb-1"
         return {"name": "revenue.ipynb"}, document
 
-    monkeypatch.setattr(documents.notebook_documents, "get", get)
+    monkeypatch.setattr(documents.notebook_documents, "get_for", get)
     for name in ("status", "start", "latest", "run", "execution"):
         monkeypatch.setattr(service.notebook_runtime_service, name, getattr(runtime, name))
 

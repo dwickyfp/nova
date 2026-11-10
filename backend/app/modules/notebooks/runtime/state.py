@@ -21,6 +21,7 @@ Every key here expires on its own.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import uuid
@@ -42,6 +43,22 @@ STARTING_STATUSES = frozenset({"PROVISIONING", "STARTING", "BOOTSTRAPPING"})
 
 def rt_key(runtime_id: str) -> str:
     return f"{PREFIX}rt:{runtime_id}"
+
+
+def channel(notebook_id: str, username: str) -> str:
+    """A notebook as one person uses it: their runtime, runs and live output.
+
+    A notebook in a shared workspace is one document but never one runtime:
+    each person runs it as themselves, under their own role, and sees only
+    their own results. Runtime, in-flight and event keys use this channel.
+    """
+    digest = hashlib.sha256(username.encode()).hexdigest()[:16]
+    return f"{notebook_id}@{digest}"
+
+
+def job_channel(job: dict[str, Any]) -> str:
+    """A queued job's channel (jobs queued before channels: the notebook id)."""
+    return str(job.get("channel") or job["notebook_id"])
 
 
 def active_key(notebook_id: str) -> str:
@@ -120,6 +137,18 @@ class RuntimeState:
     token_minted_at: float = 0.0
     token_role: str = ""
     token_version: int = 0
+    #: Whose files the notebook is in: the user, or ``~ws/<id>`` for a shared
+    #: workspace; and whether this person may write files back there.
+    namespace: str = ""
+    files_writable: bool = True
+
+    @property
+    def channel(self) -> str:
+        return channel(self.notebook_id, self.user)
+
+    @property
+    def files_namespace(self) -> str:
+        return self.namespace or self.user
 
     def to_redis(self) -> dict[str, str]:
         return {key: json.dumps(value) for key, value in asdict(self).items()}

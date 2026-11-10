@@ -10,6 +10,11 @@ contracts. Architecture: [arch-20](../../../../docs/arch-20-nova-notebook.md).
   `NOVA_SYSTEM` (`repository.py`). The worker holding a runtime's lease is the
   only writer of that runtime's status and of execution rows — the API records
   intent and wakes the worker. Do not update an execution row from two places.
+- A notebook may sit in a shared workspace. Resolve it through
+  `workspaces/spaces.py` (`space_service.for_entry`, `edit=True` for changes),
+  never by the caller's username alone. Runtime keys are per notebook and
+  person (`state.channel`): never key runtime state by notebook id alone, or
+  one person would run under another's identity.
 - Only `runtime/opensandbox_provider.py` imports the OpenSandbox SDK. Tests use
   a fake provider and fakeredis (`tests/unit/test_notebook_runtime.py`).
 - Code sent to a kernel is built in `runtime/kernel_calls.py`: user text only

@@ -114,6 +114,7 @@ type CellProps = {
   editing: boolean;
   runtimeReady: boolean;
   canEdit: boolean;
+  canRun: boolean;
   onSelect: (cellId: string, edit: boolean) => void;
   onSource: (cellId: string, source: string) => void;
   onKind: (cellId: string, kind: CellKind) => void;
@@ -219,6 +220,7 @@ export const NotebookCellView = memo(function NotebookCellView({
   editing,
   runtimeReady,
   canEdit,
+  canRun,
   onSelect,
   onSource,
   onKind,
@@ -355,7 +357,7 @@ export const NotebookCellView = memo(function NotebookCellView({
                 <ToolbarButton
                   label="Run this cell"
                   shortcut="Ctrl+Enter"
-                  disabled={!canEdit}
+                  disabled={!canRun}
                   onClick={() => onCommand(cell.id, "run")}
                 >
                   <Play className="size-3.5" />
@@ -406,11 +408,11 @@ export const NotebookCellView = memo(function NotebookCellView({
                 <DropdownMenuSeparator />
                 {executable ? (
                   <>
-                    <DropdownMenuItem disabled={!canEdit} onSelect={() => onCommand(cell.id, "run-above")}>
+                    <DropdownMenuItem disabled={!canRun} onSelect={() => onCommand(cell.id, "run-above")}>
                       <ListStart className="size-4" />
                       Run cells above
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={!canEdit} onSelect={() => onCommand(cell.id, "run-below")}>
+                    <DropdownMenuItem disabled={!canRun} onSelect={() => onCommand(cell.id, "run-below")}>
                       <ListEnd className="size-4" />
                       Run this and below
                     </DropdownMenuItem>

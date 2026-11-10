@@ -192,6 +192,13 @@ class Settings(BaseSettings):
     # catalog store, and how long one caller's visible catalog tree is reused.
     CATALOG_SYNC_INTERVAL_SECONDS: int = 300
     CATALOG_VISIBILITY_CACHE_SECONDS: int = 60
+    #: Where this process reaches a catalog source host when it connects itself
+    #: (metadata reads, notebook write-back) and that differs from the engine's
+    #: address. Deployment topology, as JSON: a backend run on the host reaches a
+    #: compose-network source by another name, e.g.
+    #: ``{"catalog-test-postgres": "nova-catalog-test-postgres.orb.local"}``.
+    #: Empty when the backend shares the engine's network.
+    CATALOG_DIRECT_HOSTS: dict[str, str] = Field(default_factory=dict)
 
     # --- Centralized authorization (Apache Ranger) ---
     # Ranger is always on: every session activates exactly one named role and

@@ -57,6 +57,36 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
+#: Shared workspaces: a named set of files owned by one user and shared with
+#: roles. Files of a workspace live in ``CONFIG_WORKSPACE_ENTRIES`` under the
+#: namespace ``~ws/<id>`` (a username never contains ``/``).
+WORKSPACES_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACES (
+    id           VARCHAR(64) NOT NULL,
+    name         VARCHAR(256) NOT NULL,
+    owner        VARCHAR(128) NOT NULL,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_deleted   BOOLEAN DEFAULT "false"
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
+#: Which roles a shared workspace is shared with, and whether they may edit.
+#: Anyone with the role assigned sees the workspace, whatever role is active.
+WORKSPACE_SHARES_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_SHARES (
+    workspace_id VARCHAR(64) NOT NULL,
+    role_name    VARCHAR(128) NOT NULL,
+    permission   VARCHAR(16) NOT NULL,
+    granted_by   VARCHAR(128),
+    granted_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(workspace_id, role_name)
+DISTRIBUTED BY HASH(workspace_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
 #: Immutable snapshot of a workspace file at each save. The content itself
 #: lives as a separate object in the workspace bucket (see
 #: ``WorkspaceService._version_object_key``); this row is metadata only, so a
@@ -469,6 +499,8 @@ async def init_nova_system() -> None:
     try:
         await db.execute_system(WORKSPACE_ENTRIES_DDL)
         await db.execute_system(WORKSPACE_FILE_VERSIONS_DDL)
+        await db.execute_system(WORKSPACES_DDL)
+        await db.execute_system(WORKSPACE_SHARES_DDL)
         await db.execute_system(ENTITIES_DDL)
         for ddl in RANGER_CONTROL_PLANE_DDL:
             await db.execute_system(ddl)

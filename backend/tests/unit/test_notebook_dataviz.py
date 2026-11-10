@@ -32,7 +32,7 @@ def _setup(monkeypatch, *, table: dict, role="analyst", source_revision=None):
         return json.dumps([{"type": "table", "table": table}]).encode()
 
     monkeypatch.setattr(repository.notebook_repository, "get_execution", get_execution)
-    monkeypatch.setattr(documents.notebook_documents, "get", get)
+    monkeypatch.setattr(documents.notebook_documents, "get_for", get)
     monkeypatch.setattr(workspace_module.workspace_service, "read_internal_object", read)
 
 

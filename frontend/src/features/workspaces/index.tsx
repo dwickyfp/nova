@@ -29,14 +29,10 @@ import {
   Database,
   ListOrdered,
   Download,
-  FileCode,
   Folder,
   GripHorizontal,
   History,
   Play,
-  FileSpreadsheet,
-  NotebookPen,
-  Plus,
   RefreshCw,
   Square,
   Search,
@@ -62,6 +58,11 @@ import {
   type ProposedRewrite,
 } from "@/features/assistant/query-attach";
 import { ChartVisualization } from "./chart-visualization";
+import { NewItemButton } from "./explorer/new-item-button";
+import { PERSONAL, type WorkspaceSpace } from "./explorer/api";
+import { useExplorerController, type Place } from "./explorer/controller";
+import { freeName } from "./explorer/tree-data";
+import { WorkspaceExplorer } from "./explorer/workspace-explorer";
 import { notebookApi } from "./notebook/api";
 import { isEditableName, isNotebookName, nextNotebookName } from "./notebook/names";
 import { NOVA_TABLE_MIME } from "./notebook/helpers";
@@ -126,7 +127,6 @@ import type {
   WorkspaceTreeResponse,
 } from "./types";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -717,9 +717,6 @@ export function WorkspacesPage() {
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({});
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<
-    Record<string, boolean>
-  >({ "": true });
   const [expandedDatabases, setExpandedDatabases] = useState<
     Record<string, boolean>
   >({});
@@ -791,13 +788,6 @@ export function WorkspacesPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [renameEntryTarget, setRenameEntryTarget] =
-    useState<WorkspaceEntry | null>(null);
-  const [renameEntryName, setRenameEntryName] = useState("");
-  const [renamingEntry, setRenamingEntry] = useState(false);
-  const [deleteEntryTarget, setDeleteEntryTarget] =
-    useState<WorkspaceEntry | null>(null);
-  const [deletingEntry, setDeletingEntry] = useState(false);
   const [pendingDestructiveSql, setPendingDestructiveSql] =
     useState<QuerySnapshot | null>(null);
 
@@ -1245,6 +1235,20 @@ export function WorkspacesPage() {
     queryFn: () => api.get<WorkspaceTreeResponse>("/workspaces/tree"),
   });
 
+  const username = useAuthStore((state) => state.auth.user?.username ?? "");
+  const personalSpace = useMemo<WorkspaceSpace>(
+    () =>
+      workspaceTreeQuery.data?.space ?? {
+        id: PERSONAL,
+        name: "Personal Workspace",
+        kind: "personal",
+        owner: username,
+        permission: "owner",
+      },
+    [workspaceTreeQuery.data?.space, username],
+  );
+  const explorer = useExplorerController(personalSpace);
+
   const queryContextQuery = useQuery<QueryContextResponse>({
     queryKey: ["query-context"],
     queryFn: () => api.get<QueryContextResponse>("/query/context"),
@@ -1610,6 +1614,7 @@ export function WorkspacesPage() {
           "default",
         role: sessionRole,
         loaded: true,
+        readOnly: file.space?.permission === "view",
       },
     }));
   }
@@ -1621,6 +1626,7 @@ export function WorkspacesPage() {
     schema: string,
     role: string,
   ) {
+    if (tabs[id]?.readOnly) return false;
     if (conflictedFilesRef.current.has(id)) {
       toast.error(
         "Copy your local SQL edits, then reload this file before saving.",
@@ -1648,35 +1654,35 @@ export function WorkspacesPage() {
     return true;
   }
 
-  function generateUniqueFileName(): string {
-    // Every file at the top level, not only the open tabs: a name an unopened
-    // file already has would point both files at one stored object.
-    const existingNames = new Set([
-      ...Object.values(tabs).map((t) => t.title.toLowerCase()),
-      ...(workspaceTreeQuery.data?.entries ?? [])
-        .filter((entry) => !entry.parent_path)
-        .map((entry) => entry.name.toLowerCase()),
-    ]);
-    const base = "Untitled";
-    const first = `${base}.sql`;
-    if (!existingNames.has(first.toLowerCase())) return first;
-    let i = 2;
-    while (existingNames.has(`${base}-${i}.sql`.toLowerCase())) i++;
-    return `${base}-${i}.sql`;
+
+  function entriesIn(space: WorkspaceSpace): WorkspaceEntry[] {
+    if (space.kind === "personal") return workspaceTreeQuery.data?.entries ?? [];
+    return (
+      queryClient.getQueryData<WorkspaceTreeResponse>(["workspace-space-tree", space.id])
+        ?.entries ?? []
+    );
   }
 
-  async function createNewFile() {
-    const fileName = generateUniqueFileName();
+  function refreshSpace(space: WorkspaceSpace) {
+    return queryClient.invalidateQueries({
+      queryKey:
+        space.kind === "personal" ? ["workspace-tree"] : ["workspace-space-tree", space.id],
+    });
+  }
+
+  async function createNewFile(place: Place = explorer.place) {
+    const fileName = freeName(entriesIn(place.space), place.parentPath, "Untitled", ".sql");
     try {
       const response = await api.post<WorkspaceFileResponse>(
         "/workspaces/files",
         {
           name: fileName,
-          parent_path: "",
+          parent_path: place.parentPath,
           content: "",
+          space: place.space.id,
         },
       );
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      await refreshSpace(place.space);
       startTransition(() => {
         setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
         setActiveTabId(response.entry.id);
@@ -1710,15 +1716,20 @@ export function WorkspacesPage() {
     }
   }
 
-  async function createNewNotebook() {
+  async function createNewNotebook(place: Place = explorer.place) {
     const name = nextNotebookName(
-      (workspaceTreeQuery.data?.entries ?? [])
-        .filter((entry) => !entry.parent_path)
+      entriesIn(place.space)
+        .filter((entry) => entry.parent_path === place.parentPath)
         .map((entry) => entry.name),
     );
     try {
-      const response = await notebookApi.create(name);
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      const response = await notebookApi.create(
+        name,
+        place.parentPath,
+        undefined,
+        place.space.id,
+      );
+      await refreshSpace(place.space);
       startTransition(() => {
         setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
         setActiveTabId(response.entry.id);
@@ -1743,60 +1754,17 @@ export function WorkspacesPage() {
     }
   }
 
-  function renameEntry(entry: WorkspaceEntry) {
-    setRenameEntryTarget(entry);
-    setRenameEntryName(entry.name);
-  }
-
-  async function confirmRenameEntry() {
-    const target = renameEntryTarget;
-    const name = renameEntryName.trim();
-    if (!target || !name || name === target.name) return;
-    setRenamingEntry(true);
-    try {
-      await api.post<{ entry: WorkspaceEntry }>("/workspaces/rename", {
-        id: target.id,
-        name,
-        parent_path: target.parent_path,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
-      setRenameEntryTarget(null);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to rename entry.",
-      );
-    } finally {
-      setRenamingEntry(false);
-    }
-  }
-
-  function deleteEntry(entry: WorkspaceEntry) {
-    setDeleteEntryTarget(entry);
-  }
-
-  async function confirmDeleteEntry() {
-    const target = deleteEntryTarget;
-    if (!target) return;
-    setDeletingEntry(true);
-    try {
-      await api.delete<{ success: boolean }>(`/workspaces/files/${target.id}`);
-      setLastExecutionByTab((previous) => {
-        const next = { ...previous };
-        delete next[target.id];
-        return next;
-      });
-      setOpenTabIds((prev) => prev.filter((id) => id !== target.id));
-      if (activeTabId === target.id) {
-        setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null);
-      }
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
-      setDeleteEntryTarget(null);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to delete entry.",
-      );
-    } finally {
-      setDeletingEntry(false);
+  /** Tabs of files that were deleted (with a folder or a workspace) close. */
+  function closeDeletedTabs(entryIds: string[]) {
+    const gone = new Set(entryIds);
+    setLastExecutionByTab((previous) => {
+      const next = { ...previous };
+      for (const id of entryIds) delete next[id];
+      return next;
+    });
+    setOpenTabIds((prev) => prev.filter((id) => !gone.has(id)));
+    if (activeTabId && gone.has(activeTabId)) {
+      setActiveTabId(openTabIds.find((id) => !gone.has(id)) ?? null);
     }
   }
 
@@ -2483,25 +2451,12 @@ export function WorkspacesPage() {
                 </Button>
               </div>
               {filePanelOpen && sidebarTab === "workspaces" && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-center gap-2"
-                    onClick={() => void createNewFile()}
-                  >
-                    <Plus className="size-4" />
-                    SQL file
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-center gap-2"
-                    onClick={() => void createNewNotebook()}
-                  >
-                    <NotebookPen className="size-4" />
-                    Notebook
-                  </Button>
+                <div className="mt-3">
+                  <NewItemButton
+                    controller={explorer}
+                    onSqlFile={(place) => void createNewFile(place)}
+                    onNotebook={(place) => void createNewNotebook(place)}
+                  />
                 </div>
               )}
             </div>
@@ -2566,17 +2521,16 @@ export function WorkspacesPage() {
                 </div>
                 <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
                   <div hidden={sidebarTab !== "workspaces"}>
-                    <WorkspaceTree
-                      entries={filteredEntries}
+                    <WorkspaceExplorer
+                      personal={personalSpace}
+                      personalEntries={filteredEntries}
+                      search={deferredWorkspaceSearch}
                       activeEntryId={activeTabId}
-                      expandedPaths={expandedWorkspacePaths}
-                      onTogglePath={(path) =>
-                        setExpandedWorkspacePaths((prev) => ({
-                          ...prev,
-                          [path]: !prev[path],
-                        }))
-                      }
-                      onOpen={(entry) => {
+                      controller={explorer}
+                      onNewSqlFile={(place) => void createNewFile(place)}
+                      onNewNotebook={(place) => void createNewNotebook(place)}
+                      onDeleted={closeDeletedTabs}
+                      onOpenFile={(entry) => {
                         if (entry.entry_type !== "file") return;
                         if (!isEditableName(entry.name)) {
                           toast.message(`${entry.name} is a data file`, {
@@ -2613,8 +2567,6 @@ export function WorkspacesPage() {
                             } satisfies WorkspaceTabState),
                         }));
                       }}
-                      onRename={renameEntry}
-                      onDelete={deleteEntry}
                     />
                   </div>
                   {databasesVisited || sidebarTab === "databases" ? (
@@ -2777,6 +2729,7 @@ export function WorkspacesPage() {
                   <MonacoSqlEditor
                     key={activeTab.id}
                     value={activeTab.content}
+                    readOnly={activeTab.readOnly}
                     database={activeTab.database}
                     schema={activeTab.schema}
                     role={sessionRole}
@@ -3088,54 +3041,6 @@ export function WorkspacesPage() {
         entryId={activeTab?.id ?? null}
         fileName={activeTab?.title ?? ""}
       />
-      <ConfirmDialog
-        open={renameEntryTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRenameEntryTarget(null);
-        }}
-        title="Rename entry"
-        desc={
-          renameEntryTarget
-            ? `Enter a new name for “${renameEntryTarget.name}”.`
-            : "Enter a new name."
-        }
-        confirmText="Rename"
-        disabled={
-          !renameEntryName.trim() ||
-          renameEntryName.trim() === renameEntryTarget?.name
-        }
-        isLoading={renamingEntry}
-        handleConfirm={() => void confirmRenameEntry()}
-      >
-        <Input
-          aria-label="New entry name"
-          autoFocus
-          value={renameEntryName}
-          onChange={(event) => setRenameEntryName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void confirmRenameEntry();
-            }
-          }}
-        />
-      </ConfirmDialog>
-      <ConfirmDialog
-        open={deleteEntryTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteEntryTarget(null);
-        }}
-        title="Delete entry?"
-        desc={
-          deleteEntryTarget
-            ? `“${deleteEntryTarget.name}” will be deleted.`
-            : "This entry will be deleted."
-        }
-        confirmText="Delete entry"
-        destructive
-        isLoading={deletingEntry}
-        handleConfirm={() => void confirmDeleteEntry()}
-      />
       <QueryConfirmationDialog
         pending={pendingDestructiveSql}
         onAssistantOpenChange={setAssistantOpen}
@@ -3167,146 +3072,6 @@ export function WorkspacesPage() {
       />
     </div>
   );
-}
-
-function WorkspaceTree({
-  entries,
-  activeEntryId,
-  expandedPaths,
-  onTogglePath,
-  onOpen,
-  onRename,
-  onDelete,
-}: {
-  entries: WorkspaceEntry[];
-  activeEntryId: string | null;
-  expandedPaths: Record<string, boolean>;
-  onTogglePath: (path: string) => void;
-  onOpen: (entry: WorkspaceEntry) => void;
-  onRename: (entry: WorkspaceEntry) => void;
-  onDelete: (entry: WorkspaceEntry) => void;
-}) {
-  return (
-    <div className="px-2 py-3">
-      <SidebarMenu>
-        {renderWorkspaceEntries(
-          "",
-          entries,
-          activeEntryId,
-          expandedPaths,
-          onTogglePath,
-          onOpen,
-          onRename,
-          onDelete,
-        )}
-      </SidebarMenu>
-    </div>
-  );
-}
-
-function renderWorkspaceEntries(
-  parentPath: string,
-  entries: WorkspaceEntry[],
-  activeEntryId: string | null,
-  expandedPaths: Record<string, boolean>,
-  onTogglePath: (path: string) => void,
-  onOpen: (entry: WorkspaceEntry) => void,
-  onRename: (entry: WorkspaceEntry) => void,
-  onDelete: (entry: WorkspaceEntry) => void,
-): React.ReactNode {
-  return entries
-    .filter((entry) => entry.parent_path === parentPath)
-    .sort((a, b) =>
-      a.entry_type === b.entry_type
-        ? a.name.localeCompare(b.name)
-        : a.entry_type === "folder"
-          ? -1
-          : 1,
-    )
-    .map((entry) => {
-      const isFolder = entry.entry_type === "folder";
-      const isOpen = expandedPaths[entry.path] ?? false;
-
-      if (isFolder) {
-        return (
-          <Collapsible
-            key={entry.id}
-            open={isOpen}
-            onOpenChange={() => onTogglePath(entry.path)}
-          >
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <ChevronRight
-                    className={cn(
-                      "size-4 shrink-0 transition-transform duration-200",
-                      isOpen && "rotate-90",
-                    )}
-                  />
-                  <Folder
-                    className={cn(
-                      "size-4 shrink-0 text-primary",
-                      isOpen && "text-primary/80",
-                    )}
-                  />
-                  <span className="truncate">{entry.name}</span>
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {renderWorkspaceEntries(
-                    entry.path,
-                    entries,
-                    activeEntryId,
-                    expandedPaths,
-                    onTogglePath,
-                    onOpen,
-                    onRename,
-                    onDelete,
-                  )}
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </SidebarMenuItem>
-          </Collapsible>
-        );
-      }
-
-      return (
-        <SidebarMenuItem key={entry.id}>
-          <button
-            type="button"
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
-              entry.id === activeEntryId &&
-                "bg-primary/10 font-medium text-primary",
-            )}
-            onClick={() => onOpen(entry)}
-          >
-            {(() => {
-              const Icon = isNotebookName(entry.name)
-                ? NotebookPen
-                : isEditableName(entry.name)
-                  ? FileCode
-                  : FileSpreadsheet;
-              return (
-                <Icon
-                  className={cn(
-                    "size-4 shrink-0",
-                    entry.id === activeEntryId
-                      ? "text-primary"
-                      : "text-muted-foreground",
-                  )}
-                />
-              );
-            })()}
-            <span className="truncate">{entry.name}</span>
-          </button>
-        </SidebarMenuItem>
-      );
-    });
 }
 
 const DatabaseExplorer = memo(function DatabaseExplorer({
@@ -3932,6 +3697,7 @@ const QueryResults = memo(function QueryResults({
 
 function MonacoSqlEditor({
   value,
+  readOnly = false,
   database,
   schema,
   role,
@@ -3945,6 +3711,7 @@ function MonacoSqlEditor({
   onDenyRewrite,
 }: {
   value: string;
+  readOnly?: boolean;
   database: string;
   schema: string;
   role: string;
@@ -4427,6 +4194,7 @@ function MonacoSqlEditor({
         onChange={onChange}
         onMount={handleMount}
         options={{
+          readOnly,
           minimap: { enabled: false },
           fontSize: 12,
           fontFamily:

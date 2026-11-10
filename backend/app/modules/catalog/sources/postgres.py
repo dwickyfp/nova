@@ -58,7 +58,7 @@ class PostgresSource(CatalogSource):
         if not databases:
             return {}
         async with await psycopg.AsyncConnection.connect(
-            host=endpoint.host,
+            host=endpoint.direct_host,
             port=endpoint.port,
             dbname=endpoint.database,
             user=credentials.username,
@@ -94,7 +94,7 @@ class PostgresSource(CatalogSource):
         from psycopg import sql
 
         async with await psycopg.AsyncConnection.connect(
-            host=endpoint.host,
+            host=endpoint.direct_host,
             port=endpoint.port,
             dbname=endpoint.database,
             user=credentials.username,

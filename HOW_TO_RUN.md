@@ -549,11 +549,23 @@ NOTEBOOK_SANDBOX_NETWORKS=      # OrbStack: 127.0.0.1/32,0.250.250.0/24
 ```
 
 Runtime dijalankan oleh `nova-worker` (langkah 5), jadi worker harus hidup.
-Di notebook, `con = novaduck.connect()` sudah terhubung ke semua catalog yang
-dilihat role aktif (`nova`, Postgres, Snowflake). `con.write(...)`,
+Di notebook, `import novaduck` lalu `con = novaduck.connect()` sudah terhubung
+ke semua catalog yang dilihat role aktif (`nova`, Postgres, Snowflake). Contoh
+lengkap (baca tiga catalog, transformasi, merge ke Nova dan Postgres) ada di
+[`docs/examples/novaduck-tour.ipynb`](docs/examples/novaduck-tour.ipynb); upload
+ke Workspaces untuk mencobanya. `con.write(...)`,
 `con.merge_into(...)` dan `con.put(df, "@stage/path/file.parquet")` menulis
 sebagai user tersebut. Menulis ke Postgres/Snowflake butuh *write credential*
 di connection-nya: Catalog → Connections → ⋯ → Notebook writes.
+
+Backend yang berjalan di host (`dev.sh`) tidak mengenal hostname jaringan
+compose seperti `catalog-test-postgres`, padahal engine memakainya. Untuk
+koneksi yang dibuka backend sendiri (metadata dan write-back), petakan host itu
+di `backend/.env`; engine tetap memakai alamat aslinya:
+
+```bash
+CATALOG_DIRECT_HOSTS={"catalog-test-postgres":"nova-catalog-test-postgres.orb.local"}
+```
 Buka **Workspaces → Notebook**, lalu **Start** pada pil runtime. Sel pertama
 siap kira-kira 10–20 detik setelah start. Tes kernel berjalan di dalam image:
 

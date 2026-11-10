@@ -64,7 +64,15 @@ Saved queries: `id` (PK), `user_name`, `name`, `sql_text`, `database_name`, `sch
 
 ### `CONFIG_WORKSPACE_ENTRIES`
 
-Virtual workspace files: `id` (PK), `user_name`, `parent_path`, `name`, `entry_type`, `object_key`, `size_bytes`, `etag`, timestamps, soft-delete fields.
+Virtual workspace files: `id` (PK), `user_name`, `parent_path`, `name`, `entry_type`, `object_key`, `size_bytes`, `etag`, timestamps, soft-delete fields. `user_name` is the owner's username for Personal Workspace files, or `~ws/<id>` for files in a shared workspace.
+
+### `CONFIG_WORKSPACES`
+
+Shared workspaces: `id` (PK, 32 hex), `name`, `owner`, timestamps, `is_deleted`. Its files live in `CONFIG_WORKSPACE_ENTRIES` under `~ws/<id>`.
+
+### `CONFIG_WORKSPACE_SHARES`
+
+Role grants on a shared workspace: `workspace_id` + `role_name` (PK), `permission` (`view` or `edit`), `granted_by`, `granted_at`. Everyone with the role assigned sees the workspace; the strongest permission among their roles applies.
 
 ### `CONFIG_AI_PROVIDERS`
 

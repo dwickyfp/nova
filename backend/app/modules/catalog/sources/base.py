@@ -26,6 +26,7 @@ from typing import ClassVar
 from urllib.parse import parse_qsl, urlencode
 
 from app.common.sql_guard import is_credential_property
+from app.core.config import settings
 
 from ..errors import CatalogError, safe_catalog_name
 from .writes import WriteRefused, WriteRequest, WriteResult
@@ -76,6 +77,11 @@ class Endpoint:
     port: int
     database: str | None = None
     options: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def direct_host(self) -> str:
+        """The host this process connects to itself; the engine keeps ``host``."""
+        return settings.CATALOG_DIRECT_HOSTS.get(self.host, self.host)
 
 
 @dataclass(frozen=True)

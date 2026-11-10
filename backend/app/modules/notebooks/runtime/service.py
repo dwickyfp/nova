@@ -15,7 +15,7 @@ import time
 from typing import Any
 
 from app.core.config import settings
-from app.core.exceptions import NovaException
+from app.core.exceptions import NovaException, StorageError
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.notebooks.documents import is_notebook_name, notebook_documents
 from app.modules.notebooks.packages import (
@@ -28,6 +28,7 @@ from app.modules.notebooks.repository import notebook_repository
 from app.modules.notebooks.runtime import events, state
 from app.modules.workspaces.repository import workspace_repository
 from app.modules.workspaces.service import workspace_service
+from app.modules.workspaces.spaces import Space, space_service
 
 RUN_MODES = ("cell", "all", "above", "below")
 _IDEMPOTENCY_SECONDS = 600
@@ -60,11 +61,24 @@ def _identity(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _require_notebook(username: str, notebook_id: str) -> dict[str, Any]:
-    entry = await workspace_repository.get_entry(username, notebook_id)
+async def _require_notebook(
+    user: dict[str, Any], notebook_id: str, *, edit: bool = False
+) -> tuple[dict[str, Any], Space]:
+    """The notebook and its workspace, if this person may open it (or change it)."""
+    try:
+        space = await space_service.for_entry(user, notebook_id, edit=edit)
+    except StorageError as exc:
+        if exc.status_code == 403:
+            raise NotebookRuntimeError(
+                "You can view this notebook but not change it", status_code=403, code="FORBIDDEN"
+            ) from None
+        raise NotebookRuntimeError(
+            "Notebook not found", status_code=404, code="NOT_FOUND"
+        ) from None
+    entry = await workspace_repository.get_entry(space.namespace, notebook_id)
     if not entry or entry["entry_type"] != "file" or not is_notebook_name(entry["name"]):
         raise NotebookRuntimeError("Notebook not found", status_code=404, code="NOT_FOUND")
-    return entry
+    return entry, space
 
 
 def _not_ready(runtime: state.RuntimeState | None) -> NotebookRuntimeError:
@@ -81,11 +95,12 @@ class NotebookRuntimeService:
     # ── Status ────────────────────────────────────────────────────────────
 
     async def status(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
-        await _require_notebook(user["username"], notebook_id)
-        runtime = await state.active_runtime(notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
+        runtime = await state.active_runtime(ch)
         if runtime is not None:
             return {"runtime": runtime.public(), "limits": _limits()}
-        last = await state.last_outcome(notebook_id)
+        last = await state.last_outcome(ch)
         return {
             "runtime": {
                 "status": last.get("status") if last else "ABSENT",
@@ -99,7 +114,8 @@ class NotebookRuntimeService:
 
     async def start(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
         identity = _identity(user)
-        await _require_notebook(identity["user"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
         if not settings.OPENSANDBOX_API_KEY:
             raise NotebookRuntimeError(
                 "Notebook runtimes are not set up on this Nova deployment",
@@ -107,10 +123,10 @@ class NotebookRuntimeService:
                 code="RUNTIME_UNAVAILABLE",
             )
         client = state.redis()
-        lock = client.lock(f"{state.PREFIX}start-lock:{notebook_id}", timeout=30,
+        lock = client.lock(f"{state.PREFIX}start-lock:{ch}", timeout=30,
                            blocking_timeout=10)
         async with lock:
-            existing = await state.active_runtime(notebook_id)
+            existing = await state.active_runtime(ch)
             if existing is not None:
                 return {"runtime": existing.public()}
             live = await state.live_runtimes()
@@ -138,19 +154,24 @@ class NotebookRuntimeService:
                 session_id=identity["session_id"],
                 active_role=identity["active_role"],
                 security_version=identity["security_version"],
+                namespace=space.namespace,
+                files_writable=space.can_edit,
             )
             await state.save(runtime, ttl=settings.NOTEBOOK_MAX_LIFETIME_SECONDS + 3600)
-            await client.set(state.active_key(notebook_id), runtime.id,
+            await client.set(state.active_key(ch), runtime.id,
                              ex=settings.NOTEBOOK_MAX_LIFETIME_SECONDS + 3600)
             await client.sadd(state.RUNTIMES, runtime.id)
-            await client.delete(state.last_key(notebook_id))
-            await state.put_job(runtime.id, {"kind": "start", "notebook_id": notebook_id})
-        await events.publish(notebook_id, "runtime.status", runtime.public())
+            await client.delete(state.last_key(ch))
+            await state.put_job(
+                runtime.id, {"kind": "start", "notebook_id": notebook_id, "channel": ch}
+            )
+        await events.publish(ch, "runtime.status", runtime.public())
         return {"runtime": runtime.public()}
 
     async def stop(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
-        await _require_notebook(user["username"], notebook_id)
-        runtime = await state.active_runtime(notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
+        runtime = await state.active_runtime(ch)
         if runtime is None:
             return {"runtime": {"status": "STOPPED"}}
         if runtime.current_execution:
@@ -169,8 +190,9 @@ class NotebookRuntimeService:
         return {"runtime": {**runtime.public(), "status": "STOPPING"}}
 
     async def restart(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
-        await _require_notebook(user["username"], notebook_id)
-        runtime = await state.active_runtime(notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
+        runtime = await state.active_runtime(ch)
         if runtime is None or runtime.status not in {"READY", "BUSY"}:
             raise _not_ready(runtime)
         await self.cancel(user, notebook_id, None)
@@ -182,8 +204,10 @@ class NotebookRuntimeService:
         from app.modules.notebooks.runtime.opensandbox_provider import OpenSandboxProvider
         from app.modules.notebooks.runtime.provider import ProviderError, SandboxHandle
 
-        await _require_notebook(user["username"], notebook_id)
-        runtime = await state.active_runtime(notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+
+        ch = state.channel(notebook_id, user["username"])
+        runtime = await state.active_runtime(ch)
         if runtime is None or not runtime.sandbox_id or runtime.status not in {"READY", "BUSY"}:
             return {"metrics": None}
         provider = OpenSandboxProvider()
@@ -223,14 +247,16 @@ class NotebookRuntimeService:
             cached = await client.get(idem)
             if cached:
                 return json.loads(cached)
-        _entry, document = await notebook_documents.get(identity["user"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
+        _entry, document = await notebook_documents.get(space.namespace, notebook_id)
         if base_revision is not None and base_revision != document.revision:
             raise NotebookRuntimeError(
                 "Save the notebook before running it",
                 status_code=409,
                 code="NOTEBOOK_CONFLICT",
             )
-        runtime = await state.active_runtime(notebook_id)
+        runtime = await state.active_runtime(ch)
         if runtime is None or runtime.status not in state.LIVE_STATUSES - {"STOPPING"}:
             raise _not_ready(runtime)
         if mode not in RUN_MODES:
@@ -257,6 +283,7 @@ class NotebookRuntimeService:
                 "execution_id": execution_id,
                 "run_id": run_id,
                 "notebook_id": notebook_id,
+                "channel": ch,
                 "user": identity["user"],
                 "session_id": identity["session_id"],
                 "active_role": identity["active_role"],
@@ -280,13 +307,13 @@ class NotebookRuntimeService:
                 notebook_id=notebook_id,
                 queued_at=now,
             )
-            await client.hset(state.inflight_key(notebook_id), cell.id, execution_id)
-            await client.expire(state.inflight_key(notebook_id), state.DAY)
+            await client.hset(state.inflight_key(ch), cell.id, execution_id)
+            await client.expire(state.inflight_key(ch), state.DAY)
             await state.put_job(runtime.id, job)
             queued.append({"execution_id": execution_id, "cell_id": cell.id,
                            "source_revision": cell.source_revision})
             await events.publish(
-                notebook_id,
+                ch,
                 "cell.queued",
                 {"execution_id": execution_id, "cell_id": cell.id, "position": position,
                  "source_revision": cell.source_revision, "run_id": run_id},
@@ -299,9 +326,10 @@ class NotebookRuntimeService:
     async def cancel(
         self, user: dict[str, Any], notebook_id: str, execution_id: str | None
     ) -> dict[str, Any]:
-        await _require_notebook(user["username"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
         client = state.redis()
-        inflight = await client.hgetall(state.inflight_key(notebook_id))
+        inflight = await client.hgetall(state.inflight_key(ch))
         targets = list(inflight.values()) if execution_id is None else [execution_id]
         cancelled = []
         for target in targets:
@@ -316,7 +344,8 @@ class NotebookRuntimeService:
     async def latest(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
         """The newest outcome of every cell, with outputs, plus what is in flight."""
         username = user["username"]
-        await _require_notebook(username, notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
         rows = await notebook_repository.latest_executions(username, notebook_id)
         # Smallest outputs first, so many cells show theirs; the largest (an
         # interactive chart) are left for the page to fetch one by one.
@@ -339,14 +368,14 @@ class NotebookRuntimeService:
         await asyncio.gather(*(load_outputs(row) for row in loaded))
         inflight = []
         for cell_id, execution_id in (
-            await state.redis().hgetall(state.inflight_key(notebook_id))
+            await state.redis().hgetall(state.inflight_key(ch))
         ).items():
             record = await state.get_execution(execution_id)
             if record and record.get("status") in {"queued", "running"}:
                 inflight.append({"cell_id": cell_id, "execution_id": execution_id,
                                  "status": record["status"],
                                  "execution_count": record.get("execution_count")})
-        runtime = await state.active_runtime(notebook_id)
+        runtime = await state.active_runtime(ch)
         variables = None
         if runtime is not None:
             raw = await state.redis().get(f"{state.PREFIX}vars:{runtime.id}")
@@ -361,7 +390,7 @@ class NotebookRuntimeService:
     async def execution(
         self, user: dict[str, Any], notebook_id: str, execution_id: str
     ) -> dict[str, Any]:
-        await _require_notebook(user["username"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
         row = await notebook_repository.get_execution(user["username"], notebook_id, execution_id)
         if row is None:
             live = await state.get_execution(execution_id)
@@ -375,7 +404,7 @@ class NotebookRuntimeService:
     # ── Packages and files ────────────────────────────────────────────────
 
     async def packages(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
-        await _require_notebook(user["username"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
         manifest = await notebook_repository.get_packages(user["username"], notebook_id)
         return {
             "requested": manifest,
@@ -396,20 +425,21 @@ class NotebookRuntimeService:
         self, user: dict[str, Any], notebook_id: str, *, name: str, version: str | None
     ) -> dict[str, Any]:
         identity = _identity(user)
-        await _require_notebook(identity["user"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+        ch = state.channel(notebook_id, user["username"])
         try:
             package = validate_request(name, version)
         except PackageNotAllowed as exc:
             raise NotebookRuntimeError(str(exc), status_code=403,
                                        code="PACKAGE_NOT_ALLOWED") from exc
-        runtime = await state.active_runtime(notebook_id)
+        runtime = await state.active_runtime(ch)
         if runtime is None or runtime.status not in {"READY", "BUSY"}:
             raise _not_ready(runtime)
         operation_id = state.new_id("pkg")
         await state.put_job(
             runtime.id,
             {"kind": "install", "operation_id": operation_id, "package": package,
-             "notebook_id": notebook_id, "user": identity["user"]},
+             "notebook_id": notebook_id, "channel": ch, "user": identity["user"]},
         )
         return {"operation_id": operation_id, "package": package, "status": "queued"}
 
@@ -418,7 +448,8 @@ class NotebookRuntimeService:
     ) -> dict[str, Any]:
         from app.modules.notebooks.packages import canonical
 
-        await _require_notebook(user["username"], notebook_id)
+        _entry, space = await _require_notebook(user, notebook_id)
+
         manifest = await notebook_repository.get_packages(user["username"], notebook_id)
         kept = [item for item in manifest if canonical(item.get("name", "")) != canonical(name)]
         await notebook_repository.set_packages(user["username"], notebook_id, kept)
@@ -436,16 +467,19 @@ class NotebookRuntimeService:
         """Store an uploaded data file next to the notebook and copy it in."""
         from app.modules.notebooks.uploads import validate_upload
 
-        entry = await _require_notebook(user["username"], notebook_id)
+        entry, space = await _require_notebook(user, notebook_id, edit=True)
+
         clean_name = validate_upload(name, data)
         base = entry.get("parent_path") or ""
         parent = "/".join(p for p in [base, subfolder] if p)
         from app.modules.notebooks.packages import _ensure_folders
+        from app.modules.workspaces.actor import acting_as
 
-        await _ensure_folders(user["username"], parent)
-        stored = await workspace_service.create_file_bytes(
-            user["username"], parent, clean_name, data
-        )
+        with acting_as(user["username"]):
+            await _ensure_folders(space.namespace, parent)
+            stored = await workspace_service.create_file_bytes(
+                space.namespace, parent, clean_name, data
+            )
         # The file is saved either way; a runtime that is not live copies it
         # in when it next starts.
         with contextlib.suppress(Exception):

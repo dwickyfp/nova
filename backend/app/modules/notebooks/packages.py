@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.modules.notebooks.repository import notebook_repository
 from app.modules.notebooks.runtime import events, kernel_calls, state
 from app.modules.notebooks.runtime.provider import KernelEvent, ProviderError
+from app.modules.workspaces.actor import acting_as
 from app.modules.workspaces.service import workspace_service
 
 if TYPE_CHECKING:
@@ -119,7 +120,7 @@ async def _install(worker: NotebookRuntimeWorker, runtime: state.RuntimeState,
 
         if event.type in {"stdout", "stderr"} and job is not None:
             await events.publish(
-                runtime.notebook_id,
+                runtime.channel,
                 "package.log",
                 {"operation_id": job["operation_id"], "text": strip_ansi(event.text)[-4000:]},
             )
@@ -146,14 +147,14 @@ async def run_install(worker: NotebookRuntimeWorker, job: dict[str, Any]) -> Non
     operation_id = job["operation_id"]
     if runtime is None or runtime.status not in {"READY", "BUSY"}:
         await events.publish(
-            job["notebook_id"],
+            state.job_channel(job),
             "package.finished",
             {"operation_id": operation_id, "ok": False, "error": "The runtime is not running"},
         )
         return
     package = job["package"]
     await state.update(runtime.id, status="BUSY", stage=f"Installing {package['name']}")
-    await events.publish(runtime.notebook_id, "runtime.status",
+    await events.publish(runtime.channel, "runtime.status",
                          {**runtime.public(), "status": "BUSY",
                           "stage": f"Installing {package['name']}"})
     try:
@@ -183,9 +184,9 @@ async def run_install(worker: NotebookRuntimeWorker, job: dict[str, Any]) -> Non
     await state.update(runtime.id, status="READY", stage="")
     latest = await state.load(runtime.id)
     if latest is not None:
-        await events.publish(runtime.notebook_id, "runtime.status", latest.public())
+        await events.publish(runtime.channel, "runtime.status", latest.public())
     await events.publish(
-        runtime.notebook_id,
+        runtime.channel,
         "package.finished",
         {
             "operation_id": operation_id,
@@ -231,7 +232,7 @@ async def restore_packages(
     result = await _install(worker, runtime, packages, job=None)
     if not result.get("ok"):
         await events.publish(
-            runtime.notebook_id,
+            runtime.channel,
             "package.finished",
             {"operation_id": "restore", "ok": False,
              "error": "Some notebook packages could not be restored"},
@@ -250,7 +251,7 @@ def _relative(path: str, folder: str) -> str | None:
 
 async def hydrate_files(worker: NotebookRuntimeWorker, runtime: state.RuntimeState) -> None:
     """Copy the notebook's Workspace folder into ``/workspace`` (bounded)."""
-    entries = await workspace_service.list_entries(runtime.user)
+    entries = await workspace_service.list_entries(runtime.files_namespace)
     notebook = next((e for e in entries if e["id"] == runtime.notebook_id), None)
     if notebook is None:
         return
@@ -275,7 +276,9 @@ async def hydrate_files(worker: NotebookRuntimeWorker, runtime: state.RuntimeSta
     async def copy(entry: dict, rel: str) -> None:
         async with gate:
             try:
-                _entry, data = await workspace_service.read_entry_bytes(runtime.user, entry["id"])
+                _entry, data = await workspace_service.read_entry_bytes(
+                    runtime.files_namespace, entry["id"]
+                )
                 await worker._provider.write_file(
                     worker.handle_of(runtime), f"/workspace/{rel}", data
                 )
@@ -286,13 +289,13 @@ async def hydrate_files(worker: NotebookRuntimeWorker, runtime: state.RuntimeSta
 
 
 async def sync_file(user: str, notebook_id: str, entry_id: str) -> None:
-    """Copy one newly uploaded Workspace file into the notebook's live runtime."""
+    """Copy one newly uploaded Workspace file into the uploader's live runtime."""
     from app.modules.notebooks.runtime.opensandbox_provider import OpenSandboxProvider
 
-    runtime = await state.active_runtime(notebook_id)
+    runtime = await state.active_runtime(state.channel(notebook_id, user))
     if runtime is None or runtime.status not in {"READY", "BUSY"}:
         return
-    entries = await workspace_service.list_entries(user)
+    entries = await workspace_service.list_entries(runtime.files_namespace)
     notebook = next((e for e in entries if e["id"] == notebook_id), None)
     entry = next((e for e in entries if e["id"] == entry_id), None)
     if notebook is None or entry is None:
@@ -300,7 +303,7 @@ async def sync_file(user: str, notebook_id: str, entry_id: str) -> None:
     rel = _relative(entry["path"], notebook.get("parent_path") or "")
     if rel is None:
         return
-    _entry, data = await workspace_service.read_entry_bytes(user, entry_id)
+    _entry, data = await workspace_service.read_entry_bytes(runtime.files_namespace, entry_id)
     from app.modules.notebooks.runtime.provider import SandboxHandle
 
     provider = OpenSandboxProvider()
@@ -318,9 +321,10 @@ async def flush_outputs(worker: NotebookRuntimeWorker, runtime: state.RuntimeSta
         return 0
     listing = await worker.call(runtime, kernel_calls.list_outputs())
     files = listing.get("files") or []
-    if not files:
+    if not files or not runtime.files_writable:
+        # A view-only member's runtime never writes into a shared workspace.
         return 0
-    entries = await workspace_service.list_entries(runtime.user)
+    entries = await workspace_service.list_entries(runtime.files_namespace)
     notebook = next((e for e in entries if e["id"] == runtime.notebook_id), None)
     if notebook is None:
         return 0
@@ -334,10 +338,11 @@ async def flush_outputs(worker: NotebookRuntimeWorker, runtime: state.RuntimeSta
             worker.handle_of(runtime), f"/workspace/outputs/{rel}"
         )
         parent = "/".join(p for p in [base, "outputs", posixpath.dirname(rel)] if p)
-        await _ensure_folders(runtime.user, parent)
-        await workspace_service.create_file_bytes(
-            runtime.user, parent, posixpath.basename(rel), data, replace=True
-        )
+        await _ensure_folders(runtime.files_namespace, parent)
+        with acting_as(runtime.user):
+            await workspace_service.create_file_bytes(
+                runtime.files_namespace, parent, posixpath.basename(rel), data, replace=True
+            )
         copied += 1
     return copied
 

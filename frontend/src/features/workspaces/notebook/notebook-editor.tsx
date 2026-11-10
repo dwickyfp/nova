@@ -110,7 +110,8 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   const anyRunning = Object.values(runs).some(
     (run) => run.status === "running" || run.status === "queued",
   );
-  const canEdit = model.saveState !== "conflict";
+  const canRun = model.saveState !== "conflict";
+  const canEdit = canRun && !model.viewOnly;
 
   const select = useCallback((cellId: string, edit: boolean) => {
     setActiveId(cellId);
@@ -550,7 +551,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
               <Button
                 size="sm"
                 className="rounded-r-none"
-                disabled={!canEdit || !cells.length}
+                disabled={!canRun || !cells.length}
                 onClick={() => void runCells("all")}
               >
                 <Play className="size-4" />
@@ -558,7 +559,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" className="rounded-l-none px-2" aria-label="More ways to run" disabled={!canEdit}>
+                  <Button size="sm" className="rounded-l-none px-2" aria-label="More ways to run" disabled={!canRun}>
                     <ChevronDown className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -637,7 +638,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
           )}
           role="status"
         >
-          {SAVE_LABEL[model.saveState]}
+          {model.viewOnly ? "View only, you can run it" : SAVE_LABEL[model.saveState]}
         </span>
         <div className="ml-auto flex min-w-0 items-center gap-1">
           <RuntimeControl
@@ -763,6 +764,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                         editing={activeId === cell.id && editing}
                         runtimeReady={ready}
                         canEdit={canEdit}
+                        canRun={canRun}
                         onSelect={select}
                         onSource={model.updateSource}
                         onKind={(id, kind) => model.updateCell(id, { kind })}

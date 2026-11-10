@@ -44,7 +44,7 @@ class StarRocksSource(CatalogSource):
             return {}
         placeholders = ", ".join(["%s"] * len(databases))
         connection = await asyncmy.connect(
-            host=endpoint.host,
+            host=endpoint.direct_host,
             port=endpoint.port,
             user=credentials.username,
             password=credentials.password,

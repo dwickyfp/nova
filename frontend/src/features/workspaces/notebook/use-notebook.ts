@@ -61,6 +61,8 @@ export function isStale(
 export function useNotebook(notebookId: string) {
   const [cells, setCells] = useState<NotebookCell[]>([]);
   const [title, setTitle] = useState("");
+  // A notebook in a workspace shared with this person to view: they run it, they do not edit it.
+  const [viewOnly, setViewOnly] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -97,6 +99,7 @@ export function useNotebook(notebookId: string) {
       pendingEdits.current = [];
       setCells(doc.notebook.cells);
       setTitle(doc.entry.name);
+      setViewOnly(doc.space?.permission === "view");
       setSaveState("saved");
       setMovedStale(new Set());
       if (status) {
@@ -652,6 +655,7 @@ export function useNotebook(notebookId: string) {
     loadError,
     reload: load,
     title,
+    viewOnly,
     cells,
     saveState,
     flush,

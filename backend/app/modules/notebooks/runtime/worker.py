@@ -258,7 +258,7 @@ class NotebookRuntimeWorker:
         for key, value in extra.items():
             setattr(runtime, key, value)
         await state.update(runtime.id, status=status, stage=stage, **extra)
-        await events.publish(runtime.notebook_id, "runtime.status", runtime.public())
+        await events.publish(runtime.channel, "runtime.status", runtime.public())
 
     def handle_of(self, runtime: state.RuntimeState) -> SandboxHandle:
         return SandboxHandle(sandbox_id=runtime.sandbox_id, context_id=runtime.context_id)
@@ -397,7 +397,7 @@ class NotebookRuntimeWorker:
             runtime.id, nova_attached=runtime.nova_attached, nova_error=runtime.nova_error
         )
         if role_changed:
-            await events.publish(runtime.notebook_id, "runtime.status", runtime.public())
+            await events.publish(runtime.channel, "runtime.status", runtime.public())
 
     async def _cleanup(
         self, runtime: state.RuntimeState, *, status: str, reason: str, error: str = ""
@@ -408,10 +408,10 @@ class NotebookRuntimeWorker:
         await self._cancel_queue(runtime, reason="The runtime stopped before this cell ran")
         await client.delete(state.rt_key(runtime.id))
         await client.srem(state.RUNTIMES, runtime.id)
-        if await client.get(state.active_key(runtime.notebook_id)) == runtime.id:
-            await client.delete(state.active_key(runtime.notebook_id))
+        if await client.get(state.active_key(runtime.channel)) == runtime.id:
+            await client.delete(state.active_key(runtime.channel))
         await client.hset(
-            state.last_key(runtime.notebook_id),
+            state.last_key(runtime.channel),
             mapping={
                 "runtime_id": runtime.id,
                 "status": status,
@@ -420,7 +420,7 @@ class NotebookRuntimeWorker:
                 "ended_at": f"{time.time():.3f}",
             },
         )
-        await client.expire(state.last_key(runtime.notebook_id), state.DAY)
+        await client.expire(state.last_key(runtime.channel), state.DAY)
         runtime.status = status
         runtime.error = error
         with contextlib.suppress(Exception):
@@ -443,7 +443,7 @@ class NotebookRuntimeWorker:
                 }
             )
         await events.publish(
-            runtime.notebook_id,
+            runtime.channel,
             "runtime.status",
             {"runtime_id": runtime.id, "status": status, "stage": "", "reason": reason,
              "error": error or None},
@@ -575,7 +575,7 @@ class NotebookRuntimeWorker:
             runtime.last_activity = time.time()
             await self._status(runtime, "READY", "", last_activity=runtime.last_activity)
             await events.publish(
-                runtime.notebook_id,
+                runtime.channel,
                 "runtime.restarted",
                 {"runtime_id": runtime.id, "generation": runtime.generation, "reason": reason},
             )
@@ -595,7 +595,7 @@ class NotebookRuntimeWorker:
         execution_id = job["execution_id"]
         now = time.time()
         await state.set_execution(execution_id, status=status, ended_at=now, message=message)
-        await state.redis().hdel(state.inflight_key(job["notebook_id"]), job["cell_id"])
+        await state.redis().hdel(state.inflight_key(state.job_channel(job)), job["cell_id"])
         with contextlib.suppress(Exception):
             await notebook_repository.record_execution(
                 {
@@ -607,7 +607,7 @@ class NotebookRuntimeWorker:
                 }
             )
         await events.publish(
-            job["notebook_id"],
+            state.job_channel(job),
             "cell.finished",
             {
                 "execution_id": execution_id,
@@ -656,11 +656,11 @@ class NotebookRuntimeWorker:
         )
         runtime.status = "BUSY"
         runtime.current_execution = execution_id
-        await events.publish(runtime.notebook_id, "runtime.status", runtime.public())
+        await events.publish(runtime.channel, "runtime.status", runtime.public())
         await state.set_execution(execution_id, status="running", started_at=started,
                                   execution_count=count)
         await events.publish(
-            runtime.notebook_id,
+            runtime.channel,
             "cell.started",
             {
                 "execution_id": execution_id,
@@ -685,7 +685,7 @@ class NotebookRuntimeWorker:
                         live = collector.accept(event)
                         if live is not None:
                             await events.publish(
-                                runtime.notebook_id,
+                                runtime.channel,
                                 "cell.output",
                                 {"execution_id": execution_id, "cell_id": job["cell_id"],
                                  "output": {k: v for k, v in live.items() if k != "_t"}},
@@ -751,11 +751,11 @@ class NotebookRuntimeWorker:
         with contextlib.suppress(Exception):
             await notebook_repository.record_execution(row)
         await state.set_execution(execution_id, status=status, ended_at=ended)
-        await client.hdel(state.inflight_key(runtime.notebook_id), job["cell_id"])
+        await client.hdel(state.inflight_key(runtime.channel), job["cell_id"])
         if status in {"failed", "timeout"} and job.get("on_error") == "stop":
             await client.set(f"{state.PREFIX}runfail:{job['run_id']}", "1", ex=state.DAY)
         await events.publish(
-            runtime.notebook_id,
+            runtime.channel,
             "cell.finished",
             {
                 "execution_id": execution_id,
@@ -791,7 +791,7 @@ class NotebookRuntimeWorker:
             await state.update(runtime.id, status="READY", current_execution="",
                                last_activity=time.time())
             latest.status, latest.current_execution = "READY", ""
-            await events.publish(runtime.notebook_id, "runtime.status", latest.public())
+            await events.publish(runtime.channel, "runtime.status", latest.public())
 
     async def _run_user_code(
         self, runtime: state.RuntimeState, job: dict[str, Any], collector: OutputCollector
@@ -835,7 +835,7 @@ class NotebookRuntimeWorker:
             live = collector.accept(event)
             if live is not None:
                 await events.publish(
-                    runtime.notebook_id,
+                    runtime.channel,
                     "cell.output",
                     {"execution_id": execution_id, "cell_id": job["cell_id"], "output":
                      {k: v for k, v in live.items() if k != "_t"}},

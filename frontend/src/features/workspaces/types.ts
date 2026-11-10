@@ -9,6 +9,8 @@ export type WorkspaceEntry = {
 
 export type WorkspaceTreeResponse = {
   root_name: string;
+  /** The workspace this tree belongs to, with the person's permission there. */
+  space?: import("./explorer/api").WorkspaceSpace;
   entries: WorkspaceEntry[];
   open_tabs: string[];
   active_tab: string | null;
@@ -25,6 +27,7 @@ export type WorkspaceTreeResponse = {
 export type WorkspaceFileResponse = {
   entry: WorkspaceEntry;
   content: string;
+  space?: import("./explorer/api").WorkspaceSpace;
 };
 
 export type QueryContextResponse = {
@@ -89,6 +92,8 @@ export type WorkspaceTabState = {
   schema: string;
   role: string;
   loaded: boolean;
+  /** In a workspace shared with this person to view only: no edits, no saves. */
+  readOnly?: boolean;
 };
 
 export type HistoryItem = {

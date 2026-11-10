@@ -1,15 +1,21 @@
-"""Workspace router — file/folder CRUD and persisted workspace state."""
+"""Workspace router: files, folders, shared workspaces and persisted state.
+
+Every request resolves the workspace first (``spaces.space_service``): the
+person's own, or a shared one they own or reach through an assigned role.
+New items name their workspace (``space``); existing ones are found by id.
+Changes need edit permission; managing a shared workspace needs ownership.
+"""
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
-# injection idiom used throughout this codebase (this file's eight uses predate
-# the diff-scoped ruff gate). The rule's suggested rewrite would break the DI
-# graph; the file is otherwise clean.
+# injection idiom used throughout this codebase. The rule's suggested rewrite
+# would break the DI graph.
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
 from app.core.deps import get_current_user
+from app.modules.workspaces.actor import acting_as
 from app.modules.workspaces.schemas import (
     WorkspaceEntry,
     WorkspaceFileCreate,
@@ -20,17 +26,87 @@ from app.modules.workspaces.schemas import (
     WorkspaceFileVersionsResponse,
     WorkspaceFolderCreate,
     WorkspaceRenameRequest,
+    WorkspaceSharesUpdate,
+    WorkspaceSpace,
+    WorkspaceSpaceCreate,
     WorkspaceStateRequest,
     WorkspaceTreeResponse,
 )
 from app.modules.workspaces.service import workspace_service
+from app.modules.workspaces.spaces import Space, space_service
 
 router = APIRouter()
 
 
+def _space(space: Space) -> WorkspaceSpace:
+    return WorkspaceSpace(**space.public())
+
+
+# ── Trees ─────────────────────────────────────────────────────────────────
+
+
 @router.get("/tree", response_model=WorkspaceTreeResponse)
 async def get_workspace_tree(user: dict = Depends(get_current_user)):
-    return await workspace_service.get_tree(user["username"])
+    """The personal workspace, with the person's saved tabs and layout."""
+    tree = await workspace_service.get_tree(user["username"])
+    return {**tree, "root_name": "Personal Workspace",
+            "space": _space(space_service.personal(user))}
+
+
+@router.get("/spaces")
+async def list_workspaces(user: dict = Depends(get_current_user)):
+    """The personal workspace and every shared one this person can open."""
+    spaces = await space_service.visible(user)
+    return {"spaces": [_space(space) for space in spaces]}
+
+
+@router.post("/spaces", status_code=201)
+async def create_workspace(body: WorkspaceSpaceCreate, user: dict = Depends(get_current_user)):
+    space = await space_service.create(user, body.name)
+    return {"space": _space(space)}
+
+
+@router.get("/spaces/{space_id}/tree", response_model=WorkspaceTreeResponse)
+async def get_shared_tree(space_id: str, user: dict = Depends(get_current_user)):
+    space = await space_service.resolve(user, space_id)
+    entries = await workspace_service.list_entries(space.namespace)
+    return WorkspaceTreeResponse(
+        root_name=space.name,
+        space=_space(space),
+        entries=[WorkspaceEntry.model_validate(entry) for entry in entries],
+    )
+
+
+@router.patch("/spaces/{space_id}")
+async def rename_workspace(
+    space_id: str, body: WorkspaceSpaceCreate, user: dict = Depends(get_current_user)
+):
+    space = await space_service.rename(user, space_id, body.name)
+    return {"space": _space(space)}
+
+
+@router.delete("/spaces/{space_id}")
+async def delete_workspace(space_id: str, user: dict = Depends(get_current_user)):
+    await space_service.delete(user, space_id)
+    return {"success": True}
+
+
+@router.get("/spaces/{space_id}/shares")
+async def get_workspace_shares(space_id: str, user: dict = Depends(get_current_user)):
+    return {"shares": await space_service.shares(user, space_id)}
+
+
+@router.put("/spaces/{space_id}/shares")
+async def set_workspace_shares(
+    space_id: str, body: WorkspaceSharesUpdate, user: dict = Depends(get_current_user)
+):
+    shares = await space_service.set_shares(
+        user, space_id, [share.model_dump() for share in body.shares]
+    )
+    return {"shares": shares}
+
+
+# ── Files and folders ─────────────────────────────────────────────────────
 
 
 @router.post("/files", response_model=WorkspaceFileResponse, status_code=201)
@@ -38,16 +114,23 @@ async def create_workspace_file(
     body: WorkspaceFileCreate,
     user: dict = Depends(get_current_user),
 ):
-    entry = await workspace_service.create_file(
-        user["username"], body.parent_path, body.name, body.content
+    space = await space_service.resolve(user, body.space, edit=True)
+    with acting_as(user["username"]):
+        entry = await workspace_service.create_file(
+            space.namespace, body.parent_path, body.name, body.content
+        )
+    return WorkspaceFileResponse(
+        entry=WorkspaceEntry.model_validate(entry), content=body.content, space=_space(space)
     )
-    return WorkspaceFileResponse(entry=WorkspaceEntry.model_validate(entry), content=body.content)
 
 
 @router.get("/files/{entry_id}", response_model=WorkspaceFileResponse)
 async def get_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
-    entry, content = await workspace_service.get_file(user["username"], entry_id)
-    return WorkspaceFileResponse(entry=WorkspaceEntry.model_validate(entry), content=content)
+    space = await space_service.for_entry(user, entry_id)
+    entry, content = await workspace_service.get_file(space.namespace, entry_id)
+    return WorkspaceFileResponse(
+        entry=WorkspaceEntry.model_validate(entry), content=content, space=_space(space)
+    )
 
 
 @router.put("/files/{entry_id}", response_model=WorkspaceFileResponse)
@@ -56,13 +139,19 @@ async def update_workspace_file(
     body: WorkspaceFileUpdate,
     user: dict = Depends(get_current_user),
 ):
-    entry = await workspace_service.update_file(user["username"], entry_id, body.content)
-    return WorkspaceFileResponse(entry=WorkspaceEntry.model_validate(entry), content=body.content)
+    space = await space_service.for_entry(user, entry_id, edit=True)
+    with acting_as(user["username"]):
+        entry = await workspace_service.update_file(space.namespace, entry_id, body.content)
+    return WorkspaceFileResponse(
+        entry=WorkspaceEntry.model_validate(entry), content=body.content, space=_space(space)
+    )
 
 
 @router.delete("/files/{entry_id}")
 async def delete_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
-    await workspace_service.delete_entry(user["username"], entry_id)
+    space = await space_service.for_entry(user, entry_id, edit=True)
+    with acting_as(user["username"]):
+        await workspace_service.delete_entry(space.namespace, entry_id)
     return {"success": True}
 
 
@@ -70,7 +159,8 @@ async def delete_workspace_file(entry_id: str, user: dict = Depends(get_current_
 async def list_workspace_file_versions(
     entry_id: str, user: dict = Depends(get_current_user)
 ):
-    versions = await workspace_service.list_file_versions(user["username"], entry_id)
+    space = await space_service.for_entry(user, entry_id)
+    versions = await workspace_service.list_file_versions(space.namespace, entry_id)
     return WorkspaceFileVersionsResponse(
         versions=[WorkspaceFileVersion(**version) for version in versions]
     )
@@ -83,8 +173,9 @@ async def list_workspace_file_versions(
 async def get_workspace_file_version(
     entry_id: str, version: int, user: dict = Depends(get_current_user)
 ):
+    space = await space_service.for_entry(user, entry_id)
     record, content = await workspace_service.get_file_version_record(
-        user["username"], entry_id, version
+        space.namespace, entry_id, version
     )
     return WorkspaceFileVersionResponse(
         version=WorkspaceFileVersion(**record), content=content
@@ -96,8 +187,10 @@ async def create_workspace_folder(
     body: WorkspaceFolderCreate,
     user: dict = Depends(get_current_user),
 ):
-    entry = await workspace_service.create_folder(user["username"], body.parent_path, body.name)
-    return {"entry": entry}
+    space = await space_service.resolve(user, body.space, edit=True)
+    with acting_as(user["username"]):
+        entry = await workspace_service.create_folder(space.namespace, body.parent_path, body.name)
+    return {"entry": entry, "space": _space(space)}
 
 
 @router.post("/rename")
@@ -105,9 +198,12 @@ async def rename_workspace_entry(
     body: WorkspaceRenameRequest,
     user: dict = Depends(get_current_user),
 ):
-    entry = await workspace_service.rename_entry(
-        user["username"], body.id, body.name, body.parent_path
-    )
+    """Rename an entry, or move it to another folder of the same workspace."""
+    space = await space_service.for_entry(user, body.id, edit=True)
+    with acting_as(user["username"]):
+        entry = await workspace_service.rename_entry(
+            space.namespace, body.id, body.name, body.parent_path
+        )
     return {"entry": entry}
 
 

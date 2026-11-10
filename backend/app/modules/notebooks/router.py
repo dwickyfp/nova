@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from app.core.deps import get_current_user
 from app.modules.notebooks.document import NotebookConflictError, NotebookFormatError
 from app.modules.notebooks.documents import notebook_documents
-from app.modules.notebooks.runtime import events
+from app.modules.notebooks.runtime import events, state
 from app.modules.notebooks.runtime.service import (
     NotebookRuntimeError,
     notebook_runtime_service,
@@ -31,44 +31,53 @@ from app.modules.notebooks.schemas import (
     NotebookEditResponse,
     NotebookResponse,
 )
+from app.modules.workspaces.actor import acting_as
 from app.modules.workspaces.schemas import WorkspaceEntry
+from app.modules.workspaces.spaces import Space, space_service
 
 router = APIRouter()
 
 
-def _response(entry: dict, document) -> dict:
+def _response(entry: dict, document, space: Space | None = None) -> dict:
     return {
         "entry": WorkspaceEntry.model_validate(entry),
         "notebook": NotebookBody.model_validate(document.to_api()),
+        "space": space.public() if space else None,
     }
 
 
 @router.post("", response_model=NotebookResponse, status_code=201)
 async def create_notebook(body: NotebookCreate, user: dict = Depends(get_current_user)):
+    space = await space_service.resolve(user, body.space, edit=True)
     try:
-        entry, document = await notebook_documents.create(
-            user["username"], parent_path=body.parent_path, name=body.name, content=body.content
-        )
+        with acting_as(user["username"]):
+            entry, document = await notebook_documents.create(
+                space.namespace, parent_path=body.parent_path, name=body.name,
+                content=body.content,
+            )
     except NotebookFormatError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _response(entry, document)
+    return _response(entry, document, space)
 
 
 @router.get("/{entry_id}", response_model=NotebookResponse)
 async def get_notebook(entry_id: str, user: dict = Depends(get_current_user)):
     try:
-        entry, document = await notebook_documents.get(user["username"], entry_id)
+        space = await space_service.for_entry(user, entry_id)
+        entry, document = await notebook_documents.get(space.namespace, entry_id)
     except NotebookFormatError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _response(entry, document)
+    return _response(entry, document, space)
 
 
 @router.patch("/{entry_id}", response_model=NotebookEditResponse)
 async def edit_notebook(entry_id: str, body: NotebookEdit, user: dict = Depends(get_current_user)):
     try:
-        entry, document, changed = await notebook_documents.edit(
-            user["username"], entry_id, base_revision=body.base_revision, edits=body.edits
-        )
+        space = await space_service.for_entry(user, entry_id, edit=True)
+        with acting_as(user["username"]):
+            entry, document, changed = await notebook_documents.edit(
+                space.namespace, entry_id, base_revision=body.base_revision, edits=body.edits
+            )
     except NotebookConflictError as exc:
         raise HTTPException(
             status_code=409,
@@ -80,12 +89,13 @@ async def edit_notebook(entry_id: str, body: NotebookEdit, user: dict = Depends(
         ) from exc
     except NotebookFormatError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {**_response(entry, document), "changed_cell_ids": changed}
+    return {**_response(entry, document, space), "changed_cell_ids": changed}
 
 
 @router.get("/{entry_id}/export")
 async def export_notebook(entry_id: str, user: dict = Depends(get_current_user)):
-    name, text = await notebook_documents.export(user["username"], entry_id)
+    space = await space_service.for_entry(user, entry_id)
+    name, text = await notebook_documents.export(space.namespace, entry_id)
     safe_name = "".join(ch for ch in name if ch.isalnum() or ch in "._- ") or "notebook.ipynb"
     return Response(
         content=text,
@@ -195,9 +205,10 @@ async def notebook_events(
 ):
     snapshot = await _call(notebook_runtime_service.status(user, entry_id))
     cursor = last_event_id or request.query_params.get("last_event_id")
+    # Each person's own runtime and results only, even on a shared notebook.
     return StreamingResponse(
         events.stream(
-            entry_id,
+            state.channel(entry_id, user["username"]),
             last_event_id=cursor,
             snapshot=snapshot,
             is_disconnected=request.is_disconnected,

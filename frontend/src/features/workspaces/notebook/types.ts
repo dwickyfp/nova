@@ -1,4 +1,5 @@
 import type { WorkspaceEntry } from "../types";
+import type { WorkspaceSpace } from "../explorer/api";
 
 export type CellKind = "python" | "sql" | "markdown";
 export type SqlEngine = "duckdb" | "nova";
@@ -22,6 +23,8 @@ export type NotebookDocument = {
 export type NotebookResponse = {
   entry: WorkspaceEntry;
   notebook: NotebookDocument;
+  /** The workspace it lives in, with this person's permission there. */
+  space?: WorkspaceSpace | null;
 };
 
 export type NotebookEditResponse = NotebookResponse & {

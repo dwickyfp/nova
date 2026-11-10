@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.modules.workspaces.schemas import WorkspaceEntry
+from app.modules.workspaces.schemas import WorkspaceEntry, WorkspaceSpace
 
 
 class NotebookCell(BaseModel):
@@ -27,6 +27,8 @@ class NotebookBody(BaseModel):
 class NotebookResponse(BaseModel):
     entry: WorkspaceEntry
     notebook: NotebookBody
+    # The workspace the notebook lives in, with this person's permission.
+    space: WorkspaceSpace | None = None
 
 
 class NotebookCreate(BaseModel):
@@ -34,6 +36,8 @@ class NotebookCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     #: An existing ``.ipynb`` to import instead of the starter notebook.
     content: str | None = Field(default=None, max_length=8 * 1024 * 1024)
+    #: The workspace to create it in; the personal workspace when omitted.
+    space: str | None = None
 
 
 class NotebookEdit(BaseModel):

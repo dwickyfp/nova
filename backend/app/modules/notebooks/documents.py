@@ -27,6 +27,7 @@ from app.modules.notebooks.document import (
     starter_document,
     to_ipynb,
 )
+from app.modules.workspaces.actor import acting_user
 from app.modules.workspaces.service import workspace_service
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class NotebookDocumentService:
         )
         await write_audit_log(
             event_type="notebook",
-            user_name=username,
+            user_name=acting_user(username),
             action="import" if content is not None else "create",
             object_type="notebook",
             object_name=entry["path"],
@@ -90,6 +91,15 @@ class NotebookDocumentService:
         if not is_notebook_name(entry["name"]):
             raise StorageError("This file is not a notebook", status_code=400)
         return entry, parse_ipynb(text)
+
+    async def get_for(
+        self, user: dict[str, Any], entry_id: str
+    ) -> tuple[dict[str, Any], NotebookDocument]:
+        """The notebook as this person may open it, in whichever workspace it is."""
+        from app.modules.workspaces.spaces import space_service
+
+        space = await space_service.for_entry(user, entry_id)
+        return await self.get(space.namespace, entry_id)
 
     async def edit(
         self,

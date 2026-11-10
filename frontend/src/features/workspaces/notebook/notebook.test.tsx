@@ -210,6 +210,7 @@ describe("cell", () => {
             editing={false}
             runtimeReady
             canEdit
+            canRun
             onSelect={vi.fn()}
             onSource={vi.fn()}
             onKind={vi.fn()}
@@ -250,6 +251,13 @@ describe("cell", () => {
     await expect.element(screen.getByText("[3]")).toBeVisible();
     await screen.getByRole("button", { name: "Ask Neva" }).click();
     expect(onCommand).toHaveBeenCalledWith("c1", "ask-neva");
+  });
+
+  it("runs but cannot be changed in a view-only workspace", async () => {
+    const { screen, onCommand } = await renderCell({ canEdit: false });
+    expect(screen.getByRole("button", { name: "Move up" }).element()).toHaveProperty("disabled", true);
+    await screen.getByRole("button", { name: "Run this cell" }).click();
+    expect(onCommand).toHaveBeenCalledWith("c1", "run");
   });
 
   it("moves up and down from its toolbar, never past the ends", async () => {

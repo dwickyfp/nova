@@ -155,6 +155,10 @@ class Store:
         self.audits: list[dict] = []
 
 
+#: alice's use of notebook nb-1: her runtime, runs and events.
+CH = state.channel("nb-1", "alice")
+
+
 @pytest.fixture
 async def env(monkeypatch):
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
@@ -217,6 +221,11 @@ async def env(monkeypatch):
 
     monkeypatch.setattr(service_module.workspace_repository, "get_entry", get_entry)
 
+    async def namespace_of(entry_id):
+        return "alice" if entry_id == "nb-1" else None
+
+    monkeypatch.setattr(service_module.workspace_repository, "namespace_of", namespace_of)
+
     document = NotebookDocument(cells=[
         make_cell(kind="markdown", source="# Title", cell_id="md"),
         make_cell(kind="python", source="print hello", cell_id="c1"),
@@ -259,13 +268,13 @@ async def drain(worker: NotebookRuntimeWorker) -> None:
 
 async def events_of(redis, notebook_id="nb-1") -> list[tuple[str, dict]]:
     return [(f["event"], json.loads(f["data"]))
-            for _id, f in await redis.xrange(state.events_key(notebook_id))]
+            for _id, f in await redis.xrange(state.events_key(state.channel(notebook_id, "alice")))]
 
 
 async def started(env) -> state.RuntimeState:
     await env["service"].start(env["user"], "nb-1")
     await drain(env["worker"])
-    runtime = await state.active_runtime("nb-1")
+    runtime = await state.active_runtime(CH)
     assert runtime is not None and runtime.status == "READY", runtime
     return runtime
 
@@ -275,7 +284,7 @@ async def test_start_is_idempotent_and_reaches_ready_with_nova_attached(env):
     second = await env["service"].start(env["user"], "nb-1")
     assert first["runtime"]["runtime_id"] == second["runtime"]["runtime_id"]
     await drain(env["worker"])
-    runtime = await state.active_runtime("nb-1")
+    runtime = await state.active_runtime(CH)
     assert runtime.status == "READY" and runtime.nova_attached
     assert len(env["provider"].created) == 1
     spec = env["provider"].created[0]
@@ -300,8 +309,10 @@ async def test_quotas_refuse_extra_runtimes(env, monkeypatch):
     assert raised.value.code == "QUOTA_EXCEEDED" and raised.value.status_code == 429
 
 
-async def _any_notebook(user, notebook_id):
-    return {"id": notebook_id, "parent_path": ""}
+async def _any_notebook(user, notebook_id, *, edit=False):
+    from app.modules.workspaces.spaces import space_service
+
+    return {"id": notebook_id, "parent_path": ""}, space_service.personal(user)
 
 
 async def test_a_session_without_an_active_role_cannot_start(env):
@@ -342,11 +353,11 @@ async def test_run_all_executes_code_cells_in_order_and_stops_on_error(env):
     assert outputs[-1]["type"] == "image"  # captured display merged by time
     error = json.loads(env["store"].objects[by_cell["c3"]["output_key"]])[0]
     assert error["traceback"][0] == "Traceback"  # terminal colours stripped
-    assert not await env["redis"].hgetall(state.inflight_key("nb-1"))
+    assert not await env["redis"].hgetall(state.inflight_key(CH))
     kinds = [name for name, _ in await events_of(env["redis"])]
     assert kinds.count("cell.queued") == 4 and kinds.count("cell.finished") == 4
     assert "cell.output" in kinds
-    runtime = await state.active_runtime("nb-1")
+    runtime = await state.active_runtime(CH)
     assert runtime.status == "READY" and runtime.execution_counter == 3
 
 
@@ -401,7 +412,7 @@ async def test_cancelling_a_running_cell_interrupts_the_kernel(env):
     task = asyncio.create_task(drain(env["worker"]))
     for _ in range(50):
         await asyncio.sleep(0.05)
-        if (await state.active_runtime("nb-1")).status == "BUSY":
+        if (await state.active_runtime(CH)).status == "BUSY":
             break
     await env["service"].cancel(env["user"], "nb-1", None)
     await asyncio.wait_for(task, timeout=5)
@@ -418,7 +429,7 @@ async def test_a_cell_that_ignores_interrupts_restarts_the_kernel(env, monkeypat
     await asyncio.wait_for(drain(env["worker"]), timeout=10)
     assert env["store"].executions[0]["status"] == "timeout"
     assert env["provider"].restarts == 1
-    runtime = await state.active_runtime("nb-1")
+    runtime = await state.active_runtime(CH)
     assert runtime.status == "READY" and runtime.generation == 2
     assert "runtime.restarted" in [name for name, _ in await events_of(env["redis"])]
 
@@ -438,7 +449,7 @@ async def test_stop_kills_the_sandbox_and_revokes_nova_access(env):
     await env["service"].stop(env["user"], "nb-1")
     await drain(env["worker"])
     assert env["provider"].killed == ["sb-1"]
-    assert await state.active_runtime("nb-1") is None
+    assert await state.active_runtime(CH) is None
     assert not await env["redis"].exists(state.rt_key(runtime.id))
     assert not await env["redis"].keys("nova:nb:token:*")
     status = await env["service"].status(env["user"], "nb-1")
@@ -453,7 +464,7 @@ async def test_a_role_switch_rotates_the_runtime_credential(env):
                              on_error="stop", idempotency_key=None)
     await drain(env["worker"])
     assert any("__nova__.rotate" in code for code in env["provider"].ran)
-    runtime = await state.active_runtime("nb-1")
+    runtime = await state.active_runtime(CH)
     assert runtime.token_role == "finance" and runtime.active_role == "finance"
 
 
@@ -464,7 +475,7 @@ async def test_a_failed_start_cleans_up(env, monkeypatch):
     monkeypatch.setattr(env["provider"], "create", broken)
     await env["service"].start(env["user"], "nb-1")
     await drain(env["worker"])
-    assert await state.active_runtime("nb-1") is None
+    assert await state.active_runtime(CH) is None
     status = await env["service"].status(env["user"], "nb-1")
     assert status["runtime"]["status"] == "FAILED" and status["runtime"]["error"]
 
@@ -474,7 +485,7 @@ async def test_idle_runtimes_are_stopped(env, monkeypatch):
     await state.update(runtime.id, last_activity=0.0)
     await env["worker"]._sweep()
     await drain(env["worker"])
-    assert await state.active_runtime("nb-1") is None
+    assert await state.active_runtime(CH) is None
     assert env["store"].runtimes[-1]["end_reason"] == "idle"
 
 
@@ -484,8 +495,8 @@ async def test_reconcile_removes_orphans_and_marks_lost_runtimes(env):
     env["provider"].live.discard("sb-1")
     await env["worker"]._reconcile(startup=False)
     assert "sb-orphan" in env["provider"].killed
-    assert await state.active_runtime("nb-1") is None
-    assert (await state.last_outcome("nb-1"))["status"] == "LOST"
+    assert await state.active_runtime(CH) is None
+    assert (await state.last_outcome(CH))["status"] == "LOST"
     assert runtime.id
 
 
@@ -543,3 +554,34 @@ async def test_latest_merges_finished_and_in_flight_cells(env):
     assert not latest["inflight"] and latest["executions"][0]["status"] == "succeeded"
     assert latest["variables"] == [{"name": "x", "type": "int"}]
 
+
+
+async def test_people_on_a_shared_notebook_each_get_their_own_runtime(env, monkeypatch):
+    from app.modules.workspaces.spaces import Space
+
+    shared = "~ws/" + "b" * 32
+    permissions = {"alice": "edit", "bob": "view"}
+
+    async def for_entry(user, entry_id, *, edit=False):
+        return Space("b" * 32, "Team", "shared", shared, "carol", permissions[user["username"]])
+
+    async def get_entry(namespace, entry_id):
+        if namespace == shared and entry_id == "nb-1":
+            return {"id": "nb-1", "name": "nb.ipynb", "entry_type": "file", "parent_path": ""}
+        return None
+
+    monkeypatch.setattr(service_module.space_service, "for_entry", for_entry)
+    monkeypatch.setattr(service_module.workspace_repository, "get_entry", get_entry)
+    bob = {**env["user"], "username": "bob", "session_id": "bob-session"}
+
+    mine = (await env["service"].start(env["user"], "nb-1"))["runtime"]["runtime_id"]
+    theirs = (await env["service"].start(bob, "nb-1"))["runtime"]["runtime_id"]
+    assert mine != theirs
+    alice_runtime = await state.active_runtime(state.channel("nb-1", "alice"))
+    bob_runtime = await state.active_runtime(state.channel("nb-1", "bob"))
+    assert alice_runtime.user == "alice" and bob_runtime.user == "bob"
+    assert alice_runtime.files_namespace == shared and alice_runtime.files_writable
+    # A view-only member runs the notebook as themselves but writes nothing back.
+    assert bob_runtime.files_namespace == shared and not bob_runtime.files_writable
+    # Nothing is keyed by the notebook alone any more.
+    assert await state.active_runtime("nb-1") is None
