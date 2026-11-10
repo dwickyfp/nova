@@ -14,6 +14,7 @@ Unknown and unauthorized graphs both return 404. SQL and errors are redacted.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, get_args
 
@@ -324,6 +325,7 @@ async def get_graph(graph_id: str, user: dict = current_user) -> schemas.GraphDe
             when_expr=task.get("when_expr"),
             created_by=task.get("created_by"),
             is_finalizer=str(task["name"]) in finalizers,
+            **_body_shape(task),
             last_state=(
                 _narrow(last_states.get(str(task["id"])), _TASK_RUN_STATES, "pending")
                 if last_states.get(str(task["id"])) is not None
@@ -358,11 +360,37 @@ async def get_task_sql(
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     body = task.get("definition")
+    shape = _body_shape(task)
     return schemas.TaskSQLResponse(
         task_id=task_id,
         name=str(task["name"]),
         sql=redact_sql_credentials(str(body)) if body else None,
+        language=shape["language"],
+        packages=shape["packages"],
+        runtime_version=shape["runtime_version"],
     )
+
+
+def _body_shape(task: dict[str, Any]) -> dict[str, Any]:
+    """Language, statement count and packages of a node, from its handler config."""
+    handler = task.get("handler") or "sql"
+    raw = task.get("handler_config")
+    try:
+        config = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except ValueError:
+        config = {}
+    if not isinstance(config, dict):
+        config = {}
+    if handler == "python":
+        return {
+            "language": "python",
+            "statement_count": 1,
+            "packages": [str(item) for item in config.get("packages") or []],
+            "runtime_version": config.get("runtime_version"),
+        }
+    count = len(config.get("statements") or []) if handler == "sql_script" else 1
+    return {"language": "sql", "statement_count": max(count, 1), "packages": [],
+            "runtime_version": None}
 
 
 async def _publish_manual_run(run: dict[str, Any], task_ids: list[str]) -> None:
@@ -372,8 +400,60 @@ async def _publish_manual_run(run: dict[str, Any], task_ids: list[str]) -> None:
 
 @router.post("/graphs/{graph_id}/runs", response_model=schemas.GraphRunResponse, status_code=202)
 async def run_graph(graph_id: str, user: dict = current_user) -> schemas.GraphRunResponse:
+    return _run_response(await enqueue_manual_run(graph_id, user))
+
+
+async def resolve_execute_target(
+    name: str, database: str | None, schema: str, user: dict[str, Any]
+) -> str:
+    """The graph ``EXECUTE TASK`` runs: the named task must be a root or standalone.
+
+    As in Snowflake, a run starts at the top of its graph; naming a task that
+    runs after another is refused with the root to execute instead. A graph is
+    the unit of a run, so executing one root of a graph with several roots runs
+    the whole graph. An unknown task and one the caller does not own answer the
+    same way.
+    """
+    access = _GraphAccess(_repository, user)
+    qualified = ".".join(part for part in (database, schema, name) if part)
+    for graph_id in await access.visible_graph_ids():
+        members = access._tasks_for(graph_id)
+        if not any(
+            str(task["name"]) == name
+            and task.get("database_name") == database
+            and (task.get("schema_name") or "default") == schema
+            for task in members
+        ):
+            continue
+        parents = [
+            str(edge["parent_task"])
+            for edge in access.edges_for(graph_id)
+            if str(edge["child_task"]) == name
+        ]
+        if parents:
+            root = _root_task(access.edges_for(graph_id), members)
+            hint = (
+                f" EXECUTE TASK {_qualified_name(root)} runs its graph." if root else ""
+            )
+            raise HTTPException(
+                409,
+                f"Task {qualified!r} runs after {', '.join(sorted(parents))}; "
+                f"EXECUTE TASK starts a graph at its root.{hint}",
+            )
+        return graph_id
+    raise HTTPException(404, f"Task {qualified!r} does not exist or is not owned by your role")
+
+
+async def enqueue_manual_run(graph_id: str, user: dict[str, Any]) -> dict[str, Any]:
+    """Persist and enqueue a manual run of ``graph_id`` as ``user``.
+
+    Shared by the Run button and ``EXECUTE TASK``. Raises ``HTTPException``
+    with a message safe to show.
+    """
     access = _GraphAccess(_repository, user)
     tasks = await access.require(graph_id)
+    if not user.get("session_id"):
+        raise HTTPException(403, "Running a task needs a signed-in Nova session")
     root = _root_task(access.edges_for(graph_id), tasks)
     execution_role = user.get("active_role")
     if not execution_role or execution_role not in user.get(
@@ -432,7 +512,7 @@ async def run_graph(graph_id: str, user: dict = current_user) -> schemas.GraphRu
         await write_audit_log(**audit, status="SUCCESS", query_id=str(run["id"]))
     except Exception:
         logger.warning("Manual task run audit outcome unavailable; attempt recorded")
-    return _run_response(run)
+    return run
 
 
 @router.get("/graphs/{graph_id}/runs", response_model=schemas.GraphRunListResponse)
@@ -584,6 +664,7 @@ def _node_run_response(node: dict[str, Any]) -> schemas.NodeRunResponse:
         # Redacted with the worker's helper: an engine error can echo a rewritten
         # `@stage` statement, credentials included.
         error_message=redact_sql_credentials(str(error)) if error else None,
+        output=redact_sql_credentials(str(node["output"])) if node.get("output") else None,
         started_at=node.get("started_at"),
         heartbeat_at=node.get("heartbeat_at"),
         finished_at=node.get("finished_at"),

@@ -296,6 +296,16 @@ function RunNodes({ runId }: { runId: string }) {
                 </pre>
               </div>
             ) : null}
+            {node.output ? (
+              <div className="mt-2">
+                <p className="mb-1 text-xs font-medium text-foreground">
+                  Output
+                </p>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-xs">
+                  {node.output}
+                </pre>
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

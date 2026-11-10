@@ -108,6 +108,24 @@ export interface GraphNode {
   created_by: string | null;
   is_finalizer: boolean;
   last_state: TaskRunState | null;
+  /** `sql` (one statement or a script) or `python`. */
+  language?: TaskLanguage;
+  /** Statements in a SQL script node; 1 for a single statement. */
+  statement_count?: number;
+  /** A Python node's `name[==version]` packages. */
+  packages?: string[];
+  runtime_version?: string | null;
+}
+
+export type TaskLanguage = "sql" | "python";
+
+export interface TaskCode {
+  task_id: string;
+  name: string;
+  sql: string | null;
+  language?: TaskLanguage;
+  packages?: string[];
+  runtime_version?: string | null;
 }
 
 export interface GraphEdge {
@@ -150,6 +168,8 @@ export interface NodeRunResponse {
   delegated: boolean;
   starrocks_query_id: string | null;
   error_message: string | null;
+  /** What a script or Python node reported (printed output, statement summary). */
+  output?: string | null;
   started_at: string | null;
   heartbeat_at: string | null;
   finished_at: string | null;
@@ -172,7 +192,7 @@ export const fetchTaskSQL = (
   taskId: string,
   signal?: AbortSignal,
 ) =>
-  api.get<{ task_id: string; name: string; sql: string | null }>(
+  api.get<TaskCode>(
     `${BASE}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(taskId)}/sql`,
     signal,
   );

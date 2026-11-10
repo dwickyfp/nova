@@ -33,6 +33,7 @@ from app.modules.notebooks.repository import notebook_repository
 from app.modules.notebooks.runtime import events, kernel_calls, rpc, state
 from app.modules.notebooks.runtime.outputs import OutputCollector, payload_of, summary
 from app.modules.notebooks.runtime.provider import (
+    TASK_RUNTIME_PREFIX,
     KernelEvent,
     ProviderError,
     SandboxGone,
@@ -1019,6 +1020,8 @@ class NotebookRuntimeWorker:
             return
         live_sandbox_ids = set(sandboxes)
         for sandbox_id, runtime_id in sandboxes.items():
+            if runtime_id.startswith(TASK_RUNTIME_PREFIX):
+                continue  # a Python task run's sandbox; the task worker owns it
             if runtime_id not in by_id:
                 logger.info("Removing orphaned notebook sandbox %s", sandbox_id)
                 with contextlib.suppress(Exception):

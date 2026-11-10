@@ -49,7 +49,46 @@ from app.modules.task_orchestration.schemas import OverlapPolicy
 
 #: The surface's clause order. `taskClause*` accepts any order, so the lowering
 #: enforces this one and rejects anything out of order rather than guessing.
-CLAUSE_ORDER = ("AFTER", "FINALIZE", "WHEN", "OVERLAP_POLICY", "SCHEDULE")
+CLAUSE_ORDER = (
+    "AFTER",
+    "FINALIZE",
+    "WHEN",
+    "OVERLAP_POLICY",
+    "SCHEDULE",
+    "LANGUAGE",
+    "RUNTIME_VERSION",
+    "PACKAGES",
+)
+
+#: How a task's body runs. ``sql`` is one statement submitted as a native
+#: one-shot ``SUBMIT TASK``; ``sql_script`` is a statement block Nova runs in
+#: order through the governed SQL path; ``python`` runs in a sandbox runtime.
+USER_HANDLERS = frozenset({"sql", "sql_script", "python"})
+#: The user handlers Nova executes itself rather than as a native engine task.
+SCRIPT_HANDLERS = frozenset({"sql_script", "python"})
+
+#: Python versions a task may ask for: the notebook runtime image's interpreter.
+PYTHON_RUNTIME_VERSIONS = ("3.12",)
+DEFAULT_PYTHON_RUNTIME = PYTHON_RUNTIME_VERSIONS[0]
+#: Bounds of a script body.
+MAX_SCRIPT_STATEMENTS = 100
+MAX_PYTHON_SOURCE_BYTES = 512 * 1024
+MAX_TASK_PACKAGES = 30
+
+#: Statements a script task may not contain: they would nest tasks, switch the
+#: run's identity, or control a transaction the worker does not own.
+_FORBIDDEN_SCRIPT_STATEMENTS = {
+    "SubmitTaskStatementContext": "a task cannot create tasks",
+    "AlterTaskStatementContext": "a task cannot alter tasks",
+    "DropTaskStatementContext": "a task cannot drop tasks",
+    "NovaExecuteTaskStatementContext": "a task cannot run other tasks",
+    "SetRoleStatementContext": "a task runs under its owner role and cannot switch roles",
+    "SetDefaultRoleStatementContext": "a task cannot change default roles",
+    "ExecuteAsStatementContext": "a task cannot change its user",
+    "BeginStatementContext": "a task script cannot open a transaction",
+    "CommitStatementContext": "a task script cannot commit a transaction",
+    "RollbackStatementContext": "a task script cannot roll back a transaction",
+}
 
 #: Nova's overlap-policy values. The grammar accepts any string, so this is the
 #: only place the enum is enforced.
@@ -97,6 +136,31 @@ class LoweredTask:
     after: tuple[str, ...] = ()
     #: Target of a ``FINALIZE`` edge, if present.
     finalize: str | None = None
+    #: ``sql`` (native one-shot), ``sql_script`` or ``python``.
+    handler: str = "sql"
+    #: ``sql_script``: the statements in run order, sliced from the source.
+    statements: tuple[str, ...] = ()
+    #: ``python``: interpreter version and ``name[==version]`` package pins.
+    runtime_version: str | None = None
+    packages: tuple[str, ...] = ()
+
+    @property
+    def language(self) -> str:
+        return "python" if self.handler == "python" else "sql"
+
+    @property
+    def handler_config(self) -> dict | None:
+        """What the worker needs beyond ``definition``; never a credential."""
+        if self.handler == "sql_script":
+            return {"version": 1, "language": "sql", "statements": list(self.statements)}
+        if self.handler == "python":
+            return {
+                "version": 1,
+                "language": "python",
+                "runtime_version": self.runtime_version or DEFAULT_PYTHON_RUNTIME,
+                "packages": list(self.packages),
+            }
+        return None
 
     @property
     def qualified_name(self) -> str:
@@ -239,6 +303,60 @@ def parse_create_task(
         except ScheduleError as exc:
             raise TaskDDLError(f"invalid task timezone: {resolved_timezone!r}") from exc
 
+    language = _clause_language(sql, clauses.get("LANGUAGE"))
+    runtime_version = _clause_runtime_version(sql, clauses.get("RUNTIME_VERSION"))
+    packages = _clause_packages(sql, clauses.get("PACKAGES"))
+    if language != "python" and (runtime_version is not None or packages):
+        raise TaskDDLError("RUNTIME_VERSION and PACKAGES need LANGUAGE PYTHON")
+
+    block = _first_child(statement, "NovaTaskScriptBlockContext")
+    attachment = _attachment_text(statement)
+    handler = "sql"
+    statements: tuple[str, ...] = ()
+    if language == "python":
+        if attachment is None:
+            raise TaskDDLError("LANGUAGE PYTHON needs its code between $$ and $$")
+        body = _python_body(attachment)
+        handler = "python"
+        runtime_version = runtime_version or DEFAULT_PYTHON_RUNTIME
+    elif block is not None or attachment is not None:
+        if block is not None:
+            statements = tuple(
+                _slice(sql, child)
+                for child in _children(block)
+                if type(child).__name__ != "TerminalNodeImpl"
+            )
+        else:
+            statements = _split_script(attachment or "")
+        statements = _validate_script(statements)
+        body = ";\n".join(statements) + ";"
+        handler = "sql_script"
+    else:
+        body = _native_body(sql, statement)
+
+    _validate_own_edges(bare_name, after, finalize)
+
+    return LoweredTask(
+        name=bare_name,
+        body=body,
+        database_name=task_database,
+        schema_name=task_schema,
+        schedule_kind=schedule_kind,
+        schedule_expr=schedule_expr,
+        when_expr=when_expr,
+        overlap_policy=overlap,
+        timezone=resolved_timezone,
+        after=after,
+        finalize=finalize,
+        handler=handler,
+        statements=statements,
+        runtime_version=runtime_version,
+        packages=packages,
+    )
+
+
+def _native_body(sql: str, statement) -> str:
+    """The single native statement a ``sql`` task submits as ``SUBMIT TASK``."""
     body_node = (
         _find_first(statement, "CreateTableAsSelectStatementContext")
         or _find_first(statement, "InsertStatementContext")
@@ -257,25 +375,226 @@ def parse_create_task(
         raise TaskDDLError("CREATE TASK bodies must not persist credentials")
     if _find_all(body_node, "StageReferenceContext"):
         raise TaskDDLError(
-            "CREATE TASK with @stage is unavailable: native task definitions "
-            "would persist injected storage credentials"
+            "CREATE TASK with @stage is unavailable for a single-statement task: native "
+            "task definitions would persist injected storage credentials. Wrap the "
+            "statement in BEGIN ... END to run it through Nova instead"
         )
+    return body
 
-    _validate_own_edges(bare_name, after, finalize)
 
-    return LoweredTask(
-        name=bare_name,
-        body=body,
-        database_name=task_database,
-        schema_name=task_schema,
-        schedule_kind=schedule_kind,
-        schedule_expr=schedule_expr,
-        when_expr=when_expr,
-        overlap_policy=overlap,
-        timezone=resolved_timezone,
-        after=after,
-        finalize=finalize,
+def _attachment_text(statement) -> str | None:
+    """The text between ``$$`` and ``$$`` when the body is a quoted script."""
+    for child in _children(statement):
+        if type(child).__name__ != "TerminalNodeImpl":
+            continue
+        text = child.getText()
+        if text.startswith("$$") and text.endswith("$$") and len(text) >= 4:
+            return text[2:-2]
+    return None
+
+
+def _split_script(text: str) -> tuple[str, ...]:
+    from app.common.sql_guard import split_sql_statements
+
+    return tuple(split_sql_statements(text))
+
+
+def _validate_script(statements: tuple[str, ...]) -> tuple[str, ...]:
+    """Check every statement of a script task before anything is stored.
+
+    Each statement must parse on its own, pass the SQL guard (ACCOUNTADMIN and
+    the other protected objects), carry no literal credential, and not be one
+    of the statements a task may not run. Privileges are checked when the task
+    runs, as the run's user, statement by statement.
+    """
+    from app.common.sql_guard import guard_sql, redact_sql_credentials
+    from app.core.exceptions import ForbiddenSQLError
+    from app.sql_frontend.parser import parse_statement
+
+    cleaned = tuple(text.strip().rstrip(";").strip() for text in statements)
+    cleaned = tuple(text for text in cleaned if text)
+    if not cleaned:
+        raise TaskDDLError("the task script has no statements")
+    if len(cleaned) > MAX_SCRIPT_STATEMENTS:
+        raise TaskDDLError(f"a task script holds at most {MAX_SCRIPT_STATEMENTS} statements")
+    for index, text in enumerate(cleaned, start=1):
+        where = f"statement {index}"
+        try:
+            parsed = parse_statement(text)
+        except ValueError as exc:
+            raise TaskDDLError(f"{where} of the task script is not valid SQL: {exc}") from None
+        reason = _FORBIDDEN_SCRIPT_STATEMENTS.get(type(parsed.statement_context).__name__)
+        if reason:
+            raise TaskDDLError(f"{where}: {reason}")
+        try:
+            guard_sql(text)
+        except ForbiddenSQLError as exc:
+            raise TaskDDLError(f"{where}: {exc.message}") from None
+        if redact_sql_credentials(text) != text:
+            raise TaskDDLError(f"{where}: a task script must not store credentials")
+    return cleaned
+
+
+def _python_body(text: str) -> str:
+    """Python source of a ``LANGUAGE PYTHON`` task, checked for syntax only."""
+    source = text.strip("\n")
+    if not source.strip():
+        raise TaskDDLError("the Python task has no code")
+    if len(source.encode()) > MAX_PYTHON_SOURCE_BYTES:
+        raise TaskDDLError(
+            f"a Python task holds at most {MAX_PYTHON_SOURCE_BYTES // 1024} KB of code"
+        )
+    import textwrap
+
+    source = textwrap.dedent(source)
+    try:
+        compile(source, "<task>", "exec", dont_inherit=True)
+    except SyntaxError as exc:
+        raise TaskDDLError(
+            f"Python syntax error on line {exc.lineno}: {exc.msg}"
+        ) from None
+    return source
+
+
+def _clause_language(sql: str, clause) -> str:
+    if clause is None:
+        return "sql"
+    inner = _first_child(clause, "TaskLanguageClauseContext")
+    if inner is None:
+        raise TaskDDLError("LANGUAGE clause is malformed")
+    raw = _slice(sql, inner)
+    value = raw[len("LANGUAGE") :].strip().lstrip("=").strip().strip("'\"").lower()
+    if value not in {"sql", "python"}:
+        raise TaskDDLError(f"unknown task LANGUAGE {value!r}; expected SQL or PYTHON")
+    return value
+
+
+def _clause_runtime_version(sql: str, clause) -> str | None:
+    if clause is None:
+        return None
+    inner = _first_child(clause, "TaskRuntimeVersionClauseContext")
+    if inner is None:
+        raise TaskDDLError("RUNTIME_VERSION clause is malformed")
+    value = _string_value(sql, inner.string())
+    if value not in PYTHON_RUNTIME_VERSIONS:
+        allowed = ", ".join(PYTHON_RUNTIME_VERSIONS)
+        raise TaskDDLError(f"RUNTIME_VERSION {value!r} is not available; use {allowed}")
+    return value
+
+
+def _clause_packages(sql: str, clause) -> tuple[str, ...]:
+    """``PACKAGES = ('name', 'name==1.2.3')`` checked against the package allowlist."""
+    if clause is None:
+        return ()
+    inner = _first_child(clause, "TaskPackagesClauseContext")
+    if inner is None:
+        raise TaskDDLError("PACKAGES clause is malformed")
+    from app.modules.notebooks.packages import PackageNotAllowed, canonical, validate_request
+
+    pins: list[str] = []
+    seen: set[str] = set()
+    for ctx in inner.string():
+        raw = _string_value(sql, ctx).strip()
+        match = re.fullmatch(r"([A-Za-z0-9._-]+)\s*(?:==\s*(\S+))?", raw)
+        if not match:
+            raise TaskDDLError(
+                f"package {raw!r} must be written name or name==version"
+            )
+        name, version = match.group(1), match.group(2)
+        try:
+            validated = validate_request(name, version)
+        except PackageNotAllowed as exc:
+            raise TaskDDLError(str(exc)) from None
+        key = canonical(validated["name"])
+        if key in seen:
+            raise TaskDDLError(f"package {name!r} is listed more than once")
+        seen.add(key)
+        pins.append(f"{validated['name']}=={version}" if version else validated["name"])
+    if len(pins) > MAX_TASK_PACKAGES:
+        raise TaskDDLError(f"a Python task installs at most {MAX_TASK_PACKAGES} packages")
+    return tuple(pins)
+
+
+@dataclass(frozen=True)
+class ExecuteTaskTarget:
+    """``EXECUTE TASK [database.][schema.]name`` resolved against the session."""
+
+    name: str
+    database_name: str | None
+    schema_name: str
+
+    @property
+    def qualified_name(self) -> str:
+        return ".".join(p for p in (self.database_name, self.schema_name, self.name) if p)
+
+
+def parse_execute_task(
+    sql: str, *, parsed=None, database: str | None = None, schema: str | None = None
+) -> ExecuteTaskTarget:
+    """Resolve the task an ``EXECUTE TASK`` names, like ``CREATE TASK`` scopes it."""
+    if parsed is None:
+        from app.sql_frontend.parser import parse_statement
+
+        try:
+            parsed = parse_statement(sql)
+        except ValueError as exc:
+            raise TaskDDLError("invalid EXECUTE TASK syntax: " + str(exc)) from None
+    statement = parsed.statement_context
+    if type(statement).__name__ != "NovaExecuteTaskStatementContext":
+        raise TaskDDLError("not an EXECUTE TASK statement")
+    raw = _slice(sql, statement.novaQualifiedTaskName())
+    name, scoped_database, scoped_schema = _split_qualified_task_name(raw)
+    return ExecuteTaskTarget(
+        name=name,
+        database_name=scoped_database or database,
+        schema_name=scoped_schema or schema or "default",
     )
+
+
+@dataclass(frozen=True)
+class DropTaskTarget:
+    """``DROP TASK [IF EXISTS] name [FORCE]``, scoped like ``CREATE TASK``."""
+
+    name: str
+    database_name: str | None
+    schema_name: str
+    if_exists: bool = False
+    force: bool = False
+
+    @property
+    def qualified_name(self) -> str:
+        return ".".join(p for p in (self.database_name, self.schema_name, self.name) if p)
+
+
+def parse_drop_task(
+    sql: str, *, parsed=None, database: str | None = None, schema: str | None = None
+) -> DropTaskTarget:
+    """Resolve the task a ``DROP TASK`` names, with ``CREATE TASK``'s scope rule."""
+    if parsed is None:
+        from app.sql_frontend.parser import parse_statement
+
+        try:
+            parsed = parse_statement(sql)
+        except ValueError as exc:
+            raise TaskDDLError("invalid DROP TASK syntax: " + str(exc)) from None
+    statement = parsed.statement_context
+    if type(statement).__name__ != "DropTaskStatementContext":
+        raise TaskDDLError("not a DROP TASK statement")
+    name, scoped_database, scoped_schema = _split_qualified_task_name(
+        _slice(sql, statement.qualifiedName())
+    )
+    return DropTaskTarget(
+        name=name,
+        database_name=scoped_database or database,
+        schema_name=scoped_schema or schema or "default",
+        if_exists=statement.EXISTS() is not None,
+        force=statement.FORCE() is not None,
+    )
+
+
+def script_statements(task: LoweredTask) -> tuple[str, ...]:
+    """The statements a script task runs, for effect analysis."""
+    return task.statements if task.handler == "sql_script" else ()
 
 
 def validate_merged_graph(node_names: list[str], edges: list[Edge]) -> None:
@@ -464,6 +783,12 @@ def _clause_kind(ctx) -> str:
             return "OVERLAP_POLICY"
         if name in ("TaskScheduleDescContext", "TaskCronScheduleDescContext"):
             return "SCHEDULE"
+        if name == "TaskLanguageClauseContext":
+            return "LANGUAGE"
+        if name == "TaskRuntimeVersionClauseContext":
+            return "RUNTIME_VERSION"
+        if name == "TaskPackagesClauseContext":
+            return "PACKAGES"
     return "UNKNOWN"
 
 

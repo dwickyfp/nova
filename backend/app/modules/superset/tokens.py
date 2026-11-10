@@ -28,13 +28,11 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import uuid
 
 from app.core.config import settings
 from app.core.redis import session_store
 from app.modules.access_control import data_tokens
 from app.modules.access_control.data_tokens import (
-    DELEGATED,
     BiCredentialError,
     BiSession,
     DataToken,
@@ -44,7 +42,6 @@ from app.modules.access_control.data_tokens import (
 )
 
 _HANDLE_PREFIX = "nova:bi:handle:"
-_DELEGATED_PREFIX = data_tokens.DELEGATED_PREFIX
 
 
 def _redis():
@@ -68,13 +65,13 @@ async def create_delegated_session(username: str, active_role: str) -> str:
     Returns its session id (``delegated:<id>``). The caller has already
     authorized the delegation (:func:`app.modules.superset.delegation.authorize`).
     """
-    delegated_id = uuid.uuid4().hex
-    key = _DELEGATED_PREFIX + delegated_id
-    await _redis().hset(
-        key, mapping={"username": username, "active_role": active_role, "version": "1"}
+    from app.modules.access_control.data_tokens import (
+        create_delegated_session as create_session,
     )
-    await _redis().expire(key, settings.SUPERSET_DELEGATION_TTL_SECONDS)
-    return DELEGATED + delegated_id
+
+    return await create_session(
+        username, active_role, settings.SUPERSET_DELEGATION_TTL_SECONDS
+    )
 
 
 async def issue_delegated_handle(username: str, active_role: str) -> str:

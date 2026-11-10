@@ -37,7 +37,8 @@ Workspaces UI (.ipynb tab) ──REST──► notebooks module ──► Redis 
 | Sandbox seam | `notebooks/runtime/provider.py`, `opensandbox_provider.py` | Only the adapter imports the SDK. It reads execd's raw event stream to keep MIME bundles (the pinned SDK keeps only text). |
 | Kernel side | `docker/notebook-runtime/nova_runtime/` | Bootstrap (DuckDB, `nova` attach, display capture), SQL bridge, `{{name}}` references, bounded table previews, variables, package installs. Tested inside the image. |
 | Durable rows | `notebooks/repository.py` | `CONFIG_NOTEBOOK_RUNTIMES`, `CONFIG_NOTEBOOK_EXECUTIONS` (written once per execution), `CONFIG_NOTEBOOK_PACKAGES`. Output payloads are objects beside the Workspace (`.notebook-outputs/`). |
-| Data tokens | `access_control/data_tokens.py` | Session-bound proxy passwords by purpose (`bi`, `notebook`). |
+| Data tokens | `access_control/data_tokens.py` | Session-bound proxy passwords by purpose (`bi`, `notebook`, `task`). |
+| Python tasks | `task_orchestration/python_task.py` | `CREATE TASK … LANGUAGE PYTHON` runs once per task run in its own sandbox from this image, with novaduck and the same write requests ([task manager](08-task-manager.md#script-and-python-tasks)). Its sandboxes (`task-…` runtime ids) are left alone by the notebook reconciler. |
 | UI | `frontend/src/features/workspaces/notebook/` | Notebook tab in Workspaces. |
 | Neva | `assistant/tools/notebook.py`, `client_capability.py`, `skill_library/notebook.md` | Reads the open notebook, proposes cells (with a title), runs cells and installs packages only with approval. |
 | Kernel requests | `notebooks/runtime/rpc.py`, `nova_runtime/novaduck.py` | `con.write`, `con.merge_into`, `con.put`: the kernel asks, the worker does it as the user. |

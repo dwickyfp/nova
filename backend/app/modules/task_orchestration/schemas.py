@@ -233,6 +233,13 @@ class GraphNode(BaseModel):
     #: dependency. The UI must be able to distinguish it.
     is_finalizer: bool = False
     last_state: TaskRunState | None = None
+    #: ``sql`` or ``python``; a ``sql`` node may hold one statement or a script.
+    language: Literal["sql", "python"] = "sql"
+    #: A script node's statement count (1 for a single-statement node).
+    statement_count: int = 1
+    #: A Python node's ``name[==version]`` packages and interpreter version.
+    packages: list[str] = Field(default_factory=list)
+    runtime_version: str | None = None
 
 
 class GraphEdge(BaseModel):
@@ -253,7 +260,11 @@ class GraphDetailResponse(BaseModel):
 class TaskSQLResponse(BaseModel):
     task_id: str
     name: str
+    #: The stored body: SQL, a SQL script, or Python source (see ``language``).
     sql: str | None = None
+    language: Literal["sql", "python"] = "sql"
+    packages: list[str] = Field(default_factory=list)
+    runtime_version: str | None = None
 
 
 class GraphRunResponse(BaseModel):
@@ -286,6 +297,8 @@ class NodeRunResponse(BaseModel):
     delegated: bool = True
     starrocks_query_id: str | None = None
     error_message: str | None = None
+    #: What a script or Python node reported (printed output, statement summary).
+    output: str | None = None
     started_at: datetime | None = None
     heartbeat_at: datetime | None = None
     finished_at: datetime | None = None

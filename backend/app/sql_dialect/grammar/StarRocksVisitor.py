@@ -499,6 +499,31 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#novaExecuteTaskStatement.
+    def visitNovaExecuteTaskStatement(self, ctx:StarRocksParser.NovaExecuteTaskStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaTaskScriptBlock.
+    def visitNovaTaskScriptBlock(self, ctx:StarRocksParser.NovaTaskScriptBlockContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskLanguageClause.
+    def visitTaskLanguageClause(self, ctx:StarRocksParser.TaskLanguageClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskRuntimeVersionClause.
+    def visitTaskRuntimeVersionClause(self, ctx:StarRocksParser.TaskRuntimeVersionClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskPackagesClause.
+    def visitTaskPackagesClause(self, ctx:StarRocksParser.TaskPackagesClauseContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#createMaterializedViewStatement.
     def visitCreateMaterializedViewStatement(self, ctx:StarRocksParser.CreateMaterializedViewStatementContext):
         return self.visitChildren(ctx)

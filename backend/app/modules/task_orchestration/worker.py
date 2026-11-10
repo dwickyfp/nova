@@ -41,6 +41,7 @@ from app.modules.task_orchestration.dag import (
     finalizers_ready,
     graph_from_task_rows,
 )
+from app.modules.task_orchestration.ddl import SCRIPT_HANDLERS
 from app.modules.task_orchestration.execution import (
     DelegateExecutor,
     NodeExecutionError,
@@ -337,6 +338,7 @@ class GraphRunWorker:
             row = existing.get(task["id"])
             if row is None:
                 if (task.get("handler") or "sql") != "sql":
+                    # Only a single-statement SQL node is a native engine task.
                     row = await self._repository.create_task_run_once(
                         job.graph_run_id, task["id"], delegated=False)
                 else:
@@ -377,6 +379,7 @@ class GraphRunWorker:
             row = existing.get(task["id"])
             if row is None:
                 if (task.get("handler") or "sql") != "sql":
+                    # Only a single-statement SQL node is a native engine task.
                     row = await self._repository.create_task_run_once(
                         job.graph_run_id, task["id"], delegated=False)
                 else:
@@ -460,6 +463,9 @@ class GraphRunWorker:
             return
 
         handler = task.get("handler") or "sql"
+        if handler in SCRIPT_HANDLERS:
+            await self._execute_script(job, task, run_id, owner, handler)
+            return
         if handler != "sql":
             from app.modules.task_orchestration.internal_handlers import run_internal_task
 
@@ -530,6 +536,48 @@ class GraphRunWorker:
             error=result.error_message,
         )
 
+    async def _execute_script(
+        self, job: GraphRunJob, task: dict[str, Any], run_id: str, owner: str, handler: str
+    ) -> None:
+        """Run a SQL script or Python node; Nova executes it, not a native task."""
+        spec = TaskSpec(
+            name=task["name"],
+            body="",
+            database=task.get("database_name"),
+            active_role=task.get("owner_role"),
+            execution_session_id=job.execution_session_id if job.trigger_type == "manual" else None,
+            schema=task.get("schema_name"),
+        )
+
+        async def heartbeat() -> None:
+            await self._repository.mark_task_run_heartbeat(run_id)
+            await self._repository.mark_graph_run_heartbeat(job.graph_run_id)
+
+        try:
+            if handler == "python":
+                from app.modules.task_orchestration.python_task import run_python_task
+
+                output = await run_python_task(
+                    task, spec, owner, self._executor, heartbeat=heartbeat
+                )
+            else:
+                from app.modules.task_orchestration.script_task import run_sql_script
+
+                output = await run_sql_script(
+                    task, spec, owner, self._executor, heartbeat=heartbeat
+                )
+        except NodeExecutionError as exc:
+            await self._finalize(
+                job, task, run_id, owner, NodeState.FAILED, error=str(exc) or "task failed"
+            )
+            return
+        except Exception as exc:  # noqa: BLE001 - any failure fails the node
+            await self._finalize(
+                job, task, run_id, owner, NodeState.FAILED, error=_safe_message(exc)
+            )
+            return
+        await self._finalize(job, task, run_id, owner, NodeState.SUCCESS, output=output or "")
+
     async def _finalize(
         self,
         job: GraphRunJob,
@@ -540,6 +588,7 @@ class GraphRunWorker:
         *,
         query_id: str | None = None,
         error: str | None = None,
+        output: str | None = None,
     ) -> None:
         """Move a ``running`` node to its terminal state, then audit it.
 
@@ -558,6 +607,7 @@ class GraphRunWorker:
             state.value,
             query_id=query_id,
             error_message=error,
+            **({"output": output} if output is not None else {}),
         )
         if not moved:
             logger.info(

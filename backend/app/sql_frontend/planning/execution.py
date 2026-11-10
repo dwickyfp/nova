@@ -16,6 +16,8 @@ from app.sql_frontend.analysis.effects import PlanEffects
 class ActionKind(Enum):
     STREAM = "stream"
     CREATE_TASK = "create_task"
+    EXECUTE_TASK = "execute_task"
+    DROP_TASK = "drop_task"
     CREATE_ML_MODEL = "create_ml_model"
     ML_PREDICT = "ml_predict"
     ML_MATERIALIZE = "ml_materialize"
@@ -95,6 +97,21 @@ class TaskPayload(SourcePayload):
     schema: str | None
     schedule_kind: str
     definition: LoweredTask | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecuteTaskPayload(SourcePayload):
+    name: str
+    database: str | None
+    schema: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DropTaskPayload(SourcePayload):
+    name: str
+    database: str | None
+    schema: str
+    if_exists: bool = False
 
 
 @dataclass(frozen=True, slots=True)

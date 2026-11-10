@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_RUNS (
     delegated          BOOLEAN DEFAULT "true",
     starrocks_query_id VARCHAR(128),
     error_message      TEXT,
+    output             TEXT,
     started_at         DATETIME,
     heartbeat_at       DATETIME,
     finished_at        DATETIME
@@ -378,6 +379,9 @@ TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # default to ``skip``, the strictest policy, so nothing starts overlapping
     # behaviour simply because the column arrived.
     ("CONFIG_TASK_GRAPH_RUNS", "overlap_policy", "VARCHAR(16) NOT NULL DEFAULT 'skip'"),
+    # Script and Python tasks: what a node run reported (the tail of a Python
+    # task's printed output, a script's statement summary). Never a credential.
+    ("CONFIG_TASK_RUNS", "output", "TEXT"),
 )
 
 

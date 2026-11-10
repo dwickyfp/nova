@@ -95,6 +95,14 @@ function mockApi() {
               attempt: 1,
               error_message: "INSERT failed: target table does not exist",
             },
+            {
+              id: "node-script",
+              task_id: "extract",
+              state: "success",
+              attempt: 1,
+              error_message: null,
+              output: "2 statements ran; 7 rows affected",
+            },
           ],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -163,6 +171,9 @@ describe("TaskDetail", () => {
     );
     await expect
       .element(screen.getByText("Executed as dwicky.f.putra · ACCOUNTADMIN"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("2 statements ran; 7 rows affected"))
       .toBeVisible();
   });
 

@@ -313,6 +313,10 @@ class Settings(BaseSettings):
     )
     #: Package indexes a sandbox may reach while an approved install runs.
     NOTEBOOK_PACKAGE_INDEX_HOSTS: str = "pypi.org,files.pythonhosted.org"
+    #: Longest a ``LANGUAGE PYTHON`` task runs (package installs included)
+    #: before it is stopped and its node fails. The task's sandbox uses the
+    #: notebook runtime image and resources above.
+    TASK_PYTHON_TIMEOUT_SECONDS: int = Field(default=3600, ge=60, le=86_400)
     #: Superset's PostgreSQL metadata database, dumped with NOVA_SYSTEM
     #: snapshots (Phase 5). The password comes from the environment only.
     SUPERSET_DB_HOST: str = "superset-db"

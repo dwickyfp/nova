@@ -31,7 +31,7 @@ _GRAPH_RUN_COLUMNS = (
 )
 _TASK_RUN_COLUMNS = (
     "id, graph_run_id, task_id, attempt, state, delegated, starrocks_query_id, "
-    "error_message, started_at, heartbeat_at, finished_at"
+    "error_message, output, started_at, heartbeat_at, finished_at"
 )
 
 # Edges store task *names* (parent_task/child_task), not ids, so graph membership
@@ -61,6 +61,7 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
             "delegated",
             "starrocks_query_id",
             "error_message",
+            "output",
             "heartbeat_at",
             "finished_at",
         }
@@ -878,6 +879,7 @@ class TaskOrchestrationRepository:
         *,
         query_id: str | None = None,
         error_message: str | None = None,
+        output: str | None = None,
     ) -> bool:
         """Conditional node-state write. True only when this caller moved it.
 
@@ -896,6 +898,9 @@ class TaskOrchestrationRepository:
         if error_message is not None:
             sets.append("error_message = %s")
             values.append(error_message)
+        if output is not None:
+            sets.append("output = %s")
+            values.append(output)
         if to_state in {"success", "failed", "skipped"}:
             sets.append("finished_at = NOW()")
         result = await db.execute_system(

@@ -24,6 +24,28 @@ def _task(statement: ast.Statement, context=None) -> Any:
     )
 
 
+def _execute_task(statement: ast.Statement, context=None) -> Any:
+    from app.modules.task_orchestration.ddl import parse_execute_task
+
+    return parse_execute_task(
+        statement.parsed.normalized_sql,
+        parsed=statement.parsed,
+        database=context.database if context else None,
+        schema=context.schema if context else None,
+    )
+
+
+def _drop_task(statement: ast.Statement, context=None) -> Any:
+    from app.modules.task_orchestration.ddl import parse_drop_task
+
+    return parse_drop_task(
+        statement.parsed.normalized_sql,
+        parsed=statement.parsed,
+        database=context.database if context else None,
+        schema=context.schema if context else None,
+    )
+
+
 def _predict(statement: ast.MLPredictStatement) -> Any:
     from app.common.ml_intercept import rewrite_ml_predict_projection
 

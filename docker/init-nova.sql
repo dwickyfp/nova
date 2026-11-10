@@ -545,6 +545,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_RUNS (
   delegated          BOOLEAN DEFAULT "true",
   starrocks_query_id VARCHAR(128),
   error_message      TEXT,
+  output             TEXT,
   started_at         DATETIME,
   heartbeat_at       DATETIME,
   finished_at        DATETIME

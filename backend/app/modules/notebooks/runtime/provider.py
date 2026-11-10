@@ -11,6 +11,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+#: Runtime ids of Python task runs. Their sandboxes belong to the task worker,
+#: so the notebook reconciler leaves them alone.
+TASK_RUNTIME_PREFIX = "task-"
+
 
 class ProviderError(RuntimeError):
     """The sandbox service failed; the message is safe to show."""

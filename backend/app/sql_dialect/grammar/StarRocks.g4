@@ -162,6 +162,10 @@ statement
     | submitTaskStatement
     | alterTaskStatement
     | dropTaskStatement
+    // NOVA-BEGIN (task-expand): `EXECUTE TASK name` runs a Nova task graph now.
+    // Nova-only; the engine has no such statement and never sees it.
+    | novaExecuteTaskStatement
+    // NOVA-END
 
     // Materialized View Statement
     | createMaterializedViewStatement
@@ -918,7 +922,12 @@ submitTaskStatement
     : (SUBMIT TASK qualifiedName? | CREATE TASK novaQualifiedTaskName?)
     // NOVA-END
         taskClause*
-        AS (createTableAsSelectStatement | insertStatement | dataCacheSelectStatement)
+    // NOVA-BEGIN (task-expand): a Nova task body may also be a statement block
+    // (`BEGIN stmt; stmt; END`) or a `$$`-quoted script (SQL statements, or
+    // Python with `LANGUAGE PYTHON`). Lowering refuses both on SUBMIT TASK.
+        AS (createTableAsSelectStatement | insertStatement | dataCacheSelectStatement
+            | novaTaskScriptBlock | ATTACHMENT)
+    // NOVA-END
     ;
 
 alterTaskStatement
@@ -938,6 +947,11 @@ taskClause
     | taskWhenClause
     | taskOverlapClause
     | taskCronScheduleDesc
+    // NOVA-END
+    // NOVA-BEGIN (task-expand): language, runtime and packages of a script task.
+    | taskLanguageClause
+    | taskRuntimeVersionClause
+    | taskPackagesClause
     // NOVA-END
     ;
 
@@ -997,6 +1011,34 @@ taskOverlapClause
 
 taskCronScheduleDesc
     : SCHEDULE EQ string
+    ;
+
+// NOVA-END
+// NOVA-BEGIN (task-expand): EXECUTE TASK, script bodies, Python tasks.
+//   EXECUTE TASK db.schema.task
+//   CREATE TASK t AS BEGIN UPDATE ...; INSERT ...; END
+//   CREATE TASK t LANGUAGE PYTHON RUNTIME_VERSION = '3.12'
+//     PACKAGES = ('pandas==2.2.3') AS $$ ...python... $$
+// Each statement in a block ends with `;`: `END` is a non-reserved word, so
+// `FROM s END` would read END as the table alias.
+novaExecuteTaskStatement
+    : EXECUTE TASK novaQualifiedTaskName
+    ;
+
+novaTaskScriptBlock
+    : BEGIN (statement ';')+ END
+    ;
+
+taskLanguageClause
+    : LANGUAGE EQ? (identifierOrString | SQL)
+    ;
+
+taskRuntimeVersionClause
+    : RUNTIME_VERSION EQ? string
+    ;
+
+taskPackagesClause
+    : PACKAGES EQ? '(' string (',' string)* ')'
     ;
 
 // NOVA-END
@@ -3835,6 +3877,9 @@ nonReserved
     | OBSERVER | OF | OFFSET | ONLY | OPTIMIZER | OPEN | OPERATE | OPTION | OVERWRITE | OFF
     // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.
     | OVERLAP_POLICY
+    // NOVA-END
+    // NOVA-BEGIN (task-expand): task script clause keywords stay identifiers.
+    | LANGUAGE | PACKAGES | RUNTIME_VERSION
     // NOVA-END
     | PARTITIONS | PASSWORD | PATH | PAUSE | PENDING | PERCENTILE_UNION | PIVOT | PLAN | PLUGIN | PLUGINS | POLICY | POLICIES
     | PERCENT_RANK | PREDICATE | PRECEDING | PRIORITY | PROC | PROCESSLIST | PROFILE | PROFILELIST | PROVIDER | PROVIDERS | PRIVILEGES | PROBABILITY | PROPERTIES | PROPERTY | PIPE | PIPES

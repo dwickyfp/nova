@@ -99,6 +99,8 @@ async def persist_lowered_task(
             "when_expr": task.when_expr,
             "overlap_policy": task.overlap_policy,
             "owner_role": owner_role,
+            "handler": task.handler,
+            "handler_config": task.handler_config,
         },
         created_by,
     )
@@ -272,3 +274,50 @@ async def _rollback(task_row: dict[str, Any], edge_rows: list[dict[str, Any]]) -
             await task_orchestration_repository.delete_edge(str(edge["id"]))
     with contextlib.suppress(Exception):
         await task_orchestration_repository.delete_task(str(task_row["id"]))
+
+
+async def drop_nova_task(
+    name: str, database_name: str | None, schema_name: str, user: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Remove a Nova task and the edges that make it a child; ``None`` if absent.
+
+    The caller's active role must own the task (the rule every task API uses).
+    A task other tasks run after, or finalize, is refused with their names:
+    dropping it would leave them waiting on a task that no longer exists. A
+    task whose graph has a pending or running run is refused until the run
+    settles. Run history stays, as it does for the engine's own tasks.
+    """
+    from app.modules.task_orchestration.access import owns_task
+    from app.modules.task_orchestration.repository import task_graph_id
+
+    task = await task_orchestration_repository.find_task(name, database_name, schema_name)
+    if task is None:
+        return None
+    if not owns_task(task, user):
+        raise TaskLoweringError(
+            f"Task {task_graph_id(task)} is owned by role {task.get('owner_role')!r}; "
+            "activate that role to drop it"
+        )
+    edges = [
+        edge
+        for edge in await task_orchestration_repository.list_all_edges()
+        if _edge_in_scope(str(edge.get("graph_id") or ""), database_name, schema_name)
+    ]
+    dependents = sorted(
+        {str(edge["child_task"]) for edge in edges if str(edge["parent_task"]) == name}
+    )
+    if dependents:
+        raise TaskLoweringError(
+            f"Tasks {', '.join(dependents)} run after or finalize {name}; drop them first"
+        )
+    own_edges = [edge for edge in edges if str(edge["child_task"]) == name]
+    graph_ids = {str(edge["graph_id"]) for edge in own_edges} or {task_graph_id(task)}
+    for graph_id in sorted(graph_ids):
+        if await task_orchestration_repository.list_active_graph_runs(graph_id):
+            raise TaskLoweringError(
+                f"Task {task_graph_id(task)} has a run in progress; drop it after the run ends"
+            )
+    for edge in own_edges:
+        await task_orchestration_repository.delete_edge(str(edge["id"]))
+    await task_orchestration_repository.delete_task(str(task["id"]))
+    return task

@@ -52,6 +52,16 @@ class CreateTaskStatement(Statement):
 
 
 @dataclass(frozen=True, slots=True)
+class ExecuteTaskStatement(Statement):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class DropTaskStatement(Statement):
+    """A Nova task when one has this name, otherwise the engine's own DROP TASK."""
+
+
+@dataclass(frozen=True, slots=True)
 class CreateMLModelStatement(Statement):
     pass
 

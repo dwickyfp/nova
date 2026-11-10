@@ -16,7 +16,10 @@ def is_task_admin(user: dict[str, Any]) -> bool:
 
 
 def owns_task(task: dict[str, Any], user: dict[str, Any]) -> bool:
-    if (task.get("handler") or "sql") != "sql":
+    from app.modules.task_orchestration.ddl import USER_HANDLERS
+
+    if (task.get("handler") or "sql") not in USER_HANDLERS:
+        # Internal handlers (Intelligence, agent quality) stay with their creator.
         return (task.get("created_by") == user.get("username")
                 and task.get("owner_role") == user.get("active_role"))
     role = task.get("owner_role")
