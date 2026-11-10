@@ -2,14 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { z } from "zod";
-import { AssistantProvider, useAssistant } from "./assistant-provider";
+import { AssistantProvider } from "./assistant-provider";
 import { useNevaSurface } from "./neva-surface-hook";
 import { defineNevaCapability } from "./surface-registry";
 
 function HistoryPage() {
   const [status, setStatus] = useState("");
-  const { clientActionStatus } = useAssistant();
   const { askNeva } = useNevaSurface({
     id: "monitoring.query_history", route: "/query-history", title: "Query history",
     context: () => ({ view: { filters: { status } } }),
@@ -22,7 +22,6 @@ function HistoryPage() {
   });
   return <div>
     <span data-testid="status">{status || "all"}</span>
-    <span data-testid="action-status">{clientActionStatus ?? "idle"}</span>
     <button onClick={() => void askNeva("Show only failed queries.")}>filter with Neva</button>
     <button onClick={() => void askNeva("Did that filter work?")}>ask outcome</button>
   </div>;
@@ -64,7 +63,9 @@ describe("Neva page integration", () => {
     );
     await screen.getByRole("button", { name: "filter with Neva" }).click();
     await expect.element(screen.getByTestId("status")).toHaveTextContent("ERROR");
-    await expect.element(screen.getByTestId("action-status")).toHaveTextContent("Page action applied.");
+    // A done action shows on the page; the panel adds no status line.
+    await vi.waitFor(() => expect(acknowledged).toHaveLength(1));
+    expect(screen.container.textContent).not.toContain("Page action applied");
     expect(acknowledged).toEqual([expect.objectContaining({
       type: "ui_action_completed", correlationId: "action-1", status: "success",
     })]);
@@ -82,12 +83,12 @@ describe("Neva page integration", () => {
 
   it("reports a failed refresh as an action failure", async () => {
     const acknowledged: Array<Record<string, unknown>> = [];
+    const failed = vi.spyOn(toast, "error");
     const load = vi.fn()
       .mockResolvedValueOnce("ready")
       .mockRejectedValue(new Error("Refresh failed"));
     function RefreshPage() {
       const query = useQuery({ queryKey: ["neva-refresh-test"], queryFn: load, retry: false });
-      const { clientActionStatus } = useAssistant();
       const { askNeva } = useNevaSurface({
         id: "roles.list", route: "/roles", context: () => ({}),
         capabilities: [defineNevaCapability({
@@ -97,7 +98,6 @@ describe("Neva page integration", () => {
       });
       return <div>
         <span data-testid="query-status">{query.data ?? "loading"}</span>
-        <span data-testid="action-status">{clientActionStatus ?? "idle"}</span>
         <button onClick={() => void askNeva("Refresh this view.")}>refresh with Neva</button>
       </div>;
     }
@@ -130,7 +130,7 @@ describe("Neva page integration", () => {
     );
     await expect.element(screen.getByTestId("query-status")).toHaveTextContent("ready");
     await screen.getByRole("button", { name: "refresh with Neva" }).click();
-    await expect.element(screen.getByTestId("action-status")).toHaveTextContent("Refresh failed");
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("Refresh failed"));
     expect(acknowledged).toEqual([expect.objectContaining({
       type: "ui_action_failed", correlationId: "refresh-1", status: "failure",
     })]);

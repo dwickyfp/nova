@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { getCookie, setCookie } from "@/lib/cookies";
 import { useAuthStore } from "@/stores/auth-store";
@@ -135,7 +136,6 @@ type AssistantContextType = {
   /** Label the header shows, e.g. the open worksheet's name; "Neva" when none. */
   headerTitle?: string;
   suggestedActions: readonly NevaSuggestedAction[];
-  clientActionStatus: string | null;
 };
 
 const AssistantContext = createContext<AssistantContextType | null>(null);
@@ -159,7 +159,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
   const [binding, setBindingState] = useState<AssistantBinding | null>(null);
   const [surfaceRegistry] = useState(() => new NevaSurfaceRegistry());
   const [applicationEvents] = useState(() => new NevaApplicationEvents());
-  const [clientActionStatus, setClientActionStatus] = useState<string | null>(null);
   const surfaceVersion = useSyncExternalStore(surfaceRegistry.subscribe, surfaceRegistry.getSnapshot, surfaceRegistry.getSnapshot);
   const eventVersion = useSyncExternalStore(applicationEvents.subscribe, applicationEvents.getSnapshot, applicationEvents.getSnapshot);
   const [selectedModel, setSelectedModel] = useState<SelectedModel>(null);
@@ -218,11 +217,9 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
     // Versions notify the panel when another page or application event changes.
     [getAppContext, surfaceVersion, eventVersion],
   );
-  useEffect(() => setClientActionStatus(null), [activeAppContext.surface.id, activeAppContext.surface.route]);
   const activeSurface = surfaceRegistry.getActive();
   const onClientAction = useCallback(async (action: { capability: string; args: Record<string, unknown>; correlation_id: string; surface_id?: string }, threadId: string, turnContext?: NevaAppContext) => {
     const surfaceId = action.surface_id ?? surfaceRegistry.getActive()?.id;
-    setClientActionStatus("Applying the page action…");
     let outcome: "success" | "failure" = "success";
     let reason: string | undefined;
     try {
@@ -250,21 +247,17 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
       payload: { capability: action.capability, ...(reason ? { reason } : {}) },
     });
     try {
-      const acknowledgment = await api.post<{ recorded: boolean; verification: "verified" | "failed" | "unmatched" }>(
+      // Records the outcome so Neva can verify it; the reply is not shown.
+      await api.post(
         `/assistant/threads/${encodeURIComponent(threadId)}/application-events`,
         event,
       );
-      setClientActionStatus(outcome === "failure"
-        ? reason ?? "The page action failed."
-        : acknowledgment.verification === "verified"
-          ? "Page action applied."
-          : "Page action applied; Neva could not verify it yet.");
     } catch {
       // The bounded turn context will carry this evidence on the next request.
-      setClientActionStatus(outcome === "failure"
-        ? reason ?? "The page action failed."
-        : "Page action applied; Neva could not record it yet.");
     }
+    // A done page action shows on the page itself, so the panel adds no
+    // status line; only a failure is worth a moment's notice.
+    if (outcome === "failure") toast.error(reason ?? "The page action failed.");
   }, [applicationEvents, getAppContext, surfaceRegistry]);
   const onUiActionCompleted = useCallback(
     (action: UiAction) => {
@@ -374,7 +367,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
     [conversation],
   );
   const newChat = useCallback(() => {
-    setClientActionStatus(null);
     setAttachments([]);
     setProposedRewriteState(null);
     setPendingNewChatMessage(null);
@@ -470,7 +462,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
       activeContext: context,
       headerTitle: activeBinding.title,
       suggestedActions: activeSurface?.suggestedActions ?? [],
-      clientActionStatus,
     }),
     [
       open,
@@ -501,7 +492,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
       context,
       activeBinding.title,
       activeSurface?.suggestedActions,
-      clientActionStatus,
     ],
   );
 
@@ -546,7 +536,6 @@ export function useAssistantPanelProps(): AssistantPanelProps {
     activeContext,
     headerTitle,
     suggestedActions,
-    clientActionStatus,
     publishApplicationEvent,
     askNeva,
   } = useAssistant();
@@ -597,7 +586,6 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       onOffsetYChange: setOffsetY,
       activeContext,
       suggestedActions,
-      clientActionStatus,
       onExecutionEvent: publishApplicationEvent,
       // Interactive answers keep state in, and send actions to, this thread.
       uiContext: conversation.threadId
@@ -627,7 +615,6 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       setOffsetY,
       activeContext,
       suggestedActions,
-      clientActionStatus,
       publishApplicationEvent,
       askNeva,
       headerTitle,
