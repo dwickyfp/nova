@@ -35,7 +35,11 @@ from app.modules.task_orchestration.execution import (
     build_submit_task,
     native_attempt_name,
 )
-from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
+from app.modules.task_orchestration.worker import (
+    ABANDONED_NODE_ERROR,
+    GraphRunJob,
+    GraphRunWorker,
+)
 
 
 class FakeRepository:
@@ -559,8 +563,13 @@ class TestIdempotency:
 
 
 class TestRestartSafety:
-    async def test_abandoned_running_row_is_held_without_resubmission(self, audit):
-        """A lost heartbeat cannot prove the native submit did not happen."""
+    async def test_abandoned_running_row_fails_without_resubmission(self, audit):
+        """A lost heartbeat cannot prove the native submit did not happen.
+
+        The node is not replayed; it fails with an explanation so the graph
+        settles. Holding it kept the run ``running`` forever, which blocked
+        every later scheduled run and DROP TASK.
+        """
         repo = FakeRepository()
         repo.add_task("A")
         repo.add_graph_run("gr1", "id_A", state="running")
@@ -569,11 +578,11 @@ class TestRestartSafety:
         stale["running_stale"] = True
 
         executor = RecordingExecutor()
-        # The worker re-derives the graph but does not replay uncertain SQL.
         await repo.transition_task_run(stale["id"], ["running"], "abandoned")
         state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A"))
-        assert state == GraphState.RUNNING
-        assert repo.task_runs[stale["id"]]["state"] == "abandoned"
+        assert state == GraphState.FAILED
+        assert repo.task_runs[stale["id"]]["state"] == "failed"
+        assert repo.task_runs[stale["id"]]["error_message"] == ABANDONED_NODE_ERROR
         assert executor.submissions == []
 
     async def test_pending_run_with_no_delivery_is_reconcilable(self, audit):

@@ -374,6 +374,55 @@ export const componentDefinitions = [
   },
 ];
 
+/**
+ * OpenUI's built-in @Sort and @Filter read a field with a dot as a nested
+ * path (`orders.date` is `row.orders.date`). Semantic results name columns
+ * `<table>.<column>`, so each such row also answers that path, through a
+ * non-enumerable alias that tables, charts and JSON never see. Without it a
+ * sort by such a column silently keeps the query's row order.
+ */
+export function withFieldPaths(
+  rows: Record<string, unknown>[] | undefined,
+): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((row) => {
+    const dotted = Object.keys(row).filter((key) => key.includes("."));
+    if (!dotted.length) return row;
+    const copy: Record<string, unknown> = { ...row };
+    for (const key of dotted) {
+      const parts = key.split(".");
+      if (parts.some((part) => !part || ["__proto__", "prototype", "constructor"].includes(part))) continue;
+      let node: Record<string, unknown> = copy;
+      let ok = true;
+      for (const [depth, part] of parts.slice(0, -1).entries()) {
+        const existing = node[part];
+        if (existing === undefined) {
+          const child: Record<string, unknown> = Object.create(null);
+          if (depth === 0) {
+            Object.defineProperty(node, part, { value: child, enumerable: false });
+          } else {
+            node[part] = child;
+          }
+          node = child;
+        } else if (
+          existing !== null &&
+          typeof existing === "object" &&
+          // A real column of that name wins; only aliases made here are extended.
+          (depth > 0 || !Object.prototype.propertyIsEnumerable.call(node, part))
+        ) {
+          node = existing as Record<string, unknown>;
+        } else {
+          ok = false;
+          break;
+        }
+      }
+      const leaf = parts[parts.length - 1];
+      if (ok && !(leaf in node)) node[leaf] = row[key];
+    }
+    return copy;
+  });
+}
+
 export function createSchemaLibrary(evidence: EvidenceRows = {}) {
   return createLibrary({
     root: "Col",
@@ -387,7 +436,7 @@ export function createSchemaLibrary(evidence: EvidenceRows = {}) {
         description:
           "Read immutable verified result records by exact evidence id. Local filters/aggregates cover only these rows.",
         params: z.object({ id: short }),
-        fn: (p) => evidence[p.id] ?? null,
+        fn: (p) => withFieldPaths(evidence[p.id]) ?? null,
       }),
     ],
   });

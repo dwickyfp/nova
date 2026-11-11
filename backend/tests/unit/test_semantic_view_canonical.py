@@ -302,3 +302,19 @@ async def test_verified_query_save_creates_new_draft_without_mutating_active(mon
         )
     assert exc.value.status_code == 422
     service._insert_version.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_query_route_reports_invalid_dimension_as_client_error(monkeypatch):
+    from app.modules.agents.semantic.planning import SemanticPlanError
+    from app.modules.intelligence import semantic_views as module
+
+    query = AsyncMock(side_effect=SemanticPlanError("Unknown dimension 'missing'."))
+    monkeypatch.setattr(module.semantic_view_service, "query", query)
+    with pytest.raises(HTTPException) as failure:
+        await module.query_semantic_view(
+            "view-1", module.SemanticViewQuery(dimensions=["missing"]), _user(),
+        )
+    assert failure.value.status_code == 422
+    assert failure.value.detail == "Unknown dimension 'missing'."
+    assert query.await_args.args[2] == _user()

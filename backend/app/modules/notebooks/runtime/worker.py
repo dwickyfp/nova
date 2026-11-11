@@ -46,6 +46,12 @@ from app.modules.workspaces.service import workspace_service
 logger = logging.getLogger(__name__)
 
 LEASE_MS = 30_000
+#: The error name execd reports when the kernel process died during a run.
+KERNEL_DIED = "KernelDied"
+KERNEL_DIED_MESSAGE = (
+    "The kernel stopped, most often because the cell used more memory than the runtime "
+    "has. Nova restarted it and variables were cleared; run the cells above again"
+)
 _SWEEP_SECONDS = 30
 _RECONCILE_SECONDS = 60
 
@@ -717,6 +723,13 @@ class NotebookRuntimeWorker:
         if collector.error and status == "succeeded":
             status = "failed"
             message = collector.error.get("message") or ""
+        # Jupyter restarts a kernel that died (most often out of memory) on its
+        # own, without Nova's bootstrap: novaduck and SQL cells would not work
+        # until the person restarted the runtime. Restart it the Nova way.
+        kernel_died = (collector.error or {}).get("name") == KERNEL_DIED
+        if kernel_died:
+            collector.nova_error("KernelRestarted", KERNEL_DIED_MESSAGE)
+            message = KERNEL_DIED_MESSAGE
         ended = time.time()
         records = collector.final()
         output_key = None
@@ -786,6 +799,9 @@ class NotebookRuntimeWorker:
             return
         if restart_after:
             await self._restart_kernel(runtime, reason="timeout")
+            return
+        if kernel_died:
+            await self._restart_kernel(runtime, reason="kernel_died")
             return
         latest = await state.load(runtime.id)
         if latest is not None:

@@ -6,6 +6,7 @@ import {
   markReactive,
 } from "@openuidev/lang-core";
 import { z } from "zod";
+import { withFieldPaths } from "./catalog";
 import { uiFunctions } from "./functions";
 
 export const UI_CATALOG_VERSION = "nova-openui-2";
@@ -378,7 +379,7 @@ export function createSchemaLibrary(evidence: EvidenceRows = {}) {
         description:
           "Read immutable verified result records by exact evidence id. Local filters/aggregates cover only these rows.",
         params: z.object({ id: short }),
-        fn: (p) => evidence[p.id] ?? null,
+        fn: (p) => withFieldPaths(evidence[p.id]) ?? null,
       }),
     ],
   });

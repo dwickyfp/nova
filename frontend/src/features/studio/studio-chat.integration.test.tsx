@@ -1,7 +1,7 @@
 import { page, userEvent } from "vitest/browser";
 import { StrictMode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -249,7 +249,8 @@ beforeEach(() => {
   vi.spyOn(signInNavigation, "open").mockImplementation(() => undefined);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await cleanup();
   vi.restoreAllMocks();
 });
 

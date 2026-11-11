@@ -307,7 +307,7 @@ async def upload_stage_file(
     return {"success": True, "filename": target_name, "size": result["size"]}
 
 
-@router.delete("/databases/{database}/stages/{stage}/files/{filename}")
+@router.delete("/databases/{database}/stages/{stage}/files/{filename:path}")
 async def delete_stage_file(
     database: str,
     stage: str,

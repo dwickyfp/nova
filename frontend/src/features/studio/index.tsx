@@ -337,9 +337,9 @@ function StudioAppContent() {
         />
       </div>
 
-      <main aria-label={tab === "dataviz" ? "Nova Studio Dataviz" : view === "chat" ? "Nova Studio chat" : view} className="shell-pane relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <main aria-label={tab === "dataviz" ? "Nova Studio Dataviz" : view === "chat" ? "Nova Studio chat" : view} className="@container/studio shell-pane relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         {/* On Dataviz the switch docks in Superset's own bar (DatavizWorkspace). */}
-        {tab === "agent" ? <StudioTabs tab={tab} onSelect={selectTab} /> : null}
+        {tab === "agent" ? <StudioTabs tab={tab} onSelect={selectTab} reserveRow={view !== "chat"} /> : null}
         {needsRole ? (
           <div role="status" className="mt-14 flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <span>Choose a role to see your data and conversations.</span>

@@ -21,19 +21,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api-client'
-
-type Alias = {
-  alias_name: string
-  model_id: string
-  model_name: string | null
-  version: number
-}
+import {
+  aliasKey,
+  listScopedAliases,
+  parseFeatureValue,
+  type ScopedAlias as Alias,
+} from './model-scope'
 
 type ModelInfo = {
   model_id: string
   model_name: string
   feature_columns: string[] | null
   model_type: string
+  database_name?: string | null
 }
 
 type PredictionResult = {
@@ -67,19 +67,17 @@ export function PredictTab() {
   // Result dialog
   const [resultOpen, setResultOpen] = useState(false)
 
-  const fetchAliases = useCallback(async () => {
+  const fetchAliases = useCallback(async (known: ModelInfo[]) => {
     try {
-      const res = await api.get<{ aliases: Alias[]; count: number }>(
-        '/ml/aliases'
-      )
-      setAliases(res.aliases)
-      if (res.aliases.length > 0 && !selectedAlias) {
-        setSelectedAlias(res.aliases[0].alias_name)
+      const found = await listScopedAliases(known)
+      setAliases(found)
+      if (found.length > 0) {
+        setSelectedAlias((current) => current || aliasKey(found[0]))
       }
     } catch {
       // silent
     }
-  }, [selectedAlias])
+  }, [])
 
   const fetchModels = useCallback(async () => {
     try {
@@ -87,20 +85,23 @@ export function PredictTab() {
         '/ml/models'
       )
       setModels(res.models)
+      return res.models
     } catch {
-      // silent
+      return []
     }
   }, [])
 
   useEffect(() => {
-    Promise.all([fetchAliases(), fetchModels()]).finally(() =>
-      setLoading(false)
-    )
+    fetchModels()
+      .then(fetchAliases)
+      .finally(() => setLoading(false))
   }, [fetchAliases, fetchModels])
+
+  const findAlias = (key: string) => aliases.find((a) => aliasKey(a) === key)
 
   // Get feature columns for selected alias
   const selectedModel = useMemo(() => {
-    const alias = aliases.find((a) => a.alias_name === selectedAlias)
+    const alias = aliases.find((a) => aliasKey(a) === selectedAlias)
     if (!alias) return null
     return models.find((m) => m.model_id === alias.model_id) ?? null
   }, [selectedAlias, aliases, models])
@@ -114,7 +115,8 @@ export function PredictTab() {
     }
     setPredicting(true)
     try {
-      const features: Record<string, number> = {}
+      const alias = findAlias(selectedAlias)
+      const features: Record<string, number | string> = {}
       for (const col of featureColumns) {
         const val = featureValues[col]
         if (val === undefined || val === '') {
@@ -122,11 +124,12 @@ export function PredictTab() {
           setPredicting(false)
           return
         }
-        features[col] = parseFloat(val)
+        features[col] = parseFeatureValue(val)
       }
       const res = await api.post<PredictionResult>('/ml/predict', {
-        model_alias: selectedAlias,
+        model_alias: alias?.alias_name ?? selectedAlias,
         features,
+        database_name: alias?.database_name ?? null,
       })
       setResult(res)
       setResultOpen(true)
@@ -154,9 +157,10 @@ export function PredictTab() {
         predictions: unknown[]
         total_rows: number
       }>('/ml/predict/batch', {
-        model_alias: batchAlias,
+        model_alias: findAlias(batchAlias)?.alias_name ?? batchAlias,
         prediction_sql: batchSql,
-        database_name: batchDb || null,
+        database_name:
+          batchDb.trim() || findAlias(batchAlias)?.database_name || null,
       })
       setBatchResult(res)
       toast.success(`Batch prediction complete: ${res.total_rows} rows`)
@@ -202,8 +206,9 @@ export function PredictTab() {
               </SelectTrigger>
               <SelectContent>
                 {aliases.map((a) => (
-                  <SelectItem key={a.alias_name} value={a.alias_name}>
-                    {a.alias_name} ({a.model_name})
+                  <SelectItem key={aliasKey(a)} value={aliasKey(a)}>
+                    {a.alias_name} ({a.model_name}
+                    {a.database_name ? `, ${a.database_name}` : ''})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -216,8 +221,6 @@ export function PredictTab() {
                 <div key={col}>
                   <Label className='mb-1.5 block text-xs'>{col}</Label>
                   <Input
-                    type='number'
-                    step='any'
                     placeholder={`Enter ${col}`}
                     value={featureValues[col] ?? ''}
                     onChange={(e) =>
@@ -255,8 +258,9 @@ export function PredictTab() {
               </SelectTrigger>
               <SelectContent>
                 {aliases.map((a) => (
-                  <SelectItem key={a.alias_name} value={a.alias_name}>
-                    {a.alias_name} ({a.model_name})
+                  <SelectItem key={aliasKey(a)} value={aliasKey(a)}>
+                    {a.alias_name} ({a.model_name}
+                    {a.database_name ? `, ${a.database_name}` : ''})
                   </SelectItem>
                 ))}
               </SelectContent>

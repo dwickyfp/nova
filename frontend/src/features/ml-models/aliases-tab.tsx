@@ -31,19 +31,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api } from '@/lib/api-client'
-
-type Alias = {
-  alias_name: string
-  model_id: string
-  model_name: string | null
-  version: number
-  created_at: string | null
-}
+import {
+  aliasKey,
+  listScopedAliases,
+  scopeQuery,
+  type ScopedAlias as Alias,
+} from './model-scope'
 
 type ModelInfo = {
   model_id: string
   model_name: string
   latest_version: number | null
+  database_name?: string | null
 }
 
 export function AliasesTab() {
@@ -62,12 +61,9 @@ export function AliasesTab() {
     version: '1',
   })
 
-  const fetchAliases = useCallback(async () => {
+  const fetchAliases = useCallback(async (known: ModelInfo[]) => {
     try {
-      const res = await api.get<{ aliases: Alias[]; count: number }>(
-        '/ml/aliases'
-      )
-      setAliases(res.aliases)
+      setAliases(await listScopedAliases(known))
     } catch {
       toast.error('Failed to load aliases')
     }
@@ -79,15 +75,16 @@ export function AliasesTab() {
         '/ml/models'
       )
       setModels(res.models)
+      return res.models
     } catch {
-      // silent
+      return []
     }
   }, [])
 
   useEffect(() => {
-    Promise.all([fetchAliases(), fetchModels()]).finally(() =>
-      setLoading(false)
-    )
+    fetchModels()
+      .then(fetchAliases)
+      .finally(() => setLoading(false))
   }, [fetchAliases, fetchModels])
 
   const filtered = aliases.filter(
@@ -116,10 +113,13 @@ export function AliasesTab() {
         alias_name: form.alias_name.trim(),
         model_id: form.model_id,
         version: parseInt(form.version, 10),
+        database_name:
+          models.find((m) => m.model_id === form.model_id)?.database_name ||
+          null,
       })
       toast.success('Alias saved successfully')
       setDialogOpen(false)
-      fetchAliases()
+      fetchAliases(models)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save alias')
     } finally {
@@ -131,10 +131,12 @@ export function AliasesTab() {
     if (!deleteDialog) return
     setSubmitting(true)
     try {
-      await api.delete(`/ml/aliases/${deleteDialog.alias_name}`)
+      await api.delete(
+        `/ml/aliases/${encodeURIComponent(deleteDialog.alias_name)}${scopeQuery(deleteDialog.database_name)}`
+      )
       toast.success('Alias deleted')
       setDeleteDialog(null)
-      fetchAliases()
+      fetchAliases(models)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete alias')
     } finally {
@@ -189,6 +191,7 @@ export function AliasesTab() {
               <tr>
                 <th className='text-left'>Alias</th>
                 <th className='text-left'>Model</th>
+                <th className='text-left'>Database</th>
                 <th className='text-left'>Version</th>
                 <th className='text-left'>Created</th>
                 <th className='w-10' />
@@ -196,10 +199,13 @@ export function AliasesTab() {
             </thead>
             <tbody>
               {filtered.map((alias) => (
-                <tr key={alias.alias_name}>
+                <tr key={aliasKey(alias)}>
                   <td className='font-medium'>{alias.alias_name}</td>
                   <td className='text-muted-foreground'>
                     {alias.model_name ?? '—'}
+                  </td>
+                  <td className='text-muted-foreground'>
+                    {alias.database_name ?? '—'}
                   </td>
                   <td>
                     <Badge variant='secondary'>v{alias.version}</Badge>
@@ -267,7 +273,9 @@ export function AliasesTab() {
                 <SelectContent>
                   {models.map((m) => (
                     <SelectItem key={m.model_id} value={m.model_id}>
-                      {m.model_name}
+                      {m.database_name
+                        ? `${m.model_name} (${m.database_name})`
+                        : m.model_name}
                     </SelectItem>
                   ))}
                 </SelectContent>

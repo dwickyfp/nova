@@ -35,6 +35,7 @@ import {
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { starterTemplates } from "@/features/workspaces/starter-templates";
+import { DocsMatches } from "./docs-matches";
 
 type RecentType = "query";
 type RecentTab = "all" | RecentType;
@@ -218,6 +219,7 @@ export function Dashboard() {
                   placeholder="Search Nova objects and docs"
                 />
               </div>
+              <DocsMatches query={searchQuery} />
             </section>
 
             <section className="space-y-4">

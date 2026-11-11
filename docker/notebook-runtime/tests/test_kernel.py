@@ -55,6 +55,19 @@ def test_extensions_cannot_be_switched_back_on(shell):
         shell.user_ns["db"].execute("SET autoinstall_known_extensions = true")
 
 
+def test_a_misspelt_table_does_not_search_other_catalogs(shell):
+    # Searching every attached catalog for a suggestion takes minutes when
+    # Postgres or Snowflake are attached; the cell must fail at once instead.
+    assert run(shell, "db.sql(\"SELECT current_setting('catalog_error_max_schemas')\")"
+                      ".fetchall()[0][0]") == 0
+    run(shell, "db.execute(\"ATTACH ':memory:' AS other_catalog\")")
+    run(shell, "db.execute('CREATE TABLE other_catalog.main.orders_elsewhere (a INT)')")
+    out = _data(nova_runtime.run_sql(json.dumps({"source": "SELECT * FROM orders_elsewher"})))
+    assert out["error"]["name"] == "CatalogException"
+    assert "other_catalog" not in out["error"]["message"]
+    run(shell, "db.execute('DETACH other_catalog')")
+
+
 def test_sql_cell_names_a_lazy_result_for_python_and_later_sql(shell):
     out = _data(nova_runtime.run_sql(json.dumps(
         {"source": "SELECT n, n * 10 AS tens FROM t ORDER BY n", "name": "tens"})))
@@ -400,7 +413,6 @@ def test_a_result_still_being_written_is_waited_for_and_kept(novaduck_con, monke
     import time
 
     import pyarrow.parquet  # noqa: F401
-
     from nova_runtime import novaduck as module
     from nova_runtime.novaduck import RPC_DIR
 

@@ -247,6 +247,7 @@ function DatasetsSection({
       name: column.name,
       expression: column.name,
       datatype: mapDatatype(column.data_type),
+      isDimension: ['String', 'Boolean', 'Date', 'DateTime'].includes(mapDatatype(column.data_type)),
       isTimeDimension: /date|time|timestamp/i.test(column.data_type),
       description: '',
     }))
@@ -406,8 +407,22 @@ function DatasetCard({
                 <div className='flex items-center gap-2'>
                   <label className='flex items-center gap-1 text-xs whitespace-nowrap'>
                     <Checkbox
+                      aria-label={`Use ${field.name} as a breakdown`}
+                      checked={field.isDimension}
+                      onCheckedChange={(value) => updateField(field.id, {
+                        isDimension: Boolean(value),
+                        ...(!value ? { isTimeDimension: false } : {}),
+                      })}
+                    />
+                    Breakdown
+                  </label>
+                  <label className='flex items-center gap-1 text-xs whitespace-nowrap'>
+                    <Checkbox
                       checked={field.isTimeDimension}
-                      onCheckedChange={(v) => updateField(field.id, { isTimeDimension: Boolean(v) })}
+                      onCheckedChange={(v) => updateField(field.id, {
+                        isTimeDimension: Boolean(v),
+                        ...(v ? { isDimension: true } : {}),
+                      })}
                     />
                     time
                   </label>

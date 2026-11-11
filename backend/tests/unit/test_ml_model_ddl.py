@@ -68,6 +68,12 @@ class TestCreateMLModelParser:
                 "CREATE ML_MODEL churn TYPE = CLASSIFICATION AS SELECT x, y FROM t"
             )
 
+    def test_reject_database_qualified_model_name_with_a_clear_message(self):
+        with pytest.raises(ValueError, match="without a database prefix; run USE"):
+            parse_create_ml_model(
+                "CREATE ML_MODEL sales.churn TYPE = CLASSIFICATION TARGET = y AS SELECT x, y FROM t"
+            )
+
     def test_reject_unknown_or_duplicate_clauses(self):
         with pytest.raises(ValueError, match="Unsupported CREATE ML_MODEL clause: GARBAGE"):
             parse_create_ml_model(

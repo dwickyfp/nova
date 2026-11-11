@@ -12,10 +12,31 @@ const TABS: { id: StudioTab; label: string }[] = [
  * native chat) and Dataviz (Superset with Nova's assistant). It floats over
  * the workspace instead of taking a header row; the selected plate slides
  * between the two tabs. Arrow keys move between them, as in any tab list.
+ *
+ * `reserveRow` is for pages with their own header (Artifacts, News,
+ * Capabilities, editors): where the Studio pane (`@container/studio`) is
+ * narrower than 64rem the switch takes its own row, so it never covers a
+ * title or a button such as **Edit chart**.
  */
-export function StudioTabs({ tab, onSelect }: { tab: StudioTab; onSelect: (tab: StudioTab) => void }) {
+export function StudioTabs({
+  tab,
+  onSelect,
+  reserveRow = false,
+}: {
+  tab: StudioTab;
+  onSelect: (tab: StudioTab) => void;
+  reserveRow?: boolean;
+}) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
+    <div
+      data-reserve-row={reserveRow || undefined}
+      className={cn(
+        "pointer-events-none z-20 flex justify-center px-4",
+        reserveRow
+          ? "relative shrink-0 pt-3 @5xl/studio:absolute @5xl/studio:inset-x-0 @5xl/studio:top-3 @5xl/studio:pt-0"
+          : "absolute inset-x-0 top-3",
+      )}
+    >
       <StudioTabSwitch tab={tab} onSelect={onSelect} className="pointer-events-auto" />
     </div>
   );

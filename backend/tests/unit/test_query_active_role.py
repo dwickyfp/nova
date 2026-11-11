@@ -124,3 +124,58 @@ def test_forged_active_role_not_in_grants_fails_closed(make_client, monkeypatch)
 
     assert response.status_code == 403
     assert engine.roles == []
+
+
+def test_use_role_inside_a_script_is_refused_before_anything_runs(make_client):
+    """``USE ROLE`` cannot ride in a script: it was read as one long role name."""
+    client, engine = make_client(roles=["analyst", "finance"], active_role="analyst")
+
+    response = client.post(
+        EXECUTE_ENDPOINT, json={"sql": "USE ROLE finance; SELECT CURRENT_ROLE()"}
+    )
+
+    assert response.status_code == 400
+    assert "on its own" in response.json()["detail"]
+    assert engine.roles == []
+
+
+def test_set_role_later_in_a_script_is_refused_not_sent_to_the_engine(make_client):
+    client, engine = make_client(roles=["analyst", "finance"], active_role="analyst")
+
+    response = client.post(EXECUTE_ENDPOINT, json={"sql": "SELECT 1; SET ROLE finance"})
+
+    assert response.status_code == 400
+    assert engine.roles == []
+
+
+def test_a_refused_role_switch_is_forbidden_not_a_signed_out_session(make_client, monkeypatch):
+    """A 401 makes the console sign the user out; an ungranted role is a 403."""
+    from app.modules.auth.exceptions import InvalidCredentialsError
+    from app.modules.auth.service import auth_service
+
+    async def refuse(session_id, role):
+        raise InvalidCredentialsError("Role is not granted to this user")
+
+    monkeypatch.setattr(auth_service, "switch_role", refuse)
+    client, _engine = make_client(roles=["analyst"], active_role="analyst")
+
+    response = client.post(EXECUTE_ENDPOINT, json={"sql": "USE ROLE finance"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Role is not granted to this user"
+
+
+def test_a_single_use_role_statement_still_switches(make_client, monkeypatch):
+    from app.modules.auth.service import auth_service
+
+    async def switch(session_id, role):
+        return {"active_role": role, "security_context_version": 2}
+
+    monkeypatch.setattr(auth_service, "switch_role", switch)
+    client, engine = make_client(roles=["analyst", "finance"], active_role="analyst")
+
+    response = client.post(EXECUTE_ENDPOINT, json={"sql": "-- switch\nUSE ROLE finance;"})
+
+    assert response.status_code == 200
+    assert response.json()[0]["rows"] == [["finance", 2]]
+    assert engine.roles == []

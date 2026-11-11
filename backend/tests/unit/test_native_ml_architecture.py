@@ -6,6 +6,7 @@ import asyncio
 import base64
 import io
 import time
+from decimal import Decimal
 
 import joblib
 import numpy as np
@@ -17,6 +18,7 @@ from app.modules.agents.registry import KNOWN_TOOLS, build_registry
 from app.modules.agents.tool_catalog import BUILTIN_TOOLS
 from app.modules.ml_engine.artifacts.serializer import deserialize_bundle, serialize_bundle
 from app.modules.ml_engine.artifacts.store import MemoryArtifactStore
+from app.modules.ml_engine.automl.router import evaluate_predictions
 from app.modules.ml_engine.data.datasource import collect_bounded
 from app.modules.ml_engine.data.mysql_fallback import PreferredDataSource
 from app.modules.ml_engine.engines.anomaly import train_anomaly
@@ -105,6 +107,24 @@ def test_tabular_auto_evaluates_candidates_and_records_metadata(task: MLTask) ->
     assert "validation_score" in result.metrics
     predictions, _ = _predict(result.bundle, table.slice(0, 3))
     assert len(predictions) == 3
+
+
+def test_regression_trains_and_scores_decimal_targets() -> None:
+    metrics = evaluate_predictions(
+        MLTask.REGRESSION, [Decimal("1.25"), Decimal("3.25")], [1.75, 2.75]
+    )
+    assert metrics == {"mae": 0.5, "r2": 0.75, "rmse": 0.5, "mse": 0.25}
+    table = pa.table({
+        "visits": [i % 10 for i in range(120)],
+        "spend": [Decimal(20 + i % 10 * 3) for i in range(120)],
+    })
+    result = train_tabular(
+        table, _spec(MLTask.REGRESSION, target_column="spend", algorithm="random_forest")
+    )
+    assert result.training_rows == 120
+    assert result.metrics["r2"] > 0.99
+    predictions, _ = _predict(result.bundle, table.slice(0, 3))
+    assert predictions == pytest.approx([20, 23, 26], abs=0.1)
 
 
 def test_forecast_is_chronological_multi_series_and_respects_horizon() -> None:

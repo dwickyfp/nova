@@ -192,7 +192,13 @@ def test_ranger_policy_compiler_separates_access_scope_and_mask(monkeypatch) -> 
         ],
     ).to_api()
     expression = scope["rowFilterPolicyItems"][0]["rowFilterInfo"]["filterExpr"]
-    assert "city IN (${{GET_USER_ATTR_Q('nova_scope.marketing.city'" in expression
+    # Ranger substitutes the stored list as one quoted string ('Bandung,Jakarta'),
+    # so the filter must match it with FIND_IN_SET, not an IN list.
+    assert (
+        "FIND_IN_SET(city, ${{GET_USER_ATTR_Q('nova_scope.marketing.city', "
+        "'__nova_no_scope__')}}) > 0"
+    ) in expression
+    assert " IN (" not in expression
     assert " AND " in expression
     assert scope["policyItems"] == []
 
@@ -497,8 +503,8 @@ async def test_effective_access_resolves_scope_and_mask_from_ranger(monkeypatch)
                             "roles": ["marketing"],
                             "rowFilterInfo": {
                                 "filterExpr": (
-                                    "city IN (${{GET_USER_ATTR_Q("
-                                    "'nova_scope.marketing.city', '__none__')}})"
+                                    "FIND_IN_SET(city, ${{GET_USER_ATTR_Q("
+                                    "'nova_scope.marketing.city', '__none__')}}) > 0"
                                 )
                             },
                         }
@@ -519,14 +525,14 @@ async def test_effective_access_resolves_scope_and_mask_from_ranger(monkeypatch)
 
         async def get_user_attributes(self, principal):
             assert principal == "alice"
-            return {"nova_scope.marketing.city": "Jakarta"}
+            return {"nova_scope.marketing.city": "Jakarta,Bandung"}
 
     result = await AccessControlService(Ranger()).effective_access(
         principal="alice", active_role="marketing", resource="analytics.sales"
     )
 
     assert result["object_access"] == ["SELECT"]
-    assert result["row_restrictions"] == ["city IN ('Jakarta')"]
+    assert result["row_restrictions"] == ["city IN ('Jakarta','Bandung')"]
     assert result["column_restrictions"] == {"phone": "MASK"}
 
 

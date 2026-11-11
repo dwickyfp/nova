@@ -139,7 +139,7 @@ export function ConnectionsPage() {
           <EmptyState
             icon={Plug}
             title='No connections yet'
-            description='Add a PostgreSQL or MySQL database, then create a catalog from it to query its tables.'
+            description='Add a StarRocks, PostgreSQL, or Snowflake source, then create a catalog from it to query its tables.'
             action={
               <Button size='sm' onClick={() => setAddOpen(true)}>
                 <Plus className='mr-1.5 h-3.5 w-3.5' />

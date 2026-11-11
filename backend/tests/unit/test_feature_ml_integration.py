@@ -71,9 +71,56 @@ async def test_training_persists_model_and_exact_feature_versions(monkeypatch):
             model_type="classification",
             target_column="churn",
         ),
-        {"username": "alice", "encrypted_password": "encrypted"},
+        {
+            "username": "alice", "encrypted_password": "encrypted",
+            "active_role": "analyst", "security_context_version": 7,
+            "session_id": "session-1",
+        },
     )
     assert calls[0]["training_sql"] == "SELECT churn,orders_7d FROM labels"
     assert calls[0]["feature_columns"] == ["orders_7d"]
+    assert calls[0]["role"] == "analyst"
+    assert calls[0]["security_context_version"] == 7
+    assert calls[0]["session_id"] == "session-1"
     assert calls[1]["parameters"][5] == 2
     assert result["model"]["version"] == 4
+
+
+async def test_spent_training_budget_is_reported_not_a_server_error(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.modules.ml_engine.spec import MLExecutionTimeout
+
+    async def authorized(_name, _user, _version=None):
+        return {}, {}, [{"view_name": "behavior", "version": 3}]
+
+    async def version(_name, _version):
+        return {"definition": {"feature_columns": ["orders_7d"]}}
+
+    async def training(_name, _body, _user):
+        return {"id": "training-1", "sql": "SELECT churn,orders_7d FROM labels", "lineage": {}}
+
+    async def train_model(**_kwargs):
+        raise MLExecutionTimeout("registration")
+
+    monkeypatch.setattr(feature_store, "_authorized_group", authorized)
+    monkeypatch.setattr(feature_store, "_view_version", version)
+    monkeypatch.setattr(feature_store, "create_training_set", training)
+    monkeypatch.setattr(ml_engine_service, "train_model", train_model)
+    monkeypatch.setattr("app.modules.intelligence.feature_store.decrypt_password", lambda _: "pw")
+    with pytest.raises(HTTPException) as raised:
+        await feature_store.train(
+            "customer",
+            FeatureTrainRequest(
+                label_relation="NOVA_SYSTEM.labels",
+                entity_keys=["customer_id"],
+                event_timestamp="label_ts",
+                label_columns=["churn"],
+                model_name="churn_model",
+                model_type="classification",
+                target_column="churn",
+            ),
+            {"username": "alice", "encrypted_password": "encrypted"},
+        )
+    assert raised.value.status_code == 504
+    assert raised.value.detail == "ML execution deadline expired during registration"

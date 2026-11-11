@@ -71,3 +71,12 @@ async def test_explorer_rejects_escaped_stage_path_before_authorization(monkeypa
 
     assert rejected.value.status_code == 400
     authorize.assert_not_awaited()
+
+
+def test_explorer_deletes_files_inside_stage_folders():
+    from app.modules.explorer import router as explorer
+
+    route = next(r for r in explorer.router.routes if r.name == "delete_stage_file")
+    match = route.path_regex.match("/databases/db/stages/raw/files/incoming/x.csv")
+    assert match is not None
+    assert match.group("filename") == "incoming/x.csv"

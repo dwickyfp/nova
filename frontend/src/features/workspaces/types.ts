@@ -56,6 +56,8 @@ export type QueryResponse = {
   warnings: string[];
   destructive?: boolean;
   needs_confirmation?: boolean;
+  /** More rows exist than the worksheet's row limit returned. */
+  truncated?: boolean;
   /** Engine or pipeline error text when `success` is false. */
   error?: string | null;
   error_code?: string | null;

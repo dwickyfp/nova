@@ -16,7 +16,7 @@ import {
   SimpleTablePagination,
   SimpleTableViewport,
 } from "@/components/data-table/simple-table-controls";
-import { fetchGraphRun, fetchGraphRunsPage } from "./api";
+import { fetchGraph, fetchGraphRun, fetchGraphRunsPage } from "./api";
 import { RunErrorDialog } from "./run-error-dialog";
 import {
   formatDuration,
@@ -175,7 +175,7 @@ export function RunHistory({ graphId }: { graphId: string }) {
                       {expanded ? (
                         <tr className="border-b border-border bg-muted/20">
                           <td colSpan={6} className="px-4 py-4">
-                            <RunNodes runId={run.id} />
+                            <RunNodes graphId={graphId} runId={run.id} />
                           </td>
                         </tr>
                       ) : null}
@@ -202,11 +202,20 @@ export function RunHistory({ graphId }: { graphId: string }) {
   );
 }
 
-function RunNodes({ runId }: { runId: string }) {
+function RunNodes({ graphId, runId }: { graphId: string; runId: string }) {
   const runQuery = useQuery({
     queryKey: ["task-orchestration", "run", runId],
     queryFn: ({ signal }) => fetchGraphRun(runId, signal),
   });
+  // Same query as the task detail page, so this is normally a cache hit. A
+  // node run whose task was dropped since keeps its id as the label.
+  const graphQuery = useQuery({
+    queryKey: ["task-orchestration", "graph", graphId],
+    queryFn: ({ signal }) => fetchGraph(graphId, signal),
+  });
+  const taskNames = new Map(
+    (graphQuery.data?.nodes ?? []).map((node) => [node.task_id, node.name]),
+  );
 
   if (runQuery.isLoading) return <LoadingLines rows={3} />;
   if (runQuery.isError) {
@@ -258,7 +267,9 @@ function RunNodes({ runId }: { runId: string }) {
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                {node.task_id ?? node.id}
+                {(node.task_id && taskNames.get(node.task_id)) ??
+                  node.task_id ??
+                  node.id}
               </span>
               <StatusBadge tone={taskRunTone(node.state)}>
                 {node.state}

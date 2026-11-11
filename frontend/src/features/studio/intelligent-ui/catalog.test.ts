@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { uiExamples, UI_CATALOG_VERSION } from "./catalog";
+import { uiExamples, UI_CATALOG_VERSION, withFieldPaths } from "./catalog";
 import { validateProgram } from "./validator";
 
 describe("catalog prompt examples", () => {
@@ -89,5 +89,43 @@ describe("conditional program validation", () => {
       .toThrow();
     expect(() => validateProgram('root=Col([@Each([1,2],"n",Button("Next",@ToAssistant("Next"),"next"))])'))
       .toThrow("passive");
+  });
+});
+
+describe("semantic column names with a dot", () => {
+  const evidence = { e: [
+    { "orders.month": "2026-06-01", "orders.revenue": "20", lon: 106.8, lat: -6.2 },
+    { "orders.month": "2026-05-01", "orders.revenue": "10", lon: 107.6, lat: -6.9 },
+    { "orders.month": "2026-07-01", "orders.revenue": "30", lon: 110.4, lat: -7.0 },
+  ] };
+  it("sorts rows by a <table>.<column> field instead of keeping the query order", () => {
+    const program = '$s=0\nroot=Col([GeoMap(@Sort(@Evidence("e"),"orders.month","asc"),"lon","lat",null,"orders.month","Where",$s)])';
+    const first = validateProgram(program, evidence, true).selections[0].row;
+    expect(first).toEqual(evidence.e[1]);
+    const latest = validateProgram(program.replace('"asc"', '"desc"'), evidence, true).selections[0].row;
+    expect(latest).toEqual(evidence.e[2]);
+  });
+  it("keeps the visible columns and the source rows unchanged", () => {
+    const [row] = withFieldPaths(evidence.e)!;
+    expect(Object.keys(row)).toEqual(["orders.month", "orders.revenue", "lon", "lat"]);
+    expect(JSON.stringify(row)).toBe(JSON.stringify(evidence.e[0]));
+    expect((row as { orders?: { month?: string } }).orders?.month).toBe("2026-06-01");
+    expect(Object.keys(evidence.e[0])).not.toContain("orders");
+  });
+  it("never shadows a real column that shares the table name", () => {
+    const [row] = withFieldPaths([{ orders: 5, "orders.month": "2026-05-01" }])!;
+    expect(row.orders).toBe(5);
+  });
+  it("never traverses prototypes while resolving result column paths", () => {
+    const source = {
+      "__proto__.docsQaPolluted": true,
+      "constructor.prototype.docsQaPolluted": true,
+      "orders.__proto__.docsQaPolluted": true,
+      "orders.month": "2026-05-01",
+    };
+    const [row] = withFieldPaths([source])!;
+    expect(Object.prototype).not.toHaveProperty("docsQaPolluted");
+    expect(row).toEqual(source);
+    expect(Object.getPrototypeOf(row.orders)).toBeNull();
   });
 });

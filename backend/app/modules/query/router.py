@@ -10,9 +10,11 @@ from pydantic import BaseModel, Field, SecretStr
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import (
     split_sql_statements,
+    strip_sql_comments,
 )
 from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
+from app.modules.auth.exceptions import InvalidCredentialsError
 from app.modules.auth.service import auth_service
 from app.modules.query.admission import Admitted
 from app.modules.query.service import _context_after, query_service
@@ -50,6 +52,23 @@ def _resolve_active_role(user: dict) -> str:
         return SecurityContext.from_session(user).active_role
     except SecurityContextError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+def _requested_role(sql: str) -> str | None:
+    """Return the role a ``USE ROLE``/``SET ROLE`` request names, or ``None``.
+
+    A role change must be the whole request. Inside a script it would either be
+    read as one long role name or reach the engine, where it changes nothing
+    for the statements after it, so it is refused instead.
+    """
+    statements = split_sql_statements(sql)
+    if len(statements) > 1:
+        if any(parse_role_statement(strip_sql_comments(stmt)) is not None for stmt in statements):
+            raise ValueError(
+                "Run USE ROLE or SET ROLE on its own, then run the other statements"
+            )
+        return None
+    return parse_role_statement(strip_sql_comments(statements[0])) if statements else None
 
 
 def _history_subject(user: dict, requested_user: str | None) -> str:
@@ -189,14 +208,21 @@ async def execute_query(
             detail="Activate a security-admin role before creating a temporary-password account.",
         )
     try:
-        requested_role = parse_role_statement(req.sql)
+        requested_role = _requested_role(req.sql)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if requested_role is not None:
         target = user.get("default_role") if requested_role.upper() == "DEFAULT" else requested_role
         if not target:
             raise HTTPException(status_code=403, detail="No explicit default role is configured")
-        switched = await auth_service.switch_role(user["session_id"], target)
+        try:
+            switched = await auth_service.switch_role(user["session_id"], target)
+        except InvalidCredentialsError as exc:
+            # A refused role is a 403, not a 401: the session is still valid,
+            # and a 401 makes the console sign the user out.
+            if exc.message == "Session expired":
+                raise
+            raise HTTPException(status_code=403, detail=exc.message) from exc
         return [
             QueryResponse(
                 success=True,

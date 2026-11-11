@@ -1,0 +1,2 @@
+order_id,customer_id,order_date,amount,status
+204,1,2026-06-03,42.00,new

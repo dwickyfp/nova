@@ -11,6 +11,8 @@ import {
   Search,
   Info,
   Settings,
+  BookMarked,
+  SquareArrowOutUpRight,
 } from "lucide-react";
 import useDialogState from "@/hooks/use-dialog-state";
 import { api } from "@/lib/api-client";
@@ -212,6 +214,16 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuItem onClick={() => setInfoOpen(true)}>
                 <Info />
                 Information
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/docs" target="_blank" rel="noopener">
+                  <BookMarked />
+                  <span className="flex-1">Docs</span>
+                  <SquareArrowOutUpRight
+                    className="text-muted-foreground"
+                    aria-label="Opens in a new tab"
+                  />
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link

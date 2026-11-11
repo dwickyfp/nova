@@ -82,6 +82,24 @@ describe("Studio's workspace tabs", () => {
     await userEvent.keyboard("{ArrowRight}");
     expect(onSelect).toHaveBeenLastCalledWith("dataviz");
   });
+
+  it.each([
+    [700, false],
+    [1200, true],
+  ])("takes its own row above a page header in a %ipx Studio pane (floats: %s)", async (width, floats) => {
+    const screen = await render(
+      <main className="@container/studio relative flex h-96 flex-col" style={{ width }}>
+        <StudioTabs tab="agent" onSelect={vi.fn()} reserveRow />
+        <header className="flex h-14 shrink-0 items-center justify-center">
+          <button type="button">Edit chart</button>
+        </header>
+      </main>,
+    );
+    const tabs = screen.getByRole("tablist").element().getBoundingClientRect();
+    const button = screen.getByRole("button", { name: "Edit chart" }).element().getBoundingClientRect();
+    if (floats) expect(button.top).toBeLessThan(tabs.bottom);
+    else expect(tabs.bottom).toBeLessThanOrEqual(button.top);
+  });
 });
 
 describe("Add to Dataviz", () => {

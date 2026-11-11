@@ -24,6 +24,11 @@ import {
 } from "recharts";
 type Props = Record<string, unknown>;
 const str = (p: Props, key: string) => String(p[key] ?? "");
+// Business totals run to billions; a full number does not fit the axis gutter
+// and loses its leading digits, so axis ticks read compactly (1.5B).
+const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+const axisTick = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? compact.format(value) : String(value);
 export default function DataChart({ p }: { p: Props }) {
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
   const [showData, setShowData] = useState(false);
@@ -51,6 +56,7 @@ export default function DataChart({ p }: { p: Props }) {
       <YAxis
         dataKey={p.type === "scatter" ? y : undefined}
         stroke="var(--muted-foreground)"
+        tickFormatter={axisTick}
         tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
       />
       {data.length > 12 && p.type !== "scatter" ? <Brush dataKey={x} height={24} stroke="var(--muted-foreground)" fill="var(--card)" /> : null}

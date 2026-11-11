@@ -67,6 +67,12 @@ def _sdk_error(exc: BaseException) -> ProviderError:
     return ProviderError("The notebook runtime service failed")
 
 
+_STREAM_ENDED = (
+    "The connection ended before Nova received the cell result. The cell may have run; "
+    "check its effects before running it again"
+)
+
+
 class _SessionBusy(Exception):
     """execd refused the run because the previous one is still finishing."""
 
@@ -188,6 +194,8 @@ class OpenSandboxProvider:
                         raise _SessionBusy()
                     raise ProviderError(_execd_error(response.text))
                 started = False
+                finished = False
+                event_types: set[str] = set()
                 async for line in response.aiter_lines():
                     line = line.strip()
                     if not line or line.startswith(":"):
@@ -199,6 +207,7 @@ class OpenSandboxProvider:
                     except json.JSONDecodeError:
                         continue
                     event = _kernel_event(raw)
+                    event_types.add(str(raw.get("type", "unknown"))[:64])
                     if (
                         not started
                         and event.type == "error"
@@ -207,7 +216,17 @@ class OpenSandboxProvider:
                         raise _SessionBusy()
                     if event.type in {"stdout", "stderr", "result", "complete"}:
                         started = True
+                    if event.type in {"complete", "error"}:
+                        finished = True
                     await sink(event)
+                if not finished:
+                    logger.warning(
+                        "Notebook execution stream ended without completion; events=%s",
+                        sorted(event_types),
+                    )
+                    # EOF does not establish whether the kernel ran the code.
+                    # Never replay a cell whose side effects may have committed.
+                    raise ProviderError(_STREAM_ENDED)
         except (ProviderError, _SessionBusy, asyncio.CancelledError):
             raise
         except Exception as exc:  # noqa: BLE001

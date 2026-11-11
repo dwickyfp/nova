@@ -115,6 +115,14 @@ def parse_create_ml_model(sql: str, *, tokens: list | None = None) -> CreateMLMo
             "AS SELECT ..."
         )
     model_name = tokens[2].text
+    if len(tokens) > 3 and tokens[3].text == ".":
+        # The grammar accepts a qualified name, but a model belongs to the
+        # session's current database; without this the dot surfaced as
+        # "Unsupported CREATE ML_MODEL clause: .".
+        raise ValueError(
+            "CREATE ML_MODEL takes a model name without a database prefix; "
+            "run USE <database> first to keep the model in that database"
+        )
     if not _MODEL_NAME_PATTERN.fullmatch(model_name):
         raise ValueError("Invalid CREATE ML_MODEL model name")
 

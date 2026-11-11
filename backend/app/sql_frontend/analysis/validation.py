@@ -109,9 +109,32 @@ _SUPPORTED_SQL_DIALECTS = frozenset({"starrocks"})
 def _native_statement_checks(statement: ast.Statement, context: Any = None) -> None:
     """Refuse native statements Nova would misread or that would mislead the engine."""
     _stage_paths_end_cleanly(statement)
+    _copy_names_a_stage(statement)
     _native_session_settings(statement)
     _native_pipe_execution(statement)
     return None
+
+
+def _copy_names_a_stage(statement: ast.Statement) -> None:
+    """Refuse ``COPY INTO`` with no ``@stage`` on either side.
+
+    The grammar accepts ``COPY INTO t FROM other_table`` and ``FROM (query)``,
+    but only stage copies are lowered; the engine has no ``COPY`` and would
+    answer with a syntax error that points nowhere useful.
+    """
+    root = statement.parsed.statement_context
+    if type(root).__name__ != "NovaCopyStatementContext":
+        return
+    from app.sql_frontend.antlr_utils import walk_nodes
+
+    if any(type(node).__name__ == "StageReferenceContext" for node in walk_nodes(root)):
+        return
+    from app.sql_frontend.errors import SemanticError
+
+    raise SemanticError(
+        "COPY INTO reads from or writes to a stage (@stage); "
+        "to copy between tables use INSERT INTO ... SELECT"
+    )
 
 
 def _native_pipe_execution(statement: ast.Statement) -> None:

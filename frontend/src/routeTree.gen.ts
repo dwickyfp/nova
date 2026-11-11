@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as BiLaunchRouteImport } from './routes/bi-launch'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
@@ -27,6 +28,7 @@ import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_auth
 import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
 import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
 import { Route as AuthenticatedSemanticViewsRouteImport } from './routes/_authenticated/semantic-views'
+import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
 import { Route as AuthenticatedAgentsAgentIdRouteImport } from './routes/_authenticated/agents/$agentId'
 import { Route as AuthenticatedAgentsSkillsRouteImport } from './routes/_authenticated/agents/skills'
@@ -59,6 +61,7 @@ import { Route as AuthenticatedTasksGraphIdRouteImport } from './routes/_authent
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
+import { Route as DocsSectionSlugRouteImport } from './routes/docs/$section/$slug'
 import { Route as AuthenticatedAgentsSemanticIndexRouteImport } from './routes/_authenticated/agents/semantic/index'
 import { Route as AuthenticatedAgentsSemanticBuilderRouteImport } from './routes/_authenticated/agents/semantic/builder'
 
@@ -69,6 +72,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const BiLaunchRoute = BiLaunchRouteImport.update({
   id: '/bi-launch',
   path: '/bi-launch',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudioRoute = StudioRouteImport.update({
@@ -159,6 +167,11 @@ const AuthenticatedSemanticViewsRoute =
     path: '/semantic-views',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const DocsIndexRoute = DocsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DocsRoute,
+} as any)
 const AuthenticatedAgentsIndexRoute =
   AuthenticatedAgentsIndexRouteImport.update({
     id: '/agents/',
@@ -347,6 +360,11 @@ const AuthenticatedWorkspacesIndexRoute =
     path: '/workspaces/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const DocsSectionSlugRoute = DocsSectionSlugRouteImport.update({
+  id: '/$section/$slug',
+  path: '/$section/$slug',
+  getParentRoute: () => DocsRoute,
+} as any)
 const AuthenticatedAgentsSemanticIndexRoute =
   AuthenticatedAgentsSemanticIndexRouteImport.update({
     id: '/agents/semantic/',
@@ -363,6 +381,7 @@ const AuthenticatedAgentsSemanticBuilderRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/bi-launch': typeof BiLaunchRoute
+  '/docs': typeof DocsRouteWithChildren
   '/studio': typeof StudioRoute
   '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/sign-in': typeof authSignInRoute
@@ -378,6 +397,7 @@ export interface FileRoutesByFullPath {
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/semantic-views': typeof AuthenticatedSemanticViewsRoute
+  '/docs/': typeof DocsIndexRoute
   '/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
   '/agents/skills': typeof AuthenticatedAgentsSkillsRoute
   '/agents/studio': typeof AuthenticatedAgentsStudioRoute
@@ -397,6 +417,7 @@ export interface FileRoutesByFullPath {
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/docs/$section/$slug': typeof DocsSectionSlugRoute
   '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/connections/': typeof AuthenticatedConnectionsIndexRoute
@@ -430,6 +451,7 @@ export interface FileRoutesByTo {
   '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/semantic-views': typeof AuthenticatedSemanticViewsRoute
   '/': typeof AuthenticatedIndexRoute
+  '/docs': typeof DocsIndexRoute
   '/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
   '/agents/skills': typeof AuthenticatedAgentsSkillsRoute
   '/agents/studio': typeof AuthenticatedAgentsStudioRoute
@@ -449,6 +471,7 @@ export interface FileRoutesByTo {
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/docs/$section/$slug': typeof DocsSectionSlugRoute
   '/agents': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
   '/connections': typeof AuthenticatedConnectionsIndexRoute
@@ -469,6 +492,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/bi-launch': typeof BiLaunchRoute
+  '/docs': typeof DocsRouteWithChildren
   '/studio': typeof StudioRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/(auth)/sign-in': typeof authSignInRoute
@@ -485,6 +509,7 @@ export interface FileRoutesById {
   '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
   '/_authenticated/semantic-views': typeof AuthenticatedSemanticViewsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/docs/': typeof DocsIndexRoute
   '/_authenticated/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
   '/_authenticated/agents/skills': typeof AuthenticatedAgentsSkillsRoute
   '/_authenticated/agents/studio': typeof AuthenticatedAgentsStudioRoute
@@ -504,6 +529,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/docs/$section/$slug': typeof DocsSectionSlugRoute
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/_authenticated/connections/': typeof AuthenticatedConnectionsIndexRoute
@@ -525,6 +551,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/bi-launch'
+    | '/docs'
     | '/studio'
     | '/monitoring'
     | '/sign-in'
@@ -540,6 +567,7 @@ export interface FileRouteTypes {
     | '/query-cost'
     | '/query-history'
     | '/semantic-views'
+    | '/docs/'
     | '/agents/$agentId'
     | '/agents/skills'
     | '/agents/studio'
@@ -559,6 +587,7 @@ export interface FileRouteTypes {
     | '/settings/profile'
     | '/tasks/$graphId'
     | '/users/$username'
+    | '/docs/$section/$slug'
     | '/agents/'
     | '/ai-providers/'
     | '/connections/'
@@ -592,6 +621,7 @@ export interface FileRouteTypes {
     | '/query-history'
     | '/semantic-views'
     | '/'
+    | '/docs'
     | '/agents/$agentId'
     | '/agents/skills'
     | '/agents/studio'
@@ -611,6 +641,7 @@ export interface FileRouteTypes {
     | '/settings/profile'
     | '/tasks/$graphId'
     | '/users/$username'
+    | '/docs/$section/$slug'
     | '/agents'
     | '/ai-providers'
     | '/connections'
@@ -630,6 +661,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/bi-launch'
+    | '/docs'
     | '/studio'
     | '/_authenticated/monitoring'
     | '/(auth)/sign-in'
@@ -646,6 +678,7 @@ export interface FileRouteTypes {
     | '/_authenticated/query-history'
     | '/_authenticated/semantic-views'
     | '/_authenticated/'
+    | '/docs/'
     | '/_authenticated/agents/$agentId'
     | '/_authenticated/agents/skills'
     | '/_authenticated/agents/studio'
@@ -665,6 +698,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/profile'
     | '/_authenticated/tasks/$graphId'
     | '/_authenticated/users/$username'
+    | '/docs/$section/$slug'
     | '/_authenticated/agents/'
     | '/_authenticated/ai-providers/'
     | '/_authenticated/connections/'
@@ -685,6 +719,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   BiLaunchRoute: typeof BiLaunchRoute
+  DocsRoute: typeof DocsRouteWithChildren
   StudioRoute: typeof StudioRoute
   authSignInRoute: typeof authSignInRoute
 }
@@ -703,6 +738,13 @@ declare module '@tanstack/react-router' {
       path: '/bi-launch'
       fullPath: '/bi-launch'
       preLoaderRoute: typeof BiLaunchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/studio': {
@@ -816,6 +858,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/semantic-views'
       preLoaderRoute: typeof AuthenticatedSemanticViewsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/docs/': {
+      id: '/docs/'
+      path: '/'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof DocsIndexRouteImport
+      parentRoute: typeof DocsRoute
     }
     '/_authenticated/agents/': {
       id: '/_authenticated/agents/'
@@ -1041,6 +1090,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/docs/$section/$slug': {
+      id: '/docs/$section/$slug'
+      path: '/$section/$slug'
+      fullPath: '/docs/$section/$slug'
+      preLoaderRoute: typeof DocsSectionSlugRouteImport
+      parentRoute: typeof DocsRoute
+    }
     '/_authenticated/agents/semantic/': {
       id: '/_authenticated/agents/semantic/'
       path: '/agents/semantic'
@@ -1180,9 +1236,22 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface DocsRouteChildren {
+  DocsIndexRoute: typeof DocsIndexRoute
+  DocsSectionSlugRoute: typeof DocsSectionSlugRoute
+}
+
+const DocsRouteChildren: DocsRouteChildren = {
+  DocsIndexRoute: DocsIndexRoute,
+  DocsSectionSlugRoute: DocsSectionSlugRoute,
+}
+
+const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   BiLaunchRoute: BiLaunchRoute,
+  DocsRoute: DocsRouteWithChildren,
   StudioRoute: StudioRoute,
   authSignInRoute: authSignInRoute,
 }

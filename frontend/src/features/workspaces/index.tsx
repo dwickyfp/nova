@@ -94,6 +94,8 @@ import {
   TableItemWithPopover,
   TablePopoverProvider,
 } from "./table-item-with-popover";
+import { explainPlanFromResult } from "./explain-plan";
+import { roleSwitchFromResults } from "./session-role";
 import {
   createStarterTemplateFile,
   getStarterTemplate,
@@ -211,28 +213,6 @@ function getSqlForExecution(fallbackSql: string) {
   const offset =
     model && position ? model.getOffsetAt(position) : source.length;
   return statementAtOffset(statements, offset)?.text ?? fallbackSql.trim();
-}
-
-/**
- * Returns the plan text when a result set is an EXPLAIN plan, otherwise null.
- *
- * The check is on the leading keyword of the statement rather than on the
- * result shape: an EXPLAIN row set happens to hold one column today, but that
- * is an engine detail, while "the user asked for a plan" is the actual intent
- * we render for. The column-shape branch is kept only as a fallback for plans
- * loaded from history, where `original_sql` may have been rewritten.
- */
-function explainPlanFromResult(result: QueryResponse): string | null {
-  if (!result.success || !result.rows.length) return null;
-  const firstKeyword = result.original_sql
-    .trim()
-    .split(/\s+/, 1)[0]
-    ?.toUpperCase();
-  const looksLikePlan =
-    firstKeyword === "EXPLAIN" ||
-    (result.columns.length === 1 && /explain/i.test(result.columns[0] ?? ""));
-  if (!looksLikePlan) return null;
-  return result.rows.map((row) => String(row[0] ?? "")).join("\n");
 }
 
 const SQL_KEYWORDS = [
@@ -1975,6 +1955,12 @@ export function WorkspacesPage() {
       if (activeTabIdRef.current === requestSnapshot.tabId)
         showResults(response);
       followSessionContext(requestSnapshot.tabId, response);
+      // A USE ROLE switched the whole session: show the new role everywhere,
+      // and drop listings cached under the old one.
+      const roleSwitch = roleSwitchFromResults(response);
+      const signedIn = useAuthStore.getState().auth.user;
+      if (roleSwitch && signedIn)
+        useAuthStore.getState().auth.setUser({ ...signedIn, ...roleSwitch });
       const feedback = recordQueryFeedback(
         activeTab.id,
         executionId,
@@ -3485,6 +3471,12 @@ const QueryResults = memo(function QueryResults({
       ))}
     </div>
   ) : null;
+  const truncatedBanner = queryResult.truncated ? (
+    <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+      Showing the first {queryResult.row_count.toLocaleString()} rows. The
+      query returned more; add a filter or LIMIT to see the rest.
+    </div>
+  ) : null;
 
   function handleSort(colIdx: number) {
     if (sortCol === colIdx) {
@@ -3499,6 +3491,7 @@ const QueryResults = memo(function QueryResults({
   return (
     <div className="flex h-full flex-col">
       {warningsBanner}
+      {truncatedBanner}
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-separate border-spacing-0 text-sm">
           <thead className="sticky top-0 z-10 bg-background">

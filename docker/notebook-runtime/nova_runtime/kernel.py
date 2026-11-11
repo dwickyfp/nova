@@ -392,6 +392,10 @@ def bootstrap(config_json: str) -> Payload:
             "memory_limit": str(config.get("memory_limit", "512MB")),
             "threads": int(config.get("threads", 2)),
             "temp_directory": "/tmp/nova/duckdb",
+            # A misspelt table name makes DuckDB look through every schema of
+            # every attached catalog for a "did you mean"; across Postgres and
+            # Snowflake that takes minutes. Suggest from local names only.
+            "catalog_error_max_schemas": 0,
         },
     )
     for extension in ("parquet", "json", "mysql"):
@@ -402,13 +406,12 @@ def bootstrap(config_json: str) -> Payload:
     # Load the dataframe stack now, before the runtime reports Ready, so the
     # first cell that shows a table or a chart does not pay for it.
     import matplotlib  # noqa: F401
+    import novaduck as public_novaduck
     import numpy  # noqa: F401
     import pandas  # noqa: F401
     import pyarrow  # noqa: F401
 
     from . import novaduck
-
-    import novaduck as public_novaduck
 
     shell = _ipython()
     shell.user_ns["db"] = novaduck.connect()

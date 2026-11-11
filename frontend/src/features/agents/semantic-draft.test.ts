@@ -57,6 +57,7 @@ describe('draftToOssieYaml', () => {
                 name: 'order_date',
                 expression: 'order_date',
                 datatype: 'DateTime',
+                isDimension: true,
                 isTimeDimension: true,
                 description: 'When the order was placed',
               },
@@ -159,4 +160,19 @@ describe('draftToOssieYaml', () => {
     const yaml = draftToOssieYaml(draft({ name: '' }))
     expect(yaml).toContain('name: untitled_model')
   })
+})
+
+
+it('keeps text breakdowns distinct from numeric facts', () => {
+  const yaml = draftToOssieYaml(draft({ datasets: [{
+    id: 'sales', name: 'sales', source: 'SALES.daily', primaryKey: '', description: '',
+    fields: [
+      { id: 'store', name: 'store', expression: 'store', datatype: 'String',
+        isDimension: true, isTimeDimension: false, description: '' },
+      { id: 'amount', name: 'amount', expression: 'amount', datatype: 'Decimal',
+        isDimension: false, isTimeDimension: false, description: '' },
+    ],
+  }] }))
+  expect(yaml).toContain('kind: dimension\n        dimension:\n          is_time: false')
+  expect(yaml).toContain('datatype: Decimal\n        kind: fact')
 })

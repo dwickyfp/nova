@@ -30,22 +30,30 @@ def _security(user: dict) -> SecurityContext:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+def _require_security_admin(user: dict) -> None:
+    """Refuse a caller whose active role cannot administer access control (403)."""
+    try:
+        access_control_service.require_security_admin(_security(user))
+    except AccessControlError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
 @router.get("/health")
 async def health(user: CurrentUser):
-    access_control_service.require_security_admin(_security(user))
+    _require_security_admin(user)
     return await access_control_service.health()
 
 
 @router.get("/policies")
 async def list_policies(user: CurrentUser):
-    access_control_service.require_security_admin(_security(user))
+    _require_security_admin(user)
     policies = await access_control_service.list_managed_policies()
     return {"policies": policies, "count": len(policies), "provider": "Ranger"}
 
 
 @router.get("/roles")
 async def list_roles(user: CurrentUser):
-    access_control_service.require_security_admin(_security(user))
+    _require_security_admin(user)
     roles = await access_control_service.list_roles()
     return {"roles": roles, "count": len(roles), "provider": "Ranger"}
 
@@ -135,5 +143,5 @@ async def put_mask(body: MaskPolicyRequest, user: CurrentUser):
 
 @router.post("/effective-access")
 async def effective_access(body: EffectiveAccessRequest, user: CurrentUser):
-    access_control_service.require_security_admin(_security(user))
+    _require_security_admin(user)
     return await access_control_service.effective_access(**body.model_dump())
