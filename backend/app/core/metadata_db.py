@@ -18,10 +18,15 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
 
 from app.core.exceptions import NovaException
+from app.core.metadata_schema import (
+    SchemaManifestError,
+    load_migrations,
+    verify_applied_migrations,
+)
 from app.modules.access_control.security_context import SecurityContext
 
-# Operators take the exclusive transaction lock before freezing writes or
-# changing the epoch. Application writes hold the shared lock until commit.
+# Operators take the exclusive transaction lock before changing schema or
+# epoch. Application transactions hold the shared lock through their last read.
 METADATA_DEPLOYMENT_LOCK = 0x4E4F56414D455441
 
 
@@ -87,6 +92,11 @@ class MetadataPoolConfig:
             raise ValueError("Invalid metadata connection configuration") from None
         if parameters.get("sslmode") != "verify-full":
             raise ValueError("Metadata connections require sslmode=verify-full")
+        hostname = parameters.get("host")
+        if not isinstance(hostname, str) or any(
+            not host or host.startswith(("/", "@")) for host in hostname.split(",")
+        ):
+            raise ValueError("Metadata connections require an explicit TLS hostname")
         if parameters.get("dbname") != "nova_control":
             raise ValueError("Metadata connections must select nova_control")
         budgets = (
@@ -140,6 +150,9 @@ class MetadataDatabase:
             raise MetadataSchemaMismatch()
         self._ready = False
         try:
+            migrations = load_migrations()
+            if schema_version != len(migrations):
+                raise MetadataSchemaMismatch()
             await self._pool.open(wait=True, timeout=self._config.acquire_timeout)
             async with self._pool.connection() as conn:
                 if conn.info.server_version // 10000 != 17:
@@ -150,6 +163,18 @@ class MetadataDatabase:
                 )
                 privileges = await cursor.fetchone()
                 if not privileges or any(privileges.values()):
+                    raise MetadataSchemaMismatch()
+                cursor = await conn.execute(
+                    "SELECT has_database_privilege(current_user, current_database(), 'CREATE') "
+                    "OR EXISTS(SELECT 1 FROM pg_catalog.pg_roles r WHERE "
+                    "(r.rolsuper OR r.rolbypassrls OR r.rolcreatedb OR r.rolcreaterole "
+                    "OR r.rolreplication OR r.rolname IN "
+                    "('pg_read_all_data', 'pg_write_all_data', 'pg_read_server_files', "
+                    "'pg_write_server_files', 'pg_execute_server_program', 'pg_signal_backend')) "
+                    "AND pg_has_role(current_user, r.oid, 'MEMBER')) AS unsafe_membership"
+                )
+                membership = await cursor.fetchone()
+                if not membership or membership["unsafe_membership"]:
                     raise MetadataSchemaMismatch()
                 cursor = await conn.execute(
                     "SELECT pg_has_role(current_user, n.nspowner, 'MEMBER') "
@@ -172,6 +197,13 @@ class MetadataDatabase:
                 if not ownership or ownership["owns_objects"]:
                     raise MetadataSchemaMismatch()
                 cursor = await conn.execute(
+                    "SELECT version, name, checksum FROM nova_meta.schema_migrations "
+                    "ORDER BY version"
+                )
+                applied = await cursor.fetchall()
+                if verify_applied_migrations(migrations, applied) != schema_version:
+                    raise MetadataSchemaMismatch()
+                cursor = await conn.execute(
                     "SELECT schema_version, metadata_epoch FROM nova_meta.deployment_state "
                     "WHERE singleton = TRUE"
                 )
@@ -185,6 +217,9 @@ class MetadataDatabase:
             self._schema_version = schema_version
             self._metadata_epoch = metadata_epoch
             self._ready = True
+        except SchemaManifestError:
+            await self._pool.close()
+            raise MetadataSchemaMismatch() from None
         except (psycopg.Error, PoolTimeout):
             await self._pool.close()
             raise MetadataUnavailable() from None
@@ -235,10 +270,9 @@ class MetadataDatabase:
                         str(self._config.idle_transaction_timeout_ms),
                     ),
                 )
-                if not read_only:
-                    await conn.execute(
-                        "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
-                    )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
                 cursor = await conn.execute(
                     "SELECT schema_version, metadata_epoch, maintenance "
                     "FROM nova_meta.deployment_state WHERE singleton = TRUE"

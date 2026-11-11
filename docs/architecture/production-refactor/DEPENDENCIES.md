@@ -1,7 +1,7 @@
 # Runtime dependencies and migration boundaries
 
 Observed application tree:
-`42f1c0928163bd4e49a77b792b204bfcc1b92f749246782f2945e5a0e345dd62`.
+`e3bcb3f5604f20c68c98e8beb3f5e9c67abfcee416c7ab4767dc8954ae546759`.
 This is the current source dependency graph. It is not the target deployment
 and does not imply that a process has the planned isolation already.
 
@@ -34,6 +34,7 @@ flowchart LR
     API --> SUPERSET[Superset API and its separate metadata DB]
     API --> RANGER[Ranger administration and its separate policy DB]
     PG[PostgreSQL transaction foundation] -. fixture only .-> TESTS[PG17 boundary tests]
+    MIGRATOR[One-shot schema installer] --> PG
 ```
 
 The graph omits HTTP ingress wiring and vendor connection credentials. It shows
@@ -77,6 +78,9 @@ execution paths and must not collapse into PG service credentials.
 `assistant/consent.py::ConsentBroker` currently keeps pending decisions in an
 in-process dictionary of futures. Redis grants do not turn that dictionary into
 a durable decision journal. The PG foundation is not used by these domains yet.
+The one-shot schema installer uses a separate migration identity, serializes
+DDL with the deployment lock and checks immutable revision hashes. It leaves
+fresh schemas without an authoritative epoch; see [PG_MIGRATIONS.md](PG_MIGRATIONS.md).
 
 ## Security boundaries to preserve
 

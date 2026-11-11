@@ -11,8 +11,18 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class MetadataMigratorSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="NOVA_METADATA_MIGRATOR_", hide_input_in_errors=True,
+    )
+
+    dsn: SecretStr
+    statement_timeout_ms: int = Field(default=60000, gt=0, le=600000)
+    lock_timeout_ms: int = Field(default=5000, gt=0, le=60000)
 
 
 class Settings(BaseSettings):

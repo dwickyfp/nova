@@ -31,6 +31,10 @@ def test_pool_and_transaction_limits_cannot_be_disabled(change):
         "host=localhost dbname=nova_control sslmode=require",
         "host=localhost dbname=superset sslmode=verify-full",
         "synthetic-invalid-canary",
+        "dbname=nova_control sslmode=verify-full",
+        "host=/tmp dbname=nova_control sslmode=verify-full",
+        "host=@local-socket dbname=nova_control sslmode=verify-full",
+        "host=localhost, dbname=nova_control sslmode=verify-full",
     ],
 )
 def test_insecure_or_wrong_database_configuration_fails_without_secret_readback(dsn):

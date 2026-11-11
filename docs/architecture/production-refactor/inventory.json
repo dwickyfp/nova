@@ -1,6 +1,6 @@
 {
-  "python_files": 681,
-  "application_tree_sha256": "42f1c0928163bd4e49a77b792b204bfcc1b92f749246782f2945e5a0e345dd62",
+  "python_files": 683,
+  "application_tree_sha256": "e3bcb3f5604f20c68c98e8beb3f5e9c67abfcee416c7ab4767dc8954ae546759",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -28753,7 +28753,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "5c81c9fefc3e898c8206a2ee4d7290fd511dd474",
+  "source_commit": "e1cb5f928a8f727a3fab8dcdc0f1ef698287f718",
   "live": {
     "started_at": "2026-11-11T10:29:57.678477+00:00",
     "finished_at": "2026-11-11T10:30:00.644282+00:00",
@@ -43851,5 +43851,5 @@
       "summary": "Ready"
     }
   ],
-  "static_reviewed_at_utc": "2026-11-11T11:15:26.411702+00:00"
+  "static_reviewed_at_utc": "2026-11-11T11:49:19.508861+00:00"
 }

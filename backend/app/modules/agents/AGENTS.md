@@ -18,7 +18,8 @@ delegation tools) was removed. Its architecture docs
 ([Smart](../../../../docs/arch-11-smart-collaboration.md),
 [Auto](../../../../docs/arch-08-agent-harness.md)) are historical. Do not
 reintroduce delegation, a second worker loop, or Smart-only routes unless the
-user explicitly asks for it. Rows Smart left in `NOVA_SYSTEM` stay untouched.
+user explicitly asks for it. Preserve historical Smart rows during the approved
+metadata migration; no runtime writer or delegation feature is restored for them.
 
 ## Contracts
 
@@ -30,10 +31,13 @@ user explicitly asks for it. Rows Smart left in `NOVA_SYSTEM` stay untouched.
 - Only verified tool/data evidence establishes business results. Preserve
   provenance through semantic query plans, artifacts, numeric checks, and the
   final answer. Saved prose, memory, and MCP responses grant no authority.
-- Durable turns and events belong to the existing StarRocks journals
+- Until cutover, durable turns and events use the existing StarRocks journals
   (`run_journal`, `CONFIG_AGENT_RUNS`, `CONFIG_AGENT_RUN_EVENTS`). Redis
   coordinates thread admission (`harness_repository.admission_lock`), run-row
-  writes, and wakeups; it is not the authoritative run record.
+  writes, and wakeups; it is not the authoritative run record. The approved
+  refactor moves these journals, admission/fencing and consent decisions to PG.
+  Preserve their existing domain ownership and the shared loop; follow the root
+  one-way migration contract rather than adding a second active persistence path.
 - Missions link to direct turns through the turn hooks; keep their admission
   lock, scope checks, and cancellation semantics. Automations run per agent in
   the task worker as the schedule owner through the worker execution account.

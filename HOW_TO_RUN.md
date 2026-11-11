@@ -1,6 +1,17 @@
 # Menjalankan Nova
 
-Panduan ini menjelaskan cara menjalankan seluruh environment development Nova:
+Panduan ini menjelaskan cara menjalankan environment development Nova.
+
+Refactor produksi sedang berlangsung mengikuti
+[kontrak acceptance](docs/architecture/production-refactor/ACCEPTANCE.md) dan
+[baseline terverifikasi](docs/architecture/production-refactor/BASELINE_AUDIT.md).
+Domain aplikasi masih memakai `NOVA_SYSTEM`. Fondasi dan
+[migrator PG17](docs/architecture/production-refactor/PG_MIGRATIONS.md) diuji
+terpisah; schema terpasang belum berarti migrasi data atau cutover selesai.
+Compose produksi tunggal dan pemisahan seluruh runtime belum tersedia. Perintah
+development di bawah tetap memakai stack yang ada, tanpa membuat stack duplikat.
+
+Komponen development:
 
 - Infrastructure: StarRocks, Redis, dan object storage
 - Backend FastAPI: port `8000`

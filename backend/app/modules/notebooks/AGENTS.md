@@ -6,8 +6,12 @@ contracts. Architecture: [arch-20](../../../../docs/arch-20-nova-notebook.md).
 - A notebook is a Workspace file. `WorkspaceService` stays the only writer of
   its content; `documents.py` owns the format and revisioned edits. Never save
   outputs into the `.ipynb`.
-- Live runtime state lives in Redis (`runtime/state.py`); durable rows in
-  `NOVA_SYSTEM` (`repository.py`). The worker holding a runtime's lease is the
+- Current live runtime state lives in Redis (`runtime/state.py`); durable rows
+  are still in `NOVA_SYSTEM` (`repository.py`) until the approved PG cutover.
+  The target moves durable generations, claims and execution state to PG;
+  Redis becomes a wakeup/cache transport. Follow the root migration contract,
+  preserve per-person runtime identity, and do not add dual-write or a fallback.
+  The worker holding a runtime's lease is the
   only writer of that runtime's status and of execution rows — the API records
   intent and wakes the worker. Do not update an execution row from two places.
 - A notebook may sit in a shared workspace. Resolve it through

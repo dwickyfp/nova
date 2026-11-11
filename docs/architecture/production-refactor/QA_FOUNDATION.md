@@ -285,3 +285,21 @@ and changed-file Ruff (42 Python files) passed. The eval/benchmark command passe
 test stack owned by the backend directory, while the running project is the
 shared development stack. No benchmark provisioning or reseeding was attempted.
 The scorecard passed 54/54 scenarios and 189/189 checks.
+
+## Atomic PostgreSQL schema installer
+
+The follow-up application tree is
+`e3bcb3f5604f20c68c98e8beb3f5e9c67abfcee416c7ab4767dc8954ae546759`.
+The existing PG17 TLS fixture passed 31 tests, with no skips, for immutable
+migration checksums, serialized DDL, rollback/crash recovery, protected grants,
+actor transactions and typed values. The test schema and newly created roles
+were removed after verifying ownership. No development domain was migrated.
+
+The installer creates two deployment tables and leaves the epoch NULL. It has
+no activation switch or API startup hook. Full local coverage passed 10,495 tests
+with four warnings in 521.74 seconds (65% combined coverage). Full-application
+mypy, changed-file Ruff (47 Python files), and the 54-scenario/189-check scorecard
+passed. New CI is pending; the earlier interrupted coverage run is not a pass.
+Details and the
+sanitized testcase report are in
+[the WP-02 packet](../../reports/production-refactor/WP-02/README.md).

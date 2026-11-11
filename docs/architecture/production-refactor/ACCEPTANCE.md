@@ -3,6 +3,9 @@
 The owner approved the architecture plan on 2026-11-11 and then reduced the
 load acceptance requirement to tests that fit the current development device.
 This document records that scope. It does not certify an implementation.
+The [supplied specification and inventory](source/README.md) are archived with
+their original checksums; the accepted changes below override their conflicting
+topology and load requirements.
 
 ## Deployment contract
 

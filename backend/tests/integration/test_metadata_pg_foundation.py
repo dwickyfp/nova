@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+from datetime import UTC, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import NamedTuple
 from uuid import uuid4
 
@@ -17,6 +19,7 @@ import pytest
 import pytest_asyncio
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.types.json import Jsonb
 
 from app.core.metadata_db import (
     METADATA_DEPLOYMENT_LOCK,
@@ -29,6 +32,7 @@ from app.core.metadata_db import (
     MetadataSchemaMismatch,
     MetadataUnavailable,
 )
+from app.core.metadata_schema import load_migrations
 from app.modules.access_control.security_context import SecurityContext
 
 pytestmark = pytest.mark.metadata_pg
@@ -85,6 +89,9 @@ async def metadata():
                     metadata_epoch uuid NOT NULL,
                     maintenance boolean NOT NULL DEFAULT false
                 );
+                CREATE TABLE nova_meta.schema_migrations (
+                    version bigint PRIMARY KEY, name text NOT NULL, checksum text NOT NULL
+                );
                 CREATE TABLE nova_meta.test_owned_rows (
                     id integer PRIMARY KEY,
                     owner_name text NOT NULL,
@@ -103,12 +110,18 @@ async def metadata():
             await admin.execute(
                 "INSERT INTO nova_meta.deployment_state VALUES (true, 1, %s, false)", (epoch,)
             )
+            for migration in load_migrations():
+                await admin.execute(
+                    "INSERT INTO nova_meta.schema_migrations VALUES (%s, %s, %s)",
+                    (migration.version, migration.name, migration.checksum),
+                )
             await admin.execute(
                 sql.SQL("GRANT USAGE ON SCHEMA nova_meta TO {}").format(sql.Identifier(role))
             )
             await admin.execute(
                 sql.SQL(
-                    "GRANT SELECT ON nova_meta.deployment_state TO {}; "
+                    "GRANT SELECT ON nova_meta.deployment_state, "
+                    "nova_meta.schema_migrations TO {}; "
                     "GRANT SELECT, INSERT, UPDATE, DELETE ON nova_meta.test_owned_rows TO {}"
                 ).format(sql.Identifier(role), sql.Identifier(role))
             )
@@ -241,6 +254,34 @@ async def test_schema_create_privilege_refuses_application_startup(metadata):
         await privileged.open(schema_version=1, metadata_epoch=epoch)
 
 
+@pytest.mark.parametrize("inherited_role", ["pg_read_all_data", "pg_write_all_data"])
+async def test_broad_inherited_database_privileges_refuse_startup(metadata, inherited_role):
+    _, admin, dsn, epoch = metadata
+    role = conninfo_to_dict(dsn)["user"]
+    await admin.execute(sql.SQL("GRANT {} TO {}").format(
+        sql.Identifier(inherited_role), sql.Identifier(role),
+    ))
+    app = MetadataDatabase(MetadataPoolConfig(dsn))
+    with pytest.raises(MetadataSchemaMismatch):
+        await app.open(schema_version=1, metadata_epoch=epoch)
+
+
+async def test_database_create_grant_refuses_startup(metadata):
+    _, admin, dsn, epoch = metadata
+    role = conninfo_to_dict(dsn)["user"]
+    await admin.execute(sql.SQL("GRANT CREATE ON DATABASE nova_control TO {}").format(
+        sql.Identifier(role),
+    ))
+    try:
+        app = MetadataDatabase(MetadataPoolConfig(dsn))
+        with pytest.raises(MetadataSchemaMismatch):
+            await app.open(schema_version=1, metadata_epoch=epoch)
+    finally:
+        await admin.execute(sql.SQL("REVOKE CREATE ON DATABASE nova_control FROM {}").format(
+            sql.Identifier(role),
+        ))
+
+
 async def test_statement_timeout_rolls_back_and_pool_recovers(metadata):
     _, _, dsn, epoch = metadata
     bounded = MetadataDatabase(MetadataPoolConfig(dsn, statement_timeout_ms=25))
@@ -344,3 +385,34 @@ async def test_maintenance_waits_for_writers_and_admits_only_reads(metadata):
     finally:
         release.set()
         await pending
+
+
+async def test_typed_values_keep_precision_timezone_unicode_and_null_distinctions(metadata):
+    db, admin, _, _ = metadata
+    await admin.execute(
+        "ALTER TABLE nova_meta.test_owned_rows "
+        "ADD COLUMN document jsonb, ADD COLUMN amount numeric(38, 12), "
+        "ADD COLUMN happened_at timestamptz, ADD COLUMN marker boolean, "
+        "ADD COLUMN json_null jsonb, ADD COLUMN sql_null jsonb"
+    )
+    document = {"label": "日本語 · café · 🦉", "ordered": [3, None, 1], "empty": {}}
+    amount = Decimal("12345678901234567890123456.123456789012")
+    happened_at = datetime(2026, 11, 11, 17, 5, 3, 123456, tzinfo=timezone(timedelta(hours=7)))
+    async with db.transaction(actor()) as conn:
+        await conn.execute(
+            "INSERT INTO nova_meta.test_owned_rows "
+            "(id, owner_name, active_role, document, amount, happened_at, marker, json_null) "
+            "VALUES (1, 'alice', 'analyst', %s, %s, %s, %s, %s)",
+            (Jsonb(document), amount, happened_at, False, Jsonb(None)),
+        )
+    async with db.transaction(actor(), read_only=True) as conn:
+        cursor = await conn.execute(
+            "SELECT document, amount, happened_at, marker, json_null IS NULL AS json_missing, "
+            "jsonb_typeof(json_null) AS json_type, sql_null IS NULL AS sql_missing "
+            "FROM nova_meta.test_owned_rows"
+        )
+        row = await cursor.fetchone()
+        assert row == {
+            "document": document, "amount": amount, "happened_at": happened_at.astimezone(UTC),
+            "marker": False, "json_missing": False, "json_type": "null", "sql_missing": True,
+        }
