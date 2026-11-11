@@ -707,3 +707,47 @@ No live data was imported or reseeded, and no live provider call was made in
 this phase. Final source provenance, import orchestration, remaining domains,
 production wiring, backups, rehearsals, cutover and full feature acceptance
 remain open. The live embedding owner waiver remains unchanged.
+
+## Retired Agent history checkpoint
+
+Revision 0011 prepares the three retired Agent stores with all 22 columns,
+original primary keys and no runtime grants. Tests preserve owners/run references,
+precise JSON numbers, array order, SQL/JSON null distinctions and timestamps
+with explicit synthetic provenance. Import requires maintenance and the owner
+identity. A revision-0010 upgrade preserves previous rows, checksums and epoch;
+reapplication has no pending revisions. No retired delegation runtime is restored.
+
+[The evidence packet](../../reports/production-refactor/WP-03/retired-agent-commands.json)
+records 76 focused passes and 409 combined PG17/PgBouncer passes without skips
+in 368.98 seconds. The final run includes 31 new history cases and all 45
+previous retained-store cases. The full unit suite passes 10,761 cases with
+four warnings in 566.38 seconds (65% combined coverage). Mypy, Ruff on 83 Python
+files and all 54 agent scenarios / 189 checks pass. The application tree remains
+`6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54`.
+
+The initial lint invocation found nine imported-fixture binding warnings, fixed
+with a local fixture and the established pytest binding annotations. A temporary
+sequential-suite launcher failed before pytest because psutil was unavailable;
+the launcher now uses the standard library and the observed owned unit process.
+No dependency or test assertion was removed. Both events remain in the packet.
+The final PG run follows completion of the unit suite.
+
+The 23-line server log scan contains no credential marker or encrypted envelope.
+Cleanup leaves no fixture schema or roles. Inventory refresh preserves 875
+source reviews, 759 feature rows and previous live/API observations. All 26
+logical PG tables and five partition patterns have ownership entries. No live
+history was imported or reseeded and no live provider call was made.
+
+CI 43089852697 for `033ed8d3` has seven successful jobs, including 333 PG cases
+without skips and 1,601 frontend cases. Its engine test step succeeded, but
+the report-upload step failed and no engine artifact is available. The job log
+API returned HTTP 502; the exact upload cause is unverified. The
+[recorded observation](../../reports/production-refactor/ci-033ed8d3-upload.json)
+keeps this run outside PASS. Engine case counts and skip reasons are not inferred
+from predecessor runs. A complete CI result remains required for delivery.
+
+The stage-registration source review adds R36: schema authorization currently
+does not establish ownership of a caller-selected storage prefix. Disposable
+proof and remediation remain open. Historical provenance/import, remaining
+domains, production runtime, backup/recovery, cutover and full feature acceptance
+are still incomplete; this checkpoint does not close those gates.

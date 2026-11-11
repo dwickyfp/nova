@@ -323,3 +323,32 @@ are preserved. Ownership covers 23 logical PG tables and five partition patterns
 Current CI is pending; no source rows or live authority have moved. Timestamp
 provenance, remaining domains, export/import orchestration, backup/retention,
 production runtime and complete feature acceptance remain open.
+
+## Retired Agent history
+
+Revision 0011 preserves the three retired stores and their 22 source columns,
+without restoring a reader, writer or delegation feature. The
+[contract](../../../architecture/production-refactor/PG_RETIRED_AGENT_HISTORY.md)
+retains opaque primary keys, historical references, exact JSON numeric values,
+array order and nullable fields behind the maintenance-only import boundary.
+
+[retired-agent-commands.json](retired-agent-commands.json) records 76 focused
+passes followed by 409 PG17/PgBouncer passes without skips in 368.98 seconds.
+The full unit suite passes 10,761 cases with four warnings in 566.38 seconds
+(65% combined coverage). Full-application mypy, 83-file Ruff and the complete
+54-scenario / 189-check scorecard pass. The initial fixture-binding lint findings
+and a temporary launcher's missing psutil dependency are recorded; the launcher
+failed before starting pytest and now uses the standard library.
+
+The final 23-line PG log scan contains no credential marker or encrypted
+envelope. Fixture cleanup leaves zero schema/roles. The source inventory keeps
+all 875 reviews, 759 feature rows and prior live/API observations. Ownership
+covers 26 logical tables and five partition patterns. The revision-0010 upgrade
+regression preserves rows, prior checksums and epoch, without publishing writes.
+
+[Audit CI observation](../ci-033ed8d3-upload.json) records seven successful jobs
+for `033ed8d3`, including 333 PG cases and 1,601 frontend cases. The engine test
+step succeeded, but its artifact upload failed; case counts and skips remain
+unverified for that run. It is not a completed CI pass. Current revisions still
+need complete CI. No history rows have moved and no live AI call was made here.
+The full migration and feature acceptance remain open.
