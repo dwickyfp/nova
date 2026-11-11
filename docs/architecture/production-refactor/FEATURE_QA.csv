@@ -49,7 +49,7 @@ sql/07-load-data-from-files.md,Load data from files,frontend/src/features/docs/c
 sql/08-nova-sql-reference.md,Nova SQL reference,frontend/src/features/docs/content/sql/08-nova-sql-reference.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 sql/09-mysql-clients.md,Connect with a MySQL client,frontend/src/features/docs/content/sql/09-mysql-clients.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 studio/01-what-is-studio.md,What is Nova Studio?,frontend/src/features/docs/content/studio/01-what-is-studio.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
-studio/02-ask-questions.md,Ask a question,frontend/src/features/docs/content/studio/02-ask-questions.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
+studio/02-ask-questions.md,Ask a question,frontend/src/features/docs/content/studio/02-ask-questions.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,"Pre-cutover replay-only checks: agent-replay/live-api.json (21 assertions), focused-final.xml (97 cases), docs browser suite (15 cases), rendered /docs/studio/ask-questions. Full page/live-AI/post-cutover acceptance remains NOT_RUN."
 studio/03-charts-in-answers.md,Charts in answers,frontend/src/features/docs/content/studio/03-charts-in-answers.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 studio/04-conversations-and-history.md,Conversations and history,frontend/src/features/docs/content/studio/04-conversations-and-history.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 studio/05-artifacts.md,Artifacts,frontend/src/features/docs/content/studio/05-artifacts.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,

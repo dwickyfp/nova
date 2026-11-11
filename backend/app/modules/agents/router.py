@@ -1947,6 +1947,7 @@ async def replay_agent_run(
                 state is not None
                 and state["status"] in {"interrupted", "failed", "cancelled"}
                 and not terminal_seen
+                and (not frames or cursor >= state["last_sequence"])
             ):
                 code = "run_interrupted" if state["status"] == "interrupted" else "run_failed"
                 yield events.format_sse(
@@ -1965,6 +1966,32 @@ async def replay_agent_run(
                         "sequence": cursor + 2,
                         "message_id": "",
                         "finish_reason": state["status"],
+                    },
+                )
+                return
+            if (
+                state is not None
+                and state["status"] == "completed"
+                and not frames
+                and cursor < state["last_sequence"]
+            ):
+                yield events.format_sse(
+                    events.EVENT_ERROR,
+                    {
+                        "run_id": run_id,
+                        "sequence": cursor + 1,
+                        "code": "run_history_unavailable",
+                        "message": "Saved run events are unavailable. "
+                        "Open the conversation to review the result.",
+                    },
+                )
+                yield events.format_sse(
+                    events.EVENT_DONE,
+                    {
+                        "run_id": run_id,
+                        "sequence": cursor + 2,
+                        "message_id": "",
+                        "finish_reason": "error",
                     },
                 )
                 return
@@ -2588,7 +2615,7 @@ async def send_agent_message(
 
         heartbeat_task = asyncio.create_task(keep_alive())
 
-        async def flush(*, project_mission: bool = True) -> str | None:
+        async def flush(*, project_mission: bool = True) -> None:
             async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
                 if batch:
                     await run_journal.append_batch(run_id, list(batch))
@@ -2596,21 +2623,27 @@ async def send_agent_message(
                     if project_mission and context.mission_id:
                         from app.modules.agents.mission import mission_service
 
-                        return await mission_service.stream_update(run_id, user)
-            return None
+                        update = await mission_service.stream_update(run_id, user)
+                        if update:
+                            update = sequence_frame(update)
+                            await run_journal.append_batch(run_id, [update])
+                            queue_frame(update)
 
         iterator = generate()
         try:
             async for frame in iterator:
+                terminal = frame.startswith(f"event: {events.EVENT_DONE}\n")
+                if terminal:
+                    # Persist the final projection before numbering completion;
+                    # a failed projection must not publish a successful done.
+                    await flush()
                 frame = sequence_frame(frame)
                 if frame.startswith("event: role_changed\n"):
                     async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
                         await run_journal.block_replay_after_role_change(run_id)
-                terminal = frame.startswith(f"event: {events.EVENT_DONE}\n")
                 if not terminal:
                     queue_frame(frame)
                 batch.append(frame)
-                update = None
                 if len(batch) >= 32 or frame.startswith(
                     (
                         "event: tool_call\n",
@@ -2621,7 +2654,7 @@ async def send_agent_message(
                         "event: done\n",
                     )
                 ):
-                    update = await flush()
+                    await flush(project_mission=not terminal)
                 if terminal:
                     queue_frame(frame)
                     payload = json.loads(frame.split("data: ", 1)[1])
@@ -2631,8 +2664,6 @@ async def send_agent_message(
                         status = "cancelled"
                     elif payload.get("finish_reason") == "interrupted":
                         status = "interrupted"
-                if update:
-                    queue_frame(sequence_frame(update))
         except asyncio.CancelledError:
             status = "cancelled"
             interruption_reason = "cancelled"

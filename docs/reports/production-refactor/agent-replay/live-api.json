@@ -1,0 +1,148 @@
+{
+  "source_commit": "08a91e0e2e6f461de4a1be03c16f986117952a7f",
+  "scope": "Controlled journal fixtures through the running API and patched local engine; no provider invocation",
+  "started_at": "2026-11-11T23:18:39.413508+00:00",
+  "cases": [
+    {
+      "id": "missing_all",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.516,
+      "events": 2,
+      "error_code": "run_history_unavailable"
+    },
+    {
+      "id": "missing_all_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "missing_tail",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.857,
+      "events": 3,
+      "error_code": "run_history_unavailable"
+    },
+    {
+      "id": "missing_tail_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "complete",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.336,
+      "events": 2,
+      "error_code": null
+    },
+    {
+      "id": "complete_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "already_consumed",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.522,
+      "events": 0,
+      "error_code": null
+    },
+    {
+      "id": "already_consumed_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "paged_failed_False",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 1.105,
+      "events": 203,
+      "error_code": "run_failed"
+    },
+    {
+      "id": "paged_failed_False_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "paged_failed_True",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.647,
+      "events": 202,
+      "error_code": null
+    },
+    {
+      "id": "paged_failed_True_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "paged_interrupted_False",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 1.055,
+      "events": 203,
+      "error_code": "run_interrupted"
+    },
+    {
+      "id": "paged_interrupted_False_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "paged_interrupted_True",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.312,
+      "events": 202,
+      "error_code": null
+    },
+    {
+      "id": "paged_interrupted_True_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "paged_cancelled_False",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 0.652,
+      "events": 203,
+      "error_code": "run_failed"
+    },
+    {
+      "id": "paged_cancelled_False_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "paged_cancelled_True",
+      "passed": true,
+      "http_status": 200,
+      "duration_seconds": 2.59,
+      "events": 202,
+      "error_code": null
+    },
+    {
+      "id": "paged_cancelled_True_source_unchanged",
+      "passed": true
+    },
+    {
+      "id": "different_security_version_denied",
+      "passed": true,
+      "http_status": 404
+    }
+  ],
+  "cleanup": [
+    {
+      "resource": "disposable_thread",
+      "http_status": 204
+    },
+    {
+      "resource": "disposable_agent",
+      "http_status": 204
+    },
+    {
+      "resource": "disposable_runs_and_events",
+      "remaining_rows": 0
+    }
+  ],
+  "application_tree_sha256": "5442781494ba008256bcd7ab0f531aa922772f2ce48ec4538d079b95fc9d1ef8",
+  "ended_at": "2026-11-11T23:19:10.062516+00:00"
+}

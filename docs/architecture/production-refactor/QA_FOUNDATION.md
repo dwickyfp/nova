@@ -826,3 +826,44 @@ provider call was made; the embedding and large-load/soak waivers are unchanged.
 The current runtime still uses StarRocks Stage metadata. Remaining callers,
 provenance, external-effect receipts and global cutover are not certified by
 these prepared-store checks. See [the domain boundary](PG_STAGE_REGISTRATIONS.md).
+
+## Agent replay and Mission publication
+
+The existing direct-run producer now persists Mission updates before delivering
+them and before successful completion. Failed, interrupted and cancelled replay
+drains all stored pages; completed replay reports unavailable history and closes
+when the remaining events are absent. It does not rewrite old run state or repeat
+actions. The final regression fixtures fail 15 cases against the parent router
+in an isolated process; all 97 focused cases pass against the repair.
+
+The [evidence packet](../../reports/production-refactor/agent-replay/README.md)
+includes 21 passing local API assertions on owned synthetic metadata and
+complete cleanup. A read-only aggregate found 62 older direct runs with no
+events, including 23 completed runs. Their source records remain untouched and
+the historical cause is unverified. The updated error guidance is visible in
+the running docs and the 15-case docs suite passes.
+
+Final local checks pass 10,818 unit/coverage cases, 349 agent trajectories,
+54 scorecard scenarios / 189 checks, full mypy, Ruff on 96 changed Python files,
+the data-access boundary scan, frontend lint/build and 1,605 frontend tests.
+No local suite skips are counted as passes. The incomplete earlier unit run
+was stopped after the pagination defect was reproduced and was replaced by
+the full run after the final fix. Initial test-fixture failures remain recorded.
+The application tree is
+`5442781494ba008256bcd7ab0f531aa922772f2ce48ec4538d079b95fc9d1ef8`.
+
+The preceding Stage checkpoint `08a91e0e` now has all eight CI jobs passing in
+[run 43114563960](https://github.com/dwickyfp/nova/actions/runs/43114563960).
+Downloaded artifacts contain 486 PG cases without skips and 217 engine passes
+with 24 skips. [The CI record](../../reports/production-refactor/ci-08a91e0e.json)
+retains the skipped prerequisites. This does not certify patched-FE policy
+acceptance, live AI, external fault recovery or release readiness. CI for the
+replay repair follows its own push.
+
+The inventory retains 875 reviewed system-call sites and 759 feature rows;
+the two unchanged history reads in the modified router were reviewed again.
+The docs feature records this partial pre-cutover evidence without changing
+its full-release acceptance status. No provider request was made in this phase.
+PG journals, durable consent, runtime separation, remaining domain migrations,
+production Compose, recovery, cutover and complete feature acceptance remain
+open. Live-embedding and original large-load/soak waivers are unchanged.

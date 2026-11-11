@@ -73,6 +73,10 @@ AI model work the answer used.
 - "The agent run stopped. Review saved steps before retrying." means the run
   was interrupted. Open the conversation again from **History**: anything the
   agent saved is shown. Check the results of any actions before asking again.
+- "Saved run events are unavailable." means Nova cannot replay all the saved
+  steps for a completed answer. Open the conversation from **History** to
+  review what remains. Check any actions before asking again; this message
+  does not mean an action failed.
 - "The run stopped because its progress could not be saved." means Nova
   stopped the agent after a storage problem. A partial answer may remain on
   screen. Pending approvals close, and an unfinished tool is marked **Result
