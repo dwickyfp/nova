@@ -14,9 +14,18 @@ import asyncmy.cursors
 import boto3
 from botocore.client import Config as BotoConfig
 
-from app.core.config import get_storage_connection, settings
+from app.core.config import require_storage_connection, settings
 from app.core.database import db
+from app.core.exceptions import InsufficientRoleError
+from app.core.role_gates import require_active_role
 from app.modules.query.dialect.injector import resolve_storage_credentials
+from app.modules.stages.schemas import StageCreate
+
+_require_prefix_admin = require_active_role("ACCOUNTADMIN")
+
+
+class StageRegistrationError(ValueError):
+    pass
 
 
 class StagePathError(ValueError):
@@ -56,9 +65,24 @@ class StageService:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-    async def create_stage(self, data: dict, username: str) -> dict | None:
+    async def create_stage(
+        self, data: dict, username: str, *, active_role: str | None
+    ) -> dict | None:
         """INSERT a new stage into CONFIG_STAGES. Returns the created stage."""
+        data = StageCreate.model_validate(data).model_dump()
+        if not active_role:
+            raise InsufficientRoleError("An active role is required")
+        prefix = data["base_prefix"]
+        if prefix:
+            await _require_prefix_admin({"active_role": active_role})
+            prefix = self._safe_relative_path(prefix.strip("/"), field="base prefix")
+        try:
+            require_storage_connection(data["storage_connection"])
+        except ValueError as exc:
+            raise StageRegistrationError("Storage connection is not configured") from exc
         stage_id = str(uuid4())
+        # A deleted name must not become a handle to another registration's files.
+        prefix = prefix or f"nova/stages/{stage_id}"
         async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
             await cur.execute(
                 "INSERT INTO NOVA_SYSTEM.CONFIG_STAGES "
@@ -71,7 +95,7 @@ class StageService:
                     data["database_name"],
                     data["schema_name"],
                     data["storage_connection"],
-                    data.get("base_prefix", ""),
+                    prefix,
                     username,
                 ),
             )
@@ -89,7 +113,7 @@ class StageService:
     # ── S3 / MinIO client ──────────────────────────────────────
 
     @staticmethod
-    def _s3_client(storage_connection: str | None = None):
+    def _s3_client(storage_connection: str):
         """Create a boto3 S3 client pointed at the stage's storage connection.
 
         Credentials, endpoint and bucket all come from the named connection in
@@ -103,7 +127,7 @@ class StageService:
         principal (NOVA-67). A resolution failure raises rather than falling
         back.
         """
-        conn = get_storage_connection(storage_connection)
+        conn = require_storage_connection(storage_connection)
         access_key, secret_key = resolve_storage_credentials(storage_connection)
         return boto3.client(
             "s3",
@@ -124,8 +148,8 @@ class StageService:
         browser disagree with ``@stage`` queries for any non-default stage
         (NOVA-67).
         """
-        connection = stage.get("storage_connection") or None
-        conn = get_storage_connection(connection)
+        connection = stage["storage_connection"]
+        conn = require_storage_connection(connection)
         return StageService._s3_client(connection), (conn.bucket or settings.S3_BUCKET)
 
     @staticmethod

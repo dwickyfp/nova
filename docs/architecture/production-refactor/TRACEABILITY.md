@@ -14,7 +14,7 @@ are excluded from this delivery's acceptance by the owner's explicit updates.
 | Explicit workload processes | WP09 | Admission, supervisor, cancellation, resource isolation | NOT_STARTED |
 | Durable agent consent/replay | WP10 | Restart, role revoke, foreign approval, repeated tool invocation | NOT_STARTED |
 | Notebook and ML execution boundaries | WP11 | Sandbox network/host/token tests; signed-model tampering and process isolation | NOT_STARTED |
-| Role/session security | WP12 | Atomic role race, principal binding, active-admin gates; live governed regressions | IN_PROGRESS |
+| Role/session security | WP12 | Atomic role race, principal binding, active-admin gates; live governed regressions | IN_PROGRESS: Stage namespace aliasing reproduced and corrected on the local patched-FE/Ranger stack; active-role prefix gate and security-epoch UI state tested; atomic role/revocation and remaining domain gates still open |
 | Single Compose, no .env | WP14 | Fresh start, upgrade, secrets checks, private ports, role health | NOT_STARTED |
 | Recovery and observability | WP14–15 | Restore drill, external manifests, alerts, fault classification | NOT_STARTED |
 | Safe one-way cutover | WP16–17 | Two rehearsals, aborted import, all-writer freeze, post-PG recovery | NOT_STARTED |

@@ -1,0 +1,91 @@
+{
+  "mode": "before",
+  "commit": "b4389d1d57ff202a01853722323badc3e2edb015",
+  "started_at": "2026-11-11T20:48:42.927444+00:00",
+  "cases": [
+    {
+      "id": "disposable_principal_active_role",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "direct_other_scope_download_denied",
+      "http_status": 403,
+      "pass": true
+    },
+    {
+      "id": "other_scope_prefix_registration_denied",
+      "http_status": 201,
+      "pass": false
+    },
+    {
+      "id": "other_scope_canary_not_exposed",
+      "http_status": 200,
+      "pass": false,
+      "synthetic_canary_exposed": true
+    }
+  ],
+  "cleanup": [
+    {
+      "id": "canary_file",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "stage_registration",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "stage_registration",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "user_session",
+      "pass": true,
+      "http_status": 200
+    },
+    {
+      "id": "policy_SELECT",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "policy_INSERT",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "policy_DELETE",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "user",
+      "http_status": 204,
+      "pass": true
+    },
+    {
+      "id": "role",
+      "http_status": 204,
+      "pass": true
+    },
+    {
+      "id": "database",
+      "pass": true
+    },
+    {
+      "id": "database",
+      "pass": true
+    },
+    {
+      "id": "admin_session",
+      "http_status": 200,
+      "pass": true
+    }
+  ],
+  "finished_at": "2026-11-11T20:48:53.474877+00:00",
+  "cleanup_complete": true,
+  "fixture_suffix": "a64e499d99"
+}

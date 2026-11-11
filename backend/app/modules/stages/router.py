@@ -15,9 +15,10 @@ import hashlib
 import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.common.audit import write_audit_log
@@ -29,7 +30,7 @@ from app.modules.stages.schemas import (
     StageListResponse,
     StageResponse,
 )
-from app.modules.stages.service import StagePathError, stage_service
+from app.modules.stages.service import StagePathError, StageRegistrationError, stage_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -142,9 +143,14 @@ async def create_stage(
 ):
     """Create a new stage."""
     data = body.model_dump()
-    await _authorize(data, user, "delete")
     async with _stage_mutation_audit(data, user, "CREATE_STAGE", data["name"]):
-        stage = await stage_service.create_stage(data, user["username"])
+        await _authorize(data, user, "delete")
+        try:
+            stage = await stage_service.create_stage(
+                data, user["username"], active_role=user.get("active_role")
+            )
+        except (StagePathError, StageRegistrationError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not stage:
             raise HTTPException(status_code=500, detail="Failed to create stage")
     return StageResponse(**stage)
@@ -194,15 +200,18 @@ async def upload_file(
     stage_id: str,
     file: UploadFile,
     user: dict = require_user,
+    path: Annotated[str, Form()] = "",
 ):
     """Upload a file to the stage's storage path."""
     try:
-        stage_service._safe_relative_path(file.filename or "unknown")
+        filename = stage_service._safe_relative_path(file.filename or "unknown")
+        if path:
+            folder = stage_service._safe_relative_path(path, field="folder")
+            filename = f"{folder}/{filename}"
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         stage = await _authorized_stage(stage_id, user, "write")
-        filename = file.filename or "unknown"
         async with _stage_mutation_audit(
             stage, user, "UPLOAD_STAGE_FILE", f"{stage_id}/{filename}"
         ):

@@ -1,0 +1,80 @@
+{
+  "run": 43089852697,
+  "commit": "033ed8d3",
+  "status": "completed",
+  "conclusion": "failure",
+  "url": "https://github.com/dwickyfp/nova/actions/runs/43089852697",
+  "jobs": [
+    {
+      "name": "Grammar drift (ANTLR regenerate-and-diff)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Backend unit (L1)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Superset integration (image build, unit tests)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Backend static (ruff, mypy)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Frontend (lint, build, vitest)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Notebook runtime image (build, kernel tests)",
+      "conclusion": "success"
+    },
+    {
+      "name": "PostgreSQL 17 metadata boundaries",
+      "conclusion": "success"
+    },
+    {
+      "name": "Backend integration (L3, real engine)",
+      "conclusion": "failure"
+    }
+  ],
+  "engine_tests": {
+    "passed": 217,
+    "skipped": 24,
+    "deselected": 362,
+    "warnings": 2,
+    "seconds": 1472.62,
+    "source": "completed job log; report artifact absent"
+  },
+  "skip_reasons": [
+    "SKIPPED [1] tests/integration/test_custom_sql_tools_l3.py:50: Set NOVA_CUSTOM_SQL_LIVE=1 for the isolated custom-tool engine test",
+    "SKIPPED [1] tests/integration/test_custom_sql_tools_llm_live.py:45: Set NOVA_CUSTOM_SQL_LLM_LIVE=1 and NOVA_CUSTOM_SQL_LLM_PORT for the live provider probe",
+    "SKIPPED [1] tests/integration/test_governed_studio_ranger.py:427: Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+    "SKIPPED [1] tests/integration/test_governed_studio_ranger.py:494: Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+    "SKIPPED [1] tests/integration/test_governed_studio_ranger.py:566: Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+    "SKIPPED [1] tests/integration/test_governed_studio_ranger.py:660: Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+    "SKIPPED [1] tests/integration/test_governed_studio_ranger.py:820: Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+    "SKIPPED [1] tests/integration/test_intelligence_ranger_engine.py:52: Requires an isolated patched-FE Ranger acceptance installation",
+    "SKIPPED [1] tests/integration/test_migration_l3.py:837: engine has UDFs disabled (enable_udf=false)",
+    "SKIPPED [1] tests/integration/test_migration_l3.py:1084: engine does not support CREATE TASK",
+    "SKIPPED [1] tests/integration/test_migration_worker_cross_cluster.py:112: set NOVA_MIGRATION_SOURCE_PORT to opt in to cross-cluster migration",
+    "SKIPPED [1] tests/integration/test_neva_sql_planning_ranger.py:51: Creates a user, a role and a Ranger policy on a patched FE; opt in explicitly",
+    "SKIPPED [1] tests/integration/test_ontology_evidence_ranger.py:63: Creates users, a role and Ranger policies on a patched FE; opt in explicitly",
+    "SKIPPED [1] tests/integration/test_sql_frontend_ranger_live.py:19: Requires isolated patched StarRocks/Ranger fixture: NOVA_FRONTEND_RANGER_URL and NOVA_FRONTEND_RANGER_TOKEN (security-admin session)",
+    "SKIPPED [1] tests/integration/test_sql_frontend_shared_data_live.py:131: Start docker-compose.shared-data.test.yml and set NOVA_SHARED_DATA_PORT",
+    "SKIPPED [1] tests/integration/test_sql_frontend_shared_data_live.py:155: Start docker-compose.shared-data.test.yml and set NOVA_SHARED_DATA_PORT",
+    "SKIPPED [1] tests/integration/test_stream_durability_gate.py:226: Requires an isolated FE with delayed publication",
+    "SKIPPED [1] tests/integration/test_stream_durability_gate.py:435: Requires disposable FE with label_clean_interval_second=1",
+    "SKIPPED [1] tests/integration/test_superset_governed.py:457: Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN",
+    "SKIPPED [1] tests/integration/test_superset_governed.py:670: Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN",
+    "SKIPPED [1] tests/integration/test_superset_governed.py:934: Set NOVA_SUPERSET_WORKER_CONTAINER",
+    "SKIPPED [1] tests/integration/test_superset_governed.py:1164: Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN",
+    "SKIPPED [1] tests/integration/test_superset_governed.py:1395: Set NOVA_BACKEND_CONTAINER and NOVA_SUPERSET_DB_CONTAINER",
+    "SKIPPED [1] tests/integration/test_superset_governed.py:1554: Set NOVA_PROMETHEUS_URL and NOVA_GRAFANA_URL"
+  ],
+  "upload_failure": "Failed to CreateArtifact after 5 attempts: response was HTML, not JSON",
+  "earlier_log_access": "HTTP 502; recovered after the run completed",
+  "reported_outage": "github-status-observation.json",
+  "outage_causality": "Not established; announcement followed the artifact failure",
+  "current_head_pass": false
+}

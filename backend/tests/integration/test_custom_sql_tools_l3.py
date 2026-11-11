@@ -167,11 +167,8 @@ async def test_custom_sql_tools_insert_select_update_delete_on_scoped_engine_use
         if bucket not in existing_buckets:
             minio_client.create_bucket(Bucket=bucket)
             created_bucket = True
-        prefix = f"custom-sql-tools/{suffix}"
-        object_key = f"{prefix}/data.parquet"
         payload = BytesIO()
         pq.write_table(pa.table({"id": [1], "value": ["from_stage"]}), payload)
-        minio_client.put_object(Bucket=bucket, Key=object_key, Body=payload.getvalue())
         stage_name = f"stage_{suffix}"
         stage = await stage_service.create_stage(
             {
@@ -179,12 +176,16 @@ async def test_custom_sql_tools_insert_select_update_delete_on_scoped_engine_use
                 "database_name": database,
                 "schema_name": "default",
                 "storage_connection": "production",
-                "base_prefix": prefix,
+                "base_prefix": "",
             },
             username,
+            active_role=role,
         )
         assert stage is not None
         stage_id = stage["id"]
+        prefix = stage["base_prefix"]
+        object_key = f"{prefix}/data.parquet"
+        minio_client.put_object(Bucket=bucket, Key=object_key, Body=payload.getvalue())
         context.schema_name = "default"
         selected = await run(
             "select_stage", f"SELECT * FROM @{stage_name}.data.parquet"

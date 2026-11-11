@@ -22,7 +22,7 @@ from app.common.sql_guard import (
     split_sql_statements,
 )
 from app.common.user_flags import set_must_change_password
-from app.core.config import get_storage_connection
+from app.core.config import require_storage_connection
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
@@ -561,7 +561,7 @@ class QueryService:
             task_repository=task_orchestration_repository,
             set_flag=set_must_change_password,
             check_stage_access=check_stage_access,
-            get_storage_connection=get_storage_connection,
+            get_storage_connection=require_storage_connection,
             resolve_storage_credentials=resolve_storage_credentials,
         )
 

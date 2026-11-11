@@ -1,0 +1,8 @@
+{
+  "at": "2026-11-11T21:00:37.158473+00:00",
+  "pid": 89478,
+  "signal": "SIGINT",
+  "result": "INTERRUPTED",
+  "observed_failure": "table-item-with-popover: replaces active card immediately; 18008ms",
+  "context": "Unit coverage and browser coverage ran concurrently; severe host memory pressure and slow live requests observed. Retry sequentially without removing failure evidence."
+}

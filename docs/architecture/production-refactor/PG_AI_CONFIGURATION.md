@@ -8,10 +8,12 @@ StarRocks services; this is not the AI runtime cutover.
 
 ## Persisted contract
 
-A command locks AI alias mutations, applies the revision-checked metadata write,
+A command locks AI configuration mutations, applies the revision-checked metadata write,
 and reconciles every changed function selection before returning. Its savepoint
 contains the alias/provider/model change, immutable definition, current pointer,
 registration job and outbox event. It never commits the enclosing transaction.
+The registry and alias repositories use the same lock before taking row locks,
+so composing them directly cannot invert the service lock order.
 
 The snapshot records the selected alias, provider and model revisions, prompt,
 model descriptor, effective engine parameters and explicit configured/disabled/

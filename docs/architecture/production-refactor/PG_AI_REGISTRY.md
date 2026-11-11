@@ -62,7 +62,10 @@ in representations and is not an API response model. Endpoint resolution and
 per-request SSRF protection remain the owning service's responsibility; the
 repository performs no external network I/O.
 
-Model writes lock the provider before changing the child. Provider deletion
+Every provider/model mutation first acquires the same transaction-scoped
+configuration lock used by aliases and function-registration intents. This order
+also applies to direct repository calls. Model writes then lock the provider
+before changing the child. Provider deletion
 locks that same row, tombstones its models, tombstones the provider and clears
 its ciphertext in one transaction. IDs and revisions remain reserved; stale
 creates cannot reuse a deleted identity. Runtime grants prohibit physical

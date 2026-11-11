@@ -346,6 +346,56 @@ async def test_registry_deletion_serializes_with_alias_creation(aliases):
         assert bool(await repo.aliases()) is not parent["is_deleted"]
 
 
+async def test_waiting_provider_delete_does_not_lock_rows_ahead_of_alias_creation(
+    aliases, environment,  # noqa: F811
+):
+    deleting = asyncio.get_running_loop().create_future()
+
+    async def remove():
+        try:
+            async with aliases() as (_, connection):
+                cursor = await connection.execute("SELECT pg_backend_pid() AS pid")
+                deleting.set_result((await cursor.fetchone())["pid"])
+                await AIRegistryRepository(connection).delete_provider(
+                    "provider-1", expected_revision=1
+                )
+        except MetadataIntegrityViolation:
+            return "referenced"
+        return "deleted"
+
+    task = None
+    try:
+        async with aliases() as (repo, _):
+            await repo.lock_mutations()
+            task = asyncio.create_task(remove())
+            async with asyncio.timeout(10):
+                pid = await deleting
+                while True:
+                    cursor = await environment.admin.execute(
+                        "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=%s "
+                        "AND locktype='advisory' AND NOT granted) AS waiting",
+                        (pid,),
+                    )
+                    if (await cursor.fetchone())["waiting"]:
+                        break
+                    if task.done():
+                        pytest.fail(f"Provider deletion ended before serialization: {await task}")
+                    await asyncio.sleep(0.01)
+            # With the previous row-first order the delete held this provider
+            # while waiting for our configuration lock, causing a deadlock here.
+            await repo.create("alias-1", definition())
+        assert await task == "referenced"
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async with aliases(read_only=True) as (repo, connection):
+        assert (await repo.alias("alias-1"))["provider_id"] == "provider-1"
+        parent = await AIRegistryRepository(connection).provider("provider-1")
+        assert parent["is_deleted"] is False
+
+
 @pytest.mark.parametrize(
     "statement,exception",
     [

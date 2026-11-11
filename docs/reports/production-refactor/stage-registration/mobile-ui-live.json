@@ -1,0 +1,43 @@
+{
+  "stage_name": "qa_stage_mobile_9c1f5982",
+  "mobile_viewport": [
+    390,
+    844
+  ],
+  "table_horizontal_scroll": "PASS",
+  "file_browser": "PASS",
+  "browser_keyboard_download": "PASS: Chrome showed mobile-download.csv 5 B Done",
+  "download_event_tool": "TIMEOUT after 15 seconds; verified through native Chrome download history",
+  "keyboard_focus_to_copy": "PASS",
+  "native_key_clipboard_attempt": "Toast showed reference but readback differed; cause not established",
+  "semantic_click_clipboard": "PASS exact reference",
+  "semantic_keyboard_clipboard": "PASS after replacing clipboard with a distinct synthetic value",
+  "viewport_restored": true,
+  "checks": [
+    {
+      "id": "copied_reference_sql",
+      "status": 200,
+      "result": [
+        {
+          "rows": [
+            [
+              7
+            ]
+          ],
+          "columns": [
+            "id"
+          ],
+          "success": true,
+          "affected_rows": 0
+        }
+      ]
+    }
+  ],
+  "cleanup": [
+    {
+      "content_verified_and_deleted": true,
+      "registration_removed": true,
+      "remaining_files": 0
+    }
+  ]
+}

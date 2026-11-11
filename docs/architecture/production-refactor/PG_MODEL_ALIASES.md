@@ -14,9 +14,11 @@ changed by a runtime login. The integer `metadata_revision` supplies CAS, while
 updates use the database clock. Deleted IDs remain reserved as tombstones.
 
 One transaction-scoped advisory lock serializes the low-volume administrator
-alias mutations. A mutation can move a default between function types and touch
+alias, provider and model mutations. It is acquired before any provider/model
+row lock, including direct registry calls. A mutation can move a default between
+function types and touch
 several providers; the shared lock avoids inconsistent ordering among those
-alias operations. A unique partial index independently enforces at most one
+configuration operations. A unique partial index independently enforces at most one
 non-deleted default per function type. Every affected alias revision advances,
 including an old default cleared by another alias's mutation.
 

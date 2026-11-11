@@ -844,7 +844,7 @@ export function DatabaseExplorerPage() {
             <DialogTitle>Create Stage</DialogTitle>
             <DialogDescription>
               Create a new stage in <span className='font-semibold'>{createStageDb}</span>.
-              The stage name will be used as the folder name in storage.
+              Nova creates a separate empty folder for each new stage.
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 py-2'>

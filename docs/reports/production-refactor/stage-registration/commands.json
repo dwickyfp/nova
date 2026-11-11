@@ -1,0 +1,178 @@
+{
+  "source_parent_commit": "b4389d1d57ff202a01853722323badc3e2edb015",
+  "application_tree_sha256": "7eb228332adf4d4c057078735decbc7709759b682bc4165ac3917468d80cf6c8",
+  "source_files_sha256": {
+    "backend/app/core/config.py": "64cc34b6daaae7921ae08e6a2104ceb238679caf82ab541b65674613a1b548e6",
+    "backend/app/modules/ai_ml/repository.py": "686fd35f176ca2d0bc6c3e1ddff9f0683e1d7f4116152ce74a21f1fb53dadea3",
+    "backend/app/modules/llm_functions/repository.py": "6d7d2eb1148204c6d37aafa18a2e4fa1ac166adacaf1354dfe9bc77ffdf3e95d",
+    "backend/app/modules/query/service.py": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
+    "backend/app/modules/stages/router.py": "4950cfb19f036ba26821617f87ddc7b66dfc819101de6f59d1e6259cdf0758c1",
+    "backend/app/modules/stages/schemas.py": "1a4ac6a5c4b0a8fa2bf29a8fc5caf9568e211867f4116ac8c7ca962ec5cbc1fa",
+    "backend/app/modules/stages/service.py": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
+    "backend/app/sql_frontend/execution/stages.py": "5d941a173faf7dd3e503b6974339bf8c30182118aa7005f9240cf22839681cb9",
+    "backend/tests/integration/test_custom_sql_tools_l3.py": "567533e91b703e8f06eb3c12fde5fb38aa2b92f82940da01fab020dcdd3f0d46",
+    "backend/tests/integration/test_metadata_model_aliases.py": "fa2114814d30c0140117f7d487b93c0ed0695c9181a690e57cb0e1d60d097fe8",
+    "backend/tests/unit/test_stage_command_hardening.py": "1f404a3d15f1a00f79c700a4050c42f2a8f54b29e1c6310c05d328c674ca54e0",
+    "backend/tests/unit/test_stage_registration_boundary.py": "babfc62422888e0b0cb4bc7be004b5e09ea6eb1cef897b43d92e16c9b01e16bf",
+    "frontend/src/features/database-explorer/index.tsx": "83299a3e01d040a093bcde4b2d6f2a6706410559eb8a245251125ded8a4f0e88",
+    "frontend/src/features/docs/content/data/02-stages.md": "53693c2d6bd00c7e434e96b0a4e473644cd2e1ac077e612ed9274b21f4bd0e0e",
+    "frontend/src/features/stages/index.test.tsx": "267c15c7f3860ea830e3bc485f194b95aecae5cf224737d85bc600399077e809",
+    "frontend/src/features/stages/index.tsx": "51625a185a4ef298af4449eff42abaf4b1eddfd1a5f4f632e20e719a0514775e",
+    "frontend/src/features/stages/stage-browser.tsx": "3fa8550cc50fde75b0e8d859d077bb57871c03741e0adba1c85611be5b59fd1c"
+  },
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470",
+    "0005_durable_jobs.sql": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5",
+    "0006_scheduler_fencing.sql": "c48b0c39a38c148f1f5d69662e35733130f03179841acffded12c78bb4a66df2",
+    "0007_model_aliases.sql": "72244ddb356e5ee985430066cdbda5e487d818718c100f41f99de19e2c50f6ec",
+    "0008_ai_function_definitions.sql": "d13251477a717edb39a2873b49dd95787eaf4d2ecaf617e59bed63e160b4f334",
+    "0009_transactional_audit.sql": "963f839e965daef13d579da0bace42209cba76f189e13c3bbb35f2f439df854b",
+    "0010_retained_legacy_metadata.sql": "eefbeb888e2805697d243361090b72008698b2d5dbad23e82ab3e676e2342594",
+    "0011_retired_agent_history.sql": "5f894195339f638b905aa82312ef86c5b6a14c3418fa0cf32c63e9f5b85c024f"
+  },
+  "static": {
+    "mypy": {
+      "exit": 0,
+      "existing_untyped_body_notes": 3
+    },
+    "ruff": {
+      "exit": 0,
+      "changed_python_files": 91
+    },
+    "user_data_system_access": {
+      "exit": 0,
+      "result": "No system/root shortcuts found in user-data adapters."
+    },
+    "deployment_secret_scan": {
+      "deployment_secret_values_scanned": 24,
+      "matched_files": [],
+      "raw_values_exported": false
+    }
+  },
+  "agent_eval": {
+    "scenarios": 54,
+    "checks": 189,
+    "exit": 0
+  },
+  "browser_final_docs_stage": {
+    "passed": 30,
+    "seconds": 10.19
+  },
+  "live_registration_cases": 15,
+  "live_folder_cases": 7,
+  "ui_upload": "folder-ui-live.json",
+  "pg": {
+    "tests": 410,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 296.26,
+    "evidence": "pg-final.xml",
+    "log_scan": {
+      "passed": true,
+      "lines": 21,
+      "matches": {
+        "credential_canary": 0,
+        "encrypted_credential": 0
+      },
+      "since": "2026-11-11T21:48:27.373019+00:00",
+      "until": "2026-11-11T21:53:25.866393+00:00",
+      "raw_log_exported": false
+    },
+    "cleanup": {
+      "fixture_schema": 0,
+      "test_roles": 0
+    }
+  },
+  "frontend_final": {
+    "tests": 1605,
+    "files": 194,
+    "seconds": 351.34,
+    "coverage": {
+      "statements": 57.73,
+      "branches": 55.77,
+      "functions": 52.5,
+      "lines": 58.58
+    },
+    "lint_errors": 0,
+    "lint_warnings": 32,
+    "build_exit": 0,
+    "coverage_exit": 0,
+    "command": "pnpm lint; pnpm build; pnpm test:coverage --no-file-parallelism",
+    "final_explorer_copy_included": true
+  },
+  "ci": "NOT_RUN_FOR_UNCOMMITTED_CHANGE",
+  "embedding_live": "OWNER_WAIVED",
+  "large_load_and_soak": "OWNER_WAIVED",
+  "authority": "StarRocks; no live PG cutover",
+  "unit_before_ai_lock": {
+    "command": "uv run pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml",
+    "tests": 10800,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 634.546,
+    "line_rate": 0.6666,
+    "branch_rate": 0.6006,
+    "raw_log_exported": false
+  },
+  "unit_final": {
+    "tests": 10800,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 575.49,
+    "warnings": 4,
+    "line_rate": 0.6666,
+    "branch_rate": 0.6006,
+    "command": "uv run pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml",
+    "raw_log_exported": false
+  },
+  "live_stage_tree_sha256": "dc171987884000598a495856494a1d6e5b420c9d480249f3b63f8d1ae0f23e2d",
+  "ai_lock_focused": {
+    "passed": 117,
+    "failures": 0,
+    "seconds": 158.75,
+    "evidence": "ai-lock-focused.xml"
+  },
+  "schema_revisions_unchanged": 11,
+  "sequence": {
+    "unit-36_started_at": "2026-11-11T21:38:40.962868+00:00",
+    "unit-36_exit": 0,
+    "unit-36_ended_at": "2026-11-11T21:48:27.362296+00:00",
+    "pg-2_started_at": "2026-11-11T21:48:27.373019+00:00",
+    "pg-2_exit": 0,
+    "pg-2_ended_at": "2026-11-11T21:53:25.866393+00:00",
+    "frontend-lint_started_at": "2026-11-11T21:53:25.873589+00:00",
+    "frontend-lint_exit": 0,
+    "frontend-lint_ended_at": "2026-11-11T21:53:35.628217+00:00",
+    "frontend-build_started_at": "2026-11-11T21:53:35.629251+00:00",
+    "frontend-build_exit": 0,
+    "frontend-build_ended_at": "2026-11-11T21:54:19.800518+00:00",
+    "frontend-coverage_started_at": "2026-11-11T21:54:19.802178+00:00",
+    "frontend-coverage_exit": 0,
+    "frontend-coverage_ended_at": "2026-11-11T22:00:16.458050+00:00"
+  },
+  "mobile_and_keyboard": "mobile-ui-live.json",
+  "copied_reference_sql": {
+    "status": 200,
+    "rows": [
+      [
+        7
+      ]
+    ],
+    "columns": [
+      "id"
+    ],
+    "success": true
+  },
+  "documentation_checks": {
+    "local_links": 62,
+    "missing": [],
+    "diff_check": "PASS",
+    "source_hashes_match": true
+  }
+}

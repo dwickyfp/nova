@@ -1,0 +1,111 @@
+{
+  "mode": "after",
+  "commit": "b4389d1d57ff202a01853722323badc3e2edb015",
+  "started_at": "2026-11-11T20:56:26.061441+00:00",
+  "cases": [
+    {
+      "id": "disposable_principal_active_role",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "direct_other_scope_download_denied",
+      "http_status": 403,
+      "pass": true
+    },
+    {
+      "id": "other_scope_prefix_registration_denied",
+      "http_status": 403,
+      "pass": true
+    },
+    {
+      "id": "ordinary_stage_creation",
+      "http_status": 201,
+      "pass": true
+    },
+    {
+      "id": "ordinary_upload",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "ordinary_download",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "ordinary_delete_file",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "docs_csv_upload",
+      "http_status": 200,
+      "pass": true
+    }
+  ],
+  "cleanup": [
+    {
+      "id": "canary_file",
+      "http_status": 500,
+      "pass": false
+    },
+    {
+      "id": "stage_registration",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "stage_registration",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "user_session",
+      "pass": true,
+      "http_status": 200
+    },
+    {
+      "id": "policy_SELECT",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "policy_INSERT",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "policy_DELETE",
+      "http_status": 200,
+      "pass": true
+    },
+    {
+      "id": "user",
+      "http_status": 204,
+      "pass": true
+    },
+    {
+      "id": "role",
+      "http_status": 204,
+      "pass": true
+    },
+    {
+      "id": "database",
+      "pass": true
+    },
+    {
+      "id": "database",
+      "pass": true
+    },
+    {
+      "id": "admin_session",
+      "http_status": 200,
+      "pass": true
+    }
+  ],
+  "error_type": "TimeoutError",
+  "finished_at": "2026-11-11T21:01:23.477723+00:00",
+  "cleanup_complete": false,
+  "fixture_suffix": "ed49d02d73"
+}

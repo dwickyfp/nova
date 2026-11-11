@@ -16,7 +16,11 @@ import psycopg
 from psycopg.pq import TransactionStatus
 
 from app.common.crypto import EncryptionError, decrypt, mask_secret
-from app.core.metadata_db import MetadataConflict, MetadataIntegrityViolation
+from app.core.metadata_db import (
+    MetadataConflict,
+    MetadataIntegrityViolation,
+    MetadataPermissionDenied,
+)
 from app.modules.ai_ml.schemas import AIModelCreate
 
 
@@ -89,6 +93,20 @@ def _key_projection(ciphertext: str | None) -> tuple[bool, str | None]:
 def _revision(value: int) -> None:
     if type(value) is not int or not 1 <= value < 2**63 - 1:
         raise ValueError("Invalid AI registry revision")
+
+
+async def lock_ai_configuration(connection: psycopg.AsyncConnection[dict[str, Any]]) -> None:
+    if connection.info.transaction_status != TransactionStatus.INTRANS:
+        raise ValueError("AI configuration requires an active metadata transaction")
+    cursor = await connection.execute(
+        "SELECT current_user='nova_meta_web' AND nova_meta.actor_is_administrator() AS allowed"
+    )
+    row = await cursor.fetchone()
+    if not row or not row["allowed"]:
+        raise MetadataPermissionDenied()
+    # Registry rows, aliases and registration intents must take this lock before
+    # any row lock, including calls made directly through a domain repository.
+    await connection.execute("SELECT pg_advisory_xact_lock(%s,%s)", (0x4E4F5641, 0x414C4941))
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +244,7 @@ class AIRegistryRepository:
         _text(identity, 64)
         has_key, hint = _key_projection(definition.encrypted_api_key)
         async with self._connection.transaction():
+            await lock_ai_configuration(self._connection)
             cursor = await self._connection.execute(
                 "INSERT INTO nova_meta.config_ai_providers "
                 "(id,name,type,endpoint,default_params,is_active,has_api_key,api_key_masked) "
@@ -252,6 +271,7 @@ class AIRegistryRepository:
         _revision(expected_revision)
         has_key, hint = _key_projection(definition.encrypted_api_key)
         async with self._connection.transaction():
+            await lock_ai_configuration(self._connection)
             cursor = await self._connection.execute(
                 "UPDATE nova_meta.config_ai_providers SET name=%s,type=%s,endpoint=%s, "
                 "default_params=%s,is_active=%s,has_api_key=%s,api_key_masked=%s, "
@@ -284,6 +304,7 @@ class AIRegistryRepository:
         _text(identity, 64)
         _revision(expected_revision)
         async with self._connection.transaction():
+            await lock_ai_configuration(self._connection)
             cursor = await self._connection.execute(
                 "SELECT id FROM nova_meta.config_ai_providers "
                 "WHERE id=%s AND metadata_revision=%s AND NOT is_deleted FOR UPDATE",
@@ -335,6 +356,7 @@ class AIRegistryRepository:
         self._require_transaction()
         _text(identity, 64)
         async with self._connection.transaction():
+            await lock_ai_configuration(self._connection)
             await self._lock_provider(definition.provider_id)
             cursor = await self._connection.execute(
                 "INSERT INTO nova_meta.config_ai_models "
@@ -356,6 +378,7 @@ class AIRegistryRepository:
         _text(identity, 64)
         _revision(expected_revision)
         async with self._connection.transaction():
+            await lock_ai_configuration(self._connection)
             await self._lock_provider(definition.provider_id)
             cursor = await self._connection.execute(
                 "UPDATE nova_meta.config_ai_models SET "
@@ -379,6 +402,7 @@ class AIRegistryRepository:
         _text(provider_id, 64)
         _revision(expected_revision)
         async with self._connection.transaction():
+            await lock_ai_configuration(self._connection)
             await self._lock_provider(provider_id)
             cursor = await self._connection.execute(
                 "UPDATE nova_meta.config_ai_models SET is_deleted=true,is_active=false, "

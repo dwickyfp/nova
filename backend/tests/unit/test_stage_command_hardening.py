@@ -130,7 +130,7 @@ async def test_explicit_scope_and_same_names_do_not_collide(monkeypatch) -> None
 
     monkeypatch.setattr(module.db, "execute_system", rows)
     monkeypatch.setattr(module, "check_stage_access", allow)
-    monkeypatch.setattr(module, "get_storage_connection", lambda name: _Connection())
+    monkeypatch.setattr(module, "require_storage_connection", lambda name: _Connection())
     monkeypatch.setattr(module, "resolve_storage_credentials", lambda name: ("key", "secret"))
     sql = "SELECT * FROM @stage.a.csv JOIN @silver.stage.b.csv ON 1=1"
     parsed, configs = await QueryService()._resolve_stage_refs(

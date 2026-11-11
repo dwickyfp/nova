@@ -1,0 +1,38 @@
+{
+  "stage_id": "22b5c418-d4a2-4f63-add5-1004f66820a0",
+  "stage_name": "qa_folder_ui_4c4b817438",
+  "ui_upload": "PASS",
+  "checks": [
+    {
+      "id": "registration_identity_and_prefix_verified",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "no_root_file",
+      "pass": true
+    },
+    {
+      "id": "incoming/seed.csv",
+      "content_verified": true
+    },
+    {
+      "id": "incoming/nova-stage-upload.csv",
+      "content_verified": true
+    }
+  ],
+  "cleanup": [
+    {
+      "file": "incoming/seed.csv",
+      "pass": true
+    },
+    {
+      "file": "incoming/nova-stage-upload.csv",
+      "pass": true
+    },
+    {
+      "registration_removed": true,
+      "remaining_files": 0
+    }
+  ]
+}

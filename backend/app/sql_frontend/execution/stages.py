@@ -9,7 +9,7 @@ from typing import Any
 
 import asyncmy  # type: ignore[import-untyped]
 
-from app.core.config import get_storage_connection, to_docker_endpoint
+from app.core.config import require_storage_connection, to_docker_endpoint
 from app.core.database import db
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.dialect.parser import CommandType, ParsedSQL
@@ -24,7 +24,7 @@ class StageRuntime:
         self,
         *,
         access_check: Callable[..., Awaitable[Any]] = check_stage_access,
-        storage_connection: Callable[..., Any] = get_storage_connection,
+        storage_connection: Callable[..., Any] = require_storage_connection,
         credentials: Callable[..., tuple[str, str]] = resolve_storage_credentials,
     ) -> None:
         self._check_stage_access = access_check

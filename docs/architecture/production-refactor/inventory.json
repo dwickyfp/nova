@@ -1,6 +1,6 @@
 {
   "python_files": 695,
-  "application_tree_sha256": "6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54",
+  "application_tree_sha256": "7eb228332adf4d4c057078735decbc7709759b682bc4165ac3917468d80cf6c8",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -987,10 +987,10 @@
       "backend/app/modules/query/service.py:1194",
       "backend/app/modules/query/service.py:1293",
       "backend/app/modules/query/service.py:1332",
-      "backend/app/modules/stages/service.py:40",
-      "backend/app/modules/stages/service.py:51",
-      "backend/app/modules/stages/service.py:64",
-      "backend/app/modules/stages/service.py:84",
+      "backend/app/modules/stages/service.py:108",
+      "backend/app/modules/stages/service.py:49",
+      "backend/app/modules/stages/service.py:60",
+      "backend/app/modules/stages/service.py:88",
       "backend/app/sql_frontend/execution/stages.py:47",
       "docker/init-nova.sql:79"
     ],
@@ -16977,10 +16977,10 @@
       "function_candidate_tables": [
         "AUDIT_LOG"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "d682e740c56e71253419db16e72e99779efbe412049f39800316764f8f49f350",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query/service.py",
@@ -16999,10 +16999,10 @@
       "function_candidate_tables": [
         "AUDIT_LOG"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "2e8aa24981963bcf21898429e7ab87fc6f2167119540b3122dfccb0030bfc0ed",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query/service.py",
@@ -17021,10 +17021,10 @@
       "function_candidate_tables": [
         "AUDIT_LOG"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "70ab0a9bd171fe495351f8b8ced336898af16c0718f03320d1c565ce18406ae6",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query/service.py",
@@ -17043,10 +17043,10 @@
       "function_candidate_tables": [
         "CONFIG_USER_PREFERENCES"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "cf918c587759b36015f6e43a489966eb85a2ebdd85f2ef52a41466e3f49f1646",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query/service.py",
@@ -17065,10 +17065,10 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "566fcad54bc03c6cfca3fc2efe1b2a9e40fbcfd0c07e6aa53558b397ffe657e0",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query/service.py",
@@ -17087,10 +17087,10 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "b24c7d80deadf58e10379f35530437e3eb6d58dcf849ee8d5a89c0cee0409d87",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query/service.py",
@@ -17109,10 +17109,10 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "fedd9f6a97f17d9c49044604f2694ec289ac0d93d6c85f7eaec8c90aab3bbf67",
+      "source_file_sha256": "1ca1e78aa05374ad2ee3a4ca9166cb8bb01d442b17fab40333b746badab8a7a2",
       "callsite_sha256": "47ce44b5c1fd7df92e23bb1c1eddd824c4dc87aa5f14c5982112bd1781a6084b",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/query_autopilot/repository.py",
@@ -17302,9 +17302,9 @@
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 38,
+      "line": 47,
       "column": 19,
-      "end_line": 38,
+      "end_line": 47,
       "end_column": 35,
       "api": "system_conn",
       "dispatch": "direct",
@@ -17315,16 +17315,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "34d6aec0fbd4f5be4756a93b932f3e24876194bad3ede1b84f74b852e8007b41",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md"
+      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 39,
+      "line": 48,
       "column": 18,
-      "end_line": 43,
+      "end_line": 52,
       "end_column": 13,
       "api": "execute",
       "dispatch": "metadata_cursor_candidate",
@@ -17337,16 +17337,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "8081200ee5a370df8a8d2054b4cd6269e2a86a5b329ee12cff7a31cfa0f29ffe",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts."
+      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 49,
+      "line": 58,
       "column": 19,
-      "end_line": 49,
+      "end_line": 58,
       "end_column": 35,
       "api": "system_conn",
       "dispatch": "direct",
@@ -17357,16 +17357,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "34d6aec0fbd4f5be4756a93b932f3e24876194bad3ede1b84f74b852e8007b41",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md"
+      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 50,
+      "line": 59,
       "column": 18,
-      "end_line": 55,
+      "end_line": 64,
       "end_column": 13,
       "api": "execute",
       "dispatch": "metadata_cursor_candidate",
@@ -17379,16 +17379,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "6400102932e72f344ee8555006bea1203513acf8f2557dff4c346a4d5c2080cc",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts."
+      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 62,
+      "line": 86,
       "column": 19,
-      "end_line": 62,
+      "end_line": 86,
       "end_column": 35,
       "api": "system_conn",
       "dispatch": "direct",
@@ -17399,16 +17399,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "34d6aec0fbd4f5be4756a93b932f3e24876194bad3ede1b84f74b852e8007b41",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md"
+      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 63,
+      "line": 87,
       "column": 18,
-      "end_line": 77,
+      "end_line": 101,
       "end_column": 13,
       "api": "execute",
       "dispatch": "metadata_cursor_candidate",
@@ -17421,16 +17421,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
-      "callsite_sha256": "b62b0aef860ebb2a3a0ef569cc39a4639538c44d0c3b7d40656aa60885698d24",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
+      "callsite_sha256": "82d9671932fdf60a5f4939c9f72aafff904ec2a4e114e347f38c054565c6ad72",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts."
+      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts.; R36 re-reviewed: INSERT stores a server-generated unique prefix or an active-admin authorized prefix; same CONFIG_STAGES target"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 82,
+      "line": 106,
       "column": 19,
-      "end_line": 82,
+      "end_line": 106,
       "end_column": 35,
       "api": "system_conn",
       "dispatch": "direct",
@@ -17441,16 +17441,16 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "34d6aec0fbd4f5be4756a93b932f3e24876194bad3ede1b84f74b852e8007b41",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md"
+      "review_notes": "METADATA: inspected cursor block only CONFIG_STAGES; storage effects separate and governed; see WAVE_A_REVIEW.md; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/stages/service.py",
-      "line": 83,
+      "line": 107,
       "column": 18,
-      "end_line": 86,
+      "end_line": 110,
       "end_column": 13,
       "api": "execute",
       "dispatch": "metadata_cursor_candidate",
@@ -17463,10 +17463,10 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "6d65f785de1eed6f2453c75a37b711bf88b053fef14bb6ea96117ba34a86f9ff",
+      "source_file_sha256": "902b25ad3d02e496db83c4de7ca699aca93d972b13775e021bd2e255a9219e15",
       "callsite_sha256": "e0b0996aa289be498cba83f66ea3881d3a630c5a6c4e6a137475b602548fc869",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts."
+      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     },
     {
       "path": "backend/app/modules/streams/claims.py",
@@ -21091,10 +21091,10 @@
       "function_candidate_tables": [
         "CONFIG_STAGES"
       ],
-      "source_file_sha256": "07f19c82d563335038a6ad4ffba616f9ffdac6a0503df4a6a211488887b4093f",
+      "source_file_sha256": "5d941a173faf7dd3e503b6974339bf8c30182118aa7005f9240cf22839681cb9",
       "callsite_sha256": "1edbdbc26539853f7a9e6183e192e7cefd85087459335d79e64cf2a6e8a9bf58",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats.; R36 re-reviewed: same metadata SQL/dispatch; strict named-storage registration and credential resolution; see STAGE_REGISTRATION_BOUNDARY.md"
     }
   ],
   "auxiliary_sources": {
@@ -22207,14 +22207,14 @@
           "backend/scripts/profile_metadata_constraints.py:101",
           "backend/scripts/profile_metadata_constraints.py:96"
         ],
-        "CONFIG_AI_PROVIDERS": [
-          "backend/scripts/profile_metadata_constraints.py:104",
-          "backend/scripts/profile_metadata_constraints.py:109"
-        ],
         "CONFIG_AI_MODELS": [
           "backend/scripts/profile_metadata_constraints.py:104",
           "backend/scripts/profile_metadata_constraints.py:114",
           "backend/scripts/profile_metadata_constraints.py:119"
+        ],
+        "CONFIG_AI_PROVIDERS": [
+          "backend/scripts/profile_metadata_constraints.py:104",
+          "backend/scripts/profile_metadata_constraints.py:109"
         ],
         "CONFIG_MODEL_ALIASES": [
           "backend/scripts/profile_metadata_constraints.py:109",
@@ -22260,33 +22260,33 @@
           "backend/scripts/profile_metadata_constraints.py:180",
           "backend/scripts/profile_metadata_constraints.py:186"
         ],
+        "CONFIG_FEATURE_VIEWS": [
+          "backend/scripts/profile_metadata_constraints.py:191"
+        ],
         "CONFIG_FEATURE_VIEW_VERSIONS": [
           "backend/scripts/profile_metadata_constraints.py:191"
         ],
-        "CONFIG_FEATURE_VIEWS": [
-          "backend/scripts/profile_metadata_constraints.py:191"
+        "CONFIG_FEATURE_GROUP_VERSIONS": [
+          "backend/scripts/profile_metadata_constraints.py:197"
         ],
         "CONFIG_FEATURE_GROUPS": [
           "backend/scripts/profile_metadata_constraints.py:197"
         ],
-        "CONFIG_FEATURE_GROUP_VERSIONS": [
-          "backend/scripts/profile_metadata_constraints.py:197"
+        "CONFIG_TASK_GRAPH_RUNS": [
+          "backend/scripts/profile_metadata_constraints.py:203"
         ],
         "CONFIG_TASK_RUNS": [
           "backend/scripts/profile_metadata_constraints.py:203",
           "backend/scripts/profile_metadata_constraints.py:208"
         ],
-        "CONFIG_TASK_GRAPH_RUNS": [
-          "backend/scripts/profile_metadata_constraints.py:203"
-        ],
         "CONFIG_TASKS": [
           "backend/scripts/profile_metadata_constraints.py:214"
         ],
-        "CONFIG_NOTEBOOK_RUNTIMES": [
+        "CONFIG_NOTEBOOK_EXECUTIONS": [
           "backend/scripts/profile_metadata_constraints.py:220",
           "backend/scripts/profile_metadata_constraints.py:225"
         ],
-        "CONFIG_NOTEBOOK_EXECUTIONS": [
+        "CONFIG_NOTEBOOK_RUNTIMES": [
           "backend/scripts/profile_metadata_constraints.py:220",
           "backend/scripts/profile_metadata_constraints.py:225"
         ],
@@ -22453,10 +22453,10 @@
     },
     "backend/scripts/seed_city_rbac_demo.py": {
       "references": {
-        "CONFIG_AI_PROVIDERS": [
+        "CONFIG_AI_MODELS": [
           "backend/scripts/seed_city_rbac_demo.py:141"
         ],
-        "CONFIG_AI_MODELS": [
+        "CONFIG_AI_PROVIDERS": [
           "backend/scripts/seed_city_rbac_demo.py:141"
         ]
       },
@@ -22742,10 +22742,10 @@
     },
     "backend/scripts/smoke_auto_two_agents.py": {
       "references": {
-        "CONFIG_AI_PROVIDERS": [
+        "CONFIG_AI_MODELS": [
           "backend/scripts/smoke_auto_two_agents.py:44"
         ],
-        "CONFIG_AI_MODELS": [
+        "CONFIG_AI_PROVIDERS": [
           "backend/scripts/smoke_auto_two_agents.py:44"
         ],
         "CONFIG_AGENT_RUNS": [
@@ -25402,7 +25402,7 @@
           "statement_kind": "DYNAMIC",
           "literal_tables": [],
           "function_candidate_tables": [],
-          "source_file_sha256": "40d25b9c3d7b23bd44922ef97d3710b6f8bd87eaca5b652c89d68f209ea270da",
+          "source_file_sha256": "567533e91b703e8f06eb3c12fde5fb38aa2b92f82940da01fab020dcdd3f0d46",
           "callsite_sha256": "cde79d23a27c04faffa16c4a405a135445c5ce96bca9629d99ccf65ff7787bc3",
           "review_status": "REQUIRES_CLASSIFICATION",
           "review_notes": ""
@@ -32458,10 +32458,10 @@
         "CONFIG_DATAVIZ_PUBLICATIONS": [
           "backend/tests/unit/test_control_plane_inventory.py:99"
         ],
-        "NOT_A_TABLE": [
+        "EVERY": [
           "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
-        "EVERY": [
+        "NOT_A_TABLE": [
           "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
         "CONFIG_STREAM_SOURCES": [
@@ -33035,7 +33035,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "67665b012331be63ca1bfd64b3d2c89989f6949d + uncommitted retired Agent history",
+  "source_commit": "b4389d1d57ff202a01853722323badc3e2edb015 + uncommitted Stage and AI configuration corrections",
   "ui_routes": [
     {
       "path": "/(auth)/sign-in",

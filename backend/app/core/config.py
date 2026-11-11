@@ -613,3 +613,11 @@ def get_storage_connection(name: str | None) -> StorageConnectionConfig:
     if name is not None and name in config.storage_connections:
         return config.storage_connections[name]
     return next(iter(config.storage_connections.values()))
+
+
+def require_storage_connection(name: str) -> StorageConnectionConfig:
+    """Resolve an explicit registration without borrowing the default credentials."""
+    connection = load_nova_app_config().storage_connections.get(name)
+    if connection is None:
+        raise ValueError("Storage connection is not configured")
+    return connection

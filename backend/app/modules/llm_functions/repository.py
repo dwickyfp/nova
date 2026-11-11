@@ -8,8 +8,8 @@ from typing import Any
 import psycopg
 from psycopg.pq import TransactionStatus
 
-from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
-from app.modules.ai_ml.repository import _parameters, _revision, _text
+from app.core.metadata_db import MetadataConflict
+from app.modules.ai_ml.repository import _parameters, _revision, _text, lock_ai_configuration
 from app.modules.llm_functions.schemas import VALID_FUNCTION_TYPES
 
 
@@ -109,17 +109,7 @@ class ModelAliasRepository:
 
     async def lock_mutations(self) -> None:
         self._require_transaction()
-        cursor = await self._connection.execute(
-            "SELECT current_user='nova_meta_web' AND nova_meta.actor_is_administrator() AS allowed"
-        )
-        row = await cursor.fetchone()
-        if not row or not row["allowed"]:
-            raise MetadataPermissionDenied()
-        # These low-volume configuration writes can move defaults between types
-        # and providers. One transaction lock gives them a consistent lock order.
-        await self._connection.execute(
-            "SELECT pg_advisory_xact_lock(%s,%s)", (0x4E4F5641, 0x414C4941)
-        )
+        await lock_ai_configuration(self._connection)
 
     async def _lock_definition(self, definition: AliasDefinition) -> None:
         cursor = await self._connection.execute(

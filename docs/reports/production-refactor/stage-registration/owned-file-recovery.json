@@ -1,0 +1,16 @@
+[
+  {
+    "fixture": 0,
+    "verified_content_sha256": "f9d41e9e88ad73e988bfa0a1b250093d6725d103e81cb0c2c2a7a7655c70c237",
+    "was_present": true,
+    "final_objects": 0,
+    "registration_removed": true
+  },
+  {
+    "fixture": 1,
+    "verified_content_sha256": "31e26370225c0855b0966f4eb7b0820feaa07d086f131723c6362801ec880413",
+    "was_present": true,
+    "final_objects": 0,
+    "registration_removed": true
+  }
+]

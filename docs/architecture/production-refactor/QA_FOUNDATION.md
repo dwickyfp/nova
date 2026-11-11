@@ -751,3 +751,51 @@ does not establish ownership of a caller-selected storage prefix. Disposable
 proof and remediation remain open. Historical provenance/import, remaining
 domains, production runtime, backup/recovery, cutover and full feature acceptance
 are still incomplete; this checkpoint does not close those gates.
+
+
+## Stage boundary and AI configuration checkpoint
+
+R36 is now reproduced and corrected for new registrations. Ordinary Stage
+creation allocates an independent UUID folder; custom locations require active
+ACCOUNTADMIN, and missing connection names cannot borrow the default. The
+Stage Manager clears role-bound state on security-epoch changes. Its multipart
+upload now honors the selected subfolder. Existing registrations and files keep
+their identity and location; historical provenance and the PG Stage port remain
+open.
+
+The [evidence packet](../../reports/production-refactor/stage-registration/README.md)
+retains the failing cross-scope probe, a resource-pressure timeout and owned-file
+recovery, the ignored-folder reproduction, UI automation limitations, and final
+live checks. Fifteen Stage/SQL cases and seven folder cases pass. Mobile file
+browsing, keyboard download/copy and the copied SQL reference are verified with
+synthetic fixtures; all owned registrations/files are cleaned up.
+
+The first combined PG run found R37: registry deletion could lock a provider
+before the configuration lock while alias creation acquired them in reverse.
+Every repository mutation now takes the shared configuration lock first. The
+new deterministic regression waits for deletion behind that lock, creates the
+alias and verifies that deletion is refused without losing the provider. The
+initial 408-pass/one-deadlock result is retained; no assertion or conflict
+classification was weakened.
+
+Final local checks pass 10,800 unit tests (four warnings), 410 PG17/PgBouncer
+cases without skips, 1,605 frontend tests across 194 files, full-application
+mypy, changed-file Ruff on 91 Python files, the data-access boundary scan and
+54 agent scenarios / 189 checks. Frontend lint has zero errors and 32 existing
+warnings; the build passes. The 21-line PG log scan contains no credential
+marker or encrypted envelope, and fixture cleanup leaves zero schemas/roles.
+All eleven migration checksums are unchanged. The final application tree is
+`7eb228332adf4d4c057078735decbc7709759b682bc4165ac3917468d80cf6c8`.
+
+The inventory preserves 875 call classifications, 759 feature rows and earlier
+live/API observations. Sixteen changed source/table bindings were reviewed
+again. CI for the parent remains queued without jobs and its cancel/rerun APIs
+return inconsistent state. The earlier audit run completed with a failed
+artifact upload; its recovered engine log records 217 passes and 24 skips.
+Neither run is a complete CI pass for this checkpoint.
+
+This is not a PG authority switch or release acceptance. Remaining domain
+ports, source/import provenance, durable consent and external participants,
+production processes/Compose, recovery/rehearsals/cutover and full feature/live
+AI acceptance remain open. No live provider call was made in this phase;
+the embedding and large-load/soak owner waivers are unchanged.
