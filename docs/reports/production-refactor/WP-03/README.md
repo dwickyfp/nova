@@ -189,3 +189,53 @@ successful: 179 PG cases without skips, 1,601 frontend cases, and 217 engine
 passes with 24 unchanged skips (no failures/errors, 1,454.999 seconds).
 This supersedes the preceding pending status for jobs/scheduler storage. It
 does not validate revision 0007 or turn skipped release cases into passes.
+
+CI 43072322386 subsequently completed for `4d805c29` with all eight jobs
+successful: 219 PostgreSQL cases without skips, 1,601 frontend cases, and
+217 engine passes with 24 unchanged skips (no failures/errors, 1,474.771
+seconds). This resolves the pending CI status for revision 0007. The engine
+fixture remains the ordinary test engine; the skips and patched-FE acceptance
+remain unproven. It does not certify the newer atomic configuration/logging edits.
+
+## Atomic AI configuration and database log boundaries
+
+Revision 0008 stores immutable function definitions, current heads, durable
+registration jobs and outbox notifications in the same transaction as selected
+provider/model/alias changes. Database guards reject missing or forged intent,
+wrong job/actor bindings, duplicate independent registration and history edits.
+The [contract](../../../architecture/production-refactor/PG_AI_CONFIGURATION.md)
+keeps metadata commit distinct from native function installation. Native
+participants, audit integration, caller ports and cutover remain open.
+
+The combined PG17/PgBouncer run passes 285 cases without skips in 186.24 seconds,
+including 43 new configuration cases and 47 identity-provisioning cases.
+[ai-configuration-commands.json](ai-configuration-commands.json) records all nine
+attempts. Earlier failures cover an UPSERT head guard, a fixture column grant,
+a quoted test setting and the migrator fixture's missing logging defaults.
+Assertions and runtime admission were retained while fixing those failures.
+
+A broader scan found the synthetic invalid-integer canary in PostgreSQL's
+primary error text. Earlier provider-only scans had missed that marker.
+[The failed scan](ai-configuration-log-scan-attempt-1.json) remains in the record.
+The fixed per-login policy suppresses raw SQL diagnostics, while Nova records
+only fixed categories and validated SQLSTATE. Readiness and every unit of work
+refuse policy drift; all 15 logins are tested. The final suite's six new server
+log lines contain no credential marker or encrypted envelope. Raw logs are
+not exported or purged. CI now has a credential-marker gate with 11 scanner
+regressions, including primary-error, parameter-key and header markers.
+
+Cleanup leaves no fixture schema or test roles. The real inventory refresh
+preserves all 875 reviews, all 759 feature rows and previous live/API observations.
+All 15 PG tables have ownership entries. There were no live provider calls or
+engine mutations in this configuration test phase; live embedding QA remains
+owner-waived. Production runtime wiring and the wider canary matrix remain open.
+
+The final application tree
+`4b9b8f0f39c61cd17d13668144457d235698c0758706341feaebe6b852e9d42c`
+passes 10,741 backend unit cases (four warnings, 447.46 seconds, 65% combined
+coverage), full-application mypy, Ruff on 76 changed Python files and all
+54 agent scenarios / 189 checks. The obsolete unit attempt was interrupted
+after 8,558 passes when scanner coverage expanded; it is not counted as a
+completed gate. Current CI is pending. The preceding alias commit has passed
+all eight CI jobs, including 219 PG cases, 1,601 frontend cases and 217 engine
+cases; its 24 skipped cases remain unproven.

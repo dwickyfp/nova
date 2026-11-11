@@ -1,6 +1,6 @@
 {
-  "python_files": 690,
-  "application_tree_sha256": "c6fd3534748cf447b1daf3d07e8762af228b39408f4d4d322aa2b8511388ebd8",
+  "python_files": 693,
+  "application_tree_sha256": "4b9b8f0f39c61cd17d13668144457d235698c0758706341feaebe6b852e9d42c",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -22186,15 +22186,15 @@
           "backend/scripts/profile_metadata_constraints.py:47",
           "backend/scripts/profile_metadata_constraints.py:71"
         ],
-        "CONFIG_WORKSPACE_SHARES": [
-          "backend/scripts/profile_metadata_constraints.py:50",
-          "backend/scripts/profile_metadata_constraints.py:55"
-        ],
         "CONFIG_WORKSPACES": [
           "backend/scripts/profile_metadata_constraints.py:50",
           "backend/scripts/profile_metadata_constraints.py:59",
           "backend/scripts/profile_metadata_constraints.py:74",
           "backend/scripts/profile_metadata_constraints.py:80"
+        ],
+        "CONFIG_WORKSPACE_SHARES": [
+          "backend/scripts/profile_metadata_constraints.py:50",
+          "backend/scripts/profile_metadata_constraints.py:55"
         ],
         "CONFIG_USER_PREFERENCES": [
           "backend/scripts/profile_metadata_constraints.py:83",
@@ -22223,20 +22223,20 @@
           "backend/scripts/profile_metadata_constraints.py:124",
           "backend/scripts/profile_metadata_constraints.py:131"
         ],
+        "CONFIG_ASSISTANT_THREADS": [
+          "backend/scripts/profile_metadata_constraints.py:137",
+          "backend/scripts/profile_metadata_constraints.py:142"
+        ],
         "CONFIG_ASSISTANT_MESSAGES": [
           "backend/scripts/profile_metadata_constraints.py:137",
           "backend/scripts/profile_metadata_constraints.py:142",
           "backend/scripts/profile_metadata_constraints.py:147"
         ],
-        "CONFIG_ASSISTANT_THREADS": [
-          "backend/scripts/profile_metadata_constraints.py:137",
-          "backend/scripts/profile_metadata_constraints.py:142"
-        ],
-        "CONFIG_AGENT_RUN_EVENTS": [
+        "CONFIG_AGENT_RUNS": [
           "backend/scripts/profile_metadata_constraints.py:153",
           "backend/scripts/profile_metadata_constraints.py:158"
         ],
-        "CONFIG_AGENT_RUNS": [
+        "CONFIG_AGENT_RUN_EVENTS": [
           "backend/scripts/profile_metadata_constraints.py:153",
           "backend/scripts/profile_metadata_constraints.py:158"
         ],
@@ -22272,12 +22272,12 @@
         "CONFIG_FEATURE_GROUP_VERSIONS": [
           "backend/scripts/profile_metadata_constraints.py:197"
         ],
+        "CONFIG_TASK_GRAPH_RUNS": [
+          "backend/scripts/profile_metadata_constraints.py:203"
+        ],
         "CONFIG_TASK_RUNS": [
           "backend/scripts/profile_metadata_constraints.py:203",
           "backend/scripts/profile_metadata_constraints.py:208"
-        ],
-        "CONFIG_TASK_GRAPH_RUNS": [
-          "backend/scripts/profile_metadata_constraints.py:203"
         ],
         "CONFIG_TASKS": [
           "backend/scripts/profile_metadata_constraints.py:214"
@@ -32458,16 +32458,16 @@
         "CONFIG_DATAVIZ_PUBLICATIONS": [
           "backend/tests/unit/test_control_plane_inventory.py:99"
         ],
-        "NOT_A_TABLE": [
-          "backend/tests/unit/test_control_plane_inventory.py:84"
-        ],
         "EVERY": [
           "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
-        "AUDIT_STREAM_CLAIMS": [
-          "backend/tests/unit/test_control_plane_inventory.py:172"
+        "NOT_A_TABLE": [
+          "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
         "CONFIG_STREAM_SOURCES": [
+          "backend/tests/unit/test_control_plane_inventory.py:172"
+        ],
+        "AUDIT_STREAM_CLAIMS": [
           "backend/tests/unit/test_control_plane_inventory.py:172"
         ],
         "AUDIT_LOG": [
@@ -33035,7 +33035,229 @@
       "system_calls": []
     }
   },
-  "source_commit": "6714dc5eb73b20a5080b9f0e68a2523e0bb3a62d + uncommitted alias storage and inventory review fix",
+  "source_commit": "4d805c2977bc1497fe1c2f4d898a0e9d03be19bf + uncommitted atomic AI configuration and private PG logging",
+  "ui_routes": [
+    {
+      "path": "/(auth)/sign-in",
+      "source": "frontend/src/routes/(auth)/sign-in.tsx"
+    },
+    {
+      "path": "/_authenticated/access-control",
+      "source": "frontend/src/routes/_authenticated/access-control.tsx"
+    },
+    {
+      "path": "/_authenticated/active-query",
+      "source": "frontend/src/routes/_authenticated/active-query.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/$agentId",
+      "source": "frontend/src/routes/_authenticated/agents/$agentId.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/",
+      "source": "frontend/src/routes/_authenticated/agents/index.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/semantic/builder",
+      "source": "frontend/src/routes/_authenticated/agents/semantic/builder.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/semantic/",
+      "source": "frontend/src/routes/_authenticated/agents/semantic/index.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/skills",
+      "source": "frontend/src/routes/_authenticated/agents/skills.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/studio",
+      "source": "frontend/src/routes/_authenticated/agents/studio.tsx"
+    },
+    {
+      "path": "/_authenticated/agents/tools",
+      "source": "frontend/src/routes/_authenticated/agents/tools.tsx"
+    },
+    {
+      "path": "/_authenticated/ai-providers/",
+      "source": "frontend/src/routes/_authenticated/ai-providers/index.tsx"
+    },
+    {
+      "path": "/_authenticated/ai-search",
+      "source": "frontend/src/routes/_authenticated/ai-search.tsx"
+    },
+    {
+      "path": "/_authenticated/analytics",
+      "source": "frontend/src/routes/_authenticated/analytics.tsx"
+    },
+    {
+      "path": "/_authenticated/business-ontology",
+      "source": "frontend/src/routes/_authenticated/business-ontology.tsx"
+    },
+    {
+      "path": "/_authenticated/connections/",
+      "source": "frontend/src/routes/_authenticated/connections/index.tsx"
+    },
+    {
+      "path": "/_authenticated/database-explorer",
+      "source": "frontend/src/routes/_authenticated/database-explorer.tsx"
+    },
+    {
+      "path": "/_authenticated/entities",
+      "source": "frontend/src/routes/_authenticated/entities.tsx"
+    },
+    {
+      "path": "/_authenticated/external-catalogs/",
+      "source": "frontend/src/routes/_authenticated/external-catalogs/index.tsx"
+    },
+    {
+      "path": "/_authenticated/feature-store",
+      "source": "frontend/src/routes/_authenticated/feature-store.tsx"
+    },
+    {
+      "path": "/_authenticated/functions/",
+      "source": "frontend/src/routes/_authenticated/functions/index.tsx"
+    },
+    {
+      "path": "/_authenticated/",
+      "source": "frontend/src/routes/_authenticated/index.tsx"
+    },
+    {
+      "path": "/_authenticated/migration",
+      "source": "frontend/src/routes/_authenticated/migration.tsx"
+    },
+    {
+      "path": "/_authenticated/ml-models/",
+      "source": "frontend/src/routes/_authenticated/ml-models/index.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/active",
+      "source": "frontend/src/routes/_authenticated/monitoring/active.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/ai",
+      "source": "frontend/src/routes/_authenticated/monitoring/ai.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/audit",
+      "source": "frontend/src/routes/_authenticated/monitoring/audit.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/autopilot",
+      "source": "frontend/src/routes/_authenticated/monitoring/autopilot.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/cluster",
+      "source": "frontend/src/routes/_authenticated/monitoring/cluster.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/health",
+      "source": "frontend/src/routes/_authenticated/monitoring/health.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/",
+      "source": "frontend/src/routes/_authenticated/monitoring/index.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/loads",
+      "source": "frontend/src/routes/_authenticated/monitoring/loads.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/queries",
+      "source": "frontend/src/routes/_authenticated/monitoring/queries.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring",
+      "source": "frontend/src/routes/_authenticated/monitoring/route.tsx"
+    },
+    {
+      "path": "/_authenticated/monitoring/tasks",
+      "source": "frontend/src/routes/_authenticated/monitoring/tasks.tsx"
+    },
+    {
+      "path": "/_authenticated/query-cost",
+      "source": "frontend/src/routes/_authenticated/query-cost.tsx"
+    },
+    {
+      "path": "/_authenticated/query-history",
+      "source": "frontend/src/routes/_authenticated/query-history.tsx"
+    },
+    {
+      "path": "/_authenticated/roles/$name",
+      "source": "frontend/src/routes/_authenticated/roles/$name.tsx"
+    },
+    {
+      "path": "/_authenticated/roles/",
+      "source": "frontend/src/routes/_authenticated/roles/index.tsx"
+    },
+    {
+      "path": "/_authenticated",
+      "source": "frontend/src/routes/_authenticated/route.tsx"
+    },
+    {
+      "path": "/_authenticated/semantic-views",
+      "source": "frontend/src/routes/_authenticated/semantic-views.tsx"
+    },
+    {
+      "path": "/_authenticated/semantic-views_/$viewId",
+      "source": "frontend/src/routes/_authenticated/semantic-views_.$viewId.tsx"
+    },
+    {
+      "path": "/_authenticated/semantic-views_/builder",
+      "source": "frontend/src/routes/_authenticated/semantic-views_.builder.tsx"
+    },
+    {
+      "path": "/_authenticated/settings/",
+      "source": "frontend/src/routes/_authenticated/settings/index.tsx"
+    },
+    {
+      "path": "/_authenticated/settings/profile",
+      "source": "frontend/src/routes/_authenticated/settings/profile.tsx"
+    },
+    {
+      "path": "/_authenticated/stages/",
+      "source": "frontend/src/routes/_authenticated/stages/index.tsx"
+    },
+    {
+      "path": "/_authenticated/tasks/$graphId",
+      "source": "frontend/src/routes/_authenticated/tasks/$graphId.tsx"
+    },
+    {
+      "path": "/_authenticated/tasks/",
+      "source": "frontend/src/routes/_authenticated/tasks/index.tsx"
+    },
+    {
+      "path": "/_authenticated/users/$username",
+      "source": "frontend/src/routes/_authenticated/users/$username.tsx"
+    },
+    {
+      "path": "/_authenticated/users/",
+      "source": "frontend/src/routes/_authenticated/users/index.tsx"
+    },
+    {
+      "path": "/_authenticated/workspaces/",
+      "source": "frontend/src/routes/_authenticated/workspaces/index.tsx"
+    },
+    {
+      "path": "/bi-launch",
+      "source": "frontend/src/routes/bi-launch.tsx"
+    },
+    {
+      "path": "/docs/$section/$slug",
+      "source": "frontend/src/routes/docs/$section/$slug.tsx"
+    },
+    {
+      "path": "/docs/",
+      "source": "frontend/src/routes/docs/index.tsx"
+    },
+    {
+      "path": "/docs",
+      "source": "frontend/src/routes/docs.tsx"
+    },
+    {
+      "path": "/studio",
+      "source": "frontend/src/routes/studio.tsx"
+    }
+  ],
   "live": {
     "started_at": "2026-11-11T10:29:57.678477+00:00",
     "finished_at": "2026-11-11T10:30:00.644282+00:00",
@@ -44195,228 +44417,6 @@
       }
     }
   },
-  "ui_routes": [
-    {
-      "path": "/(auth)/sign-in",
-      "source": "frontend/src/routes/(auth)/sign-in.tsx"
-    },
-    {
-      "path": "/_authenticated/access-control",
-      "source": "frontend/src/routes/_authenticated/access-control.tsx"
-    },
-    {
-      "path": "/_authenticated/active-query",
-      "source": "frontend/src/routes/_authenticated/active-query.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/$agentId",
-      "source": "frontend/src/routes/_authenticated/agents/$agentId.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/",
-      "source": "frontend/src/routes/_authenticated/agents/index.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/semantic/builder",
-      "source": "frontend/src/routes/_authenticated/agents/semantic/builder.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/semantic/",
-      "source": "frontend/src/routes/_authenticated/agents/semantic/index.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/skills",
-      "source": "frontend/src/routes/_authenticated/agents/skills.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/studio",
-      "source": "frontend/src/routes/_authenticated/agents/studio.tsx"
-    },
-    {
-      "path": "/_authenticated/agents/tools",
-      "source": "frontend/src/routes/_authenticated/agents/tools.tsx"
-    },
-    {
-      "path": "/_authenticated/ai-providers/",
-      "source": "frontend/src/routes/_authenticated/ai-providers/index.tsx"
-    },
-    {
-      "path": "/_authenticated/ai-search",
-      "source": "frontend/src/routes/_authenticated/ai-search.tsx"
-    },
-    {
-      "path": "/_authenticated/analytics",
-      "source": "frontend/src/routes/_authenticated/analytics.tsx"
-    },
-    {
-      "path": "/_authenticated/business-ontology",
-      "source": "frontend/src/routes/_authenticated/business-ontology.tsx"
-    },
-    {
-      "path": "/_authenticated/connections/",
-      "source": "frontend/src/routes/_authenticated/connections/index.tsx"
-    },
-    {
-      "path": "/_authenticated/database-explorer",
-      "source": "frontend/src/routes/_authenticated/database-explorer.tsx"
-    },
-    {
-      "path": "/_authenticated/entities",
-      "source": "frontend/src/routes/_authenticated/entities.tsx"
-    },
-    {
-      "path": "/_authenticated/external-catalogs/",
-      "source": "frontend/src/routes/_authenticated/external-catalogs/index.tsx"
-    },
-    {
-      "path": "/_authenticated/feature-store",
-      "source": "frontend/src/routes/_authenticated/feature-store.tsx"
-    },
-    {
-      "path": "/_authenticated/functions/",
-      "source": "frontend/src/routes/_authenticated/functions/index.tsx"
-    },
-    {
-      "path": "/_authenticated/",
-      "source": "frontend/src/routes/_authenticated/index.tsx"
-    },
-    {
-      "path": "/_authenticated/migration",
-      "source": "frontend/src/routes/_authenticated/migration.tsx"
-    },
-    {
-      "path": "/_authenticated/ml-models/",
-      "source": "frontend/src/routes/_authenticated/ml-models/index.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/active",
-      "source": "frontend/src/routes/_authenticated/monitoring/active.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/ai",
-      "source": "frontend/src/routes/_authenticated/monitoring/ai.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/audit",
-      "source": "frontend/src/routes/_authenticated/monitoring/audit.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/autopilot",
-      "source": "frontend/src/routes/_authenticated/monitoring/autopilot.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/cluster",
-      "source": "frontend/src/routes/_authenticated/monitoring/cluster.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/health",
-      "source": "frontend/src/routes/_authenticated/monitoring/health.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/",
-      "source": "frontend/src/routes/_authenticated/monitoring/index.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/loads",
-      "source": "frontend/src/routes/_authenticated/monitoring/loads.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/queries",
-      "source": "frontend/src/routes/_authenticated/monitoring/queries.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring",
-      "source": "frontend/src/routes/_authenticated/monitoring/route.tsx"
-    },
-    {
-      "path": "/_authenticated/monitoring/tasks",
-      "source": "frontend/src/routes/_authenticated/monitoring/tasks.tsx"
-    },
-    {
-      "path": "/_authenticated/query-cost",
-      "source": "frontend/src/routes/_authenticated/query-cost.tsx"
-    },
-    {
-      "path": "/_authenticated/query-history",
-      "source": "frontend/src/routes/_authenticated/query-history.tsx"
-    },
-    {
-      "path": "/_authenticated/roles/$name",
-      "source": "frontend/src/routes/_authenticated/roles/$name.tsx"
-    },
-    {
-      "path": "/_authenticated/roles/",
-      "source": "frontend/src/routes/_authenticated/roles/index.tsx"
-    },
-    {
-      "path": "/_authenticated",
-      "source": "frontend/src/routes/_authenticated/route.tsx"
-    },
-    {
-      "path": "/_authenticated/semantic-views",
-      "source": "frontend/src/routes/_authenticated/semantic-views.tsx"
-    },
-    {
-      "path": "/_authenticated/semantic-views_/$viewId",
-      "source": "frontend/src/routes/_authenticated/semantic-views_.$viewId.tsx"
-    },
-    {
-      "path": "/_authenticated/semantic-views_/builder",
-      "source": "frontend/src/routes/_authenticated/semantic-views_.builder.tsx"
-    },
-    {
-      "path": "/_authenticated/settings/",
-      "source": "frontend/src/routes/_authenticated/settings/index.tsx"
-    },
-    {
-      "path": "/_authenticated/settings/profile",
-      "source": "frontend/src/routes/_authenticated/settings/profile.tsx"
-    },
-    {
-      "path": "/_authenticated/stages/",
-      "source": "frontend/src/routes/_authenticated/stages/index.tsx"
-    },
-    {
-      "path": "/_authenticated/tasks/$graphId",
-      "source": "frontend/src/routes/_authenticated/tasks/$graphId.tsx"
-    },
-    {
-      "path": "/_authenticated/tasks/",
-      "source": "frontend/src/routes/_authenticated/tasks/index.tsx"
-    },
-    {
-      "path": "/_authenticated/users/$username",
-      "source": "frontend/src/routes/_authenticated/users/$username.tsx"
-    },
-    {
-      "path": "/_authenticated/users/",
-      "source": "frontend/src/routes/_authenticated/users/index.tsx"
-    },
-    {
-      "path": "/_authenticated/workspaces/",
-      "source": "frontend/src/routes/_authenticated/workspaces/index.tsx"
-    },
-    {
-      "path": "/bi-launch",
-      "source": "frontend/src/routes/bi-launch.tsx"
-    },
-    {
-      "path": "/docs/$section/$slug",
-      "source": "frontend/src/routes/docs/$section/$slug.tsx"
-    },
-    {
-      "path": "/docs/",
-      "source": "frontend/src/routes/docs/index.tsx"
-    },
-    {
-      "path": "/docs",
-      "source": "frontend/src/routes/docs.tsx"
-    },
-    {
-      "path": "/studio",
-      "source": "frontend/src/routes/studio.tsx"
-    }
-  ],
   "api_operations": [
     {
       "method": "POST",
@@ -48132,6 +48132,5 @@
       "operation_id": "ready_ready_get",
       "summary": "Ready"
     }
-  ],
-  "static_reviewed_at_utc": "2026-11-11T17:47:39.089910+00:00"
+  ]
 }

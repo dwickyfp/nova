@@ -60,9 +60,10 @@ replace the owner's waived live embedding tests.
 
 ## Required before runtime adoption
 
-The AI service must atomically persist immutable function definitions, jobs,
-outbox notifications and audit records with these mutations. Provider/model
-changes must include every affected alias. Native UDF installation still needs
+The prepared [AI configuration service](PG_AI_CONFIGURATION.md) now commits
+immutable function definitions, jobs and outbox notifications with these
+mutations. Deferred constraints reject runtime writes that omit their intent.
+Atomic audit and live caller integration remain open. Native UDF installation still needs
 a participant-specific intent and receipt verifier; a lost lease alone never
 authorizes another DROP/CREATE. Gateway cache partitioning, revocation, the
 unsupported `embed` registration contract (R33), expected revisions in APIs/UI,

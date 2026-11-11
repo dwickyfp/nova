@@ -1,0 +1,14 @@
+{
+  "container": "docker-nova-metadata-db-1",
+  "window": "35m",
+  "lines": 1901,
+  "encrypted_marker_hits": 0,
+  "canary_categories": {
+    "registry": 0,
+    "import": 0,
+    "parameter": 0,
+    "header": 0,
+    "invalid_parameter": 3
+  },
+  "raw_log_exported": false
+}

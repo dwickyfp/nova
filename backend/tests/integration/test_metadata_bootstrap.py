@@ -32,6 +32,7 @@ from app.core.metadata_db import (
     MetadataPoolConfig,
     MetadataSchemaMismatch,
 )
+from app.core.metadata_logging import logging_is_private
 from app.core.metadata_migrations import migrate
 
 pytestmark = pytest.mark.metadata_pg
@@ -195,6 +196,22 @@ async def test_workload_reads_deployment_state_but_cannot_change_authority(envir
                 await app.execute(statement)
 
 
+@pytest.mark.parametrize("role", LOGIN_ROLES)
+async def test_metadata_logins_cannot_enable_statement_or_error_value_logging(environment, role):
+    await environment.bootstrap()
+    async with await psycopg.AsyncConnection.connect(
+        environment.role_config(role).dsn, autocommit=True, row_factory=dict_row,
+    ) as app:
+        assert await logging_is_private(app)
+        for statement in (
+            "SET log_min_messages = 'error'", "SET log_statement = 'all'",
+            "SET log_min_duration_statement = 0", "SET log_error_verbosity = 'verbose'",
+        ):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                await app.execute(statement)
+        assert await logging_is_private(app)
+
+
 async def test_concurrent_bootstrap_has_one_creator(environment):
     results = await asyncio.gather(environment.bootstrap(), environment.bootstrap())
     assert sorted(result.created for result in results) == [False, True]
@@ -288,6 +305,10 @@ async def test_wrong_replay_password_is_refused_without_rotation(environment):
     "GRANT USAGE ON SCHEMA public TO PUBLIC",
     "ALTER ROLE nova_meta_web SET statement_timeout=0",
     "ALTER ROLE nova_meta_web IN DATABASE nova_control SET search_path=public",
+    "ALTER ROLE nova_meta_web RESET log_min_messages",
+    "ALTER ROLE nova_meta_web SET log_min_messages=error",
+    "ALTER ROLE nova_meta_web SET log_statement='all'",
+    "GRANT SET ON PARAMETER log_min_messages TO nova_meta_web",
 ])
 async def test_privilege_drift_is_refused_without_silently_repairing(environment, drift):
     await environment.bootstrap()

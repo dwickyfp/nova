@@ -60,14 +60,16 @@ adopted. A partial role set is refused rather than filled in around unknown stat
 
 Passwords are converted to SCRAM verifiers through
 [libpq's password API exposed by psycopg](https://www.psycopg.org/psycopg3/docs/api/pq.html#psycopg.pq.PGconn.encrypt_password).
-Plaintext is not placed in DDL. Statement, error-statement and duration/sample
-statement logging are suppressed inside this privileged setup transaction so
-verifiers are not logged either. This is scoped to provisioning, not a global
-change to runtime audit logging.
+Plaintext is not placed in DDL. The privileged setup transaction and every
+provisioned login use the fixed [metadata logging policy](PG_LOGGING.md) so
+statement diagnostics cannot disclose verifier or domain values. Database
+background logging retains the operator's server defaults; Nova reports
+sanitized transaction categories and SQLSTATE separately from governed audit.
 
 Reapplication verifies the deployment markers, exact role attributes,
-memberships, database/public-schema grants, SCRAM verifiers and absence of
-uncontrolled role settings. It performs no password replacement or silent grant
+memberships, database/public-schema grants, SCRAM verifiers, exact logging
+defaults and absence of uncontrolled parameter grants or database-specific role
+settings. It performs no password replacement or silent grant
 repair. After commit, a real authenticated connection verifies every configured
 login. A failed login reports `BootstrapVerificationFailed`; already committed
 identities remain available for inspection. A lost provisioning commit reports
@@ -81,14 +83,17 @@ completed import or authorizes reopening writes after a migration.
 
 ## Verification and remaining boundaries
 
-The current combined local PG17 suite passes 59 cases without skips, including
-28 provisioning cases. Every workload login can read deployment state after the
+The combined local PG17 suite for revision 0008 passes 285 cases without skips,
+including 47 provisioning cases. Every workload login can read deployment state after the
 installer and is denied DDL, temporary tables, authority updates and owner/app
 role switching. Other cases cover stable reapplication, concurrent provisioning,
 wrong credentials, foreign/partial state, privilege and role-setting drift,
-ordinary CLI output, transactional rollback and connection termination. Cleanup
+ordinary CLI output, transactional rollback, connection termination and private
+logging defaults for all 15 logins. Cleanup
 verifies deployment markers and restores the fixture's original public grants
 and database comment. Final inspection found no new roles or test schemas.
 
-These results do not prove domain grants/RLS, production Compose deployment,
-per-role pool sizing, PgBouncer, backup recovery or a completed metadata cutover.
+The [checkpoint evidence](../../reports/production-refactor/WP-03/ai-configuration-commands.json)
+records the exact source and separate domain/PgBouncer checks. Provisioning alone
+does not prove all domain grants/RLS, production Compose deployment, per-role
+pool sizing, backup recovery or a completed metadata cutover.

@@ -107,7 +107,8 @@ class ModelAliasRepository:
         )
         return await cursor.fetchone()
 
-    async def _lock_mutation(self) -> None:
+    async def lock_mutations(self) -> None:
+        self._require_transaction()
         cursor = await self._connection.execute(
             "SELECT current_user='nova_meta_web' AND nova_meta.actor_is_administrator() AS allowed"
         )
@@ -164,7 +165,7 @@ class ModelAliasRepository:
         self._require_transaction()
         _text(identity, 64)
         async with self._connection.transaction():
-            await self._lock_mutation()
+            await self.lock_mutations()
             await self._lock_definition(definition)
             if definition.is_default:
                 await self._clear_default(definition.function_type, identity)
@@ -190,7 +191,7 @@ class ModelAliasRepository:
         _text(identity, 64)
         _revision(expected_revision)
         async with self._connection.transaction():
-            await self._lock_mutation()
+            await self.lock_mutations()
             previous = await self._existing(identity, expected_revision)
             await self._lock_definition(definition)
             if definition.is_default:
@@ -212,7 +213,7 @@ class ModelAliasRepository:
         _text(identity, 64)
         _revision(expected_revision)
         async with self._connection.transaction():
-            await self._lock_mutation()
+            await self.lock_mutations()
             previous = await self._existing(identity, expected_revision)
             cursor = await self._connection.execute(
                 "UPDATE nova_meta.config_model_aliases SET is_deleted=true,is_default=false, "

@@ -33,6 +33,7 @@ from app.core.metadata_db import (
     MetadataUnavailable,
 )
 from app.core.metadata_import import ImportColumn, ImportValueError, import_row_id
+from app.core.metadata_logging import provision_role_logging
 from app.core.metadata_schema import load_migrations
 from app.modules.access_control.security_context import SecurityContext
 
@@ -79,6 +80,7 @@ async def metadata():
                     sql.Literal(password),
                 )
             )
+            await provision_role_logging(admin, role)
             await admin.execute("CREATE SCHEMA nova_meta")
             await admin.execute(
                 sql.SQL("COMMENT ON SCHEMA nova_meta IS {}").format(sql.Literal(epoch))
@@ -315,7 +317,7 @@ async def test_lost_connection_is_uncertain_and_never_retried(metadata):
     assert await cursor.fetchone() == (0,)
 
 
-async def test_database_diagnostics_do_not_expose_secret_bind_values(metadata):
+async def test_database_diagnostics_do_not_expose_secret_bind_values(metadata, caplog):
     db = metadata[0]
     canary = "synthetic-secret-canary"
     with pytest.raises(MetadataOperationFailed) as caught:
@@ -323,6 +325,43 @@ async def test_database_diagnostics_do_not_expose_secret_bind_values(metadata):
             await conn.execute("SELECT %s::integer", (canary,))
     assert canary not in str(caught.value)
     assert caught.value.__suppress_context__
+    assert canary not in caplog.text
+    assert "category=sql_error sqlstate=22P02" in caplog.text
+
+
+@pytest.mark.parametrize("setting,value", [
+    ("log_min_messages", "error"),
+    ("log_statement", "all"),
+    ("log_parameter_max_length_on_error", "32"),
+])
+async def test_readiness_refuses_logging_policy_drift(metadata, setting, value):
+    role = conninfo_to_dict(metadata.dsn)["user"]
+    await metadata.admin.execute(sql.SQL("ALTER ROLE {} SET {} TO {}").format(
+        sql.Identifier(role), sql.Identifier(setting), sql.Literal(value),
+    ))
+    db = MetadataDatabase(MetadataPoolConfig(metadata.dsn))
+    try:
+        with pytest.raises(MetadataSchemaMismatch):
+            await db.open(schema_version=len(load_migrations()), metadata_epoch=metadata.epoch)
+    finally:
+        await db.close()
+
+
+async def test_runtime_refuses_new_logging_privileges_before_domain_values(metadata):
+    role = conninfo_to_dict(metadata.dsn)["user"]
+    await metadata.admin.execute(sql.SQL("GRANT SET ON PARAMETER log_min_messages TO {}").format(
+        sql.Identifier(role),
+    ))
+    try:
+        with pytest.raises(MetadataSchemaMismatch):
+            await insert(metadata.db)
+        cursor = await metadata.admin.execute("SELECT count(*) FROM nova_meta.test_owned_rows")
+        assert await cursor.fetchone() == (0,)
+    finally:
+        await metadata.admin.execute(sql.SQL(
+            "REVOKE SET ON PARAMETER log_min_messages FROM {}"
+        ).format(sql.Identifier(role)))
+    await insert(metadata.db)
 
 
 async def test_epoch_change_rejects_a_running_process(metadata):

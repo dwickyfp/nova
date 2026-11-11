@@ -32,6 +32,7 @@ from app.core.metadata_db import (
     MetadataSchemaMismatch,
     MetadataTimeout,
 )
+from app.core.metadata_logging import provision_role_logging
 from app.core.metadata_migrations import migrate
 from app.core.metadata_schema import SchemaManifestError, load_migrations
 from app.modules.access_control.security_context import SecurityContext
@@ -88,6 +89,8 @@ async def migration_environment(tmp_path):
                 await admin.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
                     sql.Identifier(app_role), sql.Literal(password),
                 ))
+                await provision_role_logging(admin, "nova_meta_migrator")
+                await provision_role_logging(admin, app_role)
                 await admin.execute(sql.SQL("COMMENT ON ROLE nova_meta_owner IS {}").format(
                     sql.Literal(marker),
                 ))

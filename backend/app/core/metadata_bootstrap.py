@@ -25,6 +25,11 @@ from app.core.metadata_db import (
     MetadataSchemaMismatch,
     MetadataTimeout,
 )
+from app.core.metadata_logging import (
+    METADATA_LOGGING_SETTINGS,
+    logging_is_private,
+    provision_role_logging,
+)
 from app.core.metadata_migrations import METADATA_ROLES
 
 WORKLOAD_ROLES = tuple(f"nova_meta_{name}" for name in (
@@ -108,7 +113,10 @@ async def _verify_roles(conn: psycopg.AsyncConnection[dict[str, Any]], marker: s
         if (
             attributes["marker"] != marker or attributes["rolcanlogin"] != (name in LOGIN_ROLES)
             or attributes["rolreplication"] != (name == "nova_meta_backup")
-            or attributes["rolconfig"] is not None
+            or set(attributes["rolconfig"] or ()) != (
+                {f"{key}={value}" for key, value in METADATA_LOGGING_SETTINGS.items()}
+                if name in LOGIN_ROLES else set()
+            )
             or any(attributes[key] for key in (
                 "rolsuper", "rolcreatedb", "rolcreaterole", "rolbypassrls",
             ))
@@ -125,7 +133,7 @@ async def _verify_roles(conn: psycopg.AsyncConnection[dict[str, Any]], marker: s
         raise MetadataSchemaMismatch()
     cursor = await conn.execute(
         "SELECT EXISTS(SELECT 1 FROM pg_db_role_setting s JOIN pg_roles r ON r.oid=s.setrole "
-        "WHERE r.rolname=ANY(%s)) AS configured", (list(ALL_ROLES),),
+        "WHERE r.rolname=ANY(%s) AND s.setdatabase<>0) AS configured", (list(ALL_ROLES),),
     )
     settings = await cursor.fetchone()
     if not settings or settings["configured"]:
@@ -174,8 +182,10 @@ async def _verify_roles(conn: psycopg.AsyncConnection[dict[str, Any]], marker: s
             "has_database_privilege(%s, current_database(), 'TEMP') AS can_temp, "
             "has_database_privilege(%s, current_database(), 'CONNECT') AS can_connect, "
             "has_schema_privilege(%s, 'public', 'USAGE') AS public_usage, "
-            "has_schema_privilege(%s, 'public', 'CREATE') AS public_create",
-            (role, role, role, role, role),
+            "has_schema_privilege(%s, 'public', 'CREATE') AS public_create, "
+            "EXISTS(SELECT 1 FROM pg_settings WHERE name=ANY(%s) AND context='superuser' "
+            "AND has_parameter_privilege(%s,name,'SET')) AS unsafe_logging",
+            (role, role, role, role, role, list(METADATA_LOGGING_SETTINGS), role),
         )
         privileges = await cursor.fetchone()
         if not privileges:
@@ -184,6 +194,7 @@ async def _verify_roles(conn: psycopg.AsyncConnection[dict[str, Any]], marker: s
             privileges["can_create"] != (role == "nova_meta_owner")
             or privileges["can_connect"] != (role in LOGIN_ROLES)
             or privileges["can_temp"] or privileges["public_usage"] or privileges["public_create"]
+            or privileges["unsafe_logging"]
         ):
             raise MetadataSchemaMismatch()
 
@@ -225,12 +236,10 @@ async def bootstrap(
                 if not database or not database["allowed"]:
                     raise MetadataSchemaMismatch()
                 # Even hashed credentials must stay out of statement/error logs.
-                await conn.execute("SET LOCAL log_statement = 'none'")
-                await conn.execute("SET LOCAL log_min_error_statement = 'panic'")
-                await conn.execute("SET LOCAL log_parameter_max_length_on_error = 0")
-                await conn.execute("SET LOCAL log_min_duration_statement = -1")
-                await conn.execute("SET LOCAL log_min_duration_sample = -1")
-                await conn.execute("SET LOCAL log_transaction_sample_rate = 0")
+                for name, value in METADATA_LOGGING_SETTINGS.items():
+                    await conn.execute(sql.SQL("SET LOCAL {} TO {}").format(
+                        sql.Identifier(name), sql.Literal(value),
+                    ))
                 await conn.execute("SET LOCAL search_path = pg_catalog")
                 await conn.execute(
                     "SELECT pg_advisory_xact_lock(%s)", (METADATA_DEPLOYMENT_LOCK,),
@@ -299,6 +308,7 @@ async def bootstrap(
                         "WITH ADMIN FALSE, INHERIT FALSE, SET TRUE"
                     )
                     for role in LOGIN_ROLES:
+                        await provision_role_logging(conn, role)
                         await conn.execute(sql.SQL(
                             "GRANT CONNECT ON DATABASE nova_control TO {}"
                         ).format(sql.Identifier(role)))
@@ -321,8 +331,12 @@ async def bootstrap(
                     make_conninfo(config.dsn, user=role, password=password.get_secret_value()),
                     autocommit=True, connect_timeout=max(1, int(config.acquire_timeout)),
                     application_name="nova-metadata-bootstrap-verification",
+                    row_factory=dict_row,
                 ) as login:
-                    if not login.pgconn.used_password or login.info.user != role:
+                    if (
+                        not login.pgconn.used_password or login.info.user != role
+                        or not await logging_is_private(login)
+                    ):
                         raise BootstrapVerificationFailed()
             except psycopg.Error:
                 raise BootstrapVerificationFailed() from None

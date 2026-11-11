@@ -23,6 +23,7 @@ from app.core.metadata_migrations import migrate
 from app.core.metadata_schema import load_migrations
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.ai_ml.repository import AIRegistryRepository, ModelDefinition, ProviderDefinition
+from app.modules.llm_functions.registrations import FunctionRegistrationRepository
 from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
 
 pytestmark = pytest.mark.metadata_pg
@@ -41,12 +42,21 @@ async def registry(environment, monkeypatch):  # noqa: F811
     monkeypatch.setattr(crypto, "_fernet", Fernet(Fernet.generate_key()))
 
     @asynccontextmanager
-    async def transaction(workload="web", actor=ADMIN, *, read_only=False):
+    async def transaction(workload="web", actor=ADMIN, *, read_only=False, publish_functions=True):
         database = MetadataDatabase(environment.role_config("nova_meta_" + workload))
         try:
             await database.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
             async with database.transaction(actor, read_only=read_only) as connection:
                 yield AIRegistryRepository(connection), connection
+                # Storage tests retain the service's atomic registration boundary.
+                # Negative boundary tests explicitly omit it and must fail commit.
+                if (
+                    not read_only and workload == "web" and publish_functions
+                    and actor.active_role in {
+                        "ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin",
+                    }
+                ):
+                    await FunctionRegistrationRepository(connection).reconcile_changed()
         finally:
             await database.close()
 

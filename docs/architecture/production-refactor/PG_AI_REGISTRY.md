@@ -82,8 +82,10 @@ projection for inactive providers.
 Function-alias storage and reference guards are now prepared separately in
 [revision 0007](PG_MODEL_ALIASES.md). Referenced providers/models cannot be
 tombstoned; the service must compose alias deletion with provider deletion.
-Default model references, native UDF registration and its durable job/receipt
-remain open before any runtime port is complete. Preserve
+The [AI configuration service](PG_AI_CONFIGURATION.md) now binds selected
+function definitions to durable registration jobs. Default model references,
+native UDF execution and its verified receipt remain open before any runtime
+port is complete. Preserve
 the distinction between metadata commit and observed external registration.
 Also pending: atomic audit integration, revision tokens in APIs/UI, final import
 constraints/timestamp reconciliation, rehearsals, all-domain cutover and the

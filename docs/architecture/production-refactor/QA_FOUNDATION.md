@@ -592,3 +592,34 @@ successful: 179 PG cases without skips, 1,601 frontend cases, and 217 engine
 passes with 24 unchanged skips (no failures/errors, 1,454.999 seconds).
 This supersedes the preceding pending status for jobs/scheduler storage. It
 does not validate revision 0007 or turn skipped release cases into passes.
+
+CI 43072322386 subsequently completed for `4d805c29` with all eight jobs
+successful: 219 PostgreSQL cases without skips, 1,601 frontend cases, and
+217 engine passes with 24 unchanged skips (no failures/errors, 1,474.771
+seconds). This resolves the pending CI status for revision 0007. The engine
+fixture remains the ordinary test engine; the skips and patched-FE acceptance
+remain unproven. It does not certify the newer atomic configuration/logging edits.
+
+Revision 0008 now binds selected AI configuration changes to immutable function
+definitions, heads, durable registration jobs and outbox records in one
+transaction. Application tree
+`4b9b8f0f39c61cd17d13668144457d235698c0758706341feaebe6b852e9d42c`
+passes 10,741 unit cases (four warnings, 447.46 seconds, 65% combined coverage),
+285 PG17/PgBouncer cases without skips (186.24 seconds), mypy, Ruff on 76 Python
+files and the 54-scenario/189-check agent scorecard. All 15 PG tables have
+ownership entries; the refreshed inventory preserves 875 reviews and 759
+feature rows. No live domain caller has switched authority.
+
+The broader credential scan found a synthetic canary in PostgreSQL's primary
+ERROR text, outside the earlier provider-only scan. Fixed per-login logging,
+sanitized application diagnostics and admission checks now pass all login/drift
+regressions. The final suite's six new server log lines contain no canary or
+encrypted envelope. The failed scan, all nine PG attempts and the superseded
+unit run remain in the [configuration evidence](../../reports/production-refactor/WP-03/ai-configuration-commands.json).
+CI now includes the broader scanner gate with 11 regressions. Current CI,
+production wiring and the broader release canary matrix remain pending.
+
+Atomic audit, native UDF participant proof, cache/authorization isolation, runtime
+ports and cutover remain open. Stored PENDING intent is not installed-function
+proof. No live provider call was made in these storage tests; the embedding
+owner waiver does not resolve the missing managed AI_EMBED implementation.

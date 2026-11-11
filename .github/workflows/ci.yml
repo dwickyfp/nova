@@ -58,6 +58,7 @@ jobs:
               "tests/integration/test_metadata_preferences.py",
               "tests/integration/test_metadata_ai_registry.py",
               "tests/integration/test_metadata_model_aliases.py",
+              "tests/integration/test_metadata_ai_configuration.py",
               "tests/integration/test_metadata_jobs.py",
               "tests/integration/test_metadata_scheduler.py",
               "tests/integration/test_metadata_migrator.py", "-v",
@@ -77,11 +78,22 @@ jobs:
           for suite in suites:
               assert all(int(suite.attrib[k]) == 0 for k in ("failures", "errors", "skipped")), suite.attrib
           PY
+      - name: Scan database logs for credential canaries
+        if: always()
+        working-directory: backend
+        run: |
+          umask 077
+          docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" \
+            logs --no-color nova-metadata-db > "$RUNNER_TEMP/nova-metadata-server.log" 2>&1
+          uv run python tests/integration/check_metadata_logs.py "$RUNNER_TEMP/nova-metadata-server.log" \
+            > "$RUNNER_TEMP/nova-metadata-report/log-scan.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: metadata-pg-report
-          path: ${{ runner.temp }}/nova-metadata-report/metadata-pg.xml
+          path: |
+            ${{ runner.temp }}/nova-metadata-report/metadata-pg.xml
+            ${{ runner.temp }}/nova-metadata-report/log-scan.json
       - name: Remove this job's disposable database
         if: always()
         run: |

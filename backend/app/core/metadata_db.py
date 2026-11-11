@@ -7,6 +7,7 @@ module does not initialize schemas or retry transactions with uncertain outcomes
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
 
 from app.core.exceptions import NovaException
+from app.core.metadata_logging import logging_is_private
 from app.core.metadata_schema import (
     SchemaManifestError,
     load_migrations,
@@ -29,6 +31,16 @@ from app.modules.access_control.security_context import SecurityContext
 # Operators take the exclusive transaction lock before changing schema or
 # epoch. Application transactions hold the shared lock through their last read.
 METADATA_DEPLOYMENT_LOCK = 0x4E4F56414D455441
+logger = logging.getLogger(__name__)
+
+
+def _log_database_failure(category: str, error: BaseException) -> None:
+    state = getattr(error, "sqlstate", None)
+    if not isinstance(state, str) or len(state) != 5 or any(
+        char not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for char in state
+    ):
+        state = "unknown"
+    logger.warning("Metadata transaction failed: category=%s sqlstate=%s", category, state)
 
 
 class MetadataConflict(NovaException):
@@ -163,6 +175,8 @@ class MetadataDatabase:
             ):
                 if conn.info.server_version // 10000 != 17:
                     raise MetadataSchemaMismatch()
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
                 cursor = await conn.execute(
                     "SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole, rolreplication "
                     "FROM pg_catalog.pg_roles WHERE rolname = current_user"
@@ -256,6 +270,10 @@ class MetadataDatabase:
             async with self._pool.connection() as conn, conn.transaction():
                 if read_only:
                     await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
                 await conn.execute(
                     "SELECT set_config('nova.principal', %s, true), "
                     "set_config('nova.active_role', %s, true), "
@@ -300,21 +318,29 @@ class MetadataDatabase:
             psycopg.errors.UniqueViolation,
             psycopg.errors.SerializationFailure,
             psycopg.errors.DeadlockDetected,
-        ):
+        ) as exc:
+            _log_database_failure("conflict", exc)
             raise MetadataConflict() from None
-        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable):
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
             raise MetadataTimeout() from None
-        except (TooManyRequests, PoolClosed):
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
             raise MetadataUnavailable() from None
-        except psycopg.OperationalError:
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
             # A connection lost during COMMIT cannot be retried without a receipt.
             raise MetadataOutcomeUnknown() from None
-        except psycopg.errors.InsufficientPrivilege:
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
             raise MetadataPermissionDenied() from None
-        except psycopg.errors.ReadOnlySqlTransaction:
+        except psycopg.errors.ReadOnlySqlTransaction as exc:
+            _log_database_failure("read_only", exc)
             raise MetadataReadOnlyMaintenance() from None
-        except psycopg.IntegrityError:
+        except psycopg.IntegrityError as exc:
+            _log_database_failure("integrity", exc)
             raise MetadataIntegrityViolation() from None
-        except psycopg.Error:
+        except psycopg.Error as exc:
+            _log_database_failure("sql_error", exc)
             # Driver diagnostics can contain bind values; expose only the category.
             raise MetadataOperationFailed() from None
