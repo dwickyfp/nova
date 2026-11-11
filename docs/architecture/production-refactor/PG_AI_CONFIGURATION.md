@@ -78,7 +78,8 @@ handling. An expired lease must not trigger another DROP/CREATE without proof
 that the previous operation cannot still commit. The worker must preserve the
 existing resource fence for unknown outcomes.
 
-Atomic audit integration, endpoint/key resolution, gateway revocation, engine
+Configuration audit now joins this transaction through the fixed
+[audit triggers in revision 0009](PG_AUDIT.md). Endpoint/key resolution, gateway revocation, engine
 cache partitioning, the missing managed `embed` implementation, API/UI revision
 tokens, caller ports and all-domain cutover remain open. No live provider or
 engine mutation was performed by these storage tests. The owner-waived live

@@ -8,29 +8,11 @@ import json
 import uuid
 import weakref
 
+from app.common.audit_text import AUDIT_TEXT_MAX_BYTES as AUDIT_TEXT_MAX_BYTES
+from app.common.audit_text import fit_audit_text as fit_audit_text
 from app.common.sql_guard import redact_sql_credentials
 from app.core.config import settings
 from app.core.database import db
-
-#: Byte budget for each ``AUDIT_LOG`` text column. The columns are StarRocks
-#: ``STRING``/``TEXT`` (at most 65533 bytes); an over-long value makes the audit
-#: insert fail after the audited statement already ran, and the client would see
-#: that failure instead of the statement's result.
-AUDIT_TEXT_MAX_BYTES = 60_000
-
-
-def fit_audit_text(text: str | None, limit: int = AUDIT_TEXT_MAX_BYTES) -> str | None:
-    """Truncate ``text`` to ``limit`` UTF-8 bytes, recording how much was cut."""
-    if text is None:
-        return None
-    encoded = text.encode("utf-8", errors="surrogateescape")
-    if len(encoded) <= limit:
-        return text
-    marker_budget = 64
-    kept = encoded[: limit - marker_budget].decode("utf-8", errors="ignore")
-    removed = len(encoded) - len(kept.encode("utf-8", errors="surrogateescape"))
-    return f"{kept} /* [truncated {removed} bytes] */"
-
 
 _COLUMNS = (
     "query_id",

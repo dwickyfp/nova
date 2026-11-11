@@ -38,11 +38,21 @@ async def provision_role_logging(connection: psycopg.AsyncConnection[Any], role:
 
 async def logging_is_private(connection: psycopg.AsyncConnection[dict[str, Any]]) -> bool:
     cursor = await connection.execute(
-        "SELECT name,setting,context,has_parameter_privilege(current_user,name,'SET') AS can_set "
+        "SELECT name,setting,context,has_parameter_privilege(current_user,name,'SET') AS can_set, "
+        "current_setting('session_replication_role')='origin' AS origin_mode, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_parameter_acl p "
+        "LEFT JOIN pg_catalog.pg_settings s ON lower(s.name)=lower(p.parname) WHERE "
+        "(coalesce(s.context,'superuser')='superuser' "
+        "AND has_parameter_privilege(current_user,p.parname,'SET')) "
+        "OR has_parameter_privilege(current_user,p.parname,'ALTER SYSTEM')) AS unsafe_parameters "
         "FROM pg_catalog.pg_settings WHERE name=ANY(%s)", (list(METADATA_LOGGING_SETTINGS),),
     )
     rows = await cursor.fetchall()
     return (
         {row["name"]: row["setting"] for row in rows} == dict(METADATA_LOGGING_SETTINGS)
-        and not any(row["context"] == "superuser" and row["can_set"] for row in rows)
+        and not any(
+            not row["origin_mode"] or row["unsafe_parameters"]
+            or (row["context"] == "superuser" and row["can_set"])
+            for row in rows
+        )
     )

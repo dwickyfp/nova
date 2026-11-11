@@ -5,6 +5,14 @@ duplicate-preserving identity contract are implemented. Complete target DDL,
 logical uniqueness/FKs, per-domain access, timezone provenance and validated
 export/import orchestration remain open. No domain is serving PG metadata.
 
+Revisions 0001–0009 now prepare preferences, the AI registry and aliases,
+immutable function definitions, jobs/outbox, scheduler state and transactional
+audit. The [audit contract](../../../architecture/production-refactor/PG_AUDIT.md)
+describes the latest storage work. The results below retain their original
+source versions; later checkpoints do not replace earlier failures.
+
+## Original import checkpoint
+
 Source checkpoint: parent `a7894247db84c9a9627b5c9a390a4c6636ef0d9a`, application
 tree `e16247c8315832918e30500757d50fd38d3da28885a5b93e7c1c0ff7a5e4d38c`.
 The installed schema package remains revision `0001_deployment_state.sql`;
@@ -239,3 +247,49 @@ after 8,558 passes when scanner coverage expanded; it is not counted as a
 completed gate. Current CI is pending. The preceding alias commit has passed
 all eight CI jobs, including 219 PG cases, 1,601 frontend cases and 217 engine
 cases; its 24 skipped cases remain unproven.
+
+CI 43080254576 subsequently completed for `d49e2b43` with all eight jobs
+successful: 285 PG cases without skips, 1,601 frontend cases, and 217 engine
+passes with 24 unchanged skips (no failures/errors, 1,462.211 seconds).
+The PG log gate scanned 61 lines with no credential marker or encrypted
+envelope. This resolves revision 0008's pending CI status. The ordinary engine
+fixture and its 24 skips do not prove patched-FE or complete feature acceptance.
+It does not certify the subsequent transactional-audit changes.
+
+## Transactional audit and trigger admission
+
+Revision 0009 prepares append-only audit storage, monthly/default partitions,
+actor-scoped reads and exact event/context replay. Preference, provider, model
+and alias changes now append their success audit in the same transaction, without
+configuration values or credentials. Legacy fields, nullable actors and repeated
+numeric IDs remain representable. Live audit/history callers still use StarRocks.
+
+[audit-commands.json](audit-commands.json) records all twelve PG attempts. The
+final sequential run passes 333 cases without skips in 214.60 seconds: 41 audit,
+25 transaction-boundary, 50 provisioning and the existing registry, queue,
+scheduler, pooling and migration cases. Failures found during implementation
+covered privileged import classification, partial nullable audit identities and
+a pooled backend retaining disabled triggers after its SET grant was revoked.
+The corresponding regressions pass after fixes. The penultimate run's 25 ms
+startup timeout failed while full coverage ran concurrently; its 332 passes and
+one failure remain recorded. The final run keeps the same timeout and assertions.
+
+The final application tree
+`6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54`
+passes 10,761 backend unit cases (four warnings, 699.97 seconds, 65% coverage),
+full-application mypy, Ruff on 81 changed Python files and 54 agent scenarios /
+189 checks. The superseded unit attempt was interrupted after 8,375 passes
+when the trigger-mode fix changed application code. The audit formatting helper
+is shared without importing legacy database/configuration state into PG storage.
+
+The final log scan covers 21 lines with no credential marker or encrypted
+envelope, and cleanup leaves no fixture schema or roles. The actual inventory
+refresh preserves all 875 reviews and 759 feature rows; three audit writer
+locations were re-reviewed after helper extraction, with unchanged SQL ASTs.
+Live/API observations remain intact. Ownership covers 16 logical tables and
+monthly/default partition patterns. No development engine data was reset.
+
+CI for this audit checkpoint is pending; predecessor `d49e2b43` passed all eight
+jobs. Remaining domain hooks, audit/refusal/history callers and their historical
+authorization, import orchestration, partition maintenance, retention/export,
+backups and one-way cutover are still open. No live AI call was made here.

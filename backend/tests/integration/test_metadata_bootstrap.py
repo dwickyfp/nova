@@ -309,6 +309,9 @@ async def test_wrong_replay_password_is_refused_without_rotation(environment):
     "ALTER ROLE nova_meta_web SET log_min_messages=error",
     "ALTER ROLE nova_meta_web SET log_statement='all'",
     "GRANT SET ON PARAMETER log_min_messages TO nova_meta_web",
+    "GRANT SET ON PARAMETER session_replication_role TO nova_meta_web",
+    "GRANT ALTER SYSTEM ON PARAMETER TimeZone TO nova_meta_web",
+    "ALTER ROLE nova_meta_web SET session_replication_role=replica",
 ])
 async def test_privilege_drift_is_refused_without_silently_repairing(environment, drift):
     await environment.bootstrap()

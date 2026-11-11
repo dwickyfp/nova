@@ -183,9 +183,12 @@ async def _verify_roles(conn: psycopg.AsyncConnection[dict[str, Any]], marker: s
             "has_database_privilege(%s, current_database(), 'CONNECT') AS can_connect, "
             "has_schema_privilege(%s, 'public', 'USAGE') AS public_usage, "
             "has_schema_privilege(%s, 'public', 'CREATE') AS public_create, "
-            "EXISTS(SELECT 1 FROM pg_settings WHERE name=ANY(%s) AND context='superuser' "
-            "AND has_parameter_privilege(%s,name,'SET')) AS unsafe_logging",
-            (role, role, role, role, role, list(METADATA_LOGGING_SETTINGS), role),
+            "EXISTS(SELECT 1 FROM pg_parameter_acl p "
+            "LEFT JOIN pg_settings s ON lower(s.name)=lower(p.parname) "
+            "WHERE (coalesce(s.context,'superuser')='superuser' "
+            "AND has_parameter_privilege(%s,p.parname,'SET')) "
+            "OR has_parameter_privilege(%s,p.parname,'ALTER SYSTEM')) AS unsafe_parameters",
+            (role, role, role, role, role, role, role),
         )
         privileges = await cursor.fetchone()
         if not privileges:
@@ -194,7 +197,7 @@ async def _verify_roles(conn: psycopg.AsyncConnection[dict[str, Any]], marker: s
             privileges["can_create"] != (role == "nova_meta_owner")
             or privileges["can_connect"] != (role in LOGIN_ROLES)
             or privileges["can_temp"] or privileges["public_usage"] or privileges["public_create"]
-            or privileges["unsafe_logging"]
+            or privileges["unsafe_parameters"]
         ):
             raise MetadataSchemaMismatch()
 

@@ -1,0 +1,432 @@
+{
+  "source_parent_commit": "d49e2b43f35f635e512a33ac7c11809a707b103d",
+  "application_tree_sha256": "6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54",
+  "source_files_sha256": {
+    ".github/workflows/ci.yml": "14f975e109ca61feb1f56f42bd0b55fd07591d3c03fa624da1f2ae078a67d9bf",
+    "backend/app/common/audit.py": "f8a34575a17ef37a2d86e479b3917b275944e92a392181df92724f6205d4502e",
+    "backend/app/common/audit_text.py": "de0a7d474edbfd86e3a659dda933c901b1def930f2906dfa22d98d461ef2fa6a",
+    "backend/app/common/metadata_audit.py": "b5b23bcb5063ab8bcc3cbf641cd3fa9dab034633aa47660f3c082df85b6aaee9",
+    "backend/app/core/metadata_bootstrap.py": "1924b92973ab498a0c5ecf31634eecb37b41f7bbe788f21ab5773ac9e6376c1d",
+    "backend/app/core/metadata_logging.py": "3caca60ca08e8c896672b3b31a15f7eaa8b6b5b1cf10b1769754054123f75436",
+    "backend/metadata_migrations/0009_transactional_audit.sql": "963f839e965daef13d579da0bace42209cba76f189e13c3bbb35f2f439df854b",
+    "backend/tests/integration/test_metadata_audit.py": "ccc8e1550132a507e4a2dad44f59176dc80533215e4cc8e64c4cf222e509a8d6",
+    "backend/tests/integration/test_metadata_bootstrap.py": "a1f81791e2870c20ff4284ce949b1e315f339a716cbbc1c9aa887c187b509bf4",
+    "backend/tests/integration/test_metadata_pg_foundation.py": "4f37edbc2b3f8ea1c2094dbd84993053364ec79b5db724efab10bc9d39a75214",
+    "backend/tests/unit/test_metadata_audit.py": "8b157dcad05f51e3e0a79b5babb1896ae4374d6a316cb526a305f326196e0b73"
+  },
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470",
+    "0005_durable_jobs.sql": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5",
+    "0006_scheduler_fencing.sql": "c48b0c39a38c148f1f5d69662e35733130f03179841acffded12c78bb4a66df2",
+    "0007_model_aliases.sql": "72244ddb356e5ee985430066cdbda5e487d818718c100f41f99de19e2c50f6ec",
+    "0008_ai_function_definitions.sql": "d13251477a717edb39a2873b49dd95787eaf4d2ecaf617e59bed63e160b4f334",
+    "0009_transactional_audit.sql": "963f839e965daef13d579da0bace42209cba76f189e13c3bbb35f2f439df854b"
+  },
+  "topology": "Existing docker project, PG17.11 verify-full TLS and native PgBouncer1.26.1; no new engine stack",
+  "pg_attempts": [
+    {
+      "attempt": 1,
+      "tests": 64,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 46.442,
+      "artifact": "audit-pg-attempt-1.xml"
+    },
+    {
+      "attempt": 2,
+      "tests": 73,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 145.546,
+      "artifact": "audit-pg-attempt-2.xml"
+    },
+    {
+      "attempt": 3,
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 21.318,
+      "artifact": "audit-pg-attempt-3.xml"
+    },
+    {
+      "attempt": 4,
+      "tests": 91,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 102.433,
+      "artifact": "audit-pg-attempt-4.xml"
+    },
+    {
+      "attempt": 5,
+      "tests": 36,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 29.629,
+      "artifact": "audit-pg-attempt-5.xml"
+    },
+    {
+      "attempt": 6,
+      "tests": 325,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 389.481,
+      "artifact": "audit-pg-attempt-6.xml"
+    },
+    {
+      "attempt": 7,
+      "tests": 5,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 3.801,
+      "artifact": "audit-pg-attempt-7.xml"
+    },
+    {
+      "attempt": 8,
+      "tests": 330,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 293.48,
+      "artifact": "audit-pg-attempt-8.xml"
+    },
+    {
+      "attempt": 9,
+      "tests": 3,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.02,
+      "artifact": "audit-pg-attempt-9.xml"
+    },
+    {
+      "attempt": 10,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 7.285,
+      "artifact": "audit-pg-attempt-10.xml"
+    },
+    {
+      "attempt": 11,
+      "tests": 333,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 421.362,
+      "artifact": "audit-pg-attempt-11.xml"
+    },
+    {
+      "attempt": 12,
+      "tests": 333,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 214.101,
+      "artifact": "audit-pg-final.xml"
+    }
+  ],
+  "full_pg": {
+    "result": "PASS",
+    "passed": 333,
+    "skipped": 0,
+    "pytest_seconds": 214.6,
+    "selection": [
+      "test_metadata_pg_foundation",
+      "test_metadata_bootstrap",
+      "test_metadata_pgbouncer",
+      "test_metadata_preferences",
+      "test_metadata_ai_registry",
+      "test_metadata_model_aliases",
+      "test_metadata_ai_configuration",
+      "test_metadata_audit",
+      "test_metadata_jobs",
+      "test_metadata_scheduler",
+      "test_metadata_migrator"
+    ],
+    "cases_by_file": {
+      "test_metadata_pg_foundation": 25,
+      "test_metadata_bootstrap": 50,
+      "test_metadata_pgbouncer": 7,
+      "test_metadata_preferences": 30,
+      "test_metadata_ai_registry": 33,
+      "test_metadata_model_aliases": 40,
+      "test_metadata_ai_configuration": 43,
+      "test_metadata_audit": 41,
+      "test_metadata_jobs": 32,
+      "test_metadata_scheduler": 15,
+      "test_metadata_migrator": 17
+    },
+    "options": [
+      "-q",
+      "--junit-xml=/tmp/nova-audit-pg-12.xml"
+    ],
+    "artifact": "audit-pg-final.xml",
+    "execution": "Sequential after the full coverage suite; timeout and assertions unchanged after attempt 11"
+  },
+  "unit_attempts": [
+    {
+      "attempt": 29,
+      "result": "PASS_BEFORE_HELPER_AND_ORIGIN_MODE_FIX",
+      "passed": 10760,
+      "warnings": 4,
+      "seconds": 660.27
+    },
+    {
+      "attempt": 30,
+      "result": "INTERRUPTED",
+      "passed_before_interrupt": 8375,
+      "warnings": 3,
+      "seconds": 510.55,
+      "reason": "Effective trigger mode admission was corrected after two new PG regressions failed; replacement unit suite ran on the final code."
+    }
+  ],
+  "focused_unit_attempts": [
+    {
+      "attempt": 1,
+      "passed": 17,
+      "seconds": 1.93
+    },
+    {
+      "attempt": 2,
+      "passed": 19,
+      "seconds": 1.51
+    },
+    {
+      "attempt": 3,
+      "passed": 24,
+      "seconds": 3.37,
+      "selection": [
+        "test_metadata_audit.py",
+        "test_audit_text_limits.py"
+      ]
+    }
+  ],
+  "full_unit_coverage": {
+    "result": "PASS",
+    "argv": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit",
+      "--cov=app",
+      "--cov-branch",
+      "--cov-report=term-missing",
+      "--cov-report=xml:/tmp/nova-refactor-coverage-31.xml"
+    ],
+    "passed": 10761,
+    "warnings": 4,
+    "seconds": 699.97,
+    "coverage_percent_rounded": 65,
+    "line_rate": 0.6664,
+    "branch_rate": 0.6003
+  },
+  "mypy": {
+    "result": "PASS",
+    "command": "uv run mypy app --no-error-summary"
+  },
+  "ruff": {
+    "argv": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "--force-exclude",
+      "app/common/audit.py",
+      "app/common/audit_text.py",
+      "app/common/durable_jobs.py",
+      "app/common/metadata_audit.py",
+      "app/common/preferences.py",
+      "app/core/config.py",
+      "app/core/deps.py",
+      "app/core/metadata_bootstrap.py",
+      "app/core/metadata_db.py",
+      "app/core/metadata_import.py",
+      "app/core/metadata_logging.py",
+      "app/core/metadata_migrations.py",
+      "app/core/metadata_schema.py",
+      "app/core/redis.py",
+      "app/main.py",
+      "app/modules/agents/router.py",
+      "app/modules/agents/studio_router.py",
+      "app/modules/ai_ml/metadata_service.py",
+      "app/modules/ai_ml/repository.py",
+      "app/modules/ai_ml/router.py",
+      "app/modules/assistant/consent.py",
+      "app/modules/assistant/router.py",
+      "app/modules/assistant/service.py",
+      "app/modules/auth/service.py",
+      "app/modules/llm_functions/registrations.py",
+      "app/modules/llm_functions/repository.py",
+      "app/modules/llm_functions/router.py",
+      "app/modules/task_orchestration/execution.py",
+      "app/modules/task_orchestration/metadata_scheduler.py",
+      "app/modules/task_orchestration/worker.py",
+      "app/observability/http.py",
+      "scripts/inventory_control_plane.py",
+      "scripts/profile_metadata_constraints.py",
+      "tests/eval/semantic_execution.py",
+      "tests/eval/test_business_ontology_trajectory.py",
+      "tests/eval/test_evidence_health_trajectory.py",
+      "tests/eval/test_mcp_consent_trajectory.py",
+      "tests/eval/test_semantic_clarification_trajectory.py",
+      "tests/eval/test_semantic_latest_month.py",
+      "tests/integration/build_metadata_pooler.py",
+      "tests/integration/check_metadata_logs.py",
+      "tests/integration/prepare_metadata_fixture.py",
+      "tests/integration/test_metadata_ai_configuration.py",
+      "tests/integration/test_metadata_ai_registry.py",
+      "tests/integration/test_metadata_audit.py",
+      "tests/integration/test_metadata_bootstrap.py",
+      "tests/integration/test_metadata_jobs.py",
+      "tests/integration/test_metadata_migrator.py",
+      "tests/integration/test_metadata_model_aliases.py",
+      "tests/integration/test_metadata_pg_foundation.py",
+      "tests/integration/test_metadata_pgbouncer.py",
+      "tests/integration/test_metadata_preferences.py",
+      "tests/integration/test_metadata_scheduler.py",
+      "tests/integration/test_task_outcome_uncertainty.py",
+      "tests/unit/test_agent_run_storage_failure.py",
+      "tests/unit/test_ai_ml_ssrf_guard.py",
+      "tests/unit/test_api_auth_inventory.py",
+      "tests/unit/test_assistant_stage_b.py",
+      "tests/unit/test_control_plane_inventory.py",
+      "tests/unit/test_control_plane_session_boundaries.py",
+      "tests/unit/test_durable_jobs.py",
+      "tests/unit/test_llm_alias_authorization.py",
+      "tests/unit/test_mcp_registry_access.py",
+      "tests/unit/test_metadata_ai_registry.py",
+      "tests/unit/test_metadata_audit.py",
+      "tests/unit/test_metadata_bootstrap_config.py",
+      "tests/unit/test_metadata_db_config.py",
+      "tests/unit/test_metadata_import.py",
+      "tests/unit/test_metadata_log_acceptance.py",
+      "tests/unit/test_metadata_model_aliases.py",
+      "tests/unit/test_metadata_preferences.py",
+      "tests/unit/test_metadata_scheduler.py",
+      "tests/unit/test_metadata_schema.py",
+      "tests/unit/test_notebook_data_tokens.py",
+      "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+      "tests/unit/test_observability_metrics.py",
+      "tests/unit/test_process_role.py",
+      "tests/unit/test_superset_bridge.py",
+      "tests/unit/test_task_orchestration_worker.py",
+      "tests/unit/test_task_outcome_uncertainty.py",
+      "tests/unit/test_web_search_tool.py"
+    ],
+    "python_files": 81,
+    "exit_code": 0,
+    "output": "All checks passed!\n"
+  },
+  "agent_scorecard": {
+    "result": "PASS",
+    "scenarios": 54,
+    "checks": 189,
+    "command": "uv run python -m tests.eval.report"
+  },
+  "inventory": {
+    "cli_exit_code": 0,
+    "preserved_reviews": 875,
+    "source_rebound_after_review": [
+      {
+        "function": "_write_row",
+        "previous_line": 75,
+        "line": 57,
+        "unchanged_callsite_sha256": "74899b5e3d8d104a0c550bc51b84e01cfaec210754f3fae405970a70e9b956b0"
+      },
+      {
+        "function": "_write_row",
+        "previous_line": 90,
+        "line": 72,
+        "unchanged_callsite_sha256": "397132e9832262ccae1554e7b1f63a3dcf852a6d0cfa06f31b541dc75de47d28"
+      },
+      {
+        "function": "_AuditWriter._write_group",
+        "previous_line": 139,
+        "line": 121,
+        "unchanged_callsite_sha256": "550920f870679f50f393ad8c2a2a589838de8e8719fba546d795d83d17f9e362"
+      }
+    ],
+    "unchanged_feature_rows": 759,
+    "live_observation_preserved": true,
+    "api_observation_preserved": true,
+    "application_fingerprint": {
+      "python_files": 695,
+      "application_tree_sha256": "6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54"
+    }
+  },
+  "cleanup": {
+    "remaining_fixture_schema": 0,
+    "remaining_test_roles": 0
+  },
+  "credential_log_scan": {
+    "passed": true,
+    "lines": 21,
+    "matches": {
+      "credential_canary": 0,
+      "encrypted_credential": 0
+    },
+    "container": "docker-nova-metadata-db-1",
+    "since": "2026-11-11T19:35:45.384860+00:00",
+    "until": "2026-11-11T19:40:06.099372+00:00",
+    "raw_log_exported": false,
+    "suite_attempt": 12
+  },
+  "predecessor_ci": {
+    "head": "d49e2b43f35f635e512a33ac7c11809a707b103d",
+    "run": 43080254576,
+    "status": "SUCCESS",
+    "successful_jobs": 8,
+    "pg_passed": 285,
+    "pg_skipped": 0,
+    "pg_log_scan": {
+      "lines": 61,
+      "matches": {
+        "credential_canary": 0,
+        "encrypted_credential": 0
+      },
+      "passed": true
+    },
+    "frontend_passed": 1601,
+    "engine": {
+      "run": 43080254576,
+      "source_commit": "d49e2b43f35f635e512a33ac7c11809a707b103d",
+      "result": "SUCCESS",
+      "passed": 217,
+      "skipped": 24,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1462.211,
+      "skip_cases_and_reasons_unchanged": true
+    }
+  },
+  "current_ci": "NOT_RUN",
+  "runtime_authority": "StarRocks; no live audit, preference or AI configuration caller port",
+  "open_work": [
+    "Remaining domain schemas and audit hooks",
+    "All audit/history/monitoring/lineage callers, refusal recording and historical-data authorization",
+    "Partition maintenance, verified export/retention and backup",
+    "Import provenance, historical redaction, sequence positioning and complete validation",
+    "Native AI function participant verification, cache isolation and live caller ports",
+    "Runtime separation, one production Compose, rehearsals and all-domain cutover",
+    "Complete feature and live AI acceptance; live embedding QA remains OWNER_WAIVED"
+  ],
+  "docs_and_workflow": {
+    "ci_jobs": 8,
+    "shell_steps": 39,
+    "local_links": 52,
+    "diff_check": "PASS",
+    "pg_logical_tables": 16,
+    "partition_inventory_patterns": 2
+  }
+}

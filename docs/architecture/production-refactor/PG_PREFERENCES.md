@@ -97,9 +97,10 @@ proxy self-clear overgrant. Revision 0003 grants only administrator password-fla
 updates to these workloads; tests also refuse News and personal-preference writes.
 The upgrade test retains an existing flag and its revision unchanged.
 
-Still required: port every caller with its real actor and revision, preserve
-pre-authentication/bootstrap semantics, atomically persist relevant audit/job
-records, reconcile historical timestamps/keys, run import rehearsals and verify
+Revision 0009 adds [success audit in the preference transaction](PG_AUDIT.md),
+recording the key and revision without the value. Still required: port every
+caller with its real actor and revision, preserve pre-authentication/bootstrap
+semantics and refusal audit, reconcile historical timestamps/keys, run import rehearsals and verify
 one-way cutover. HTTP/UI revision tokens and user documentation must be updated
 together when those runtime paths change. These storage tests do not prove live
 profile/settings, authentication or an all-domain migration.

@@ -333,8 +333,9 @@ async def test_database_diagnostics_do_not_expose_secret_bind_values(metadata, c
     ("log_min_messages", "error"),
     ("log_statement", "all"),
     ("log_parameter_max_length_on_error", "32"),
+    ("session_replication_role", "replica"),
 ])
-async def test_readiness_refuses_logging_policy_drift(metadata, setting, value):
+async def test_readiness_refuses_session_policy_drift(metadata, setting, value):
     role = conninfo_to_dict(metadata.dsn)["user"]
     await metadata.admin.execute(sql.SQL("ALTER ROLE {} SET {} TO {}").format(
         sql.Identifier(role), sql.Identifier(setting), sql.Literal(value),
@@ -347,20 +348,59 @@ async def test_readiness_refuses_logging_policy_drift(metadata, setting, value):
         await db.close()
 
 
-async def test_runtime_refuses_new_logging_privileges_before_domain_values(metadata):
+async def test_reused_backend_refuses_disabled_triggers_after_set_privilege_is_revoked(metadata):
     role = conninfo_to_dict(metadata.dsn)["user"]
-    await metadata.admin.execute(sql.SQL("GRANT SET ON PARAMETER log_min_messages TO {}").format(
+    grant = sql.SQL("GRANT SET ON PARAMETER session_replication_role TO {}").format(
         sql.Identifier(role),
+    )
+    revoke = sql.SQL("REVOKE SET ON PARAMETER session_replication_role FROM {}").format(
+        sql.Identifier(role),
+    )
+    await metadata.admin.execute(grant)
+    try:
+        async with metadata.db._pool.connection() as connection:
+            await connection.execute("SET session_replication_role=replica")
+        await metadata.admin.execute(revoke)
+        with pytest.raises(MetadataSchemaMismatch):
+            await insert(metadata.db)
+        cursor = await metadata.admin.execute("SELECT count(*) FROM nova_meta.test_owned_rows")
+        assert await cursor.fetchone() == (0,)
+    finally:
+        await metadata.admin.execute(grant)
+        async with metadata.db._pool.connection() as connection:
+            await connection.execute("RESET session_replication_role")
+        await metadata.admin.execute(revoke)
+    await insert(metadata.db)
+
+
+@pytest.mark.parametrize("privilege,parameter", [
+    ("SET", "log_min_messages"), ("SET", "session_replication_role"),
+    ("ALTER SYSTEM", "TimeZone"),
+])
+async def test_runtime_refuses_unsafe_parameter_privileges_before_domain_values(
+    metadata, privilege, parameter,
+):
+    role = conninfo_to_dict(metadata.dsn)["user"]
+    await metadata.admin.execute(sql.SQL("GRANT {} ON PARAMETER {} TO {}").format(
+        sql.SQL(privilege), sql.Identifier(parameter), sql.Identifier(role),
     ))
     try:
+        candidate = MetadataDatabase(MetadataPoolConfig(metadata.dsn))
+        try:
+            with pytest.raises(MetadataSchemaMismatch):
+                await candidate.open(
+                    schema_version=len(load_migrations()), metadata_epoch=metadata.epoch,
+                )
+        finally:
+            await candidate.close()
         with pytest.raises(MetadataSchemaMismatch):
             await insert(metadata.db)
         cursor = await metadata.admin.execute("SELECT count(*) FROM nova_meta.test_owned_rows")
         assert await cursor.fetchone() == (0,)
     finally:
         await metadata.admin.execute(sql.SQL(
-            "REVOKE SET ON PARAMETER log_min_messages FROM {}"
-        ).format(sql.Identifier(role)))
+            "REVOKE {} ON PARAMETER {} FROM {}"
+        ).format(sql.SQL(privilege), sql.Identifier(parameter), sql.Identifier(role)))
     await insert(metadata.db)
 
 

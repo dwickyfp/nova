@@ -24,9 +24,13 @@ diagnostics for these accounts; monitoring must use the sanitized application
 event and workload/request telemetry. It does not replace governed audit events.
 
 Bootstrap verifies the exact role defaults and refuses unexpected parameter SET
-grants, including inherited grants. It does not silently repair a pre-existing
+grants, including inherited grants. Revision 0009 expands admission to every
+privileged or unknown parameter SET grant and every ALTER SYSTEM grant, protecting
+audit/constraint triggers as well as logging. It does not silently repair a pre-existing
 deployment. Readiness checks the effective settings and privileges of the
-connected backend. Every unit of work repeats that check inside its transaction,
+connected backend, including origin replication mode so its normal triggers run.
+Revoking SET privileges does not reset a backend's already changed mode.
+Every unit of work repeats that check inside its transaction,
 before sending actor or domain values; a transaction pooler may select a
 different backend after readiness. Policy drift refuses admission.
 

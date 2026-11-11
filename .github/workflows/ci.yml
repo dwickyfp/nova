@@ -59,6 +59,7 @@ jobs:
               "tests/integration/test_metadata_ai_registry.py",
               "tests/integration/test_metadata_model_aliases.py",
               "tests/integration/test_metadata_ai_configuration.py",
+              "tests/integration/test_metadata_audit.py",
               "tests/integration/test_metadata_jobs.py",
               "tests/integration/test_metadata_scheduler.py",
               "tests/integration/test_metadata_migrator.py", "-v",

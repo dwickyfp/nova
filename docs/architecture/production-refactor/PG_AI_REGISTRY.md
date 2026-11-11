@@ -87,6 +87,8 @@ function definitions to durable registration jobs. Default model references,
 native UDF execution and its verified receipt remain open before any runtime
 port is complete. Preserve
 the distinction between metadata commit and observed external registration.
-Also pending: atomic audit integration, revision tokens in APIs/UI, final import
+Revision 0009 adds [atomic provider/model success audit](PG_AUDIT.md), without
+configuration values or encrypted credentials. Also pending: live refusal
+audit, revision tokens in APIs/UI, final import
 constraints/timestamp reconciliation, rehearsals, all-domain cutover and the
 matching product docs. The storage tests cannot certify those paths.

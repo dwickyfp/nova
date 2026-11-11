@@ -1,6 +1,6 @@
 {
-  "python_files": 693,
-  "application_tree_sha256": "4b9b8f0f39c61cd17d13668144457d235698c0758706341feaebe6b852e9d42c",
+  "python_files": 695,
+  "application_tree_sha256": "6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -13,7 +13,7 @@
       "backend/migrations/20260923_ai_search.sql:47"
     ],
     "AUDIT_LOG": [
-      "backend/app/common/audit.py:68",
+      "backend/app/common/audit.py:50",
       "backend/app/modules/agents/repository.py:697",
       "backend/app/modules/catalog/lineage.py:172",
       "backend/app/modules/monitoring/ai_usage.py:131",
@@ -2151,9 +2151,9 @@
   "system_calls": [
     {
       "path": "backend/app/common/audit.py",
-      "line": 75,
+      "line": 57,
       "column": 14,
-      "end_line": 75,
+      "end_line": 57,
       "end_column": 68,
       "api": "execute_system",
       "dispatch": "direct",
@@ -2162,16 +2162,16 @@
       "statement_kind": "DYNAMIC",
       "literal_tables": [],
       "function_candidate_tables": [],
-      "source_file_sha256": "5218b83a18fefa4ba7315ee9d3c57ce993c7d56f8662f3aa46a740f05db05760",
+      "source_file_sha256": "f8a34575a17ef37a2d86e479b3917b275944e92a392181df92724f6205d4502e",
       "callsite_sha256": "74899b5e3d8d104a0c550bc51b84e01cfaec210754f3fae405970a70e9b956b0",
       "review_status": "CLASSIFIED_METADATA",
       "review_notes": "METADATA_WRITE: _insert_statement generates only AUDIT_LOG INSERT; NOW engine time; bounded grouping; see WAVE_A_REVIEW.md"
     },
     {
       "path": "backend/app/common/audit.py",
-      "line": 90,
+      "line": 72,
       "column": 14,
-      "end_line": 90,
+      "end_line": 72,
       "end_column": 97,
       "api": "execute_system",
       "dispatch": "direct",
@@ -2180,16 +2180,16 @@
       "statement_kind": "DYNAMIC",
       "literal_tables": [],
       "function_candidate_tables": [],
-      "source_file_sha256": "5218b83a18fefa4ba7315ee9d3c57ce993c7d56f8662f3aa46a740f05db05760",
+      "source_file_sha256": "f8a34575a17ef37a2d86e479b3917b275944e92a392181df92724f6205d4502e",
       "callsite_sha256": "397132e9832262ccae1554e7b1f63a3dcf852a6d0cfa06f31b541dc75de47d28",
       "review_status": "CLASSIFIED_METADATA",
       "review_notes": "METADATA_WRITE: _insert_statement generates only AUDIT_LOG INSERT; NOW engine time; bounded grouping; see WAVE_A_REVIEW.md"
     },
     {
       "path": "backend/app/common/audit.py",
-      "line": 139,
+      "line": 121,
       "column": 22,
-      "end_line": 142,
+      "end_line": 124,
       "end_column": 17,
       "api": "execute_system",
       "dispatch": "direct",
@@ -2198,7 +2198,7 @@
       "statement_kind": "DYNAMIC",
       "literal_tables": [],
       "function_candidate_tables": [],
-      "source_file_sha256": "5218b83a18fefa4ba7315ee9d3c57ce993c7d56f8662f3aa46a740f05db05760",
+      "source_file_sha256": "f8a34575a17ef37a2d86e479b3917b275944e92a392181df92724f6205d4502e",
       "callsite_sha256": "550920f870679f50f393ad8c2a2a589838de8e8719fba546d795d83d17f9e362",
       "review_status": "CLASSIFIED_METADATA",
       "review_notes": "METADATA_WRITE: _insert_statement generates only AUDIT_LOG INSERT; NOW engine time; bounded grouping; see WAVE_A_REVIEW.md"
@@ -22207,14 +22207,14 @@
           "backend/scripts/profile_metadata_constraints.py:101",
           "backend/scripts/profile_metadata_constraints.py:96"
         ],
+        "CONFIG_AI_PROVIDERS": [
+          "backend/scripts/profile_metadata_constraints.py:104",
+          "backend/scripts/profile_metadata_constraints.py:109"
+        ],
         "CONFIG_AI_MODELS": [
           "backend/scripts/profile_metadata_constraints.py:104",
           "backend/scripts/profile_metadata_constraints.py:114",
           "backend/scripts/profile_metadata_constraints.py:119"
-        ],
-        "CONFIG_AI_PROVIDERS": [
-          "backend/scripts/profile_metadata_constraints.py:104",
-          "backend/scripts/profile_metadata_constraints.py:109"
         ],
         "CONFIG_MODEL_ALIASES": [
           "backend/scripts/profile_metadata_constraints.py:109",
@@ -22223,14 +22223,14 @@
           "backend/scripts/profile_metadata_constraints.py:124",
           "backend/scripts/profile_metadata_constraints.py:131"
         ],
-        "CONFIG_ASSISTANT_THREADS": [
-          "backend/scripts/profile_metadata_constraints.py:137",
-          "backend/scripts/profile_metadata_constraints.py:142"
-        ],
         "CONFIG_ASSISTANT_MESSAGES": [
           "backend/scripts/profile_metadata_constraints.py:137",
           "backend/scripts/profile_metadata_constraints.py:142",
           "backend/scripts/profile_metadata_constraints.py:147"
+        ],
+        "CONFIG_ASSISTANT_THREADS": [
+          "backend/scripts/profile_metadata_constraints.py:137",
+          "backend/scripts/profile_metadata_constraints.py:142"
         ],
         "CONFIG_AGENT_RUNS": [
           "backend/scripts/profile_metadata_constraints.py:153",
@@ -22240,30 +22240,30 @@
           "backend/scripts/profile_metadata_constraints.py:153",
           "backend/scripts/profile_metadata_constraints.py:158"
         ],
+        "ML_MODELS": [
+          "backend/scripts/profile_metadata_constraints.py:163",
+          "backend/scripts/profile_metadata_constraints.py:174"
+        ],
         "ML_MODEL_VERSIONS": [
           "backend/scripts/profile_metadata_constraints.py:163",
           "backend/scripts/profile_metadata_constraints.py:168",
           "backend/scripts/profile_metadata_constraints.py:174"
         ],
-        "ML_MODELS": [
-          "backend/scripts/profile_metadata_constraints.py:163",
-          "backend/scripts/profile_metadata_constraints.py:174"
-        ],
         "ML_MODEL_ALIASES": [
           "backend/scripts/profile_metadata_constraints.py:168"
-        ],
-        "CONFIG_SEMANTIC_VIEW_VERSIONS": [
-          "backend/scripts/profile_metadata_constraints.py:180",
-          "backend/scripts/profile_metadata_constraints.py:186"
         ],
         "CONFIG_SEMANTIC_VIEWS": [
           "backend/scripts/profile_metadata_constraints.py:180",
           "backend/scripts/profile_metadata_constraints.py:186"
         ],
-        "CONFIG_FEATURE_VIEWS": [
-          "backend/scripts/profile_metadata_constraints.py:191"
+        "CONFIG_SEMANTIC_VIEW_VERSIONS": [
+          "backend/scripts/profile_metadata_constraints.py:180",
+          "backend/scripts/profile_metadata_constraints.py:186"
         ],
         "CONFIG_FEATURE_VIEW_VERSIONS": [
+          "backend/scripts/profile_metadata_constraints.py:191"
+        ],
+        "CONFIG_FEATURE_VIEWS": [
           "backend/scripts/profile_metadata_constraints.py:191"
         ],
         "CONFIG_FEATURE_GROUPS": [
@@ -22272,12 +22272,12 @@
         "CONFIG_FEATURE_GROUP_VERSIONS": [
           "backend/scripts/profile_metadata_constraints.py:197"
         ],
-        "CONFIG_TASK_GRAPH_RUNS": [
-          "backend/scripts/profile_metadata_constraints.py:203"
-        ],
         "CONFIG_TASK_RUNS": [
           "backend/scripts/profile_metadata_constraints.py:203",
           "backend/scripts/profile_metadata_constraints.py:208"
+        ],
+        "CONFIG_TASK_GRAPH_RUNS": [
+          "backend/scripts/profile_metadata_constraints.py:203"
         ],
         "CONFIG_TASKS": [
           "backend/scripts/profile_metadata_constraints.py:214"
@@ -22453,10 +22453,10 @@
     },
     "backend/scripts/seed_city_rbac_demo.py": {
       "references": {
-        "CONFIG_AI_MODELS": [
+        "CONFIG_AI_PROVIDERS": [
           "backend/scripts/seed_city_rbac_demo.py:141"
         ],
-        "CONFIG_AI_PROVIDERS": [
+        "CONFIG_AI_MODELS": [
           "backend/scripts/seed_city_rbac_demo.py:141"
         ]
       },
@@ -22742,10 +22742,10 @@
     },
     "backend/scripts/smoke_auto_two_agents.py": {
       "references": {
-        "CONFIG_AI_MODELS": [
+        "CONFIG_AI_PROVIDERS": [
           "backend/scripts/smoke_auto_two_agents.py:44"
         ],
-        "CONFIG_AI_PROVIDERS": [
+        "CONFIG_AI_MODELS": [
           "backend/scripts/smoke_auto_two_agents.py:44"
         ],
         "CONFIG_AGENT_RUNS": [
@@ -32458,10 +32458,10 @@
         "CONFIG_DATAVIZ_PUBLICATIONS": [
           "backend/tests/unit/test_control_plane_inventory.py:99"
         ],
-        "EVERY": [
+        "NOT_A_TABLE": [
           "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
-        "NOT_A_TABLE": [
+        "EVERY": [
           "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
         "CONFIG_STREAM_SOURCES": [
@@ -33035,7 +33035,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "4d805c2977bc1497fe1c2f4d898a0e9d03be19bf + uncommitted atomic AI configuration and private PG logging",
+  "source_commit": "d49e2b43f35f635e512a33ac7c11809a707b103d + uncommitted transactional audit",
   "ui_routes": [
     {
       "path": "/(auth)/sign-in",

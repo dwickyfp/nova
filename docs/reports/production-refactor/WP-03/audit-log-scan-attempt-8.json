@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "lines": 22,
+  "matches": {
+    "credential_canary": 0,
+    "encrypted_credential": 0
+  },
+  "container": "docker-nova-metadata-db-1",
+  "since": "2026-11-11T19:14:38.290986+00:00",
+  "until": "2026-11-11T19:19:49.114383+00:00",
+  "raw_log_exported": false,
+  "suite_attempt": 8
+}

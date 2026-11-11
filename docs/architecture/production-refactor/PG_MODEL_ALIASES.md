@@ -63,7 +63,9 @@ replace the owner's waived live embedding tests.
 The prepared [AI configuration service](PG_AI_CONFIGURATION.md) now commits
 immutable function definitions, jobs and outbox notifications with these
 mutations. Deferred constraints reject runtime writes that omit their intent.
-Atomic audit and live caller integration remain open. Native UDF installation still needs
+Revision 0009 adds [atomic alias success audit](PG_AUDIT.md), including both rows
+in a default move. Live caller and refusal-audit integration remain open.
+Native UDF installation still needs
 a participant-specific intent and receipt verifier; a lost lease alone never
 authorizes another DROP/CREATE. Gateway cache partitioning, revocation, the
 unsupported `embed` registration contract (R33), expected revisions in APIs/UI,

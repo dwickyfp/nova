@@ -623,3 +623,51 @@ Atomic audit, native UDF participant proof, cache/authorization isolation, runti
 ports and cutover remain open. Stored PENDING intent is not installed-function
 proof. No live provider call was made in these storage tests; the embedding
 owner waiver does not resolve the missing managed AI_EMBED implementation.
+
+CI 43080254576 subsequently completed for `d49e2b43` with all eight jobs
+successful: 285 PG cases without skips, 1,601 frontend cases, and 217 engine
+passes with 24 unchanged skips (no failures/errors, 1,462.211 seconds).
+The PG log gate scanned 61 lines with no credential marker or encrypted
+envelope. This resolves revision 0008's pending CI status. The ordinary engine
+fixture and its 24 skips do not prove patched-FE or complete feature acceptance.
+It does not certify the subsequent transactional-audit changes.
+
+## Transactional audit checkpoint
+
+Revision 0009 adds append-only audit storage, scoped reads, exact event/context
+replay and success audit in preference/provider/model/alias transactions.
+It retains the 27 legacy fields and duplicate numeric IDs, using a composite
+timestamp/UUID identity. Three initial monthly partitions and a default
+partition have no direct runtime grants. Import and live history ports remain open.
+
+Application tree
+`6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54`
+passes 10,761 unit cases (four warnings, 699.97 seconds, 65% combined coverage),
+full-application mypy, Ruff on 81 Python files and all 54 agent scenarios / 189
+checks. The final PG17/PgBouncer run passes 333 cases without skips in 214.60
+seconds, including 41 audit, 25 transaction-boundary and 50 provisioning cases.
+
+The [audit evidence](../../reports/production-refactor/WP-03/audit-commands.json)
+retains all twelve PG attempts. Regressions exposed privileged imports being
+misclassified as runtime writes, nullable partial metadata identities, and
+disabled triggers surviving SET-privilege revocation on a pooled backend.
+Each is corrected and tested. The penultimate combined run passed 332 cases
+and failed the existing 25 ms timeout fixture during startup while coverage
+ran concurrently. The final run executes sequentially with the same timeout
+and assertions. No production latency or load target is inferred from it.
+The superseded unit run was interrupted after 8,375 passes for the effective
+trigger-mode correction; it is not a completed gate.
+
+The shared audit text helper preserves legacy behavior without importing the
+engine adapter or application configuration into PG audit storage. Three legacy
+call sites were re-reviewed after their source positions moved; their SQL ASTs
+are unchanged. The real inventory CLI preserves 875 reviews, 759 feature rows
+and prior live/API observations. All 16 logical PG tables and both partition
+patterns have ownership entries. The final suite's 21 server log lines contain
+no credential marker or encrypted envelope; fixture cleanup leaves no schema
+or test roles. Development data was not reseeded.
+
+Current CI is pending. The preceding `d49e2b43` commit passed all eight jobs.
+Live caller ports, refusal/history authorization, remaining domain audit hooks,
+partition maintenance, retention/export, backups, production runtime wiring and
+cutover remain release gates. No live provider call was made in this audit phase.
