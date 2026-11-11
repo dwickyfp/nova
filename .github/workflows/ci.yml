@@ -23,10 +23,13 @@ jobs:
         working-directory: backend
         run: uv sync --locked
       - name: Build checksum-pinned transaction pooler
+        timeout-minutes: 5
         working-directory: backend
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libevent-dev libssl-dev
+          sudo apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 install -y build-essential pkg-config libevent-dev libssl-dev
           uv run python tests/integration/build_metadata_pooler.py "$RUNNER_TEMP/nova-pgbouncer"
       - name: Prepare private TLS fixture
         working-directory: backend
@@ -56,6 +59,7 @@ jobs:
               "tests/integration/test_metadata_pg_foundation.py",
               "tests/integration/test_metadata_bootstrap.py",
               "tests/integration/test_metadata_pgbouncer.py",
+              "tests/integration/test_metadata_preferences.py",
               "tests/integration/test_metadata_migrator.py", "-v",
               "--junit-xml=metadata-pg.xml",
           ]))

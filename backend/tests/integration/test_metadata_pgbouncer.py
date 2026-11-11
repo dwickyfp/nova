@@ -19,6 +19,7 @@ from app.core.metadata_db import (
     MetadataPoolConfig,
     MetadataTimeout,
 )
+from app.core.metadata_schema import load_migrations
 from app.modules.access_control.security_context import SecurityContext
 from tests.integration.build_metadata_pooler import VERSION
 from tests.integration.test_metadata_pg_foundation import metadata as metadata
@@ -133,8 +134,8 @@ log_disconnections = 0
 async def test_transaction_pooling_reuses_one_backend_without_actor_leakage(pooler):
     first, second = pooler.database(max_size=2), pooler.database(max_size=2)
     try:
-        await first.open(schema_version=1, metadata_epoch=pooler.epoch)
-        await second.open(schema_version=1, metadata_epoch=pooler.epoch)
+        await first.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
+        await second.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
         alice = SecurityContext("alice", "analyst", security_context_version=7)
         bob = SecurityContext("bob", "finance", security_context_version=42)
         async with first.transaction(alice) as conn:
@@ -175,7 +176,7 @@ async def test_transaction_pooling_reuses_one_backend_without_actor_leakage(pool
 
 async def test_transaction_deadlines_survive_ignored_startup_options(pooler, metadata):
     database = pooler.database(statement_timeout_ms=30, lock_timeout_ms=20)
-    await database.open(schema_version=1, metadata_epoch=pooler.epoch)
+    await database.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
     try:
         with pytest.raises(MetadataTimeout):
             async with database.transaction(SecurityContext("alice", "analyst")) as conn:
@@ -204,11 +205,13 @@ async def test_startup_validation_has_a_deadline_through_the_pooler(pooler, meta
             )
             async with asyncio.timeout(2):
                 with pytest.raises(MetadataTimeout):
-                    await database.open(schema_version=1, metadata_epoch=pooler.epoch)
+                    await database.open(
+                        schema_version=len(load_migrations()), metadata_epoch=pooler.epoch,
+                    )
         assert not database._ready
         recovered = pooler.database()
         try:
-            await recovered.open(schema_version=1, metadata_epoch=pooler.epoch)
+            await recovered.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
         finally:
             await recovered.close()
     finally:
@@ -217,7 +220,7 @@ async def test_startup_validation_has_a_deadline_through_the_pooler(pooler, meta
 
 async def test_cancel_rolls_back_before_a_different_actor_reuses_the_backend(pooler, metadata):
     database = pooler.database()
-    await database.open(schema_version=1, metadata_epoch=pooler.epoch)
+    await database.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
     started = asyncio.Event()
 
     async def pending_write():

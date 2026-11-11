@@ -14,7 +14,7 @@ The SQL variables module operates on the caller's engine session.
 | `nova.must_change_password` | `common/user_flags.py` | Account administration and the authenticated password-change flow |
 | `nova.news_enabled` | `common/news_entitlement.py` | Administrator write, current principal read |
 | `account.profile` | `auth/profile.py` | Current principal only |
-| `workspace.*` | `workspaces/service.py` through `workspaces/repository.py` | Fixed UI keys for the resolved personal/shared namespace; never arbitrary reserved keys |
+| `workspace.*` | `workspaces/service.py` through `workspaces/repository.py` | Current principal's fixed UI keys; never arbitrary reserved keys |
 | `studio.*` | `agents/studio_service.py` | Current principal; fixed theme/language/name/role/warehouse/thinking keys |
 | `setup_complete` | `common/nova_system.py`, owner `__system__` | Bootstrap/setup service only |
 | `default_llm_model` | `ai_ml/default_model.py`, owner `__system__` | Active administrator write; resolved model reference |
@@ -26,6 +26,12 @@ required. The external-search value contains authenticated ciphertext and a
 fixed public hint. Do not log values or put them in migration manifests.
 All these current preference writers use engine `NOW()`; their timestamp
 conversion must use the verified source session timezone, not assume UTC.
+
+The preference storage review verified the router boundary again:
+`get_workspace_tree` and `save_workspace_state` pass `user["username"]` to
+preference consumers. `get_shared_tree` reads entries through the resolved
+shared namespace without reading preferences. Shared file authorization below
+must not be incorrectly applied to these personal UI preference rows.
 
 ## Workspace constraints and authorization
 

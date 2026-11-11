@@ -22,6 +22,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
+from app.core.metadata_bootstrap import ALL_ROLES
 from app.core.metadata_db import (
     METADATA_DEPLOYMENT_LOCK,
     MetadataDatabase,
@@ -31,12 +32,14 @@ from app.core.metadata_db import (
     MetadataSchemaMismatch,
     MetadataTimeout,
 )
-from app.core.metadata_migrations import METADATA_ROLES, migrate
+from app.core.metadata_migrations import migrate
 from app.core.metadata_schema import SchemaManifestError, load_migrations
 from app.modules.access_control.security_context import SecurityContext
 
 pytestmark = pytest.mark.metadata_pg
 APP_VERSION = "a" * 40
+SCHEMA_VERSION = len(load_migrations())
+APPLIED_VERSIONS = tuple(range(1, SCHEMA_VERSION + 1))
 
 
 @dataclass(repr=False)
@@ -68,12 +71,12 @@ async def migration_environment(tmp_path):
         cursor = await admin.execute(
             "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
             "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
-            (list(METADATA_ROLES),),
+            (list(ALL_ROLES),),
         )
         assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
         try:
             async with admin.transaction():
-                for role in METADATA_ROLES:
+                for role in ALL_ROLES:
                     await admin.execute(
                         sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)),
                     )
@@ -124,7 +127,7 @@ async def migration_environment(tmp_path):
                 await admin.execute("REVOKE CREATE ON DATABASE nova_control FROM nova_meta_owner")
                 # ALTER DEFAULT PRIVILEGES persists outside a schema after its removal.
                 await admin.execute("DROP OWNED BY nova_meta_owner")
-                for role in (app_role, *reversed(METADATA_ROLES)):
+                for role in (app_role, *reversed(ALL_ROLES)):
                     await admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
 
 
@@ -145,7 +148,8 @@ async def ledger(env):
 async def test_fresh_schema_has_restricted_grants_and_no_active_epoch(migration_environment):
     env = migration_environment
     result = await install(env)
-    assert result.schema_version == 1 and result.applied_versions == (1,)
+    assert result.schema_version == SCHEMA_VERSION
+    assert result.applied_versions == APPLIED_VERSIONS
     current = await state(env)
     assert current["maintenance"] and current["metadata_epoch"] is None
     records = await ledger(env)
@@ -159,7 +163,7 @@ async def test_fresh_schema_has_restricted_grants_and_no_active_epoch(migration_
     assert (await cursor.fetchone())["owned"]
     async with await psycopg.AsyncConnection.connect(env.application.dsn, autocommit=True) as conn:
         cursor = await conn.execute("SELECT count(*) FROM nova_meta.schema_migrations")
-        assert await cursor.fetchone() == (1,)
+        assert await cursor.fetchone() == (SCHEMA_VERSION,)
         for statement in (
             "UPDATE nova_meta.deployment_state SET maintenance=false",
             "DELETE FROM nova_meta.schema_migrations",
@@ -170,7 +174,7 @@ async def test_fresh_schema_has_restricted_grants_and_no_active_epoch(migration_
                 await conn.execute(statement)
     app = MetadataDatabase(env.application)
     with pytest.raises(MetadataSchemaMismatch):
-        await app.open(schema_version=1, metadata_epoch=str(uuid4()))
+        await app.open(schema_version=SCHEMA_VERSION, metadata_epoch=str(uuid4()))
     cursor = await env.admin.execute(
         "SELECT has_schema_privilege('nova_meta_backup', 'nova_meta', 'USAGE') AS can_read"
     )
@@ -184,6 +188,27 @@ async def test_reapply_is_unchanged_and_does_not_rewrite_ledger(migration_enviro
     result = await migrate(env.migrator, app_version="b" * 40, directory=env.directory)
     assert result.applied_versions == ()
     assert (await ledger(env), await state(env)) == before
+
+
+async def test_upgrade_from_deployment_only_schema_preserves_first_revision(migration_environment):
+    env = migration_environment
+    pending = [migration for migration in load_migrations() if migration.version > 1]
+    for migration in pending:
+        (env.directory / migration.name).unlink()
+    result = await install(env)
+    assert result.schema_version == 1 and result.applied_versions == (1,)
+    first = (await ledger(env))[0]
+    for migration in pending:
+        (env.directory / migration.name).write_text(migration.statement)
+    result = await install(env)
+    assert result.applied_versions == tuple(m.version for m in pending)
+    assert (await ledger(env))[0] == first
+    cursor = await env.admin.execute(
+        "SELECT relrowsecurity AND relforcerowsecurity AS protected FROM pg_class "
+        "WHERE oid='nova_meta.config_user_preferences'::regclass"
+    )
+    assert (await cursor.fetchone())["protected"]
+    assert (await state(env))["metadata_epoch"] is None
 
 
 async def test_changed_applied_bytes_refuse_migrator_and_application(migration_environment):
@@ -200,14 +225,14 @@ async def test_changed_applied_bytes_refuse_migrator_and_application(migration_e
     await env.admin.execute("UPDATE nova_meta.schema_migrations SET checksum=%s", ("0" * 64,))
     app = MetadataDatabase(env.application)
     with pytest.raises(MetadataSchemaMismatch):
-        await app.open(schema_version=1, metadata_epoch=epoch)
+        await app.open(schema_version=SCHEMA_VERSION, metadata_epoch=epoch)
 
 
 async def test_two_migrators_publish_one_schema_revision(migration_environment):
     env = migration_environment
     results = await asyncio.gather(install(env), install(env))
-    assert sorted(result.applied_versions for result in results) == [(), (1,)]
-    assert len(await ledger(env)) == 1
+    assert sorted(result.applied_versions for result in results) == [(), APPLIED_VERSIONS]
+    assert len(await ledger(env)) == SCHEMA_VERSION
 
 
 @pytest.mark.parametrize("failure", [
@@ -218,7 +243,7 @@ async def test_partial_ddl_and_transaction_escape_roll_back(migration_environmen
     env = migration_environment
     await install(env)
     before = await ledger(env), await state(env)
-    (env.directory / "0002_atomic.sql").write_text(
+    (env.directory / f"{SCHEMA_VERSION + 1:04d}_atomic.sql").write_text(
         "CREATE TABLE nova_meta.atomic_probe(id integer PRIMARY KEY);\n" + failure,
     )
     with pytest.raises(MetadataOperationFailed):
@@ -231,7 +256,7 @@ async def test_partial_ddl_and_transaction_escape_roll_back(migration_environmen
 async def test_lost_migration_connection_rolls_back_and_resumes(migration_environment):
     env = migration_environment
     await install(env)
-    path = env.directory / "0002_interrupted.sql"
+    path = env.directory / f"{SCHEMA_VERSION + 1:04d}_interrupted.sql"
     statement = "CREATE TABLE nova_meta.interrupted_probe(id integer PRIMARY KEY);"
     path.write_text(statement + "\nPERFORM pg_sleep(30);")
     pending = asyncio.create_task(install(env))
@@ -249,14 +274,14 @@ async def test_lost_migration_connection_rolls_back_and_resumes(migration_enviro
         await env.admin.execute("SELECT pg_terminate_backend(%s)", (active["pid"],))
         with pytest.raises(MetadataOutcomeUnknown):
             await pending
-        assert len(await ledger(env)) == 1
+        assert len(await ledger(env)) == SCHEMA_VERSION
         cursor = await env.admin.execute(
             "SELECT to_regclass('nova_meta.interrupted_probe') AS probe",
         )
         assert (await cursor.fetchone())["probe"] is None
         path.write_text(statement)
-        assert (await install(env)).applied_versions == (2,)
-        assert (await state(env))["schema_version"] == 2
+        assert (await install(env)).applied_versions == (SCHEMA_VERSION + 1,)
+        assert (await state(env))["schema_version"] == SCHEMA_VERSION + 1
     finally:
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)
@@ -269,12 +294,12 @@ async def test_schema_upgrade_requires_maintenance_and_preserves_epoch(migration
     await env.admin.execute(
         "UPDATE nova_meta.deployment_state SET metadata_epoch=%s, maintenance=false", (epoch,),
     )
-    (env.directory / "0002_upgrade.sql").write_text(
+    (env.directory / f"{SCHEMA_VERSION + 1:04d}_upgrade.sql").write_text(
         "CREATE TABLE nova_meta.upgrade_probe(id integer PRIMARY KEY);",
     )
     with pytest.raises(MetadataSchemaMismatch):
         await install(env)
-    assert len(await ledger(env)) == 1
+    assert len(await ledger(env)) == SCHEMA_VERSION
     await env.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=true")
     await install(env)
     current = await state(env)
@@ -290,7 +315,7 @@ async def test_migration_waits_for_readers_and_lock_wait_is_bounded(migration_en
     epoch = str(uuid4())
     await env.admin.execute("UPDATE nova_meta.deployment_state SET metadata_epoch=%s", (epoch,))
     app = MetadataDatabase(env.application)
-    await app.open(schema_version=1, metadata_epoch=epoch)
+    await app.open(schema_version=SCHEMA_VERSION, metadata_epoch=epoch)
     try:
         async with app.transaction(SecurityContext(principal="fixture", active_role="ANALYST"),
                                    read_only=True):
@@ -327,14 +352,14 @@ async def test_application_identity_cannot_run_migrator(migration_environment):
 
 async def test_failed_fresh_install_leaves_no_partial_schema(migration_environment):
     env = migration_environment
-    path = env.directory / "0002_failed.sql"
+    path = env.directory / f"{SCHEMA_VERSION + 1:04d}_failed.sql"
     path.write_text("CREATE TABLE nova_meta.probe(id integer); COMMIT;")
     with pytest.raises(MetadataOperationFailed):
         await install(env)
     cursor = await env.admin.execute("SELECT to_regnamespace('nova_meta') AS schema")
     assert (await cursor.fetchone())["schema"] is None
     path.unlink()
-    assert (await install(env)).applied_versions == (1,)
+    assert (await install(env)).applied_versions == APPLIED_VERSIONS
 
 
 async def test_missing_ledger_never_overwrites_existing_objects(migration_environment):
@@ -358,8 +383,8 @@ async def test_one_shot_entrypoint_installs_without_publishing_epoch(migration_e
     stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
     assert process.returncode == 0
     assert json.loads(stdout) == {
-        "status": "SCHEMA_INSTALLED", "schema_version": 1,
-        "applied_versions": [1], "metadata_epoch_published": False,
+        "status": "SCHEMA_INSTALLED", "schema_version": SCHEMA_VERSION,
+        "applied_versions": list(APPLIED_VERSIONS), "metadata_epoch_published": False,
     }
     password = conninfo_to_dict(env.migrator.dsn)["password"]
     assert password.encode() not in stdout + stderr

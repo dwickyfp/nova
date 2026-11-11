@@ -57,3 +57,26 @@ No production recovery action changed. Existing StarRocks remains authoritative;
 do not run an import or publish an epoch using these helpers alone. This work
 addresses parts of DB-11/MIG-01/MIG-02 and the redacted-import boundary. It does
 not satisfy complete schema translation, two rehearsals or release acceptance.
+
+
+## Preference storage checkpoint
+
+Revision 0002 now installs the first domain table and its forced RLS/column
+grants. The [preference contract](../../../architecture/production-refactor/PG_PREFERENCES.md)
+describes ownership, retained deletion revisions, per-workload access, credential
+validation and the still-pending caller/cutover work. The earlier revision-1
+statement above applies to the import-helper checkpoint, not this schema package.
+
+Final local checks: 10,622 backend tests passed with four warnings in 561.75
+seconds (65% combined coverage); mypy, Ruff on 58 changed Python files and the
+54-scenario/189-check scorecard passed. The final PG17/PgBouncer suite passed
+96 tests without skips in 67.65 seconds, including 27 preference cases.
+The repository receives the service transaction and uses a savepoint per batch;
+service rollback and a caught batch conflict both preserve atomicity. Fixture
+cleanup left no test schemas or new roles. No development data was reset.
+
+[preferences-commands.json](preferences-commands.json) records source/schema
+hashes, exact commands, earlier attempts and scope. The sanitized JUnit report
+is [metadata-preferences-local.xml](metadata-preferences-local.xml). CI for
+these edits is pending; the parent run's Ubuntu mirror DNS failures remain
+failed infrastructure evidence and do not certify this source.

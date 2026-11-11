@@ -109,7 +109,8 @@ async def metadata():
                                 AND active_role = current_setting('nova.active_role', true));
             """)
             await admin.execute(
-                "INSERT INTO nova_meta.deployment_state VALUES (true, 1, %s, false)", (epoch,)
+                "INSERT INTO nova_meta.deployment_state VALUES (true, %s, %s, false)",
+                (len(load_migrations()), epoch)
             )
             for migration in load_migrations():
                 await admin.execute(
@@ -129,7 +130,7 @@ async def metadata():
         created = True
         app_dsn = make_conninfo(dsn, user=role, password=password)
         app = MetadataDatabase(MetadataPoolConfig(app_dsn, max_size=2, acquire_timeout=2))
-        await app.open(schema_version=1, metadata_epoch=epoch)
+        await app.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
         yield MetadataFixture(app, admin, app_dsn, epoch)
     finally:
         if app:
@@ -238,7 +239,7 @@ async def test_wrong_epoch_refuses_startup(metadata):
     _, _, dsn, _ = metadata
     wrong = MetadataDatabase(MetadataPoolConfig(dsn))
     with pytest.raises(MetadataSchemaMismatch):
-        await wrong.open(schema_version=1, metadata_epoch=str(uuid4()))
+        await wrong.open(schema_version=len(load_migrations()), metadata_epoch=str(uuid4()))
     with pytest.raises(MetadataUnavailable):
         async with wrong.transaction(actor()):
             pytest.fail("Mismatched epoch served a transaction")
@@ -252,7 +253,7 @@ async def test_schema_create_privilege_refuses_application_startup(metadata):
     )
     privileged = MetadataDatabase(MetadataPoolConfig(dsn))
     with pytest.raises(MetadataSchemaMismatch):
-        await privileged.open(schema_version=1, metadata_epoch=epoch)
+        await privileged.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
 
 
 @pytest.mark.parametrize("inherited_role", ["pg_read_all_data", "pg_write_all_data"])
@@ -264,7 +265,7 @@ async def test_broad_inherited_database_privileges_refuse_startup(metadata, inhe
     ))
     app = MetadataDatabase(MetadataPoolConfig(dsn))
     with pytest.raises(MetadataSchemaMismatch):
-        await app.open(schema_version=1, metadata_epoch=epoch)
+        await app.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
 
 
 async def test_database_create_grant_refuses_startup(metadata):
@@ -276,7 +277,7 @@ async def test_database_create_grant_refuses_startup(metadata):
     try:
         app = MetadataDatabase(MetadataPoolConfig(dsn))
         with pytest.raises(MetadataSchemaMismatch):
-            await app.open(schema_version=1, metadata_epoch=epoch)
+            await app.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
     finally:
         await admin.execute(sql.SQL("REVOKE CREATE ON DATABASE nova_control FROM {}").format(
             sql.Identifier(role),
@@ -286,7 +287,7 @@ async def test_database_create_grant_refuses_startup(metadata):
 async def test_statement_timeout_rolls_back_and_pool_recovers(metadata):
     _, _, dsn, epoch = metadata
     bounded = MetadataDatabase(MetadataPoolConfig(dsn, statement_timeout_ms=25))
-    await bounded.open(schema_version=1, metadata_epoch=epoch)
+    await bounded.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
     try:
         with pytest.raises(MetadataUnavailable):
             async with bounded.transaction(actor()) as conn:

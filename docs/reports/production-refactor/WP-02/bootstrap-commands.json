@@ -138,8 +138,23 @@
     }
   ],
   "ci": {
-    "result": "PENDING",
-    "limit": "Previous CI commits do not test these provisioning edits."
+    "result": "PASS",
+    "commit": "a7894247db84c9a9627b5c9a390a4c6636ef0d9a",
+    "run_url": "https://github.com/dwickyfp/nova/actions/runs/43029919010",
+    "jobs_succeeded": 8,
+    "metadata_pg": {
+      "passed": 59,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "engine": {
+      "passed": 217,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 24
+    },
+    "limit": "Skipped engine cases remain unproven; this run predates import conversion and transaction-pooling changes."
   },
   "limitations": [
     "No production Compose provisioning",

@@ -435,3 +435,46 @@ Full backend coverage passed 10,601 tests with four warnings in 468.15 seconds
 (65% combined coverage), along with mypy, Ruff on 55 changed Python files and
 the 54-scenario/189-check scorecard. CI for these edits is pending. These tests
 do not install the production pooler/Compose, port a domain or perform cutover.
+
+
+## Preference storage and CI infrastructure failure
+
+CI [43029919010](https://github.com/dwickyfp/nova/actions/runs/43029919010)
+passed all eight jobs for `a7894247db84c9a9627b5c9a390a4c6636ef0d9a`.
+Downloaded reports contain 59 PG passes with no skips and 217 engine passes
+with 24 skips, no failures/errors. This supersedes the provisioning checkpoint's
+pending-CI statement; it does not prove the later import/pooling changes.
+
+The next run, [43036382504](https://github.com/dwickyfp/nova/actions/runs/43036382504),
+failed to install OS dependencies for both PgBouncer and Playwright because the
+Ubuntu mirrors could not be resolved. Those jobs failed before their tests ran.
+They remain failed evidence, not passes or application-test results. The pooler
+build step now bounds package acquisition and refuses a failed index refresh;
+it still requires all dependencies and the pinned source checksum.
+
+Revision 0002 and the preference repository implement composite identity,
+forced RLS by row category/workload, atomic revision CAS, retained deletion
+revisions and encrypted search-key validation. The 94-case local PG suite passes
+without skips, including 25 preference cases and upgrade from revision 1.
+The [storage contract](PG_PREFERENCES.md) lists the remaining actor/revision
+plumbing, audit integration, import and cutover work. No production domain has
+switched authority. Unknown historical keys are preserved but inaccessible until
+reviewed; the read-only source probe observed 17 rows in ten known key names.
+
+The final preference checkpoint also passed 10,622 backend tests with four
+warnings in 480.80 seconds (65% combined coverage), mypy, Ruff on 58 changed
+Python files and the 54-scenario/189-check scorecard. Final PG acceptance after
+the last DDL edit passed 94 cases with zero skips in 38.36 seconds. Cleanup
+left zero test schemas/new roles. Exact evidence is in the
+[preference command record](../../reports/production-refactor/WP-03/preferences-commands.json).
+
+The subsequent transaction-composition review moves repository work into the
+service's actor-bound transaction and adds a savepoint per batch. An outer
+rollback or an internally caught conflict cannot commit a partial batch. The
+final application tree `ec36d34ee8c530b13f3904a24052115e2ae69cd81283539826d73f78c7e6a00c`
+passed 10,622 backend tests with four warnings in 561.75 seconds (65% combined
+coverage), mypy, changed-file Ruff and the agent scorecard. The final combined
+PG suite passed 96 cases without skips in 67.65 seconds, including 27 preference
+cases. A 90-minute scan of 2,368 fixture log lines found zero occurrences of
+the preference secret canaries or encrypted-envelope marker; no raw logs were
+exported. Earlier runs remain in the report. CI for this source is still pending.

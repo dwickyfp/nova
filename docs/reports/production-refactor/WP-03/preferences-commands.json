@@ -1,0 +1,222 @@
+{
+  "source_parent_commit": "60e859d8b93f95131e4616bc8d204fa18af75177",
+  "application_tree_sha256": "ec36d34ee8c530b13f3904a24052115e2ae69cd81283539826d73f78c7e6a00c",
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc"
+  },
+  "working_directory": "backend",
+  "runtime_authority": "StarRocks; preference caller port and all-domain cutover pending",
+  "topology": {
+    "project": "docker",
+    "pg": "17.11",
+    "pgbouncer": "1.26.1 native process, transaction mode",
+    "tls": "verify-full",
+    "fixture": "existing disposable PG, no new containers",
+    "cleanup": {
+      "test_schemas": 0,
+      "new_fixture_roles": 0
+    }
+  },
+  "checks": [
+    {
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/unit",
+        "--cov=app",
+        "--cov-branch",
+        "--cov-report=term-missing",
+        "--cov-report=xml:/tmp/nova-refactor-coverage-19.xml"
+      ],
+      "result": "PASS",
+      "passed": 10622,
+      "warnings": 4,
+      "coverage_percent_rounded": 65,
+      "seconds": 561.75
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "mypy",
+        "app",
+        "--no-error-summary"
+      ],
+      "result": "PASS"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        "app/common/preferences.py",
+        "app/core/config.py",
+        "app/core/deps.py",
+        "app/core/metadata_bootstrap.py",
+        "app/core/metadata_db.py",
+        "app/core/metadata_import.py",
+        "app/core/metadata_migrations.py",
+        "app/core/metadata_schema.py",
+        "app/core/redis.py",
+        "app/main.py",
+        "app/modules/agents/router.py",
+        "app/modules/agents/studio_router.py",
+        "app/modules/ai_ml/router.py",
+        "app/modules/assistant/consent.py",
+        "app/modules/assistant/router.py",
+        "app/modules/assistant/service.py",
+        "app/modules/auth/service.py",
+        "app/modules/llm_functions/router.py",
+        "app/modules/task_orchestration/execution.py",
+        "app/modules/task_orchestration/worker.py",
+        "app/observability/http.py",
+        "scripts/inventory_control_plane.py",
+        "scripts/profile_metadata_constraints.py",
+        "tests/eval/semantic_execution.py",
+        "tests/eval/test_business_ontology_trajectory.py",
+        "tests/eval/test_evidence_health_trajectory.py",
+        "tests/eval/test_mcp_consent_trajectory.py",
+        "tests/eval/test_semantic_clarification_trajectory.py",
+        "tests/eval/test_semantic_latest_month.py",
+        "tests/integration/build_metadata_pooler.py",
+        "tests/integration/prepare_metadata_fixture.py",
+        "tests/integration/test_metadata_bootstrap.py",
+        "tests/integration/test_metadata_migrator.py",
+        "tests/integration/test_metadata_pg_foundation.py",
+        "tests/integration/test_metadata_pgbouncer.py",
+        "tests/integration/test_metadata_preferences.py",
+        "tests/integration/test_task_outcome_uncertainty.py",
+        "tests/unit/test_agent_run_storage_failure.py",
+        "tests/unit/test_ai_ml_ssrf_guard.py",
+        "tests/unit/test_api_auth_inventory.py",
+        "tests/unit/test_assistant_stage_b.py",
+        "tests/unit/test_control_plane_inventory.py",
+        "tests/unit/test_control_plane_session_boundaries.py",
+        "tests/unit/test_llm_alias_authorization.py",
+        "tests/unit/test_mcp_registry_access.py",
+        "tests/unit/test_metadata_bootstrap_config.py",
+        "tests/unit/test_metadata_db_config.py",
+        "tests/unit/test_metadata_import.py",
+        "tests/unit/test_metadata_preferences.py",
+        "tests/unit/test_metadata_schema.py",
+        "tests/unit/test_notebook_data_tokens.py",
+        "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+        "tests/unit/test_observability_metrics.py",
+        "tests/unit/test_process_role.py",
+        "tests/unit/test_superset_bridge.py",
+        "tests/unit/test_task_orchestration_worker.py",
+        "tests/unit/test_task_outcome_uncertainty.py",
+        "tests/unit/test_web_search_tool.py"
+      ],
+      "result": "PASS",
+      "python_files": 58
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "tests.eval.report"
+      ],
+      "result": "PASS",
+      "scenarios_passed": 54,
+      "checks_passed": 189
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "-"
+      ],
+      "stdin": "import json, os, pytest\nfrom pathlib import Path\nos.environ['NOVA_TEST_METADATA_ADMIN_DSN']=json.loads(Path('/tmp/nova-control-plane-pg/connection.json').read_text())['admin_dsn']\nos.environ['NOVA_TEST_METADATA_DISPOSABLE']='acknowledged'\nos.environ['NOVA_TEST_PGBOUNCER_BINARY']='/tmp/nova-pgbouncer-acceptance-build-2/pgbouncer'\nraise SystemExit(pytest.main(['tests/integration/test_metadata_preferences.py', 'tests/integration/test_metadata_migrator.py', 'tests/integration/test_metadata_pg_foundation.py', 'tests/integration/test_metadata_pgbouncer.py', 'tests/integration/test_metadata_bootstrap.py', '-q', '--tb=short', '--maxfail=3', '--junit-xml=/tmp/nova-preferences-pg-5.xml']))\n",
+      "result": "PASS",
+      "passed": 96,
+      "skipped": 0,
+      "seconds": 67.65,
+      "artifact": "metadata-preferences-local.xml"
+    }
+  ],
+  "earlier_attempts": [
+    {
+      "report": "/tmp/nova-preferences-pg-1.xml",
+      "result": "PASS",
+      "passed": 38,
+      "seconds": 22.21,
+      "limit": "Initial preference/migrator subset; before imported-value, role-spoofing, upgrade and lock-recovery additions."
+    },
+    {
+      "report": "/tmp/nova-preferences-pg-2.xml",
+      "result": "PASS",
+      "passed": 94,
+      "seconds": 37.17,
+      "limit": "Before final workload grants were narrowed."
+    },
+    {
+      "report": "/tmp/nova-preferences-pg-3.xml",
+      "result": "PASS",
+      "passed": 94,
+      "seconds": 31.78,
+      "limit": "Before final pref_value text/check DDL aligned with the column mapping."
+    },
+    {
+      "report": "/tmp/nova-preferences-pg-4.xml",
+      "result": "PASS",
+      "passed": 94,
+      "seconds": 38.36,
+      "limit": "Before caller-owned transaction and nested-savepoint composition."
+    },
+    {
+      "report": "/tmp/nova-refactor-unit-18.log",
+      "result": "PASS",
+      "passed": 10622,
+      "seconds": 480.8,
+      "limit": "Before caller-owned transaction and nested-savepoint composition; superseded by the next complete backend run."
+    }
+  ],
+  "source_probe": {
+    "mode": "READ_ONLY",
+    "row_values_exported": false,
+    "rows": 17,
+    "key_counts": {
+      "default_llm_model": 1,
+      "setup_complete": 1,
+      "tavily_api_key": 1,
+      "workspace.active_tab": 2,
+      "workspace.assistant_state": 2,
+      "workspace.last_database": 2,
+      "workspace.last_role": 2,
+      "workspace.last_schema": 2,
+      "workspace.open_tabs": 2,
+      "workspace.sidebar_state": 2
+    },
+    "limit": "Observation only; not frozen export or timestamp provenance"
+  },
+  "ci": {
+    "result": "PENDING",
+    "limit": "This working tree is not pushed. Parent run 43036382504 failed PG/browser dependency installation before tests because Ubuntu mirrors could not be resolved; engine job is still running."
+  },
+  "limitations": [
+    "No caller uses the PG preference repository yet",
+    "No production epoch or cutover",
+    "No per-domain HTTP/UI revision-token wiring",
+    "No atomic preference/audit event integration",
+    "No historical timestamp reconciliation or import rehearsal",
+    "Search-key RLS grants encrypted internal access; API redaction remains owned by the settings/tool ports",
+    "Single-host and local-load exceptions remain; embeddings OWNER_WAIVED"
+  ],
+  "log_canary_scan": {
+    "service": "docker-nova-metadata-db-1",
+    "window_minutes": 90,
+    "scanned_lines": 2368,
+    "encrypted_envelope_marker_lines": 0,
+    "preference_plaintext_canary_lines": 0,
+    "raw_log_exported": false,
+    "limit": "Fixture logs only; not all production services."
+  }
+}
