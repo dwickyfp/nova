@@ -43,6 +43,24 @@ class TransactionIntent:
 
 
 @dataclass(frozen=True, slots=True)
+class MergeCapture:
+    """A ``MERGE`` into a table with Streams, as queries the capture coordinator runs.
+
+    ``rows_sql`` gives each upserted row whole (``__c0``… in ``columns`` order),
+    ``deleted_sql`` the current rows a ``THEN DELETE`` removes, ``check_sql``
+    refuses two source rows for one key. ``native_steps`` is the ordinary
+    lowering, used only while the source is not captured.
+    """
+
+    rows_sql: str
+    columns: tuple[str, ...]
+    deleted_sql: str
+    check_sql: str
+    clause_kinds: tuple[str, ...]
+    native_steps: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SourcePayload:
     source_key: int
 
@@ -56,6 +74,8 @@ class StreamPayload(SourcePayload):
     if_exists: bool = False
     if_not_exists: bool = False
     append_only: bool = False
+    or_replace: bool = False
+    show_initial_rows: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +217,8 @@ class EngineSqlPlan:
     transaction_intent: TransactionIntent | None = None
     private_bindings: tuple[PrivateSqlBinding, ...] = ()
     stream_functions: tuple[StreamFunctionBinding, ...] = ()
+    #: Set by the MERGE planner when the target has Streams.
+    capture: MergeCapture | None = None
 
     def __post_init__(self) -> None:
         from app.common.sql_guard import redact_sql_credentials

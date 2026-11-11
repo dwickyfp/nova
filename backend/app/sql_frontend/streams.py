@@ -49,13 +49,24 @@ def build_stream_statement(parsed) -> StreamStatement:
         "status" if node.STATUS() else "backlog" if node.BACKLOG() else
         "list" if node.STREAMS() else "describe"
     )
+    creating = operation == "create"
+
+    def flag(token) -> bool:
+        return creating and token is not None and token.type == StarRocksParser.TRUE
+
+    if creating and node.REPLACE() is not None and node.IF() is not None:
+        from app.sql_frontend.errors import SemanticError
+
+        raise SemanticError("Use either OR REPLACE or IF NOT EXISTS, not both")
     return StreamStatement(
         parsed, operation,
         name_parts(names[0]) if names else None,
         name_parts(names[1]) if len(names) > 1 else None,
         bool(node.IF()) and operation == "drop",
-        bool(node.IF()) and operation == "create",
-        operation == "create" and node.APPEND_ONLY() is not None and node.TRUE() is not None,
+        bool(node.IF()) and creating,
+        flag(node.appendOnly),
+        creating and node.REPLACE() is not None,
+        flag(node.initialRows),
     )
 
 
@@ -84,6 +95,7 @@ def validate_stream(statement: Statement, context):
     return StreamPayload(
         0, statement.operation, database, name, source,
         statement.if_exists, statement.if_not_exists, statement.append_only,
+        statement.or_replace, statement.show_initial_rows,
     )
 
 

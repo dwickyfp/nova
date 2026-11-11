@@ -2,7 +2,7 @@
 name: nova-streams
 title: Explain, draft and run Nova Streams SQL
 summary: Create, read, consume and drop Nova Streams (table change tracking) and trigger tasks from them, within their supported sources and limits.
-triggers: nova streams, create stream, drop stream, change tracking, change data capture, cdc, backlog, nova_stream_has_data, system$stream_has_data, metadata$action, buat stream, hapus stream, perubahan tabel
+triggers: nova streams, show_initial_rows, stale stream, create stream, drop stream, change tracking, change data capture, cdc, backlog, nova_stream_has_data, system$stream_has_data, metadata$action, buat stream, hapus stream, perubahan tabel
 source: docs/sql_docs/13-nova-streams.md
 ---
 
@@ -67,6 +67,11 @@ FROM analytics.orders_stream;
 ```
 
 ```sql
+CREATE OR REPLACE STREAM analytics.orders_stream ON TABLE analytics.orders
+SHOW_INITIAL_ROWS = TRUE;
+```
+
+```sql
 DROP STREAM IF EXISTS analytics.orders_stream;
 ```
 
@@ -99,17 +104,22 @@ DROP STREAM IF EXISTS analytics.orders_stream;
   on it.
 - While a table has Streams, Nova records every change made through Nova to that
   table: worksheets, Neva, tasks and the SQL proxy. Supported writes are full-row
-  `INSERT`, `UPDATE … SET … WHERE …` and `DELETE … WHERE …`. A single write can
-  change at most 50,000 rows.
-- While a table has Streams, Nova refuses `TRUNCATE`, `ALTER TABLE`,
-  `INSERT OVERWRITE`, partial column lists and writes inside an explicit
-  transaction.
+  `INSERT`, `UPDATE … SET … WHERE …`, `DELETE … WHERE …`, `MERGE INTO` and
+  `TRUNCATE TABLE` (which shows every row as a DELETE). A single write can change
+  at most 50,000 rows.
+- While a table has Streams, Nova refuses `ALTER TABLE`, `INSERT OVERWRITE`,
+  partial column lists and writes inside an explicit transaction.
 - When a write reaches the table outside Nova, the Stream becomes blocked, and
   reading it fails until the Stream is recreated. Explain this to the user
   instead of working around it.
+- A Stream that is not consumed for 14 days after a change becomes stale and
+  must be recreated with `CREATE OR REPLACE STREAM` (owner role) or dropped.
+  `DESCRIBE STREAM` shows `stale_after`.
+- `SHOW_INITIAL_ROWS = TRUE` makes the first read return the rows the table held
+  at creation as INSERTs (up to 100,000 rows), then changes as usual.
 - Do not write rows in `NOVA_SYSTEM` or send Stream syntax straight to the engine
-  as a workaround. Do not invent `SHOW_INITIAL_ROWS`, `AT`/`BEFORE` or
-  `CREATE OR REPLACE STREAM`, none of which is supported.
+  as a workaround. `AT`/`BEFORE` and Streams on views, external or partitioned
+  tables are not supported.
 
 ## Tasks
 

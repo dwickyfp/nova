@@ -318,6 +318,8 @@ class FeatureAdapters:
                 record = await stream_service.create(
                     name, payload.source, mode, caller,
                     if_not_exists=payload.if_not_exists,
+                    or_replace=payload.or_replace,
+                    show_initial_rows=payload.show_initial_rows,
                 )
                 stream_sql.forget()
                 columns = ["stream", "source", "mode", "owner_role"]
@@ -333,7 +335,9 @@ class FeatureAdapters:
                 ]]
             elif payload.operation == "list":
                 items = await stream_service.list_streams(payload.database, caller)
-                columns = ["name", "database", "source", "mode", "owner_role", "created_at"]
+                columns = [
+                    "name", "database", "source", "mode", "status", "owner_role", "created_at",
+                ]
                 rows = [[item[key] for key in columns] for item in items]
             elif payload.operation == "backlog" and name is not None:
                 info = await stream_service.backlog(name, caller)

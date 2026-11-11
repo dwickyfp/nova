@@ -333,6 +333,13 @@ class Settings(BaseSettings):
     #: Shortest gap between two stream-triggered runs of one task (Snowflake: 30 s,
     #: configurable down to 10 s).
     STREAM_TRIGGER_MIN_INTERVAL_SECONDS: int = Field(default=30, ge=10, le=86_400)
+    #: How long unconsumed changes are kept for a stream. A stream whose oldest
+    #: unconsumed change is older becomes STALE (recreate it) and its changes are
+    #: released (Snowflake's 14-day maximum extension).
+    STREAM_RETENTION_DAYS: int = Field(default=14, ge=1, le=90)
+    #: How often the scheduler marks stale streams, trims consumed journal rows
+    #: and refreshes the stream gauges.
+    STREAM_MAINTENANCE_INTERVAL_SECONDS: int = Field(default=300, ge=30, le=86_400)
     #: Longest a ``LANGUAGE PYTHON`` task runs (package installs included)
     #: before it is stopped and its node fails. The task's sandbox uses the
     #: notebook runtime image and resources above.

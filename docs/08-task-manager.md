@@ -734,6 +734,7 @@ endpoint separately exposes StarRocks `SUBMIT TASK` templates.
 | `GET /runs/{graph_run_id}` | Node attempts and redacted errors. |
 | `GET /graphs/{graph_id}/nodes/{task_id}/sql` | Stored SQL (or Python) before rewriting, with credentials redacted, plus `language`, `packages` and `runtime_version`. Graph nodes carry `language`, `statement_count`, `packages`; node runs carry `output`. |
 | `POST /graphs/{graph_id}/runs` | Persist and enqueue a manual run under the authenticated caller (the same path as `EXECUTE TASK`). |
+| `GET /graphs/{graph_id}/triggers` | For the root's stream `WHEN`: each stream's offset, head and `has_data` (or its error, such as `STREAM_STALE`), the last five stream-triggered runs with what they observed, and the `STREAM_NOT_CONSUMED` warning. |
 | `POST /graphs/{graph_id}/lifecycle` | `{"action": "resume" \| "suspend"}` on the graph's root, owner role only (the same path as `ALTER TASK … RESUME/SUSPEND`). Summaries carry `lifecycle_state`. |
 
 Authorization is enforced on every endpoint. Unknown and unauthorized graph IDs

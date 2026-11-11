@@ -365,6 +365,7 @@ class SchedulerTick:
     ) -> None:
         self._repository = repository
         self._transport = transport
+        self._streams_maintained_at = float("-inf")
 
     async def tick(self, now: datetime | None = None) -> SchedulerPlan:
         moment = now or datetime.now(UTC)
@@ -409,7 +410,26 @@ class SchedulerTick:
                 )
 
         SCHEDULER_OVERLAP_SKIPS.inc(plan.overlap_skipped)
+        await self._maintain_streams()
         return plan
+
+    async def _maintain_streams(self) -> None:
+        """Mark stale streams, trim consumed journals and refresh stream gauges."""
+        import time
+
+        from app.core.config import settings
+
+        if time.monotonic() - self._streams_maintained_at < (
+            settings.STREAM_MAINTENANCE_INTERVAL_SECONDS
+        ):
+            return
+        self._streams_maintained_at = time.monotonic()
+        try:
+            from app.modules.streams.service import stream_service
+
+            await stream_service.maintain()
+        except Exception:
+            logger.exception("stream maintenance failed; it runs again next interval")
 
     async def _enqueue(
         self, due: DueGraph, plan: SchedulerPlan, *, skip_existing_lookup: bool = False

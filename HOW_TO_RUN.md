@@ -743,7 +743,11 @@ Script ini mengisi `STREAM_WRITER_USER`, `STREAM_WRITER_PASSWORD`, dan
 `STREAM_WRITER_ROLE` di `.env`. Restart backend, scheduler, dan worker setelahnya.
 Tanpa akun ini `CREATE STREAM` gagal dengan `STREAM_CHANGE_TRACKING_UNAVAILABLE`.
 Hanya penulisan lewat Nova yang ditangkap; penulisan langsung ke engine membuat
-stream `BLOCKED` sampai dibuat ulang. Detail: `docs/sql_docs/13-nova-streams.md`.
+stream `BLOCKED` sampai dibuat ulang. Perubahan yang belum dikonsumsi disimpan
+`STREAM_RETENTION_DAYS` hari (default 14); lewat dari itu stream menjadi `STALE`.
+Scheduler menjalankan pemeliharaan stream (tandai stale, bersihkan journal,
+perbarui metrik) setiap `STREAM_MAINTENANCE_INTERVAL_SECONDS` (default 300).
+Detail: `docs/sql_docs/13-nova-streams.md`.
 
 Cara mengamati:
 

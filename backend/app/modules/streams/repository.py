@@ -82,7 +82,7 @@ def _decode_record(row) -> StreamRecord:
         StreamName(row[1], row[3], row[2], row[0]), row[4], row[5],
         StreamName(row[6], row[7]), row[8], row[9], ChangeCursor(row[10], row[11]), row[12],
     )
-    if record.generation < 0 or record.status not in {"READY", "DROPPED"}:
+    if record.generation < 0 or record.status not in {"READY", "DROPPED", "STALE"}:
         raise StreamError("STREAM_METADATA_INCONSISTENT", "Stream generation is inconsistent")
     return record
 

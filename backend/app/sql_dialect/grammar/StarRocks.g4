@@ -845,7 +845,8 @@ novaUserIdentity
     ;
 
 novaStreamStatement
-    : CREATE STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName (APPEND_ONLY EQ (TRUE | FALSE))?
+    : CREATE (OR REPLACE)? STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName
+      (APPEND_ONLY EQ appendOnly=(TRUE | FALSE))? (SHOW_INITIAL_ROWS EQ initialRows=(TRUE | FALSE))?
     | DROP STREAM (IF EXISTS)? novaStreamName
     | (DESC | DESCRIBE) STREAM novaStreamName
     | SHOW STREAM STATUS novaStreamName
@@ -3851,7 +3852,7 @@ nonReserved
     // identifier -- without it these new tokens would become reserved spellings.
     | ML_MODEL | INPUT | TARGET | SERIES | ALGORITHM | TEST_SIZE | FEATURES | HYPERPARAMETERS
     | COPY | REQUIRE | CHANGE | AVAILABLE | ML_FORECAST | HORIZON | FREQUENCY
-    | STREAMS | APPEND_ONLY | BACKLOG
+    | STREAMS | APPEND_ONLY | SHOW_INITIAL_ROWS | BACKLOG
     // NOVA-END
     | ARRAY_AGG | ARRAY_AGG_DISTINCT | ASSERT_ROWS | AWARE
     | BACKEND | BACKENDS | BACKUP | BEGIN | BITMAP_UNION | BLACKLIST | BLACKHOLE | BINARY | BODY | BOOLEAN | BRANCH | BROKER | BUCKETS

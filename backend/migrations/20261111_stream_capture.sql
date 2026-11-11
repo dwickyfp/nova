@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS (
     mode VARCHAR(16) NOT NULL,
     source_id VARCHAR(64) NOT NULL,
     created_by VARCHAR(128) NOT NULL,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    show_initial_rows BOOLEAN,
+    initial_commit_seq BIGINT
 ) PRIMARY KEY(stream_id)
 DISTRIBUTED BY HASH(stream_id) BUCKETS 1
 PROPERTIES ('replication_num'='1');

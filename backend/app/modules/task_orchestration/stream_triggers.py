@@ -62,8 +62,14 @@ async def plan_stream_triggers(
     engine_timezone: str = "UTC",
 ) -> list[DueGraph]:
     from app.modules.streams.service import stream_service
+    from app.observability.metrics import (
+        STREAM_NOT_CONSUMED,
+        STREAM_TRIGGER_ERRORS,
+        STREAM_TRIGGER_RUNS,
+    )
 
     due: list[DueGraph] = []
+    not_consuming = 0
     graphs = build_graphs(tasks, edges)
     for graph_id, graph in graphs.items():
         scoped = _tasks_by_name(tasks, scope_from_graph_id(graph_id))
@@ -97,6 +103,7 @@ async def plan_stream_triggers(
                 if tree is None or not await stream_when.evaluate(tree, has_data):
                     continue
             except (StreamError, stream_when.WhenError) as exc:
+                STREAM_TRIGGER_ERRORS.labels(getattr(exc, "code", "STREAM_WHEN_INVALID")).inc()
                 logger.warning("stream task %s cannot be triggered: %s", graph_id, exc)
                 continue
             digest = hashlib.sha256(
@@ -104,7 +111,10 @@ async def plan_stream_triggers(
             ).hexdigest()
             attempt = await _attempt(repository, graph_id, digest, now, engine_timezone)
             if attempt is None:
+                if await _acknowledged(repository, graph_id, digest):
+                    not_consuming += 1
                 continue
+            STREAM_TRIGGER_RUNS.inc()
             task_ids, task_names = _graph_task_ids(graph, scoped)
             due.append(
                 DueGraph(
@@ -120,7 +130,15 @@ async def plan_stream_triggers(
                     wal_marks={"stream_trigger": digest, "streams": observed},
                 )
             )
+    STREAM_NOT_CONSUMED.set(not_consuming)
     return due
+
+
+async def _acknowledged(repository: Any, graph_id: str, digest: str) -> bool:
+    """The newest run for these exact observations succeeded (and left them pending)."""
+    recent = await repository.latest_stream_runs(graph_id)
+    same = [run for run in recent if _marks(run).get("stream_trigger") == digest]
+    return bool(same) and str(same[0].get("state") or "") == "success"
 
 
 async def _attempt(

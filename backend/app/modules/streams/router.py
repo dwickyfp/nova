@@ -15,6 +15,7 @@ router = APIRouter()
 current_user = Depends(get_current_user)
 
 _NOT_FOUND = {"STREAM_NOT_FOUND"}
+_GONE = {"STREAM_STALE"}
 
 
 def _caller(user: dict[str, Any]) -> StreamCaller:
@@ -24,7 +25,12 @@ def _caller(user: dict[str, Any]) -> StreamCaller:
 
 
 def _http(exc: StreamError) -> HTTPException:
-    status = 404 if exc.code in _NOT_FOUND else 403 if exc.code == "STREAM_ACCESS_DENIED" else 409
+    status = (
+        404 if exc.code in _NOT_FOUND
+        else 410 if exc.code in _GONE
+        else 403 if exc.code == "STREAM_ACCESS_DENIED"
+        else 409
+    )
     return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
 
 
@@ -51,3 +57,15 @@ async def stream_backlog(database: str, name: str, user: dict = current_user) ->
         return await stream_service.backlog(StreamName(database, name), _caller(user))
     except StreamError as exc:
         raise _http(exc) from None
+
+
+@router.get("/{database}/{name}/consumptions")
+async def stream_consumptions(
+    database: str, name: str, limit: int = 50, user: dict = current_user
+) -> dict[str, Any]:
+    """Recent consumptions: offsets moved, target, state. Never SQL or rows."""
+    try:
+        items = await stream_service.consumptions(StreamName(database, name), _caller(user), limit)
+    except StreamError as exc:
+        raise _http(exc) from None
+    return {"consumptions": items, "count": len(items)}

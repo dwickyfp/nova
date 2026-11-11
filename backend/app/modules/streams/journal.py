@@ -71,6 +71,8 @@ _OPERATION_COLUMNS = (
 #: Added after the table shipped; ``migrate_stream_columns`` adds it.
 STREAM_COLUMN_MIGRATIONS = (
     ("AUDIT_STREAM_CONSUMPTION_OPERATIONS", "dispatch_attempt", "BIGINT"),
+    ("CONFIG_STREAM_DEFINITIONS", "show_initial_rows", "BOOLEAN"),
+    ("CONFIG_STREAM_DEFINITIONS", "initial_commit_seq", "BIGINT"),
 )
 
 
@@ -289,6 +291,27 @@ class StarRocksConsumptionJournal:
                 "STREAM_CONSUMPTION_BLOCKED", "Offset receipts are not one unbroken chain"
             )
         return ChangeCursor(creation.epoch, cursor)
+
+    async def recent(self, stream_id: str, limit: int) -> list[dict]:
+        """The newest consumption events of a stream, without receipts or SQL."""
+        result = await self._execute(
+            "SELECT consume_id, state, sequence_from, sequence_to, target_database, "
+            "target_object, principal, created_at FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
+            f"WHERE stream_id=%s ORDER BY created_at DESC LIMIT {int(limit)}",
+            (stream_id,),
+        )
+        return [
+            {
+                "consume_id": row[0],
+                "state": row[1],
+                "offset_from": int(row[2]),
+                "offset_to": int(row[3]),
+                "target": f"{row[4]}.{row[5]}",
+                "principal": row[6],
+                "at": row[7],
+            }
+            for row in result["rows"]
+        ]
 
     async def failed_attempts(self, stream_id: str, generation: int, start: int) -> int:
         """Proven failures from ``start``: the next attempt's arbitration slot."""

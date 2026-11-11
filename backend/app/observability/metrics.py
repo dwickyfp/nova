@@ -96,6 +96,78 @@ WORKER_RECONCILIATION_DURATION = Histogram(
     buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300),
 )
 
+STREAM_CAPTURE_COMMITS = Counter(
+    "nova_stream_capture_commits_total",
+    "Captured commits to stream sources by write kind.",
+    ("kind",),
+)
+STREAM_CAPTURE_ROWS = Counter(
+    "nova_stream_capture_rows_total", "Row changes journaled for stream sources."
+)
+STREAM_CAPTURE_FAILURES = Counter(
+    "nova_stream_capture_failures_total",
+    "Writes to stream sources that were refused or failed, by error code.",
+    ("code",),
+)
+STREAM_CAPTURE_DURATION = Histogram(
+    "nova_stream_capture_duration_seconds",
+    "Captured write duration in seconds, lock wait included.",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 120),
+)
+STREAM_SOURCE_BLOCKS = Counter(
+    "nova_stream_source_blocks_total",
+    "Stream sources marked BLOCKED or SOURCE_INVALID, by new status.",
+    ("status",),
+)
+STREAM_READS = Counter(
+    "nova_stream_reads_total", "Stream reads (peeks and consumptions) by outcome.", ("result",)
+)
+STREAM_READ_DURATION = Histogram(
+    "nova_stream_read_duration_seconds",
+    "Time to resolve, verify and reduce one stream read.",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
+)
+STREAM_REDUCER_ROWS = Counter(
+    "nova_stream_reducer_rows_total",
+    "Journal events into and stream rows out of the reducer.",
+    ("side",),
+)
+STREAM_CONSUMPTIONS = Counter(
+    "nova_stream_consumptions_total",
+    "Consuming INSERT ... SELECT outcomes (committed, empty, failed, conflict).",
+    ("result",),
+)
+STREAM_OBJECTS = Gauge(
+    "nova_streams", "Current streams by status, from the last maintenance pass.", ("status",)
+)
+STREAM_SOURCES = Gauge(
+    "nova_stream_sources",
+    "Current stream sources by status, from the last maintenance pass.",
+    ("status",),
+)
+STREAM_BACKLOG_COMMITS_MAX = Gauge(
+    "nova_stream_backlog_commits_max", "Largest number of unconsumed commits of any stream."
+)
+STREAM_RETENTION_REMAINING_MIN = Gauge(
+    "nova_stream_retention_seconds_remaining_min",
+    "Seconds until the next stream becomes stale; -1 when no stream has a backlog.",
+)
+STREAM_STALE_MARKED = Counter(
+    "nova_stream_stale_total", "Streams marked STALE because their backlog outlived retention."
+)
+STREAM_TRIGGER_RUNS = Counter(
+    "nova_stream_trigger_runs_total", "Graph runs created because a stream had data."
+)
+STREAM_TRIGGER_ERRORS = Counter(
+    "nova_stream_trigger_errors_total",
+    "Stream-triggered tasks whose WHEN could not be evaluated, by error code.",
+    ("code",),
+)
+STREAM_NOT_CONSUMED = Gauge(
+    "nova_stream_tasks_not_consuming",
+    "Stream-triggered tasks whose last successful run left the same data pending.",
+)
+
 MIGRATION_WORKER_ACTIVE_JOBS = Gauge(
     "nova_migration_worker_active_jobs", "Migration jobs currently executing in this worker."
 )

@@ -129,3 +129,69 @@ async def _stream_facts(task: dict[str, Any], graph_id: str) -> list[tuple[str, 
                 "with INSERT … SELECT … FROM <stream> to consume it.",
             ))
     return facts
+
+
+async def trigger_facts(task: dict[str, Any], graph_id: str) -> dict[str, Any]:
+    """The streams a root task's ``WHEN`` reads and what the trigger last saw."""
+    from app.modules.streams.schemas import StreamError
+    from app.modules.streams.service import stream_service
+    from app.modules.task_orchestration import stream_when
+
+    streams: list[dict[str, Any]] = []
+    observed: dict[str, list[Any]] = {}
+    if task.get("when_ast"):
+        for text, stream_id in sorted(stream_when.dependencies(task["when_ast"]).items()):
+            item: dict[str, Any] = {"stream": text}
+            try:
+                pending, state = await stream_service.trigger_state(
+                    stream_id, stream_when.stream_name(text)
+                )
+                observed[text] = [stream_id, *state]
+                item.update(offset=state[0], head=state[1], has_data=pending)
+            except StreamError as exc:
+                item.update(error=exc.code, message=str(exc))
+            streams.append(item)
+    runs = await task_orchestration_repository.latest_stream_runs(graph_id, 5)
+    history = []
+    for run in runs:
+        marks = run.get("wal_marks")
+        try:
+            marks = json.loads(marks) if isinstance(marks, str) else (marks or {})
+        except ValueError:
+            marks = {}
+        history.append(
+            {
+                "run_id": run.get("id"),
+                "state": run.get("state"),
+                "started_at": run.get("started_at"),
+                "finished_at": run.get("finished_at"),
+                "observed": {
+                    name: {"offset": values[1], "head": values[2]}
+                    for name, values in (marks.get("streams") or {}).items()
+                    if isinstance(values, list) and len(values) == 3
+                },
+            }
+        )
+    warning = None
+    if (
+        runs
+        and runs[0].get("state") == "success"
+        and observed
+        and history[0]["observed"]
+        == {name: {"offset": v[1], "head": v[2]} for name, v in observed.items()}
+        and any(h > o for _id, o, h in observed.values())
+    ):
+        warning = (
+            "STREAM_NOT_CONSUMED: the last run succeeded but did not consume its streams, "
+            "so it will not run again until new data arrives"
+        )
+    return {
+        "graph_id": graph_id,
+        "root_task": task.get("name"),
+        "state": task.get("lifecycle_state") or "STARTED",
+        "schedule_kind": task.get("schedule_kind"),
+        "when": task.get("when_expr"),
+        "streams": streams,
+        "recent_triggered_runs": history,
+        "warning": warning,
+    }

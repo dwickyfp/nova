@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS (
     mode VARCHAR(16) NOT NULL,
     source_id VARCHAR(64) NOT NULL,
     created_by VARCHAR(128) NOT NULL,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    show_initial_rows BOOLEAN,
+    initial_commit_seq BIGINT
 ) PRIMARY KEY(stream_id)
 DISTRIBUTED BY HASH(stream_id) BUCKETS 1
 PROPERTIES ('replication_num'='1')
@@ -330,6 +332,9 @@ class SourceRegistry:
         )
         self.forget_cache()
         if status in {BLOCKED, SOURCE_INVALID}:
+            from app.observability.metrics import STREAM_SOURCE_BLOCKS
+
+            STREAM_SOURCE_BLOCKS.labels(status).inc()
             logger.warning("stream source %s is %s: %s", record.qualified, status, reason)
             with contextlib.suppress(Exception):
                 from app.common.audit import write_audit_log

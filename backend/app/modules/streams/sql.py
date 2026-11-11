@@ -2,9 +2,9 @@
 
 For each native statement Nova is about to send to the engine:
 
-* a write (INSERT / UPDATE / DELETE) to a table that has Streams goes to the
-  capture coordinator; other changes to such a table (INSERT OVERWRITE,
-  TRUNCATE, ALTER) are refused while it has Streams;
+* a write (INSERT / UPDATE / DELETE / MERGE / TRUNCATE) to a table that has
+  Streams goes to the capture coordinator; other changes to such a table
+  (INSERT OVERWRITE, ALTER) are refused while it has Streams;
 * a reference to a Stream (``FROM db.my_stream``) is replaced by the stream's
   rows as a typed derived table, and ``SYSTEM$STREAM_HAS_DATA('db.s')`` (or the
   older ``NOVA_STREAM_HAS_DATA``) by TRUE or FALSE;
@@ -30,10 +30,8 @@ from app.modules.streams.schemas import StreamError
 from app.modules.streams.service import StreamCaller, stream_service
 from app.modules.streams.sources import source_registry
 
-_SOURCE_DDL = {
-    "TruncateTableStatementContext": "TRUNCATE TABLE",
-    "AlterTableStatementContext": "ALTER TABLE",
-}
+_SOURCE_DDL = {"AlterTableStatementContext": "ALTER TABLE"}
+_TRUNCATE = "TruncateTableStatementContext"
 
 
 class StreamSql:
@@ -58,7 +56,7 @@ class StreamSql:
             self._names = {
                 (str(row[0]).lower(), str(row[1]).lower())
                 for row in result["rows"]
-                if row[2] == "READY"
+                if row[2] in {"READY", "STALE"}
             }
         except Exception:  # noqa: BLE001 - before bootstrap there are no streams
             self._names = set()
@@ -77,14 +75,22 @@ class StreamSql:
         captured = await source_registry.captured_tables()
         intent = plan.transaction_intent
         if captured:
-            target = self._ddl_target(parsed, context.database) if root in _SOURCE_DDL else None
-            if target is not None and target in captured:
+            ddl = root in _SOURCE_DDL or root == _TRUNCATE
+            target = self._ddl_target(parsed, context.database) if ddl else None
+            if target is not None and target in captured and root in _SOURCE_DDL:
                 return self._error(
                     parsed,
                     "STREAM_SOURCE_WRITE_UNSUPPORTED",
                     f"{_SOURCE_DDL[root]} on a table with streams is not supported; drop its "
                     "streams first",
                 )
+            if target is not None and target in captured:
+                try:
+                    return await self._capture(
+                        adapters, plan, context, captured[target], "truncate"
+                    )
+                except StreamError as exc:
+                    return self._error(parsed, exc.code, str(exc))
         streams = await self._stream_refs(parsed, context.database)
         functions = tuple(plan.stream_functions or ())
         writes_source = (
@@ -128,13 +134,26 @@ class StreamSql:
                 raise StreamError("STREAM_WRITE_FAILED", str(result.error))
             return list(result.columns), [list(row) for row in result.rows]
 
+        merge = getattr(plan, "capture", None)
+
         async def run_native() -> QueryResult:
-            return await adapters.execute_engine_sql(plan, context)
+            if merge is None:
+                return await adapters.execute_engine_sql(plan, context)
+            from dataclasses import replace
+
+            result = QueryResult()
+            for step in merge.native_steps:
+                result = await adapters.execute_engine_sql(
+                    replace(plan, engine_sql=step, redacted_sql=step, capture=None), context
+                )
+                if result.error:
+                    break
+            return result
 
         caller = Caller(context.username, context.role, query, run_native)
         started = time.monotonic()
         outcome = await capture_coordinator.write(
-            record, parsed.statement_context, parsed.normalized_sql, kind, caller
+            record, parsed.statement_context, parsed.normalized_sql, kind, caller, merge
         )
         if outcome.native is not None:
             return outcome.native
@@ -201,6 +220,13 @@ class StreamSql:
                 "STREAM_TARGET_ATOMICITY_UNSUPPORTED",
                 "Streams cannot be consumed inside an explicit transaction",
             )
+        from app.observability.metrics import (
+            STREAM_CONSUMPTIONS,
+            STREAM_READ_DURATION,
+            STREAM_READS,
+        )
+
+        read_started = time.monotonic()
         resolved: dict[StreamName, Any] = {}
         for name in {name for name, _node in streams} | {f.name for f in functions}:
             resolved[name] = await stream_service.resolve(name, caller)
@@ -231,6 +257,8 @@ class StreamSql:
         if label_at is not None:
             replacements.append((label_at, label_at, " WITH LABEL __NOVA_STREAM_LABEL__ "))
         sql = _apply(parsed.normalized_sql, replacements)
+        STREAM_READ_DURATION.observe(time.monotonic() - read_started)
+        STREAM_READS.labels("consume" if consuming else "peek").inc()
         if not consuming:
             return await adapters.execute_engine_sql(plan, context, sql_override=sql)
 
@@ -239,6 +267,7 @@ class StreamSql:
         if not stream.has_data:
             # Nothing to consume: the statement inserts no rows and, as in
             # Snowflake, the offset does not move (no claim, no label).
+            STREAM_CONSUMPTIONS.labels("empty").inc()
             return await adapters.execute_engine_sql(
                 plan, context, sql_override=sql.replace(" WITH LABEL __NOVA_STREAM_LABEL__ ", " ")
             )
@@ -271,10 +300,22 @@ class StreamSql:
         # user. The receipt must name who the engine will report.
         engine_principal = str(login.rows[0][0]).split("@")[0].strip("'`")
         digest = hashlib.sha256(parsed.normalized_sql.encode()).hexdigest()
-        state = await stream_service.consume(
-            stream, caller, target_db, target_table, digest, submit,
-            engine_principal=engine_principal,
-        )
+        try:
+            state = await stream_service.consume(
+                stream, caller, target_db, target_table, digest, submit,
+                engine_principal=engine_principal,
+            )
+        except StreamError as exc:
+            STREAM_CONSUMPTIONS.labels(
+                "conflict" if exc.code == "STREAM_CONSUMPTION_BLOCKED" else "error"
+            ).inc()
+            raise
+        STREAM_CONSUMPTIONS.labels(
+            {
+                ConsumptionState.OFFSET_COMMITTED: "committed",
+                ConsumptionState.FAILED: "failed",
+            }.get(state, "unverified")
+        ).inc()
         if "error" in outcome and state != ConsumptionState.OFFSET_COMMITTED:
             raise outcome["error"]
         result = outcome.get("result") or QueryResult(original_sql=parsed.original_sql)

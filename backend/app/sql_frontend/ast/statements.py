@@ -25,6 +25,11 @@ class StreamStatement(Statement):
     if_not_exists: bool = False
     #: ``CREATE STREAM … APPEND_ONLY = TRUE``; Standard when absent or FALSE.
     append_only: bool = False
+    #: ``CREATE OR REPLACE STREAM``.
+    or_replace: bool = False
+    #: ``CREATE STREAM … SHOW_INITIAL_ROWS = TRUE``: the first read returns the
+    #: source's rows at creation as inserts.
+    show_initial_rows: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -41,7 +41,7 @@ async def test_real_loader_returns_behavior_and_reference_boundary():
 async def test_all_skill_sql_examples_have_expected_scope_and_effects():
     skill = skill_library.get("nova-streams")
     examples = re.findall(r"```sql\n(.*?)\n```", skill.body, flags=re.S)
-    assert len(examples) == 10
+    assert len(examples) == 11
     operations = []
     for sql in examples:
         plan = await SQLPlanner().plan(
@@ -77,5 +77,6 @@ async def test_all_skill_sql_examples_have_expected_scope_and_effects():
         "has_data",
         "peek",
         "consume",
+        "create",
         "drop",
     ]

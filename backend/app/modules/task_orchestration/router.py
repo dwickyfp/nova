@@ -433,6 +433,19 @@ async def set_graph_lifecycle(
     )
 
 
+@router.get("/graphs/{graph_id}/triggers")
+async def get_graph_triggers(graph_id: str, user: dict = current_user) -> dict[str, Any]:
+    """Stream dependencies of a graph's root and its recent stream-triggered runs."""
+    from app.modules.task_orchestration.views import trigger_facts
+
+    access = _GraphAccess(_repository, user)
+    tasks = await access.require(graph_id)
+    root = _root_task(access.edges_for(graph_id), tasks)
+    if root is None:
+        raise HTTPException(status_code=409, detail="Task graph has no root")
+    return await trigger_facts(root, graph_id)
+
+
 @router.post("/graphs/{graph_id}/runs", response_model=schemas.GraphRunResponse, status_code=202)
 async def run_graph(graph_id: str, user: dict = current_user) -> schemas.GraphRunResponse:
     return _run_response(await enqueue_manual_run(graph_id, user))
