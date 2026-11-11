@@ -67,9 +67,10 @@ the successful recovery; they are not counted as a passing attempt.
 
 The [evidence packet](../../reports/production-refactor/stage-registration/README.md)
 records attempts, checks, source hashes and remaining gates. This change does
-not move Stage metadata to PostgreSQL. Logical name uniqueness, revision CAS,
-historical registration provenance, the PG caller contract and final cutover
-remain part of the domain port. Existing rows are preserved, not retrospectively
+not switch Stage metadata authority. The subsequent
+[prepared PG domain](PG_STAGE_REGISTRATIONS.md) verifies logical name uniqueness,
+revision CAS, schema-scoped access and transactional audit. Runtime caller
+wiring, historical registration provenance and final cutover remain open. Existing rows are preserved, not retrospectively
 certified as safe imports. The current local registrations were not rewritten.
 
 All 16 metadata callsites affected by changed source-file hashes were reviewed

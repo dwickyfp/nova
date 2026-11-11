@@ -799,3 +799,30 @@ ports, source/import provenance, durable consent and external participants,
 production processes/Compose, recovery/rehearsals/cutover and full feature/live
 AI acceptance remain open. No live provider call was made in this phase;
 the embedding and large-load/soak owner waivers are unchanged.
+
+
+## Prepared Stage PostgreSQL domain
+
+Revision 0012 adds schema-governed Stage registrations with immutable namespaces,
+positive revision CAS, retained deletion identities and atomic audit. Its scoped
+service verifies the actor before and after Ranger authorization and clears the
+scope after success, failure or cancellation. Eight established consumers have
+payload access only under an authorized database/schema/action. Other workloads,
+readonly and backup SQL identities cannot discover or read Stage records.
+
+The final local suite passes 486 real-PG/PgBouncer cases without skips, including
+76 Stage cases and an upgrade from revision 0011. Unit/coverage passes 10,800
+cases without skips; changed-file Ruff passes 94 Python files; mypy and agent
+eval (54 scenarios, 189 checks) pass. Earlier fixture failures are retained in
+[the verification packet](../../reports/production-refactor/stage-pg/README.md).
+The fixture contains no Nova schemas or roles after cleanup. All eleven previous
+migration checksums remain unchanged.
+
+The application tree digest is
+`1966f668abb8cbb5d3b75227ab742b88cac2448e7b774b0a0cf628d7b2f1ce1f`
+(697 Python files). All 875 existing call reviews and 759 feature inventory rows
+are preserved. No frontend file or dependency changed in this phase. No live
+provider call was made; the embedding and large-load/soak waivers are unchanged.
+The current runtime still uses StarRocks Stage metadata. Remaining callers,
+provenance, external-effect receipts and global cutover are not certified by
+these prepared-store checks. See [the domain boundary](PG_STAGE_REGISTRATIONS.md).

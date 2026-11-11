@@ -32,7 +32,7 @@ execution-local variables.
 
 ## Atomic metadata changes
 
-Preference, provider, model and alias writes produce an audit record in their
+Preference, provider, model, alias and Stage writes produce an audit record in their
 own transaction. The record contains the table, object key, revision, action
 and original actor, without values, prompts, ciphertext or endpoints. Default
 moves record both the newly selected alias and the demoted alias. A later
@@ -42,8 +42,9 @@ and success audit together.
 A narrowly scoped security-definer trigger writes the reserved metadata fields;
 ordinary workload inserts cannot supply those fields or forge a metadata
 success event. Constraints also reject partial table/key/revision tuples during
-privileged import. The trigger accepts only its four fixed source tables, keeps a
-fixed search path and applies RLS. It does not give a workload the owner role.
+privileged import. Revision 0012 adds Stage registrations to the trigger's fixed
+source allowlist. It keeps a fixed search path and applies RLS, without giving
+a workload the owner role. Earlier migration checksums remain unchanged.
 
 An audit refusal/failure must be recorded in a separate transaction after the
 failed domain transaction has rolled back. The repository test proves this

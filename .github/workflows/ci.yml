@@ -62,6 +62,7 @@ jobs:
               "tests/integration/test_metadata_audit.py",
               "tests/integration/test_metadata_retained_legacy.py",
               "tests/integration/test_metadata_retired_agents.py",
+              "tests/integration/test_metadata_stages.py",
               "tests/integration/test_metadata_jobs.py",
               "tests/integration/test_metadata_scheduler.py",
               "tests/integration/test_metadata_migrator.py", "-v",
