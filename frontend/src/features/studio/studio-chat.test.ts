@@ -510,6 +510,28 @@ describe("studio transcript reducer", () => {
     expect(turn.state).toBe("error");
   });
 
+  it.each(["pending", "running"] as const)(
+    "keeps a storage interruption visible and closes a %s tool",
+    (status) => {
+      const turn = run([
+        delta("Partial answer"),
+        { type: "tool_call", payload: {
+          tool_call_id: "call", tool_name: "query_execute", status,
+          classification: "read_only", sql_preview: "SELECT 42",
+        } },
+        { type: "error", code: "run_persistence_unavailable", message: "Progress could not be saved." },
+        { type: "done", message_id: "reply", finish_reason: "interrupted" },
+      ]);
+      expect(turn.answer).toBe("Partial answer");
+      expect(turn.error).toBe("Progress could not be saved.");
+      expect(turn.state).toBe("error");
+      expect(turn.stopReason).toBe("interrupted");
+      expect(turn.pendingConsent).toBeNull();
+      expect(turn.steps[0].status).toBe(status === "pending" ? "cancelled" : "failed");
+      if (status === "running") expect(turn.steps[0].text).toBe("Result not confirmed");
+    },
+  );
+
   it("marks a cancelled turn from the done frame", () => {
     const turn = run([
       { type: "done", message_id: "m", finish_reason: "cancelled" },

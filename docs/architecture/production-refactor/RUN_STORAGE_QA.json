@@ -1,0 +1,202 @@
+{
+  "scope": "Studio terminal delivery when legacy metadata persistence fails; not PG durable-job acceptance",
+  "parent_commit": "1e0f0626da1d732095030f05f99058aebceee7ae",
+  "diagnosed_at": "2026-11-11T12:32:31.832537+00:00",
+  "original_failure": {
+    "source": "LIVE_MCP_FIXED_CHECKPOINT.json",
+    "run_id": "384c2225-bc82-4f39-8b24-3cbd74073017",
+    "operator_cancel_after_seconds": 257.3,
+    "local_log_evidence": {
+      "message": "Agent run journal failed",
+      "exception_class": "ProgrammingError",
+      "engine_error_code": 1064,
+      "engine_planner_milliseconds": 10804,
+      "call_path": [
+        "produce",
+        "flush",
+        "mission_service.stream_update",
+        "project_run",
+        "require_thread",
+        "assistant_repository.get_thread",
+        "db.execute_system"
+      ],
+      "observation": "Logged after fixture messages POST and before active-run lookup and explicit cancellation; raw local logs not exported",
+      "attribution": "Temporal correlation with the fixture turn and cancellation; the exception log does not include run_id."
+    },
+    "limits": "The exact remainder of the 257-second wait is not established. The separate search-provider timeout has not been explained."
+  },
+  "controlled_backend": {
+    "result": "PASS",
+    "cases": 7,
+    "faults": [
+      "projection_error",
+      "projection_timeout",
+      "projection_and_finish_timeout",
+      "journal_error",
+      "journal_timeout",
+      "history_error",
+      "history_timeout"
+    ],
+    "assertions": [
+      "bounded EOF and task completion",
+      "closed inner generator",
+      "no tool effect after failed progress publication",
+      "one interrupted terminal event",
+      "sanitized stream and logs",
+      "interrupted history where writable"
+    ]
+  },
+  "controlled_browser": {
+    "result": "PASS",
+    "focused_cases": 58,
+    "new_cases": 3,
+    "assertions": [
+      "partial answer remains visible with warning",
+      "pending consent is removed",
+      "unfinished running tool is not shown as completed"
+    ]
+  },
+  "limits": [
+    "No durable consent across process restart",
+    "Legacy metadata journal and final status are not one transaction",
+    "Failed final status persistence relies on existing stale-run reconciliation",
+    "No large-load acceptance claim"
+  ],
+  "full_validation": {
+    "backend_unit": {
+      "command": "uv run pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:/tmp/nova-refactor-coverage-14.xml",
+      "passed": 10502,
+      "warnings": 4,
+      "seconds": 877.27,
+      "combined_coverage_percent": 65
+    },
+    "mypy": {
+      "command": "uv run mypy app --no-error-summary",
+      "result": "PASS"
+    },
+    "changed_ruff": {
+      "working_directory": "backend",
+      "argv": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        "app/core/config.py",
+        "app/core/deps.py",
+        "app/core/metadata_db.py",
+        "app/core/metadata_migrations.py",
+        "app/core/metadata_schema.py",
+        "app/core/redis.py",
+        "app/main.py",
+        "app/modules/agents/router.py",
+        "app/modules/agents/studio_router.py",
+        "app/modules/ai_ml/router.py",
+        "app/modules/assistant/consent.py",
+        "app/modules/assistant/router.py",
+        "app/modules/assistant/service.py",
+        "app/modules/auth/service.py",
+        "app/modules/llm_functions/router.py",
+        "app/modules/task_orchestration/execution.py",
+        "app/modules/task_orchestration/worker.py",
+        "app/observability/http.py",
+        "scripts/inventory_control_plane.py",
+        "scripts/profile_metadata_constraints.py",
+        "tests/eval/semantic_execution.py",
+        "tests/eval/test_business_ontology_trajectory.py",
+        "tests/eval/test_evidence_health_trajectory.py",
+        "tests/eval/test_mcp_consent_trajectory.py",
+        "tests/eval/test_semantic_clarification_trajectory.py",
+        "tests/eval/test_semantic_latest_month.py",
+        "tests/integration/prepare_metadata_fixture.py",
+        "tests/integration/test_metadata_migrator.py",
+        "tests/integration/test_metadata_pg_foundation.py",
+        "tests/integration/test_task_outcome_uncertainty.py",
+        "tests/unit/test_agent_run_storage_failure.py",
+        "tests/unit/test_ai_ml_ssrf_guard.py",
+        "tests/unit/test_api_auth_inventory.py",
+        "tests/unit/test_assistant_stage_b.py",
+        "tests/unit/test_control_plane_inventory.py",
+        "tests/unit/test_control_plane_session_boundaries.py",
+        "tests/unit/test_llm_alias_authorization.py",
+        "tests/unit/test_mcp_registry_access.py",
+        "tests/unit/test_metadata_db_config.py",
+        "tests/unit/test_metadata_schema.py",
+        "tests/unit/test_notebook_data_tokens.py",
+        "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+        "tests/unit/test_observability_metrics.py",
+        "tests/unit/test_process_role.py",
+        "tests/unit/test_superset_bridge.py",
+        "tests/unit/test_task_orchestration_worker.py",
+        "tests/unit/test_task_outcome_uncertainty.py",
+        "tests/unit/test_web_search_tool.py"
+      ],
+      "result": "PASS",
+      "files": 48
+    },
+    "agent_scorecard": {
+      "command": "uv run python -m tests.eval.report",
+      "passed_scenarios": 54,
+      "total_scenarios": 54,
+      "passed_checks": 189,
+      "total_checks": 189
+    },
+    "agent_trajectories": {
+      "command": "uv run pytest tests/eval -q --junit-xml=/tmp/nova-refactor-eval-3.xml",
+      "passed": 349,
+      "warnings": 1,
+      "seconds": 19.82,
+      "environment": "Fresh ephemeral signing/encryption keys; controlled provider seams"
+    },
+    "assistant_benchmark": {
+      "command": "uv run pytest tests/benchmark/test_assistant_loop.py -q",
+      "passed": 11,
+      "seconds": 4.92,
+      "limit": "Controlled microbenchmark smoke checks, not end-to-end latency acceptance"
+    },
+    "frontend_lint": {
+      "command": "pnpm lint",
+      "errors": 0,
+      "warnings": 32
+    },
+    "frontend_build": {
+      "command": "pnpm build",
+      "result": "PASS"
+    },
+    "frontend_coverage": {
+      "command": "pnpm test:coverage --no-file-parallelism",
+      "result": "PASS",
+      "files": 193,
+      "passed": 1601,
+      "seconds": 374.71,
+      "line_coverage_percent": 58.4
+    },
+    "CI": "PENDING for this source; prior CI results are recorded separately",
+    "docs": {
+      "command": "pnpm exec vitest run --browser.headless --no-file-parallelism src/features/docs",
+      "result": "PASS",
+      "passed": 15,
+      "seconds": 3.07
+    }
+  },
+  "application_tree_sha256": "fdc7b06462b64cc78af1e0c755e7bf662d97c78feac2d5d1e1771b93ba4d0b8c",
+  "live": {
+    "MCP": {
+      "report": "LIVE_MCP_STORAGE_FIX_CHECKPOINT.json",
+      "passed": 5,
+      "failed": 1
+    },
+    "web_search": {
+      "report": "LIVE_STUDIO_SEARCH_STORAGE_FIX_CHECKPOINT.json",
+      "passed": 4,
+      "failed": 2
+    },
+    "conditions": "Initial attempts overlapped full backend coverage and browser coverage. Browser coverage was interrupted after observing multiple Chromium processes despite maxWorkers=1. Subsequent attempts still overlapped backend coverage. No scenario was deleted or retried in place.",
+    "cleanup": "All fixture conversations, agents and MCP server rows removed through their APIs; synthetic HTTP server and tunnel terminated; loopback listener closed."
+  },
+  "docs": {
+    "page": "/docs/studio/ask-questions",
+    "rendered_in_chrome": true,
+    "executable_examples_changed": false
+  }
+}

@@ -114,5 +114,21 @@
       "seconds": 18.8
     }
   ],
-  "ci": "PENDING_FOR_THIS_TREE"
+  "ci": {
+    "run_id": 43017536132,
+    "commit": "1e0f0626da1d732095030f05f99058aebceee7ae",
+    "result": "SUCCESS",
+    "jobs_passed": 8,
+    "postgres": {
+      "passed": 31,
+      "skipped": 0,
+      "artifact": "metadata-pg-ci.xml"
+    },
+    "engine": {
+      "passed": 217,
+      "skipped": 24,
+      "failures": 0,
+      "limit": "Ordinary-engine lane; governed/live-provider skips remain acceptance gaps"
+    }
+  }
 }

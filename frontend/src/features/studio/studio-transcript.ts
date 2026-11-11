@@ -907,15 +907,16 @@ export function applyEvent(
         };
       }
 
-      case "error":
-        // A denied or failed tool is reported through both an error frame and a
-        // status; the rail row already carries it, so the turn only records the
-        // message when there is no answer to show alongside it.
+      case "error": {
+        // Tool failures already appear on the rail. A persistence failure must
+        // remain visible even when part of the answer has reached the browser.
+        const persistenceFailed = event.code === "run_persistence_unavailable";
         return {
           ...turn,
-          state: turn.answer ? turn.state : "error",
-          error: turn.answer ? turn.error : event.message,
+          state: turn.answer && !persistenceFailed ? turn.state : "error",
+          error: turn.answer && !persistenceFailed ? turn.error : event.message,
         };
+      }
 
       case "suggestions":
         return { ...turn, suggestions: event.suggestions };
@@ -923,13 +924,22 @@ export function applyEvent(
       case "done":
         return {
           ...turn,
+          pendingConsent: null,
           // The turn is over: nothing on the rail can still be running, whatever
           // a missed close frame left behind. This is the backstop that stops a
           // spinner outliving the answer.
           steps: turn.steps.map((step) =>
-            step.status === "running"
-              ? { ...step, status: "done" as const }
-              : step,
+            step.status === "pending"
+              ? {
+                  ...step,
+                  status: "cancelled" as const,
+                  text: describeStatus(step.label, "cancelled", step.skillName),
+                }
+              : step.status === "running" && event.finish_reason === "interrupted"
+                ? { ...step, status: "failed" as const, text: "Result not confirmed" }
+                : step.status === "running"
+                  ? { ...step, status: "done" as const }
+                  : step,
           ),
           content: (turn.content ?? []).map((item) =>
             item.type === "ui"

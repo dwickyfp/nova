@@ -151,6 +151,7 @@ def _run_in_background(coroutine: Coroutine[object, object, object], *, label: s
     task.add_done_callback(finished)
     return task
 _active_run_tasks: set[asyncio.Task[None]] = set()
+RUN_STORAGE_TIMEOUT_SECONDS = 15.0
 
 router = APIRouter()
 
@@ -2432,6 +2433,8 @@ async def send_agent_message(
 
         return future
 
+    interruption_reason: str | None = None
+
     async def generate() -> AsyncGenerator[str, None]:
         reply_parts: list[str] = []
         reply_stamp = stamp
@@ -2443,7 +2446,7 @@ async def send_agent_message(
 
         plain = plain_frames()
         try:
-            async for raw in loop.run(
+            raw_frames = loop.run(
                 thread=runtime,
                 user_content=prompt,
                 context=context,
@@ -2451,22 +2454,24 @@ async def send_agent_message(
                 cancelled=lambda: False,
                 model=body.model,
                 provider_id=body.provider_id,
-            ):
-                for frame in plain(raw):
-                    if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
-                        reply_parts.append(_text_from_frame(frame))
-                    if frame.startswith("event: role_changed\n"):
-                        reply_parts.clear()
-                        reply_stamp = observation_context(
-                            session_security(context.user or {})
-                        )
-                    if frame.startswith(f"event: {events.EVENT_DONE}\n"):
-                        payload = json.loads(frame.split("data: ", 1)[1])
-                        reply_message_id = payload["message_id"]
-                        finish_reason = payload.get("finish_reason")
-                        done_frame = frame
-                        continue
-                    yield frame
+            )
+            async with contextlib.aclosing(raw_frames):
+                async for raw in raw_frames:
+                    for frame in plain(raw):
+                        if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
+                            reply_parts.append(_text_from_frame(frame))
+                        if frame.startswith("event: role_changed\n"):
+                            reply_parts.clear()
+                            reply_stamp = observation_context(
+                                session_security(context.user or {})
+                            )
+                        if frame.startswith(f"event: {events.EVENT_DONE}\n"):
+                            payload = json.loads(frame.split("data: ", 1)[1])
+                            reply_message_id = payload["message_id"]
+                            finish_reason = payload.get("finish_reason")
+                            done_frame = frame
+                            continue
+                        yield frame
             for frame in plain.flush():
                 reply_parts.append(_text_from_frame(frame))
                 yield frame
@@ -2474,7 +2479,7 @@ async def send_agent_message(
             finish_reason = "cancelled"
             done_frame = events.done(reply_message_id, finish_reason="cancelled")
         except GeneratorExit:
-            finish_reason = "cancelled"
+            finish_reason = interruption_reason or "cancelled"
             raise
         except Exception:  # noqa: BLE001 - never leak an internal trace
             finish_reason = "error"
@@ -2505,26 +2510,28 @@ async def send_agent_message(
                             0,
                             {"kind": "context", **context.context_stats},
                         )
-                    await assistant_repository.append_message(
-                        thread_id,
-                        user_name=user_name,
-                        role="assistant",
-                        message_id=reply_message_id,
-                        content="".join(reply_parts),
-                        agent_id=agent_id,
-                        model_name=agent.get("model_name"),
-                        usage=context.usage,
-                        steps=steps,
-                        instructions=context.instructions,
-                        security_context=(
-                            reply_stamp
-                            if reply_stamp
-                            == observation_context(session_security(context.user or {}))
-                            else None
-                        ),
-                    )
-                except Exception:
-                    logger.exception("Could not persist the agent reply")
+                    async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                        await assistant_repository.append_message(
+                            thread_id,
+                            user_name=user_name,
+                            role="assistant",
+                            message_id=reply_message_id,
+                            content="".join(reply_parts),
+                            agent_id=agent_id,
+                            model_name=agent.get("model_name"),
+                            usage=context.usage,
+                            steps=steps,
+                            instructions=context.instructions,
+                            security_context=(
+                                reply_stamp
+                                if reply_stamp
+                                == observation_context(session_security(context.user or {}))
+                                else None
+                            ),
+                        )
+                except Exception as exc:
+                    logger.warning("Could not persist the agent reply (%s)", type(exc).__name__)
+                    raise RuntimeError("Agent reply persistence failed") from None
         if done_frame is not None:
             yield done_frame
 
@@ -2556,6 +2563,7 @@ async def send_agent_message(
             stream_queue.put_nowait(None)
 
     async def produce() -> None:
+        nonlocal interruption_reason
         status = "failed"
         batch: list[str] = []
 
@@ -2575,30 +2583,34 @@ async def send_agent_message(
                     if now >= next_heartbeat:
                         await run_journal.heartbeat(run_id)
                         next_heartbeat = now + 15
-                except Exception:
-                    logger.exception("Could not renew agent run lease")
+                except Exception as exc:
+                    logger.warning("Could not renew agent run lease (%s)", type(exc).__name__)
 
         heartbeat_task = asyncio.create_task(keep_alive())
 
-        async def flush() -> None:
-            if batch:
-                await run_journal.append_batch(run_id, list(batch))
-                batch.clear()
-                if context.mission_id:
-                    from app.modules.agents.mission import mission_service
+        async def flush(*, project_mission: bool = True) -> str | None:
+            async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                if batch:
+                    await run_journal.append_batch(run_id, list(batch))
+                    batch.clear()
+                    if project_mission and context.mission_id:
+                        from app.modules.agents.mission import mission_service
 
-                    update = await mission_service.stream_update(run_id, user)
-                    if update:
-                        queue_frame(sequence_frame(update))
+                        return await mission_service.stream_update(run_id, user)
+            return None
 
         iterator = generate()
         try:
             async for frame in iterator:
                 frame = sequence_frame(frame)
                 if frame.startswith("event: role_changed\n"):
-                    await run_journal.block_replay_after_role_change(run_id)
-                queue_frame(frame)
+                    async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                        await run_journal.block_replay_after_role_change(run_id)
+                terminal = frame.startswith(f"event: {events.EVENT_DONE}\n")
+                if not terminal:
+                    queue_frame(frame)
                 batch.append(frame)
+                update = None
                 if len(batch) >= 32 or frame.startswith(
                     (
                         "event: tool_call\n",
@@ -2609,44 +2621,70 @@ async def send_agent_message(
                         "event: done\n",
                     )
                 ):
-                    await flush()
-                if frame.startswith(f"event: {events.EVENT_DONE}\n"):
+                    update = await flush()
+                if terminal:
+                    queue_frame(frame)
                     payload = json.loads(frame.split("data: ", 1)[1])
                     if payload.get("finish_reason") == "stop":
                         status = "completed"
                     elif payload.get("finish_reason") == "cancelled":
                         status = "cancelled"
+                    elif payload.get("finish_reason") == "interrupted":
+                        status = "interrupted"
+                if update:
+                    queue_frame(sequence_frame(update))
         except asyncio.CancelledError:
             status = "cancelled"
-            await iterator.aclose()
+            interruption_reason = "cancelled"
             frame = sequence_frame(events.done("", finish_reason="cancelled"))
             queue_frame(frame)
             batch.append(frame)
-        except Exception:
-            logger.exception("Agent run journal failed")
+        except Exception as exc:
+            logger.warning("Agent run persistence failed (%s)", type(exc).__name__)
+            status = "interrupted"
+            interruption_reason = "interrupted"
+            # An uncertain journal write must stop iteration before another tool
+            # can run. Preserve the error even if storage remains unavailable.
+            batch.clear()
+            for raw in (
+                events.error(
+                    "run_persistence_unavailable",
+                    "The run stopped because its progress could not be saved. "
+                    "Review saved steps and check any actions before trying again.",
+                ),
+                events.done("", finish_reason="interrupted"),
+            ):
+                frame = sequence_frame(raw)
+                queue_frame(frame)
+                batch.append(frame)
         finally:
             heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
             try:
-                await flush()
-            except Exception:
-                logger.exception("Could not flush agent run events")
-            try:
-                await run_journal.finish(run_id, status)
-                await write_audit_log(
-                    event_type="AGENT_RUN",
-                    user_name=user_name,
-                    action="FINISH",
-                    object_type="AGENT_RUN",
-                    object_name=run_id,
-                    status="SUCCESS" if status == "completed" else "FAILED",
-                    active_role=security.active_role,
-                    session_id=user.get("session_id"),
-                )
-            except Exception:
-                logger.exception("Could not finalize agent run")
-            queue_frame(None)
+                async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                    await asyncio.gather(heartbeat_task, return_exceptions=True)
+                    try:
+                        await iterator.aclose()
+                    except Exception as exc:
+                        logger.warning("Could not save closed agent reply (%s)", type(exc).__name__)
+                    try:
+                        await flush(project_mission=False)
+                    except Exception as exc:
+                        logger.warning("Could not flush agent run events (%s)", type(exc).__name__)
+                    await run_journal.finish(run_id, status)
+                    await write_audit_log(
+                        event_type="AGENT_RUN",
+                        user_name=user_name,
+                        action="FINISH",
+                        object_type="AGENT_RUN",
+                        object_name=run_id,
+                        status="SUCCESS" if status == "completed" else "FAILED",
+                        active_role=security.active_role,
+                        session_id=user.get("session_id"),
+                    )
+            except Exception as exc:
+                logger.warning("Could not finalize agent run (%s)", type(exc).__name__)
+            finally:
+                queue_frame(None)
 
     task = asyncio.create_task(produce())
     _active_run_tasks.add(task)

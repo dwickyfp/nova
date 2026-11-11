@@ -361,6 +361,40 @@ it("keeps a direct provider-format failure visible after reload without resubmit
   expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
 });
 
+it("shows a storage interruption beside the partial answer and removes consent", async () => {
+  const screen = await renderStudio("ask_every_tool");
+  const fetch = vi.mocked(globalThis.fetch);
+  const fallback = fetch.getMockImplementation()!;
+  let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  fetch.mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/messages") && init?.method === "POST") {
+      return new Response(new ReadableStream({
+        start(controller) {
+          stream = controller;
+          controller.enqueue(new TextEncoder().encode(
+            'event: text_delta\ndata: {"text":"Partial answer from the agent."}\n\n'
+            + 'event: tool_call\ndata: {"tool_call_id":"read","tool_name":"query_execute","sql_preview":"SELECT 42","classification":"read_only","status":"pending"}\n\n',
+          ));
+        },
+      }), { headers: { "Content-Type": "text/event-stream" } });
+    }
+    return fallback(input, init);
+  });
+  await screen.getByRole("textbox", { name: "Message Nova" }).fill("Read the synthetic result");
+  await screen.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Allow once" })).toBeVisible();
+  stream!.enqueue(new TextEncoder().encode(
+    'event: error\ndata: {"code":"run_persistence_unavailable","message":"The run stopped because its progress could not be saved."}\n\n'
+    + 'event: done\ndata: {"message_id":"","finish_reason":"interrupted"}\n\n',
+  ));
+  stream!.close();
+  await expect.element(screen.getByText("Partial answer from the agent.")).toBeVisible();
+  await expect.element(screen.getByText("The run stopped because its progress could not be saved.")).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/decision"))).toHaveLength(0);
+});
+
 it("preserves the draft when the user switches agents", async () => {
   mockFetch("read_only", false);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

@@ -72,4 +72,9 @@ AI model work the answer used.
   want.
 - "The agent run stopped. Review saved steps before retrying." means the run
   was interrupted. Open the conversation again from **History**: anything the
-  agent saved is shown, and you can ask again.
+  agent saved is shown. Check the results of any actions before asking again.
+- "The run stopped because its progress could not be saved." means Nova
+  stopped the agent after a storage problem. A partial answer may remain on
+  screen. Pending approvals close, and an unfinished tool is marked **Result
+  not confirmed**. Review **History** and check any actions before trying
+  again; an action may have completed even if its result could not be saved.

@@ -1,9 +1,9 @@
 # Foundation verification checkpoint
 
 This is partial evidence on the active migration branch, not release acceptance.
-No domain has switched its metadata authority to PostgreSQL. WP00 writer and
-transform review, the migrator, domain ports, production Compose and cutover
-remain open.
+No domain has switched its metadata authority to PostgreSQL. WP00 transform and
+grant review, complete schema/import migration, domain ports, production Compose
+and cutover remain open. The foundation schema installer is verified separately.
 
 ## Environment and source
 
@@ -219,7 +219,7 @@ real engine: the committed effect was not replayed on redelivery. The 24 skips
 remain acceptance gaps, including governed Ranger/Superset scenarios. This run
 does not validate the subsequent MCP changes below.
 
-## MCP and Studio follow-up (local validation complete; CI pending)
+## MCP and Studio follow-up
 
 `LIVE_SQL_TOOL_CHECKPOINT.json` records six successful Console tool trajectories:
 three each on `cx/gpt-6-luna` and `cx/gpt-6.1-sol`. Each approved exactly one
@@ -303,3 +303,60 @@ passed. New CI is pending; the earlier interrupted coverage run is not a pass.
 Details and the
 sanitized testcase report are in
 [the WP-02 packet](../../reports/production-refactor/WP-02/README.md).
+
+## Subsequent CI and bounded Studio persistence
+
+CI run [43012324623](https://github.com/dwickyfp/nova/actions/runs/43012324623)
+completed successfully for `e1cb5f928a8f727a3fab8dcdc0f1ef698287f718`, including
+all eight jobs. Its downloaded real-engine report contains 217 passes, zero
+failures and 24 skips. This verifies the MCP/consent checkpoint above; the same
+governed/live-provider skip limitations remain. It does not certify later edits.
+
+In the original 257-second stalled MCP run's request window, local logs show
+Mission projection calling `assistant_repository.get_thread`, and StarRocks
+reporting planner error 1064 after 10,804 ms. This attribution uses the adjacent
+fixture request and cancellation; the exception log lacks a run ID. The old producer logged that
+exception without emitting a terminal interruption, and cleanup had no deadline.
+The exact remaining wait is not established. Sanitized identifiers and the call
+path are retained in [RUN_STORAGE_QA.json](RUN_STORAGE_QA.json), without raw logs.
+
+The current route bounds journal/projection and reply writes, closes the shared
+generator on failure, stops before another tool, emits an interruption even
+when storage remains unavailable, and bounds final cleanup. The browser retains
+a partial answer beside the warning, removes expired approval controls and
+marks an unfinished running step as **Result not confirmed**. Seven controlled
+fault cases and the 58-case focused browser run pass. The user docs were rendered
+and visually inspected at `/docs/studio/ask-questions`; no executable example
+changed. This is not durable consent, an atomic legacy journal or WP08 acceptance.
+
+New live evidence is retained separately in
+[the MCP report](LIVE_MCP_STORAGE_FIX_CHECKPOINT.json) and
+[the web-search report](LIVE_STUDIO_SEARCH_STORAGE_FIX_CHECKPOINT.json).
+MCP passed five of six attempts; search passed four of six. All attempts reached
+a terminal outcome and all disposable resources were removed. Initial attempts
+overlapped backend and browser coverage, which saturated the local device;
+browser coverage was deliberately interrupted and is not a pass. MCP's first
+attempt failed before a tool call, and search recorded one storage interruption
+and one turn-budget timeout. Later success does not erase those failures or
+close R30. There is no medium-PoC capacity claim.
+
+CI run [43017536132](https://github.com/dwickyfp/nova/actions/runs/43017536132)
+subsequently passed all eight jobs on schema-installer commit
+`1e0f0626da1d732095030f05f99058aebceee7ae`. Downloaded artifacts confirm 31 PG
+passes without skips and 217 engine passes with 24 skips, zero failures/errors.
+The original pending-CI statement above is superseded for that commit only.
+
+For the Studio persistence follow-up, full local backend coverage passed 10,502
+tests with four warnings in 877.27 seconds (65% combined coverage). Mypy and Ruff
+for 48 changed Python files passed. Agent eval passed 54/54 scenarios and 189/189
+checks; all 349 controlled trajectories and 11 assistant microbenchmark smoke
+checks passed. The latter do not measure provider or engine latency. Final
+frontend coverage passed 1,601 tests across 193 files in 374.71 seconds, with
+58.4% line coverage. Lint passed with zero errors and 32 warnings, and the
+production build passed. The earlier interrupted browser run is retained as
+an interrupted attempt. Commands and results are in `RUN_STORAGE_QA.json`;
+CI for this follow-up remains pending.
+
+[Wave K](WAVE_K_REVIEW.md) resolves five declared key mappings for tables absent
+from the inspected live schema. Eight target-key mappings, per-role grants and
+timestamp provenance remain unresolved; no source table was created or altered.

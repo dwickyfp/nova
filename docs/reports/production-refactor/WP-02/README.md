@@ -46,8 +46,14 @@ pytest.main([
 
 Result: **31 passed, zero skipped, 18.80 seconds**. The accompanying
 `metadata-pg-local.xml` removes the local hostname and retains all testcase
-results. The CI PostgreSQL job now runs both files and refuses empty/skipped
-acceptance reports; CI on this new source is still pending.
+results. The CI PostgreSQL job runs both files and refuses empty/skipped
+acceptance reports. Run
+[43017536132](https://github.com/dwickyfp/nova/actions/runs/43017536132) completed
+successfully for commit `1e0f0626da1d732095030f05f99058aebceee7ae`: all eight
+jobs passed. [metadata-pg-ci.xml](metadata-pg-ci.xml) records 31 PG passes with
+zero skips. The separate real-engine report contains 217 passes, zero failures
+and 24 skips; those skips still exclude required governed/live-provider gates.
+This CI result does not validate subsequent Studio persistence edits.
 
 | Requirement | Concrete evidence | Remaining limit |
 | --- | --- | --- |
