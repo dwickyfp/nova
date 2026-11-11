@@ -225,7 +225,10 @@ class AuthService:
                 )
         except RoleActivationError as exc:
             raise InvalidCredentialsError(str(exc)) from exc
-        version = await session_store.set_active_role(session_id, active_role)
+        try:
+            version = await session_store.set_active_role(session_id, active_role)
+        except ValueError:
+            raise InvalidCredentialsError("Session changed; sign in again") from None
 
         return {
             "roles": list(assignments.assigned_roles),

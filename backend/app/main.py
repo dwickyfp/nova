@@ -132,7 +132,6 @@ async def _bootstrap_exclusively() -> None:
     """
     from app.modules.task_orchestration.transport import LeaderLock
 
-    lock = None
     try:
         lock = LeaderLock(
             session_store._redis, key=_BOOTSTRAP_LOCK, ttl_seconds=BOOTSTRAP_LOCK_TTL_SECONDS
@@ -140,20 +139,15 @@ async def _bootstrap_exclusively() -> None:
         deadline = time.monotonic() + BOOTSTRAP_LOCK_TTL_SECONDS
         while not await lock.acquire():
             if time.monotonic() >= deadline:
-                logger.warning("Schema bootstrap lock was not released; continuing without it")
-                lock = None
-                break
+                raise RuntimeError("Schema bootstrap lock deadline exceeded")
             await asyncio.sleep(BOOTSTRAP_LOCK_POLL_SECONDS)
-    except Exception as exc:
-        # A lock that cannot be taken must not keep the only process from starting.
-        logger.warning("Schema bootstrap is not serialized: %s", type(exc).__name__)
-        lock = None
+    except Exception:
+        raise RuntimeError("Schema bootstrap requires an exclusive lock") from None
     try:
         await _bootstrap_control_plane()
     finally:
-        if lock is not None:
-            with contextlib.suppress(Exception):
-                await lock.release()
+        with contextlib.suppress(Exception):
+            await lock.release()
 
 
 async def _bootstrap_control_plane() -> None:

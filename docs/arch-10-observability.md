@@ -28,7 +28,10 @@ application database.
 
 `backend/app/observability/metrics.py` defines the shared low-cardinality
 contract. FastAPI records request rate, latency, and in-flight work using route
-templates. `QueryService.execute()` records every SQL statement that passes
+templates, including nested-router prefixes and aliases. Object IDs never become
+labels. The root Prometheus scrape is excluded; a business endpoint ending in
+`/metrics` retains its full API route label and is still measured.
+`QueryService.execute()` records every SQL statement that passes
 through Nova's query pipeline, including direct calls from features and batch
 calls from the editor or MySQL proxy. Sources are restricted to `web`,
 `mysql_proxy`, and `internal`. The proxy records listener availability,

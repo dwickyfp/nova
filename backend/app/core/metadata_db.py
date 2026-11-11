@@ -1,0 +1,277 @@
+"""Transactional PostgreSQL access for Nova's control plane.
+
+Repositories receive a connection only inside an actor-bound transaction. This
+module does not initialize schemas or retry transactions with uncertain outcomes.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from math import isfinite
+from typing import Any
+
+import psycopg
+from psycopg.conninfo import conninfo_to_dict
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
+
+from app.core.exceptions import NovaException
+from app.modules.access_control.security_context import SecurityContext
+
+# Operators take the exclusive transaction lock before freezing writes or
+# changing the epoch. Application writes hold the shared lock until commit.
+METADATA_DEPLOYMENT_LOCK = 0x4E4F56414D455441
+
+
+class MetadataConflict(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata changed concurrently; reload and try again", status_code=409)
+
+
+class MetadataUnavailable(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata service is unavailable", status_code=503)
+
+
+class MetadataOutcomeUnknown(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata outcome requires reconciliation before retry", status_code=503)
+
+
+class MetadataSchemaMismatch(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata schema or epoch does not match this deployment", status_code=503)
+
+
+class MetadataPermissionDenied(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata operation is not authorized", status_code=403)
+
+
+class MetadataTimeout(MetadataUnavailable):
+    def __init__(self) -> None:
+        NovaException.__init__(self, "Metadata operation exceeded its deadline", status_code=503)
+
+
+class MetadataIntegrityViolation(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata operation violates a record constraint", status_code=409)
+
+
+class MetadataReadOnlyMaintenance(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata writes are paused for maintenance", status_code=503)
+
+
+class MetadataOperationFailed(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Metadata operation failed", status_code=500)
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataPoolConfig:
+    dsn: str = field(repr=False)
+    max_size: int = 10
+    max_waiting: int = 40
+    acquire_timeout: float = 5
+    statement_timeout_ms: int = 15000
+    lock_timeout_ms: int = 3000
+    idle_transaction_timeout_ms: int = 30000
+
+    def __post_init__(self) -> None:
+        try:
+            parameters = conninfo_to_dict(self.dsn)
+        except psycopg.Error:
+            raise ValueError("Invalid metadata connection configuration") from None
+        if parameters.get("sslmode") != "verify-full":
+            raise ValueError("Metadata connections require sslmode=verify-full")
+        if parameters.get("dbname") != "nova_control":
+            raise ValueError("Metadata connections must select nova_control")
+        budgets = (
+            self.max_size,
+            self.max_waiting,
+            self.acquire_timeout,
+            self.statement_timeout_ms,
+            self.lock_timeout_ms,
+            self.idle_transaction_timeout_ms,
+        )
+        if any(not isfinite(value) or value <= 0 for value in budgets):
+            raise ValueError("Metadata pool and transaction budgets must be positive and finite")
+
+
+class MetadataDatabase:
+    def __init__(self, config: MetadataPoolConfig) -> None:
+        self._config = config
+        self._pool: AsyncConnectionPool[psycopg.AsyncConnection[dict[str, Any]]] = (
+            AsyncConnectionPool(
+                config.dsn,
+                open=False,
+                min_size=1,
+                max_size=config.max_size,
+                timeout=config.acquire_timeout,
+                max_waiting=config.max_waiting,
+                name="nova-metadata",
+                reconnect_timeout=config.acquire_timeout,
+                check=AsyncConnectionPool.check_connection,
+                kwargs={
+                    "autocommit": True,
+                    "prepare_threshold": None,
+                    "row_factory": dict_row,
+                    "connect_timeout": max(1, int(config.acquire_timeout)),
+                    "options": (
+                        f"-c statement_timeout={config.statement_timeout_ms} "
+                        f"-c lock_timeout={config.lock_timeout_ms} "
+                        "-c idle_in_transaction_session_timeout="
+                        f"{config.idle_transaction_timeout_ms} "
+                        "-c synchronous_commit=on -c timezone=UTC"
+                    ),
+                },
+            )
+        )
+        self._ready = False
+        self._schema_version: int | None = None
+        self._metadata_epoch: str | None = None
+
+    async def open(self, *, schema_version: int, metadata_epoch: str) -> None:
+        """Admit this process only after an explicit migrator published its epoch."""
+        if schema_version < 1 or not metadata_epoch:
+            raise MetadataSchemaMismatch()
+        self._ready = False
+        try:
+            await self._pool.open(wait=True, timeout=self._config.acquire_timeout)
+            async with self._pool.connection() as conn:
+                if conn.info.server_version // 10000 != 17:
+                    raise MetadataSchemaMismatch()
+                cursor = await conn.execute(
+                    "SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole, rolreplication "
+                    "FROM pg_catalog.pg_roles WHERE rolname = current_user"
+                )
+                privileges = await cursor.fetchone()
+                if not privileges or any(privileges.values()):
+                    raise MetadataSchemaMismatch()
+                cursor = await conn.execute(
+                    "SELECT pg_has_role(current_user, n.nspowner, 'MEMBER') "
+                    "OR has_schema_privilege(current_user, n.oid, 'CREATE') AS owns_schema "
+                    "FROM pg_catalog.pg_namespace n WHERE n.nspname = 'nova_meta'"
+                )
+                owner = await cursor.fetchone()
+                if not owner or owner["owns_schema"]:
+                    raise MetadataSchemaMismatch()
+                cursor = await conn.execute(
+                    "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_class c "
+                    "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'nova_meta' "
+                    "AND pg_has_role(current_user, c.relowner, 'MEMBER')) "
+                    "OR EXISTS(SELECT 1 FROM pg_catalog.pg_database "
+                    "WHERE datname = current_database() "
+                    "AND pg_has_role(current_user, datdba, 'MEMBER')) AS owns_objects"
+                )
+                ownership = await cursor.fetchone()
+                if not ownership or ownership["owns_objects"]:
+                    raise MetadataSchemaMismatch()
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch FROM nova_meta.deployment_state "
+                    "WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != schema_version
+                    or str(state["metadata_epoch"]) != metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+            self._schema_version = schema_version
+            self._metadata_epoch = metadata_epoch
+            self._ready = True
+        except (psycopg.Error, PoolTimeout):
+            await self._pool.close()
+            raise MetadataUnavailable() from None
+        except BaseException:
+            await self._pool.close()
+            raise
+
+    async def close(self) -> None:
+        self._ready = False
+        await self._pool.close()
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                if not read_only:
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                    )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ):
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable):
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed):
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError:
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege:
+            raise MetadataPermissionDenied() from None
+        except psycopg.errors.ReadOnlySqlTransaction:
+            raise MetadataReadOnlyMaintenance() from None
+        except psycopg.IntegrityError:
+            raise MetadataIntegrityViolation() from None
+        except psycopg.Error:
+            # Driver diagnostics can contain bind values; expose only the category.
+            raise MetadataOperationFailed() from None

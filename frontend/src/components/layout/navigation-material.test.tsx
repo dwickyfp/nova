@@ -471,6 +471,7 @@ describe("Nova navigation material", () => {
       expect(getComputedStyle(shell, "::before").backdropFilter).toBe("none");
       expect(getComputedStyle(shell).backdropFilter).toContain("blur(12px)");
       expect(getComputedStyle(shell, "::after").display).toBe("none");
+      await Promise.all(shell.getAnimations().map((animation) => animation.finished));
       await expect
         .poll(() => Math.round(shell.getBoundingClientRect().left))
         .toBe(0);

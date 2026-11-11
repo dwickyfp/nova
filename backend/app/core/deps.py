@@ -1,11 +1,13 @@
 """Shared FastAPI dependencies — authentication, authorization, DB connections."""
 
+from typing import Annotated
+
+from cryptography.fernet import InvalidToken
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from cryptography.fernet import InvalidToken
 
 from app.core.database import db
-from app.core.exceptions import SessionExpiredError, InsufficientRoleError
+from app.core.exceptions import InsufficientRoleError, SessionExpiredError
 from app.core.redis import session_store
 from app.core.security import decode_token, decrypt_password
 
@@ -13,7 +15,7 @@ bearer_scheme = HTTPBearer()
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
 ) -> dict:
     """Extract user from JWT → verify session in Redis.
 
@@ -26,10 +28,18 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-        )
+        ) from None
 
-    session = await session_store.get(payload["sid"])
-    if not session:
+    subject, session_id = payload.get("sub"), payload.get("sid")
+    if (
+        not isinstance(subject, str)
+        or not subject
+        or not isinstance(session_id, str)
+        or not session_id
+    ):
+        raise SessionExpiredError() from None
+    session = await session_store.get(session_id)
+    if not session or session.get("username") != subject:
         raise SessionExpiredError()
 
     # Sessions store an encrypted StarRocks password. If the backend restarted
@@ -39,7 +49,7 @@ async def get_current_user(
         decrypt_password(session["encrypted_password"])
     except (InvalidToken, KeyError, TypeError, ValueError):
         await session_store.delete(payload["sid"])
-        raise SessionExpiredError()
+        raise SessionExpiredError() from None
 
     # Refresh session TTL on activity
     await session_store.refresh(payload["sid"])
@@ -65,17 +75,15 @@ def require_role(*allowed_roles: str):
             ...
     """
 
-    async def _check(user: dict = Depends(get_current_user)) -> dict:
+    async def _check(user: Annotated[dict, Depends(get_current_user)]) -> dict:
         if not any(r in user["roles"] for r in allowed_roles):
-            raise InsufficientRoleError(
-                f"Requires one of: {', '.join(allowed_roles)}"
-            )
+            raise InsufficientRoleError(f"Requires one of: {', '.join(allowed_roles)}")
         return user
 
     return _check
 
 
-async def get_user_connection(user: dict = Depends(get_current_user)):
+async def get_user_connection(user: Annotated[dict, Depends(get_current_user)]):
     """Create a StarRocks connection as the authenticated user.
 
     Usage:

@@ -26,7 +26,8 @@ from pydantic import BaseModel, Field
 
 from app.common.audit import write_audit_log
 from app.common.ssrf_guard import BlockedEndpointError, resolve_and_validate_url
-from app.core.deps import get_current_user, require_role
+from app.core.deps import get_current_user
+from app.core.role_gates import require_active_role
 from app.modules.ai_ml.default_model import (
     DefaultModelSettings,
     read_default_model,
@@ -59,7 +60,7 @@ router = APIRouter()
 
 # Provider config is system config. Reused, not re-declared, from the repo's
 # admin role set (same list ``/users``, monitoring and task orchestration use).
-require_admin = Depends(require_role(*ADMIN_ROLES))
+require_admin = Depends(require_active_role(*ADMIN_ROLES))
 
 # Read routes still require only authentication. Built once so routes use a
 # module-level dependency instead of calling ``Depends(...)`` in argument
@@ -243,7 +244,7 @@ async def test_connection(
         api_key=body.api_key,
         # Only administrators can save a provider, so only they may probe the
         # local network; everyone else keeps the public-only check.
-        allow_private_network=any(role in user["roles"] for role in ADMIN_ROLES),
+        allow_private_network=user.get("active_role") in ADMIN_ROLES,
     )
     return TestConnectionResponse(**result)
 

@@ -15,7 +15,8 @@ a masked hint of a key, never the key itself.
 
 ## Before you start
 
-- You need an administrator role, such as `ACCOUNTADMIN`.
+- Your active role must be an administrator role, such as `ACCOUNTADMIN`.
+  Having that role assigned is not enough while another role is active.
 - Have the provider's endpoint address and an API key ready.
 
 ## Open the page

@@ -2,6 +2,7 @@ from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
+from tests.eval.semantic_execution import assert_answer_with_window_probes
 from tests.unit.test_semantic_guidance_fallback import USER, setup_tool
 from tests.unit.test_semantic_latest_month import LATEST_MONTH
 
@@ -39,7 +40,7 @@ async def test_latest_month_trajectory_uses_consent_and_completes(monkeypatch):
     assert context.route["required_capabilities"] == ("semantic_query",)
     # One planning call inside the tool: the scripted turn planner wrote no plan.
     planner_provider.complete.assert_awaited_once()
-    execute.assert_awaited_once()
-    assert "ORDER BY `order_date` DESC" in execute.call_args.kwargs["sql"]
+    answer = assert_answer_with_window_probes(execute, USER)
+    assert "ORDER BY `order_date` DESC" in answer.kwargs["sql"]
     assert "private-test-value" not in "".join(frames)
     assert any('"finish_reason":"stop"' in frame.replace(" ", "") for frame in frames)

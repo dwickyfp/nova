@@ -12,10 +12,12 @@ commands run from `backend/` unless marked otherwise.
 - Runtime/dependency truth is `backend/.python-version`,
   `backend/pyproject.toml`, and `backend/uv.lock`. The local Python pin is 3.11.
   Use `uv sync --locked`; do not copy dependency lists into instructions.
-- Use typed Python interfaces, Pydantic API schemas, and established dataclasses
-  where appropriate. Follow existing async `asyncmy` connection/cursor lifetimes
-  through `backend/app/core/database.py`; do not introduce a synchronous driver
-  or a second connection factory.
+- Use typed Python interfaces, Pydantic API schemas, and established dataclasses.
+  StarRocks access retains async `asyncmy` lifetimes through
+  `backend/app/core/database.py`. Approved PG metadata access uses async psycopg3
+  through the sole `backend/app/core/metadata_db.py` owner. Domain repositories
+  use explicit actor-bound transactions; do not add synchronous metadata I/O,
+  another pool owner, or a SQL dialect-rewrite proxy.
 - System connections may serve control-plane/bootstrap/health operations.
   Caller-visible data uses the existing delegated execution path and security
   context. Preserve cancellation, sanitized errors, and redacted audit logging.
@@ -23,6 +25,11 @@ commands run from `backend/` unless marked otherwise.
   `backend/app/common/nova_system.py`, and the owner's schema initialization.
   CRUD configuration uses existing primary-key conventions. Audit/analytics
   table models must follow their actual schema, not a generic table template.
+- Migration state and accepted single-host exceptions are recorded under
+  `docs/architecture/production-refactor/`. Preserve existing StarRocks domains
+  until their reviewed PG port and cutover. Metadata writes require revision
+  checks, transaction-local principal/active-role context and explicit outcomes.
+  Do not retry an external mutation or an uncertain commit without receipts.
 - Configuration comes through `backend/app/core/config.py`; reuse existing
   encryption and `backend/app/storage/secrets.py` resolution. Never persist
   plaintext credentials as a shortcut when encryption or resolution fails.

@@ -1,0 +1,106 @@
+{
+  "scope": "Pre-cutover live Console chat and saved-history checkpoint only",
+  "started_at": "2026-11-11T09:26:19.309703+00:00",
+  "attempts": [
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 1,
+      "started_at": "2026-11-11T09:26:19.641472+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 0,
+      "output_schema_valid": true,
+      "fixture_deleted": true,
+      "duration_seconds": 13.9
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 2,
+      "started_at": "2026-11-11T09:26:33.539260+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 0,
+      "output_schema_valid": true,
+      "fixture_deleted": true,
+      "duration_seconds": 9.01
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 3,
+      "started_at": "2026-11-11T09:26:42.554562+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 0,
+      "output_schema_valid": true,
+      "fixture_deleted": true,
+      "duration_seconds": 13.61
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 1,
+      "started_at": "2026-11-11T09:26:56.169430+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 0,
+      "output_schema_valid": true,
+      "fixture_deleted": true,
+      "duration_seconds": 10.35
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 2,
+      "started_at": "2026-11-11T09:27:06.515452+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 0,
+      "output_schema_valid": true,
+      "fixture_deleted": true,
+      "duration_seconds": 9.92
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 3,
+      "started_at": "2026-11-11T09:27:16.440344+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 0,
+      "output_schema_valid": true,
+      "fixture_deleted": true,
+      "duration_seconds": 11.69
+    }
+  ],
+  "finished_at": "2026-11-11T09:27:28.132524+00:00",
+  "application_tree_sha256": "489df16dc4f4b9fa20169642ea44d0a3273116ae87ce4e58d9478401073e72d9",
+  "source_baseline_commit": "c6a51ff2e5a94a46191884ded40fc15394de27ed",
+  "metadata_authority": "legacy StarRocks NOVA_SYSTEM; PostgreSQL cutover not performed",
+  "engine_version": "8.0.33",
+  "topology": "existing single-host docker project; host API",
+  "fe_image_id": "sha256:ba74dfa4ff6b5b5beca2bd639ddc9d3bc27164847a7b3650058be31526961c45",
+  "fixture": {
+    "prompt": "Return JSON with suite=control-plane, total=6*7 as integer, status=ready; no data queries or tools.",
+    "expected_json": {
+      "suite": "control-plane",
+      "total": 42,
+      "status": "ready"
+    },
+    "attempt_policy": "Three independent attempts per active registered LLM, no retry."
+  }
+}

@@ -372,7 +372,7 @@ ADMIN_USER = {
     "username": "admin",
     "session_id": "s",
     "roles": ["ACCOUNTADMIN"],
-    "active_role": None,
+    "active_role": "ACCOUNTADMIN",
     "encrypted_password": "enc",
 }
 ANALYST_USER = {
@@ -570,13 +570,13 @@ class TestProviderWriteRoutesUseTheSharedRoleSet:
         "method,path",
         [("post", "/providers"), ("put", "/providers/{provider_id}")],
     )
-    def test_write_routes_are_guarded_by_require_role(self, method, path):
+    def test_write_routes_are_guarded_by_active_role(self, method, path):
         from app.modules.ai_ml.router import router
 
         route = next(
             r for r in router.routes if r.path == path and method.upper() in (r.methods or set())
         )
-        assert "require_role.<locals>._check" in _dependency_names(route.dependant)
+        assert "require_active_role.<locals>._check" in _dependency_names(route.dependant)
 
 
 def _dependency_names(dependant) -> set[str]:

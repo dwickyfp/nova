@@ -83,15 +83,26 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 
 ### State, storage, and credentials
 
-- Durable relational Nova control-plane metadata belongs in StarRocks
-  `NOVA_SYSTEM`. Do not introduce another relational Nova metadata database.
-  Ranger's own policy database belongs to Ranger, not Nova's control plane.
-- Redis owns runtime sessions, caches, locks, leases, and wakeups. It is not a
-  second durable relational source of truth. Object/file payloads belong in
-  the existing managed storage abstraction.
-- Inspect [docker/init-nova.sql](docker/init-nova.sql) and the owning schema
-  initialization before changing tables. Follow the flat names already used
-  there, such as `CONFIG_STAGES` and `AUDIT_LOG`; do not invent nested schemas.
+- The approved production refactor moves durable Nova control-plane metadata
+  to PostgreSQL 17, database `nova_control`, schema `nova_meta`. This explicitly
+  replaces the former StarRocks-only placement rule. StarRocks retains user
+  authentication and governed analytical data; Ranger and Superset own their
+  separate databases. PostgreSQL metadata is never a user SQL connection.
+- Follow the [acceptance contract](docs/architecture/production-refactor/ACCEPTANCE.md)
+  and [recorded migration state](docs/architecture/production-refactor/TRACEABILITY.md).
+  Until the verified cutover, existing domains still use `NOVA_SYSTEM`; a tested
+  PG foundation is not evidence that a domain was migrated. Inventory all
+  writers before porting domains. Do not introduce production dual-write,
+  fallback to stale StarRocks metadata, or an opt-in metadata backend flag.
+- Redis owns runtime sessions, caches and wakeups. Durable job state, outbox,
+  claims, fencing and receipts move to PG. Stream journals that must commit
+  with analytical data stay in the same StarRocks transaction; their control
+  metadata moves to PG. Object/file payloads retain the existing storage owner.
+- Inspect [docker/init-nova.sql](docker/init-nova.sql), owning schema code and
+  the ownership manifest before changing tables. Preserve logical names and
+  opaque IDs; PG physical tables use lowercase names in `nova_meta`. Versioned
+  migrations must validate checksums and publish the schema epoch atomically.
+  Application processes must not migrate PG or use its owner/migrator login.
 - User-facing file access uses `@stage` and configured connection names. Keep
   storage vendors, physical endpoints, and credential-bearing paths out of UI.
 - Never commit raw deployment secrets. Configuration may hold metadata,

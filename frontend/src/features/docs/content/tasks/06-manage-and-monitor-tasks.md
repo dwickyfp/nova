@@ -102,6 +102,11 @@ DROP TASK IF EXISTS log_orders;
 A single step can also be `skipped`: its `WHEN` condition was false, or a step
 before it failed.
 
+An `abandoned` step means its worker stopped reporting progress and the outcome
+is unknown. The run stays `running`; Nova does not repeat the step, start its
+finalizer, or free its overlap slot. Ask an administrator to verify whether the
+changes were applied before starting replacement work.
+
 ## Failures and retries
 
 Nova does **not** retry a failed run by itself. Read the error, fix the cause,
@@ -116,7 +121,6 @@ Common errors:
 | `Statement 2 of 3 failed: ... (statement 1 ran and is kept)` | A statement in a multi-statement task failed. Earlier statements were not undone. |
 | `Task ... has a run in progress; drop it after the run ends` | `DROP TASK` waits for the current run to end. |
 | `Tasks clean_a, clean_b, notify_done run after or finalize load_raw; drop them first` | Drop the tasks that depend on this one first. |
-| `The worker stopped while this step was running, so Nova cannot tell whether its changes were applied. ...` | The run was interrupted. Nova does not rerun it on its own, so nothing is written twice. Check the data, then run the task again. |
 
 ## Who can see and run a task
 

@@ -29,14 +29,22 @@ commands run from the repository root unless stated otherwise. Read
   FE with a stock image can remove role/filter/mask enforcement even when it
   starts successfully. Keep FE/BE/grammar capability assumptions aligned.
 - Ranger owns its own policy database and services. That database is not a Nova
-  relational metadata store. Redis coordinates runtime/session work; object
-  storage carries payloads; durable relational Nova metadata uses `NOVA_SYSTEM`.
+  relational metadata store. The approved production target adds dedicated
+  PG17 `nova_control.nova_meta`, critical/cache Redis separation and individual
+  workload processes in one Compose file. Existing domains still use
+  `NOVA_SYSTEM` until verified cutover; consult the
+  [migration state](../docs/architecture/production-refactor/TRACEABILITY.md).
+  Object storage retains payloads, and StarRocks retains transactional Stream
+  journals beside analytical data.
 - `docker/init-nova.sql` and `backend/app/common/nova_system.py` own bootstrap
   and schema initialization. Preserve flat table naming, additive compatible
   changes, role guards/defaults, and bootstrap order. Do not copy old schema
   diagrams or invent SQL unsupported by the pinned engine.
 - Tracked configuration contains metadata, placeholders, and secret references.
-  Deployment keys belong in untracked environment/supported secret stores.
+  The approved production contract uses one private Compose file outside Git
+  with inline environment and privilege-scoped YAML anchors, without `.env`
+  files or an override chain. Its credentials and certificates remain private.
+  Existing development overrides remain development tooling.
   Share stable signing/encryption configuration across applicable processes;
   do not generate replacement keys silently at process startup.
 - Keep the authenticated Ranger policy bridge internal and allowlisted. Do not

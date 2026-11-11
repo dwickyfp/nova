@@ -10,6 +10,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  metadata-pg:
+    name: PostgreSQL 17 metadata boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+      - name: Prepare private TLS fixture
+        working-directory: backend
+        run: uv run python tests/integration/prepare_metadata_fixture.py "$RUNNER_TEMP/nova-metadata-pg"
+      - name: Start disposable PostgreSQL
+        run: |
+          docker compose ls
+          docker ps --format '{{.Names}}'
+          docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" up -d --wait
+      - name: Verify metadata transactions and security boundaries
+        working-directory: backend
+        run: |
+          uv run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import pytest
+          configuration = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "nova-metadata-pg/connection.json").read_text()
+          )
+          os.environ["NOVA_TEST_METADATA_ADMIN_DSN"] = configuration["admin_dsn"]
+          os.environ["NOVA_TEST_METADATA_DISPOSABLE"] = "acknowledged"
+          raise SystemExit(pytest.main([
+              "tests/integration/test_metadata_pg_foundation.py", "-v",
+              "--junit-xml=metadata-pg.xml",
+          ]))
+          PY
+      - name: Refuse skipped or empty acceptance
+        if: always()
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from xml.etree import ElementTree as ET
+          suites = list(ET.parse("metadata-pg.xml").getroot().iter("testsuite"))
+          assert sum(int(s.attrib["tests"]) for s in suites) > 0, "No PG tests executed"
+          for suite in suites:
+              assert all(int(suite.attrib[k]) == 0 for k in ("failures", "errors", "skipped")), suite.attrib
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metadata-pg-report
+          path: backend/metadata-pg.xml
+      - name: Remove this job's disposable database
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" ]; then
+            docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" down --volumes
+          fi
+
   backend-static:
     name: Backend static (ruff, mypy)
     runs-on: ubuntu-latest
@@ -157,6 +218,28 @@ jobs:
       - name: Agent harness eval
         working-directory: backend
         run: uv run python -m tests.eval.report
+
+      - name: Agent trajectory suite
+        working-directory: backend
+        run: |
+          uv run python - <<'PY'
+          import os
+          import secrets
+          from cryptography.fernet import Fernet
+          import pytest
+          os.environ["FERNET_KEY"] = Fernet.generate_key().decode()
+          os.environ["SECRET_KEY"] = secrets.token_urlsafe(32)
+          raise SystemExit(pytest.main(["tests/eval", "-q", "--junit-xml=eval.xml"]))
+          PY
+
+      - name: Upload agent trajectory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-trajectories
+          path: backend/eval.xml
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Threshold is report-only in this first gate: the denominator is now
       # correct (include=app/**), the baseline is measured, but the floor is not

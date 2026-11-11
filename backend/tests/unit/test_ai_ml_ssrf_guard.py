@@ -367,10 +367,17 @@ async def test_service_allows_a_local_endpoint_only_when_asked(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "roles,expected", [(["ACCOUNTADMIN"], True), (["ANALYST"], False), ([], False)]
+    "roles,active_role,expected",
+    [
+        (["ACCOUNTADMIN"], "ACCOUNTADMIN", True),
+        (["ACCOUNTADMIN", "ANALYST"], "ANALYST", False),
+        (["ACCOUNTADMIN"], None, False),
+        (["ANALYST"], "ANALYST", False),
+        ([], None, False),
+    ],
 )
 def test_test_connection_route_allows_local_network_only_for_admins(
-    monkeypatch, roles, expected
+    monkeypatch, roles, active_role, expected
 ):
     from unittest.mock import AsyncMock
 
@@ -386,7 +393,7 @@ def test_test_connection_route_allows_local_network_only_for_admins(
     app.include_router(ai_router.router, prefix="/api/v1/ai")
 
     async def current_user():
-        return {"username": "u", "roles": roles}
+        return {"username": "u", "roles": roles, "active_role": active_role}
 
     app.dependency_overrides[deps.get_current_user] = current_user
     resp = TestClient(app).post(

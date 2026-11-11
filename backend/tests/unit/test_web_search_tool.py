@@ -325,8 +325,14 @@ def test_key_shape_check():
 
 # ── the settings routes ─────────────────────────────────────────────────
 
-ADMIN = {"username": "admin", "session_id": "s", "roles": ["ACCOUNTADMIN"], "active_role": None}
-ANALYST = {"username": "analyst", "session_id": "s", "roles": ["test_analyst"], "active_role": None}
+ADMIN = {
+    "username": "admin", "session_id": "s", "roles": ["ACCOUNTADMIN"],
+    "active_role": "ACCOUNTADMIN",
+}
+ANALYST = {
+    "username": "analyst", "session_id": "s", "roles": ["test_analyst"],
+    "active_role": "test_analyst",
+}
 
 
 @pytest.fixture

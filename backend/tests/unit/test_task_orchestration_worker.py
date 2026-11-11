@@ -36,7 +36,6 @@ from app.modules.task_orchestration.execution import (
     native_attempt_name,
 )
 from app.modules.task_orchestration.worker import (
-    ABANDONED_NODE_ERROR,
     GraphRunJob,
     GraphRunWorker,
 )
@@ -563,13 +562,8 @@ class TestIdempotency:
 
 
 class TestRestartSafety:
-    async def test_abandoned_running_row_fails_without_resubmission(self, audit):
-        """A lost heartbeat cannot prove the native submit did not happen.
-
-        The node is not replayed; it fails with an explanation so the graph
-        settles. Holding it kept the run ``running`` forever, which blocked
-        every later scheduled run and DROP TASK.
-        """
+    async def test_abandoned_running_row_holds_without_resubmission(self, audit):
+        """An unknown external effect must keep the overlap slot occupied."""
         repo = FakeRepository()
         repo.add_task("A")
         repo.add_graph_run("gr1", "id_A", state="running")
@@ -580,9 +574,38 @@ class TestRestartSafety:
         executor = RecordingExecutor()
         await repo.transition_task_run(stale["id"], ["running"], "abandoned")
         state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A"))
-        assert state == GraphState.FAILED
-        assert repo.task_runs[stale["id"]]["state"] == "failed"
-        assert repo.task_runs[stale["id"]]["error_message"] == ABANDONED_NODE_ERROR
+        assert state == GraphState.RUNNING
+        assert repo.task_runs[stale["id"]]["state"] == "abandoned"
+        assert repo.graph_runs["gr1"]["state"] == "running"
+        repo.add_graph_run("gr2", "id_A", overlap_policy="queue")
+        assert await GraphRunWorker(repo, executor).handle(
+            GraphRunJob("gr2", "id_A")
+        ) == GraphState.PENDING
+        assert executor.submissions == []
+
+    @pytest.mark.parametrize("unknown_node", ["B", "F"])
+    async def test_unknown_effect_is_not_overwritten_by_failure_or_finalizer(
+        self, audit, unknown_node
+    ):
+        repo = FakeRepository()
+        for name in ("A", "B", "F"):
+            repo.add_task(name)
+        repo.add_edge("g1", "A", "B")
+        repo.add_finalize("g1", "A", "F")
+        repo.add_graph_run("gr1", "g1", state="running")
+        failed = await repo.create_task_run_once("gr1", "id_A")
+        failed["state"] = "failed"
+        unknown = await repo.create_task_run_once("gr1", "id_" + unknown_node)
+        unknown["state"] = "abandoned"
+        executor = RecordingExecutor()
+        worker = GraphRunWorker(repo, executor)
+        for _ in range(3):
+            assert await asyncio.wait_for(
+                worker.handle(GraphRunJob("gr1", "g1")), timeout=1
+            ) == GraphState.RUNNING
+        assert unknown["state"] == "abandoned"
+        assert repo.graph_runs["gr1"]["state"] == "running"
+        assert len(repo.task_runs) == 2
         assert executor.submissions == []
 
     async def test_pending_run_with_no_delivery_is_reconcilable(self, audit):

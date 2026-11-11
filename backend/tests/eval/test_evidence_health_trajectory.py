@@ -17,6 +17,7 @@ from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import query_service
 from tests.benchmark.harness import ScriptedProvider, text_frame
+from tests.eval.semantic_execution import assert_answer_with_window_probes
 from tests.unit.test_semantic_intelligence import sales_model
 
 
@@ -60,7 +61,7 @@ async def test_governed_health_survives_loop_replay_without_extra_model_call(
         user_content="What is total revenue?", context=context, resolve_consent=consent,
     )]
     assert provider.calls == 1
-    execute.assert_awaited_once()
+    assert_answer_with_window_probes(execute, context.user)
     consent.assert_awaited_once()
     assert usage.await_args.kwargs["active_role"] == "ANALYST"
     assert usage.await_args.kwargs["security_context_version"] == 3

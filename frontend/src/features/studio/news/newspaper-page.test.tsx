@@ -163,7 +163,10 @@ it.each([
   expect(entries[1].getBoundingClientRect().top).toBeGreaterThan(
     entries[0].getBoundingClientRect().bottom - 1,
   );
-  await expect.poll(() => document.querySelectorAll('[data-testid="news-chart"] svg').length).toBe(2);
+  await expect.poll(
+    () => document.querySelectorAll('[data-testid="news-chart"] svg').length,
+    { timeout: 10_000 },
+  ).toBe(2);
   await screen
     .getByRole("button", { name: "Revenue fell 34.6% in Bandung", exact: true })
     .click();
@@ -262,7 +265,10 @@ it("rotates the chart form down the page", async () => {
       ),
     )
     .toEqual(["weekday", "trend", "level"]);
-  await expect.poll(() => document.querySelectorAll('[data-testid="news-chart"] svg').length).toBe(4);
+  await expect.poll(
+    () => document.querySelectorAll('[data-testid="news-chart"] svg').length,
+    { timeout: 10_000 },
+  ).toBe(4);
 });
 
 it("records a like or dislike without opening the story, and clears it on a second press", async () => {

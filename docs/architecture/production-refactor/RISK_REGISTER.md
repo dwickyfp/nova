@@ -1,0 +1,24 @@
+# Refactor risk register
+
+| ID | Risk | Required treatment | Current evidence |
+| --- | --- | --- | --- |
+| R01 | Mixed metadata and root-capable engine pool | Explicit PG repositories and restricted engine-admin adapter; classify all callers | Source inventory; migration not implemented |
+| R02 | Missing historical/dynamic metadata | Preserve live tables, aliases and histories; validate counts, keys and digests | 157 live tables inventoried; transform review pending |
+| R03 | Duplicate Key history loses rows under PG uniqueness | Profile logical IDs and preserve duplicates with deterministic import identity | Seven Duplicate Key tables identified |
+| R04 | Naive timestamps shift schedules/history | Per-writer timezone provenance and explicit UTC conversion | Engine timezone captured; per-table review pending |
+| R05 | Lost or repeated external effects | Durable prepare/receipt, fencing, reconciliation; block uncertain outcomes | Existing saga/capture boundaries identified; PG protocol pending |
+| R06 | Concurrent role switches lose security revisions | Atomic Redis membership/revision/TTL update; logout cannot resurrect session | New unit and real-Redis concurrency checks pass; full regression pending |
+| R07 | Assigned admin role authorizes inactive admin | Active-role provider mutation and private-endpoint probe gates | Focused provider/auth tests pass; live route evidence pending |
+| R08 | JWT principal and stored credentials diverge | Bind token subject to session username before decryption/TTL refresh | Negative unit test passes; full auth regression pending |
+| R09 | Shared Docker controller failure compromises host | Minimize controller reach, validate lifecycle inputs, prohibit socket/host mounts in runtimes, test egress | Single-host exception approved; no separate-host isolation claim |
+| R10 | ML deserialization runs in API privilege context | Trusted artifact signature and constrained execution; quarantine unsigned legacy artifacts | Existing thread executor confirmed; remediation pending |
+| R11 | Production inline secrets leak into Git/logs | Credential-free tracked template; restricted untracked deployment YAML; redacted validation | Deployment generator/manifest pending |
+| R12 | Backup survives process loss but not host loss | Off-host base/WAL plus coherent external recovery manifest and actual restore | New PG recovery implementation pending |
+| R13 | AI mock success hides provider/embedding failure | Dedicated live-provider fixture matrix, all attempts retained, missing prerequisites block | Feature matrix created; live refactor QA not run |
+| R14 | Resource pressure on development device | Bounded local load, record actual limits; separate production sizing | Owner waived earlier medium-load acceptance |
+| R15 | Root-capable source reads in feature/search materialization | Preserve caller/service-principal proof and Ranger context through build, refresh and reads; separate engine-derived payloads from PG control metadata | `FeatureStoreService._materialize` and `SearchService._source_fingerprint` still call the system adapter; remediations and governed tests pending |
+| R16 | Runtime schema bootstrap outlives its Redis lease | Replace runtime bootstrap with serialized transactional PG migrator and strict epoch admission | Lock acquisition now fails closed; retirement and crash proof still pending |
+| R17 | Unknown Task effect is mislabeled as an ordinary failure | Preserve uncertainty, prevent replay and overlap release, reconcile durable external receipts | Legacy abandoned nodes now held; PG VERIFYING/BLOCKED and operator resolution still pending |
+| R18 | Revoked roles survive in cached session assignments | Durable security revision, session/delegation invalidation and concurrent-revocation tests; preserve workspace file-sharing semantics | Role revoke does not invalidate sessions; workspace authorization reads cached assigned roles |
+| R19 | Concurrent saves share a revision number and object key | Atomic revision reservation, immutable object receipt and CAS publication; preserve conflicting legacy rows | Read-only profile found two duplicate workspace revision groups; no data repaired or dropped |
+| R20 | FE metadata stops when disk drops below its free-space floor | Size production volumes, bound engine/audit log retention and alert before the engine limit; preserve audit export policy | Local FE logged DiskLimitException immediately before exit 255; same container recovered; no deliberate fault-test claim |

@@ -52,19 +52,9 @@ from app.modules.task_orchestration.repository import TaskOrchestrationRepositor
 
 logger = logging.getLogger(__name__)
 
-#: Node states that mean "this node must be executed now".
 # A stale heartbeat cannot prove whether StarRocks accepted the native submit.
-# Replaying an abandoned INSERT could write data twice, so an abandoned node is
-# never re-run: it fails with ``ABANDONED_NODE_ERROR`` for the owner to inspect.
-# Holding it instead kept the graph run ``running`` forever, which blocked every
-# later run under ``skip`` and made DROP TASK refuse the task.
+# Keep uncertain runs active so overlap admission cannot start a replacement.
 _RUNNABLE = frozenset({NodeState.PENDING})
-
-ABANDONED_NODE_ERROR = (
-    "The worker stopped while this step was running, so Nova cannot tell whether "
-    "its changes were applied. It was not run again: check the data, then run the "
-    "task again."
-)
 
 
 class TaskLookup(Protocol):
@@ -251,6 +241,10 @@ class GraphRunWorker:
 
         while True:
             states, rows = await self._load_states(job.graph_run_id, all_nodes, by_name)
+            if NodeState.ABANDONED in states.values():
+                # A failed sibling or a finalizer cannot resolve an unknown
+                # external effect. Preserve all evidence for reconciliation.
+                return GraphState.RUNNING
             decision = evaluate(graph, states)
 
             if decision.ready:
@@ -354,7 +348,7 @@ class GraphRunWorker:
                     row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             moved = await self._repository.transition_task_run(
                 row["id"],
-                [NodeState.PENDING.value, NodeState.ABANDONED.value],
+                [NodeState.PENDING.value],
                 NodeState.SKIPPED.value,
             )
             if moved:
@@ -383,7 +377,6 @@ class GraphRunWorker:
         that is already ``running`` (or settled) is not this delivery's to claim.
         """
         claimed: list[tuple[dict[str, Any], str]] = []
-        settled_abandoned = False
         for name in ready:
             task = by_name[name]
             row = existing.get(task["id"])
@@ -395,10 +388,6 @@ class GraphRunWorker:
                 else:
                     row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             current = _to_node_state(str(row["state"] or "pending"))
-            if current is NodeState.ABANDONED:
-                if await self._fail_abandoned(job, task, row["id"]):
-                    settled_abandoned = True
-                continue
             if current not in _RUNNABLE:
                 # Another delivery already handled this node, or a live worker
                 # is executing it.
@@ -412,27 +401,11 @@ class GraphRunWorker:
                     break
 
         if not claimed:
-            # Failing an abandoned node is progress: the caller re-evaluates and
-            # the graph settles instead of staying ``running``.
-            return settled_abandoned
+            return False
         await asyncio.gather(
             *(self._when_then_execute(job, task, run_id) for task, run_id in claimed)
         )
         return True
-
-    async def _fail_abandoned(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> bool:
-        """Fail an abandoned node without re-running it; True when this call moved it."""
-        moved = await self._repository.transition_task_run(
-            run_id,
-            [NodeState.ABANDONED.value],
-            NodeState.FAILED.value,
-            error_message=ABANDONED_NODE_ERROR,
-        )
-        if moved:
-            await self._audit(
-                job, task, task.get("created_by"), NodeState.FAILED.value, ABANDONED_NODE_ERROR
-            )
-        return moved
 
     async def _when_then_execute(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> None:
         """Evaluate ``WHEN`` then execute, as one schedulable unit."""

@@ -63,7 +63,7 @@ def duties(monkeypatch):
     monkeypatch.setattr(starrocks, "resolve_engine_capabilities", record("capabilities"))
     monkeypatch.setattr(main.session_store, "init", record("session_store"))
     monkeypatch.setattr(main.session_store, "close", record("close_sessions"))
-    monkeypatch.setattr(main, "_bootstrap_control_plane", record("bootstrap"))
+    monkeypatch.setattr(main, "_bootstrap_exclusively", record("bootstrap"))
     monkeypatch.setattr(main, "_register_llm_udfs", record("llm_udfs"))
     monkeypatch.setattr("app.proxy.server.MySQLProxyServer", Proxy)
     monkeypatch.setattr(
@@ -340,7 +340,7 @@ async def test_bootstrap_lock_is_released_when_bootstrap_fails(monkeypatch, boot
     assert bootstrap_lock.held is False
 
 
-async def test_bootstrap_proceeds_when_the_lock_is_never_released(monkeypatch, bootstrap_lock):
+async def test_bootstrap_refuses_when_the_lock_is_never_released(monkeypatch, bootstrap_lock):
     ran = []
     bootstrap_lock.held = True
     monkeypatch.setattr(main, "BOOTSTRAP_LOCK_TTL_SECONDS", 0.01)
@@ -350,14 +350,13 @@ async def test_bootstrap_proceeds_when_the_lock_is_never_released(monkeypatch, b
 
     monkeypatch.setattr(main, "_bootstrap_control_plane", bootstrap)
 
-    await main._bootstrap_exclusively()
+    with pytest.raises(RuntimeError, match="requires an exclusive lock"):
+        await main._bootstrap_exclusively()
 
-    # A crashed holder must not keep every other process from starting, and
-    # the waiter must not release a lock it never held.
-    assert ran == [True] and bootstrap_lock.held is True
+    assert ran == [] and bootstrap_lock.held is True
 
 
-async def test_bootstrap_runs_without_a_lock_when_redis_is_unavailable(monkeypatch):
+async def test_bootstrap_refuses_when_redis_is_unavailable(monkeypatch):
     ran = []
 
     class Broken:
@@ -373,9 +372,10 @@ async def test_bootstrap_runs_without_a_lock_when_redis_is_unavailable(monkeypat
     monkeypatch.setattr("app.modules.task_orchestration.transport.LeaderLock", Broken)
     monkeypatch.setattr(main, "_bootstrap_control_plane", bootstrap)
 
-    await main._bootstrap_exclusively()
+    with pytest.raises(RuntimeError, match="requires an exclusive lock"):
+        await main._bootstrap_exclusively()
 
-    assert ran == [True]
+    assert ran == []
 
 
 async def test_current_llm_functions_are_not_dropped_and_recreated(monkeypatch, udf_registration):
