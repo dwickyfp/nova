@@ -23,6 +23,8 @@ class StreamStatement(Statement):
     source: tuple[str, ...] | None = None
     if_exists: bool = False
     if_not_exists: bool = False
+    #: ``CREATE STREAM … APPEND_ONLY = TRUE``; Standard when absent or FALSE.
+    append_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +56,11 @@ class CreateTaskStatement(Statement):
 @dataclass(frozen=True, slots=True)
 class ExecuteTaskStatement(Statement):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class TaskLifecycleStatement(Statement):
+    """ALTER TASK, SHOW TASKS or DESCRIBE TASK: Nova tasks first, else the engine's."""
 
 
 @dataclass(frozen=True, slots=True)

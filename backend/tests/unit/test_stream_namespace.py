@@ -78,9 +78,20 @@ async def test_typed_planning_freezes_scope_without_io(sql, operation, name):
     assert not binder.mock_calls
 
 
+@pytest.mark.parametrize(("sql", "append_only"), [
+    ("CREATE STREAM s ON TABLE t", False),
+    ("CREATE STREAM s ON TABLE t APPEND_ONLY=FALSE", False),
+    ("CREATE STREAM s ON TABLE t APPEND_ONLY = TRUE", True),
+])
+def test_standard_is_the_default_mode(sql, append_only):
+    """Snowflake: a Standard stream unless APPEND_ONLY = TRUE."""
+    statement = ast_builders.build(parse_statement(sql))
+    assert isinstance(statement, StreamStatement)
+    assert statement.append_only is append_only
+
+
 @pytest.mark.parametrize("sql", [
-    "CREATE STREAM s ON TABLE t APPEND_ONLY=FALSE",
-    "CREATE STREAM s ON TABLE t",
+    "CREATE STREAM s ON TABLE t APPEND_ONLY",
     "CREATE STREAM TABLE s ON TABLE t APPEND_ONLY=TRUE",
     "CREATE STREAM s ON TABLE t APPEND_ONLY=TRUE garbage",
     "DROP STREAM", "DROP STREAM IF NOT EXISTS db.s", "DROP STREAM db.s CASCADE",
@@ -103,14 +114,6 @@ async def test_native_stream_load_and_catalog_names_unchanged():
         node = ast_builders.build(parse_statement(sql))
         assert isinstance(node, NativeStatement)
         assert (await SQLPlanner().plan(node, PlanningContext())).engine_sql == sql
-
-
-def test_runtime_refuses_an_unverified_provider():
-    from app.modules.streams import runtime
-    from app.sql_frontend.errors import CapabilityUnsupportedError
-
-    with pytest.raises(CapabilityUnsupportedError, match="provider is unavailable"):
-        runtime.require_stream_runtime()
 
 
 @pytest.mark.parametrize("argument", ["'s'", "'db.s'", "'db.default.s'"])

@@ -493,6 +493,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
     version        BIGINT DEFAULT "1",
     handler        VARCHAR(64) DEFAULT "sql",
     handler_config JSON,
+    lifecycle_state VARCHAR(16) DEFAULT "STARTED",
+    when_ast       STRING,
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY(id)
@@ -2378,11 +2380,57 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS (
     target_transaction_id BIGINT,
     active_role VARCHAR(128),
     security_context_version BIGINT,
+    dispatch_attempt BIGINT,
     submission_digest VARCHAR(64) NOT NULL,
     cancellation_digest VARCHAR(64) NOT NULL,
     created_at DATETIME NOT NULL
 ) PRIMARY KEY(consume_id)
 DISTRIBUTED BY HASH(consume_id) BUCKETS 1
+PROPERTIES ('replication_num'='1');
+
+-- Streams capture (2026-11-11): sources, captured-commit index, stream definitions.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAM_SOURCES (
+    source_id VARCHAR(64) NOT NULL,
+    epoch BIGINT NOT NULL,
+    database_name VARCHAR(128) NOT NULL,
+    table_name VARCHAR(128) NOT NULL,
+    table_id BIGINT NOT NULL,
+    key_columns STRING NOT NULL,
+    columns_json STRING NOT NULL,
+    schema_fingerprint VARCHAR(64) NOT NULL,
+    journal_table VARCHAR(128) NOT NULL,
+    lineage_table VARCHAR(128) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    status_reason VARCHAR(512),
+    registered_by VARCHAR(128) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(source_id)
+DISTRIBUTED BY HASH(source_id) BUCKETS 1
+PROPERTIES ('replication_num'='1');
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS (
+    source_id VARCHAR(64) NOT NULL,
+    commit_seq BIGINT NOT NULL,
+    commit_id VARCHAR(64) NOT NULL,
+    version_before BIGINT NOT NULL,
+    version_after BIGINT NOT NULL,
+    row_count BIGINT NOT NULL,
+    principal VARCHAR(256) NOT NULL,
+    active_role VARCHAR(128),
+    recorded_at DATETIME NOT NULL
+) PRIMARY KEY(source_id, commit_seq)
+DISTRIBUTED BY HASH(source_id) BUCKETS 1
+PROPERTIES ('replication_num'='1');
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS (
+    stream_id VARCHAR(64) NOT NULL,
+    mode VARCHAR(16) NOT NULL,
+    source_id VARCHAR(64) NOT NULL,
+    created_by VARCHAR(128) NOT NULL,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(stream_id)
+DISTRIBUTED BY HASH(stream_id) BUCKETS 1
 PROPERTIES ('replication_num'='1');
 
 -- Declarative Studio UI state, separate from immutable message output.

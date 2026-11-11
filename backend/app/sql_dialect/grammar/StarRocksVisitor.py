@@ -504,6 +504,16 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#novaShowTasksStatement.
+    def visitNovaShowTasksStatement(self, ctx:StarRocksParser.NovaShowTasksStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaDescribeTaskStatement.
+    def visitNovaDescribeTaskStatement(self, ctx:StarRocksParser.NovaDescribeTaskStatementContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#novaTaskScriptBlock.
     def visitNovaTaskScriptBlock(self, ctx:StarRocksParser.NovaTaskScriptBlockContext):
         return self.visitChildren(ctx)

@@ -17,6 +17,7 @@ from app.sql_frontend.ast.statements import (
     SecurityStatement,
     StageAwareStatement,
     Statement,
+    TaskLifecycleStatement,
 )
 from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.parser import ParsedStatement
@@ -105,6 +106,9 @@ def default_builders() -> AstBuilderRegistry:
         "SubmitTaskStatementContext": _task,
         "NovaExecuteTaskStatementContext": ExecuteTaskStatement,
         "DropTaskStatementContext": DropTaskStatement,
+        "AlterTaskStatementContext": TaskLifecycleStatement,
+        "NovaShowTasksStatementContext": TaskLifecycleStatement,
+        "NovaDescribeTaskStatementContext": TaskLifecycleStatement,
         "QueryStatementContext": _query,
         "CreateInternalFunctionStmtContext": NativeStatement,
         "CreateUdfFunctionStmtContext": NativeStatement,

@@ -94,9 +94,16 @@ class DueGraph:
     #: The root task whose schedule anchored this occurrence.
     root_task: str = ""
     owner_role: str | None = None
+    #: ``schedule`` for cron/interval occurrences, ``stream`` for stream triggers.
+    trigger_type: str = "schedule"
+    #: Stream triggers derive their run id from what they observed, not a time.
+    run_key: str | None = None
+    wal_marks: dict | None = None
 
     @property
     def run_id(self) -> str:
+        if self.run_key is not None:
+            return str(uuid5(NAMESPACE_URL, f"nova:graph_run:{self.run_key}"))
         return deterministic_run_id(self.graph_id, self.due_at, self.root_task)
 
 
@@ -278,6 +285,9 @@ def plan_tick(
             kind = (task.get("schedule_kind") or "").lower()
             if kind not in SCHEDULED_KINDS:
                 continue
+            if (task.get("lifecycle_state") or "STARTED") != "STARTED":
+                # ALTER TASK … SUSPEND (or a new task not yet resumed).
+                continue
             created_at = task.get("created_at")
             try:
                 if isinstance(created_at, datetime):
@@ -362,6 +372,14 @@ class SchedulerTick:
         tasks = await self._repository.list_tasks()
         edges = await self._repository.list_all_edges()
         plan = plan_tick(tasks, edges, moment, engine_timezone)
+        try:
+            from app.modules.task_orchestration.stream_triggers import plan_stream_triggers
+
+            plan.due.extend(
+                await plan_stream_triggers(tasks, edges, moment, self._repository, engine_timezone)
+            )
+        except Exception:
+            logger.exception("stream trigger planning failed; scheduled tasks continue")
         SCHEDULER_INVALID_SCHEDULES.inc(plan.skipped)
         existing_ids: set[str] | None = None
         if plan.due:
@@ -444,7 +462,8 @@ class SchedulerTick:
             {
                 "id": due.run_id,
                 "graph_id": due.graph_id,
-                "trigger_type": "schedule",
+                "trigger_type": due.trigger_type,
+                **({"wal_marks": due.wal_marks} if due.wal_marks else {}),
                 "state": "pending",
                 "overlap_policy": due.overlap_policy,
                 "execution_role": due.owner_role,

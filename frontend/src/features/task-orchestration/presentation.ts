@@ -70,6 +70,7 @@ export const SCHEDULE_KIND_LABELS: Record<ScheduleKind, string> = {
   manual: "Manual",
   interval: "Interval",
   cron: "Cron",
+  stream: "On stream data",
 };
 
 export function formatSchedule(

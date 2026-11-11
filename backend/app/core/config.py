@@ -313,6 +313,26 @@ class Settings(BaseSettings):
     )
     #: Package indexes a sandbox may reach while an approved install runs.
     NOTEBOOK_PACKAGE_INDEX_HOSTS: str = "pypi.org,files.pythonhosted.org"
+    # ── Nova Streams (docs/sql_docs/13-nova-streams.md) ────────────────────
+    #: The dedicated account that commits captured writes to stream sources
+    #: together with their change journal (scripts/provision_stream_writer.py).
+    #: Unset means Streams cannot be created (fail closed).
+    STREAM_WRITER_USER: str = ""
+    STREAM_WRITER_PASSWORD: str = ""
+    STREAM_WRITER_ROLE: str = ""
+    #: How long a process trusts its list of stream sources and stream names.
+    #: Registration waits this long before taking a source's baseline.
+    STREAM_REGISTRY_CACHE_SECONDS: float = Field(default=3.0, ge=0.5, le=60)
+    #: How long registration waits for Ranger to grant the writer a new source.
+    STREAM_WRITER_GRANT_WAIT_SECONDS: float = Field(default=120.0, ge=5, le=900)
+    #: How long a write waits for another captured write to the same source.
+    STREAM_WRITE_LOCK_WAIT_SECONDS: float = Field(default=30.0, ge=1, le=600)
+    #: Largest captured write and largest stream read, in rows; larger is refused.
+    STREAM_WRITE_MAX_ROWS: int = Field(default=50_000, ge=1, le=1_000_000)
+    STREAM_READ_MAX_ROWS: int = Field(default=100_000, ge=1, le=2_000_000)
+    #: Shortest gap between two stream-triggered runs of one task (Snowflake: 30 s,
+    #: configurable down to 10 s).
+    STREAM_TRIGGER_MIN_INTERVAL_SECONDS: int = Field(default=30, ge=10, le=86_400)
     #: Longest a ``LANGUAGE PYTHON`` task runs (package installs included)
     #: before it is stopped and its node fails. The task's sandbox uses the
     #: notebook runtime image and resources above.

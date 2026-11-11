@@ -35,6 +35,17 @@ def _execute_task(statement: ast.Statement, context=None) -> Any:
     )
 
 
+def _task_statement(statement: ast.Statement, context=None) -> Any:
+    from app.modules.task_orchestration.ddl import parse_task_statement
+
+    return parse_task_statement(
+        statement.parsed.normalized_sql,
+        parsed=statement.parsed,
+        database=context.database if context else None,
+        schema=context.schema if context else None,
+    )
+
+
 def _drop_task(statement: ast.Statement, context=None) -> Any:
     from app.modules.task_orchestration.ddl import parse_drop_task
 

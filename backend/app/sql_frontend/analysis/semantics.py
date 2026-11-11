@@ -32,6 +32,12 @@ def _constant_effects(effects: PlanEffects, statement: ast.Statement) -> PlanEff
     return effects
 
 
+def _task_lifecycle_effects(statement: ast.Statement) -> PlanEffects:
+    if type(statement.parsed.statement_context).__name__ == "AlterTaskStatementContext":
+        return _native_effects(statement)
+    return PlanEffects(reads_data=True)
+
+
 def _create_task_effects(statement: ast.Statement) -> PlanEffects:
     """A task stores metadata now and later runs what its script runs.
 
@@ -311,6 +317,12 @@ def default_semantics() -> StatementSemanticsRegistry:
     registry.register(
         ast.DropTaskStatement,
         StatementSemantics(_native_effects, validator=validation._drop_task, preflight_safe=True),
+    )
+    registry.register(
+        ast.TaskLifecycleStatement,
+        StatementSemantics(
+            _task_lifecycle_effects, validator=validation._task_statement, preflight_safe=True
+        ),
     )
     registry.register(
         ast.CreateTaskStatement,

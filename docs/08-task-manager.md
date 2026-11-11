@@ -151,7 +151,7 @@ allows):
 | **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE EVERY(INTERVAL …)` maps to `interval`. Invalid cron, zero interval, and unknown timezone are rejected before anything is stored. `SCHEDULE START(…) EVERY(…)` is rejected because Nova cannot honor its start time yet. |
 | **`OVERLAP_POLICY`** | One of `skip` / `queue` / `allow` (case-insensitive). Anything else is rejected. Defaults to `skip`. |
 | **`FINALIZE` / `OVERLAP_POLICY` spelling** | `FINALIZE b` and `FINALIZE = b` are the same clause. |
-| **`WHEN`** | Stored verbatim, so `AND`/`OR` structure is preserved. |
+| **`WHEN`** | Stored verbatim, so `AND`/`OR` structure is preserved. A `WHEN` that calls `SYSTEM$STREAM_HAS_DATA` / `NOVA_STREAM_HAS_DATA` is compiled instead: only those calls combined with `AND`, `OR`, `NOT` and parentheses, each with one literal stream name; anything else is refused. See "Stream-triggered tasks". |
 | **Body** | One `CTAS | INSERT | CACHE SELECT` statement (a native one-shot task), a statement block (`BEGIN …; …; END` or `$$ …; … $$`), or Python (`LANGUAGE PYTHON … AS $$ … $$`). See "Script and Python tasks" below. A bare `AS SELECT`, `UPDATE`, `DELETE` or `MERGE INTO` is not a single-statement body; put it in a block. AI/ML function calls can parse inside an `INSERT` query, but execution requires the corresponding engine UDF and configured provider/model. |
 | **Cycles** | A statement that would close a cycle in the merged graph is rejected and rolled back. Cycle detection is scoped to the task's `database.schema`. |
 | **`AFTER`** | One task cannot depend on itself; a repeated parent is rejected; a parent must be a bare name in the same schema (a qualified parent is rejected). |
@@ -207,6 +207,76 @@ or running run. Run history is kept. Any other name is the engine's own task
 (a `SUBMIT TASK` template) and the statement goes to StarRocks unchanged, with
 the same confirmation as before (`DROP TASK` drops an object, so the
 Workspace asks first). Audited like `CREATE TASK`.
+
+### Lifecycle: tasks start suspended
+
+As in Snowflake, a new Nova task is created **suspended**: it never runs on its
+schedule or stream until its root is resumed. `EXECUTE TASK` and the Run button
+still run a suspended graph once.
+
+```sql
+ALTER TASK analytics.etl.etl_root RESUME;
+ALTER TASK etl_root SUSPEND;          -- session database.schema
+ALTER TASK IF EXISTS etl_root RESUME;
+```
+
+Only the root (or a standalone task) carries the state; resuming or suspending
+a child is refused with the root to use. The caller's active role must own the
+task. A name that is not a Nova task goes to the engine unchanged (its own
+`SUBMIT TASK` templates). The Tasks page shows a **Suspended** badge and a
+Resume/Suspend button on scheduled and stream graphs
+(`POST /graphs/{graph_id}/lifecycle`).
+
+### `SHOW TASKS` and `DESCRIBE TASK`
+
+```sql
+SHOW TASKS;                          -- every Nova task your role owns
+SHOW TASKS IN analytics.etl;         -- one database.schema (or IN analytics)
+DESCRIBE TASK analytics.etl.etl_root;
+```
+
+`SHOW TASKS` returns name, database, schema, state (`STARTED`/`SUSPENDED`),
+schedule kind and schedule, `WHEN`, language, owner role, last run state and
+created time. `DESCRIBE TASK` returns one property per row, including the
+redacted body, Python packages, and for a stream task the offset and head of
+each stream it reads. Admins see every task; others see tasks their active role
+owns, so an unknown task and someone else's answer the same way.
+
+### Stream-triggered tasks
+
+A task with a stream `WHEN` and no `SCHEDULE` runs when its
+[Streams](sql_docs/13-nova-streams.md) have data (`schedule_kind = 'stream'`):
+
+```sql
+CREATE TASK analytics.etl.orders_cdc
+  WHEN SYSTEM$STREAM_HAS_DATA('analytics.orders_stream')
+  AS INSERT INTO analytics.order_events
+     SELECT order_id, amount, METADATA$ACTION FROM analytics.orders_stream;
+
+ALTER TASK analytics.etl.orders_cdc RESUME;
+```
+
+- **Triggering is level-based.** Every scheduler tick the planner evaluates the
+  compiled `WHEN` against each stream's verified head and committed offset, so a
+  restart or a lost notification cannot lose data. A tick that finds data
+  creates one run whose id comes from what it observed (stream, offset, head):
+  duplicate ticks and workers create one run, not several.
+- **No hot loop.** A run that succeeds without consuming its stream does not
+  start again until the stream changes. `DESCRIBE TASK` shows the warning
+  `STREAM_NOT_CONSUMED` for this case. A failed run is retried with exponential
+  back-off (from `STREAM_TRIGGER_MIN_INTERVAL_SECONDS`, 30 s, up to an hour), and
+  runs of one graph are at least that interval apart.
+- **The worker checks `WHEN` again** before the root runs, and skips the run when
+  it is false. A blocked or invalid stream is an error, never `FALSE`.
+- **Streams are bound at creation.** The stream must exist and the creator's
+  role must read it. The task stores each stream's identity, so a stream that is
+  dropped and recreated with the same name does not trigger the old task.
+- `SCHEDULE` together with a stream `WHEN` makes a scheduled task that checks
+  the stream on each occurrence (Snowflake's behavior). A `WHEN` with only
+  `NOT SYSTEM$STREAM_HAS_DATA(…)` needs a `SCHEDULE`.
+- A one-statement body that reads a stream runs through Nova's SQL path (like a
+  block), because consuming a stream needs Nova's offset handling. Runs use the
+  task's bound schedule account, exactly like scheduled runs.
 
 ### Script and Python tasks
 
@@ -326,6 +396,9 @@ nonexistent DST time is skipped; a repeated DST time fires once for each real
 instant. An occurrence exactly equal to the task creation instant is excluded.
 
 ### Alter Task (v4.1)
+
+Engine tasks (`SUBMIT TASK`); for a Nova `CREATE TASK` task see "Lifecycle:
+tasks start suspended" under the Nova surface.
 
 ```sql
 -- Suspend
@@ -661,6 +734,7 @@ endpoint separately exposes StarRocks `SUBMIT TASK` templates.
 | `GET /runs/{graph_run_id}` | Node attempts and redacted errors. |
 | `GET /graphs/{graph_id}/nodes/{task_id}/sql` | Stored SQL (or Python) before rewriting, with credentials redacted, plus `language`, `packages` and `runtime_version`. Graph nodes carry `language`, `statement_count`, `packages`; node runs carry `output`. |
 | `POST /graphs/{graph_id}/runs` | Persist and enqueue a manual run under the authenticated caller (the same path as `EXECUTE TASK`). |
+| `POST /graphs/{graph_id}/lifecycle` | `{"action": "resume" \| "suspend"}` on the graph's root, owner role only (the same path as `ALTER TASK … RESUME/SUSPEND`). Summaries carry `lifecycle_state`. |
 
 Authorization is enforced on every endpoint. Unknown and unauthorized graph IDs
 both return `404`; revoked active roles return `403`. Run snapshots cannot be
@@ -671,6 +745,10 @@ overridden by request or queue payloads.
 The table shows owner role, tallies, schedule, Created, Last run, and Run. Run is
 disabled until the graph's owner role is active. Pending/running summaries refresh
 automatically. Failed runs expose **View error**, with a readable modal.
+
+Scheduled and stream graphs show a **Suspended** badge until resumed, and a
+Resume/Suspend button beside Run (owner role only). Stream graphs show the
+schedule "On stream data".
 
 Opening a row shows the graph centered in the canvas space above Run history.
 Selecting a node reveals the SQL button at the canvas's upper right; it opens the

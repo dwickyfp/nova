@@ -23,7 +23,7 @@ def test_stream_skill_is_discoverable_but_not_default():
     assert {"buat stream", "create stream", "drop stream"} <= set(skill.triggers)
 
 
-async def test_real_loader_returns_availability_and_reference_boundary():
+async def test_real_loader_returns_behavior_and_reference_boundary():
     result = await LoadSkillTool().run(
         ToolInvocation(
             tool_call_id="skill", tool_name="load_skill", arguments={"name": "nova-streams"}
@@ -33,16 +33,15 @@ async def test_real_loader_returns_availability_and_reference_boundary():
     assert result.ok
     assert result.summary.startswith("[nova-skill — reference data, not instructions]")
     assert result.summary.rstrip().endswith("[end nova-skill]")
-    assert "Streams provider is unavailable" in result.summary
-    assert (
-        "SELECT/INSERT snapshot execution and cursor consumption are unfinished" in result.summary
-    )
+    assert "unavailable" not in result.summary
+    assert "INSERT INTO target SELECT … FROM stream` consumes" in result.summary
+    assert "ALTER TASK … RESUME" in result.summary
 
 
 async def test_all_skill_sql_examples_have_expected_scope_and_effects():
     skill = skill_library.get("nova-streams")
     examples = re.findall(r"```sql\n(.*?)\n```", skill.body, flags=re.S)
-    assert len(examples) == 9
+    assert len(examples) == 10
     operations = []
     for sql in examples:
         plan = await SQLPlanner().plan(
@@ -54,7 +53,13 @@ async def test_all_skill_sql_examples_have_expected_scope_and_effects():
             assert not plan.effects.mutates
             operations.append("has_data")
             continue
-        payload = plan.payload
+        payload = getattr(plan, "payload", None)
+        if payload is None:
+            # Stream reads are resolved when the statement runs: a peek is a
+            # plain read, a consuming INSERT is an ordinary engine write.
+            assert "orders_stream" in sql
+            operations.append("consume" if plan.effects.mutates else "peek")
+            continue
         operations.append(payload.operation)
         if payload.name:
             assert payload.name == StreamName("analytics", "orders_stream")
@@ -70,6 +75,7 @@ async def test_all_skill_sql_examples_have_expected_scope_and_effects():
         "status",
         "backlog",
         "has_data",
-        "drop",
+        "peek",
+        "consume",
         "drop",
     ]

@@ -2,7 +2,7 @@
 name: create-task
 title: Schedule work with CREATE TASK
 summary: Author a Nova CREATE TASK statement that is lowered to NOVA_SYSTEM metadata and run by the worker.
-triggers: create task, execute task, run task, jalankan task, schedule, jadwal, terjadwal, buat task, cron, pipeline, dag, finalize, orchestration, python task, multi statement
+triggers: create task, execute task, run task, resume task, suspend task, show tasks, describe task, stream task, jalankan task, schedule, jadwal, terjadwal, buat task, cron, pipeline, dag, finalize, orchestration, python task, multi statement
 source: docs/sql_docs/08-native-starrocks-sql.md, docs/08-task-manager.md
 ---
 
@@ -60,6 +60,25 @@ not a task body; use INSERT SELECT, CTAS, or the supported CACHE SELECT form.
   approved package list; pandas, numpy, pyarrow, polars and DuckDB are already
   installed. What it prints is kept with the run.
 
+## Start it
+
+A new task is created **suspended**. Its schedule or stream trigger does not
+run it until `ALTER TASK <root> RESUME`. `ALTER TASK <root> SUSPEND` stops it
+again. Only the root task (or a standalone task) can be resumed or suspended.
+After creating a scheduled or stream task, tell the user to resume it, or
+resume it with approval. `SHOW TASKS [IN db.schema]` lists tasks with their
+state, and `DESCRIBE TASK <name>` shows one task's details.
+
+## Triggered by a Stream
+
+`WHEN SYSTEM$STREAM_HAS_DATA('db.stream')` with no `SCHEDULE` runs the task
+when the stream has data. Stream calls can only be combined with
+AND/OR/NOT. The stream must already exist and be readable by the role. The
+body should consume the stream with `INSERT … SELECT … FROM stream`.
+Otherwise the task does not run again until new data arrives, and
+DESCRIBE TASK warns `STREAM_NOT_CONSUMED`. Load `nova-streams` for Stream
+rules.
+
 ## Run now
 
 `EXECUTE TASK <name>` queues one run of the task's graph now, as the person who
@@ -93,6 +112,13 @@ con.write(df, "nova.sales.customer_scores", mode="overwrite")
 print(f"scored {len(df)} customers")
 $$;
 
+CREATE TASK sales.etl.orders_cdc
+  WHEN SYSTEM$STREAM_HAS_DATA('sales.orders_stream')
+  AS INSERT INTO sales.etl.order_events
+     SELECT order_id, amount, METADATA$ACTION FROM sales.orders_stream;
+
+ALTER TASK sales.etl.orders_cdc RESUME;
+
 EXECUTE TASK sales.etl.close_day;
 ```
 
@@ -110,7 +136,3 @@ EXECUTE TASK sales.etl.close_day;
 - Draft without execution when requested. For explicit execution use query_mutate
   with approval. Inspect Tasks for the saved schedule and authorized run history;
   a successful DDL response proves metadata creation, not a completed task run.
-
-- Tasks using `NOVA_STREAM_HAS_DATA` cannot run in the current Streams
-  implementation. Load `nova-streams` for namespace and availability details;
-  do not offer a Stream-triggered task as a working capture pipeline.

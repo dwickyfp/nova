@@ -519,6 +519,9 @@ TABLET: 'TABLET';
 TABLETS: 'TABLETS';
 TAG: 'TAG';
 TASK: 'TASK';
+// NOVA-BEGIN (task-expand): `SHOW TASKS` lists Nova tasks. Also in `nonReserved`.
+TASKS: 'TASKS';
+// NOVA-END
 // NOVA-BEGIN (NOVA-125 / 109-A): tokens for the Nova `CREATE ML_MODEL` surface.
 // `ML_MODEL` is one spelling, not the engine's `ML_MODEL` (there is none); it
 // could not be composed from `ML` + `MODEL` because neither exists upstream and

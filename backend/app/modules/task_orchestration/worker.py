@@ -430,6 +430,19 @@ class GraphRunWorker:
         if not expression:
             return True
         owner = task.get("created_by") or ""
+        if task.get("when_ast"):
+            # A WHEN over streams is Nova's to evaluate, as the run's identity.
+            try:
+                allowed = await _stream_when_allows(task, owner)
+            except Exception as exc:  # noqa: BLE001 - an error is a failure, not a skip
+                await self._finalize(
+                    job, task, run_id, owner, NodeState.FAILED, error=_safe_message(exc)
+                )
+                return False
+            if allowed:
+                return True
+            await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
+            return False
         spec = TaskSpec(
             name=task["name"],
             body=task.get("definition") or "",
@@ -685,6 +698,25 @@ def _to_node_state(raw: str) -> NodeState:
         return NodeState(raw.lower())
     except ValueError:
         return NodeState.PENDING
+
+
+async def _stream_when_allows(task: dict[str, Any], owner: str) -> bool:
+    """Evaluate a compiled stream ``WHEN`` for the run's user and the task's role."""
+    from app.modules.streams.service import StreamCaller, stream_service
+    from app.modules.task_orchestration import stream_when
+
+    tree = stream_when.load(task["when_ast"])
+    bound = stream_when.dependencies(task["when_ast"])
+    caller = StreamCaller(owner, task.get("owner_role"))
+
+    async def has_data(text: str) -> bool:
+        if text not in bound:
+            raise stream_when.WhenError(f"The task is not bound to stream {text}")
+        name = stream_when.stream_name(text)
+        await stream_service.trigger_state(bound[text], name)
+        return await stream_service.has_data(name, caller)
+
+    return tree is not None and await stream_when.evaluate(tree, has_data)
 
 
 def _safe_message(exc: Exception) -> str:

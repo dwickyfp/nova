@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ScheduleKind = Literal["manual", "interval", "cron"]
+ScheduleKind = Literal["manual", "interval", "cron", "stream"]
 OverlapPolicy = Literal["skip", "queue", "allow"]
 #: ``after`` is a normal dependency edge (child waits for parent); ``finalize``
 #: is a FINALIZE edge (runs after its target completes, not as a dependency).
@@ -209,6 +209,12 @@ class GraphSummary(BaseModel):
     #: When the graph's anchor task was created. Null only for a legacy row whose
     #: created_at predates the column.
     created_at: datetime | None = None
+    #: The root's lifecycle: ``SUSPENDED`` graphs run only on EXECUTE TASK / Run.
+    lifecycle_state: Literal["STARTED", "SUSPENDED"] = "STARTED"
+
+
+class LifecycleRequest(BaseModel):
+    state: Literal["STARTED", "SUSPENDED"]
 
 
 class GraphListResponse(BaseModel):

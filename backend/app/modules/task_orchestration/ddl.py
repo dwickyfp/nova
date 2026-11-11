@@ -143,6 +143,15 @@ class LoweredTask:
     #: ``python``: interpreter version and ``name[==version]`` package pins.
     runtime_version: str | None = None
     packages: tuple[str, ...] = ()
+    #: A ``WHEN`` over streams, compiled (``stream_when.py``); ``None`` otherwise.
+    when_tree: dict | None = None
+
+    @property
+    def stream_names(self) -> tuple[str, ...]:
+        """Streams the ``WHEN`` reads, as ``database.name``."""
+        from app.modules.task_orchestration.stream_when import streams_in
+
+        return tuple(dict.fromkeys(streams_in(self.when_tree))) if self.when_tree else ()
 
     @property
     def language(self) -> str:
@@ -291,8 +300,18 @@ def parse_create_task(
     after = _clause_after(sql, clauses.get("AFTER"))
     finalize = _clause_finalize(sql, clauses.get("FINALIZE"))
     when_expr = _clause_when(sql, clauses.get("WHEN"))
+    when_tree = _stream_when(clauses.get("WHEN"), scoped_database or database)
     overlap = _clause_overlap(sql, clauses.get("OVERLAP_POLICY"))
     schedule_kind, schedule_expr, embedded_zone = _clause_schedule(sql, clauses.get("SCHEDULE"))
+    if when_tree is not None and schedule_kind == "manual" and not after and finalize is None:
+        from app.modules.task_orchestration.stream_when import triggers_on_data
+
+        if not triggers_on_data(when_tree):
+            raise TaskDDLError(
+                "A WHEN that is true only when streams have no data needs a SCHEDULE"
+            )
+        # Snowflake's triggered task: no schedule, runs when its streams have data.
+        schedule_kind = "stream"
     # An explicit zone in the cron string wins: it is what the author wrote in
     # this statement, and silently preferring the session default would fire the
     # task at the wrong wall-clock moment.
@@ -352,7 +371,30 @@ def parse_create_task(
         statements=statements,
         runtime_version=runtime_version,
         packages=packages,
+        when_tree=when_tree,
     )
+
+
+def _stream_when(clause, database: str | None) -> dict | None:
+    """The compiled ``WHEN`` when it calls a stream function, else ``None``."""
+    if clause is None:
+        return None
+    inner = _first_child(clause, "TaskWhenClauseContext")
+    if inner is None:
+        return None
+    from app.modules.task_orchestration.stream_when import (
+        WhenError,
+        compile_when,
+        mentions_streams,
+    )
+
+    expression = inner.expression()
+    if not mentions_streams(expression):
+        return None
+    try:
+        return compile_when(expression, database)
+    except WhenError as exc:
+        raise TaskDDLError(str(exc)) from None
 
 
 def _native_body(sql: str, statement) -> str:
@@ -589,6 +631,46 @@ def parse_drop_task(
         schema_name=scoped_schema or schema or "default",
         if_exists=statement.EXISTS() is not None,
         force=statement.FORCE() is not None,
+    )
+
+
+@dataclass(frozen=True)
+class TaskStatementTarget:
+    """ALTER TASK / DESCRIBE TASK / SHOW TASKS, scoped like ``CREATE TASK``."""
+
+    name: str | None
+    database_name: str | None
+    schema_name: str | None
+    action: str = ""
+
+
+def parse_task_statement(
+    sql: str, *, parsed, database: str | None = None, schema: str | None = None
+) -> TaskStatementTarget:
+    statement = parsed.statement_context
+    kind = type(statement).__name__
+    if kind == "NovaShowTasksStatementContext":
+        node = statement.novaQualifiedTaskName()
+        if node is None:
+            return TaskStatementTarget(None, database, schema, "show")
+        parts = [part for part in _slice(sql, node).split(".") if part]
+        parts = [_unquote_identifier(part) for part in parts]
+        if len(parts) > 2:
+            raise TaskDDLError("SHOW TASKS IN takes a database or database.schema")
+        return TaskStatementTarget(None, parts[0], parts[1] if len(parts) == 2 else None, "show")
+    if kind == "NovaDescribeTaskStatementContext":
+        raw = _slice(sql, statement.novaQualifiedTaskName())
+        action = "describe"
+    elif kind == "AlterTaskStatementContext":
+        raw = _slice(sql, statement.qualifiedName())
+        action = (
+            "resume" if statement.RESUME() else "suspend" if statement.SUSPEND() else "set"
+        )
+    else:
+        raise TaskDDLError("not a task statement")
+    name, scoped_database, scoped_schema = _split_qualified_task_name(raw)
+    return TaskStatementTarget(
+        name, scoped_database or database, scoped_schema or schema or "default", action
     )
 
 

@@ -18,6 +18,7 @@ class ActionKind(Enum):
     CREATE_TASK = "create_task"
     EXECUTE_TASK = "execute_task"
     DROP_TASK = "drop_task"
+    TASK_LIFECYCLE = "task_lifecycle"
     CREATE_ML_MODEL = "create_ml_model"
     ML_PREDICT = "ml_predict"
     ML_MATERIALIZE = "ml_materialize"
@@ -54,6 +55,7 @@ class StreamPayload(SourcePayload):
     source: StreamName | None = None
     if_exists: bool = False
     if_not_exists: bool = False
+    append_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +104,14 @@ class TaskPayload(SourcePayload):
 @dataclass(frozen=True, slots=True)
 class ExecuteTaskPayload(SourcePayload):
     name: str
+    database: str | None
+    schema: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskStatementPayload(SourcePayload):
+    action: str
+    name: str | None
     database: str | None
     schema: str | None
 

@@ -21,7 +21,7 @@ self-cycle.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.modules.task_orchestration.ddl import LoweredTask
@@ -86,6 +86,8 @@ async def persist_lowered_task(
     graph_key = graph_id or await _graph_key_for_task(task)
     if owner_role:
         await _validate_owner_role(task, graph_key, owner_role)
+    when_ast = await _bind_streams(task, created_by, owner_role)
+    task = await _route_stream_body(task)
 
     created_task = await task_orchestration_repository.create_task(
         {
@@ -101,6 +103,9 @@ async def persist_lowered_task(
             "owner_role": owner_role,
             "handler": task.handler,
             "handler_config": task.handler_config,
+            # Snowflake: a new task does nothing on its own until RESUME.
+            "lifecycle_state": "SUSPENDED",
+            "when_ast": when_ast,
         },
         created_by,
     )
@@ -321,3 +326,89 @@ async def drop_nova_task(
         await task_orchestration_repository.delete_edge(str(edge["id"]))
     await task_orchestration_repository.delete_task(str(task["id"]))
     return task
+
+
+async def _bind_streams(task: LoweredTask, created_by: str, owner_role: str | None) -> str | None:
+    """Resolve the ``WHEN``'s streams to their current ids, as the creating role.
+
+    The task is bound to these stream objects: a stream dropped and created
+    again under the same name is a different stream, and the task refuses to
+    run against it until it is recreated.
+    """
+    if task.when_tree is None:
+        return None
+    from app.modules.streams.schemas import StreamError
+    from app.modules.streams.service import StreamCaller, stream_service
+    from app.modules.task_orchestration.stream_when import dump, stream_name
+
+    caller = StreamCaller(created_by, owner_role)
+    bound: dict[str, str] = {}
+    for text in task.stream_names:
+        try:
+            record = await stream_service.current(stream_name(text))
+            await stream_service.authorize_read(
+                caller, record.source.database, record.source.name
+            )
+        except StreamError as exc:
+            raise TaskLoweringError(f"WHEN reads stream {text}: {exc}") from None
+        bound[text] = record.stream_id
+    return dump(task.when_tree, bound)
+
+
+async def _route_stream_body(task: LoweredTask) -> LoweredTask:
+    """A single statement that reads a stream runs through Nova, not SUBMIT TASK.
+
+    The engine does not know Nova streams, and only Nova can advance a
+    stream's offset after the insert is verified.
+    """
+    if task.handler != "sql":
+        return task
+    from app.modules.streams.sql import stream_sql
+    from app.sql_frontend.parser import parse_statement
+
+    try:
+        refs = await stream_sql._stream_refs(parse_statement(task.body), task.database_name)
+    except ValueError:
+        return task
+    if not refs:
+        return task
+    return replace(task, handler="sql_script", statements=(task.body,))
+
+
+async def set_task_lifecycle(
+    name: str, database_name: str | None, schema_name: str, action: str, user: dict[str, Any]
+) -> dict[str, Any] | None:
+    """``ALTER TASK … RESUME | SUSPEND`` on a Nova task; ``None`` if absent.
+
+    The root's state schedules its whole graph, so only a root (or standalone)
+    task is resumed or suspended, as in Snowflake where the root controls the
+    graph's schedule. Suspending stops new runs; a run in progress finishes,
+    and a stream's backlog stays for the next RESUME.
+    """
+    from app.modules.task_orchestration.access import owns_task
+    from app.modules.task_orchestration.repository import task_graph_id
+
+    task = await task_orchestration_repository.find_task(name, database_name, schema_name)
+    if task is None:
+        return None
+    if action not in {"resume", "suspend"}:
+        raise TaskLoweringError("ALTER TASK on a Nova task supports RESUME and SUSPEND")
+    if not owns_task(task, user):
+        raise TaskLoweringError(
+            f"Task {task_graph_id(task)} is owned by role {task.get('owner_role')!r}; "
+            "activate that role to change it"
+        )
+    parents = [
+        str(edge["parent_task"])
+        for edge in await task_orchestration_repository.list_all_edges()
+        if _edge_in_scope(str(edge.get("graph_id") or ""), database_name, schema_name)
+        and str(edge["child_task"]) == name
+    ]
+    if parents:
+        raise TaskLoweringError(
+            f"Task {name} runs after {', '.join(sorted(parents))}; resume or suspend the "
+            "graph's root task instead"
+        )
+    state = "STARTED" if action == "resume" else "SUSPENDED"
+    await task_orchestration_repository.set_lifecycle(str(task["id"]), state)
+    return {**task, "lifecycle_state": state}

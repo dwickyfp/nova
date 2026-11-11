@@ -296,6 +296,9 @@ async def list_graphs(user: dict = current_user) -> schemas.GraphListResponse:
                 # The anchor node's creation time represents the graph's; a
                 # graph has no row of its own.
                 created_at=(root or scope_task or {}).get("created_at"),
+                lifecycle_state=_narrow(
+                    (root or {}).get("lifecycle_state"), ("STARTED", "SUSPENDED"), "STARTED"
+                ),
             )
         )
     return schemas.GraphListResponse(graphs=summaries, count=len(summaries))
@@ -396,6 +399,38 @@ def _body_shape(task: dict[str, Any]) -> dict[str, Any]:
 async def _publish_manual_run(run: dict[str, Any], task_ids: list[str]) -> None:
     async with aioredis.from_url(settings.REDIS_URL, decode_responses=True) as client:
         await RedisGraphRunTransport(client).publish_graph_run(run, task_ids)
+
+
+@router.post("/graphs/{graph_id}/lifecycle", response_model=schemas.GraphSummary)
+async def set_graph_lifecycle(
+    graph_id: str, body: schemas.LifecycleRequest, user: dict = current_user
+) -> schemas.GraphSummary:
+    """Resume or suspend a graph (its root), as ``ALTER TASK root RESUME | SUSPEND``."""
+    from app.modules.task_orchestration.lowering import TaskLoweringError, set_task_lifecycle
+
+    access = _GraphAccess(_repository, user)
+    tasks = await access.require(graph_id)
+    root = _root_task(access.edges_for(graph_id), tasks)
+    if root is None:
+        raise HTTPException(status_code=409, detail="Task graph has no root")
+    try:
+        changed = await set_task_lifecycle(
+            str(root["name"]), root.get("database_name"), root.get("schema_name") or "default",
+            "resume" if body.state == "STARTED" else "suspend", user,
+        )
+    except TaskLoweringError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    await write_audit_log(
+        event_type="task", user_name=user["username"],
+        action="RESUME_TASK" if body.state == "STARTED" else "SUSPEND_TASK",
+        object_type="TASK_GRAPH", object_name=graph_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return schemas.GraphSummary(
+        graph_id=graph_id, root_task=str(root["name"]), owner_role=graph_role(tasks),
+        database_name=root.get("database_name"), schema_name=root.get("schema_name"),
+        node_count=len(tasks), lifecycle_state=(changed or {}).get("lifecycle_state", body.state),
+    )
 
 
 @router.post("/graphs/{graph_id}/runs", response_model=schemas.GraphRunResponse, status_code=202)

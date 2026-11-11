@@ -162,9 +162,12 @@ statement
     | submitTaskStatement
     | alterTaskStatement
     | dropTaskStatement
-    // NOVA-BEGIN (task-expand): `EXECUTE TASK name` runs a Nova task graph now.
-    // Nova-only; the engine has no such statement and never sees it.
+    // NOVA-BEGIN (task-expand): `EXECUTE TASK name` runs a Nova task graph now;
+    // `SHOW TASKS` and `DESCRIBE TASK` read Nova tasks. Nova-only statements
+    // the engine never sees.
     | novaExecuteTaskStatement
+    | novaShowTasksStatement
+    | novaDescribeTaskStatement
     // NOVA-END
 
     // Materialized View Statement
@@ -842,7 +845,7 @@ novaUserIdentity
     ;
 
 novaStreamStatement
-    : CREATE STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName APPEND_ONLY EQ TRUE
+    : CREATE STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName (APPEND_ONLY EQ (TRUE | FALSE))?
     | DROP STREAM (IF EXISTS)? novaStreamName
     | (DESC | DESCRIBE) STREAM novaStreamName
     | SHOW STREAM STATUS novaStreamName
@@ -1023,6 +1026,14 @@ taskCronScheduleDesc
 // `FROM s END` would read END as the table alias.
 novaExecuteTaskStatement
     : EXECUTE TASK novaQualifiedTaskName
+    ;
+
+novaShowTasksStatement
+    : SHOW TASKS ((IN | FROM) novaQualifiedTaskName)?
+    ;
+
+novaDescribeTaskStatement
+    : (DESC | DESCRIBE) TASK novaQualifiedTaskName
     ;
 
 novaTaskScriptBlock
@@ -3879,7 +3890,7 @@ nonReserved
     | OVERLAP_POLICY
     // NOVA-END
     // NOVA-BEGIN (task-expand): task script clause keywords stay identifiers.
-    | LANGUAGE | PACKAGES | RUNTIME_VERSION
+    | LANGUAGE | PACKAGES | RUNTIME_VERSION | TASKS
     // NOVA-END
     | PARTITIONS | PASSWORD | PATH | PAUSE | PENDING | PERCENTILE_UNION | PIVOT | PLAN | PLUGIN | PLUGINS | POLICY | POLICIES
     | PERCENT_RANK | PREDICATE | PRECEDING | PRIORITY | PROC | PROCESSLIST | PROFILE | PROFILELIST | PROVIDER | PROVIDERS | PRIVILEGES | PROBABILITY | PROPERTIES | PROPERTY | PIPE | PIPES

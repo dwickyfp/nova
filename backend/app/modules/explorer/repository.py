@@ -89,7 +89,12 @@ class CallerMetadata:
         catalog = check_identifier(catalog, field="catalog")
         database = check_identifier(database, field="database")
         rows = await self._rows(f"SHOW FULL TABLES FROM `{catalog}`.`{database}`")
-        return {row[0]: (row[1] if len(row) > 1 else "BASE TABLE") for row in rows}
+        # Nova Streams' change journals are Nova-managed, not user objects.
+        return {
+            row[0]: (row[1] if len(row) > 1 else "BASE TABLE")
+            for row in rows
+            if not str(row[0]).startswith("__nova_stream_")
+        }
 
     async def function_names(self, database: str) -> set[str]:
         database = check_identifier(database, field="database")

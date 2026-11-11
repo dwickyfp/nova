@@ -382,4 +382,27 @@ describe("TaskList", () => {
 
     await expect.element(screen.getByText("No tasks yet")).toBeInTheDocument();
   });
+
+  it("resumes a suspended scheduled task", async () => {
+    graphs = [graph({ lifecycle_state: "SUSPENDED" })];
+    runRequests.length = 0;
+    const screen = await renderList();
+    await expect.element(screen.getByText("suspended")).toBeVisible();
+    await screen.getByRole("button", { name: "Resume nightly_load" }).click();
+    expect(runRequests[runRequests.length - 1]).toContain(
+      "/task-orchestration/graphs/db1.default.g1/lifecycle",
+    );
+    expect(toast.success).toHaveBeenCalledWith("nightly_load resumed");
+  });
+
+  it("offers no Resume on a manual task", async () => {
+    graphs = [graph({ schedule_kind: "manual", lifecycle_state: "SUSPENDED" })];
+    const screen = await renderList();
+    await expect
+      .element(screen.getByRole("button", { name: "Run nightly_load" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Resume nightly_load" }).query()).toBeNull();
+    expect(screen.getByText("suspended").query()).toBeNull();
+  });
 });
+

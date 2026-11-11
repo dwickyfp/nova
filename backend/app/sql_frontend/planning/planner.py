@@ -120,6 +120,7 @@ def default_registry() -> PlannerRegistry:
         ast.CreateTaskStatement: ActionKind.CREATE_TASK,
         ast.ExecuteTaskStatement: ActionKind.EXECUTE_TASK,
         ast.DropTaskStatement: ActionKind.DROP_TASK,
+        ast.TaskLifecycleStatement: ActionKind.TASK_LIFECYCLE,
         ast.CreateMLModelStatement: ActionKind.CREATE_ML_MODEL,
         ast.MLPredictStatement: ActionKind.ML_PREDICT,
         ast.MLMaterializeStatement: ActionKind.ML_MATERIALIZE,

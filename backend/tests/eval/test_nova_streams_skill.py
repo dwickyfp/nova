@@ -16,25 +16,24 @@ from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_fram
     [
         (
             "Draft CREATE STREAM for analytics.orders; do not execute.",
-            "Draft only; execution is unavailable.\n```sql\nCREATE STREAM analytics.orders_stream "
+            "Draft only, not run.\n```sql\nCREATE STREAM analytics.orders_stream "
             "ON TABLE analytics.orders APPEND_ONLY = TRUE;\n```",
         ),
         (
             "Explain s versus analytics.s versus analytics.default.s.",
-            "With analytics active, all three identify the same Stream. Execution is unavailable.",
+            "With analytics active, all three identify the same Stream.",
         ),
         (
             "Execute CREATE STREAM analytics.s on analytics.orders.",
-            "Streams execution is unavailable. "
-            "A flag change alone does not make the provider ready.",
+            "Creating it changes the database, so I need your approval before I run it.",
         ),
         (
             "Explain DROP STREAM analytics.s; I have not approved deletion.",
-            "DROP requires confirmation. Nothing was dropped; Streams execution is unavailable.",
+            "DROP requires confirmation. Nothing was dropped.",
         ),
         (
-            "Create a task WHEN NOVA_STREAM_HAS_DATA('analytics.s').",
-            "Stream functions in tasks are unavailable. No task was created.",
+            "Explain a task WHEN NOVA_STREAM_HAS_DATA('analytics.s').",
+            "It runs when the stream has data, after ALTER TASK … RESUME. No task was created.",
         ),
     ],
 )
@@ -54,6 +53,8 @@ async def test_neva_loads_stream_playbook_without_mutation(monkeypatch, prompt, 
                     (
                         skill.body.strip() in str(message.get("content", ""))
                         or json.dumps(skill.body.strip())[1:-1] in str(message.get("content", ""))
+                        or json.dumps(skill.body.strip(), ensure_ascii=False)[1:-1]
+                        in str(message.get("content", ""))
                     )
                     for message in messages
                 ), "Real skill body did not reach the next model iteration"
@@ -104,6 +105,11 @@ async def test_neva_loads_stream_playbook_without_mutation(monkeypatch, prompt, 
         )
     ]
     assert provider.calls == (3 if drafting else 2)
-    assert any(answer in frame or json.dumps(answer)[1:-1] in frame for frame in frames)
+    assert any(
+        answer in frame
+        or json.dumps(answer)[1:-1] in frame
+        or json.dumps(answer, ensure_ascii=False)[1:-1] in frame
+        for frame in frames
+    )
     assert any('"finish_reason":"stop"' in frame.replace(" ", "") for frame in frames)
     mutation.assert_not_awaited()

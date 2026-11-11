@@ -45,6 +45,7 @@ export const ORCHESTRATION_SCHEDULE_KINDS = [
   "manual",
   "interval",
   "cron",
+  "stream",
 ] as const;
 
 export const ORCHESTRATION_EDGE_KINDS = ["after", "finalize"] as const;
@@ -90,7 +91,11 @@ export interface GraphSummary {
   last_run: GraphRunSummary | null;
   run_counts: RunCounts;
   created_at: string | null;
+  /** `SUSPENDED` graphs run only when someone runs them (Run, EXECUTE TASK). */
+  lifecycle_state?: LifecycleState;
 }
+
+export type LifecycleState = "STARTED" | "SUSPENDED";
 
 export interface GraphListResponse {
   graphs: GraphSummary[];
@@ -181,6 +186,16 @@ export interface GraphRunDetailResponse {
 }
 
 const BASE = "/task-orchestration";
+
+/** Resume or suspend a graph's schedule or stream trigger (ALTER TASK root RESUME|SUSPEND). */
+export const setGraphLifecycle = (
+  graphId: string,
+  state: LifecycleState,
+): Promise<GraphSummary> =>
+  api.post<GraphSummary>(
+    `${BASE}/graphs/${encodeURIComponent(graphId)}/lifecycle`,
+    { state },
+  );
 
 export const runGraph = (graphId: string): Promise<GraphRunResponse> =>
   api.post<GraphRunResponse>(

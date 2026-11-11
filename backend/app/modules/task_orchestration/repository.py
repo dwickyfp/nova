@@ -22,7 +22,8 @@ _ROLE_BINDINGS = "NOVA_SYSTEM.CONFIG_TASK_ROLE_BINDINGS"
 _TASK_COLUMNS = (
     "id, name, database_name, schema_name, definition, schedule_kind, schedule_expr, "
     "timezone, when_expr, overlap_policy, owner_role, created_by, "
-    "consecutive_fail_count, version, created_at, updated_at, handler, handler_config"
+    "consecutive_fail_count, version, created_at, updated_at, handler, handler_config, "
+    "lifecycle_state, when_ast"
 )
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, edge_kind, created_at"
 _GRAPH_RUN_COLUMNS = (
@@ -50,6 +51,8 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
             "overlap_policy",
             "owner_role",
             "handler_config",
+            "lifecycle_state",
+            "when_ast",
         }
     ),
     "edge": frozenset({"parent_task", "child_task"}),
@@ -234,8 +237,10 @@ class TaskOrchestrationRepository:
             INSERT INTO {_TASKS}
             (id, name, database_name, schema_name, definition, schedule_kind,
              schedule_expr, timezone, when_expr, overlap_policy, owner_role,
-             created_by, version, created_at, updated_at, handler, handler_config)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW(), %s, %s)
+             created_by, version, created_at, updated_at, handler, handler_config,
+             lifecycle_state, when_ast)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW(), %s, %s,
+                    %s, %s)
             """,
             [
                 task_id,
@@ -252,6 +257,8 @@ class TaskOrchestrationRepository:
                 created_by,
                 data.get("handler", "sql"),
                 json.dumps(data["handler_config"]) if data.get("handler_config") else None,
+                data.get("lifecycle_state") or "STARTED",
+                data.get("when_ast"),
             ],
         )
         created = await self.get_task(task_id)
@@ -354,6 +361,24 @@ class TaskOrchestrationRepository:
             [*values, task_id],
         )
         return await self.get_task(task_id)
+
+    async def set_lifecycle(self, task_id: str, state: str) -> None:
+        """``STARTED`` or ``SUSPENDED``: whether the scheduler may start the task."""
+        if state not in {"STARTED", "SUSPENDED"}:
+            raise ValueError("Unknown task lifecycle state")
+        await db.execute_system(
+            f"UPDATE {_TASKS} SET lifecycle_state = %s, updated_at = NOW() WHERE id = %s",
+            [state, task_id],
+        )
+
+    async def latest_stream_runs(self, graph_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """Recent stream-triggered runs of a graph, newest first."""
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} WHERE graph_id = %s AND "
+            "trigger_type = 'stream' ORDER BY started_at DESC LIMIT %s",
+            [graph_id, limit],
+        )
+        return [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]
 
     async def delete_task(self, task_id: str) -> bool:
         result = await db.execute_system(f"DELETE FROM {_TASKS} WHERE id = %s", [task_id])

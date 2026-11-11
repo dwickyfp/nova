@@ -834,4 +834,8 @@ class TestManualRuns:
             for method in getattr(route, "methods", set())
             if method != "GET"
         ]
-        assert mutations == [("/graphs/{graph_id}/runs", "POST")]
+        # Running a graph and resuming/suspending it are the only mutations.
+        assert sorted(mutations) == [
+            ("/graphs/{graph_id}/lifecycle", "POST"),
+            ("/graphs/{graph_id}/runs", "POST"),
+        ]

@@ -723,6 +723,28 @@ lengkap + alasan keputusan ada di `docs/08-task-manager.md` § Runtime semantics
   masih aktif; `queue` menundanya sampai run aktif selesai; `allow` menjalankan
   konkuren. Nilai tak dikenal berperilaku `skip`.
 
+Task baru dibuat **SUSPENDED**: jadwal dan trigger stream baru berjalan setelah
+`ALTER TASK <root> RESUME` (atau tombol Resume di Tasks). `EXECUTE TASK` tetap
+bisa menjalankannya sekali. Task dengan `WHEN SYSTEM$STREAM_HAS_DATA('…')` tanpa
+`SCHEDULE` dijalankan scheduler saat stream punya data; lihat
+`docs/08-task-manager.md` § Stream-triggered tasks.
+
+### Nova Streams: akun stream writer
+
+`CREATE STREAM` butuh principal khusus yang menulis perubahan sumber, journal,
+dan lineage dalam satu transaksi engine. Buat sekali (butuh akses admin engine
+dan Ranger dari `backend/.env`); password tidak pernah dicetak:
+
+```bash
+cd backend && uv run python scripts/provision_stream_writer.py --write-env .env
+```
+
+Script ini mengisi `STREAM_WRITER_USER`, `STREAM_WRITER_PASSWORD`, dan
+`STREAM_WRITER_ROLE` di `.env`. Restart backend, scheduler, dan worker setelahnya.
+Tanpa akun ini `CREATE STREAM` gagal dengan `STREAM_CHANGE_TRACKING_UNAVAILABLE`.
+Hanya penulisan lewat Nova yang ditangkap; penulisan langsung ke engine membuat
+stream `BLOCKED` sampai dibuat ulang. Detail: `docs/sql_docs/13-nova-streams.md`.
+
 Cara mengamati:
 
 ```bash

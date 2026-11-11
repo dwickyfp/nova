@@ -37,6 +37,9 @@ class Consumption:
     operation_digest: str
     active_role: str | None = None
     security_context_version: int | None = None
+    #: Proven-failed attempts already made from this start offset. Each retry
+    #: after a verified failure claims a new slot; nothing else can.
+    attempt: int = 0
 
     def __post_init__(self) -> None:
         for value in (self.consume_id, self.operation_digest):
@@ -54,7 +57,15 @@ class Consumption:
 
     @property
     def dispatch_resource(self) -> str:
-        return operation_id("stream-dispatch", self.stream_id)
+        """One arbitration slot per stream generation and start offset.
+
+        The start offset is the committed cursor this operation consumes from,
+        so a stream can be consumed again after each advance, while two
+        operations from the same offset still have exactly one winner.
+        """
+        return operation_id(
+            "stream-dispatch", self.stream_id, self.generation, self.snapshot.after.sequence
+        )
 
     def decision_claim(self, attempt_id: str, decision: str) -> Claim:
         if decision not in {"submit", "cancel"}:
@@ -62,7 +73,7 @@ class Consumption:
         return Claim(
             self.dispatch_resource,
             self.snapshot.after.epoch,
-            self.generation,
+            self.attempt,
             attempt_id,
             operation_id(
                 decision, self.consume_id, self.operation_digest, self.stream_id,
@@ -74,6 +85,7 @@ class Consumption:
                 self.target.transaction_id if self.target.transaction_id is not None else -1,
                 self.active_role or "",
                 self.security_context_version if self.security_context_version is not None else -1,
+                self.attempt,
             ),
         )
 
