@@ -32,6 +32,7 @@ from app.core.metadata_db import (
     MetadataSchemaMismatch,
     MetadataUnavailable,
 )
+from app.core.metadata_import import ImportColumn, ImportValueError, import_row_id
 from app.core.metadata_schema import load_migrations
 from app.modules.access_control.security_context import SecurityContext
 
@@ -416,3 +417,91 @@ async def test_typed_values_keep_precision_timezone_unicode_and_null_distinction
             "document": document, "amount": amount, "happened_at": happened_at.astimezone(UTC),
             "marker": False, "json_missing": False, "json_type": "null", "sql_missing": True,
         }
+
+
+async def test_legacy_values_bind_without_json_numeric_loss_or_timestamp_shift(metadata):
+    db, admin, _, _ = metadata
+    await admin.execute(
+        "ALTER TABLE nova_meta.test_owned_rows ADD COLUMN payload jsonb, "
+        "ADD COLUMN legacy_id bigint, ADD COLUMN label varchar(64), "
+        "ADD COLUMN happened_at timestamptz, ADD COLUMN enabled boolean, "
+        "ADD COLUMN measurement double precision, ADD COLUMN json_null jsonb, "
+        "ADD COLUMN sql_null jsonb"
+    )
+    raw = '{"precise":9007199254740993.1234567890123456789,"items":[null,true,"日本語"]}'
+    columns_and_values = (
+        (ImportColumn("payload", "json", False), raw),
+        (ImportColumn("legacy_id", "bigint(20)", False), 2 ** 63 - 1),
+        (ImportColumn("label", "varchar(64)", False), "日本語 café 🦉"),
+        (ImportColumn("happened_at", "datetime", False, "Asia/Jakarta"),
+         datetime(2026, 11, 11, 10, 15, 20, 123456)),
+        (ImportColumn("enabled", "tinyint(1)", False), 0),
+        (ImportColumn("measurement", "double", False), 1.2345678901234567),
+        (ImportColumn("json_null", "json", True), "null"),
+        (ImportColumn("sql_null", "json", True), None),
+    )
+    async with db.transaction(actor()) as conn:
+        await conn.execute(
+            "INSERT INTO nova_meta.test_owned_rows "
+            "(id,owner_name,active_role,payload,legacy_id,label,happened_at,enabled,measurement,"
+            "json_null,sql_null) VALUES (1,'alice','analyst',%s,%s,%s,%s,%s,%s,%s,%s)",
+            tuple(column.convert(value) for column, value in columns_and_values),
+        )
+    async with db.transaction(actor(), read_only=True) as conn:
+        cursor = await conn.execute(
+            "SELECT payload->>'precise' AS precise, payload->'items' AS items, "
+            "legacy_id,label,happened_at,enabled,measurement, "
+            "json_null IS NULL AS json_missing, jsonb_typeof(json_null) AS json_type, "
+            "sql_null IS NULL AS sql_missing FROM nova_meta.test_owned_rows"
+        )
+        row = await cursor.fetchone()
+        assert row == {
+            "precise": "9007199254740993.1234567890123456789",
+            "items": [None, True, "日本語"], "legacy_id": 2 ** 63 - 1,
+            "label": "日本語 café 🦉",
+            "happened_at": datetime(2026, 11, 11, 3, 15, 20, 123456, tzinfo=UTC),
+            "enabled": False, "measurement": 1.2345678901234567,
+            "json_missing": False, "json_type": "null", "sql_missing": True,
+        }
+
+
+async def test_import_keeps_duplicate_occurrences_and_invalid_chunk_rolls_back(metadata):
+    db, admin, _, _ = metadata
+    snapshot = uuid4()
+    await admin.execute(
+        "ALTER TABLE nova_meta.test_owned_rows ADD COLUMN import_id uuid UNIQUE, "
+        "ADD COLUMN legacy_id bigint, ADD COLUMN happened_at timestamptz"
+    )
+    async with db.transaction(actor()) as conn:
+        for ordinal in range(2):
+            await conn.execute(
+                "INSERT INTO nova_meta.test_owned_rows "
+                "(id,owner_name,active_role,import_id,legacy_id) "
+                "VALUES (%s,'alice','analyst',%s,42)",
+                (ordinal + 1, import_row_id(snapshot, "AUDIT_LOG", "a" * 64, ordinal)),
+            )
+    with pytest.raises(MetadataConflict):
+        async with db.transaction(actor()) as conn:
+            await conn.execute(
+                "INSERT INTO nova_meta.test_owned_rows "
+                "(id,owner_name,active_role,import_id,legacy_id) "
+                "VALUES (3,'alice','analyst',%s,42)",
+                (import_row_id(snapshot, "AUDIT_LOG", "a" * 64, 0),),
+            )
+    with pytest.raises(ImportValueError):
+        async with db.transaction(actor()) as conn:
+            await conn.execute(
+                "INSERT INTO nova_meta.test_owned_rows "
+                "VALUES (3,'alice','analyst',1,0,NULL,43,NULL)"
+            )
+            invalid_time = ImportColumn("happened_at", "datetime", False, "America/New_York")
+            await conn.execute(
+                "UPDATE nova_meta.test_owned_rows SET happened_at=%s WHERE id=3",
+                (invalid_time.convert(datetime(2026, 11, 1, 1, 30)),),
+            )
+    async with db.transaction(actor(), read_only=True) as conn:
+        cursor = await conn.execute(
+            "SELECT count(*) AS rows,count(DISTINCT import_id) AS identities, "
+            "count(DISTINCT legacy_id) AS legacy_ids FROM nova_meta.test_owned_rows"
+        )
+        assert await cursor.fetchone() == {"rows": 2, "identities": 2, "legacy_ids": 1}

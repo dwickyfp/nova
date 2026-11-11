@@ -1,0 +1,143 @@
+{
+  "source_parent_commit": "a7894247db84c9a9627b5c9a390a4c6636ef0d9a",
+  "application_tree_sha256": "e16247c8315832918e30500757d50fd38d3da28885a5b93e7c1c0ff7a5e4d38c",
+  "schema_revision": "0001_deployment_state.sql",
+  "working_directory": "backend",
+  "checks": [
+    {
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/unit",
+        "--cov=app",
+        "--cov-branch",
+        "--cov-report=term-missing",
+        "--cov-report=xml:/tmp/nova-refactor-coverage-16.xml"
+      ],
+      "result": "PASS",
+      "passed": 10601,
+      "warnings": 4,
+      "coverage_percent_rounded": 65,
+      "seconds": 457.59
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "mypy",
+        "app",
+        "--no-error-summary"
+      ],
+      "result": "PASS"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "tests.eval.report"
+      ],
+      "result": "PASS",
+      "scenarios_passed": 54,
+      "checks_passed": 189
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        "app/core/config.py",
+        "app/core/deps.py",
+        "app/core/metadata_bootstrap.py",
+        "app/core/metadata_db.py",
+        "app/core/metadata_import.py",
+        "app/core/metadata_migrations.py",
+        "app/core/metadata_schema.py",
+        "app/core/redis.py",
+        "app/main.py",
+        "app/modules/agents/router.py",
+        "app/modules/agents/studio_router.py",
+        "app/modules/ai_ml/router.py",
+        "app/modules/assistant/consent.py",
+        "app/modules/assistant/router.py",
+        "app/modules/assistant/service.py",
+        "app/modules/auth/service.py",
+        "app/modules/llm_functions/router.py",
+        "app/modules/task_orchestration/execution.py",
+        "app/modules/task_orchestration/worker.py",
+        "app/observability/http.py",
+        "scripts/inventory_control_plane.py",
+        "scripts/profile_metadata_constraints.py",
+        "tests/eval/semantic_execution.py",
+        "tests/eval/test_business_ontology_trajectory.py",
+        "tests/eval/test_evidence_health_trajectory.py",
+        "tests/eval/test_mcp_consent_trajectory.py",
+        "tests/eval/test_semantic_clarification_trajectory.py",
+        "tests/eval/test_semantic_latest_month.py",
+        "tests/integration/prepare_metadata_fixture.py",
+        "tests/integration/test_metadata_bootstrap.py",
+        "tests/integration/test_metadata_migrator.py",
+        "tests/integration/test_metadata_pg_foundation.py",
+        "tests/integration/test_task_outcome_uncertainty.py",
+        "tests/unit/test_agent_run_storage_failure.py",
+        "tests/unit/test_ai_ml_ssrf_guard.py",
+        "tests/unit/test_api_auth_inventory.py",
+        "tests/unit/test_assistant_stage_b.py",
+        "tests/unit/test_control_plane_inventory.py",
+        "tests/unit/test_control_plane_session_boundaries.py",
+        "tests/unit/test_llm_alias_authorization.py",
+        "tests/unit/test_mcp_registry_access.py",
+        "tests/unit/test_metadata_bootstrap_config.py",
+        "tests/unit/test_metadata_db_config.py",
+        "tests/unit/test_metadata_import.py",
+        "tests/unit/test_metadata_schema.py",
+        "tests/unit/test_notebook_data_tokens.py",
+        "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+        "tests/unit/test_observability_metrics.py",
+        "tests/unit/test_process_role.py",
+        "tests/unit/test_superset_bridge.py",
+        "tests/unit/test_task_orchestration_worker.py",
+        "tests/unit/test_task_outcome_uncertainty.py",
+        "tests/unit/test_web_search_tool.py"
+      ],
+      "result": "PASS",
+      "python_files": 53
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "-"
+      ],
+      "stdin": "import json,os,pytest\nfrom pathlib import Path\nos.environ['NOVA_TEST_METADATA_ADMIN_DSN']=json.loads(Path('/tmp/nova-control-plane-pg/connection.json').read_text())['admin_dsn']\nos.environ['NOVA_TEST_METADATA_DISPOSABLE']='acknowledged'\nraise SystemExit(pytest.main(['tests/integration/test_metadata_bootstrap.py','tests/integration/test_metadata_migrator.py','tests/integration/test_metadata_pg_foundation.py','-q','--tb=short','--junit-xml=/tmp/nova-import-pg-2.xml']))\n",
+      "result": "PASS",
+      "passed": 61,
+      "skipped": 0,
+      "seconds": 14.84,
+      "artifact": "metadata-import-local.xml"
+    }
+  ],
+  "earlier_attempts": [
+    {
+      "report": "/tmp/nova-import-pg-1.xml",
+      "passed": 61,
+      "skipped": 0,
+      "seconds": 13.1,
+      "limit": "Before final VARCHAR contract-length bound; superseded by final combined PG suite."
+    }
+  ],
+  "ci": {
+    "result": "PENDING"
+  },
+  "limits": [
+    "No full target schema or domain repository cutover",
+    "No writer freeze or authenticated export manifest",
+    "All 249 DATETIME columns still require writer/era provenance",
+    "No complete import or migration rehearsal"
+  ]
+}

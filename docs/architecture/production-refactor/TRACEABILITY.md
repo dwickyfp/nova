@@ -9,6 +9,7 @@ are excluded from this delivery's acceptance by the owner's explicit updates.
 | Complete metadata ownership and writer inventory | WP00 | Live schema, static + dynamic call review, migration mapping | IN_PROGRESS |
 | Consistent architecture instructions | WP01 | Root/scoped rules and operational docs agree with runtime/migration state | IN_PROGRESS: placement rule updated; runtime and operator documentation still pending |
 | PG-only transactional metadata | WP02–07 | DB01–15 as applicable; all domain regressions; no stale metadata path | IN_PROGRESS: transaction boundary, immutable schema installer and restricted identity bootstrap tested on PG17; no domain port, production Compose provisioning or cutover |
+| Lossless schema translation | WP03 | Per-column types/provenance, relational constraints, duplicate retention and full import checks | IN_PROGRESS: 1,578 column type mappings, strict value conversions and all target key definitions; 249 timestamp provenance reviews, domain DDL and import orchestration remain open |
 | Durable jobs and effects | WP08, WP13 | JOB01–23; crash matrix; engine receipts; Redis loss | NOT_STARTED |
 | Explicit workload processes | WP09 | Admission, supervisor, cancellation, resource isolation | NOT_STARTED |
 | Durable agent consent/replay | WP10 | Restart, role revoke, foreign approval, repeated tool invocation | NOT_STARTED |

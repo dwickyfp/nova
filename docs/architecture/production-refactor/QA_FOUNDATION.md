@@ -388,3 +388,28 @@ validated Studio checkpoint. Provisioning is added to the non-skipping CI PG
 lane, but CI for this source is pending. The
 [bootstrap command record](../../reports/production-refactor/WP-02/bootstrap-commands.json)
 and [operator contract](PG_BOOTSTRAP.md) preserve exact scope and limitations.
+
+
+## Studio checkpoint CI and lossless import preparation
+
+CI run [43023889831](https://github.com/dwickyfp/nova/actions/runs/43023889831)
+completed all eight jobs successfully for
+`d1c8b45d0c9c26831f632b52c65c1edb1ee2b51c`. Downloaded reports contain 31 PG
+passes without skips and 217 engine passes with 24 skips, no failures/errors.
+This supersedes that checkpoint's pending-CI statement. Live Studio/MCP failures
+remain open; neither the skips nor provider evidence changed.
+
+Subsequent import preparation adds strict value conversion and immutable-export
+row identities. All 1,578 observed columns have a type mapping; all 249 DATETIME
+columns still require provenance. Seven duplicate-key tables preserve every
+legacy ID and row occurrence, and the former dashboard key is established from
+historical source. No target key definition remains unknown, but complete
+constraints, per-domain access, actual schemas and import validation remain open.
+The current combined PG suite passes 61 cases without skips; details and exact
+scope are in the [WP-03 packet](../../reports/production-refactor/WP-03/README.md).
+
+The final local import checkpoint passed 10,601 backend tests with four warnings
+in 457.59 seconds (65% combined coverage). Mypy, Ruff on 53 changed Python files
+and the 54-scenario/189-check scorecard passed. The final 61-case PG suite has no
+skips, and cleanup left zero new fixture roles/schema after excluding the
+pre-existing administrator. CI for this source remains pending.

@@ -1,6 +1,6 @@
 {
-  "python_files": 684,
-  "application_tree_sha256": "087baab4ad673b7f832bee566d8ca5e560a3c405fbba98636571a22ff05beb4c",
+  "python_files": 685,
+  "application_tree_sha256": "e16247c8315832918e30500757d50fd38d3da28885a5b93e7c1c0ff7a5e4d38c",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -28753,7 +28753,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "d1c8b45d0c9c26831f632b52c65c1edb1ee2b51c",
+  "source_commit": "a7894247db84c9a9627b5c9a390a4c6636ef0d9a",
   "live": {
     "started_at": "2026-11-11T10:29:57.678477+00:00",
     "finished_at": "2026-11-11T10:30:00.644282+00:00",

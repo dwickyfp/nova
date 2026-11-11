@@ -198,5 +198,22 @@
     "page": "/docs/studio/ask-questions",
     "rendered_in_chrome": true,
     "executable_examples_changed": false
+  },
+  "ci": {
+    "run_id": 43023889831,
+    "commit": "d1c8b45d0c9c26831f632b52c65c1edb1ee2b51c",
+    "result": "SUCCESS",
+    "jobs_passed": 8,
+    "postgres": {
+      "passed": 31,
+      "skipped": 0
+    },
+    "engine": {
+      "passed": 217,
+      "skipped": 24,
+      "failures": 0,
+      "errors": 0
+    },
+    "limit": "CI does not close live-provider failures or governed acceptance skips and does not test subsequent identity provisioning/import edits."
   }
 }
