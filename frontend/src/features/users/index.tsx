@@ -1123,7 +1123,7 @@ export function Users() {
                                 </Badge>
                                 {user.roles.length > 1 ? (
                                   <span className="text-xs text-muted-foreground">
-                                    +{user.roles.length - 1} role lain
+                                    +{user.roles.length - 1} more
                                   </span>
                                 ) : null}
                               </div>

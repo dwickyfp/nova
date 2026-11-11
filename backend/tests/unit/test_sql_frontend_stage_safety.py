@@ -106,3 +106,59 @@ def test_streamed_listing_rows_are_rewritten():
 
     asyncio.run(run())
     assert received == {"columns": ["PATH", "SIZE"], "rows": [["@raw/x.csv", 54], [None, 0]]}
+
+
+def test_engine_response_names_stages_not_buckets_or_endpoints():
+    from app.modules.query.dialect.parser import CommandType
+    from app.modules.query.repository import QueryResult
+    from app.sql_frontend.execution.adapters import FeatureAdapters
+
+    physical = (
+        "SELECT * FROM FILES('path'='s3://lake/tenants/a/x.csv', 'format'='csv', "
+        "'aws.s3.endpoint'='http://minio.internal:9000')"
+    )
+
+    class Repo:
+        async def execute_as_user(self, **kwargs):
+            return QueryResult(columns=["c"], rows=[[1]], row_count=1, executed_sql=kwargs["sql"])
+
+    audited = []
+
+    async def audit(**kwargs):
+        audited.append(kwargs)
+
+    adapters = object.__new__(FeatureAdapters)
+    adapters._repo = Repo()
+    adapters._audit_sink = audit
+    adapters._decrypt = lambda _value: "pw"
+    context = SimpleNamespace(
+        username="u", encrypted_password="e", database="db", schema=None, role="r",
+        max_rows=10, connection=None, session_id=None, file_id=None, row_sink=None,
+        engine_session_prepared=False, transaction_active=False,
+    )
+    result = asyncio.run(
+        adapters._run_on_engine(
+            None, context, sql="SELECT * FROM @raw/x.csv", executed_sql=physical,
+            audit_sql=physical, warnings=[],
+            location_map=[("s3://lake/tenants/a", "@raw"),
+                          ("http://minio.internal:9000", "<storage endpoint>")],
+            parsed=SimpleNamespace(command_type=CommandType.STAGE_QUERY),
+        )
+    )
+    assert "s3://" not in result.executed_sql
+    assert "minio" not in result.executed_sql
+    assert "'path'='@raw/x.csv'" in result.executed_sql
+
+
+@pytest.mark.parametrize(
+    "sql",
+    ["COPY INTO t FROM other_table", "COPY INTO t FROM (SELECT * FROM other_table)"],
+)
+def test_copy_without_a_stage_is_refused_with_its_alternative(sql):
+    with pytest.raises(SemanticError, match="to copy between tables use INSERT INTO"):
+        _validate(sql)
+
+
+@pytest.mark.parametrize("sql", ["COPY INTO t FROM @raw/x.csv", "COPY INTO t FROM @raw.*.csv"])
+def test_copy_from_a_stage_still_validates(sql):
+    _validate(sql)

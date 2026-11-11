@@ -51,11 +51,9 @@ type Algorithm =
   | 'auto'
   | 'linear'
   | 'logistic'
-  | 'decision_tree'
   | 'random_forest'
+  | 'extra_trees'
   | 'gradient_boost'
-  | 'knn'
-  | 'svm'
 
 type ModelInfo = {
   model_id: string
@@ -95,15 +93,14 @@ const MODEL_TYPES: { value: ModelType; label: string }[] = [
   { value: 'regression', label: 'Regression' },
 ]
 
+// The algorithms the training engine accepts; anything else fails training.
 const ALGORITHMS: { value: Algorithm; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Best algorithm chosen automatically' },
-  { value: 'linear', label: 'Linear', description: 'Linear / Ridge regression' },
-  { value: 'logistic', label: 'Logistic', description: 'Logistic regression' },
-  { value: 'decision_tree', label: 'Decision Tree', description: 'Single decision tree' },
+  { value: 'linear', label: 'Linear', description: 'Ridge regression (regression only)' },
+  { value: 'logistic', label: 'Logistic', description: 'Logistic regression (classification only)' },
   { value: 'random_forest', label: 'Random Forest', description: 'Ensemble of decision trees' },
-  { value: 'gradient_boost', label: 'Gradient Boost', description: 'Gradient boosted trees (XGBoost-style)' },
-  { value: 'knn', label: 'KNN', description: 'K-nearest neighbors' },
-  { value: 'svm', label: 'SVM', description: 'Support vector machine' },
+  { value: 'extra_trees', label: 'Extra Trees', description: 'Randomized ensemble of decision trees' },
+  { value: 'gradient_boost', label: 'Gradient Boost', description: 'Histogram gradient boosted trees' },
 ]
 
 
@@ -159,7 +156,19 @@ function getPrimaryMetric(metrics: Record<string, unknown> | null): { key: strin
   return null
 }
 
+function modelTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    classification: 'Classification',
+    regression: 'Regression',
+    clustering: 'Clustering',
+    anomaly_detection: 'Anomaly detection',
+    forecast: 'Forecasting',
+  }
+  return labels[type] ?? type
+}
+
 function ModelStatus({ status }: { status: string | null }) {
+  status = status?.toLowerCase() ?? null
   if (status === 'ready') return <StatusBadge tone='success'>Ready</StatusBadge>
   if (status === 'failed') return <StatusBadge tone='danger'>Failed</StatusBadge>
   if (status === 'training') return <StatusBadge tone='info' dot>Training</StatusBadge>
@@ -241,7 +250,7 @@ export function ModelsTab() {
 
   const classificationCount = models.filter((m) => m.model_type === 'classification').length
   const regressionCount = models.filter((m) => m.model_type === 'regression').length
-  const readyCount = models.filter((m) => m.latest_status === 'ready').length
+  const readyCount = models.filter((m) => m.latest_status?.toLowerCase() === 'ready').length
 
   // ── Train Model Dialog ────────────────────────────────────────
 
@@ -481,9 +490,7 @@ export function ModelsTab() {
                     </td>
                     <td className='px-4 py-3'>
                       <span className='text-muted-foreground'>
-                        {model.model_type === 'classification'
-                          ? 'Classification'
-                          : 'Regression'}
+                        {modelTypeLabel(model.model_type)}
                       </span>
                     </td>
                     <td className='px-4 py-3'>
@@ -837,9 +844,7 @@ export function ModelsTab() {
                 <div>
                   <span className='text-muted-foreground'>Type</span>
                   <p>
-                    {detailDialog.model_type === 'classification'
-                      ? 'Classification'
-                      : 'Regression'}
+                    {modelTypeLabel(detailDialog.model_type)}
                   </p>
                 </div>
                 <div>

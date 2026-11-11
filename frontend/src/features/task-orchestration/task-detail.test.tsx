@@ -90,14 +90,14 @@ function mockApi() {
           node_runs: [
             {
               id: "node-failed",
-              task_id: "load",
+              task_id: "id_load",
               state: "failed",
               attempt: 1,
               error_message: "INSERT failed: target table does not exist",
             },
             {
               id: "node-script",
-              task_id: "extract",
+              task_id: "id_extract",
               state: "success",
               attempt: 1,
               error_message: null,
@@ -175,6 +175,12 @@ describe("TaskDetail", () => {
     await expect
       .element(screen.getByText("2 statements ran; 7 rows affected"))
       .toBeVisible();
+    // Node runs are labelled with the task name, not its internal id.
+    const failedNode = screen
+      .getByRole("listitem")
+      .filter({ hasText: "INSERT failed" });
+    await expect.element(failedNode).toHaveTextContent(/^load/);
+    await expect.element(failedNode).not.toHaveTextContent("id_load");
   });
 
   it("keeps the SQL modal open when a node run state refreshes", async () => {

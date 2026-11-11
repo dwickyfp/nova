@@ -24,6 +24,16 @@ commands run from `frontend/`.
   expose vendors, physical storage endpoints, or stored credentials. Masked
   secret status is distinct from intentional write-only credential entry.
 
+## User documentation
+
+- `/docs` is a standalone surface (its own layout, like Studio) rendered from
+  Markdown in `src/features/docs/content/`; sections are registered in
+  `src/features/docs/nav.ts`. Do not add a docs framework or a second app.
+- A UI change that alters labels, steps, or behavior a docs page describes
+  updates that page in the same change (root contract: User documentation).
+  `src/features/docs/content.test.ts` checks front matter, internal links,
+  code-block languages, and forbidden storage/API terms for every page.
+
 ## Design and layout
 
 Read [DESIGN.md](../DESIGN.md) first. Its Nova tokens, surfaces, icon meanings,

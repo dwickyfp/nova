@@ -81,3 +81,81 @@ def test_runtimes_are_not_configured_without_an_api_key(monkeypatch):
     monkeypatch.setattr(adapter.settings, "OPENSANDBOX_API_KEY", "")
     with pytest.raises(ProviderError, match="not configured"):
         adapter._connection_config()
+
+
+class _Response:
+    status_code = 200
+
+    def __init__(self, lines: list[str]) -> None:
+        self._lines = lines
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
+
+
+class _Stream:
+    def __init__(self, lines: list[str]) -> None:
+        self._response = _Response(lines)
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _Codes:
+    RUN_CODE_PATH = "/code"
+
+    def __init__(self, lines: list[str]) -> None:
+        self._lines = lines
+
+    async def _get_sse_client(self):
+        lines = self._lines
+
+        class _Client:
+            def stream(self, method, url, json):  # noqa: A002, ARG002
+                return _Stream(lines)
+
+        return _Client()
+
+    def _get_execd_url(self, path: str) -> str:
+        return path
+
+
+def _provider_streaming(monkeypatch, lines: list[str]) -> adapter.OpenSandboxProvider:
+    provider = adapter.OpenSandboxProvider()
+    live = adapter._Live(sandbox=None, interpreter=type("I", (), {"codes": _Codes(lines)})())
+
+    async def connect(_sandbox_id: str):
+        return live
+
+    monkeypatch.setattr(provider, "_connect", connect)
+    return provider
+
+
+async def test_a_finished_run_passes_every_event_to_the_sink(monkeypatch):
+    provider = _provider_streaming(monkeypatch, [
+        'data: {"type": "init", "text": "exec-1"}',
+        'data: {"type": "execution_complete"}',
+        'data: {"type": "stdout", "text": "1\\n"}',
+    ])
+    seen: list[str] = []
+
+    async def sink(event):
+        seen.append(event.type)
+
+    await provider.run(adapter.SandboxHandle("sb", "ctx"), "print(1)", sink)
+    assert seen == ["init", "complete", "stdout"]
+
+
+async def test_a_stream_that_ends_before_the_run_finishes_is_an_error(monkeypatch):
+    # A lost connection does not prove whether the kernel ran the code.
+    provider = _provider_streaming(monkeypatch, ['data: {"type": "init", "text": "exec-1"}'])
+
+    async def sink(event):
+        return None
+
+    with pytest.raises(ProviderError, match="check its effects before running it again"):
+        await provider.run(adapter.SandboxHandle("sb", "ctx"), "x = 1", sink)

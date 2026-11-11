@@ -642,6 +642,13 @@ class AccessControlService:
                 if active_role not in item.get("roles", []):
                     continue
                 expression = str(item.get("rowFilterInfo", {}).get("filterExpr", ""))
+                # Show the engine's FIND_IN_SET scope match as the IN list it means.
+                expression = re.sub(
+                    r"FIND_IN_SET\(\s*([^,()]+?)\s*,\s*"
+                    r"(\$\{\{GET_USER_ATTR_Q\('[^']+',\s*'[^']*'\)\}\})\s*\)\s*>\s*0",
+                    r"\1 IN (\2)",
+                    expression,
+                )
                 expression = re.sub(
                     r"\$\{\{GET_USER_ATTR_Q\('([^']+)',\s*'[^']*'\)\}\}",
                     lambda match: self._quoted_scope_values(attributes.get(match.group(1))),

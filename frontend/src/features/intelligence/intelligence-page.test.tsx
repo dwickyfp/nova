@@ -118,6 +118,22 @@ describe("Nova Intelligence", () => {
     });
   });
 
+  it("searches an index built without an embedding model by text match", async () => {
+    const defaultGet = mocks.get.getMockImplementation();
+    mocks.get.mockImplementation(async (path: string) => path === "/ai/search"
+      ? [{ name: "notes", source_relation: "SALES.notes", model_alias: null,
+        active_version: 1, status: "ACTIVE" }]
+      : defaultGet?.(path));
+    const screen = await renderIntelligence();
+    await userEvent.click(screen.getByRole("button", { name: /notes/ }));
+    await expect.element(screen.getByRole("combobox", { name: "Search mode" })).toHaveValue("LEXICAL");
+    await userEvent.fill(screen.getByRole("textbox", { name: "Search query" }), "refund");
+    await userEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
+    expect(mocks.post).toHaveBeenCalledWith("/ai/search/notes/query", {
+      query: "refund", mode: "LEXICAL",
+    });
+  });
+
   it("explains an index that is still building before search", async () => {
     const defaultGet = mocks.get.getMockImplementation();
     mocks.get.mockImplementation(async (path: string) => path === "/ai/search"

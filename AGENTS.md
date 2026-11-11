@@ -133,6 +133,23 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 - Verify engine-sensitive behavior against the pin, patches, and tests; do not
   infer support from another database or newer upstream documentation.
 
+### User documentation
+
+- Nova's user documentation is part of the product: Markdown pages in
+  `frontend/src/features/docs/content/`, served at `/docs` (user menu → Docs).
+  Follow [the authoring guide](frontend/src/features/docs/content/AUTHORING.md).
+- Every change that adds, changes, renames, or removes something users can see
+  or call (a page, button, menu item, SQL statement, function, novaduck API,
+  setting, permission, or limit) updates the matching docs page in the same
+  change, or adds a new page. A feature is not done while its docs are missing
+  or describe old behavior.
+- Write only what was verified in the running product. Every SQL and Python
+  example is one you ran in Nova (SQL Workspace or a notebook) and that
+  worked; describe errors and limits as they actually behave.
+- Pages are for non-experts: plain English, steps that name the exact on-screen
+  labels, and no internal endpoints, file paths, environment variables,
+  storage vendors, or credentials.
+
 ## Task routing
 
 | Task | Read before changing code |
@@ -148,6 +165,7 @@ Do not copy stale examples into production. Report unrelated documentation debt.
 | Business ontology: domains, concepts, relations, metric bindings, stewardship, releases | [ontology architecture](docs/arch-18-business-ontology.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
 | Nova Notebook: documents, runtimes, OpenSandbox, `nova_runtime`, notebook data tokens, notebook UI | [notebooks guide](backend/app/modules/notebooks/AGENTS.md), [notebook architecture](docs/arch-20-nova-notebook.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `docker/notebook-runtime/`, `frontend/src/features/workspaces/notebook/` |
 | Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
+| User documentation pages, `/docs` | [docs authoring guide](frontend/src/features/docs/content/AUTHORING.md), [frontend guide](frontend/AGENTS.md) |
 | Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
 | StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |
 
@@ -161,6 +179,7 @@ CI suites. Changes spanning backend and frontend require both sets of checks.
 | Change | Required validation |
 | --- | --- |
 | Documentation/instructions only | Diff, references, stale claims, hierarchy consistency, task routing |
+| User docs pages (`frontend/src/features/docs/content/`) | Verify each example live in Nova, then `pnpm exec vitest run --browser.headless src/features/docs` and view the page at `/docs` |
 | Backend code | Unit suite with coverage, agent eval scorecard, blocking Ruff on changed Python |
 | DB access, SQL execution, auth, storage, proxy | Backend checks plus seeded real-engine integration |
 | SQL grammar/generated parser | Grammar pin/drift, regeneration and artifact diff, relevant SQL tests and consumer regressions |

@@ -1,6 +1,7 @@
 """Recovery and scope checks for persisted agent runs."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -79,7 +80,10 @@ async def test_replay_reports_interrupted_run_without_resending_a_tool(monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancel", [False, "provider", "journal"])
-async def test_slow_subscriber_replays_bounded_queue_while_run_completes(monkeypatch, cancel):
+@pytest.mark.parametrize("precomposed", [False, True])
+async def test_slow_subscriber_replays_bounded_queue_while_run_completes(
+    monkeypatch, cancel, precomposed,
+):
     from app.core.redis import session_store
     from app.modules.assistant.tools import ToolRegistry
 
@@ -123,9 +127,19 @@ async def test_slow_subscriber_replays_bounded_queue_while_run_completes(monkeyp
             if cancel == "journal":
                 yield events.format_sse("tool_call", {"tool_call_id": "tool", "status": "running"})
                 await asyncio.sleep(3600)
-            for index in range(200):
-                yield events.text_delta(str(index))
-            yield events.done("reply", finish_reason="stop")
+            if precomposed:
+                frames = [events.text_delta(str(index)) for index in range(200)]
+                frames.extend([
+                    events.table({"columns": ["units"], "rows": [[42]]}),
+                    events.chart("chart-tool", '{"type":"bar"}'),
+                    events.done("reply", finish_reason="stop"),
+                ])
+                for frame in frames:
+                    yield frame
+            else:
+                for index in range(200):
+                    yield events.text_delta(str(index))
+                yield events.done("reply", finish_reason="stop")
 
     monkeypatch.setattr(router, "AssistantLoop", ScriptedLoop)
     response = await router.send_agent_message(
@@ -137,11 +151,19 @@ async def test_slow_subscriber_replays_bounded_queue_while_run_completes(monkeyp
     frames = [frame async for frame in response.body_iterator]
     assert len(frames) == (2 if cancel == "journal" else 1 if cancel else 0)
     assert sum(len(call.args[1]) for call in append.call_args_list) == (
-        3 if cancel == "journal" else 1 if cancel else 201
+        3 if cancel == "journal" else 1 if cancel else 203 if precomposed else 201
     )
     assert finish.await_args.args[1] == ("cancelled" if cancel else "completed")
     if cancel:
         assert '"finish_reason":"cancelled"' in frames[-1]
+    else:
+        journaled = [frame for call in append.call_args_list for frame in call.args[1]]
+        sequences = [json.loads(frame.split("data: ", 1)[1])["sequence"] for frame in journaled]
+        assert all(left < right for left, right in zip(sequences, sequences[1:], strict=False))
+        if precomposed:
+            assert [frame.splitlines()[0] for frame in journaled[-3:]] == [
+                "event: table", "event: chart", "event: done",
+            ]
     saved = router.assistant_repository.append_message.await_args.kwargs
     assert {
         "kind": "turn_outcome", "finish_reason": "cancelled" if cancel else "stop",

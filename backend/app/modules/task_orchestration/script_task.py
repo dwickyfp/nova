@@ -115,11 +115,19 @@ async def run_sql_script(
     failed = next((index for index, result in enumerate(results) if result.error), None)
     if failed is not None:
         message = _redact(str(results[failed].error))
+        kept = ""
+        if failed == 1:
+            kept = " (statement 1 ran and is kept)"
+        elif failed:
+            kept = f" (statements 1-{failed} ran and are kept)"
         raise NodeExecutionError(
-            f"Statement {failed + 1} of {len(statements)} failed: {message}"
-            + (f" (statements 1-{failed} ran and are kept)" if failed else "")
+            f"Statement {failed + 1} of {len(statements)} failed: {message}{kept}"
         )
     if len(results) < len(statements):
         raise NodeExecutionError(f"Only {len(results)} of {len(statements)} statements ran")
     affected = sum(int(result.affected_rows or 0) for result in results)
-    return f"{len(statements)} statements ran; {affected} rows affected"
+    count = len(statements)
+    return (
+        f"{count} {'statement' if count == 1 else 'statements'} ran; "
+        f"{affected} {'row' if affected == 1 else 'rows'} affected"
+    )

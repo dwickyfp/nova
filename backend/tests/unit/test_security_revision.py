@@ -103,3 +103,16 @@ def test_ranger_accepts_one_explicit_default(monkeypatch):
         username="alice", password="test", default_role_mode="explicit", default_roles=["marketing"]
     )
     assert user.default_roles == ["marketing"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["health", "list_policies", "list_roles"])
+async def test_access_control_reads_refuse_a_non_admin_role_with_403(route):
+    """A non-admin active role is refused cleanly, not reported as a server error."""
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as refused:
+        await getattr(access_router, route)(session(role="marketing"))
+
+    assert refused.value.status_code == 403
+    assert "not authorized" in refused.value.detail

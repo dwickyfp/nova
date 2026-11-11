@@ -21,7 +21,7 @@ from app.core.deps import get_current_user
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.ossie import SUPPORTED_VERSIONS, OssieParseError, parse_ossie
-from app.modules.agents.semantic.planning import SemanticPlan
+from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
 from app.modules.agents.semantic.quality_lab import evaluate_verified_queries
 from app.modules.agents.semantic.runtime import (
     lint_semantic_model,
@@ -1298,7 +1298,10 @@ async def sync_semantic_view_bi(view_id: str, user: CurrentUser):
 
 @router.post("/{view_id}/query", response_class=SanitizingJSONResponse)
 async def query_semantic_view(view_id: str, body: SemanticViewQuery, user: CurrentUser):
-    return await semantic_view_service.query(view_id, body, user)
+    try:
+        return await semantic_view_service.query(view_id, body, user)
+    except SemanticPlanError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{view_id}/news/defaults", response_class=SanitizingJSONResponse)

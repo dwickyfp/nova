@@ -21,6 +21,7 @@ export type DraftField = {
   /** SQL expression. For a plain column this equals `name`. */
   expression: string
   datatype: string
+  isDimension: boolean
   isTimeDimension: boolean
   description: string
 }
@@ -155,9 +156,10 @@ export function draftToOssieYaml(draft: SemanticDraft): string {
         out.push('            - dialect: ANSI_SQL')
         out.push(`              expression: ${yamlScalar(field.expression || field.name)}`)
         if (field.datatype) out.push(`        datatype: ${field.datatype}`)
-        if (field.isTimeDimension) {
+        out.push(`        kind: ${field.isDimension || field.isTimeDimension ? 'dimension' : 'fact'}`)
+        if (field.isDimension || field.isTimeDimension) {
           out.push('        dimension:')
-          out.push('          is_time: true')
+          out.push(`          is_time: ${field.isTimeDimension}`)
         }
         const fDesc = descriptionLine('        ', 'description', field.description)
         if (fDesc) out.push(fDesc.trimEnd())

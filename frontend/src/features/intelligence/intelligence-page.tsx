@@ -373,7 +373,11 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                 <li key={item.name} className="flex flex-wrap items-center justify-between gap-2 py-3">
                   <button className="rounded-md p-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     aria-current={selectedSearch === item.name ? "true" : undefined}
-                    onClick={() => { setSelectedSearch(item.name); setSearchResult(null); setMode("HYBRID"); }}>
+                    onClick={() => {
+                      // An index built without an embedding model answers text matches only.
+                      setSelectedSearch(item.name); setSearchResult(null);
+                      setMode(item.model_alias ? "HYBRID" : "LEXICAL");
+                    }}>
                     <span className="font-medium">{item.name}</span><p className="text-sm text-muted-foreground">
                       {item.source_relation} · {item.status} · v{item.active_version ?? "—"}</p>
                   </button>
@@ -398,7 +402,7 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                   <select aria-label="Search mode" value={mode}
                     onChange={(event) => setMode(event.target.value as typeof mode)}
                     className="h-9 rounded-md border bg-background px-3 text-sm">
-                    <option value="HYBRID">Hybrid (text + meaning)</option>
+                    <option value="HYBRID" disabled={!selectedSearchIndex?.model_alias}>Hybrid (text + meaning)</option>
                     <option value="LEXICAL">Text match</option>
                     <option value="SEMANTIC" disabled={!selectedSearchIndex?.model_alias}>Meaning match</option>
                   </select>

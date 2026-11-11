@@ -1,0 +1,4 @@
+order_id,customer_id,order_date,amount,status
+201,1,2026-06-01,55.00,new
+202,2,2026-06-02,18.75,new
+203,3,2026-06-02,99.90,shipped

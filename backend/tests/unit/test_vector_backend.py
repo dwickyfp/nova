@@ -79,3 +79,17 @@ async def test_creation_encapsulates_hnsw_and_gin_sql(monkeypatch):
     assert 'USING VECTOR ("index_type"="hnsw"' in calls[1]
     assert 'USING GIN ("parser"="english"' in calls[1]
     assert '"dim"="3"' in calls[1]
+
+
+async def test_drop_works_before_the_search_database_exists(monkeypatch):
+    calls = []
+
+    async def execute(sql):
+        calls.append(sql)
+
+    monkeypatch.setattr(module.db, "execute_system", execute)
+    await StarRocksVectorBackend().drop_index(PROJECTION)
+    assert calls == [
+        "CREATE DATABASE IF NOT EXISTS `_NOVA_AI_SEARCH`",
+        f"DROP TABLE IF EXISTS {PROJECTION.table()}",
+    ]

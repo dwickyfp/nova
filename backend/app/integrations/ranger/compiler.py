@@ -105,12 +105,15 @@ def compile_scope_filter(*, role: str, bindings: list[tuple[str, str, list[str]]
         grouped[dimension].extend(values)
         columns[dimension] = column
 
+    # Ranger substitutes the whole attribute as one quoted string, so the
+    # stored list 'Bandung,Jakarta' must be matched with FIND_IN_SET: an
+    # ``IN (...)`` list would compare the column with that single string.
     clauses: list[str] = []
     for dimension in sorted(grouped):
         attribute = role_scope_attribute(role, dimension)
         clauses.append(
-            f"{columns[dimension]} IN "
-            f"(${{{{GET_USER_ATTR_Q('{attribute}', '__nova_no_scope__')}}}})"
+            f"FIND_IN_SET({columns[dimension]}, "
+            f"${{{{GET_USER_ATTR_Q('{attribute}', '__nova_no_scope__')}}}}) > 0"
         )
     return " AND ".join(clauses) if clauses else "1 = 0"
 

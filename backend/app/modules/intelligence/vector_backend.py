@@ -94,6 +94,9 @@ class StarRocksVectorBackend:
             ) from exc
 
     async def drop_index(self, projection: SearchProjection) -> None:
+        # StarRocks rejects DROP TABLE IF EXISTS in a database that does not
+        # exist yet, which failed the very first index build on a new cluster.
+        await db.execute_system(f"CREATE DATABASE IF NOT EXISTS `{_DATABASE}`")
         await db.execute_system(f"DROP TABLE IF EXISTS {projection.table()}")
 
     @staticmethod

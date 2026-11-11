@@ -774,21 +774,31 @@ class FeatureStoreService:
             password = decrypt_password(user["encrypted_password"])
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=401, detail="User connection unavailable") from exc
-        model = await ml_engine_service.train_model(
-            model_name=body.model_name,
-            model_type=body.model_type,
-            algorithm=body.algorithm,
-            training_sql=training["sql"],
-            target_column=body.target_column,
-            feature_columns=feature_columns,
-            hyperparameters=None,
-            test_size=body.test_size,
-            database_name=body.label_relation.split(".")[-2],
-            created_by=user["username"],
-            username=user["username"],
-            password=password,
-            role=user.get("active_role"),
-        )
+        from app.modules.ml_engine.spec import MLError, TrainingTimeout
+
+        try:
+            model = await ml_engine_service.train_model(
+                model_name=body.model_name,
+                model_type=body.model_type,
+                algorithm=body.algorithm,
+                training_sql=training["sql"],
+                target_column=body.target_column,
+                feature_columns=feature_columns,
+                hyperparameters=None,
+                test_size=body.test_size,
+                database_name=body.label_relation.split(".")[-2],
+                created_by=user["username"],
+                username=user["username"],
+                password=password,
+                role=user.get("active_role"),
+                security_context_version=user.get("security_context_version", 1),
+                session_id=user.get("session_id"),
+            )
+        except TrainingTimeout as exc:
+            # A spent ML budget is the caller's answer, not an unexpected server fault.
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
+        except MLError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_FEATURE_ML_LINKS "
             "(id,model_id,model_version,training_set_id,group_name,group_version,"

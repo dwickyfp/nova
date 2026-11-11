@@ -2533,6 +2533,17 @@ async def send_agent_message(
 
     stream_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=128)
     subscriber_connected = True
+    next_sequence = 0
+
+    def sequence_frame(frame: str) -> str:
+        nonlocal next_sequence
+        # Text filtering can split precomposed frames. Number the final stream,
+        # including mission updates, so delivery and journal replay agree.
+        name, encoded = frame.split("\ndata: ", 1)
+        payload = json.loads(encoded)
+        payload["sequence"] = next_sequence
+        next_sequence += 1
+        return events.format_sse(name.removeprefix("event: "), payload)
 
     def queue_frame(frame: str | None) -> None:
         nonlocal subscriber_connected
@@ -2581,11 +2592,12 @@ async def send_agent_message(
 
                     update = await mission_service.stream_update(run_id, user)
                     if update:
-                        queue_frame(update)
+                        queue_frame(sequence_frame(update))
 
         iterator = generate()
         try:
             async for frame in iterator:
+                frame = sequence_frame(frame)
                 if frame.startswith("event: role_changed\n"):
                     await run_journal.block_replay_after_role_change(run_id)
                 queue_frame(frame)
@@ -2610,7 +2622,7 @@ async def send_agent_message(
         except asyncio.CancelledError:
             status = "cancelled"
             await iterator.aclose()
-            frame = events.done("", finish_reason="cancelled")
+            frame = sequence_frame(events.done("", finish_reason="cancelled"))
             queue_frame(frame)
             batch.append(frame)
         except Exception:

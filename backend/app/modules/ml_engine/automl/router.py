@@ -22,6 +22,7 @@ from sklearn.metrics import (
     f1_score,
     log_loss,
     mean_absolute_error,
+    mean_squared_error,
     r2_score,
     roc_auc_score,
 )
@@ -204,11 +205,12 @@ def evaluate_predictions(task: MLTask, truth, predicted, probabilities=None) -> 
                 )
             )
         return metrics
+    mse = float(mean_squared_error(truth, predicted))
     return {
         "mae": float(mean_absolute_error(truth, predicted)),
         "r2": float(r2_score(truth, predicted)),
-        "rmse": float(np.sqrt(np.mean((np.asarray(truth) - np.asarray(predicted)) ** 2))),
-        "mse": float(np.mean((np.asarray(truth) - np.asarray(predicted)) ** 2)),
+        "rmse": float(np.sqrt(mse)),
+        "mse": mse,
     }
 
 

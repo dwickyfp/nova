@@ -700,7 +700,10 @@ class FeatureAdapters:
             if location_map and result.error:
                 result.error = _logical_location(result.error, location_map)
             result.original_sql = redact_for_output(sql)
-            result.executed_sql = redacted_sql
+            # The client knows stages, not buckets or storage endpoints.
+            result.executed_sql = (
+                _logical_location(redacted_sql, location_map) if location_map else redacted_sql
+            )
             result.warnings = warnings
 
             await self._audit(

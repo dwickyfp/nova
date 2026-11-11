@@ -150,12 +150,14 @@ class TestExplainResponseIsRedacted:
         assert "'aws.s3.secret_key'='***'" in payload["executed_sql"]
 
     def test_response_still_documents_what_ran(self, explain_client):
-        """Redaction is value-only: a reviewer can still read the plan target."""
+        """The response names the logical stage; physical locations stay private."""
         client, _repo = explain_client
         payload = client.post(EXPLAIN_ENDPOINT, json={"sql": STAGE_SQL}).json()
 
         assert payload["executed_sql"].startswith("EXPLAIN SELECT * FROM FILES(")
-        assert "s3://stages/db/sch/stage1/data.csv" in payload["executed_sql"]
+        assert "@stage1/data.csv" in payload["executed_sql"]
+        assert "s3://stages/" not in payload["executed_sql"]
+        assert "minio:9000" not in payload["executed_sql"]
         assert "'format'='csv'" in payload["executed_sql"]
 
     def test_original_sql_is_the_user_stage_reference(self, explain_client):

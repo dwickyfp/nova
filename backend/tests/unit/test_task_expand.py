@@ -630,6 +630,18 @@ class TestScriptRunner:
         assert executor.conn.log == ["SET ROLE analyst", "USE `sales`"]
         assert executor.owners == [("svc_etl", None)]
 
+    async def test_summary_counts_read_naturally(self, monkeypatch):
+        from app.modules.query import service as query_module
+
+        async def execute_statements(**kwargs):
+            return [QueryResult(affected_rows=1)]
+
+        monkeypatch.setattr(query_module.query_service, "execute_statements", execute_statements)
+        summary = await script_task.run_sql_script(
+            _script_task(["INSERT INTO b SELECT 1"]), SPEC, "svc_etl", _Executor()
+        )
+        assert summary == "1 statement ran; 1 row affected"
+
     async def test_stops_at_the_first_failure(self, monkeypatch):
         from app.modules.query import service as query_module
 
@@ -651,7 +663,7 @@ class TestScriptRunner:
                 _Executor(),
             )
         assert str(caught.value) == (
-            "Statement 2 of 3 failed: Access denied on b (statements 1-1 ran and are kept)"
+            "Statement 2 of 3 failed: Access denied on b (statement 1 ran and is kept)"
         )
 
     async def test_manual_run_uses_the_session(self, monkeypatch):

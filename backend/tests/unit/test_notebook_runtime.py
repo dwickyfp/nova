@@ -81,6 +81,10 @@ class FakeProvider:
                 await self._interrupt.wait()
                 await sink(KernelEvent(type="error", error={
                     "name": "KeyboardInterrupt", "value": "", "traceback": []}))
+            elif line == "oom":
+                await sink(KernelEvent(type="error", error={
+                    "name": "KernelDied", "traceback": [],
+                    "value": "the kernel died while executing the code"}))
             elif line == "hang":
                 await asyncio.Event().wait()
             elif line.startswith("show "):
@@ -431,6 +435,23 @@ async def test_a_cell_that_ignores_interrupts_restarts_the_kernel(env, monkeypat
     assert env["provider"].restarts == 1
     runtime = await state.active_runtime(CH)
     assert runtime.status == "READY" and runtime.generation == 2
+    assert "runtime.restarted" in [name for name, _ in await events_of(env["redis"])]
+
+
+async def test_a_kernel_that_died_is_restarted_with_nova_bootstrapped(env):
+    await started(env)
+    env["document"].cells[1].source = "oom"
+    await env["service"].run(env["user"], "nb-1", mode="cell", cell_id="c1",
+                             base_revision=5, on_error="stop", idempotency_key=None)
+    await asyncio.wait_for(drain(env["worker"]), timeout=10)
+    execution = env["store"].executions[0]
+    assert execution["status"] == "failed"
+    assert "more memory" in execution["error_message"]
+    assert env["provider"].restarts == 1
+    runtime = await state.active_runtime(CH)
+    assert runtime.status == "READY" and runtime.generation == 2
+    # The new kernel ran Nova's bootstrap, so novaduck and SQL cells work again.
+    assert any("__nova__.bootstrap" in code for code in env["provider"].ran[-3:])
     assert "runtime.restarted" in [name for name, _ in await events_of(env["redis"])]
 
 

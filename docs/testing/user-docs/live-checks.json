@@ -1,0 +1,882 @@
+{
+  "date": "2026-11-11",
+  "scope": "Local Nova, caller-authenticated requests and notebook runtime; synthetic data. Checks include setup and cleanup.",
+  "checks": [
+    {
+      "area": "sql",
+      "checks": [
+        {
+          "label": "database",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:1",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:2",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:3",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:4",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:5",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:6",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:7",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:8",
+          "passed": true
+        },
+        {
+          "label": "databases-and-tables:9",
+          "passed": true
+        },
+        {
+          "label": "changing-data:seed:0",
+          "passed": true
+        },
+        {
+          "label": "changing-data:seed:1",
+          "passed": true
+        },
+        {
+          "label": "querying-data:0",
+          "passed": true
+        },
+        {
+          "label": "querying-data:1",
+          "passed": true
+        },
+        {
+          "label": "querying-data:2",
+          "passed": true
+        },
+        {
+          "label": "querying-data:3",
+          "passed": true
+        },
+        {
+          "label": "querying-data:4",
+          "passed": true
+        },
+        {
+          "label": "querying-data:5",
+          "passed": true
+        },
+        {
+          "label": "querying-data:6",
+          "passed": true
+        },
+        {
+          "label": "querying-data:7",
+          "passed": true
+        },
+        {
+          "label": "querying-data:8",
+          "passed": true
+        },
+        {
+          "label": "querying-data:9",
+          "passed": true
+        },
+        {
+          "label": "querying-data:10",
+          "passed": true
+        },
+        {
+          "label": "querying-data:11",
+          "passed": true
+        },
+        {
+          "label": "changing-data:2",
+          "passed": true
+        },
+        {
+          "label": "changing-data:3",
+          "passed": true
+        },
+        {
+          "label": "changing-data:4",
+          "passed": true
+        },
+        {
+          "label": "changing-data:5",
+          "passed": true
+        },
+        {
+          "label": "changing-data:6",
+          "passed": true
+        },
+        {
+          "label": "changing-data:7",
+          "passed": true
+        },
+        {
+          "label": "changing-data:8",
+          "passed": true
+        },
+        {
+          "label": "changing-data:9",
+          "passed": true
+        },
+        {
+          "label": "changing-data:10",
+          "passed": true
+        },
+        {
+          "label": "views:0",
+          "passed": true
+        },
+        {
+          "label": "views:1",
+          "passed": true
+        },
+        {
+          "label": "views:2",
+          "passed": true
+        },
+        {
+          "label": "views:3",
+          "passed": true
+        },
+        {
+          "label": "views:4",
+          "passed": true
+        },
+        {
+          "label": "views:5",
+          "passed": true
+        },
+        {
+          "label": "views:6",
+          "passed": true
+        },
+        {
+          "label": "views:7",
+          "passed": true
+        },
+        {
+          "label": "cleanup",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "stage",
+      "checks": [
+        {
+          "label": "CREATE DATABASE DOCS_QA_FILES_<run>",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE customers ( customer_id INT NOT NULL, name VARCHAR(100), city VARCHAR(50), signup_date DATE ) DUPLICATE KEY (customer_id) DISTRIBUTED BY HASH (cust",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE orders ( order_id BIGINT NOT NULL, customer_id INT NOT NULL, order_date DATE NOT NULL, amount DECIMAL(10, 2), status VARCHAR(20) DEFAULT 'new' ) PR",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE daily_sales ( sale_date DATE NOT NULL, city VARCHAR(50) NOT NULL, revenue DECIMAL(12, 2) SUM DEFAULT '0', orders BIGINT SUM DEFAULT '0' ) AGGREGATE",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE products ( product_id INT NOT NULL, name VARCHAR(100), price DECIMAL(10, 2) ) UNIQUE KEY (product_id) DISTRIBUTED BY HASH (product_id); INSERT INTO",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE events ( event_time DATETIME NOT NULL, event_type VARCHAR(30), payload JSON ) DUPLICATE KEY (event_time) PARTITION BY date_trunc('day', event_time)",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE monthly_targets ( month_start DATE NOT NULL, city VARCHAR(50) NOT NULL, target DECIMAL(12, 2) ) DUPLICATE KEY (month_start, city) PARTITION BY RANG",
+          "passed": true
+        },
+        {
+          "label": "SHOW PARTITIONS FROM monthly_targets;",
+          "passed": true
+        },
+        {
+          "label": "-- Same columns and settings, no rows CREATE TABLE orders_archive LIKE orders; -- New table filled from a query CREATE TABLE big_orders AS SELECT order_id, amou",
+          "passed": true
+        },
+        {
+          "label": "SHOW DATABASES LIKE 'DOCS_QA%'; SHOW TABLES; SHOW TABLES LIKE 'order%'; SHOW FULL TABLES; -- also says whether each one is a table or a view DESCRIBE customers;",
+          "passed": true
+        },
+        {
+          "label": "INSERT INTO customers VALUES (1, 'Ana', 'Jakarta', '2026-01-15'), (2, 'Budi', 'Bandung', '2026-02-03'), (3, 'Citra', 'Jakarta', '2026-03-20'), (4, 'Dewi', 'Sura",
+          "passed": true
+        },
+        {
+          "label": "INSERT INTO orders (order_id, customer_id, order_date, amount) VALUES (101, 1, '2026-05-01', 120.00), (102, 1, '2026-05-03', 80.50), (103, 2, '2026-05-03', 42.0",
+          "passed": true
+        },
+        {
+          "label": "LIST @docs_qa_sql_files;",
+          "passed": true
+        },
+        {
+          "label": "LIST FILES @docs_qa_sql_files/incoming/;",
+          "passed": true
+        },
+        {
+          "label": "SELECT * FROM @docs_qa_sql_files/new_orders.csv;",
+          "passed": true
+        },
+        {
+          "label": "SELECT COUNT(*) AS n FROM @docs_qa_sql_files.*.csv;",
+          "passed": true
+        },
+        {
+          "label": "SELECT o.order_id, c.name FROM @docs_qa_sql_files/new_orders.csv AS o JOIN customers c ON c.customer_id = o.customer_id ORDER BY o.order_id;",
+          "passed": true
+        },
+        {
+          "label": "SELECT * FROM @docs_qa_sql_files/prices.parquet; SELECT * FROM @docs_qa_sql_files/stock.tsv;",
+          "passed": true
+        },
+        {
+          "label": "COPY INTO orders FROM @docs_qa_sql_files/new_orders.csv;",
+          "passed": true
+        },
+        {
+          "label": "COPY INTO orders FROM @docs_qa_sql_files.incoming.*.csv;",
+          "passed": true
+        },
+        {
+          "label": "INSERT INTO orders (order_id, customer_id, order_date, amount) SELECT order_id, customer_id, order_date, amount FROM @docs_qa_sql_files/incoming/more_orders.csv",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE june_orders AS SELECT * FROM @docs_qa_sql_files/new_orders.csv;",
+          "passed": true
+        },
+        {
+          "label": "SELECT order_id, amount FROM orders WHERE order_id >= 200 ORDER BY order_id;",
+          "passed": true
+        },
+        {
+          "label": "SHOW CONNECTIONS",
+          "passed": true
+        },
+        {
+          "label": "DESCRIBE CONNECTION shop_pg",
+          "passed": true
+        },
+        {
+          "label": "REFRESH CATALOG pg_shop SCHEMA public TABLE customers",
+          "passed": true
+        },
+        {
+          "label": "SHOW AVAILABLE ROLES",
+          "passed": true
+        },
+        {
+          "label": "SHOW CURRENT ACCESS",
+          "passed": true
+        },
+        {
+          "label": "DROP DATABASE DOCS_QA_FILES_<run>",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "task",
+      "checks": [
+        {
+          "label": "example setup",
+          "passed": true
+        },
+        {
+          "label": "create stream",
+          "passed": true
+        },
+        {
+          "label": "capture changes",
+          "passed": true
+        },
+        {
+          "label": "stream has data",
+          "passed": true
+        },
+        {
+          "label": "consume stream",
+          "passed": true
+        },
+        {
+          "label": "stream empty",
+          "passed": true
+        },
+        {
+          "label": "create log task",
+          "passed": true
+        },
+        {
+          "label": "run log_orders",
+          "passed": true
+        },
+        {
+          "label": "completed log_orders",
+          "passed": true
+        },
+        {
+          "label": "read task results",
+          "passed": true
+        },
+        {
+          "label": "create block task",
+          "passed": true
+        },
+        {
+          "label": "run close_and_total",
+          "passed": true
+        },
+        {
+          "label": "completed close_and_total",
+          "passed": true
+        },
+        {
+          "label": "create dollar task",
+          "passed": true
+        },
+        {
+          "label": "run dollar_block",
+          "passed": true
+        },
+        {
+          "label": "completed dollar_block",
+          "passed": true
+        },
+        {
+          "label": "create graph",
+          "passed": true
+        },
+        {
+          "label": "run load_raw",
+          "passed": true
+        },
+        {
+          "label": "completed load_raw",
+          "passed": true
+        },
+        {
+          "label": "check graph output",
+          "passed": true
+        },
+        {
+          "label": "cleanup task notify_done",
+          "passed": true
+        },
+        {
+          "label": "cleanup task publish",
+          "passed": true
+        },
+        {
+          "label": "cleanup task clean_b",
+          "passed": true
+        },
+        {
+          "label": "cleanup task clean_a",
+          "passed": true
+        },
+        {
+          "label": "cleanup task load_raw",
+          "passed": true
+        },
+        {
+          "label": "cleanup task dollar_block",
+          "passed": true
+        },
+        {
+          "label": "cleanup task close_and_total",
+          "passed": true
+        },
+        {
+          "label": "cleanup task log_orders",
+          "passed": true
+        },
+        {
+          "label": "cleanup stream orders_changes",
+          "passed": true
+        },
+        {
+          "label": "cleanup database",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "python-task",
+      "checks": [
+        {
+          "label": "example setup",
+          "passed": true
+        },
+        {
+          "label": "close orders",
+          "passed": true
+        },
+        {
+          "label": "run close_and_total",
+          "passed": true
+        },
+        {
+          "label": "completed close_and_total",
+          "passed": true
+        },
+        {
+          "label": "dollar log",
+          "passed": true
+        },
+        {
+          "label": "run dollar_block",
+          "passed": true
+        },
+        {
+          "label": "completed dollar_block",
+          "passed": true
+        },
+        {
+          "label": "python summary",
+          "passed": true
+        },
+        {
+          "label": "run py_summary",
+          "passed": true
+        },
+        {
+          "label": "completed py_summary",
+          "passed": true
+        },
+        {
+          "label": "python write setup",
+          "passed": true
+        },
+        {
+          "label": "run py_write",
+          "passed": true
+        },
+        {
+          "label": "completed py_write",
+          "passed": true
+        },
+        {
+          "label": "verify persisted write",
+          "passed": true
+        },
+        {
+          "label": "cleanup py_write",
+          "passed": true
+        },
+        {
+          "label": "cleanup py_summary",
+          "passed": true
+        },
+        {
+          "label": "cleanup dollar_block",
+          "passed": true
+        },
+        {
+          "label": "cleanup close_and_total",
+          "passed": true
+        },
+        {
+          "label": "cleanup database",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "native-ml",
+      "checks": [
+        {
+          "label": "CREATE DATABASE DOCS_QA_NATIVE_ML_<run>",
+          "passed": true
+        },
+        {
+          "label": "CREATE TABLE training_examples AS SELECT generate_series AS sample_id, MOD(generate_series, 10) AS visits, CAST(20 + MOD(generate_series, 10) * 3 AS DOUBLE) AS ",
+          "passed": true
+        },
+        {
+          "label": "CREATE ML_MODEL loyalty TYPE = CLASSIFICATION TARGET = loyal ALGORITHM = random_forest AS SELECT visits, spend, loyal FROM training_examples;",
+          "passed": true
+        },
+        {
+          "label": "SELECT sample_id, ML_PREDICT('loyalty_current', visits, spend) AS prediction FROM training_examples LIMIT 5;",
+          "passed": true
+        },
+        {
+          "label": "CREATE ML_MODEL spending TYPE = REGRESSION TARGET = spend ALGORITHM = random_forest AS SELECT visits, spend FROM training_examples;",
+          "passed": true
+        },
+        {
+          "label": "SELECT sample_id, ML_PREDICT('spending_current', visits) AS prediction FROM training_examples LIMIT 5;",
+          "passed": true
+        },
+        {
+          "label": "CREATE ML_MODEL segments TYPE = CLUSTERING AS SELECT visits, spend FROM training_examples;",
+          "passed": true
+        },
+        {
+          "label": "SELECT sample_id, ML_PREDICT('segments_current', visits, spend) AS prediction FROM training_examples LIMIT 5;",
+          "passed": true
+        },
+        {
+          "label": "CREATE ML_MODEL unusual_spend TYPE = ANOMALY_DETECTION AS SELECT visits, spend FROM training_examples;",
+          "passed": true
+        },
+        {
+          "label": "SELECT sample_id, ML_PREDICT('unusual_spend_current', visits, spend) AS prediction FROM training_examples LIMIT 5;",
+          "passed": true
+        },
+        {
+          "label": "CREATE ML_MODEL daily_spend TYPE = FORECAST TARGET = spend TIMESTAMP = day HORIZON = 3 FREQUENCY = 'D' ALGORITHM = naive AS SELECT day, spend FROM training_exam",
+          "passed": true
+        },
+        {
+          "label": "SELECT * FROM ML_FORECAST(MODEL => 'daily_spend_current', HORIZON => 3);",
+          "passed": true
+        },
+        {
+          "label": "DROP DATABASE DOCS_QA_NATIVE_ML_<run>",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "ml",
+      "checks": [
+        {
+          "label": "train classification",
+          "passed": true
+        },
+        {
+          "label": "create alias",
+          "passed": true
+        },
+        {
+          "label": "predict",
+          "passed": true
+        },
+        {
+          "label": "batch predict",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "ai-final",
+      "checks": [
+        {
+          "label": "create database",
+          "passed": true
+        },
+        {
+          "label": "create activity",
+          "passed": true
+        },
+        {
+          "label": "create entity",
+          "passed": true
+        },
+        {
+          "label": "create feature view",
+          "passed": true
+        },
+        {
+          "label": "refresh feature view",
+          "passed": true
+        },
+        {
+          "label": "activate feature view",
+          "passed": true
+        },
+        {
+          "label": "create feature group",
+          "passed": true
+        },
+        {
+          "label": "lookup features",
+          "passed": true
+        },
+        {
+          "label": "create search",
+          "passed": true
+        },
+        {
+          "label": "lexical search",
+          "passed": true
+        },
+        {
+          "label": "filtered search",
+          "passed": true
+        },
+        {
+          "label": "rebuild search",
+          "passed": true
+        },
+        {
+          "label": "activate rebuilt search",
+          "passed": true
+        },
+        {
+          "label": "search after rebuild",
+          "passed": true
+        },
+        {
+          "label": "train from feature group",
+          "passed": true
+        },
+        {
+          "label": "cleanup database",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "functions-configured",
+      "checks": [
+        {
+          "label": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+          "passed": true
+        },
+        {
+          "label": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS sentiment",
+          "passed": true
+        },
+        {
+          "label": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS category",
+          "passed": true
+        },
+        {
+          "label": "SELECT AI_SUMMARIZE('The store opened at nine. Ten orders arrived before lunch. All orders were shipped.') AS summary",
+          "passed": true
+        },
+        {
+          "label": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS details",
+          "passed": true
+        },
+        {
+          "label": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS translated",
+          "passed": true
+        },
+        {
+          "label": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS matches",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "semantic",
+      "checks": [
+        {
+          "label": "create",
+          "passed": true
+        },
+        {
+          "label": "validate",
+          "passed": true
+        },
+        {
+          "label": "publish",
+          "passed": true
+        },
+        {
+          "label": "query revenue by store",
+          "passed": true
+        },
+        {
+          "label": "quality",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "novaduck",
+      "checks": [
+        {
+          "label": "import novaduck con = novaduck.connect() assert con.sql('SELECT 42').fetchall() == [(42,)] assert any(x['alias']=='nova' and x['attached'] for x in con.catalogs",
+          "passed": true
+        },
+        {
+          "label": "assert con.nova('SELECT CURRENT_ROLE()').fetchall() == [('ACCOUNTADMIN',)] print('caller role preserved')",
+          "passed": true
+        },
+        {
+          "label": "con.write('SELECT 1 AS id, 100 AS amount', 'nova.DOCS_QA_NOVADUCK_<run>.orders')",
+          "passed": true
+        },
+        {
+          "label": "assert con.nova('SELECT * FROM DOCS_QA_NOVADUCK_<run>.orders').fetchall() == [(1,100)] print('append verified')",
+          "passed": true
+        },
+        {
+          "label": "con.merge_into('nova.DOCS_QA_NOVADUCK_<run>.orders', 'SELECT * FROM (VALUES (1,120),(2,200)) t(id,amount)', on=['id'])",
+          "passed": true
+        },
+        {
+          "label": "assert con.nova('SELECT * FROM DOCS_QA_NOVADUCK_<run>.orders ORDER BY id').fetchall() == [(1,120),(2,200)] print('merge verified')",
+          "passed": true
+        },
+        {
+          "label": "con.write('SELECT 3 AS id, 300 AS amount', 'nova.DOCS_QA_NOVADUCK_<run>.orders', mode='overwrite')",
+          "passed": true
+        },
+        {
+          "label": "assert con.nova('SELECT * FROM DOCS_QA_NOVADUCK_<run>.orders').fetchall() == [(3,300)] print('overwrite verified')",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "mysql-proxy",
+      "checks": [
+        {
+          "label": "identity",
+          "passed": true
+        },
+        {
+          "label": "connections",
+          "passed": true
+        },
+        {
+          "label": "create database",
+          "passed": true
+        },
+        {
+          "label": "select database",
+          "passed": true
+        },
+        {
+          "label": "create table",
+          "passed": true
+        },
+        {
+          "label": "begin",
+          "passed": true
+        },
+        {
+          "label": "insert",
+          "passed": true
+        },
+        {
+          "label": "rollback",
+          "passed": true
+        },
+        {
+          "label": "verify rollback",
+          "passed": true
+        },
+        {
+          "label": "set role",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "area": "administration-monitoring",
+      "checks": [
+        {
+          "label": "/auth/me",
+          "passed": true
+        },
+        {
+          "label": "/auth/profile",
+          "passed": true
+        },
+        {
+          "label": "/users",
+          "passed": true
+        },
+        {
+          "label": "/users/roles",
+          "passed": true
+        },
+        {
+          "label": "/access-control/health",
+          "passed": true
+        },
+        {
+          "label": "/access-control/policies",
+          "passed": true
+        },
+        {
+          "label": "/access-control/roles",
+          "passed": true
+        },
+        {
+          "label": "/migration/capabilities",
+          "passed": true
+        },
+        {
+          "label": "/migration/engine",
+          "passed": true
+        },
+        {
+          "label": "/migration/sources",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/queries/history",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/queries/stats",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/queries/active",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/audit",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/loads",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/loads/stats",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/metrics/fe",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/runtime-health",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/alerts",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/readiness",
+          "passed": true
+        },
+        {
+          "label": "/monitoring/ai/usage",
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

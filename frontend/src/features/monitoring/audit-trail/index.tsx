@@ -63,7 +63,7 @@ interface AuditResponse {
   total: number
 }
 
-const EVENT_TYPE_OPTIONS = ['query', 'workspace', 'login']
+const EVENT_TYPE_OPTIONS = ['query', 'workspace', 'login', 'security_admin']
 const STATUS_OPTIONS = ['SUCCESS', 'ERROR']
 /** Seven data columns plus the details toggle. */
 const COLUMN_COUNT = 8
