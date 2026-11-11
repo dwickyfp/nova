@@ -531,3 +531,20 @@ CI 43049859127 subsequently completed with all eight jobs successful for
 `1d79c40a`: 99 PG passes without skips, 1,601 frontend passes and 217 engine
 passes with 24 skips, no failures/errors. This supersedes its earlier pending
 status; it does not prove revision 0004 or the unexecuted engine cases.
+
+Revision 0005 adds durable job/outbox storage with immutable effect intents,
+verified receipts, lease fencing and a resource conflict fence. The final local
+application tree `266f2fd61298079c2c282dc5d83f1d368ab4bb35271dbba0dde973662ec684e7`
+passes 10,690 unit cases (four warnings, 669.13 seconds, 65% coverage), 164 PG
+cases without skips (169.85 seconds), mypy, Ruff on 64 changed Python files and
+all 54 agent scenarios / 189 checks. The first two migration syntax failures and
+the intermediate 27-case pass remain in the
+[WP-08 evidence](../../reports/production-refactor/WP-08/README.md).
+The [PG ownership matrix](PG_STORAGE_OWNERSHIP.csv) covers all ten installed
+tables. The legacy inventory still contains 875 reviewed call sites, all
+preserved with their full source bindings. Runtime ports, participant proof,
+scheduler leadership, Redis outage acceptance and domain cutover remain open.
+
+Registry commit `130c479b` passes its CI PG job with 132 cases and zero skips
+in run 43057585539. Seven jobs have passed; the engine integration job is still
+running. The job-storage checkpoint has not yet run in CI.

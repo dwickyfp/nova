@@ -1,0 +1,205 @@
+{
+  "source_parent_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+  "application_tree_sha256": "266f2fd61298079c2c282dc5d83f1d368ab4bb35271dbba0dde973662ec684e7",
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470",
+    "0005_durable_jobs.sql": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5"
+  },
+  "local_topology": "Existing docker project; PG17.11 verify-full TLS, native PgBouncer1.26.1. No new database/engine containers; no development reseed.",
+  "runtime_authority": "StarRocks; no caller port or epoch activation",
+  "pg_attempts": [
+    {
+      "attempt": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 1,
+      "skipped": 0,
+      "seconds": 1.837
+    },
+    {
+      "attempt": 2,
+      "tests": 1,
+      "failures": 0,
+      "errors": 1,
+      "skipped": 0,
+      "seconds": 1.765
+    },
+    {
+      "attempt": 3,
+      "tests": 27,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 78.264
+    },
+    {
+      "attempt": 4,
+      "tests": 164,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 168.51
+    }
+  ],
+  "combined_pg_command": {
+    "entrypoint": "uv run python (load private fixture DSN in memory; invoke pytest.main)",
+    "test_selection": [
+      "test_metadata_jobs.py",
+      "test_metadata_ai_registry.py",
+      "test_metadata_preferences.py",
+      "test_metadata_migrator.py",
+      "test_metadata_pg_foundation.py",
+      "test_metadata_pgbouncer.py",
+      "test_metadata_bootstrap.py"
+    ],
+    "options": [
+      "-q",
+      "--tb=short",
+      "--maxfail=3",
+      "--junit-xml=/tmp/nova-jobs-pg-4.xml"
+    ],
+    "pytest_seconds": 169.85
+  },
+  "changed_python_ruff": {
+    "argv": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "--force-exclude",
+      "app/common/durable_jobs.py",
+      "app/common/preferences.py",
+      "app/core/config.py",
+      "app/core/deps.py",
+      "app/core/metadata_bootstrap.py",
+      "app/core/metadata_db.py",
+      "app/core/metadata_import.py",
+      "app/core/metadata_migrations.py",
+      "app/core/metadata_schema.py",
+      "app/core/redis.py",
+      "app/main.py",
+      "app/modules/agents/router.py",
+      "app/modules/agents/studio_router.py",
+      "app/modules/ai_ml/repository.py",
+      "app/modules/ai_ml/router.py",
+      "app/modules/assistant/consent.py",
+      "app/modules/assistant/router.py",
+      "app/modules/assistant/service.py",
+      "app/modules/auth/service.py",
+      "app/modules/llm_functions/router.py",
+      "app/modules/task_orchestration/execution.py",
+      "app/modules/task_orchestration/worker.py",
+      "app/observability/http.py",
+      "scripts/inventory_control_plane.py",
+      "scripts/profile_metadata_constraints.py",
+      "tests/eval/semantic_execution.py",
+      "tests/eval/test_business_ontology_trajectory.py",
+      "tests/eval/test_evidence_health_trajectory.py",
+      "tests/eval/test_mcp_consent_trajectory.py",
+      "tests/eval/test_semantic_clarification_trajectory.py",
+      "tests/eval/test_semantic_latest_month.py",
+      "tests/integration/build_metadata_pooler.py",
+      "tests/integration/prepare_metadata_fixture.py",
+      "tests/integration/test_metadata_ai_registry.py",
+      "tests/integration/test_metadata_bootstrap.py",
+      "tests/integration/test_metadata_jobs.py",
+      "tests/integration/test_metadata_migrator.py",
+      "tests/integration/test_metadata_pg_foundation.py",
+      "tests/integration/test_metadata_pgbouncer.py",
+      "tests/integration/test_metadata_preferences.py",
+      "tests/integration/test_task_outcome_uncertainty.py",
+      "tests/unit/test_agent_run_storage_failure.py",
+      "tests/unit/test_ai_ml_ssrf_guard.py",
+      "tests/unit/test_api_auth_inventory.py",
+      "tests/unit/test_assistant_stage_b.py",
+      "tests/unit/test_control_plane_inventory.py",
+      "tests/unit/test_control_plane_session_boundaries.py",
+      "tests/unit/test_durable_jobs.py",
+      "tests/unit/test_llm_alias_authorization.py",
+      "tests/unit/test_mcp_registry_access.py",
+      "tests/unit/test_metadata_ai_registry.py",
+      "tests/unit/test_metadata_bootstrap_config.py",
+      "tests/unit/test_metadata_db_config.py",
+      "tests/unit/test_metadata_import.py",
+      "tests/unit/test_metadata_preferences.py",
+      "tests/unit/test_metadata_schema.py",
+      "tests/unit/test_notebook_data_tokens.py",
+      "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+      "tests/unit/test_observability_metrics.py",
+      "tests/unit/test_process_role.py",
+      "tests/unit/test_superset_bridge.py",
+      "tests/unit/test_task_orchestration_worker.py",
+      "tests/unit/test_task_outcome_uncertainty.py",
+      "tests/unit/test_web_search_tool.py"
+    ],
+    "exit_code": 0,
+    "python_files": 64,
+    "output": "All checks passed!\n"
+  },
+  "cleanup": {
+    "remaining_fixture_schema": 0,
+    "remaining_test_roles": 0
+  },
+  "full_unit_coverage": {
+    "result": "PASS",
+    "argv": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit",
+      "--cov=app",
+      "--cov-branch",
+      "--cov-report=term-missing",
+      "--cov-report=xml:/tmp/nova-refactor-coverage-23.xml"
+    ],
+    "passed": 10690,
+    "warnings": 4,
+    "seconds": 669.13,
+    "coverage_percent_rounded": 65
+  },
+  "mypy": {
+    "result": "PASS",
+    "command": "uv run mypy app --no-error-summary"
+  },
+  "agent_scorecard": {
+    "result": "PASS",
+    "scenarios": 54,
+    "checks": 189,
+    "command": "uv run python -m tests.eval.report"
+  },
+  "parent_ci": {
+    "run": 43057585539,
+    "head": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+    "status": "RUNNING",
+    "pg": {
+      "passed": 132,
+      "skipped": 0,
+      "seconds": 43.295
+    }
+  },
+  "current_ci": "NOT_RUN; not committed or pushed yet",
+  "live_embeddings": "OWNER_WAIVED; no provider calls in this checkpoint",
+  "limits": [
+    "Participant adapters and runtime caller ports pending",
+    "No real Redis outage or external worker-kill/commit fault acceptance in storage tests",
+    "No domain cutover, production Compose or migration rehearsal",
+    "Known live AI failures and all unproven engine skips remain open"
+  ],
+  "docs_and_workflow": {
+    "local_links": 3,
+    "ci_jobs": 8,
+    "shell_steps": 38,
+    "pg_ownership_tables": 10
+  },
+  "credential_log_scan": {
+    "container": "docker-nova-metadata-db-1",
+    "window": "45m",
+    "lines": 1552,
+    "encrypted_marker_hits": 0,
+    "credential_canary_hits": 0,
+    "raw_log_exported": false
+  }
+}
