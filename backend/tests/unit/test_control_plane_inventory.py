@@ -1,13 +1,82 @@
 import ast
 import csv
+from copy import deepcopy
+
+import pytest
 
 from scripts.inventory_control_plane import (
     CREATE,
     inspect_python,
     literal_bindings,
     merge_feature_inventory,
+    preserve_call_reviews,
     string_template,
 )
+
+
+def test_identical_calls_keep_their_separate_reviews_by_location():
+    source = '''
+async def load(query):
+    await db.execute_system(query)
+    await db.execute_system(query)
+'''
+    _, current = inspect_python(source, "repository.py")
+    previous = deepcopy(current)
+    assert previous[0]["callsite_sha256"] == previous[1]["callsite_sha256"]
+    for row, status in zip(previous, ["METADATA", "ENGINE"], strict=True):
+        row["review_status"] = status
+        row["review_notes"] = status + " evidence"
+    preserve_call_reviews(current, list(reversed(previous)))
+    assert [row["review_status"] for row in current] == ["METADATA", "ENGINE"]
+    assert [row["review_notes"] for row in current] == ["METADATA evidence", "ENGINE evidence"]
+
+
+def test_two_identical_calls_on_one_line_are_distinguished_by_columns():
+    _, current = inspect_python(
+        "async def load(q):\n    await db.execute_system(q); await db.execute_system(q)\n",
+        "inline.py",
+    )
+    assert current[0]["line"] == current[1]["line"]
+    assert current[0]["column"] != current[1]["column"]
+    previous = deepcopy(current)
+    previous[0]["review_status"], previous[1]["review_status"] = "FIRST", "SECOND"
+    preserve_call_reviews(current, list(reversed(previous)))
+    assert [row["review_status"] for row in current] == ["FIRST", "SECOND"]
+
+
+def test_legacy_csv_review_is_upgraded_only_for_an_unchanged_unique_call():
+    source = (
+        'async def load():\n'
+        '    await db.execute_system("SELECT * FROM NOVA_SYSTEM.CONFIG_TASKS")\n'
+    )
+    _, current = inspect_python(source, "legacy.py")
+    previous = [{
+        key: ";".join(value) if isinstance(value, list) else str(value)
+        for key, value in current[0].items() if key not in {"column", "end_line", "end_column"}
+    }]
+    previous[0]["review_status"] = "METADATA"
+    preserve_call_reviews(current, previous)
+    assert current[0]["review_status"] == "METADATA"
+    _, changed = inspect_python(source + "# changed context\n", "legacy.py")
+    preserve_call_reviews(changed, previous)
+    assert changed[0]["review_status"] == "REQUIRES_CLASSIFICATION"
+
+
+def test_ambiguous_old_reviews_refuse_refresh_without_overwriting_current_rows():
+    _, current = inspect_python(
+        "async def load(q):\n    await db.execute_system(q); await db.execute_system(q)\n",
+        "inline.py",
+    )
+    previous = [{k: v for k, v in current[0].items()
+                 if k not in {"column", "end_line", "end_column"}}]
+    previous[0]["review_status"] = "REVIEWED"
+    before = deepcopy(current)
+    with pytest.raises(ValueError, match="Ambiguous legacy"):
+        preserve_call_reviews(current, previous)
+    assert current == before
+    with pytest.raises(ValueError, match="Duplicate source-bound"):
+        preserve_call_reviews(current, [current[0], current[0]])
+    assert current == before
 
 
 def test_docstrings_comments_and_dynamic_prefixes_are_not_tables():

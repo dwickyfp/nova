@@ -149,14 +149,14 @@
     }
   ],
   "latest_observation": {
-    "run": 43057585539,
-    "source_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+    "run": 43065274014,
+    "source_commit": "6714dc5eb73b20a5080b9f0e68a2523e0bb3a62d",
     "result": "SUCCESS",
     "passed": 217,
     "skipped": 24,
     "failures": 0,
     "errors": 0,
-    "seconds": 1584.844,
+    "seconds": 1454.999,
     "skip_cases_and_reasons_unchanged": true
   }
 }

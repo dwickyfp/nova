@@ -79,9 +79,11 @@ the new grants deliberately do not give those workers provider keys. Web
 configuration edits must preserve omitted keys and use the private administrator
 projection for inactive providers.
 
-Function aliases, default model references, native UDF registration and its
-durable job/receipt are not implemented by this repository. Provider deletion
-must compose their state changes before any runtime port is complete. Preserve
+Function-alias storage and reference guards are now prepared separately in
+[revision 0007](PG_MODEL_ALIASES.md). Referenced providers/models cannot be
+tombstoned; the service must compose alias deletion with provider deletion.
+Default model references, native UDF registration and its durable job/receipt
+remain open before any runtime port is complete. Preserve
 the distinction between metadata commit and observed external registration.
 Also pending: atomic audit integration, revision tokens in APIs/UI, final import
 constraints/timestamp reconciliation, rehearsals, all-domain cutover and the

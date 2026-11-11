@@ -62,3 +62,9 @@ This storage layer does not execute a Task body or evaluate WHEN. Task/graph
 domain records, their final foreign keys, scheduler/runtime caller ports and
 external fault acceptance remain open. See [scheduler-commands.json](scheduler-commands.json)
 and the retained focused/final reports for exact source and result evidence.
+
+CI 43065274014 subsequently completed for `6714dc5e` with all eight jobs
+successful: 179 PG cases without skips, 1,601 frontend cases, and 217 engine
+passes with 24 unchanged skips (no failures/errors, 1,454.999 seconds).
+This supersedes the preceding pending status for jobs/scheduler storage. It
+does not validate revision 0007 or turn skipped release cases into passes.

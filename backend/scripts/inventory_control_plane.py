@@ -223,6 +223,9 @@ def inspect_python(source: str, path: str) -> tuple[dict[str, set[str]], list[di
             {
                 "path": path,
                 "line": node.lineno,
+                "column": node.col_offset,
+                "end_line": node.end_lineno,
+                "end_column": node.end_col_offset,
                 "api": ";".join(sorted(origins)),
                 "dispatch": dispatch or ("direct" if direct else "indirect_candidate"),
                 "receiver": ast.unparse(node.func.value) if direct else ast.unparse(node.func),
@@ -418,6 +421,61 @@ async def inspect_live(host: str, port: int) -> dict[str, Any]:
     }
 
 
+_CALL_POSITIONS = frozenset({"column", "end_line", "end_column"})
+_CALL_REVIEW_FIELDS = frozenset({"review_status", "review_notes"})
+
+
+def _call_source_binding(row: dict[str, Any], *, legacy: bool = False) -> tuple:
+    ignored = _CALL_REVIEW_FIELDS | (_CALL_POSITIONS if legacy else frozenset())
+
+    def serialized(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, list):
+            return ";".join(str(item) for item in value)
+        return str(value)
+
+    return tuple(
+        (key, serialized(value)) for key, value in sorted(row.items()) if key not in ignored
+    )
+
+
+def preserve_call_reviews(current: list[dict], previous: list[dict]) -> None:
+    """Carry reviews only across unchanged, unambiguous source locations.
+
+    Older CSVs have line numbers but no columns. Their reviews can be upgraded
+    only when both inventories have exactly one call for that complete binding.
+    Validate the whole mapping before changing any row or writing the CSV.
+    """
+    exact: dict[tuple, list[dict]] = defaultdict(list)
+    legacy: dict[tuple, list[dict]] = defaultdict(list)
+    current_legacy: dict[tuple, list[dict]] = defaultdict(list)
+    for row in previous:
+        if not all(re.fullmatch(r"[0-9a-f]{64}", str(row.get(key, ""))) for key in (
+            "source_file_sha256", "callsite_sha256",
+        )):
+            continue
+        target = exact if row.keys() >= _CALL_POSITIONS else legacy
+        target[_call_source_binding(row, legacy=target is legacy)].append(row)
+    for row in current:
+        current_legacy[_call_source_binding(row, legacy=True)].append(row)
+    updates = []
+    for row in current:
+        matched = exact.get(_call_source_binding(row), [])
+        if not matched:
+            key = _call_source_binding(row, legacy=True)
+            matched = legacy.get(key, [])
+            if matched and len(current_legacy[key]) != 1:
+                raise ValueError("Ambiguous legacy call review; preserve the inventory for review")
+        if len(matched) > 1:
+            raise ValueError("Duplicate source-bound call reviews require reconciliation")
+        if matched:
+            updates.append((row, matched[0]))
+    for row, review in updates:
+        row["review_status"] = review["review_status"]
+        row["review_notes"] = review.get("review_notes", "")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -454,23 +512,17 @@ def main() -> None:
         result["api_operations"] = api_inventory(args.live_api)
     args.output.mkdir(parents=True, exist_ok=True)
     calls_path = args.output / "SYSTEM_CALLS.csv"
-    reviews = {}
+    reviews = []
     if calls_path.exists():
         with calls_path.open(newline="") as existing:
-            reviews = {
-                (row["path"], row.get("source_file_sha256"), row.get("callsite_sha256")): row
-                for row in csv.DictReader(existing)
-            }
+            reviews = list(csv.DictReader(existing))
+    preserve_call_reviews(result["system_calls"], reviews)
     with calls_path.open("w", newline="") as file:
         writer = csv.DictWriter(
             file, fieldnames=list(result["system_calls"][0]), lineterminator="\n"
         )
         writer.writeheader()
         for row in result["system_calls"]:
-            review = reviews.get((row["path"], row["source_file_sha256"], row["callsite_sha256"]))
-            if review:
-                row["review_status"] = review["review_status"]
-                row["review_notes"] = review.get("review_notes", "")
             writer.writerow(
                 {
                     **row,

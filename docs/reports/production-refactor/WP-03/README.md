@@ -148,3 +148,44 @@ unit run, source aggregates and remaining gates. The sanitized final report is
 describes the required caller, alias/job, audit, import and cutover work. There
 were no live provider requests in these storage tests; embedding-provider QA
 remains owner-waived, and R32 is still open in the legacy runtime.
+
+## Function-alias storage and inventory review bindings
+
+Revision 0007 preserves alias identities, prompts and raw parameters, and adds
+CAS, default uniqueness, atomic default moves and retained deletion revisions.
+Parent reference guards reject provider/model deletion while an alias still
+uses them. The [storage contract](../../../architecture/production-refactor/PG_MODEL_ALIASES.md)
+lists the caller, immutable-definition, native UDF receipt, audit and cutover
+work still required. No live alias service has switched authority.
+
+The final combined PG17/PgBouncer suite passes 219 tests without skips in
+112.41 seconds, including 40 alias cases. The first attempt passed two cases
+and failed one because a refused writer received a reference-constraint error
+before the permission check. The guard now checks actor permission first.
+All four attempt reports remain in
+[model-alias-commands.json](model-alias-commands.json), including the earlier
+219-case pass before the final line-wrap edit. Mypy, Ruff on 70 Python files and
+all 54 agent scenarios / 189 checks pass. The fixture leaves no test schema or
+roles. A 25-minute scan of 1,089 PG log lines finds no credential canaries or
+encrypted-envelope markers; raw logs are not exported.
+
+The inventory refresher previously keyed reviews only by source-file and AST
+hashes, which collide for identical SQL calls at different locations. It now
+includes the full source binding and start/end positions. Older line-only CSVs
+upgrade only when their binding is unique; ambiguous reviews stop the refresh
+before any file is overwritten. Twelve focused tests pass. Running the real CLI
+preserves all 875 reviews, all 759 feature rows byte-for-byte, and the previous
+live/API observations. The refreshed inventory covers 690 application files.
+Inventory preservation does not change an untested feature into a pass.
+
+Full backend coverage passes 10,730 tests with four warnings in 453.58 seconds
+(65% combined coverage). CI for these edits is pending. The preceding
+job/scheduler commit has passed seven CI jobs, including 179 PG cases without
+skips; its real-engine job is still running. No frontend code or executable
+user-doc example changed in this checkpoint.
+
+CI 43065274014 subsequently completed for `6714dc5e` with all eight jobs
+successful: 179 PG cases without skips, 1,601 frontend cases, and 217 engine
+passes with 24 unchanged skips (no failures/errors, 1,454.999 seconds).
+This supersedes the preceding pending status for jobs/scheduler storage. It
+does not validate revision 0007 or turn skipped release cases into passes.

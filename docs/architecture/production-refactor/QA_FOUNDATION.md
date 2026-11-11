@@ -567,3 +567,28 @@ jobs successful: 132 PG cases without skips and 217 engine passes with 24 skips
 (no failures/errors, 1,584.844 seconds in the engine report). Every skipped case
 and reason matches the retained skip inventory. This resolves that run's pending
 status; the two newer job/scheduler storage commits still await their own CI.
+
+Revision 0007 adds transactional function-alias storage, reference guards and
+atomic default moves. Application tree
+`c6fd3534748cf447b1daf3d07e8762af228b39408f4d4d322aa2b8511388ebd8` passes
+10,730 unit cases (four warnings, 453.58 seconds, 65% coverage), 219 PG cases
+without skips (112.41 seconds), mypy, Ruff on 70 Python files and the full
+54-scenario/189-check scorecard. The first permission-classification failure
+and all subsequent attempts remain in the
+[alias evidence](../../reports/production-refactor/WP-03/model-alias-commands.json).
+Source profiling found zero current aliases; this is an aggregate observation,
+not a migration snapshot. All thirteen PG tables have ownership entries.
+
+The inventory review fix distinguishes identical AST calls by complete source
+binding and position, and refuses ambiguous legacy review migration. Its actual
+CLI run preserves all 875 reviews and 759 feature rows; live/API observations
+remain unchanged. Neither this preservation nor the storage tests certify a
+live caller port, native UDF registration, AI cache safety or final cutover.
+CI 43065274014 for the preceding job/scheduler commit has seven successful jobs
+(including 179 PG passes without skips); its engine job is still running.
+
+CI 43065274014 subsequently completed for `6714dc5e` with all eight jobs
+successful: 179 PG cases without skips, 1,601 frontend cases, and 217 engine
+passes with 24 unchanged skips (no failures/errors, 1,454.999 seconds).
+This supersedes the preceding pending status for jobs/scheduler storage. It
+does not validate revision 0007 or turn skipped release cases into passes.
