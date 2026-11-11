@@ -19,6 +19,7 @@ Sources: `backend/app/modules/query/sql_pipeline.py`, `dialect/parser.py`, `dial
 | `COPY INTO …` | Passed through; `@stage` translated. |
 | `CREATE ML_MODEL … AS SELECT …` | **Intercepted** — handled by the Python ML engine; never sent to StarRocks. |
 | `CREATE TASK …` | **Intercepted** — lowered to `CONFIG_TASK*` metadata; never sent to StarRocks. |
+| `EXECUTE TASK …` | **Intercepted** — queues a manual run of the task's graph; never sent to StarRocks. |
 | `AI_*`, `ML_PREDICT` | StarRocks global UDFs; execute inside the engine. |
 | `@@variables` | Passed through; never read as stages. |
 | `LIST …` | No implementation; passed through and **rejected by the engine** (StarRocks has no `LIST` statement). |

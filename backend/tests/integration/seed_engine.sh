@@ -47,7 +47,8 @@ fi
 # Apply the additive migrations explicitly and fail seeding if either fails.
 for migration in \
   "$BACKEND_DIR/migrations/20261005_stream_namespace.sql" \
-  "$BACKEND_DIR/migrations/20261005_stream_namespace_recovery.sql"; do
+  "$BACKEND_DIR/migrations/20261005_stream_namespace_recovery.sql" \
+  "$BACKEND_DIR/migrations/20261111_stream_capture.sql"; do
   fe_sql < "$migration"
 done
 

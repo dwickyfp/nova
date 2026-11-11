@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-query";
 import {
   AlertCircle,
+  Pause,
   Play,
   CircleSlash,
   SearchX,
@@ -28,7 +29,12 @@ import {
   SimpleTableToolbar,
   SimpleTableViewport,
 } from "@/components/data-table/simple-table-controls";
-import { fetchGraphs, runGraph, type GraphSummary } from "./api";
+import {
+  fetchGraphs,
+  runGraph,
+  setGraphLifecycle,
+  type GraphSummary,
+} from "./api";
 import { RunErrorDialog } from "./run-error-dialog";
 import {
   formatSchedule,
@@ -301,6 +307,23 @@ function TaskRow({
     onError: (error: Error) =>
       toast.error(error.message || "Could not run task"),
   });
+  // Scheduled and stream-triggered graphs fire on their own only while
+  // started; a manual graph runs when someone runs it, whatever its state.
+  const triggered =
+    graph.schedule_kind != null && graph.schedule_kind !== "manual";
+  const suspended = graph.lifecycle_state === "SUSPENDED";
+  const lifecycleMutation = useMutation({
+    mutationFn: () =>
+      setGraphLifecycle(graph.graph_id, suspended ? "STARTED" : "SUSPENDED"),
+    onSuccess: () => {
+      toast.success(
+        `${taskLabel(graph)} ${suspended ? "resumed" : "suspended"}`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["task-orchestration"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not change the task"),
+  });
   return (
     <tr
       onClick={onOpen}
@@ -321,21 +344,26 @@ function TaskRow({
             aria-hidden="true"
             className="size-4 shrink-0 text-muted-foreground"
           />
-          <div className="min-w-0">
-            <span className="block truncate text-sm font-medium">
+          <div className="shrink-0">
+            <span className="block text-sm font-medium">
               {taskLabel(graph)}
             </span>
             <span className="block text-xs text-muted-foreground">
               {graph.owner_role ?? "Owner role required"}
             </span>
           </div>
-          {graph.last_run ? (
-            <StatusBadge tone={graphRunTone(graph.last_run.state)} dot>
-              {graph.last_run.state}
-            </StatusBadge>
-          ) : (
-            <StatusBadge tone="neutral">never run</StatusBadge>
-          )}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {graph.last_run ? (
+              <StatusBadge tone={graphRunTone(graph.last_run.state)} dot>
+                {graph.last_run.state}
+              </StatusBadge>
+            ) : (
+              <StatusBadge tone="neutral">never run</StatusBadge>
+            )}
+            {triggered && suspended ? (
+              <StatusBadge tone="warning">suspended</StatusBadge>
+            ) : null}
+          </div>
         </div>
       </td>
       <td className="px-4 py-3 text-right text-sm tabular-nums">
@@ -373,6 +401,30 @@ function TaskRow({
               runId={graph.last_run.id}
               taskName={taskLabel(graph)}
             />
+          ) : null}
+          {triggered ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`${suspended ? "Resume" : "Suspend"} ${taskLabel(graph)}`}
+              disabled={lifecycleMutation.isPending || !graph.can_run}
+              title={
+                suspended
+                  ? "Start running on its schedule or stream data"
+                  : "Stop starting new runs; a running run finishes"
+              }
+              onClick={(event) => {
+                event.stopPropagation();
+                lifecycleMutation.mutate();
+              }}
+            >
+              {suspended ? (
+                <Play aria-hidden="true" className="size-3.5" />
+              ) : (
+                <Pause aria-hidden="true" className="size-3.5" />
+              )}
+              {suspended ? "Resume" : "Suspend"}
+            </Button>
           ) : null}
           <Button
             variant="outline"

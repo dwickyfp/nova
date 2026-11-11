@@ -6,6 +6,8 @@ The init-nova.sql creates tables with flat naming:
 All persistent state lives in StarRocks NOVA_SYSTEM — no SQLite, no PostgreSQL.
 """
 
+import contextlib
+
 from asyncmy.errors import ProgrammingError
 
 from app.core.database import db
@@ -139,6 +141,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
     version        BIGINT DEFAULT "1",
     handler        VARCHAR(64) DEFAULT "sql",
     handler_config JSON,
+    lifecycle_state VARCHAR(16) DEFAULT "STARTED",
+    when_ast       STRING,
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY(id)
@@ -185,6 +189,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_RUNS (
     delegated          BOOLEAN DEFAULT "true",
     starrocks_query_id VARCHAR(128),
     error_message      TEXT,
+    output             TEXT,
     started_at         DATETIME,
     heartbeat_at       DATETIME,
     finished_at        DATETIME
@@ -378,6 +383,15 @@ TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # default to ``skip``, the strictest policy, so nothing starts overlapping
     # behaviour simply because the column arrived.
     ("CONFIG_TASK_GRAPH_RUNS", "overlap_policy", "VARCHAR(16) NOT NULL DEFAULT 'skip'"),
+    # Script and Python tasks: what a node run reported (the tail of a Python
+    # task's printed output, a script's statement summary). Never a credential.
+    ("CONFIG_TASK_RUNS", "output", "TEXT"),
+    # Snowflake lifecycle: tasks created by SQL start SUSPENDED and run on a
+    # schedule or stream trigger only after ALTER TASK … RESUME. Existing rows
+    # keep running (STARTED), so no schedule changes behaviour on upgrade.
+    ("CONFIG_TASKS", "lifecycle_state", 'VARCHAR(16) DEFAULT "STARTED"'),
+    # A WHEN over streams, compiled (task_orchestration/stream_when.py).
+    ("CONFIG_TASKS", "when_ast", "STRING"),
 )
 
 
@@ -529,14 +543,25 @@ async def init_nova_system() -> None:
 
         await ensure_schema()
         from app.modules.streams.claims import CLAIMS_DDL
-        from app.modules.streams.journal import CONSUMPTION_OPERATIONS_DDL, CONSUMPTIONS_DDL
+        from app.modules.streams.journal import (
+            CONSUMPTION_OPERATIONS_DDL,
+            CONSUMPTIONS_DDL,
+            STREAM_COLUMN_MIGRATIONS,
+        )
         from app.modules.streams.repository import NAMESPACE_OPERATIONS_DDL, STREAMS_DDL
+        from app.modules.streams.sources import STREAM_SOURCE_DDL
 
         for ddl in (
             CLAIMS_DDL, STREAMS_DDL, NAMESPACE_OPERATIONS_DDL,
-            CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL,
+            CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL, *STREAM_SOURCE_DDL,
         ):
             await db.execute_system(ddl)
+        for table, column, column_type in STREAM_COLUMN_MIGRATIONS:
+            if not await _column_exists(table, column):
+                with contextlib.suppress(ProgrammingError):
+                    await db.execute_system(
+                        f"ALTER TABLE NOVA_SYSTEM.{table} ADD COLUMN {column} {column_type}"
+                    )
         from app.modules.superset.access import AUTHOR_ROLES_DDL
 
         await db.execute_system(AUTHOR_ROLES_DDL)

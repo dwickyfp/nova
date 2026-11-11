@@ -1,16 +1,27 @@
 /** One statement of a script, with its character offsets in the source. */
 export type SqlStatement = { text: string; start: number; end: number }
 
+const CREATE_TASK_START = /^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?|SUBMIT\s+)TASK\b/i
+
+function isWordChar(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_$]/.test(char)
+}
+
 /**
  * Splits a script on top-level `;`, ignoring semicolons inside quotes,
- * backticks and comments. Statements that are only whitespace or comments are
- * dropped. The server splits the same way when it runs a whole script; this is
- * only for choosing which statements to send.
+ * backticks, comments and `$$ ... $$` bodies, and inside the `BEGIN ... END`
+ * block of a `CREATE TASK` (where a `CASE` closes with its own `END`).
+ * Statements that are only whitespace or comments are dropped. The server
+ * splits the same way when it runs a whole script; this is only for choosing
+ * which statements to send.
  */
 export function splitSqlStatements(source: string): SqlStatement[] {
   const statements: SqlStatement[] = []
   let start = 0
   let index = 0
+  let previousWord = ''
+  let inTaskBlock = false
+  let caseDepth = 0
   const push = (end: number) => {
     const raw = source.slice(start, end)
     if (stripComments(raw).trim()) {
@@ -22,7 +33,30 @@ export function splitSqlStatements(source: string): SqlStatement[] {
   while (index < source.length) {
     const char = source[index]
     const next = source[index + 1]
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === '$' && next === '$' && !isWordChar(source[index - 1])) {
+      const close = source.indexOf('$$', index + 2)
+      index = close === -1 ? source.length : close + 2
+    } else if (/[A-Za-z_]/.test(char)) {
+      let end = index + 1
+      while (isWordChar(source[end])) end += 1
+      const word = source.slice(index, end).toUpperCase()
+      if (inTaskBlock) {
+        if (word === 'CASE') caseDepth += 1
+        else if (word === 'END') {
+          if (caseDepth > 0) caseDepth -= 1
+          else inTaskBlock = false
+        }
+      } else if (
+        word === 'BEGIN' &&
+        previousWord === 'AS' &&
+        CREATE_TASK_START.test(stripComments(source.slice(start, index)))
+      ) {
+        inTaskBlock = true
+        caseDepth = 0
+      }
+      previousWord = word
+      index = end
+    } else if (char === "'" || char === '"' || char === '`') {
       index = skipQuoted(source, index, char)
     } else if (char === '-' && next === '-') {
       index = lineEnd(source, index)
@@ -31,9 +65,10 @@ export function splitSqlStatements(source: string): SqlStatement[] {
     } else if (char === '/' && next === '*') {
       const close = source.indexOf('*/', index + 2)
       index = close === -1 ? source.length : close + 2
-    } else if (char === ';') {
+    } else if (char === ';' && !inTaskBlock) {
       push(index)
       start = index + 1
+      previousWord = ''
       index += 1
     } else {
       index += 1

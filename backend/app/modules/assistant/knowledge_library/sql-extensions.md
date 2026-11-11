@@ -12,7 +12,8 @@ Implemented interceptions in the shared QueryService:
 | CREATE ML_MODEL ... AS SELECT | Native Python ML training and model persistence | create-ml-model |
 | ML_PREDICT('alias', features...) | Classification/regression inference when runtime is enabled | native-ml |
 | SELECT * FROM ML_FORECAST(...) | Persisted forecast inference | native-ml |
-| CREATE TASK ... AS statement | Nova task metadata and scheduler | create-task |
+| CREATE TASK ... AS statement, BEGIN ... END block, or LANGUAGE PYTHON $$ ... $$ | Nova task metadata and scheduler | create-task |
+| EXECUTE TASK name | Queues a run of the task's graph now | create-task |
 | ALTER USER ... REQUIRE PASSWORD CHANGE [OFF or NONE] | Nova login flag, administrative permission required | create-user |
 | USE ROLE/SET ROLE name | Change the authenticated Nova session's active granted role | sql-operations |
 | Grants/role SQL with Ranger enabled | Supported forms route to the access-control service | security-governance |

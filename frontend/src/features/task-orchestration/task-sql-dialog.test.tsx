@@ -62,4 +62,34 @@ describe("Task SQL", () => {
     expect(code.element().querySelectorAll(".hljs-keyword").length).toBeGreaterThan(5);
     expect(code.element().textContent).toContain("\nFROM\n");
   });
+
+  it("shows a Python task as Python, unformatted, with its packages", async () => {
+    const code = "import novaduck\ncon = novaduck.connect()\nprint(con.sql('SELECT 1'))";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          task_id: "t2",
+          name: "score",
+          sql: code,
+          language: "python",
+          packages: ["scikit-learn==1.5.2", "tabulate"],
+          runtime_version: "3.12",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <TaskSQLDialog graphId="g1" node={{ ...node, name: "score", language: "python" }} />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("button", { name: "View Python for score" }).click();
+    await expect.element(screen.getByRole("heading", { name: "Task Python" })).toBeVisible();
+    await expect.element(screen.getByText("score · Python 3.12")).toBeVisible();
+    await expect
+      .element(screen.getByText("Packages: scikit-learn==1.5.2, tabulate"))
+      .toBeVisible();
+    expect(screen.getByLabelText("Task Python code").element().textContent).toBe(code);
+  });
 });

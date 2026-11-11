@@ -45,6 +45,7 @@ export const ORCHESTRATION_SCHEDULE_KINDS = [
   "manual",
   "interval",
   "cron",
+  "stream",
 ] as const;
 
 export const ORCHESTRATION_EDGE_KINDS = ["after", "finalize"] as const;
@@ -90,7 +91,11 @@ export interface GraphSummary {
   last_run: GraphRunSummary | null;
   run_counts: RunCounts;
   created_at: string | null;
+  /** `SUSPENDED` graphs run only when someone runs them (Run, EXECUTE TASK). */
+  lifecycle_state?: LifecycleState;
 }
+
+export type LifecycleState = "STARTED" | "SUSPENDED";
 
 export interface GraphListResponse {
   graphs: GraphSummary[];
@@ -108,6 +113,24 @@ export interface GraphNode {
   created_by: string | null;
   is_finalizer: boolean;
   last_state: TaskRunState | null;
+  /** `sql` (one statement or a script) or `python`. */
+  language?: TaskLanguage;
+  /** Statements in a SQL script node; 1 for a single statement. */
+  statement_count?: number;
+  /** A Python node's `name[==version]` packages. */
+  packages?: string[];
+  runtime_version?: string | null;
+}
+
+export type TaskLanguage = "sql" | "python";
+
+export interface TaskCode {
+  task_id: string;
+  name: string;
+  sql: string | null;
+  language?: TaskLanguage;
+  packages?: string[];
+  runtime_version?: string | null;
 }
 
 export interface GraphEdge {
@@ -150,6 +173,8 @@ export interface NodeRunResponse {
   delegated: boolean;
   starrocks_query_id: string | null;
   error_message: string | null;
+  /** What a script or Python node reported (printed output, statement summary). */
+  output?: string | null;
   started_at: string | null;
   heartbeat_at: string | null;
   finished_at: string | null;
@@ -162,6 +187,16 @@ export interface GraphRunDetailResponse {
 
 const BASE = "/task-orchestration";
 
+/** Resume or suspend a graph's schedule or stream trigger (ALTER TASK root RESUME|SUSPEND). */
+export const setGraphLifecycle = (
+  graphId: string,
+  state: LifecycleState,
+): Promise<GraphSummary> =>
+  api.post<GraphSummary>(
+    `${BASE}/graphs/${encodeURIComponent(graphId)}/lifecycle`,
+    { state },
+  );
+
 export const runGraph = (graphId: string): Promise<GraphRunResponse> =>
   api.post<GraphRunResponse>(
     `${BASE}/graphs/${encodeURIComponent(graphId)}/runs`,
@@ -172,7 +207,7 @@ export const fetchTaskSQL = (
   taskId: string,
   signal?: AbortSignal,
 ) =>
-  api.get<{ task_id: string; name: string; sql: string | null }>(
+  api.get<TaskCode>(
     `${BASE}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(taskId)}/sql`,
     signal,
   );

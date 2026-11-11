@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS (
     target_transaction_id BIGINT,
     active_role VARCHAR(128),
     security_context_version BIGINT,
+    dispatch_attempt BIGINT,
     submission_digest VARCHAR(64) NOT NULL,
     cancellation_digest VARCHAR(64) NOT NULL,
     created_at DATETIME NOT NULL
@@ -64,7 +65,14 @@ _OPERATION_COLUMNS = (
     "consume_id,stream_id,generation,source_id,epoch,sequence_from,sequence_to,"
     "schema_version,operation_digest,target_database,target_object,engine_label,principal,"
     "target_load_id,target_transaction_id,active_role,security_context_version,"
-    "submission_digest,cancellation_digest"
+    "submission_digest,cancellation_digest,dispatch_attempt"
+)
+
+#: Added after the table shipped; ``migrate_stream_columns`` adds it.
+STREAM_COLUMN_MIGRATIONS = (
+    ("AUDIT_STREAM_CONSUMPTION_OPERATIONS", "dispatch_attempt", "BIGINT"),
+    ("CONFIG_STREAM_DEFINITIONS", "show_initial_rows", "BOOLEAN"),
+    ("CONFIG_STREAM_DEFINITIONS", "initial_commit_seq", "BIGINT"),
 )
 
 
@@ -79,6 +87,7 @@ def _operation_values(consume: Consumption) -> tuple:
         consume.active_role, consume.security_context_version,
         consume.decision_claim("0" * 64, "submit").operation_digest,
         consume.decision_claim("0" * 64, "cancel").operation_digest,
+        consume.attempt,
     )
 
 
@@ -133,7 +142,7 @@ class StarRocksConsumptionJournal:
                 ChangeSnapshot(row[3], ChangeCursor(row[4], row[5]),
                                ChangeCursor(row[4], row[6]), row[7]),
                 TargetIdentity(row[9], row[10], row[11], row[12], row[13], row[14]), row[8],
-                row[15], row[16],
+                row[15], row[16], int(row[19] or 0),
             )
             if (
                 tuple(row) != _operation_values(consume)
@@ -252,10 +261,63 @@ class StarRocksConsumptionJournal:
         return await self.committed_cursor(consume.stream_id, consume.snapshot.after)
 
     async def committed_cursor(self, stream_id: str, creation: ChangeCursor) -> ChangeCursor:
+        """The committed offset, proven by an unbroken chain of receipts.
+
+        Starting at the stream's creation cursor, each OFFSET_COMMITTED receipt
+        must start exactly where the previous one ended. A gap, a receipt that
+        overlaps another, or two receipts from the same offset is not resolved
+        by taking a maximum: it blocks the stream.
+        """
         result = await self._execute(
-            "SELECT MAX(sequence_to) FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
+            "SELECT sequence_from, sequence_to FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
             "WHERE stream_id=%s AND epoch=%s AND state='OFFSET_COMMITTED'",
             (stream_id, creation.epoch),
         )
-        sequence = result["rows"][0][0]
-        return ChangeCursor(creation.epoch, max(creation.sequence, int(sequence or 0)))
+        by_start: dict[int, int] = {}
+        for start, end in result["rows"]:
+            start, end = int(start), int(end)
+            if end < start or by_start.get(start, end) != end:
+                raise StreamError("STREAM_CONSUMPTION_BLOCKED", "Offset receipts conflict")
+            if end <= creation.sequence and start < creation.sequence:
+                continue  # history before ``creation`` (an interval's own start)
+            if start < creation.sequence:
+                raise StreamError("STREAM_CONSUMPTION_BLOCKED", "Offset receipts overlap")
+            by_start[start] = end
+        cursor = creation.sequence
+        while cursor in by_start:
+            cursor = by_start.pop(cursor)
+        if by_start:
+            raise StreamError(
+                "STREAM_CONSUMPTION_BLOCKED", "Offset receipts are not one unbroken chain"
+            )
+        return ChangeCursor(creation.epoch, cursor)
+
+    async def recent(self, stream_id: str, limit: int) -> list[dict]:
+        """The newest consumption events of a stream, without receipts or SQL."""
+        result = await self._execute(
+            "SELECT consume_id, state, sequence_from, sequence_to, target_database, "
+            "target_object, principal, created_at FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
+            f"WHERE stream_id=%s ORDER BY created_at DESC LIMIT {int(limit)}",
+            (stream_id,),
+        )
+        return [
+            {
+                "consume_id": row[0],
+                "state": row[1],
+                "offset_from": int(row[2]),
+                "offset_to": int(row[3]),
+                "target": f"{row[4]}.{row[5]}",
+                "principal": row[6],
+                "at": row[7],
+            }
+            for row in result["rows"]
+        ]
+
+    async def failed_attempts(self, stream_id: str, generation: int, start: int) -> int:
+        """Proven failures from ``start``: the next attempt's arbitration slot."""
+        result = await self._execute(
+            "SELECT COUNT(DISTINCT consume_id) FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
+            "WHERE stream_id=%s AND generation=%s AND sequence_from=%s AND state='FAILED'",
+            (stream_id, generation, start),
+        )
+        return int(result["rows"][0][0] or 0)

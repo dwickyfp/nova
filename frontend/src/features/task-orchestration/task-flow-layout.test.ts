@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GraphEdge, GraphNode } from "./api";
 import {
+  bodyLabel,
   buildTaskFlow,
   NODE_HEIGHT,
   NODE_WIDTH,
@@ -146,5 +147,18 @@ describe("taskFlowViewport", () => {
     expect(viewport.y + bounds.height * viewport.zoom).toBeLessThan(368);
     expect(viewport.x).toBeGreaterThan(0);
     expect(viewport.x + bounds.width * viewport.zoom).toBeLessThan(320);
+  });
+});
+
+describe("bodyLabel", () => {
+  it("names what a node runs beyond one SQL statement", () => {
+    expect(bodyLabel(node("a"))).toBe("");
+    expect(bodyLabel(node("a", { language: "sql", statement_count: 3 }))).toBe("3 statements");
+    expect(bodyLabel(node("a", { language: "python" }))).toBe("Python");
+  });
+
+  it("puts it beside the schedule on the node", () => {
+    const { nodes } = buildTaskFlow([node("a", { language: "python" })], []);
+    expect(nodes[0].data.schedule).toBe("Manual · Python");
   });
 });

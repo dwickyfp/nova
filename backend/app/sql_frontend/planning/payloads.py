@@ -4,6 +4,8 @@ from typing import Any
 
 from app.sql_frontend.planning.execution import (
     ActionKind,
+    DropTaskPayload,
+    ExecuteTaskPayload,
     ForecastPayload,
     MaterializePayload,
     ModelPayload,
@@ -12,6 +14,7 @@ from app.sql_frontend.planning.execution import (
     SecurityPayload,
     SourcePayload,
     TaskPayload,
+    TaskStatementPayload,
 )
 
 _PAYLOADS: dict[ActionKind, Callable[[int, Any], SourcePayload]] = {
@@ -19,6 +22,15 @@ _PAYLOADS: dict[ActionKind, Callable[[int, Any], SourcePayload]] = {
     ActionKind.CATALOG: lambda key, value: replace(value, source_key=key),
     ActionKind.CREATE_TASK: lambda key, value: TaskPayload(
         key, value.name, value.database_name, value.schema_name, value.schedule_kind, value
+    ),
+    ActionKind.EXECUTE_TASK: lambda key, value: ExecuteTaskPayload(
+        key, value.name, value.database_name, value.schema_name
+    ),
+    ActionKind.DROP_TASK: lambda key, value: DropTaskPayload(
+        key, value.name, value.database_name, value.schema_name, value.if_exists
+    ),
+    ActionKind.TASK_LIFECYCLE: lambda key, value: TaskStatementPayload(
+        key, value.action, value.name, value.database_name, value.schema_name
     ),
     ActionKind.CREATE_ML_MODEL: lambda key, value: ModelPayload(
         key, value.model_name, value.model_type, value

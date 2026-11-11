@@ -47,6 +47,8 @@ from app.sql_frontend.planning.execution import (
     CompositePlan,
     EngineSqlPlan,
     ExecutionPlan,
+    MergeCapture,
+    TransactionIntent,
 )
 from app.sql_frontend.planning.logical import LogicalPlan
 
@@ -448,6 +450,51 @@ class _Lowering:
             f"ON {self.statement.on_sql} WHERE {action} IN ({self.numbers('update', 'insert')})"
         )
 
+    def full_rows(self, values: dict[int, dict[str, str]]) -> tuple[str, tuple[str, ...]]:
+        """Every column of each row the upsert writes, as it will be after the MERGE.
+
+        Used when the target has Streams: Nova writes and journals whole rows,
+        so a matched row keeps every column no clause sets and a new row gets
+        the table default for it, exactly as the partial-update upsert would.
+        """
+        action = self.action()
+        selected: list[str] = []
+        names: list[str] = []
+        guarded = False
+        for column in self.columns:
+            name = column.name.casefold()
+            branches = []
+            for number, assigned in values.items():
+                if name in assigned:
+                    branches.append(f"WHEN {number} THEN {assigned[name]}")
+                elif self.statement.clauses[number - 1].kind == "insert":
+                    branches.append(f"WHEN {number} THEN {_default(column)}")
+            value = (
+                f"CASE {action} {' '.join(branches)} ELSE {self.column(column)} END"
+                if branches
+                else self.column(column)
+            )
+            if not guarded and name in self.keys:
+                value = f"IF({self.assertion()}, {value}, NULL)"
+                guarded = True
+            selected.append(f"{value} AS `__c{len(names)}`")
+            names.append(column.name)
+        sql = (
+            f"SELECT {', '.join(selected)} FROM {self.source} LEFT JOIN {self.target} "
+            f"ON {self.statement.on_sql} WHERE {action} IN ({self.numbers('update', 'insert')})"
+        )
+        return sql, tuple(names)
+
+    def deleted_rows(self) -> str:
+        """The current rows a ``WHEN MATCHED … THEN DELETE`` removes."""
+        keys = [_quote(c.name) for c in self.columns if c.name.casefold() in self.keys]
+        tested = keys[0] if len(keys) == 1 else f"({', '.join(keys)})"
+        every = ", ".join(_quote(column.name) for column in self.columns)
+        return (
+            f"SELECT {every} FROM {self.statement.target_sql} WHERE {tested} IN "
+            f"({self.matched_keys(self.numbers('delete'))})"
+        )
+
     def matched_keys(self, numbers: str) -> str:
         keys = [column for column in self.columns if column.name.casefold() in self.keys]
         return (
@@ -587,6 +634,12 @@ class MergePlanner:
         kinds = {clause.kind for clause in statement.clauses}
         steps: list[EngineSqlPlan] = []
 
+        # Every step names its target, so a write to a table that gained
+        # Streams after planning is refused rather than run uncaptured.
+        intent = TransactionIntent(
+            "merge", (INTERNAL_CATALOG, name.database, name.table), proven=False
+        )
+
         def step(sql: str, effects: PlanEffects) -> EngineSqlPlan:
             from app.sql_frontend.analysis.semantics import confirmation_policy
 
@@ -596,6 +649,7 @@ class MergePlanner:
                 effects,
                 logical.source_key,
                 requires_confirmation=confirmation_policy(effects),
+                transaction_intent=intent,
             )
 
         if "delete" in kinds:
@@ -615,6 +669,56 @@ class MergePlanner:
                     ),
                 )
             )
+        if await _has_streams(name):
+            return _captured_plan(logical, lowering, values, kinds, steps, intent, table)
         if len(steps) == 1:
             return steps[0]
         return CompositePlan(tuple(steps), Atomicity.BEST_EFFORT)
+
+
+async def _has_streams(name: TableName) -> bool:
+    from app.modules.streams.sources import source_registry
+
+    captured = await source_registry.captured_tables()
+    return ((name.database or "").casefold(), name.table.casefold()) in {
+        (database.casefold(), table.casefold()) for database, table in captured
+    }
+
+
+def _captured_plan(logical, lowering, values, kinds, steps, intent, table) -> EngineSqlPlan:
+    """One plan the Streams capture coordinator runs as journaled commits."""
+    from app.sql_frontend.analysis.semantics import confirmation_policy
+
+    if any(column.generated_expression for column in table.columns):
+        raise SemanticError(
+            "MERGE into a table with streams cannot write a table with generated columns"
+        )
+    rows_sql, names = (
+        lowering.full_rows(values)
+        if kinds & {"update", "insert"}
+        else ("", tuple(column.name for column in table.columns))
+    )
+    effects = PlanEffects()
+    for item in steps:
+        effects = effects | item.effects
+    # Never meant to reach the engine as written: the coordinator runs the
+    # capture queries. If anything sent it natively, it fails closed.
+    guard = (
+        "SELECT assert_true(FALSE, 'MERGE into a table with streams must be captured by Nova')"
+    )
+    return EngineSqlPlan(
+        guard,
+        guard,
+        effects,
+        logical.source_key,
+        requires_confirmation=confirmation_policy(effects),
+        transaction_intent=intent,
+        capture=MergeCapture(
+            rows_sql=rows_sql,
+            columns=names,
+            deleted_sql=lowering.deleted_rows() if "delete" in kinds else "",
+            check_sql=lowering.check() if "delete" in kinds else "",
+            clause_kinds=tuple(sorted(kinds)),
+            native_steps=tuple(item.engine_sql for item in steps),
+        ),
+    )

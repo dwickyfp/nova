@@ -136,6 +136,7 @@ class NovaConnection:
 
     def _send(self, op: str, data: Any, extension: str | None, **fields: Any) -> dict[str, Any]:
         os.makedirs(RPC_DIR, exist_ok=True)
+        _remove_stale_results()
         request_id = uuid.uuid4().hex
         if extension is None:
             data_name = f"{request_id}.bin"
@@ -143,15 +144,18 @@ class NovaConnection:
         else:
             data_name = f"{request_id}{extension}"
             _export(self._con, data, os.path.join(RPC_DIR, data_name), _FORMATS[extension])
-        paths = [os.path.join(RPC_DIR, name) for name in
-                 (data_name, f"{request_id}.json", f"{request_id}.result.json")]
+        paths = [os.path.join(RPC_DIR, name) for name in (data_name, f"{request_id}.json")]
+        result_path = os.path.join(RPC_DIR, f"{request_id}.result.json")
         try:
             with open(paths[1], "w", encoding="utf-8") as handle:
                 json.dump({"op": op, "data": data_name, **fields}, handle)
             sys.stderr.write(f"\x1enova-rpc {request_id}\x1e\n")
             sys.stderr.flush()
-            result = _wait(paths[2], self._state.request_timeout)
+            result = _wait(result_path, self._state.request_timeout)
         finally:
+            # The result file stays for now: the upload that wrote it may still
+            # be setting its permissions when its content is already readable,
+            # and removing it then fails that upload. A later request removes it.
             for path in paths:
                 with contextlib.suppress(FileNotFoundError):
                     os.remove(path)
@@ -200,13 +204,33 @@ def _export(con: duckdb.DuckDBPyConnection, data: Any, path: str, fmt: str) -> N
         con.execute(f'DROP VIEW IF EXISTS "{view}"').fetchall()
 
 
+#: A result file older than this belongs to a request that has finished.
+_RESULT_STALE_SECONDS = 30.0
+
+
+def _remove_stale_results() -> None:
+    now = time.time()
+    with contextlib.suppress(FileNotFoundError):
+        for name in os.listdir(RPC_DIR):
+            if not name.endswith(".result.json"):
+                continue
+            path = os.path.join(RPC_DIR, name)
+            with contextlib.suppress(OSError):
+                if now - os.path.getmtime(path) > _RESULT_STALE_SECONDS:
+                    os.remove(path)
+
+
 def _wait(path: str, timeout: float) -> dict[str, Any]:
+    """The result Nova writes for a request, once it is complete."""
     deadline = time.monotonic() + timeout
     delay = 0.02
     while time.monotonic() < deadline:
         if os.path.exists(path):
-            with open(path, encoding="utf-8") as handle:
-                return json.load(handle)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    return json.load(handle)
+            except ValueError:
+                pass  # still being written
         time.sleep(delay)
         delay = min(delay * 1.5, 0.25)
     raise NovaError("Nova did not answer in time; the write may still finish")

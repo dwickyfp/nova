@@ -67,6 +67,7 @@ from app.modules.query.router import router as query_router
 from app.modules.query_autopilot.router import router as query_autopilot_router
 from app.modules.resource_groups.router import router as resource_groups_router
 from app.modules.stages.router import router as stages_router
+from app.modules.streams.router import router as streams_router
 from app.modules.superset.dataviz_router import router as dataviz_router
 from app.modules.superset.router import internal_router as superset_internal_router
 from app.modules.superset.router import router as superset_router
@@ -512,6 +513,7 @@ def create_app() -> FastAPI:
         prefix=f"{prefix}/task-orchestration",
         tags=["task-orchestration"],
     )
+    app.include_router(streams_router, prefix=f"{prefix}/streams", tags=["streams"])
     app.include_router(pipes_router, prefix=f"{prefix}/pipes", tags=["pipes"])
     # Phase 10 — bounded agentic assistant (NOVA-61). Thread state is
     # process-local (E5a); see docs/specs/nova-61-agentic-assistant-design.md.

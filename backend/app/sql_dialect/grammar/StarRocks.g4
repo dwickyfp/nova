@@ -162,6 +162,13 @@ statement
     | submitTaskStatement
     | alterTaskStatement
     | dropTaskStatement
+    // NOVA-BEGIN (task-expand): `EXECUTE TASK name` runs a Nova task graph now;
+    // `SHOW TASKS` and `DESCRIBE TASK` read Nova tasks. Nova-only statements
+    // the engine never sees.
+    | novaExecuteTaskStatement
+    | novaShowTasksStatement
+    | novaDescribeTaskStatement
+    // NOVA-END
 
     // Materialized View Statement
     | createMaterializedViewStatement
@@ -838,7 +845,8 @@ novaUserIdentity
     ;
 
 novaStreamStatement
-    : CREATE STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName APPEND_ONLY EQ TRUE
+    : CREATE (OR REPLACE)? STREAM (IF NOT EXISTS)? novaStreamName ON TABLE novaStreamName
+      (APPEND_ONLY EQ appendOnly=(TRUE | FALSE))? (SHOW_INITIAL_ROWS EQ initialRows=(TRUE | FALSE))?
     | DROP STREAM (IF EXISTS)? novaStreamName
     | (DESC | DESCRIBE) STREAM novaStreamName
     | SHOW STREAM STATUS novaStreamName
@@ -918,7 +926,12 @@ submitTaskStatement
     : (SUBMIT TASK qualifiedName? | CREATE TASK novaQualifiedTaskName?)
     // NOVA-END
         taskClause*
-        AS (createTableAsSelectStatement | insertStatement | dataCacheSelectStatement)
+    // NOVA-BEGIN (task-expand): a Nova task body may also be a statement block
+    // (`BEGIN stmt; stmt; END`) or a `$$`-quoted script (SQL statements, or
+    // Python with `LANGUAGE PYTHON`). Lowering refuses both on SUBMIT TASK.
+        AS (createTableAsSelectStatement | insertStatement | dataCacheSelectStatement
+            | novaTaskScriptBlock | ATTACHMENT)
+    // NOVA-END
     ;
 
 alterTaskStatement
@@ -938,6 +951,11 @@ taskClause
     | taskWhenClause
     | taskOverlapClause
     | taskCronScheduleDesc
+    // NOVA-END
+    // NOVA-BEGIN (task-expand): language, runtime and packages of a script task.
+    | taskLanguageClause
+    | taskRuntimeVersionClause
+    | taskPackagesClause
     // NOVA-END
     ;
 
@@ -997,6 +1015,42 @@ taskOverlapClause
 
 taskCronScheduleDesc
     : SCHEDULE EQ string
+    ;
+
+// NOVA-END
+// NOVA-BEGIN (task-expand): EXECUTE TASK, script bodies, Python tasks.
+//   EXECUTE TASK db.schema.task
+//   CREATE TASK t AS BEGIN UPDATE ...; INSERT ...; END
+//   CREATE TASK t LANGUAGE PYTHON RUNTIME_VERSION = '3.12'
+//     PACKAGES = ('pandas==2.2.3') AS $$ ...python... $$
+// Each statement in a block ends with `;`: `END` is a non-reserved word, so
+// `FROM s END` would read END as the table alias.
+novaExecuteTaskStatement
+    : EXECUTE TASK novaQualifiedTaskName
+    ;
+
+novaShowTasksStatement
+    : SHOW TASKS ((IN | FROM) novaQualifiedTaskName)?
+    ;
+
+novaDescribeTaskStatement
+    : (DESC | DESCRIBE) TASK novaQualifiedTaskName
+    ;
+
+novaTaskScriptBlock
+    : BEGIN (statement ';')+ END
+    ;
+
+taskLanguageClause
+    : LANGUAGE EQ? (identifierOrString | SQL)
+    ;
+
+taskRuntimeVersionClause
+    : RUNTIME_VERSION EQ? string
+    ;
+
+taskPackagesClause
+    : PACKAGES EQ? '(' string (',' string)* ')'
     ;
 
 // NOVA-END
@@ -3798,7 +3852,7 @@ nonReserved
     // identifier -- without it these new tokens would become reserved spellings.
     | ML_MODEL | INPUT | TARGET | SERIES | ALGORITHM | TEST_SIZE | FEATURES | HYPERPARAMETERS
     | COPY | REQUIRE | CHANGE | AVAILABLE | ML_FORECAST | HORIZON | FREQUENCY
-    | STREAMS | APPEND_ONLY | BACKLOG
+    | STREAMS | APPEND_ONLY | SHOW_INITIAL_ROWS | BACKLOG
     // NOVA-END
     | ARRAY_AGG | ARRAY_AGG_DISTINCT | ASSERT_ROWS | AWARE
     | BACKEND | BACKENDS | BACKUP | BEGIN | BITMAP_UNION | BLACKLIST | BLACKHOLE | BINARY | BODY | BOOLEAN | BRANCH | BROKER | BUCKETS
@@ -3835,6 +3889,9 @@ nonReserved
     | OBSERVER | OF | OFFSET | ONLY | OPTIMIZER | OPEN | OPERATE | OPTION | OVERWRITE | OFF
     // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.
     | OVERLAP_POLICY
+    // NOVA-END
+    // NOVA-BEGIN (task-expand): task script clause keywords stay identifiers.
+    | LANGUAGE | PACKAGES | RUNTIME_VERSION | TASKS
     // NOVA-END
     | PARTITIONS | PASSWORD | PATH | PAUSE | PENDING | PERCENTILE_UNION | PIVOT | PLAN | PLUGIN | PLUGINS | POLICY | POLICIES
     | PERCENT_RANK | PREDICATE | PRECEDING | PRIORITY | PROC | PROCESSLIST | PROFILE | PROFILELIST | PROVIDER | PROVIDERS | PRIVILEGES | PROBABILITY | PROPERTIES | PROPERTY | PIPE | PIPES

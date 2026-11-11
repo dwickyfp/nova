@@ -229,6 +229,19 @@ def _mask_literals_and_comments(sql: str) -> str:
     while i < length:
         ch = sql[i]
 
+        # ``$$ ... $$`` body (a function, script or Python task): opaque text.
+        if (
+            ch == "$"
+            and sql.startswith("$$", i)
+            and (i == 0 or not (sql[i - 1].isalnum() or sql[i - 1] in "_$"))
+        ):
+            close = sql.find("$$", i + 2)
+            end = length if close == -1 else close + 2
+            for k in range(i, end):
+                chars[k] = "\x00"
+            i = end
+            continue
+
         # ``--`` line comment: to end of line.
         if ch == "-" and i + 1 < length and sql[i + 1] == "-":
             while i < length and sql[i] != "\n":

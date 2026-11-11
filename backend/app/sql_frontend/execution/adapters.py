@@ -34,7 +34,9 @@ from app.sql_frontend.execution.stages import StageRuntime
 from app.sql_frontend.parser import ParsedStatement
 from app.sql_frontend.planning.execution import (
     CatalogPayload,
+    DropTaskPayload,
     EngineSqlPlan,
+    ExecuteTaskPayload,
     ForecastPayload,
     MaterializePayload,
     ModelPayload,
@@ -43,6 +45,7 @@ from app.sql_frontend.planning.execution import (
     PredictionPayload,
     SecurityPayload,
     TaskPayload,
+    TaskStatementPayload,
 )
 from app.sql_frontend.runtime_sql import lower_private_sql
 from app.sql_frontend.stages import planned_stages
@@ -154,6 +157,7 @@ class FeatureAdapters:
         )
         handlers: dict[type, Callable[..., Awaitable[QueryResult]]] = {
             TaskPayload: self._execute_create_task,
+            ExecuteTaskPayload: self._execute_execute_task,
             ModelPayload: self._execute_create_ml_model,
             PredictionPayload: self._execute_ml_predict,
             ForecastPayload: self._execute_ml_forecast,
@@ -163,8 +167,10 @@ class FeatureAdapters:
             executor.register(action, self._handler(method))
         executor.register(MaterializePayload, self.materialize)
         executor.register(SecurityPayload, self.security)
-        executor.register(StreamPayload, self.stream_unavailable)
+        executor.register(StreamPayload, self.stream_statement)
         executor.register(CatalogPayload, self.catalog)
+        executor.register(DropTaskPayload, self.drop_task)
+        executor.register(TaskStatementPayload, self.task_statement)
         return executor
 
     async def catalog(self, plan: NovaActionPlan, context: ExecutionContext) -> QueryResult:
@@ -285,26 +291,83 @@ class FeatureAdapters:
             executed_sql=parsed.normalized_sql,
         )
 
-    async def stream_unavailable(self, plan, context) -> QueryResult:
-        from app.modules.streams.runtime import require_stream_runtime
+    async def stream_statement(self, plan: NovaActionPlan, context: ExecutionContext):
+        """CREATE / DROP / DESCRIBE / SHOW STREAM(S) through the Streams service."""
+        from app.modules.streams.schemas import StreamError, StreamMode
+        from app.modules.streams.service import StreamCaller, stream_service
+        from app.modules.streams.sql import stream_sql
+        from app.sql_frontend.planning.execution import StreamPayload
 
-        key = plan.payload.source_key if isinstance(plan, NovaActionPlan) else plan.source_key
-        source = context.statements[key].parsed
+        payload = plan.payload
+        if not isinstance(payload, StreamPayload):
+            raise SemanticError("Stream statement must have a stream payload")
+        source = context.statements[payload.source_key].parsed
+        caller = StreamCaller(context.username, context.role,
+                              int(context.security_context_version or 1))
+        start = time.monotonic()
         try:
-            require_stream_runtime()
-        except CapabilityUnsupportedError as exc:
+            columns: list[str]
+            rows: list[list[Any]]
+            name = payload.name
+            if payload.operation != "list" and name is None:
+                raise StreamError("STREAM_NOT_FOUND", "A stream name is required")
+            if payload.operation == "create":
+                if name is None or payload.source is None:
+                    raise StreamError("STREAM_NOT_FOUND", "A stream and its source are required")
+                mode = StreamMode.APPEND_ONLY if payload.append_only else StreamMode.STANDARD
+                record = await stream_service.create(
+                    name, payload.source, mode, caller,
+                    if_not_exists=payload.if_not_exists,
+                    or_replace=payload.or_replace,
+                    show_initial_rows=payload.show_initial_rows,
+                )
+                stream_sql.forget()
+                columns = ["stream", "source", "mode", "owner_role"]
+                rows = [[f"{record.name.database}.{record.name.name}",
+                         f"{record.source.database}.{record.source.name}", str(mode),
+                         record.owner_role]]
+            elif payload.operation == "drop" and name is not None:
+                dropped = await stream_service.drop(name, caller,
+                                                    if_exists=payload.if_exists)
+                stream_sql.forget()
+                columns, rows = ["stream", "dropped"], [[
+                    f"{name.database}.{name.name}", dropped is not None,
+                ]]
+            elif payload.operation == "list":
+                items = await stream_service.list_streams(payload.database, caller)
+                columns = [
+                    "name", "database", "source", "mode", "status", "owner_role", "created_at",
+                ]
+                rows = [[item[key] for key in columns] for item in items]
+            elif payload.operation == "backlog" and name is not None:
+                info = await stream_service.backlog(name, caller)
+                columns, rows = list(info), [list(info.values())]
+            elif name is not None:
+                info = await stream_service.status(name, caller)
+                columns, rows = list(info), [list(info.values())]
+        except StreamError as exc:
             await self._audit(
                 event_type="query", user_name=context.username, action="stream",
-                object_type="stream", object_name="stream", status="ERROR",
-                sql_text=source.original_sql, error_message=str(exc),
+                object_type="stream", object_name=str(payload.name or payload.database),
+                status="ERROR", sql_text=source.original_sql, error_message=str(exc),
                 active_role=context.role, session_id=context.session_id,
                 database_name=context.database, schema_name=context.schema,
             )
-            return QueryResult(
-                error=str(exc), error_code=exc.code,
-                original_sql=source.original_sql, executed_sql=source.original_sql,
+            return QueryResult(error=str(exc), error_code=exc.code,
+                               original_sql=source.original_sql, executed_sql=source.original_sql)
+        if payload.operation in {"create", "drop"}:
+            await self._audit(
+                event_type="query", user_name=context.username, action="stream",
+                object_type="stream", object_name=str(payload.name), status="SUCCESS",
+                sql_text=source.original_sql, active_role=context.role,
+                session_id=context.session_id, database_name=context.database,
+                schema_name=context.schema,
             )
-        raise SemanticError("Stream runtime admission must have an execution adapter")
+        return QueryResult(
+            columns=columns, rows=rows, row_count=len(rows),
+            elapsed_ms=round((time.monotonic() - start) * 1000, 2),
+            original_sql=source.original_sql, executed_sql=source.original_sql,
+        )
 
     @asynccontextmanager
     async def _transaction_connection(self, context):
@@ -411,11 +474,6 @@ class FeatureAdapters:
                 raise SemanticError("Action payload requires a validated definition")
             statement = context.statements[plan.payload.source_key]
             parsed = statement.parsed
-            if isinstance(plan.payload, TaskPayload):
-                from app.sql_frontend.streams import stream_functions
-
-                if stream_functions(parsed, plan.payload.database or context.database):
-                    return await self.stream_unavailable(plan, context)
             kwargs = vars_context(context)
             kwargs.update(
                 sql=parsed.original_sql,
@@ -431,8 +489,33 @@ class FeatureAdapters:
         return handle
 
     async def execute_engine(self, plan: EngineSqlPlan, context: ExecutionContext) -> QueryResult:
-        if plan.stream_functions:
-            return await self.stream_unavailable(plan, context)
+        """Run a native statement, after Nova Streams had its say.
+
+        A statement that reads a Stream, calls ``SYSTEM$STREAM_HAS_DATA``, or
+        writes a table that has Streams is handled by ``app.modules.streams.sql``
+        (which calls back into ``execute_engine_sql`` with the rewritten SQL).
+        Everything else runs exactly as before.
+        """
+        from app.modules.streams.sql import stream_sql
+
+        handled = await stream_sql.intercept(self, plan, context)
+        if handled is not None:
+            return handled
+        return await self.execute_engine_sql(plan, context)
+
+    async def execute_engine_sql(
+        self,
+        plan: EngineSqlPlan,
+        context: ExecutionContext,
+        *,
+        sql_override: str | None = None,
+    ) -> QueryResult:
+        """Execute ``plan`` on the engine as the caller.
+
+        ``sql_override`` is a statement Nova rewrote (a Stream relation inlined
+        as typed rows). It is executed as given; the audit records the
+        caller's statement, not the inlined rows.
+        """
         statement = context.statements[plan.source_key]
         source = statement.parsed
         sql = source.original_sql
@@ -445,9 +528,17 @@ class FeatureAdapters:
         parsed = planned_stages(plan)
         if parsed.stage_refs and not plan.stage_aware:
             raise ValueError("Stage references require a stage lowering rule")
+        if sql_override is not None:
+            if parsed.stage_refs:
+                raise ValueError("A statement cannot read a stream and a stage together")
+            return await self._run_on_engine(
+                plan, context, sql=sql, executed_sql=sql_override,
+                audit_sql=redact_for_output(normalized_sql), warnings=[], location_map=[],
+                parsed=parsed,
+            )
         username, encrypted_password = context.username, context.encrypted_password
         database, schema, role = context.database, context.schema, context.role
-        max_rows, connection = context.max_rows, context.connection
+        connection = context.connection
         session_id, file_id = context.session_id, context.file_id
         executed_sql = normalized_sql
         warnings = []
@@ -543,6 +634,28 @@ class FeatureAdapters:
             warnings = prepared.warnings
 
         executed_sql = lower_private_sql(plan, executed_sql, source.normalized_sql)
+        return await self._run_on_engine(
+            plan, context, sql=sql, executed_sql=executed_sql,
+            audit_sql=redact_for_output(executed_sql), warnings=warnings,
+            location_map=location_map, parsed=parsed,
+        )
+
+    async def _run_on_engine(
+        self,
+        plan: EngineSqlPlan,
+        context: ExecutionContext,
+        *,
+        sql: str,
+        executed_sql: str,
+        audit_sql: str,
+        warnings: list,
+        location_map: list[tuple[str, str]],
+        parsed: Any,
+    ) -> QueryResult:
+        username, encrypted_password = context.username, context.encrypted_password
+        database, schema, role = context.database, context.schema, context.role
+        max_rows, connection = context.max_rows, context.connection
+        session_id, file_id = context.session_id, context.file_id
 
         # 5. Execute
         #
@@ -564,7 +677,7 @@ class FeatureAdapters:
         # branch below needs it too, and the engine call may never return.
         # ``QueryResult`` redacts ``executed_sql`` as well, so the value the
         # repository hands back is independently safe.
-        redacted_sql = redact_for_output(executed_sql)
+        redacted_sql = audit_sql
         browse = bool(location_map) and parsed.command_type == CommandType.STAGE_BROWSE
         row_sink = context.row_sink
         if browse and row_sink is not None:
@@ -959,6 +1072,203 @@ class FeatureAdapters:
             )
             raise
 
+    async def task_statement(
+        self, plan: NovaActionPlan, context: ExecutionContext
+    ) -> QueryResult:
+        """ALTER TASK RESUME/SUSPEND, SHOW TASKS and DESCRIBE TASK on Nova tasks.
+
+        ``ALTER TASK`` on a name that is not a Nova task goes to the engine
+        unchanged (its own ``SUBMIT TASK`` templates), as before.
+        """
+        from app.modules.task_orchestration.lowering import set_task_lifecycle
+        from app.modules.task_orchestration.views import describe_task, show_tasks
+
+        payload = plan.payload
+        if not isinstance(payload, TaskStatementPayload):
+            raise SemanticError("Task statement requires a typed payload")
+        parsed = context.statements[payload.source_key].parsed
+        user = {"username": context.username, "active_role": context.role}
+        start = time.monotonic()
+        try:
+            if payload.action == "show":
+                columns, rows = await show_tasks(payload.database, payload.schema, user)
+            elif payload.action == "describe":
+                found = await describe_task(
+                    payload.name or "", payload.database, payload.schema or "default", user
+                )
+                if found is None:
+                    raise TaskLoweringError(
+                        f"Task {payload.name} does not exist or is not owned by your role"
+                    )
+                columns, rows = found
+            else:
+                changed = await set_task_lifecycle(
+                    payload.name or "", payload.database, payload.schema or "default",
+                    payload.action, user,
+                )
+                if changed is None:
+                    sql = parsed.normalized_sql
+                    return await self.execute_engine(
+                        EngineSqlPlan(sql, sql, plan.effects, payload.source_key,
+                                      requires_confirmation=plan.requires_confirmation),
+                        context,
+                    )
+                await self._audit(
+                    event_type="task", user_name=context.username,
+                    action=f"{payload.action.upper()}_TASK", object_type="task",
+                    object_name=f"{changed.get('database_name')}.{changed.get('schema_name')}."
+                    f"{changed.get('name')}",
+                    status="SUCCESS", sql_text=parsed.original_sql, active_role=context.role,
+                    session_id=context.session_id, database_name=changed.get("database_name"),
+                    schema_name=changed.get("schema_name"),
+                )
+                columns = ["task", "state"]
+                rows = [[f"{changed.get('database_name')}.{changed.get('schema_name')}."
+                         f"{changed.get('name')}", changed["lifecycle_state"]]]
+        except TaskLoweringError as exc:
+            return QueryResult(error=str(exc), original_sql=parsed.original_sql,
+                               executed_sql=parsed.normalized_sql)
+        return QueryResult(
+            columns=columns, rows=rows, row_count=len(rows),
+            elapsed_ms=round((time.monotonic() - start) * 1000, 2),
+            original_sql=parsed.original_sql, executed_sql=parsed.normalized_sql,
+        )
+
+    async def drop_task(self, plan: NovaActionPlan, context: ExecutionContext) -> QueryResult:
+        """``DROP TASK``: a Nova task by its scoped name, else the engine's task.
+
+        Nova tasks (``CREATE TASK``) live in ``CONFIG_TASK*`` and the engine has
+        never seen them; any other name is the engine's own ``SUBMIT TASK``
+        template and the statement is forwarded unchanged, as before.
+        """
+        from app.modules.task_orchestration.lowering import drop_nova_task
+
+        if not isinstance(plan.payload, DropTaskPayload):
+            raise SemanticError("DROP TASK requires a typed payload")
+        payload = plan.payload
+        parsed = context.statements[payload.source_key].parsed
+        start = time.monotonic()
+        user = {"username": context.username, "active_role": context.role}
+        audit = dict(
+            event_type="query",
+            user_name=context.username,
+            action="execute",
+            object_type="task",
+            sql_text=parsed.original_sql,
+            rewritten_sql=parsed.normalized_sql,
+            session_id=context.session_id,
+            file_id=context.file_id,
+            database_name=payload.database,
+            schema_name=payload.schema,
+        )
+        qualified = ".".join(p for p in (payload.database, payload.schema, payload.name) if p)
+        try:
+            dropped = await drop_nova_task(payload.name, payload.database, payload.schema, user)
+        except TaskLoweringError as exc:
+            elapsed = round((time.monotonic() - start) * 1000, 2)
+            await self._audit(**audit, object_name=qualified, status="ERROR",
+                              error_message=str(exc), duration_ms=int(elapsed))
+            return QueryResult(error=str(exc), elapsed_ms=elapsed,
+                               original_sql=parsed.original_sql,
+                               executed_sql=parsed.normalized_sql)
+        if dropped is None:
+            sql = parsed.normalized_sql
+            return await self.execute_engine(
+                EngineSqlPlan(sql, sql, plan.effects, payload.source_key,
+                              requires_confirmation=plan.requires_confirmation),
+                context,
+            )
+        elapsed = round((time.monotonic() - start) * 1000, 2)
+        await self._audit(**audit, object_name=qualified, status="SUCCESS",
+                          rows_affected=1, duration_ms=int(elapsed))
+        return QueryResult(
+            columns=["task_id", "name", "database_name", "schema_name"],
+            rows=[[dropped["id"], dropped["name"], dropped.get("database_name"),
+                   dropped.get("schema_name")]],
+            row_count=1,
+            affected_rows=1,
+            elapsed_ms=elapsed,
+            original_sql=parsed.original_sql,
+            executed_sql=parsed.normalized_sql,
+            warnings=["DROP TASK removed a Nova task; its run history is kept."],
+        )
+
+    async def _execute_execute_task(
+        self,
+        *,
+        sql: str,
+        normalized_sql: str,
+        username: str,
+        encrypted_password: str,
+        role: str | None,
+        database: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        security_context_version: int,
+        validated_frontend=None,
+    ) -> QueryResult:
+        """``EXECUTE TASK``: queue one run of the task's graph now, as the caller.
+
+        The same path as the Run button: the caller's role must be the task's
+        owner role and the run uses the caller's session. Like Snowflake it
+        returns once the run is queued; the run's progress is in Tasks.
+        """
+        from fastapi import HTTPException
+
+        from app.modules.task_orchestration.router import (
+            enqueue_manual_run,
+            resolve_execute_target,
+        )
+
+        start = time.monotonic()
+        target = validated_frontend
+        user = {
+            "username": username,
+            "encrypted_password": encrypted_password,
+            "active_role": role,
+            "assigned_roles": [role] if role else [],
+            "session_id": session_id,
+            "security_context_version": security_context_version,
+        }
+        try:
+            if not isinstance(target, ExecuteTaskPayload) or not target.database:
+                raise HTTPException(
+                    400, "EXECUTE TASK needs a database: select one, or name database.schema.task"
+                )
+            # A manual run executes under the caller's Nova session, which the
+            # worker reads back. A MySQL client connection has none, so a run
+            # queued from it could never start.
+            from app.core.redis import session_store
+
+            session = await session_store.get(session_id) if session_id else None
+            if not session or session.get("username") != username:
+                raise HTTPException(
+                    403,
+                    "EXECUTE TASK runs under your Nova sign-in; run it from a Workspace "
+                    "or the Tasks page",
+                )
+            graph_id = await resolve_execute_target(
+                target.name, target.database, target.schema or "default", user
+            )
+            run = await enqueue_manual_run(graph_id, user)
+        except HTTPException as exc:
+            return QueryResult(
+                error=str(exc.detail),
+                elapsed_ms=round((time.monotonic() - start) * 1000, 2),
+                original_sql=sql,
+                executed_sql=normalized_sql,
+            )
+        return QueryResult(
+            columns=["task", "run_id", "state", "trigger"],
+            rows=[[graph_id, str(run["id"]), str(run.get("state") or "pending"), "manual"]],
+            row_count=1,
+            affected_rows=0,
+            elapsed_ms=round((time.monotonic() - start) * 1000, 2),
+            original_sql=sql,
+            executed_sql=normalized_sql,
+            warnings=["Task run queued. Follow its progress in Tasks."],
+        )
+
     async def _execute_create_task(
         self,
         *,
@@ -1068,7 +1378,14 @@ class FeatureAdapters:
                 executed_sql=normalized_sql,
                 warnings=[
                     "CREATE TASK is Nova metadata; no statement was sent to StarRocks. "
-                    "The task's SUBMIT TASK is issued by the worker when the graph runs."
+                    + {
+                        "sql": "The task's SUBMIT TASK is issued by the worker when the "
+                        "graph runs.",
+                        "sql_script": "The worker runs the task's statements in order, as "
+                        "the run's user, when the graph runs.",
+                        "python": "The worker runs the task's Python in a runtime with "
+                        "novaduck when the graph runs.",
+                    }[task.handler]
                 ],
             )
         except (TaskDDLError, TaskLoweringError) as exc:

@@ -23,6 +23,13 @@ class StreamStatement(Statement):
     source: tuple[str, ...] | None = None
     if_exists: bool = False
     if_not_exists: bool = False
+    #: ``CREATE STREAM … APPEND_ONLY = TRUE``; Standard when absent or FALSE.
+    append_only: bool = False
+    #: ``CREATE OR REPLACE STREAM``.
+    or_replace: bool = False
+    #: ``CREATE STREAM … SHOW_INITIAL_ROWS = TRUE``: the first read returns the
+    #: source's rows at creation as inserts.
+    show_initial_rows: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +56,21 @@ class StageAwareStatement(Statement):
 @dataclass(frozen=True, slots=True)
 class CreateTaskStatement(Statement):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class ExecuteTaskStatement(Statement):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class TaskLifecycleStatement(Statement):
+    """ALTER TASK, SHOW TASKS or DESCRIBE TASK: Nova tasks first, else the engine's."""
+
+
+@dataclass(frozen=True, slots=True)
+class DropTaskStatement(Statement):
+    """A Nova task when one has this name, otherwise the engine's own DROP TASK."""
 
 
 @dataclass(frozen=True, slots=True)

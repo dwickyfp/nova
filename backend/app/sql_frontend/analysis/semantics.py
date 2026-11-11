@@ -32,6 +32,46 @@ def _constant_effects(effects: PlanEffects, statement: ast.Statement) -> PlanEff
     return effects
 
 
+def _task_lifecycle_effects(statement: ast.Statement) -> PlanEffects:
+    if type(statement.parsed.statement_context).__name__ == "AlterTaskStatementContext":
+        return _native_effects(statement)
+    return PlanEffects(reads_data=True)
+
+
+def _create_task_effects(statement: ast.Statement) -> PlanEffects:
+    """A task stores metadata now and later runs what its script runs.
+
+    A script that updates, deletes or drops is confirmed when the task is
+    created, as the same statements would be in a worksheet: every later run
+    executes what was confirmed here. A body that does not lower is left to
+    the validator, which reports why.
+    """
+    from app.modules.task_orchestration.ddl import (
+        TaskDDLError,
+        parse_create_task,
+        script_statements,
+    )
+    from app.sql_frontend.ast.builder import ast_builders
+    from app.sql_frontend.parser import parse_statement
+
+    effects = PlanEffects(writes_metadata=True)
+    try:
+        task = parse_create_task(statement.parsed.normalized_sql, parsed=statement.parsed)
+    except TaskDDLError:
+        return effects
+    if task.handler == "sql":
+        return effects
+    if task.handler == "python":
+        return effects | PlanEffects(reads_data=True, writes_data=True)
+    for text in script_statements(task):
+        try:
+            inner = ast_builders.build(parse_statement(text))
+            effects |= semantics_registry.analyze(inner).effects
+        except ValueError:
+            effects |= PlanEffects(reads_data=True, writes_data=True)
+    return effects
+
+
 @dataclass(frozen=True, slots=True)
 class StatementSemantics:
     effects_resolver: Callable[[Any], PlanEffects]
@@ -272,8 +312,28 @@ def default_semantics() -> StatementSemanticsRegistry:
             _security_effects, validator=validation._security_context, preflight_safe=True
         ),
     )
+    # The same effects (and confirmation) as the engine's DROP TASK, whichever
+    # kind of task the name turns out to be at execution.
+    registry.register(
+        ast.DropTaskStatement,
+        StatementSemantics(_native_effects, validator=validation._drop_task, preflight_safe=True),
+    )
+    registry.register(
+        ast.TaskLifecycleStatement,
+        StatementSemantics(
+            _task_lifecycle_effects, validator=validation._task_statement, preflight_safe=True
+        ),
+    )
+    registry.register(
+        ast.CreateTaskStatement,
+        StatementSemantics(_create_task_effects, validator=validation._task, preflight_safe=True),
+    )
     for node, effects, validator in (
-        (ast.CreateTaskStatement, PlanEffects(writes_metadata=True), validation._task),
+        (
+            ast.ExecuteTaskStatement,
+            PlanEffects(reads_data=True, writes_data=True, writes_metadata=True),
+            validation._execute_task,
+        ),
         (
             ast.CreateMLModelStatement,
             PlanEffects(reads_data=True, writes_metadata=True),

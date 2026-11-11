@@ -9,6 +9,9 @@ from app.sql_frontend.ast.statements import Statement, StreamStatement
 from app.sql_frontend.errors import SQLSyntaxError, SyntaxDiagnostic
 from app.sql_frontend.parser import _Diagnostics, new_parser, tokenize_sql
 
+#: Snowflake's spelling and Nova's original alias.
+HAS_DATA_FUNCTIONS = frozenset({"SYSTEM$STREAM_HAS_DATA", "NOVA_STREAM_HAS_DATA"})
+
 
 def name_parts(node) -> tuple[str, ...]:
     parts = []
@@ -46,12 +49,24 @@ def build_stream_statement(parsed) -> StreamStatement:
         "status" if node.STATUS() else "backlog" if node.BACKLOG() else
         "list" if node.STREAMS() else "describe"
     )
+    creating = operation == "create"
+
+    def flag(token) -> bool:
+        return creating and token is not None and token.type == StarRocksParser.TRUE
+
+    if creating and node.REPLACE() is not None and node.IF() is not None:
+        from app.sql_frontend.errors import SemanticError
+
+        raise SemanticError("Use either OR REPLACE or IF NOT EXISTS, not both")
     return StreamStatement(
         parsed, operation,
         name_parts(names[0]) if names else None,
         name_parts(names[1]) if len(names) > 1 else None,
         bool(node.IF()) and operation == "drop",
-        bool(node.IF()) and operation == "create",
+        bool(node.IF()) and creating,
+        flag(node.appendOnly),
+        creating and node.REPLACE() is not None,
+        flag(node.initialRows),
     )
 
 
@@ -79,7 +94,8 @@ def validate_stream(statement: Statement, context):
         raise SemanticError("An active database is required for SHOW STREAMS")
     return StreamPayload(
         0, statement.operation, database, name, source,
-        statement.if_exists, statement.if_not_exists,
+        statement.if_exists, statement.if_not_exists, statement.append_only,
+        statement.or_replace, statement.show_initial_rows,
     )
 
 
@@ -93,17 +109,18 @@ def stream_functions(parsed, database):
         if type(node).__name__ != "SimpleFunctionCallContext":
             continue
         parts = name_parts(node.qualifiedName())
-        if parts[-1].upper() != "NOVA_STREAM_HAS_DATA":
+        function = parts[-1].upper()
+        if function not in HAS_DATA_FUNCTIONS:
             continue
         expressions = node.expression()
         if len(parts) != 1 or len(expressions) != 1 or node.over():
-            raise SemanticError("NOVA_STREAM_HAS_DATA requires one literal Stream name")
+            raise SemanticError(f"{function} requires one literal Stream name")
         tokens = [
             token for token in parsed.visible_tokens
             if expressions[0].start.start <= token.start <= expressions[0].stop.stop
         ]
         if len(tokens) != 1 or tokens[0].text[0] not in {"'", '"'}:
-            raise SemanticError("NOVA_STREAM_HAS_DATA requires one literal Stream name")
+            raise SemanticError(f"{function} requires one literal Stream name")
         literal = tokens[0].text
         if "\\" in literal:
             raise SemanticError("Backslash escapes in Stream name literals are unsupported")

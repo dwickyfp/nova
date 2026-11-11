@@ -387,3 +387,45 @@ def test_a_large_display_is_handed_over_as_a_file(shell):
     nova_runtime.begin(json.dumps({"execution_id": "e-next"}))
     assert not os.path.exists(handed["file"])
     nova_runtime.end()
+
+
+def test_a_result_still_being_written_is_waited_for_and_kept(novaduck_con, monkeypatch):
+    """The worker's upload finishes (permissions) after the content is readable.
+
+    Removing the result file as soon as it is read made that upload fail, so the
+    kernel keeps it, and it reads a half-written file again rather than failing.
+    """
+    import os
+    import threading
+    import time
+
+    import pyarrow.parquet  # noqa: F401
+
+    from nova_runtime import novaduck as module
+    from nova_runtime.novaduck import RPC_DIR
+
+    def serve():
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            for name in os.listdir(RPC_DIR) if os.path.isdir(RPC_DIR) else []:
+                if name.endswith(".json") and not name.endswith(".result.json"):
+                    target = os.path.join(RPC_DIR, name[:-5] + ".result.json")
+                    with open(target, "w") as out:
+                        out.write('{"ok": tr')  # half written
+                        out.flush()
+                        time.sleep(0.3)
+                        out.write('ue, "inserted": 1}')
+                    seen.append(target)
+                    return
+            time.sleep(0.01)
+
+    seen: list = []
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    assert novaduck_con.write("SELECT 1 AS n", "sales.daily") == {"inserted": 1}
+    thread.join()
+    assert os.path.exists(seen[0])  # kept for the upload to finish
+    monkeypatch.setattr(module, "_RESULT_STALE_SECONDS", 0.0)
+    time.sleep(0.01)
+    module._remove_stale_results()
+    assert not os.path.exists(seen[0])

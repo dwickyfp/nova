@@ -7,6 +7,8 @@ from app.sql_frontend.antlr_utils import walk_nodes as _walk_nodes
 from app.sql_frontend.ast.statements import (
     CreateMLModelStatement,
     CreateTaskStatement,
+    DropTaskStatement,
+    ExecuteTaskStatement,
     ForcePasswordChangeStatement,
     MLForecastStatement,
     MLMaterializeStatement,
@@ -15,6 +17,7 @@ from app.sql_frontend.ast.statements import (
     SecurityStatement,
     StageAwareStatement,
     Statement,
+    TaskLifecycleStatement,
 )
 from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.parser import ParsedStatement
@@ -55,9 +58,27 @@ def _native_or_stage(parsed: ParsedStatement) -> Statement:
     return NativeStatement(parsed)
 
 
+#: Task clauses and bodies only Nova runs; the engine's SUBMIT TASK has none.
+_NOVA_TASK_PARTS = frozenset(
+    {
+        "NovaTaskScriptBlockContext",
+        "TaskLanguageClauseContext",
+        "TaskRuntimeVersionClauseContext",
+        "TaskPackagesClauseContext",
+    }
+)
+
+
 def _task(parsed: ParsedStatement) -> Statement:
     if parsed.visible_tokens[0].text.upper() == "CREATE":
         return CreateTaskStatement(parsed)
+    context = parsed.statement_context
+    if any(type(node).__name__ in _NOVA_TASK_PARTS for node in _walk_nodes(context)) or any(
+        context.getChild(i).getText().startswith("$$") for i in range(context.getChildCount())
+    ):
+        raise SemanticError(
+            "SUBMIT TASK takes one engine statement; use CREATE TASK for a script or Python task"
+        )
     return _native_or_stage(parsed)
 
 
@@ -83,6 +104,11 @@ def default_builders() -> AstBuilderRegistry:
     for name, builder in {
         "CreateMlModelStatementContext": CreateMLModelStatement,
         "SubmitTaskStatementContext": _task,
+        "NovaExecuteTaskStatementContext": ExecuteTaskStatement,
+        "DropTaskStatementContext": DropTaskStatement,
+        "AlterTaskStatementContext": TaskLifecycleStatement,
+        "NovaShowTasksStatementContext": TaskLifecycleStatement,
+        "NovaDescribeTaskStatementContext": TaskLifecycleStatement,
         "QueryStatementContext": _query,
         "CreateInternalFunctionStmtContext": NativeStatement,
         "CreateUdfFunctionStmtContext": NativeStatement,

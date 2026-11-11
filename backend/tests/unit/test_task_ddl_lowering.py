@@ -443,11 +443,13 @@ class TestPersistLoweredTask:
             created_by="alice",
         )
 
-        plan = plan_tick(
-            list(repo.tasks.values()),
-            repo.edges,
-            datetime(2026, 1, 2, tzinfo=UTC),
-        )
+        # Like Snowflake, a task created by SQL waits for ALTER TASK … RESUME.
+        assert root.task["lifecycle_state"] == "SUSPENDED"
+        moment = datetime(2026, 1, 2, tzinfo=UTC)
+        assert plan_tick(list(repo.tasks.values()), repo.edges, moment).due == []
+        root.task["lifecycle_state"] = "STARTED"
+
+        plan = plan_tick(list(repo.tasks.values()), repo.edges, moment)
 
         assert len(plan.due) == 1
         assert plan.due[0].graph_id == "db1.default.a"

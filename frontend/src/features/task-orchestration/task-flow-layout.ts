@@ -114,10 +114,12 @@ export function buildTaskFlow(
     position: positionOf.get(node.name) ?? DEFAULT_POSITION,
     data: {
       label: node.is_finalizer ? `${node.name} (finalizer)` : node.name,
-      schedule: formatSchedule(
-        node.schedule_kind as ScheduleKind,
-        node.schedule_expr,
-      ),
+      schedule: [
+        formatSchedule(node.schedule_kind as ScheduleKind, node.schedule_expr),
+        bodyLabel(node),
+      ]
+        .filter(Boolean)
+        .join(" · "),
       isFinalizer: node.is_finalizer,
       lastState: node.last_state,
       tone: taskNodeTone(node),
@@ -179,4 +181,11 @@ export function taskFlowViewport(
     1,
     0.2,
   );
+}
+
+/** What a node runs, when it is more than one SQL statement. */
+export function bodyLabel(node: GraphNode): string {
+  if (node.language === "python") return "Python";
+  const count = node.statement_count ?? 1;
+  return count > 1 ? `${count} statements` : "";
 }

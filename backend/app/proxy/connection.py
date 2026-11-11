@@ -478,7 +478,7 @@ class ProxyConnection:
         if peer_allowed(self._peer_host):
             purposes.append(data_tokens.BI)
         if notebook_peer_allowed(self._peer_host):
-            purposes.append(data_tokens.NOTEBOOK)
+            purposes.extend((data_tokens.NOTEBOOK, data_tokens.TASK))
         for purpose in purposes:
             try:
                 binding = await data_tokens.match(
@@ -515,7 +515,7 @@ class ProxyConnection:
     async def _audit_bi_refusal(
         self, username: str, binding: bi_tokens.TokenBinding, reason: str
     ) -> None:
-        notebook = binding.purpose == data_tokens.NOTEBOOK.name
+        notebook = binding.notebook
         logger.info(
             "[%s] %s login refused for %r: %s",
             self._ctx.connection_id,

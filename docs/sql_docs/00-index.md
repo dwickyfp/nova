@@ -154,6 +154,6 @@ Set A ⊎ Set B = 8 files, 331 tests. `09-guardrails-invariants.md` also reports
 
 ## Nova Streams
 
-[13 — Nova Streams](13-nova-streams.md) documents the implemented namespace and
-recognized syntax, current disabled/provider-unavailable execution, and the
-boundary between parser tests and production acceptance.
+[13 — Nova Streams](13-nova-streams.md) documents table change tracking:
+`CREATE/DROP/SHOW/DESCRIBE STREAM`, Standard and append-only Streams, reading
+and consuming them, `SYSTEM$STREAM_HAS_DATA`, supported sources and their limits.

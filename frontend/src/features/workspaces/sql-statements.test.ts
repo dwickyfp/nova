@@ -32,6 +32,33 @@ describe('splitSqlStatements', () => {
   it('reads doubled quotes as one escaped quote', () => {
     expect(splitSqlStatements("SELECT 'it''s; fine'; SELECT 2")).toHaveLength(2)
   })
+
+  it("keeps a task's BEGIN ... END block as one statement", () => {
+    const script = `CREATE TASK etl.public.refresh AS BEGIN
+  UPDATE stock SET level = CASE WHEN qty > 0 THEN 'ok' ELSE 'empty' END WHERE id > 0;
+  INSERT INTO stock_log SELECT * FROM stock;
+END;
+EXECUTE TASK etl.public.refresh`
+    const texts = splitSqlStatements(script).map((statement) => statement.text)
+    expect(texts).toHaveLength(2)
+    expect(texts[0]).toMatch(/^CREATE TASK[\s\S]*INSERT INTO stock_log SELECT \* FROM stock;\nEND$/)
+    expect(texts[1]).toBe('EXECUTE TASK etl.public.refresh')
+  })
+
+  it('keeps a $$ body as one statement', () => {
+    const script = 'CREATE TASK t LANGUAGE PYTHON AS $$\nx = 1; y = 2\n$$;\nSELECT a$$b; SELECT 3'
+    const texts = splitSqlStatements(script).map((statement) => statement.text)
+    expect(texts).toEqual([
+      'CREATE TASK t LANGUAGE PYTHON AS $$\nx = 1; y = 2\n$$',
+      'SELECT a$$b',
+      'SELECT 3',
+    ])
+  })
+
+  it('still splits a transaction BEGIN and an alias named begin', () => {
+    expect(splitSqlStatements('BEGIN; INSERT INTO t VALUES (1); COMMIT')).toHaveLength(3)
+    expect(splitSqlStatements('SELECT 1 AS begin; SELECT 2')).toHaveLength(2)
+  })
 })
 
 describe('statementAtOffset', () => {

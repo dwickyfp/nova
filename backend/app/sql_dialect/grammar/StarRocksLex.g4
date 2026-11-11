@@ -299,6 +299,10 @@ KEYS: 'KEYS';
 KILL: 'KILL';
 LABEL: 'LABEL';
 LAG: 'LAG';
+// NOVA-BEGIN (task-expand): `LANGUAGE PYTHON` on Nova CREATE TASK. Must also be in
+// `nonReserved` or a column named `language` would stop parsing.
+LANGUAGE: 'LANGUAGE';
+// NOVA-END
 LARGEINT: 'LARGEINT';
 LAST: 'LAST';
 LAST_VALUE: 'LAST_VALUE';
@@ -376,6 +380,10 @@ ORDER: 'ORDER';
 OUTER: 'OUTER';
 OUTFILE: 'OUTFILE';
 OVER: 'OVER';
+// NOVA-BEGIN (task-expand): `PACKAGES = (...)` on a Python CREATE TASK. Must also
+// be in `nonReserved`.
+PACKAGES: 'PACKAGES';
+// NOVA-END
 PARAMETER: '?';
 PARTITION: 'PARTITION';
 PARTITIONS: 'PARTITIONS';
@@ -458,6 +466,10 @@ ROWS: 'ROWS';
 ROW_NUMBER: 'ROW_NUMBER';
 RULE: 'RULE';
 RULES: 'RULES';
+// NOVA-BEGIN (task-expand): `RUNTIME_VERSION = '3.12'` on a Python CREATE TASK.
+// Must also be in `nonReserved`.
+RUNTIME_VERSION: 'RUNTIME_VERSION';
+// NOVA-END
 RUNNING: 'RUNNING';
 SAMPLE: 'SAMPLE';
 SCHEDULE: 'SCHEDULE';
@@ -507,6 +519,9 @@ TABLET: 'TABLET';
 TABLETS: 'TABLETS';
 TAG: 'TAG';
 TASK: 'TASK';
+// NOVA-BEGIN (task-expand): `SHOW TASKS` lists Nova tasks. Also in `nonReserved`.
+TASKS: 'TASKS';
+// NOVA-END
 // NOVA-BEGIN (NOVA-125 / 109-A): tokens for the Nova `CREATE ML_MODEL` surface.
 // `ML_MODEL` is one spelling, not the engine's `ML_MODEL` (there is none); it
 // could not be composed from `ML` + `MODEL` because neither exists upstream and
@@ -516,6 +531,7 @@ TASK: 'TASK';
 ML_MODEL: 'ML_MODEL';
 STREAMS: 'STREAMS';
 APPEND_ONLY: 'APPEND_ONLY';
+SHOW_INITIAL_ROWS: 'SHOW_INITIAL_ROWS';
 BACKLOG: 'BACKLOG';
 INPUT: 'INPUT';
 TARGET: 'TARGET';

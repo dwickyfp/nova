@@ -731,6 +731,15 @@ def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:
     return f"{key}{operator}'{REDACTED_VALUE}'"
 
 
+_CREATE_TASK_START = re.compile(
+    r"^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?|SUBMIT\s+)TASK\b", re.IGNORECASE
+)
+
+
+def _is_word_char(ch: str) -> bool:
+    return ch.isalnum() or ch in "_$"
+
+
 def split_sql_statements(sql: str) -> list[str]:
     """Split SQL into individual statements, respecting strings and comments.
 
@@ -754,14 +763,54 @@ def split_sql_statements(sql: str) -> list[str]:
     Getting that wrong in the other direction would let a comment swallow a
     statement boundary the engine honours.
 
+    Two Nova bodies also hold semicolons that are not boundaries: a ``$$``
+    quoted body (``CREATE FUNCTION ... AS $$...$$``, a script or Python task)
+    is one token to the engine's lexer, and the ``BEGIN ... END`` block of a
+    ``CREATE TASK`` is one statement to Nova's grammar. Inside such a block a
+    ``CASE`` opens an ``END`` of its own.
+
     Empty statements are filtered out.
     """
     statements: list[str] = []
     current: list[str] = []
     i = 0
     length = len(sql)
+    previous_word = ""
+    in_task_block = False
+    case_depth = 0
     while i < length:
         ch = sql[i]
+
+        if ch == "$" and sql.startswith("$$", i) and (i == 0 or not _is_word_char(sql[i - 1])):
+            close = sql.find("$$", i + 2)
+            end = length if close == -1 else close + 2
+            current.append(sql[i:end])
+            i = end
+            continue
+
+        if ch.isalpha() or ch == "_":
+            j = i + 1
+            while j < length and _is_word_char(sql[j]):
+                j += 1
+            word = sql[i:j].upper()
+            current.append(sql[i:j])
+            i = j
+            if in_task_block:
+                if word == "CASE":
+                    case_depth += 1
+                elif word == "END":
+                    if case_depth:
+                        case_depth -= 1
+                    else:
+                        in_task_block = False
+            elif (
+                word == "BEGIN"
+                and previous_word == "AS"
+                and _CREATE_TASK_START.match(strip_sql_comments("".join(current)))
+            ):
+                in_task_block, case_depth = True, 0
+            previous_word = word
+            continue
 
         if ch in "'\"`":
             # Match the engine's quoted strings/identifiers, including an
@@ -812,11 +861,12 @@ def split_sql_statements(sql: str) -> list[str]:
             i = newline
             continue
 
-        if ch == ";":
+        if ch == ";" and not in_task_block:
             stmt = "".join(current).strip()
             if stmt:
                 statements.append(stmt)
             current = []
+            previous_word = ""
             i += 1
             continue
 

@@ -15,6 +15,9 @@ token is never accepted as a Superset token or the other way round:
 * ``notebook`` — one notebook runtime's token. It is bound to the runtime as
   well: it stops working when the runtime stops, and the proxy runs every
   statement on its connections read-only.
+* ``task`` — one ``LANGUAGE PYTHON`` task run's token, bound to that run's
+  sandbox exactly like a notebook runtime's. The proxy treats its connections
+  as notebook connections.
 
 Redis layout per purpose (all keys expire on their own):
 
@@ -73,7 +76,10 @@ class TokenPurpose:
 
 BI = TokenPurpose(name="bi", prefix="nova:bi:")
 NOTEBOOK = TokenPurpose(name="notebook", prefix="nova:nb:", subject_key_prefix="nova:nb:rt:")
-PURPOSES = {BI.name: BI, NOTEBOOK.name: NOTEBOOK}
+TASK = TokenPurpose(name="task", prefix="nova:task:", subject_key_prefix="nova:task:rt:")
+PURPOSES = {BI.name: BI, NOTEBOOK.name: NOTEBOOK, TASK.name: TASK}
+#: Purposes whose connections come from a sandbox runtime (DuckDB's scanner).
+SANDBOX_PURPOSES = frozenset({NOTEBOOK.name, TASK.name})
 
 
 @dataclass(frozen=True)
@@ -114,7 +120,8 @@ class TokenBinding:
 
     @property
     def notebook(self) -> bool:
-        return self.purpose == NOTEBOOK.name
+        """A sandbox runtime's connection: a notebook, or a Python task run."""
+        return self.purpose in SANDBOX_PURPOSES
 
 
 def _redis():
@@ -170,6 +177,28 @@ async def _delegated_session(session_id: str) -> BiSession:
         encrypted_password="",
         delegated=True,
     )
+
+
+async def create_delegated_session(username: str, active_role: str, ttl: int) -> str:
+    """Record a background run's session as ``username`` under ``active_role``.
+
+    Returns its session id (``delegated:<id>``). The proxy opens such a session
+    through the worker account's impersonation, never with a password; the
+    caller has already established that the run may act as this principal.
+    """
+    delegated_id = uuid.uuid4().hex
+    key = DELEGATED_PREFIX + delegated_id
+    await _redis().hset(
+        key, mapping={"username": username, "active_role": active_role, "version": "1"}
+    )
+    await _redis().expire(key, ttl)
+    return DELEGATED + delegated_id
+
+
+async def end_delegated_session(session_id: str) -> None:
+    """Forget a delegated session; tokens minted for it stop verifying."""
+    if session_id.startswith(DELEGATED):
+        await _redis().delete(DELEGATED_PREFIX + session_id[len(DELEGATED) :])
 
 
 async def mint(
@@ -324,6 +353,8 @@ __all__ = [
     "DELEGATED_PREFIX",
     "NOTEBOOK",
     "PURPOSES",
+    "SANDBOX_PURPOSES",
+    "TASK",
     "BiCredentialError",
     "BiSession",
     "DataToken",
@@ -334,4 +365,6 @@ __all__ = [
     "resolve_session",
     "revoke_subject",
     "verify_binding",
+    "create_delegated_session",
+    "end_delegated_session",
 ]
