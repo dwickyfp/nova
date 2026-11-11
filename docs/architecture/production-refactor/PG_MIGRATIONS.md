@@ -28,9 +28,10 @@ the [approved source specification](source/NOVA_PRODUCTION_ARCHITECTURE_REFACTOR
 - `nova_meta_backup`: separate backup role. Revision `0001` gives it no SQL
   table access; this installer does not implement the backup/PITR service.
 
-Role provisioning and per-workload login credentials belong to the deployment
-bootstrap, not the application pool. The current PG tests create temporary
-roles solely inside the explicitly disposable fixture. Production provisioning,
+Role provisioning and per-workload login credentials belong to the separate
+[bootstrap command](PG_BOOTSTRAP.md), not the application pool. That command
+creates and verifies restricted roles before schema installation; its tests use
+only the explicitly disposable fixture. Production Compose wiring, complete
 domain grants and RLS policies remain to be delivered.
 
 Application startup rejects schema/table/database ownership, schema or database

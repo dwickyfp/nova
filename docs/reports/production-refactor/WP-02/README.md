@@ -1,8 +1,10 @@
 # WP-02: PostgreSQL foundation
 
 Status: **IN_PROGRESS**. The transaction boundary and one-shot schema installer
-are implemented. Complete domain schemas, deployment provisioning, PgBouncer
-acceptance and production readiness remain open. No metadata cutover occurred.
+are implemented. Restricted identity provisioning is now tested separately;
+see [PG_BOOTSTRAP.md](../../../architecture/production-refactor/PG_BOOTSTRAP.md).
+Complete domain schemas, production Compose wiring, PgBouncer acceptance and
+production readiness remain open. No metadata cutover occurred.
 
 Source checkpoint: parent `e1cb5f928a8f727a3fab8dcdc0f1ef698287f718`, application
 tree `e3bcb3f5604f20c68c98e8beb3f5e9c67abfcee416c7ab4767dc8954ae546759`.
@@ -85,3 +87,32 @@ its checksum prefix. DDL and ledger are one transaction, so no external effect
 is replayed by that recovery. Do not publish an epoch to bypass missing import,
 rehearsal or writer-freeze gates. Existing StarRocks domains remain unchanged
 until the separately validated one-way cutover.
+
+
+## Identity bootstrap checkpoint
+
+A subsequent source checkpoint, parent
+`d1c8b45d0c9c26831f632b52c65c1edb1ee2b51c`, adds the separate privileged
+identity installer. Its application tree is
+`087baab4ad673b7f832bee566d8ca5e560a3c405fbba98636571a22ff05beb4c`.
+[bootstrap-commands.json](bootstrap-commands.json) records the exact commands,
+prior failed attempt, final results and remaining gates;
+[metadata-bootstrap-local.xml](metadata-bootstrap-local.xml) contains all 59
+combined PG cases (28 identity provisioning, 31 existing installer/transaction
+cases), with zero skips. This is separate from the earlier installer evidence.
+
+Provisioning creates 17 deployment-marked roles in one transaction, with 15
+independently authenticated logins. It rejects foreign/partial deployments,
+privilege drift and uncontrolled role settings. Credentials stay private and
+reapplication cannot rotate them. All workload logins are tested for denied
+DDL, temporary objects, authority changes and owner/app role switching. CLI
+output is checked for generated credential canaries. Rollback and terminated
+setup leave no partial roles. The fixture restores its original PUBLIC grants
+and database comment, and final inspection found zero new roles/test schemas.
+
+Full backend coverage passed 10,515 tests with four warnings in 552.28 seconds
+(65% combined coverage). Mypy, Ruff on 51 changed Python files and the
+54-scenario/189-check agent scorecard passed. The frontend is unchanged since
+its validated Studio checkpoint. CI for the provisioning edits is pending.
+Production Compose wiring, per-domain grants/RLS, PgBouncer, backup/PITR and
+cutover remain open; no WP-02 completion or production-readiness claim is made.

@@ -360,3 +360,31 @@ CI for this follow-up remains pending.
 [Wave K](WAVE_K_REVIEW.md) resolves five declared key mappings for tables absent
 from the inspected live schema. Eight target-key mappings, per-role grants and
 timestamp provenance remain unresolved; no source table was created or altered.
+
+
+## Restricted PostgreSQL identity provisioning
+
+The next application tree is
+`087baab4ad673b7f832bee566d8ca5e560a3c405fbba98636571a22ff05beb4c`, based on
+parent commit `d1c8b45d0c9c26831f632b52c65c1edb1ee2b51c`.
+The separate bootstrap command atomically provisions 12 restricted workload
+logins, migrator/readonly/backup logins and two NOLOGIN roles. Reapplication
+verifies deployment markers, exact grants/memberships, safe role settings and
+all supplied passwords; it does not rotate passwords or repair unknown state.
+Only the backup role receives replication, and only the NOLOGIN owner receives
+database CREATE. The command neither installs domain tables nor publishes an epoch.
+
+The existing disposable PG17 TLS fixture passed 59 combined tests with no skips,
+including 28 provisioning cases. All 12 workload logins were denied DDL,
+unauthorized role switching and deployment-state updates. Concurrent setup has
+one creator; controlled rollback and connection termination leave no partial
+roles. Final cleanup found zero new roles and test schemas. The first run's
+wrong-password classification failure was fixed and retained in the report.
+
+Full local backend coverage passed 10,515 tests with four warnings in 552.28
+seconds (65% combined coverage). Mypy, Ruff on 51 changed Python files and the
+54-scenario/189-check scorecard passed. Frontend code is unchanged from the
+validated Studio checkpoint. Provisioning is added to the non-skipping CI PG
+lane, but CI for this source is pending. The
+[bootstrap command record](../../reports/production-refactor/WP-02/bootstrap-commands.json)
+and [operator contract](PG_BOOTSTRAP.md) preserve exact scope and limitations.

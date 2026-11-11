@@ -45,6 +45,7 @@ jobs:
           os.environ["NOVA_TEST_METADATA_DISPOSABLE"] = "acknowledged"
           raise SystemExit(pytest.main([
               "tests/integration/test_metadata_pg_foundation.py",
+              "tests/integration/test_metadata_bootstrap.py",
               "tests/integration/test_metadata_migrator.py", "-v",
               "--junit-xml=metadata-pg.xml",
           ]))
