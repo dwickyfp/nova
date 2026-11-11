@@ -3,7 +3,7 @@
 Status: **IN_PROGRESS**. The transaction boundary and one-shot schema installer
 are implemented. Restricted identity provisioning is now tested separately;
 see [PG_BOOTSTRAP.md](../../../architecture/production-refactor/PG_BOOTSTRAP.md).
-Complete domain schemas, production Compose wiring, PgBouncer acceptance and
+Complete domain schemas, production Compose/pooler wiring and
 production readiness remain open. No metadata cutover occurred.
 
 Source checkpoint: parent `e1cb5f928a8f727a3fab8dcdc0f1ef698287f718`, application
@@ -116,3 +116,34 @@ Full backend coverage passed 10,515 tests with four warnings in 552.28 seconds
 its validated Studio checkpoint. CI for the provisioning edits is pending.
 Production Compose wiring, per-domain grants/RLS, PgBouncer, backup/PITR and
 cutover remain open; no WP-02 completion or production-readiness claim is made.
+
+
+## Transaction-pooler checkpoint
+
+Parent `1361b6571486f54a1f6b66a4dcd99d93d71e7826`, application tree
+`7f432f8901b93d64ef02933df7811947e09568ef80fd2b5b8465c8429d4dc65b`, adds real
+PgBouncer transaction-pooling checks and fixes a startup deadline defect.
+[PG_POOLING.md](../../../architecture/production-refactor/PG_POOLING.md) records
+the pinned source, TLS/SCRAM configuration and scope.
+[pooling-commands.json](pooling-commands.json) retains exact commands, prior
+setup failures and the reproduced application failure;
+[metadata-pooling-local.xml](metadata-pooling-local.xml) records the final
+68 PG cases with zero skips in 19.24 seconds.
+
+The new seven cases verify two application pools, 12 simultaneous transaction
+requests and one shared physical backend without actor/role/version leakage.
+They also verify absent-context denial, transaction deadlines, startup timeout
+and recovery, cancellation rollback and rejection of unverified/unauthenticated
+clients. A valid TLS hostname is preserved even when the socket uses a loopback
+IP. Temporary auth files are removed, password/verifier log canaries are absent,
+and cleanup left zero new roles/schema or pooler processes. The pre-existing
+fixture administrator remains untouched.
+
+The initial locked-ledger test failed because the pooler ignored startup timeout
+options. Startup now bounds the entire validation phase and raises a redacted
+metadata timeout, while leaving failed readiness closed. This adds parts of
+DB-09/10/12 coverage; production Compose/pooler wiring, domain RLS, operational
+pool exhaustion and the rest of WP-02 still require implementation and acceptance.
+Full backend coverage passed 10,601 tests with four warnings in 468.15 seconds
+(65% combined coverage). Mypy, Ruff on 55 changed Python files and the
+54-scenario/189-check scorecard passed. CI for these edits is pending.

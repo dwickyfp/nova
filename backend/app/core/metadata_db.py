@@ -6,6 +6,7 @@ module does not initialize schemas or retry transactions with uncertain outcomes
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -154,7 +155,12 @@ class MetadataDatabase:
             if schema_version != len(migrations):
                 raise MetadataSchemaMismatch()
             await self._pool.open(wait=True, timeout=self._config.acquire_timeout)
-            async with self._pool.connection() as conn:
+            # Transaction poolers can ignore startup timeout options. Bound the
+            # entire validation, including waits on the migration ledger.
+            async with (
+                asyncio.timeout(self._config.acquire_timeout),
+                self._pool.connection() as conn,
+            ):
                 if conn.info.server_version // 10000 != 17:
                     raise MetadataSchemaMismatch()
                 cursor = await conn.execute(
@@ -220,6 +226,9 @@ class MetadataDatabase:
         except SchemaManifestError:
             await self._pool.close()
             raise MetadataSchemaMismatch() from None
+        except (TimeoutError, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable):
+            await self._pool.close()
+            raise MetadataTimeout() from None
         except (psycopg.Error, PoolTimeout):
             await self._pool.close()
             raise MetadataUnavailable() from None

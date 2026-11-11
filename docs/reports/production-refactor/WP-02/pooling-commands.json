@@ -1,0 +1,199 @@
+{
+  "source_parent_commit": "1361b6571486f54a1f6b66a4dcd99d93d71e7826",
+  "application_tree_sha256": "7f432f8901b93d64ef02933df7811947e09568ef80fd2b5b8465c8429d4dc65b",
+  "working_directory": "backend",
+  "schema_revision": "0001_deployment_state.sql",
+  "pooler": {
+    "version": "1.26.1",
+    "source_sha256": "00886a2994b4844cd37110970df777772cfc42a74c400522c82fba509a3f42d9",
+    "mode": "transaction",
+    "physical_backends": 1,
+    "application_pools": 2,
+    "backend_tls": "verify-full",
+    "client_tls": "required; libpq verify-full",
+    "simultaneous_transaction_requests": 12
+  },
+  "checks": [
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "tests/integration/build_metadata_pooler.py",
+        "/tmp/nova-pgbouncer-acceptance-build-2",
+        "--openssl-prefix",
+        "/opt/homebrew/opt/openssl@3"
+      ],
+      "environment": {
+        "PKG_CONFIG_PATH": "/opt/homebrew/opt/libevent/lib/pkgconfig:/opt/homebrew/opt/openssl@3/lib/pkgconfig"
+      },
+      "result": "PASS"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "-"
+      ],
+      "stdin": "import json,os,pytest\nfrom pathlib import Path\nos.environ['NOVA_TEST_METADATA_ADMIN_DSN']=json.loads(Path('/tmp/nova-control-plane-pg/connection.json').read_text())['admin_dsn']\nos.environ['NOVA_TEST_METADATA_DISPOSABLE']='acknowledged'\nos.environ['NOVA_TEST_PGBOUNCER_BINARY']='/tmp/nova-pgbouncer-acceptance-build-2/pgbouncer'\nraise SystemExit(pytest.main(['tests/integration/test_metadata_pg_foundation.py','tests/integration/test_metadata_bootstrap.py','tests/integration/test_metadata_pgbouncer.py','tests/integration/test_metadata_migrator.py','-q','--tb=short','--junit-xml=/tmp/nova-pgbouncer-pg-5.xml']))\n",
+      "result": "PASS",
+      "passed": 68,
+      "skipped": 0,
+      "seconds": 19.24,
+      "artifact": "metadata-pooling-local.xml"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "mypy",
+        "app",
+        "--no-error-summary"
+      ],
+      "result": "PASS"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        "app/core/config.py",
+        "app/core/deps.py",
+        "app/core/metadata_bootstrap.py",
+        "app/core/metadata_db.py",
+        "app/core/metadata_import.py",
+        "app/core/metadata_migrations.py",
+        "app/core/metadata_schema.py",
+        "app/core/redis.py",
+        "app/main.py",
+        "app/modules/agents/router.py",
+        "app/modules/agents/studio_router.py",
+        "app/modules/ai_ml/router.py",
+        "app/modules/assistant/consent.py",
+        "app/modules/assistant/router.py",
+        "app/modules/assistant/service.py",
+        "app/modules/auth/service.py",
+        "app/modules/llm_functions/router.py",
+        "app/modules/task_orchestration/execution.py",
+        "app/modules/task_orchestration/worker.py",
+        "app/observability/http.py",
+        "scripts/inventory_control_plane.py",
+        "scripts/profile_metadata_constraints.py",
+        "tests/eval/semantic_execution.py",
+        "tests/eval/test_business_ontology_trajectory.py",
+        "tests/eval/test_evidence_health_trajectory.py",
+        "tests/eval/test_mcp_consent_trajectory.py",
+        "tests/eval/test_semantic_clarification_trajectory.py",
+        "tests/eval/test_semantic_latest_month.py",
+        "tests/integration/build_metadata_pooler.py",
+        "tests/integration/prepare_metadata_fixture.py",
+        "tests/integration/test_metadata_bootstrap.py",
+        "tests/integration/test_metadata_migrator.py",
+        "tests/integration/test_metadata_pg_foundation.py",
+        "tests/integration/test_metadata_pgbouncer.py",
+        "tests/integration/test_task_outcome_uncertainty.py",
+        "tests/unit/test_agent_run_storage_failure.py",
+        "tests/unit/test_ai_ml_ssrf_guard.py",
+        "tests/unit/test_api_auth_inventory.py",
+        "tests/unit/test_assistant_stage_b.py",
+        "tests/unit/test_control_plane_inventory.py",
+        "tests/unit/test_control_plane_session_boundaries.py",
+        "tests/unit/test_llm_alias_authorization.py",
+        "tests/unit/test_mcp_registry_access.py",
+        "tests/unit/test_metadata_bootstrap_config.py",
+        "tests/unit/test_metadata_db_config.py",
+        "tests/unit/test_metadata_import.py",
+        "tests/unit/test_metadata_schema.py",
+        "tests/unit/test_notebook_data_tokens.py",
+        "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+        "tests/unit/test_observability_metrics.py",
+        "tests/unit/test_process_role.py",
+        "tests/unit/test_superset_bridge.py",
+        "tests/unit/test_task_orchestration_worker.py",
+        "tests/unit/test_task_outcome_uncertainty.py",
+        "tests/unit/test_web_search_tool.py"
+      ],
+      "result": "PASS",
+      "python_files": 55
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "tests.eval.report"
+      ],
+      "result": "PASS",
+      "scenarios_passed": 54,
+      "checks_passed": 189
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/unit",
+        "--cov=app",
+        "--cov-branch",
+        "--cov-report=term-missing",
+        "--cov-report=xml:/tmp/nova-refactor-coverage-17.xml"
+      ],
+      "result": "PASS",
+      "passed": 10601,
+      "warnings": 4,
+      "coverage_percent_rounded": 65,
+      "seconds": 468.15
+    }
+  ],
+  "prior_attempts": [
+    {
+      "report": "/tmp/nova-pgbouncer-pg-1.xml",
+      "result": "ERROR",
+      "errors": 3,
+      "cause": "Fixture used an IP as TLS hostname, not a certificate DNS name; fixed host=localhost plus hostaddr=127.0.0.1 without weakening certificate validation."
+    },
+    {
+      "report": "/tmp/nova-pgbouncer-pg-2.xml",
+      "result": "FAIL",
+      "passed": 2,
+      "failed": 1,
+      "cause": "Startup schema validation exceeded the test deadline when the pooler ignored startup timeout options; fixed with an overall validation deadline and typed timeout."
+    },
+    {
+      "report": "/tmp/nova-pgbouncer-pg-3.xml",
+      "result": "PASS",
+      "passed": 3,
+      "seconds": 3.72,
+      "limit": "Before cancellation and negative transport/auth cases."
+    },
+    {
+      "report": "/tmp/nova-pgbouncer-pg-4.xml",
+      "result": "PASS",
+      "passed": 7,
+      "seconds": 7.45,
+      "limit": "Before final startup prewarming/recovery assertions and final combined suite."
+    },
+    {
+      "result": "BUILD_SETUP_FAILURE",
+      "cause": "Initial all-target native build required unavailable pandoc; the acceptance build selects the binary target. A first scripted build could not find Homebrew OpenSSL; the final script accepts an explicit dependency prefix."
+    }
+  ],
+  "cleanup": {
+    "new_roles_remaining": 0,
+    "test_schema_remaining": 0,
+    "pooler_processes_remaining": 0
+  },
+  "ci": {
+    "result": "PENDING"
+  },
+  "limits": [
+    "Production Compose/pooler wiring pending",
+    "No domain schemas or complete grants/RLS",
+    "No production load or pool-exhaustion acceptance",
+    "No backup/PITR or metadata cutover"
+  ]
+}

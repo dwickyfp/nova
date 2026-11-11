@@ -22,6 +22,12 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
+      - name: Build checksum-pinned transaction pooler
+        working-directory: backend
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libevent-dev libssl-dev
+          uv run python tests/integration/build_metadata_pooler.py "$RUNNER_TEMP/nova-pgbouncer"
       - name: Prepare private TLS fixture
         working-directory: backend
         run: uv run python tests/integration/prepare_metadata_fixture.py "$RUNNER_TEMP/nova-metadata-pg"
@@ -43,9 +49,13 @@ jobs:
           )
           os.environ["NOVA_TEST_METADATA_ADMIN_DSN"] = configuration["admin_dsn"]
           os.environ["NOVA_TEST_METADATA_DISPOSABLE"] = "acknowledged"
+          os.environ["NOVA_TEST_PGBOUNCER_BINARY"] = str(
+              Path(os.environ["RUNNER_TEMP"]) / "nova-pgbouncer/pgbouncer"
+          )
           raise SystemExit(pytest.main([
               "tests/integration/test_metadata_pg_foundation.py",
               "tests/integration/test_metadata_bootstrap.py",
+              "tests/integration/test_metadata_pgbouncer.py",
               "tests/integration/test_metadata_migrator.py", "-v",
               "--junit-xml=metadata-pg.xml",
           ]))

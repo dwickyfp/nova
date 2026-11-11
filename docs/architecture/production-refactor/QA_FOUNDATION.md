@@ -413,3 +413,25 @@ in 457.59 seconds (65% combined coverage). Mypy, Ruff on 53 changed Python files
 and the 54-scenario/189-check scorecard passed. The final 61-case PG suite has no
 skips, and cleanup left zero new fixture roles/schema after excluding the
 pre-existing administrator. CI for this source remains pending.
+
+
+## Transaction pooling and bounded startup
+
+The next application tree,
+`7f432f8901b93d64ef02933df7811947e09568ef80fd2b5b8465c8429d4dc65b`, adds a
+validated PgBouncer 1.26.1 path on the existing PG17 fixture. The final combined
+suite passed 68 tests with zero skips in 19.24 seconds. Two application pools
+shared one backend across 12 simultaneous transaction requests without actor,
+role or security-version leakage. Cancellation rolled back the pending write,
+and plaintext, wrong-hostname and wrong-password connections were refused.
+
+A locked-ledger startup initially exceeded its deadline because the pooler
+ignored connection-startup timeout options. The fix bounds the full validation
+phase, closes failed readiness and returns a redacted metadata timeout; recovery
+through a new pool also passed. Earlier fixture hostname and native dependency
+build failures are retained in the
+[pooling report](../../reports/production-refactor/WP-02/pooling-commands.json).
+Full backend coverage passed 10,601 tests with four warnings in 468.15 seconds
+(65% combined coverage), along with mypy, Ruff on 55 changed Python files and
+the 54-scenario/189-check scorecard. CI for these edits is pending. These tests
+do not install the production pooler/Compose, port a domain or perform cutover.
