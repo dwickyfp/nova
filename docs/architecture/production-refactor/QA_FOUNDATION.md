@@ -671,3 +671,39 @@ Current CI is pending. The preceding `d49e2b43` commit passed all eight jobs.
 Live caller ports, refusal/history authorization, remaining domain audit hooks,
 partition maintenance, retention/export, backups, production runtime wiring and
 cutover remain release gates. No live provider call was made in this audit phase.
+
+## Retained stores checkpoint
+
+Revision 0010 prepares seven stores with no current runtime data consumer,
+preserving 71 source columns and all duplicate occurrences. Maintenance-only
+import uses the explicit owner identity and an exclusive deployment barrier.
+All workload, readonly and backup SQL identities are refused SELECT, INSERT,
+UPDATE, DELETE and TRUNCATE, including direct partition access. The earlier
+zero source counts do not authorize omitting these stores from final export.
+
+The [retained-store evidence](../../reports/production-refactor/WP-03/retained-commands.json)
+records 378 PG17/PgBouncer passes without skips in 284.68 seconds. Its 45 new
+cases cover types/nullability, duplicate identity, full DML refusal, rollback,
+maintenance and import reset. The first attempt passed 37 cases and failed one
+incorrect expectation that COPY could run with forced RLS. The corrected contract
+uses INSERT and tests COPY refusal; that failure remains in the record.
+
+The application tree remains
+`6aad376e17c3346fde52f2ccb556713960227dc5334ff95614de925ff7d17d54`.
+The complete unit suite passes 10,761 cases with four warnings in 607.66 seconds
+(65% combined coverage). Full-application mypy passes with three existing notes
+about untyped bodies; changed-file Ruff passes on 82 Python files; the agent
+scorecard passes all 54 scenarios / 189 checks. Unit and PG suites run sequentially.
+The first Ruff command accidentally selected no paths and inspected report-only
+full-tree debt. The corrected command asserts a nonempty selection.
+
+The final PG log scan covers 21 lines with no credential marker or encrypted
+envelope. Cleanup leaves zero fixture schema and roles. Inventory refresh
+preserves all 875 reviews, 759 feature rows and prior live/API observations;
+ownership covers 23 logical PG tables and five partition patterns. CI's test
+image now contains the schema inventory required by the new tests.
+
+No live data was imported or reseeded, and no live provider call was made in
+this phase. Final source provenance, import orchestration, remaining domains,
+production wiring, backups, rehearsals, cutover and full feature acceptance
+remain open. The live embedding owner waiver remains unchanged.

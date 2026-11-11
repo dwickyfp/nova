@@ -1,0 +1,383 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="378" time="283.881" timestamp="2026-11-12T03:10:24.888629+07:00">
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_actor_context_is_transaction_local_and_rls_is_fail_closed" time="0.148" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_concurrent_revision_update_has_one_winner" time="0.058" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_unique_conflict_and_application_exception_rollback" time="0.054" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_wrong_epoch_refuses_startup" time="0.051" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_schema_create_privilege_refuses_application_startup" time="0.060" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_broad_inherited_database_privileges_refuse_startup[pg_read_all_data]" time="0.067" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_broad_inherited_database_privileges_refuse_startup[pg_write_all_data]" time="0.058" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_database_create_grant_refuses_startup" time="0.060" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_statement_timeout_rolls_back_and_pool_recovers" time="0.081" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_lost_connection_is_uncertain_and_never_retried" time="0.058" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_database_diagnostics_do_not_expose_secret_bind_values" time="0.048" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_readiness_refuses_session_policy_drift[log_min_messages-error]" time="0.058" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_readiness_refuses_session_policy_drift[log_statement-all]" time="0.122" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_readiness_refuses_session_policy_drift[log_parameter_max_length_on_error-32]" time="0.073" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_readiness_refuses_session_policy_drift[session_replication_role-replica]" time="0.054" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_reused_backend_refuses_disabled_triggers_after_set_privilege_is_revoked" time="0.056" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_runtime_refuses_unsafe_parameter_privileges_before_domain_values[SET-log_min_messages]" time="0.089" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_runtime_refuses_unsafe_parameter_privileges_before_domain_values[SET-session_replication_role]" time="0.087" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_runtime_refuses_unsafe_parameter_privileges_before_domain_values[ALTER SYSTEM-TimeZone]" time="0.081" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_epoch_change_rejects_a_running_process" time="0.056" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_read_only_transaction_cannot_mutate_and_resets_context" time="0.064" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_maintenance_waits_for_writers_and_admits_only_reads" time="0.086" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_typed_values_keep_precision_timezone_unicode_and_null_distinctions" time="0.077" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_legacy_values_bind_without_json_numeric_loss_or_timestamp_shift" time="0.056" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_import_keeps_duplicate_occurrences_and_invalid_chunk_rolls_back" time="0.062" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_fresh_roles_reapply_without_password_rotation_and_install_schema" time="0.607" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_web]" time="0.443" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_query]" time="0.463" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_proxy]" time="0.428" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_agent]" time="0.434" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_scheduler]" time="0.512" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_task]" time="0.501" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_ingestion]" time="0.533" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_ml]" time="0.746" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_notebook]" time="0.640" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_automation]" time="1.271" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_maintenance]" time="1.072" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_workload_reads_deployment_state_but_cannot_change_authority[nova_meta_outbox]" time="0.934" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_migrator]" time="0.480" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_readonly]" time="0.501" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_backup]" time="0.587" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_web]" time="0.399" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_query]" time="0.473" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_proxy]" time="0.682" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_agent]" time="0.979" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_scheduler]" time="0.599" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_task]" time="0.481" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_ingestion]" time="0.422" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_ml]" time="0.422" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_notebook]" time="0.744" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_automation]" time="0.648" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_maintenance]" time="0.556" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_metadata_logins_cannot_enable_statement_or_error_value_logging[nova_meta_outbox]" time="0.396" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_concurrent_bootstrap_has_one_creator" time="0.362" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_other_deployment_cannot_adopt_roles" time="0.305" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_partial_existing_role_is_not_adopted" time="0.057" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_existing_schema_is_not_adopted" time="0.064" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_ordinary_cli_verifies_without_secret_output" time="0.677" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_wrong_replay_password_is_refused_without_rotation" time="0.563" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web SUPERUSER]" time="0.388" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT nova_meta_owner TO nova_meta_agent]" time="0.791" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT TEMP ON DATABASE nova_control TO PUBLIC]" time="0.553" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT CONNECT ON DATABASE nova_control TO pg_monitor]" time="0.655" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT USAGE ON SCHEMA public TO PUBLIC]" time="0.364" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web SET statement_timeout=0]" time="0.377" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web IN DATABASE nova_control SET search_path=public]" time="0.349" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web RESET log_min_messages]" time="0.344" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web SET log_min_messages=error]" time="0.564" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web SET log_statement='all']" time="0.337" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT SET ON PARAMETER log_min_messages TO nova_meta_web]" time="0.360" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT SET ON PARAMETER session_replication_role TO nova_meta_web]" time="0.317" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[GRANT ALTER SYSTEM ON PARAMETER TimeZone TO nova_meta_web]" time="0.319" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_privilege_drift_is_refused_without_silently_repairing[ALTER ROLE nova_meta_web SET session_replication_role=replica]" time="0.342" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_failed_setup_rolls_back_every_role_and_marker" time="0.431" />
+    <testcase classname="tests.integration.test_metadata_bootstrap" name="test_terminated_provisioning_rolls_back_and_can_be_verified" time="0.406" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_transaction_pooling_reuses_one_backend_without_actor_leakage" time="0.490" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_transaction_deadlines_survive_ignored_startup_options" time="0.436" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_startup_validation_has_a_deadline_through_the_pooler" time="2.712" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_cancel_rolls_back_before_a_different_actor_reuses_the_backend" time="1.779" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_pooler_refuses_unverified_or_unauthenticated_clients[plaintext]" time="0.431" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_pooler_refuses_unverified_or_unauthenticated_clients[wrong_hostname]" time="0.420" />
+    <testcase classname="tests.integration.test_metadata_pgbouncer" name="test_pooler_refuses_unverified_or_unauthenticated_clients[wrong_password]" time="0.422" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_personal_values_are_private_and_batch_updates_are_atomic" time="0.515" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_competing_create_and_revision_have_one_winner" time="0.555" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_delete_and_recreate_keep_revision_and_reject_old_writers" time="0.717" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_account_flags_require_active_admin_and_preserve_self_clear[ACCOUNTADMIN]" time="0.460" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_account_flags_require_active_admin_and_preserve_self_clear[SECURITYADMIN]" time="0.482" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_account_flags_require_active_admin_and_preserve_self_clear[user_admin]" time="0.552" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_account_flags_require_active_admin_and_preserve_self_clear[security_admin]" time="0.469" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[query]" time="0.574" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[agent]" time="0.633" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[scheduler]" time="0.597" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[task]" time="0.465" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[ingestion]" time="0.655" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[ml]" time="0.489" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[notebook]" time="0.647" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[automation]" time="0.589" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[maintenance]" time="0.494" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[outbox]" time="0.481" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_workloads_receive_only_their_required_preference_access[readonly]" time="0.614" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_system_settings_and_secret_access_follow_workload_and_active_role" time="0.666" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_secret_validation_refuses_plaintext_without_echoing_it" time="0.585" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_imported_values_keep_owners_nulls_unicode_and_timestamp" time="0.666" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_saved_role_does_not_change_the_active_role_or_entitlement" time="1.031" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_lock_failure_rolls_back_batch_and_next_write_recovers" time="4.392" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_unscoped_access_unknown_keys_and_direct_revision_bypass_are_refused" time="1.075" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_maintenance_refuses_batch_and_preserves_reads" time="1.011" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_service_transaction_can_compose_preferences_with_its_other_writes" time="2.041" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_caught_batch_conflict_cannot_commit_partial_preferences" time="1.681" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_sql_workload_password_flags_require_active_admin[query]" time="0.791" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_sql_workload_password_flags_require_active_admin[proxy]" time="0.802" />
+    <testcase classname="tests.integration.test_metadata_preferences" name="test_password_policy_upgrade_preserves_existing_preference_rows" time="0.444" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_encrypted_key_capacity_and_public_projection" time="0.553" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_unscoped_workload_connection_sees_no_registry_or_credentials" time="0.471" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_inactive_provider_keeps_key_for_admin_edits_but_not_invocation" time="0.592" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_import_preserves_source_identity_ciphertext_json_and_null_timestamps" time="0.515" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[query]" time="0.541" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[proxy]" time="1.016" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[task]" time="0.542" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[ingestion]" time="0.605" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[ml]" time="0.595" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[automation]" time="0.583" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[maintenance]" time="0.842" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_metadata_readers_cannot_read_credentials[readonly]" time="1.156" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_unrelated_workloads_cannot_read_registry[scheduler]" time="1.658" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_unrelated_workloads_cannot_read_registry[notebook]" time="0.567" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_unrelated_workloads_cannot_read_registry[outbox]" time="0.685" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_registry_mutations_require_web_and_active_administrator[web-actor0]" time="0.550" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_registry_mutations_require_web_and_active_administrator[query-actor1]" time="0.531" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_registry_mutations_require_web_and_active_administrator[proxy-actor2]" time="0.457" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_registry_mutations_require_web_and_active_administrator[agent-actor3]" time="0.543" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_provider_revision_and_credentials_have_one_concurrent_winner" time="0.725" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_raw_writes_cannot_break_revision_or_credential_pair[UPDATE nova_meta.config_ai_providers SET name='no-revision'-MetadataIntegrityViolation]" time="0.670" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_raw_writes_cannot_break_revision_or_credential_pair[UPDATE nova_meta.config_ai_providers SET created_by='forged'-MetadataPermissionDenied]" time="0.903" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_raw_writes_cannot_break_revision_or_credential_pair[DELETE FROM nova_meta.config_ai_providers-MetadataPermissionDenied]" time="0.568" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_raw_writes_cannot_break_revision_or_credential_pair[TRUNCATE nova_meta.config_ai_providers CASCADE-MetadataPermissionDenied]" time="0.588" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_raw_writes_cannot_break_revision_or_credential_pair[UPDATE nova_meta.config_ai_provider_credentials SET ciphertext=NULL-MetadataIntegrityViolation]" time="0.557" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_raw_writes_cannot_break_revision_or_credential_pair[UPDATE nova_meta.config_ai_providers SET metadata_revision=2-MetadataIntegrityViolation]" time="0.518" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_credential_presence_must_match_public_projection_at_commit" time="0.647" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_provider_delete_and_child_tombstones_rollback_together" time="0.929" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_provider_delete_serializes_with_model_creation" time="0.661" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_model_revision_is_distinct_from_embedding_descriptor_revision" time="0.710" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_model_alias_uniqueness_is_enforced_across_providers" time="0.610" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_deleted_model_identity_cannot_be_recreated" time="0.592" />
+    <testcase classname="tests.integration.test_metadata_ai_registry" name="test_caught_duplicate_does_not_rollback_unrelated_outer_work" time="0.513" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_identity_prompt_parameters_and_actor_survive_updates" time="0.600" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_import_retains_null_flags_timestamps_and_author" time="0.710" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[web]" time="1.893" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[query]" time="0.829" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[proxy]" time="0.578" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[agent]" time="0.526" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[task]" time="0.507" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[ingestion]" time="0.613" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[ml]" time="0.579" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[automation]" time="0.485" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_reader_workloads_can_list_but_cannot_mutate[maintenance]" time="0.656" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_unrelated_workloads_have_no_alias_table_access[scheduler]" time="0.658" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_unrelated_workloads_have_no_alias_table_access[notebook]" time="0.467" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_unrelated_workloads_have_no_alias_table_access[outbox]" time="0.458" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_unscoped_connection_cannot_read_aliases" time="0.539" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_active_administrator_roles_can_create[ACCOUNTADMIN]" time="0.522" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_active_administrator_roles_can_create[SECURITYADMIN]" time="0.589" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_active_administrator_roles_can_create[user_admin]" time="0.600" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_active_administrator_roles_can_create[security_admin]" time="0.523" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_moving_default_clears_destination_without_losing_old_type" time="0.738" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_two_default_creates_commit_with_exactly_one_default" time="0.683" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_concurrent_revision_writers_have_one_winner" time="0.705" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_duplicate_create_does_not_clear_default_when_conflict_is_caught" time="0.622" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_inactive_default_is_selected_without_silent_provider_fallback" time="0.742" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_delete_promotes_first_active_and_reserves_deleted_identity" time="0.959" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_outer_rollback_restores_alias_and_promoted_default" time="0.829" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_invalid_registry_reference_conflicts_without_clearing_default[changes0]" time="0.750" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_invalid_registry_reference_conflicts_without_clearing_default[changes1]" time="0.676" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_invalid_registry_reference_conflicts_without_clearing_default[changes2]" time="0.581" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_cross_provider_model_is_refused" time="0.536" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_embedding_descriptor_reference_without_live_provider_call" time="0.573" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_referenced_registry_deletion_rolls_back_all_rows[provider]" time="0.877" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_referenced_registry_deletion_rolls_back_all_rows[model]" time="0.691" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_registry_deletion_serializes_with_alias_creation" time="1.563" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_direct_writes_cannot_bypass_revision_identity_or_reference_guards[UPDATE nova_meta.config_model_aliases SET metadata_revision=5-MetadataIntegrityViolation]" time="0.673" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_direct_writes_cannot_bypass_revision_identity_or_reference_guards[UPDATE nova_meta.config_model_aliases SET created_by='other'-MetadataPermissionDenied]" time="0.609" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_direct_writes_cannot_bypass_revision_identity_or_reference_guards[DELETE FROM nova_meta.config_model_aliases-MetadataPermissionDenied]" time="0.529" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_direct_writes_cannot_bypass_revision_identity_or_reference_guards[TRUNCATE nova_meta.config_model_aliases-MetadataPermissionDenied]" time="0.560" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_direct_writes_cannot_bypass_revision_identity_or_reference_guards[UPDATE nova_meta.config_model_aliases SET function_type='embed',metadata_revision=2-MetadataIntegrityViolation]" time="0.617" />
+    <testcase classname="tests.integration.test_metadata_model_aliases" name="test_alias_repository_cannot_escape_service_transaction" time="0.534" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_definition_job_outbox_and_alias_share_the_original_actor" time="0.736" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_secret_and_endpoint_overrides_do_not_enter_definitions_or_queue" time="0.615" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_configured_snapshot_remains_immutable_after_provider_and_model_changes" time="0.635" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_default_move_reconciles_both_old_and_new_functions" time="0.668" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_nonselected_alias_does_not_install_a_different_function" time="0.648" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_disabled_default_and_last_deletion_have_explicit_frozen_states" time="0.650" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_reconciliation_without_changes_does_not_duplicate_jobs" time="0.569" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_concurrent_default_commands_keep_monotonic_immutable_versions" time="0.543" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_service_rollback_and_caught_stale_revision_leave_no_registration_intent" time="0.597" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_configuration_without_registration_intent_cannot_commit[alias]" time="0.624" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_configuration_without_registration_intent_cannot_commit[provider]" time="0.780" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_configuration_without_registration_intent_cannot_commit[model]" time="0.568" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_incomplete_definition_job_boundary_cannot_commit[head]" time="0.685" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_incomplete_definition_job_boundary_cannot_commit[job]" time="0.847" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_incomplete_definition_job_boundary_cannot_commit[outbox]" time="0.960" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_function_job_cannot_lie_about_its_definition[changes0]" time="1.909" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_function_job_cannot_lie_about_its_definition[changes1]" time="1.041" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_function_job_cannot_lie_about_its_definition[changes2]" time="1.839" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_function_job_cannot_lie_about_its_definition[changes3]" time="4.321" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_function_job_cannot_lie_about_its_definition[changes4]" time="2.185" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_function_job_cannot_lie_about_its_definition[changes5]" time="1.396" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_one_definition_cannot_enqueue_a_second_independent_registration" time="0.996" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_runtime_cannot_rewrite_history_or_remove_its_head[UPDATE nova_meta.ai_function_definitions SET version=2]" time="2.803" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_runtime_cannot_rewrite_history_or_remove_its_head[DELETE FROM nova_meta.ai_function_definitions]" time="1.028" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_runtime_cannot_rewrite_history_or_remove_its_head[TRUNCATE nova_meta.ai_function_definitions CASCADE]" time="0.994" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_runtime_cannot_rewrite_history_or_remove_its_head[DELETE FROM nova_meta.ai_function_heads]" time="1.364" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_definition_read_is_restricted_to_admin_and_maintenance_service" time="0.683" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_invalid_engine_parameters_rollback_the_alias_and_intent[parameters0]" time="0.609" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_invalid_engine_parameters_rollback_the_alias_and_intent[parameters1]" time="0.694" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_invalid_engine_parameters_rollback_the_alias_and_intent[parameters2]" time="0.569" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_invalid_engine_parameters_rollback_the_alias_and_intent[parameters3]" time="0.705" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_invalid_engine_parameters_rollback_the_alias_and_intent[parameters4]" time="0.717" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_invalid_engine_parameters_rollback_the_alias_and_intent[parameters5]" time="0.752" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_registration_repository_rejects_use_after_transaction" time="0.680" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_snapshot_preserves_parameter_precision_without_python_float_rounding" time="0.796" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_embedding_snapshot_retains_descriptor_without_claiming_live_registration" time="0.724" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_forged_definition_cannot_commit[payload]" time="2.188" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_forged_definition_cannot_commit[digest]" time="0.733" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_forged_definition_cannot_commit[version]" time="0.827" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_foreign_administrator_cannot_enqueue_under_another_definition_actor" time="0.674" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_shared_provider_change_creates_one_intent_for_each_selected_function" time="0.587" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_alias_and_provider_deletion_preserve_old_definitions_and_clear_credentials" time="1.376" />
+    <testcase classname="tests.integration.test_metadata_ai_configuration" name="test_provider_change_serializes_with_alias_creation" time="0.729" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_same_event_replays_but_different_payload_or_context_conflicts" time="1.159" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_concurrent_replay_records_exactly_one_event" time="1.805" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_history_is_scoped_to_principal_and_active_role" time="0.808" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_password_redaction_survives_storage_and_replay" time="0.743" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_metadata_audit_rolls_back_and_refusal_can_be_recorded_afterward" time="1.940" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_preference_audit_contains_identity_and_revision_without_value" time="0.697" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_ai_default_move_audits_every_changed_row_with_jobs" time="0.717" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[UPDATE nova_meta.audit_log SET status='CHANGED']" time="0.511" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[DELETE FROM nova_meta.audit_log]" time="0.639" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[TRUNCATE nova_meta.audit_log CASCADE]" time="0.547" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[SELECT * FROM nova_meta.audit_log_unpartitioned]" time="0.606" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[INSERT INTO nova_meta.audit_log (event_type,user_name) VALUES ('query','other')]" time="1.121" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[INSERT INTO nova_meta.audit_log (event_type,metadata_table) VALUES ('query','forged')]" time="0.538" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[INSERT INTO nova_meta.audit_log (event_type) VALUES ('metadata')]" time="0.625" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[ALTER TABLE nova_meta.config_ai_providers DISABLE TRIGGER provider_audit]" time="0.650" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_rewrite_audit_or_forge_metadata_success[SET session_replication_role=replica]" time="0.576" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_unscoped_connection_cannot_read_or_append" time="0.582" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_duplicate_legacy_ids_and_null_actor_fields_survive_import" time="0.653" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_audit_repository_cannot_outlive_its_transaction" time="0.525" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_current_event_uses_utc_month_and_leaf_has_no_runtime_grant" time="0.488" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_web]" time="0.901" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_query]" time="1.120" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_proxy]" time="0.578" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_agent]" time="0.478" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_scheduler]" time="0.467" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_task]" time="0.537" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_ingestion]" time="0.422" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_ml]" time="0.506" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_notebook]" time="0.655" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_automation]" time="0.492" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_maintenance]" time="0.495" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_each_workload_can_record_its_own_service_event[nova_meta_outbox]" time="0.605" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_readonly_login_cannot_append_an_event" time="0.422" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_insert_nonfinite_or_empty_audit_identity[infinity-3f5dcd01-f023-4ef6-b0b7-279a5e01a50c]" time="0.505" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_runtime_cannot_insert_nonfinite_or_empty_audit_identity[2025-01-01T00:00:00Z-00000000-0000-0000-0000-000000000000]" time="0.463" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_privileged_alias_import_is_not_runtime_intent_or_success_audit" time="0.648" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_import_cannot_create_partial_metadata_audit_identity[config_ai_models-None-1]" time="0.409" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_import_cannot_create_partial_metadata_audit_identity[config_ai_models-key1-None]" time="0.472" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_import_cannot_create_partial_metadata_audit_identity[config_ai_models-None-None]" time="0.940" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_import_cannot_create_partial_metadata_audit_identity[None-key3-1]" time="0.439" />
+    <testcase classname="tests.integration.test_metadata_audit" name="test_import_cannot_create_partial_metadata_audit_identity[config_ai_models-key4-1]" time="0.410" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[CONFIG_DASHBOARDS]" time="0.470" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[CONFIG_DASHBOARD_WIDGETS]" time="0.532" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[CONFIG_PINNED_QUERIES]" time="0.529" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[LINEAGE_LOAD_HISTORY]" time="0.474" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[QUALITY_TABLE_STATS]" time="0.491" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[STAGE_FILE_MANIFEST]" time="0.544" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_source_column_type_nullability_and_value_survives[USAGE_QUERY_STATS]" time="0.514" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_identical_source_occurrences_remain_distinct_and_exact_replay_conflicts[LINEAGE_LOAD_HISTORY]" time="0.981" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_identical_source_occurrences_remain_distinct_and_exact_replay_conflicts[QUALITY_TABLE_STATS]" time="0.686" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_identical_source_occurrences_remain_distinct_and_exact_replay_conflicts[STAGE_FILE_MANIFEST]" time="0.558" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_identical_source_occurrences_remain_distinct_and_exact_replay_conflicts[USAGE_QUERY_STATS]" time="0.655" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_web]" time="0.534" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_query]" time="0.485" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_proxy]" time="0.451" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_agent]" time="0.784" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_scheduler]" time="1.222" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_task]" time="2.062" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_ingestion]" time="1.234" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_ml]" time="1.498" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_notebook]" time="1.188" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_automation]" time="2.450" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_maintenance]" time="1.671" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_outbox]" time="2.482" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_readonly]" time="1.679" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_every_runtime_and_readonly_identity_is_refused[nova_meta_backup]" time="1.308" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_migrator_requires_explicit_owner_role" time="0.813" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[CONFIG_DASHBOARDS]" time="0.670" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[CONFIG_DASHBOARD_WIDGETS]" time="0.532" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[CONFIG_PINNED_QUERIES]" time="0.492" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[LINEAGE_LOAD_HISTORY]" time="0.544" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[QUALITY_TABLE_STATS]" time="0.536" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[STAGE_FILE_MANIFEST]" time="0.535" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_owner_cannot_mutate_or_read_retained_rows_after_maintenance[USAGE_QUERY_STATS]" time="0.505" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_direct_partition_truncate_is_also_fenced_by_maintenance[lineage_load_history_unpartitioned]" time="0.832" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_direct_partition_truncate_is_also_fenced_by_maintenance[quality_table_stats_unpartitioned]" time="0.803" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_direct_partition_truncate_is_also_fenced_by_maintenance[usage_query_stats_unpartitioned]" time="0.499" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_import_holds_the_shared_deployment_barrier_until_commit" time="0.559" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_invalid_import_rolls_back_prior_rows_and_copy_cannot_bypass_rls" time="0.512" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[CONFIG_DASHBOARDS]" time="0.617" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[CONFIG_DASHBOARD_WIDGETS]" time="0.480" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[CONFIG_PINNED_QUERIES]" time="0.640" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[LINEAGE_LOAD_HISTORY]" time="1.130" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[QUALITY_TABLE_STATS]" time="0.697" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[STAGE_FILE_MANIFEST]" time="1.061" />
+    <testcase classname="tests.integration.test_metadata_retained_legacy" name="test_explicit_import_reset_is_allowed_only_inside_maintenance[USAGE_QUERY_STATS]" time="0.578" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_submission_and_outbox_are_atomic_and_dedupe_is_permanent" time="0.825" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_actor_visibility_and_cross_actor_duplicate_refusal[other0]" time="1.121" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_actor_visibility_and_cross_actor_duplicate_refusal[other1]" time="1.401" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_actor_visibility_and_cross_actor_duplicate_refusal[other2]" time="1.055" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_competing_claims_and_stale_revision_have_one_winner" time="0.705" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_skip_locked_does_not_wait_for_another_workers_row" time="0.528" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_expired_workers_cannot_repeat_armed_effects[LEASED]" time="2.692" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_expired_workers_cannot_repeat_armed_effects[PREPARED]" time="2.649" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_expired_workers_cannot_repeat_armed_effects[SUBMITTED]" time="2.652" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_expired_workers_cannot_repeat_armed_effects[VERIFYING]" time="2.574" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_expired_workers_cannot_repeat_armed_effects[BLOCKED]" time="2.559" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_expired_workers_cannot_repeat_armed_effects[COMMITTED]" time="2.787" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_verified_receipt_and_completion_survive_lost_ack" time="0.647" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_unknown_effect_blocks_same_resource_and_cannot_retry" time="0.560" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_retry_requires_proven_absence_and_preserves_prior_intent" time="1.655" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_internal_work_cannot_claim_external_proof_shortcut" time="0.743" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_cancel_and_internal_failure_cannot_hide_an_armed_effect" time="0.556" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_worker_cannot_dedupe_another_actors_submission" time="0.574" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_database_rejects_pending_job_without_outbox" time="1.055" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_receipt_and_outcome_rollback_with_the_domain_transaction" time="0.611" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_outbox_concurrent_publishers_claim_each_event_once" time="0.889" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_workloads_cannot_mutate_definition_or_erase_effect_history[UPDATE nova_meta.job_queue SET definition_digest=repeat('f',64)]" time="0.570" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_workloads_cannot_mutate_definition_or_erase_effect_history[DELETE FROM nova_meta.external_effect_intents]" time="0.771" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_workloads_cannot_mutate_definition_or_erase_effect_history[TRUNCATE nova_meta.job_queue CASCADE]" time="0.722" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_workloads_cannot_mutate_definition_or_erase_effect_history[UPDATE nova_meta.external_effect_receipts SET result_digest=repeat('e',64)]" time="0.641" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_direct_state_jump_cannot_bypass_receipts[COMMITTED]" time="0.716" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_direct_state_jump_cannot_bypass_receipts[COMPLETED]" time="0.761" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_direct_state_jump_cannot_bypass_receipts[FAILED]" time="1.017" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_direct_state_jump_cannot_bypass_receipts[PENDING]" time="0.757" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_outbox_loss_reclaims_notification_but_not_job_effect" time="1.785" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_redis_unavailable_does_not_block_pg_polling" time="1.753" />
+    <testcase classname="tests.integration.test_metadata_jobs" name="test_maintenance_and_transaction_lifetime_block_job_mutations" time="0.564" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_concurrent_leaders_have_one_winner_and_tokens_never_reset" time="1.256" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_due_occurrence_reserves_one_job_and_outbox_under_original_actor" time="0.922" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_definition_version_distinguishes_occurrences_and_drift_is_conflict" time="0.620" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_future_and_expired_leaders_cannot_publish_occurrences" time="1.625" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_occurrence_cannot_commit_after_its_leader_deadline" time="1.987" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_occurrence_and_notification_roll_back_with_the_graph_run" time="0.635" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_scheduled_context_cannot_cross_principal_role_or_version[other0]" time="0.537" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_scheduled_context_cannot_cross_principal_role_or_version[other1]" time="0.789" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_scheduled_context_cannot_cross_principal_role_or_version[other2]" time="0.647" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_only_scheduler_login_can_acquire_leadership[web]" time="0.828" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_only_scheduler_login_can_acquire_leadership[task]" time="0.841" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_only_scheduler_login_can_acquire_leadership[agent]" time="0.890" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_only_scheduler_login_can_acquire_leadership[outbox]" time="1.034" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_scheduler_user_context_can_publish_but_cannot_take_leadership" time="1.315" />
+    <testcase classname="tests.integration.test_metadata_scheduler" name="test_repository_cannot_open_its_own_transaction_after_service_exit" time="0.792" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_fresh_schema_has_restricted_grants_and_no_active_epoch" time="0.397" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_reapply_is_unchanged_and_does_not_rewrite_ledger" time="0.310" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_upgrade_from_deployment_only_schema_preserves_first_revision" time="0.375" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_changed_applied_bytes_refuse_migrator_and_application" time="0.869" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_two_migrators_publish_one_schema_revision" time="0.999" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[SELECT missing_column FROM nova_meta.deployment_state;]" time="0.326" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[COMMIT;]" time="0.501" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[EXECUTE 'COMMIT';]" time="0.580" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_lost_migration_connection_rolls_back_and_resumes" time="0.497" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_schema_upgrade_requires_maintenance_and_preserves_epoch" time="0.534" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_migration_waits_for_readers_and_lock_wait_is_bounded" time="0.824" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_privileged_runtime_role_refuses_schema_install[nova_meta_app]" time="0.132" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_privileged_runtime_role_refuses_schema_install[nova_meta_readonly]" time="0.118" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_application_identity_cannot_run_migrator" time="0.081" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_failed_fresh_install_leaves_no_partial_schema" time="0.603" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_missing_ledger_never_overwrites_existing_objects" time="0.174" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_one_shot_entrypoint_installs_without_publishing_epoch" time="2.639" />
+  </testsuite>
+</testsuites>

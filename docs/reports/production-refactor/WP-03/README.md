@@ -293,3 +293,33 @@ CI for this audit checkpoint is pending; predecessor `d49e2b43` passed all eight
 jobs. Remaining domain hooks, audit/refusal/history callers and their historical
 authorization, import orchestration, partition maintenance, retention/export,
 backups and one-way cutover are still open. No live AI call was made here.
+
+## Retained stores and import fencing
+
+Revision 0010 preserves seven inactive source stores, their 71 columns and
+duplicate occurrences. The [storage contract](../../../architecture/production-refactor/PG_RETAINED_METADATA.md)
+requires explicit owner import in maintenance and excludes runtime SQL access.
+Direct partition TRUNCATE is fenced as well as parent mutations.
+
+[retained-commands.json](retained-commands.json) records all three PG attempts:
+the initial 37 passes and one incorrect COPY expectation, 45 focused passes,
+and 378 combined passes without skips in 284.68 seconds. PostgreSQL refuses
+COPY FROM under applicable RLS; import uses INSERT and keeps forced RLS active.
+The final matrix adds explicit refusal of every DML operation for all 14
+workload/readonly/backup SQL identities. The CI image includes the captured
+source schema needed by these checks.
+
+The unchanged application tree passes 10,761 unit cases with four warnings in
+607.66 seconds (65% combined coverage), full-application mypy, Ruff on 82 changed
+Python files and the complete 54-scenario / 189-check agent scorecard. The first
+Ruff invocation selected no paths and exposed 99 report-only baseline findings;
+the corrected command asserts a nonempty list and passes. No assertions were
+removed to suppress that unrelated baseline.
+
+The 21-line PG log scan contains no credential marker or encrypted envelope;
+fixture cleanup leaves no schema or roles. All 875 source reviews and 759
+feature rows survive the actual inventory refresh. Prior live/API observations
+are preserved. Ownership covers 23 logical PG tables and five partition patterns.
+Current CI is pending; no source rows or live authority have moved. Timestamp
+provenance, remaining domains, export/import orchestration, backup/retention,
+production runtime and complete feature acceptance remain open.
