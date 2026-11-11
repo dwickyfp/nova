@@ -102,10 +102,12 @@ DROP TASK IF EXISTS log_orders;
 A single step can also be `skipped`: its `WHEN` condition was false, or a step
 before it failed.
 
-An `abandoned` step means its worker stopped reporting progress and the outcome
-is unknown. The run stays `running`; Nova does not repeat the step, start its
-finalizer, or free its overlap slot. Ask an administrator to verify whether the
-changes were applied before starting replacement work.
+An `abandoned` step means its outcome is unknown. This can happen when a worker
+stops reporting progress, a connection breaks during submission, or a native
+task's result cannot be confirmed before the observation deadline. The run stays
+`running`; Nova does not repeat the step, start its finalizer, or free its overlap
+slot. Ask an administrator to verify whether the changes were applied before
+starting replacement work.
 
 ## Failures and retries
 

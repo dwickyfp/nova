@@ -30,6 +30,8 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from asyncmy.errors import MySQLError
+
 from app.common.identifiers import check_identifier
 from app.core.config import settings
 from app.core.database import db
@@ -58,6 +60,16 @@ class NodeExecutionError(RuntimeError):
     def __init__(self, message: str, *, query_id: str | None = None) -> None:
         super().__init__(message)
         self.query_id = query_id
+
+
+class NodeOutcomeUnknown(NodeExecutionError):
+    """Submission may have taken effect, but no terminal receipt is available."""
+
+    def __init__(self, *, query_id: str | None = None) -> None:
+        super().__init__(
+            "Task outcome is unknown; verify the native run before starting replacement work",
+            query_id=query_id,
+        )
 
 
 class NodeConnection(Protocol):
@@ -274,29 +286,43 @@ class DelegateExecutor:
                 _redact(str(exc)),
             )
 
-        async with self._owner_conn(owner, spec.execution_session_id) as conn:
-            async with _dict_cursor(conn) as cur:
-                await self._prepare_task_session(cur, spec)
-            body = spec.body
-            if "@" in body:
-                from app.modules.query.dialect.parser import parse_sql
+        submission_started = False
+        try:
+            async with self._owner_conn(owner, spec.execution_session_id) as conn:
+                async with _dict_cursor(conn) as cur:
+                    await self._prepare_task_session(cur, spec)
+                body = spec.body
+                if "@" in body:
+                    from app.modules.query.dialect.parser import parse_sql
 
-                parsed = parse_sql(body)
-                if parsed.errors:
-                    raise NodeExecutionError("task body contains invalid stage SQL")
-                if parsed.stage_refs:
-                    raise NodeExecutionError(
-                        "scheduled @stage execution is unavailable because native task "
-                        "definitions would persist storage credentials"
-                    )
-            statement = build_submit_task(replace(spec, body=body))
-            await self._submit(conn, statement)
+                    parsed = parse_sql(body)
+                    if parsed.errors:
+                        raise NodeExecutionError("task body contains invalid stage SQL")
+                    if parsed.stage_refs:
+                        raise NodeExecutionError(
+                            "scheduled @stage execution is unavailable because native task "
+                            "definitions would persist storage credentials"
+                        )
+                statement = build_submit_task(replace(spec, body=body))
+                submission_started = True
+                await self._submit(conn, statement)
+        except NodeExecutionError:
+            raise
+        except Exception:
+            if submission_started:
+                raise NodeOutcomeUnknown() from None
+            raise
 
         # Never retain a system-pool connection across the full native run.
         # Long runs can exceed the pool size and their heartbeats need that pool.
-        result = await self._await_completion(
-            None, native_name, watermark=watermark, heartbeat=heartbeat
-        )
+        try:
+            result = await self._await_completion(
+                None, native_name, watermark=watermark, heartbeat=heartbeat
+            )
+        except NodeOutcomeUnknown:
+            raise
+        except Exception:
+            raise NodeOutcomeUnknown() from None
         if spec.native_name:
             await self._drop_completed_native_task(spec, owner)
 
@@ -462,12 +488,25 @@ class DelegateExecutor:
         Nothing from the statement is logged: the body can embed storage
         credentials after ``@stage`` rewriting.
         """
+        acknowledged = False
         try:
             async with conn.cursor() as cur:
                 await cur.execute(statement)
+                acknowledged = True
                 await cur.fetchone()
         except Exception as exc:
-            raise NodeExecutionError(_redact(str(exc))) from exc
+            # Only explicit pre-admission refusals establish that nothing ran.
+            # Transport failures and errors after acknowledgement remain unknown.
+            if (
+                not acknowledged
+                and isinstance(exc, MySQLError)
+                and exc.args
+                and exc.args[0] in {
+                    1044, 1045, 1046, 1049, 1054, 1064, 1142, 1143, 1146, 1227, 5203,
+                }
+            ):
+                raise NodeExecutionError(_redact(str(exc))) from None
+            raise NodeOutcomeUnknown() from None
 
     async def _latest_create_time(
         self, conn: NodeConnection, task_name: str
@@ -506,9 +545,8 @@ class DelegateExecutor:
     ) -> ExecutionResult:
         """Poll ``information_schema.task_runs`` until the new run settles.
 
-        Losing the run row (an FE restart drops in-flight runs with no trace,
-        design §1) is not success: after the timeout the node is reported
-        failed so the graph does not advance on an unknown outcome.
+        Losing the run row or reaching the observation deadline leaves the
+        outcome unknown. Neither releases the graph's overlap slot.
 
         A transient read failure is neither: the engine's task-run surface can
         fail while the run itself is fine, so a failed poll is retried until the
@@ -530,17 +568,18 @@ class DelegateExecutor:
                 )
                 result = None
             if result is not None and result.state not in _PENDING_STATES:
+                if result.state not in _SUCCESS_STATES | _FAILURE_STATES:
+                    raise NodeOutcomeUnknown(query_id=result.query_id)
                 return result
 
             if heartbeat is not None:
-                await heartbeat()
+                try:
+                    await heartbeat()
+                except Exception:
+                    raise NodeOutcomeUnknown(query_id=result.query_id if result else None) from None
 
             if asyncio.get_running_loop().time() >= deadline:
-                raise NodeExecutionError(
-                    f"task {task_name!r} did not finish within "
-                    f"{self._poll_timeout:.0f}s; its trace may have been lost",
-                    query_id=result.query_id if result else None,
-                )
+                raise NodeOutcomeUnknown(query_id=result.query_id if result else None)
             await asyncio.sleep(self._poll_interval)
 
     async def _newest_run_after(

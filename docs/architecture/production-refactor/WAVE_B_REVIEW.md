@@ -71,3 +71,30 @@ The current `committed_cursor` checks an unbroken chain and refuses conflicting
 or overlapping receipts; preserve that behavior. A schedule that is not due or
 a false WHEN predicate cannot consume data or advance an offset. The new
 schedule-and-WHEN combinations and crash matrix remain unverified.
+
+## Mixed adapter classification
+
+The remaining `SourceRegistry` and `StreamService` system calls have now been
+reviewed individually. Their `_execute` wrappers are explicitly mixed adapters,
+not PG repository methods. Registry identity/column/partition reads and
+`StreamService._table_exists` stay in the engine observer. Registry creation of
+the source journal/lineage tables stays in restricted engine administration.
+Every other call in those two files addresses the named Nova control tables.
+Stream SQL name resolution also reads control metadata only.
+
+`TargetCommitVerifier` reads `information_schema.loads` and `SHOW TRANSACTION`,
+not Nova control rows or target data. Preserve its exact database/table/label/
+principal/load/transaction checks, refusal of ambiguous evidence and the
+distinction between COMMITTED and VISIBLE. Never treat CANCELLED alone or
+expired engine evidence as proof that an INSERT did not commit.
+
+Native Task config/run/schedule reads and the executor's watermark/completion
+observers also remain engine observations. A poll timeout, post-submit heartbeat
+failure or broken submit response cannot establish a failed mutation. The new
+`NodeOutcomeUnknown` path holds the existing node as abandoned and the graph as
+running, without cleanup, replay, finalizer admission or overlap release.
+Definite pre-admission refusals retain their failure response. The CI regression
+performs a real INSERT into a disposable Duplicate Key table, loses delivery of
+the completion result, redelivers the job three times and requires exactly one
+row and one native submit. Its result is tracked separately from unit evidence.
+This does not yet implement the planned PG receipts or operator reconciliation.

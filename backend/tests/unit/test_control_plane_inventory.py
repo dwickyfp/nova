@@ -129,3 +129,43 @@ class CallerData:
     assert functions["Wrapper._execute"]["dispatch"] == "direct"
     assert functions["Wrapper.read"]["literal_tables"] == ["CONFIG_STREAM_SOURCES"]
     assert all(call["review_status"] == "REQUIRES_CLASSIFICATION" for call in calls)
+
+
+def test_raw_connection_and_mixed_metadata_cursor_bypass_are_inventoried():
+    _, calls = inspect_python('''
+import asyncmy
+class Users:
+    async def connect(self):
+        return await asyncmy.connect(user=admin_name, password=secret)
+    async def list(self, cursor, query):
+        await cursor.execute("SHOW USERS")
+        await cursor.execute("SELECT MAX(event_time) FROM NOVA_SYSTEM.AUDIT_LOG")
+        await cursor.execute(query)
+class Data:
+    async def list(self, cursor, query):
+        await cursor.execute(query)
+''', "users.py")
+    assert len(calls) == 4
+    assert calls[0]["dispatch"] == "connection_candidate"
+    cursors = calls[1:]
+    assert all(call["dispatch"] == "metadata_cursor_candidate" for call in cursors)
+    assert [call["statement_kind"] for call in cursors] == ["SHOW", "SELECT", "DYNAMIC"]
+    assert cursors[-1]["literal_tables"] == []
+    assert cursors[-1]["function_candidate_tables"] == ["AUDIT_LOG"]
+    assert all(call["review_status"] == "REQUIRES_CLASSIFICATION" for call in calls)
+
+
+def test_cursor_batch_constants_and_dynamic_metadata_namespace_require_review():
+    _, calls = inspect_python('''
+INSERT = "INSERT INTO NOVA_SYSTEM.CONFIG_TASKS(id) VALUES (%s)"
+async def write(cur, table, rows):
+    await cur.executemany(INSERT, rows)
+    await cur.execute(f"SELECT * FROM NOVA_SYSTEM.{table}")
+async def unrelated(cur):
+    """NOVA_SYSTEM.NOT_SQL is a historical description."""
+    await cur.execute("SELECT 1")
+''', "raw.py")
+    assert len(calls) == 2
+    assert calls[0]["literal_tables"] == ["CONFIG_TASKS"]
+    assert calls[1]["literal_tables"] == []
+    assert all(call["dispatch"] == "metadata_cursor_candidate" for call in calls)

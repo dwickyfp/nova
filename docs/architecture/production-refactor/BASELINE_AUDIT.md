@@ -29,20 +29,25 @@ not a transactionally consistent export and must never authorize cutover.
   additional live stores. Prefixes and docstring words are not table names.
 - The source scanner records 740 direct system API calls, including two `self`
   calls in the connection factory, plus 51 indirect candidates reached through
-  aliases, injected defaults or pass-through adapters. It also inventories auxiliary scripts/tests.
+  aliases, injected defaults or pass-through adapters. The expanded scanner also
+  records raw connection factories and metadata-bearing cursor functions, adding
+  84 candidates. It inventories auxiliary scripts/tests.
   Review status is explicit; locating a call does not prove its SQL semantics.
 
 The current Docker project is `docker`, using the engine and development
-Compose files. Its existing 14 services include patched FE/BE, Ranger, Superset,
+Compose files. Its original 14 services include patched FE/BE, Ranger, Superset,
 object storage, critical/cache-shared Redis and OpenSandbox. Docker reports
 eight CPUs and about 8 GiB RAM on OrbStack/aarch64. No duplicate stack was made.
+The project now also includes the private PG17 fixture described in
+`QA_FOUNDATION.md`, bringing the running project to 15 services.
 
 ## Process and transaction boundaries
 
 The API lifespan owns schema bootstrap, LLM UDF registration, ML sweeping,
 catalog/news/search work and buffered usage flushers. Its schema lock failed
-open at baseline; this branch now rejects lock failure. The general worker starts Tasks, migration, ML, automation, notebook and
-autopilot loops. Scheduler leadership/transport uses Redis, while records live
+open at baseline; this branch now rejects lock failure. The general worker starts
+Tasks, migration, ML, automation, notebook and autopilot loops. Scheduler
+leadership/transport uses Redis, while records live
 in StarRocks. These must move to the approved explicit workload owners.
 
 Preserve the existing SQL frontend and shared agent loop. Files and notebook
@@ -55,17 +60,31 @@ these external effects atomic.
 
 METADATA_OWNERSHIP.csv covers each live/source candidate with a proposed owner
 and destination. Its REVIEW_REQUIRED fields are unresolved work, not defaults
-that a migrator may accept. Finish per-call classification (metadata, restricted
-engine administration, caller data), transaction boundaries, logical uniqueness,
+that a migrator may accept. Complete the table-level mapping of the classified
+calls, transaction boundaries, logical uniqueness,
 foreign-key/orphan policy, original timestamp provenance and consumer privileges.
 Duplicate Key history needs a lossless row-identity strategy before import.
 
 `WAVE_A_REVIEW.md` records the inspected preference/workspace/stage/audit paths;
-`WAVE_B_REVIEW.md` covers the Task repository and Stream control receipts.
-108 of 791 direct/indirect call sites have a destination classification. This
-does not close the remaining 683 classifications or prove target authorization.
+`WAVE_B_REVIEW.md` covers the Task repository and Stream control receipts;
+`WAVE_C_REVIEW.md` separates Entity/Feature/Search metadata from engine payloads;
+`WAVE_D_REVIEW.md` covers Assistant, Studio and Notebook repositories.
+`WAVE_E_REVIEW.md` covers Intelligence revision stores,
+ML/migration jobs, Autopilot and the monitoring split. `WAVE_F_REVIEW.md` covers
+Studio workflows, knowledge, sharing and history. `WAVE_G_REVIEW.md` covers
+Catalog, Explorer and query metadata/engine boundaries.
+The 791 pooled/indirect calls and 84 raw connection/cursor candidates now have
+source-reviewed destination classifications (875 total). This is a static path
+classification, not a completed ownership/transform or authorization gate.
+`WAVE_H_REVIEW.md` covers governance, publication and bootstrap;
+`WAVE_I_REVIEW.md` covers the additional direct connections and cursor writers.
 `CONSTRAINT_PROFILE.json` contains read-only aggregate checks, including two
 duplicate workspace revision groups that must not be silently deduplicated.
+The expanded 44-check profile also found 135 Task node rows without a parent
+graph run. Other checked provider/model references, alias defaults, message
+sequence/ownership, agent event references, ML/Semantic/Feature active versions,
+Notebook runtime scope and Dataviz idempotency had zero observed violations.
+These checks do not cover every FK, JSON reference, timestamp or import constraint.
 It also records the distinction between a personal principal and a shared
 workspace namespace, and the pending session-revocation defect.
 

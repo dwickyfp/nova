@@ -170,6 +170,7 @@ def inspect_python(source: str, path: str) -> tuple[dict[str, set[str]], list[di
     children = docstrings(tree) | {
         id(c) for n in ast.walk(tree) if isinstance(n, ast.JoinedStr) for c in n.values
     }
+    function_tables: dict[int, set[str]] = {}
     for node in ast.walk(tree):
         if id(node) not in children:
             for name in names(string_template(node, bindings)):
@@ -177,9 +178,16 @@ def inspect_python(source: str, path: str) -> tuple[dict[str, set[str]], list[di
         if not isinstance(node, ast.Call):
             continue
         origins = adapters.get((id(node), ast.unparse(node.func)))
-        if not origins:
+        potential_cursor = (
+            isinstance(node.func, ast.Attribute) and node.func.attr in {"execute", "executemany"}
+        )
+        potential_connection = (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"connect", "create_pool"}
+            and ast.unparse(node.func.value) in {"asyncmy", "aiomysql", "pymysql"}
+        )
+        if not origins and not potential_cursor and not potential_connection:
             continue
-        direct = isinstance(node.func, ast.Attribute) and node.func.attr in origins
         scope = node
         containers = []
         function = None
@@ -192,16 +200,31 @@ def inspect_python(source: str, path: str) -> tuple[dict[str, set[str]], list[di
         query = string_template(node.args[0], bindings) if node.args else ""
         first_word = re.match(r"\s*([A-Za-z]+)\b", query)
         kind = first_word.group(1).upper() if first_word else "DYNAMIC"
-        candidates = set()
-        for expression in ast.walk(function or node):
-            if id(expression) not in children:
-                candidates.update(names(string_template(expression, bindings)))
+        candidate_scope = function or node
+        if id(candidate_scope) not in function_tables:
+            candidates = set()
+            for expression in ast.walk(candidate_scope):
+                if id(expression) not in children:
+                    candidates.update(names(string_template(expression, bindings)))
+            function_tables[id(candidate_scope)] = candidates
+        candidates = function_tables[id(candidate_scope)]
+        dispatch = ""
+        if not origins and isinstance(node.func, ast.Attribute):
+            if potential_cursor and (candidates or "NOVA_SYSTEM" in query.upper()):
+                origins = {node.func.attr}
+                dispatch = "metadata_cursor_candidate"
+            elif potential_connection:
+                origins = {node.func.attr}
+                dispatch = "connection_candidate"
+        if not origins:
+            continue
+        direct = isinstance(node.func, ast.Attribute) and node.func.attr in origins
         calls.append(
             {
                 "path": path,
                 "line": node.lineno,
                 "api": ";".join(sorted(origins)),
-                "dispatch": "direct" if direct else "indirect_candidate",
+                "dispatch": dispatch or ("direct" if direct else "indirect_candidate"),
                 "receiver": ast.unparse(node.func.value) if direct else ast.unparse(node.func),
                 "function": ".".join(reversed(containers)),
                 "statement_kind": kind,
@@ -327,7 +350,7 @@ def merge_feature_inventory(path: Path, new_rows: list[dict[str, str]]) -> None:
     if not rows:
         raise ValueError("Feature inventory is empty")
     with path.open("w", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -439,7 +462,9 @@ def main() -> None:
                 for row in csv.DictReader(existing)
             }
     with calls_path.open("w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=list(result["system_calls"][0]))
+        writer = csv.DictWriter(
+            file, fieldnames=list(result["system_calls"][0]), lineterminator="\n"
+        )
         writer.writeheader()
         for row in result["system_calls"]:
             review = reviews.get((row["path"], row["source_file_sha256"], row["callsite_sha256"]))

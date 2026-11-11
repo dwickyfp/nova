@@ -75,6 +75,9 @@ AI SQL functions such as `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`,
 to know which model to call. A **function alias** maps a function type to a
 provider and model.
 
+Creating, changing or deleting an alias requires an active administrator role.
+The same requirement applies when registering the AI functions again.
+
 1. Click **Add Function Alias**.
 2. Choose the function **Type** and type an **Alias Name**, for example
    `default_complete`.

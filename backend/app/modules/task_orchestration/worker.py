@@ -45,6 +45,7 @@ from app.modules.task_orchestration.ddl import SCRIPT_HANDLERS
 from app.modules.task_orchestration.execution import (
     DelegateExecutor,
     NodeExecutionError,
+    NodeOutcomeUnknown,
     TaskSpec,
     native_attempt_name,
 )
@@ -515,6 +516,12 @@ class GraphRunWorker:
 
         try:
             result = await self._executor.execute(spec, owner, heartbeat=heartbeat)
+        except NodeOutcomeUnknown as exc:
+            await self._finalize(
+                job, task, run_id, owner, NodeState.ABANDONED,
+                query_id=exc.query_id, error=str(exc),
+            )
+            return
         except NodeExecutionError as exc:
             await self._finalize(
                 job,

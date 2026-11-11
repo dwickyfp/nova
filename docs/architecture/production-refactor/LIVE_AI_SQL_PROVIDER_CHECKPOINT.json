@@ -1,0 +1,454 @@
+{
+  "scope": "Pre-cutover live AI SQL; seven text functions; synthetic inputs only",
+  "application_tree_sha256": "39d8b7c5000eb1ab2e9b6a6e916c0112d75d93fb94a44e2fdfde0c0b25bbcacd",
+  "started_at": "2026-11-11T10:28:33.784005+00:00",
+  "attempts": [
+    {
+      "function_type": "complete",
+      "attempt": 1,
+      "sql": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+      "engine_timeout_ms": 144558,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:34.290836+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "ready",
+      "duration_seconds": 2.18
+    },
+    {
+      "function_type": "complete",
+      "attempt": 2,
+      "sql": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+      "engine_timeout_ms": 141726,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:36.700205+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "ready",
+      "duration_seconds": 3.94
+    },
+    {
+      "function_type": "complete",
+      "attempt": 3,
+      "sql": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+      "engine_timeout_ms": 141734,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:40.873670+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "ready",
+      "duration_seconds": 1.77
+    },
+    {
+      "function_type": "sentiment",
+      "attempt": 1,
+      "sql": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS answer",
+      "engine_timeout_ms": 136212,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:42.918742+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "{\"sentiment\":\"positive\",\"confidence\":0.99}",
+      "duration_seconds": 1.74
+    },
+    {
+      "function_type": "sentiment",
+      "attempt": 2,
+      "sql": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS answer",
+      "engine_timeout_ms": 163289,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:44.910197+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "{\"sentiment\":\"positive\",\"confidence\":0.99}",
+      "duration_seconds": 2.2
+    },
+    {
+      "function_type": "sentiment",
+      "attempt": 3,
+      "sql": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS answer",
+      "engine_timeout_ms": 141812,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:47.331893+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "{\"sentiment\":\"positive\",\"confidence\":0.99}",
+      "duration_seconds": 1.79
+    },
+    {
+      "function_type": "classify",
+      "attempt": 1,
+      "sql": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS answer",
+      "engine_timeout_ms": 167882,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:49.363315+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "billing",
+      "duration_seconds": 2.28
+    },
+    {
+      "function_type": "classify",
+      "attempt": 2,
+      "sql": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS answer",
+      "engine_timeout_ms": 134613,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:51.923030+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "billing",
+      "duration_seconds": 1.5
+    },
+    {
+      "function_type": "classify",
+      "attempt": 3,
+      "sql": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS answer",
+      "engine_timeout_ms": 128492,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:53.639831+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "billing",
+      "duration_seconds": 1.49
+    },
+    {
+      "function_type": "summarize",
+      "attempt": 1,
+      "sql": "SELECT AI_SUMMARIZE('Exactly 10 orders were shipped today. No orders remain pending.') AS answer",
+      "engine_timeout_ms": 121766,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:55.409998+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "Exactly 10 orders shipped today, and none are pending.",
+      "duration_seconds": 1.85
+    },
+    {
+      "function_type": "summarize",
+      "attempt": 2,
+      "sql": "SELECT AI_SUMMARIZE('Exactly 10 orders were shipped today. No orders remain pending.') AS answer",
+      "engine_timeout_ms": 156100,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:57.446863+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "All 10 orders were shipped today. None are pending.",
+      "duration_seconds": 1.99
+    },
+    {
+      "function_type": "summarize",
+      "attempt": 3,
+      "sql": "SELECT AI_SUMMARIZE('Exactly 10 orders were shipped today. No orders remain pending.') AS answer",
+      "engine_timeout_ms": 161896,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:28:59.715144+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "Exactly 10 orders shipped today, and none are pending.",
+      "duration_seconds": 2.65
+    },
+    {
+      "function_type": "extract",
+      "attempt": 1,
+      "sql": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS answer",
+      "engine_timeout_ms": 153453,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:02.512417+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "{\"total\":120}",
+      "duration_seconds": 2.91
+    },
+    {
+      "function_type": "extract",
+      "attempt": 2,
+      "sql": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS answer",
+      "engine_timeout_ms": 143841,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:05.741182+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "{\"total\":120}",
+      "duration_seconds": 2.04
+    },
+    {
+      "function_type": "extract",
+      "attempt": 3,
+      "sql": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS answer",
+      "engine_timeout_ms": 152879,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:08.031151+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "{\"total\":120}",
+      "duration_seconds": 2.32
+    },
+    {
+      "function_type": "translate",
+      "attempt": 1,
+      "sql": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS answer",
+      "engine_timeout_ms": 154686,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:10.720583+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "Selamat pagi",
+      "duration_seconds": 2.31
+    },
+    {
+      "function_type": "translate",
+      "attempt": 2,
+      "sql": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS answer",
+      "engine_timeout_ms": 168173,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:13.269723+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "Selamat pagi",
+      "duration_seconds": 1.41
+    },
+    {
+      "function_type": "translate",
+      "attempt": 3,
+      "sql": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS answer",
+      "engine_timeout_ms": 120251,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:14.969138+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "Selamat pagi",
+      "duration_seconds": 2.06
+    },
+    {
+      "function_type": "filter",
+      "attempt": 1,
+      "sql": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS answer",
+      "engine_timeout_ms": 135261,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:17.255466+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "true",
+      "duration_seconds": 1.4
+    },
+    {
+      "function_type": "filter",
+      "attempt": 2,
+      "sql": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS answer",
+      "engine_timeout_ms": 146253,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:18.886720+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "true",
+      "duration_seconds": 1.89
+    },
+    {
+      "function_type": "filter",
+      "attempt": 3,
+      "sql": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS answer",
+      "engine_timeout_ms": 149947,
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:29:20.947900+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "gateway_success_delta": 1.0,
+      "provider_invocation_observed": true,
+      "synthetic_output": "true",
+      "duration_seconds": 1.39
+    }
+  ],
+  "temporary_aliases": [
+    {
+      "id": "3a91018c-e459-4ecb-9229-364d5d07cf83",
+      "function_type": "complete",
+      "deleted": true
+    },
+    {
+      "id": "30ab8165-b570-4330-b1a4-659110028d04",
+      "function_type": "complete",
+      "deleted": true
+    },
+    {
+      "id": "bb1e6215-dac5-40c2-9ee0-25c7a2dd7464",
+      "function_type": "complete",
+      "deleted": true
+    },
+    {
+      "id": "aa186cad-9491-4acf-aed3-780ec3065888",
+      "function_type": "sentiment",
+      "deleted": true
+    },
+    {
+      "id": "3464bd00-d651-47b8-b697-f20272a2e4f1",
+      "function_type": "sentiment",
+      "deleted": true
+    },
+    {
+      "id": "da5c7251-1df4-4cab-8001-66975523cfa7",
+      "function_type": "sentiment",
+      "deleted": true
+    },
+    {
+      "id": "cd95507b-964c-43a6-a775-b01bdb0d3e0f",
+      "function_type": "classify",
+      "deleted": true
+    },
+    {
+      "id": "3da906fa-3018-42a2-a3ed-40d9af28b963",
+      "function_type": "classify",
+      "deleted": true
+    },
+    {
+      "id": "1be98a5b-74d8-4a95-918a-02898ded15c6",
+      "function_type": "classify",
+      "deleted": true
+    },
+    {
+      "id": "2223e00f-014d-42cd-b3ec-185eac7cf8d4",
+      "function_type": "summarize",
+      "deleted": true
+    },
+    {
+      "id": "c29d4357-43e1-4d71-b0ee-fc10d6056b04",
+      "function_type": "summarize",
+      "deleted": true
+    },
+    {
+      "id": "54a27214-00c5-4035-9b29-ef18360082db",
+      "function_type": "summarize",
+      "deleted": true
+    },
+    {
+      "id": "f4287166-2063-40a5-bc2d-992bd11087c1",
+      "function_type": "extract",
+      "deleted": true
+    },
+    {
+      "id": "83ee0c1e-a3ff-4538-a3d2-64ef94a53a53",
+      "function_type": "extract",
+      "deleted": true
+    },
+    {
+      "id": "1ef49a70-101b-4469-931a-6b151fadaff0",
+      "function_type": "extract",
+      "deleted": true
+    },
+    {
+      "id": "cddb48fb-4438-49c3-a962-bb3e114cdcfe",
+      "function_type": "translate",
+      "deleted": true
+    },
+    {
+      "id": "1aa92ef5-1a22-47fa-a561-a5cc2650ee27",
+      "function_type": "translate",
+      "deleted": true
+    },
+    {
+      "id": "c088cdd8-5921-48ae-83a2-0061a8261e34",
+      "function_type": "translate",
+      "deleted": true
+    },
+    {
+      "id": "7ecb0a1a-da4e-4d9c-87bf-f6042ce6958d",
+      "function_type": "filter",
+      "deleted": true
+    },
+    {
+      "id": "accdce92-43fb-47dd-a579-1c58c98cf733",
+      "function_type": "filter",
+      "deleted": true
+    },
+    {
+      "id": "c931ce42-dcc9-48ee-b623-7298cbe02ac3",
+      "function_type": "filter",
+      "deleted": true
+    }
+  ],
+  "embedding": "OWNER_WAIVED",
+  "cache_control": "Distinct engine timeout_ms per attempt; identical SQL input and model parameters; require gateway success counter delta of one. Timeout is not sent to the provider.",
+  "original_registration_restored": true,
+  "finished_at": "2026-11-11T10:29:22.449229+00:00"
+}

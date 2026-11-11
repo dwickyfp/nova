@@ -100,8 +100,8 @@ The previous docs commit's CI run `42977447467` completed with 240 integration
 cases: 214 passed, two failed, 24 skipped. Both failures expected uncertain Task
 nodes to remain abandoned; the worker had instead settled them as failed. The
 worker now holds these runs, including when a sibling failed or a finalizer is
-uncertain. Unit and local synthetic engine evidence pass. A new CI run has not
-yet verified this revision. The previous CI result is not green.
+uncertain. Unit and local synthetic engine evidence pass. Checkpoint CI run `42996593585` subsequently passed both regressions.
+The earlier failing CI attempt remains recorded here.
 
 Those 24 skips include live/custom tools, patched-FE/Ranger acceptance, engine
 capabilities, cross-cluster migration, delayed-publication/label-expiry faults,
@@ -116,3 +116,95 @@ and Dataviz acceptance after PG cutover remain pending. The separate
 `LIVE_CHAT_CHECKPOINT.json` proves the six pre-cutover Console chat/history
 attempts only. It does not certify tool calling, external search, Studio,
 Dataviz, dependency failures or post-migration behavior.
+
+## Follow-up: uncertain native submission and complete connection discovery
+
+This follow-up starts from checkpoint commit
+`ee4ff8f498aad14d09c9eb2c8021089347a55ba4`. Its application source digest is
+`39d8b7c5000eb1ab2e9b6a6e916c0112d75d93fb94a44e2fdfde0c0b25bbcacd`.
+The earlier live chat and PG evidence above remains tied to its original code.
+
+Native Task transport loss during submission, response or connection cleanup
+now leaves an abandoned node and a held graph. The same applies to an observation
+deadline, heartbeat loss or an unrecognized native state. Explicit pre-admission
+syntax/access refusals remain known failures. This is a conservative recovery
+hold, not the planned PG receipt/reconciliation protocol.
+
+- Ten new unit cases cover seven uncertain paths, two explicit refusals and a
+  refusal-shaped error after acknowledgement. Each uncertain-path case tries
+  three deliveries and checks one submission, no native deletion, no child or
+  finalizer execution, no replacement admission and sanitized stored errors.
+- The expanded Task-focused suite passed 151 cases. The complete application
+  suite passed 10,425 cases with 65% branch/line combined coverage before the
+  scanner additions. Two subsequent 10,427-case runs passed. After the alias authorization
+  fix, the final full suite passed 10,452 cases with 65% coverage in 453.09 seconds.
+- Full application mypy and the agent scorecard passed (54/54 scenarios,
+  189/189 checks). Changed-file Ruff passed after fixing one overlong profile
+  description. The two changed Task docs passed the 15-case docs suite and were
+  inspected as rendered pages in Chrome; no executable example changed.
+- The new real-engine regression injects lost completion after a real INSERT
+  commits, then requires three worker deliveries to leave exactly one row and
+  one native submission. It collected one case. Execution is pending in CI;
+  its seeding/fault setup is not run on the shared development database.
+
+The source review expanded to 875 calls: the original 791 pooled/indirect paths
+plus 84 direct connection/cursor candidates. Eight scanner regressions pass,
+including raw connection bypasses, mixed cursor functions, dynamic SQL and
+review/waiver preservation. All 875 have destination classifications. Table
+transforms, per-role grants, constraints and timestamp provenance remain open;
+this does not close WP00.
+
+The read-only constraint profile now executes 44 checks on the existing engine.
+It found two duplicate workspace revision groups and 135 orphan Task node rows
+(128 success, seven failed). The other checked candidates had zero observed
+violations. No row, object, password or shared volume was changed by profiling.
+These observations are not a frozen migration snapshot.
+
+CI run `42996593585` tests checkpoint `ee4ff8f4`, not this follow-up. Grammar,
+backend static/unit, Notebook image/kernel, Superset image/unit, PG17 boundary
+and frontend jobs passed. Real-engine integration also passed: 216 passed,
+zero failed, 24 skipped. The follow-up's new external-commit regression has not
+yet been delivered to CI. The 24 skipped capabilities remain acceptance gaps.
+
+## Follow-up: AI alias authorization and live SQL evidence
+
+Global AI alias creation, update, deletion and UDF registration now require an
+active administrator role. Merely having an assigned administrator role is
+insufficient. Authenticated users retain read access to alias and registration
+metadata. Twenty-five route tests cover the four mutations with each supported
+admin role, an inactive admin and a missing role, plus non-admin reads. The live
+fixture setup/cleanup exercises the authorized admin path. A live non-admin
+mutation test remains pending; controlled tests do not substitute for it.
+
+The final application mypy check passed, and the scorecard passed 54/54 scenarios
+and 189/189 checks. The docs browser suite passed 15 cases; the AI provider page
+was verified in Chrome with the active-role requirement rendered.
+
+`LIVE_AI_SQL_CHECKPOINT.json` retains the first 21 SQL output validations, three
+per text function. Gateway counters showed only seven provider calls, with the
+14 repeated results coming from the engine cache. These are SQL output passes,
+not 21 independent provider passes. `LIVE_AI_SQL_UNCACHED_CHECKPOINT.json` retains
+a second attempt: all 21 failed its explicit provider-invocation criterion,
+although outputs were valid. Fresh disposable alias IDs did not bypass caching.
+
+The pinned StarRocks cache key contains the prompt, model, sampling parameters
+and timeout, but omits endpoint and alias credential. See the exact
+[upstream implementation](https://github.com/StarRocks/starrocks/blob/4a9848edf03f5c936dac664b2d52527f48e72eb0/be/src/util/llm_cache.cpp#L24-L34).
+This confirms why alias changes alone could not establish a new provider call;
+provider/alias cache partitioning is now tracked as risk R27, not treated as
+verified security. All disposable aliases from both attempts were deleted and
+the original registration restored. No embedding provider was configured.
+
+`LIVE_AI_SQL_PROVIDER_CHECKPOINT.json` records the third experiment: all 21
+independent provider invocations passed, three each for Complete, Sentiment,
+Classify, Summarize, Extract, Translate and Filter on the existing
+`cx/gpt-6-luna` model. Each attempt required a gateway success counter increase
+of exactly one, a successful SQL result and the expected structured/semantic
+output. The synthetic SQL input and model parameters were identical within
+each function; only the engine observation timeout varied (120–170 seconds),
+which is not forwarded to the provider. All calls completed within four seconds.
+All 21 temporary aliases were removed and original UDF registration restored.
+This verifies pre-cutover happy paths only, not cache isolation, provider
+failures, authorization, AI quality on arbitrary inputs or post-PG behavior.
+
+Final changed-file Ruff passed for all 34 Python files in the branch.

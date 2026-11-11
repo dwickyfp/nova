@@ -12,6 +12,7 @@ Endpoints under /api/v1/ai:
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import get_current_user
+from app.core.role_gates import require_active_role
 from app.modules.llm_functions.schemas import (
     VALID_FUNCTION_TYPES,
     AliasCreate,
@@ -23,8 +24,11 @@ from app.modules.llm_functions.schemas import (
     UDFStatusResponse,
 )
 from app.modules.llm_functions.service import llm_function_service
+from app.modules.users.router import ADMIN_ROLES
 
 router = APIRouter()
+require_user = Depends(get_current_user)
+require_admin = Depends(require_active_role(*ADMIN_ROLES))
 
 
 # ── Aliases ───────────────────────────────────────────────────
@@ -32,7 +36,7 @@ router = APIRouter()
 
 @router.get("/aliases", response_model=AliasListResponse)
 async def list_aliases(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all LLM function aliases."""
     aliases = await llm_function_service.list_aliases()
@@ -43,20 +47,22 @@ async def list_aliases(
 @router.post("/aliases", response_model=AliasResponse, status_code=201)
 async def create_alias(
     body: AliasCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Create a new LLM function alias and register the UDF."""
     if body.function_type not in VALID_FUNCTION_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}",
+            detail=(
+                f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}"
+            ),
         )
     try:
         result = await llm_function_service.create_alias(
             body.model_dump(), user["username"]
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     return AliasResponse(**result)
 
 
@@ -64,7 +70,7 @@ async def create_alias(
 async def update_alias(
     alias_id: str,
     body: AliasUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Update an existing alias."""
     data = body.model_dump(exclude_none=True)
@@ -73,12 +79,14 @@ async def update_alias(
     if "function_type" in data and data["function_type"] not in VALID_FUNCTION_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}",
+            detail=(
+                f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}"
+            ),
         )
     try:
         result = await llm_function_service.update_alias(alias_id, data)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     if not result:
         raise HTTPException(status_code=404, detail=f"Alias '{alias_id}' not found")
     return AliasResponse(**result)
@@ -87,7 +95,7 @@ async def update_alias(
 @router.delete("/aliases/{alias_id}", status_code=204)
 async def delete_alias(
     alias_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Delete an alias."""
     deleted = await llm_function_service.delete_alias(alias_id)
@@ -100,7 +108,7 @@ async def delete_alias(
 
 @router.post("/aliases/register-udfs", response_model=UDFRegisterResponse)
 async def register_udfs(
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Re-register all LLM UDFs in StarRocks.
 
@@ -121,7 +129,7 @@ async def register_udfs(
 
 @router.get("/aliases/udf-status", response_model=UDFStatusResponse)
 async def get_udf_status(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Check which LLM UDFs are registered in StarRocks."""
     statuses = await llm_function_service.get_udf_status()

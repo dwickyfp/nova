@@ -1,7 +1,7 @@
 {
-  "started_at": "2026-11-11T09:06:04.396500+00:00",
+  "started_at": "2026-11-11T10:07:38.002517+00:00",
   "consistent_snapshot": false,
-  "scope": "reviewed workspace/preferences/stages/audit candidates only",
+  "scope": "reviewed relational uniqueness, reference and scope candidates; not all constraints",
   "checks": {
     "workspace_live_path_duplicates": {
       "count": 0,
@@ -82,7 +82,108 @@
     "audit_null_query_id": {
       "count": 0,
       "query_sha256": "3e7eafdb0b4f70a47333d30c648f05716432f51d1788d7bd7fd36440f5920661"
+    },
+    "ai_models_orphan_provider": {
+      "count": 0,
+      "query_sha256": "b2272e8541bea1e901bd476aafd198962e20f2c67251ea54e84a58f3c6c0607a"
+    },
+    "ai_aliases_orphan_provider": {
+      "count": 0,
+      "query_sha256": "c1be6b94a47247ac7f3425e0e6c84fb36f4079eabbfd3eeccf65a78b7b35aa7f"
+    },
+    "ai_aliases_orphan_model": {
+      "count": 0,
+      "query_sha256": "b6496c52c7d2484186756fc384eb4060ab1094ffd05877774600812d003265a0"
+    },
+    "ai_aliases_provider_model_mismatch": {
+      "count": 0,
+      "query_sha256": "07e847bd5005ae388f04be6946e1fd36a9c0b1f5d5bcc8b4b7007ba3c254b74a"
+    },
+    "ai_aliases_multiple_active_defaults": {
+      "count": 0,
+      "query_sha256": "a3d1092cdda87119cbeb5a93b171881d0a0a4fc59259d26c02691408310acf34"
+    },
+    "ai_aliases_duplicate_name": {
+      "count": 0,
+      "query_sha256": "c14c27374d2d8d625813770112fe6f73e3a866f0a41e6acd7f4fc1f1381eea55"
+    },
+    "assistant_messages_orphan_thread": {
+      "count": 0,
+      "query_sha256": "d3dd5a93f7002b1149133cffd13a01d4de9766d58f232a913586c3301f5ea28e"
+    },
+    "assistant_messages_owner_mismatch": {
+      "count": 0,
+      "query_sha256": "bb82f4aac56813f73c28b2cb93370d949503392018c4b1c20c57cc804b2672a0"
+    },
+    "assistant_message_sequence_duplicates": {
+      "count": 0,
+      "query_sha256": "6fb85d2983985cd4bc0bda41a39a66993a21050ec9815d25a6ce7871f5a9d6bf"
+    },
+    "agent_events_orphan_run": {
+      "count": 0,
+      "query_sha256": "b375a4f5263cf07682e6ecca273ef03c930263fd5e79f4d83e23e99ea7691642"
+    },
+    "agent_events_above_high_water": {
+      "count": 0,
+      "query_sha256": "0aeababad21302e2fff382857f4f1b832a9ac2b7aa84b99a5afa4dad4998e6c0"
+    },
+    "ml_version_orphan_model": {
+      "count": 0,
+      "query_sha256": "c1d944ec6c9bfa9ff72b4101c2e9e9a97e4c3eafa1669ad84cb8b74a93b22957"
+    },
+    "ml_alias_orphan_version": {
+      "count": 0,
+      "query_sha256": "1170ae5c36e3f5d8672a0f627ee4b6136185ff2839cfae84f68d489d0052a864"
+    },
+    "ml_current_version_missing_or_not_ready": {
+      "count": 0,
+      "query_sha256": "93170c37e60625e604bb60781a28cc3258d98631bd3dc46c2acb2bf320969990"
+    },
+    "semantic_active_version_missing_or_inactive": {
+      "count": 0,
+      "query_sha256": "59daf0c86de17a3d8c828d0cb4793fe0a7e48365e856700fa515c140263ad345"
+    },
+    "semantic_orphan_version": {
+      "count": 0,
+      "query_sha256": "8d987a86fde76d2cb215761c2491f6aa3cdaf0b254a9a8b6a3972850928a77fa"
+    },
+    "feature_view_active_version_missing": {
+      "count": 0,
+      "query_sha256": "9aa32108466802d35197552297bc4603e34b14f9bff99bed9c21a04bee7077d6"
+    },
+    "feature_group_active_version_missing": {
+      "count": 0,
+      "query_sha256": "0d62208bde8a1c908996d79b65388afe3ec5b47616fc0b999f2dd8be2b6c8c54"
+    },
+    "task_node_orphan_graph_run": {
+      "count": 135,
+      "query_sha256": "cd75d8a51a4a909fdeb249ddb5cb0cee747d2c7ba2da566f2772f331758d7671"
+    },
+    "task_node_attempt_duplicates": {
+      "count": 0,
+      "query_sha256": "31312f83cd27aa2e23d722cb9070663664a779596769872ca56771c192472f9d"
+    },
+    "task_duplicate_qualified_name": {
+      "count": 0,
+      "query_sha256": "66981109a30541b780b014ade94962b62fc201a1782af91e085db7dfc7083410"
+    },
+    "notebook_execution_orphan_runtime": {
+      "count": 0,
+      "query_sha256": "2953ebb09c1b0289733f7b40018a85135643e1fa3a46ed4a16735db68a4b39d5"
+    },
+    "notebook_execution_runtime_scope_mismatch": {
+      "count": 0,
+      "query_sha256": "8a18188a25116c6135f123ee427435c3aeac3714eff350191ffe29740fbfe0f9"
+    },
+    "dataviz_duplicate_idempotency_scope": {
+      "count": 0,
+      "query_sha256": "ba2a1ef9d7aea9081ea9725e7adddef76075a4859f963157be29ed658a4d1632"
     }
   },
-  "finished_at": "2026-11-11T09:06:16.781209+00:00"
+  "finished_at": "2026-11-11T10:07:41.316071+00:00",
+  "orphan_task_nodes_by_state": {
+    "success": 128,
+    "failed": 7
+  },
+  "orphan_task_observed_at": "2026-11-11T10:09:29.760538+00:00"
 }
