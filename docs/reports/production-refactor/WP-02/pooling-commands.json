@@ -188,7 +188,30 @@
     "pooler_processes_remaining": 0
   },
   "ci": {
-    "result": "PENDING"
+    "result": "FAIL",
+    "commit": "60e859d8b93f95131e4616bc8d204fa18af75177",
+    "run_url": "https://github.com/dwickyfp/nova/actions/runs/43036382504",
+    "jobs_succeeded": 6,
+    "jobs_failed": 2,
+    "engine": {
+      "passed": 217,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 24
+    },
+    "failed_setup_jobs": [
+      {
+        "name": "PostgreSQL 17 metadata boundaries",
+        "step": "Build checksum-pinned transaction pooler",
+        "reason": "Ubuntu mirror DNS resolution failure during apt dependency installation; no PG tests ran."
+      },
+      {
+        "name": "Frontend (lint, build, vitest)",
+        "step": "Install Playwright browser",
+        "reason": "Ubuntu mirror DNS resolution failure during OS dependency installation; frontend checks did not run."
+      }
+    ],
+    "limit": "The complete CI gate failed. Passing local PG tests and the engine job do not replace the failed setup jobs."
   },
   "limits": [
     "Production Compose/pooler wiring pending",

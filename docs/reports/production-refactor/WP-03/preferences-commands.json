@@ -199,7 +199,7 @@
   },
   "ci": {
     "result": "PENDING",
-    "limit": "This working tree is not pushed. Parent run 43036382504 failed PG/browser dependency installation before tests because Ubuntu mirrors could not be resolved; engine job is still running."
+    "limit": "This checkpoint is pushed as fe44caa5b4883a32c1637cecdf4be2bfe1b9714c; CI pending. Parent run 43036382504 completed with two dependency-installation failures and 217 engine passes/24 skips."
   },
   "limitations": [
     "No caller uses the PG preference repository yet",

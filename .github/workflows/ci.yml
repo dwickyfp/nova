@@ -12,7 +12,7 @@ concurrency:
 jobs:
   metadata-pg:
     name: PostgreSQL 17 metadata boundaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -22,15 +22,9 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
-      - name: Build checksum-pinned transaction pooler
-        timeout-minutes: 5
-        working-directory: backend
-        run: |
-          sudo apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=2 \
-            -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 \
-            -o Acquire::https::Timeout=30 install -y build-essential pkg-config libevent-dev libssl-dev
-          uv run python tests/integration/build_metadata_pooler.py "$RUNNER_TEMP/nova-pgbouncer"
+      - name: Build pinned metadata test runtime and transaction pooler
+        timeout-minutes: 8
+        run: docker build -f docker/metadata-test.Dockerfile -t nova-metadata-test:ci .
       - name: Prepare private TLS fixture
         working-directory: backend
         run: uv run python tests/integration/prepare_metadata_fixture.py "$RUNNER_TEMP/nova-metadata-pg"
@@ -40,9 +34,14 @@ jobs:
           docker ps --format '{{.Names}}'
           docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" up -d --wait
       - name: Verify metadata transactions and security boundaries
-        working-directory: backend
         run: |
-          uv run python - <<'PY'
+          mkdir -m 700 "$RUNNER_TEMP/nova-metadata-report"
+          docker run --rm -i --network host --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e RUNNER_TEMP \
+            -v "$RUNNER_TEMP/nova-metadata-pg:$RUNNER_TEMP/nova-metadata-pg:ro" \
+            -v "$RUNNER_TEMP/nova-metadata-report:/reports" \
+            nova-metadata-test:ci - <<'PY'
           import json
           import os
           from pathlib import Path
@@ -52,25 +51,24 @@ jobs:
           )
           os.environ["NOVA_TEST_METADATA_ADMIN_DSN"] = configuration["admin_dsn"]
           os.environ["NOVA_TEST_METADATA_DISPOSABLE"] = "acknowledged"
-          os.environ["NOVA_TEST_PGBOUNCER_BINARY"] = str(
-              Path(os.environ["RUNNER_TEMP"]) / "nova-pgbouncer/pgbouncer"
-          )
           raise SystemExit(pytest.main([
               "tests/integration/test_metadata_pg_foundation.py",
               "tests/integration/test_metadata_bootstrap.py",
               "tests/integration/test_metadata_pgbouncer.py",
               "tests/integration/test_metadata_preferences.py",
               "tests/integration/test_metadata_migrator.py", "-v",
-              "--junit-xml=metadata-pg.xml",
+              "-p", "no:cacheprovider", "--junit-xml=/reports/metadata-pg.xml",
           ]))
           PY
       - name: Refuse skipped or empty acceptance
         if: always()
-        working-directory: backend
         run: |
           python - <<'PY'
+          import os
+          from pathlib import Path
           from xml.etree import ElementTree as ET
-          suites = list(ET.parse("metadata-pg.xml").getroot().iter("testsuite"))
+          report = Path(os.environ["RUNNER_TEMP"]) / "nova-metadata-report/metadata-pg.xml"
+          suites = list(ET.parse(report).getroot().iter("testsuite"))
           assert sum(int(s.attrib["tests"]) for s in suites) > 0, "No PG tests executed"
           for suite in suites:
               assert all(int(suite.attrib[k]) == 0 for k in ("failures", "errors", "skipped")), suite.attrib
@@ -79,7 +77,7 @@ jobs:
         if: always()
         with:
           name: metadata-pg-report
-          path: backend/metadata-pg.xml
+          path: ${{ runner.temp }}/nova-metadata-report/metadata-pg.xml
       - name: Remove this job's disposable database
         if: always()
         run: |
@@ -483,11 +481,14 @@ jobs:
 
   frontend:
     name: Frontend (lint, build, vitest)
-    # Playwright 1.59.1 ships no Chromium for Ubuntu 26.04, which ubuntu-latest
-    # now resolves to. Move off 24.04 together with a Playwright upgrade.
     runs-on: ubuntu-24.04
+    container:
+      # Match the locked Playwright package; this image supplies browser OS deps.
+      image: mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
+      options: --shm-size=1g
     defaults:
       run:
+        shell: bash
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
@@ -514,8 +515,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify the pinned Chromium runtime
+        timeout-minutes: 2
+        run: |
+          node --input-type=module - <<'JS'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({ headless: true });
+          console.log(`Chromium ${browser.version()}`);
+          await browser.close();
+          JS
 
       - name: Intelligent UI catalog and validator drift
         run: pnpm ui:check

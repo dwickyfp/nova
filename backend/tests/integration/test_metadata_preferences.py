@@ -486,3 +486,53 @@ async def test_caught_batch_conflict_cannot_commit_partial_preferences(preferenc
         assert all(record.revision == 1 for record in records.values())
         with pytest.raises(ValueError, match="active metadata transaction"):
             await repo.change("alice", {"studio.theme": PreferenceChange(1, "outside")})
+
+
+@pytest.mark.parametrize("workload", ["query", "proxy"])
+async def test_sql_workload_password_flags_require_active_admin(preferences, workload):
+    async with preferences(workload) as (repo, _):
+        administrator = actor("admin", "SECURITYADMIN")
+        await repo.change(administrator, "alice", {
+            "nova.must_change_password": PreferenceChange(0, "true"),
+        })
+        record = await repo.read(administrator, "alice", ["nova.must_change_password"])
+        assert record["nova.must_change_password"].revision == 1
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.change(actor(), "alice", {
+                "nova.must_change_password": PreferenceChange(1, "false"),
+            })
+        for key, owner in (("nova.news_enabled", "alice"), ("studio.theme", "admin")):
+            with pytest.raises(MetadataPermissionDenied):
+                await repo.change(administrator, owner, {key: PreferenceChange(0, "true")})
+        await repo.change(administrator, "alice", {
+            "nova.must_change_password": PreferenceChange(1, "false"),
+        })
+        assert (await repo.read(actor(), "alice", ["nova.must_change_password"]))[
+            "nova.must_change_password"
+        ].revision == 2
+
+
+async def test_password_policy_upgrade_preserves_existing_preference_rows(environment, tmp_path):  # noqa: F811
+    await environment.bootstrap()
+    for revision in load_migrations():
+        if revision.version <= 2:
+            (tmp_path / revision.name).write_text(revision.statement)
+    result = await migrate(
+        environment.role_config("nova_meta_migrator"), app_version="a" * 40, directory=tmp_path,
+    )
+    assert result.schema_version == 2
+    await environment.admin.execute(
+        "INSERT INTO nova_meta.config_user_preferences "
+        "(user_name,pref_key,pref_value,revision) "
+        "VALUES ('alice','nova.must_change_password','true',7)"
+    )
+    before = await environment.admin.execute(
+        "SELECT * FROM nova_meta.config_user_preferences WHERE user_name='alice'"
+    )
+    original = await before.fetchone()
+    result = await migrate(environment.role_config("nova_meta_migrator"), app_version="b" * 40)
+    assert 3 in result.applied_versions
+    after = await environment.admin.execute(
+        "SELECT * FROM nova_meta.config_user_preferences WHERE user_name='alice'"
+    )
+    assert await after.fetchone() == original

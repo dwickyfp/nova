@@ -80,3 +80,36 @@ hashes, exact commands, earlier attempts and scope. The sanitized JUnit report
 is [metadata-preferences-local.xml](metadata-preferences-local.xml). CI for
 these edits is pending; the parent run's Ubuntu mirror DNS failures remain
 failed infrastructure evidence and do not certify this source.
+
+## SQL password-flag workload correction
+
+The SQL frontend's managed password-flag command runs in query and proxy.
+Two new regression cases failed against revision 0002: query lacked its required
+administrator write grant, while proxy could clear its own flag without an
+administrator role. Revision 0003 fixes these policies, keeps News and personal
+preference writes restricted to web, and preserves prior rows/revisions on
+upgrade. No immutable migration was rewritten.
+
+The current local PG run passes 99 tests without skips in 92.62 seconds. The
+original two failures and intermediate 98-test pass remain recorded in
+[password-flags-commands.json](password-flags-commands.json). The final sanitized
+report is [metadata-preferences-sql-flags.xml](metadata-preferences-sql-flags.xml).
+The fixture has no remaining test schema or newly created role. Full backend
+coverage passes 10,622 tests with four warnings in 1,416.68 seconds (65% coverage).
+Mypy, changed-file Ruff (58 Python files), and the 54-scenario/189-check agent
+scorecard pass. The application source is unchanged from the preference checkpoint.
+
+CI dependency setup now uses a digest-pinned Playwright image matching the
+locked package and a digest-pinned Python test image with libevent/OpenSSL build
+dependencies. The latter compiles the checksum-pinned PgBouncer and runs tests
+as a non-root user against the disposable TLS database. It mounts only the
+private fixture and report directory, without a Docker socket. Chromium must
+launch successfully, and all existing lint/build/coverage and PG test guards
+remain required. These changes remove the affected per-job Ubuntu apt download;
+they do not turn previous setup failures into passes. CI evidence remains pending.
+
+Image contents were checked against the official
+[Playwright Docker documentation](https://playwright.dev/docs/docker) and
+[Python base-image build dependencies](https://github.com/docker-library/buildpack-deps/blob/master/debian/bookworm/Dockerfile).
+Registry manifests supplied the exact digests in the Dockerfile/workflow.
+This is CI infrastructure, not the pending production Compose deployment.

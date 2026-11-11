@@ -478,3 +478,18 @@ PG suite passed 96 cases without skips in 67.65 seconds, including 27 preference
 cases. A 90-minute scan of 2,368 fixture log lines found zero occurrences of
 the preference secret canaries or encrypted-envelope marker; no raw logs were
 exported. Earlier runs remain in the report. CI for this source is still pending.
+
+CI 43036382504 subsequently completed with six successful jobs and two failed
+dependency-installation jobs. Its downloaded engine report has 217 passes and
+24 skips, no failures/errors. The run remains FAIL because PG and frontend
+acceptance never started. The preference checkpoint was pushed separately as
+`fe44caa5b4883a32c1637cecdf4be2bfe1b9714c`; its CI evidence is pending.
+
+Revision 0003 corrects the preference password-policy grants after two regression
+tests exposed a missing administrator write grant for query and an overly broad
+self-clear exception for proxy. Both SQL workloads now require an active
+administrator role; the web authentication path retains self-clear after a
+verified password change. News administration and personal writes stay with web.
+The combined local suite passes 99 PG tests without skips, including a revision-2
+upgrade that preserves existing row contents and revision. See the
+[password-policy evidence](../../reports/production-refactor/WP-03/password-flags-commands.json).

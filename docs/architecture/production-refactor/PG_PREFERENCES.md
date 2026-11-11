@@ -3,7 +3,9 @@
 Revision `0002_user_preferences.sql` installs the first domain table,
 `nova_meta.config_user_preferences`. The PG repository is
 `backend/app/common/preferences.py`. Both are tested using the production
-bootstrap and migrator on the existing disposable PG17 fixture.
+bootstrap and migrator on the existing disposable PG17 fixture. Revision
+`0003_password_flag_workloads.sql` corrects grants for both SQL consumers without
+rewriting revision 0002 or existing preference rows.
 
 The running application still uses StarRocks. No caller has switched to this
 repository, no second write is made, and no deployment epoch has been published.
@@ -48,14 +50,15 @@ The SQL gateway must continue denying access to metadata and its credentials.
 | Row category | Read | Write |
 | --- | --- | --- |
 | Reviewed profile, Workspace and Studio keys | Own rows through web/query/proxy/agent or scoped readonly | Own rows through web |
-| Account flags | Own rows through the same readers; web/proxy administrators may inspect target-user flags | Web/proxy with active `ACCOUNTADMIN`, `SECURITYADMIN`, `user_admin` or `security_admin` |
-| News entitlement | Also readable for the current actor by automation | Same account-administration rule |
+| Password-change flag | Own rows through the same readers; web/query/proxy administrators may inspect target-user flags | Web/query/proxy with active `ACCOUNTADMIN`, `SECURITYADMIN`, `user_admin` or `security_admin` |
+| News entitlement | Own rows through the same readers and automation; target-user rows through web administrators | Web with one of the active administration roles above |
 | Default model | Web/query/proxy/agent/task/automation and scoped readonly | Web with one of the active administration roles above |
 | Setup marker | Web | Web with active `ACCOUNTADMIN` |
 | Encrypted search credential | Web and agent only | Web with one of the active administration roles above |
 
-The caller may clear its own password-change flag to `false`; it cannot set the
-flag or delete it. The authentication port must keep that call after verified
+The web caller may clear its own password-change flag to `false`; a caller without
+an administration role cannot set the flag or delete it. Query/proxy cannot use
+this self-clear exception. The authentication port must keep that call after verified
 StarRocks password-change success. Saving `workspace.last_role` or `studio.role`
 does not change the active security context or grant an entitlement.
 
@@ -80,13 +83,19 @@ it exported counts and key names only. This was not a writer-frozen snapshot.
 
 ## Evidence and remaining wiring
 
-The combined PG suite passes 96 cases without skips, including fresh install,
-upgrade from revision 1, migration rollback, PgBouncer isolation and 27 preference
+The combined PG suite passes 99 cases without skips, including fresh install,
+upgrades from revisions 1 and 2, migration rollback, PgBouncer isolation and 30 preference
 cases. Preference cases cover concurrent create/update, cross-user access,
 inactive administration, every workload identity, secret boundaries, saved-role
 spoofing, atomic batches, lock timeout/recovery, maintenance, tombstones and
 preserved imported values. The [WP03 report](../../reports/production-refactor/WP-03/README.md)
 records exact commands and source versions.
+
+The managed SQL adapter `_execute_force_password_change` runs in query and proxy
+workloads. Regression tests initially exposed a missing query write grant and a
+proxy self-clear overgrant. Revision 0003 grants only administrator password-flag
+updates to these workloads; tests also refuse News and personal-preference writes.
+The upgrade test retains an existing flag and its revision unchanged.
 
 Still required: port every caller with its real actor and revision, preserve
 pre-authentication/bootstrap semantics, atomically persist relevant audit/job
