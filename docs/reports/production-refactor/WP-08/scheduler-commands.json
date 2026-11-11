@@ -1,0 +1,210 @@
+{
+  "source_parent_commit": "6bc9c1a859258e5753b4936b7dcddc7832dacbbd",
+  "application_tree_sha256": "1b0ec04b97d1ba687c149acf9d5cc5b212313346b65b50661b3b8005cfec8249",
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470",
+    "0005_durable_jobs.sql": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5",
+    "0006_scheduler_fencing.sql": "c48b0c39a38c148f1f5d69662e35733130f03179841acffded12c78bb4a66df2"
+  },
+  "topology": "Existing docker project: PG17.11 verify-full TLS, native PgBouncer1.26.1; no new engine/database stack",
+  "pg_attempts": [
+    {
+      "attempt": 1,
+      "tests": 2,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 5.473
+    },
+    {
+      "attempt": 2,
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 51.2
+    }
+  ],
+  "full_pg": {
+    "result": "PASS",
+    "selection": [
+      "test_metadata_scheduler.py",
+      "test_metadata_jobs.py",
+      "test_metadata_ai_registry.py",
+      "test_metadata_preferences.py",
+      "test_metadata_migrator.py",
+      "test_metadata_pg_foundation.py",
+      "test_metadata_pgbouncer.py",
+      "test_metadata_bootstrap.py"
+    ],
+    "options": [
+      "-q",
+      "--tb=short",
+      "--maxfail=3",
+      "--junit-xml=/tmp/nova-scheduler-pg-3.xml"
+    ],
+    "passed": 179,
+    "skipped": 0,
+    "pytest_seconds": 211.46,
+    "junit_seconds": 209.841,
+    "artifact": "scheduler-pg-final.xml"
+  },
+  "full_unit_coverage": {
+    "result": "PASS",
+    "argv": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit",
+      "--cov=app",
+      "--cov-branch",
+      "--cov-report=term-missing",
+      "--cov-report=xml:/tmp/nova-refactor-coverage-24.xml"
+    ],
+    "passed": 10705,
+    "warnings": 4,
+    "seconds": 637.04,
+    "coverage_percent_rounded": 65
+  },
+  "mypy": {
+    "result": "PASS",
+    "command": "uv run mypy app --no-error-summary"
+  },
+  "ruff": {
+    "argv": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "--force-exclude",
+      "app/common/durable_jobs.py",
+      "app/common/preferences.py",
+      "app/core/config.py",
+      "app/core/deps.py",
+      "app/core/metadata_bootstrap.py",
+      "app/core/metadata_db.py",
+      "app/core/metadata_import.py",
+      "app/core/metadata_migrations.py",
+      "app/core/metadata_schema.py",
+      "app/core/redis.py",
+      "app/main.py",
+      "app/modules/agents/router.py",
+      "app/modules/agents/studio_router.py",
+      "app/modules/ai_ml/repository.py",
+      "app/modules/ai_ml/router.py",
+      "app/modules/assistant/consent.py",
+      "app/modules/assistant/router.py",
+      "app/modules/assistant/service.py",
+      "app/modules/auth/service.py",
+      "app/modules/llm_functions/router.py",
+      "app/modules/task_orchestration/execution.py",
+      "app/modules/task_orchestration/metadata_scheduler.py",
+      "app/modules/task_orchestration/worker.py",
+      "app/observability/http.py",
+      "scripts/inventory_control_plane.py",
+      "scripts/profile_metadata_constraints.py",
+      "tests/eval/semantic_execution.py",
+      "tests/eval/test_business_ontology_trajectory.py",
+      "tests/eval/test_evidence_health_trajectory.py",
+      "tests/eval/test_mcp_consent_trajectory.py",
+      "tests/eval/test_semantic_clarification_trajectory.py",
+      "tests/eval/test_semantic_latest_month.py",
+      "tests/integration/build_metadata_pooler.py",
+      "tests/integration/prepare_metadata_fixture.py",
+      "tests/integration/test_metadata_ai_registry.py",
+      "tests/integration/test_metadata_bootstrap.py",
+      "tests/integration/test_metadata_jobs.py",
+      "tests/integration/test_metadata_migrator.py",
+      "tests/integration/test_metadata_pg_foundation.py",
+      "tests/integration/test_metadata_pgbouncer.py",
+      "tests/integration/test_metadata_preferences.py",
+      "tests/integration/test_metadata_scheduler.py",
+      "tests/integration/test_task_outcome_uncertainty.py",
+      "tests/unit/test_agent_run_storage_failure.py",
+      "tests/unit/test_ai_ml_ssrf_guard.py",
+      "tests/unit/test_api_auth_inventory.py",
+      "tests/unit/test_assistant_stage_b.py",
+      "tests/unit/test_control_plane_inventory.py",
+      "tests/unit/test_control_plane_session_boundaries.py",
+      "tests/unit/test_durable_jobs.py",
+      "tests/unit/test_llm_alias_authorization.py",
+      "tests/unit/test_mcp_registry_access.py",
+      "tests/unit/test_metadata_ai_registry.py",
+      "tests/unit/test_metadata_bootstrap_config.py",
+      "tests/unit/test_metadata_db_config.py",
+      "tests/unit/test_metadata_import.py",
+      "tests/unit/test_metadata_preferences.py",
+      "tests/unit/test_metadata_scheduler.py",
+      "tests/unit/test_metadata_schema.py",
+      "tests/unit/test_notebook_data_tokens.py",
+      "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+      "tests/unit/test_observability_metrics.py",
+      "tests/unit/test_process_role.py",
+      "tests/unit/test_superset_bridge.py",
+      "tests/unit/test_task_orchestration_worker.py",
+      "tests/unit/test_task_outcome_uncertainty.py",
+      "tests/unit/test_web_search_tool.py"
+    ],
+    "exit_code": 0,
+    "python_files": 67,
+    "output": "All checks passed!\n"
+  },
+  "agent_scorecard": {
+    "result": "PASS",
+    "scenarios": 54,
+    "checks": 189,
+    "command": "uv run python -m tests.eval.report"
+  },
+  "focused_unit": {
+    "result": "PASS",
+    "passed": 15,
+    "seconds": 2.51
+  },
+  "current_ci": "NOT_RUN",
+  "runtime_authority": "StarRocks; Task scheduler and graph execution remain on their existing runtime paths",
+  "open_work": [
+    "Immutable Task/graph domain tables and matching foreign keys",
+    "Actual scheduler/graph/node runtime ports",
+    "SCHEDULE AND WHEN and overlap/finalizer acceptance through the PG runtime",
+    "External participant verification and cutover"
+  ],
+  "cleanup": {
+    "remaining_fixture_schema": 0,
+    "remaining_test_roles": 0
+  },
+  "docs_and_workflow": {
+    "local_links": 7,
+    "ci_jobs": 8,
+    "shell_steps": 38,
+    "pg_ownership_tables": 12
+  },
+  "credential_log_scan": {
+    "container": "docker-nova-metadata-db-1",
+    "window": "20m",
+    "lines": 501,
+    "encrypted_marker_hits": 0,
+    "credential_canary_hits": 0,
+    "raw_log_exported": false
+  },
+  "predecessor_registry_ci": {
+    "head": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+    "run": 43057585539,
+    "successful_jobs": 8,
+    "pg_passed": 132,
+    "pg_skipped": 0,
+    "engine": {
+      "run": 43057585539,
+      "source_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+      "result": "SUCCESS",
+      "passed": 217,
+      "skipped": 24,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1584.844,
+      "skip_cases_and_reasons_unchanged": true
+    }
+  }
+}

@@ -548,3 +548,22 @@ scheduler leadership, Redis outage acceptance and domain cutover remain open.
 Registry commit `130c479b` passes its CI PG job with 132 cases and zero skips
 in run 43057585539. Seven jobs have passed; the engine integration job is still
 running. The job-storage checkpoint has not yet run in CI.
+
+Revision 0006 adds fenced scheduler leadership and unique UTC due occurrences.
+The final application tree
+`1b0ec04b97d1ba687c149acf9d5cc5b212313346b65b50661b3b8005cfec8249`
+passes 10,705 unit cases (four warnings, 637.04 seconds, 65% combined coverage),
+179 PG cases without skips (211.46 seconds), full-application mypy, Ruff on 67
+changed Python files and all 54 agent scenarios / 189 checks. The
+[scheduler evidence](../../reports/production-refactor/WP-08/scheduler-commands.json)
+retains the failed shared-lock policy attempt and both subsequent PG results.
+All twelve PG tables have ownership entries; fixture cleanup leaves no test
+schema or workload roles. Task graph/node ports and runtime WHEN/overlap/finalizer
+acceptance remain open. Neither this checkpoint nor revision 0005 has run in CI
+yet; the preceding registry run is still finishing engine integration.
+
+Registry CI 43057585539 subsequently completed for `130c479b` with all eight
+jobs successful: 132 PG cases without skips and 217 engine passes with 24 skips
+(no failures/errors, 1,584.844 seconds in the engine report). Every skipped case
+and reason matches the retained skip inventory. This resolves that run's pending
+status; the two newer job/scheduler storage commits still await their own CI.

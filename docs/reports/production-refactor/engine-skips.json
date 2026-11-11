@@ -147,5 +147,16 @@
       "release_evidence": "UNPROVEN",
       "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
     }
-  ]
+  ],
+  "latest_observation": {
+    "run": 43057585539,
+    "source_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+    "result": "SUCCESS",
+    "passed": 217,
+    "skipped": 24,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 1584.844,
+    "skip_cases_and_reasons_unchanged": true
+  }
 }

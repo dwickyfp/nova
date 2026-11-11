@@ -1,6 +1,6 @@
 {
-  "python_files": 688,
-  "application_tree_sha256": "266f2fd61298079c2c282dc5d83f1d368ab4bb35271dbba0dde973662ec684e7",
+  "python_files": 689,
+  "application_tree_sha256": "1b0ec04b97d1ba687c149acf9d5cc5b212313346b65b50661b3b8005cfec8249",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -28753,7 +28753,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0 + uncommitted durable job storage",
+  "source_commit": "6bc9c1a8 + uncommitted scheduler fencing",
   "live": {
     "started_at": "2026-11-11T10:29:57.678477+00:00",
     "finished_at": "2026-11-11T10:30:00.644282+00:00",

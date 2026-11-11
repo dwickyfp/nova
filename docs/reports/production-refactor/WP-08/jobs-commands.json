@@ -173,14 +173,26 @@
   "parent_ci": {
     "run": 43057585539,
     "head": "130c479bc040d31ed6769ddf44b07c35e279dca0",
-    "status": "RUNNING",
+    "status": "SUCCESS",
     "pg": {
       "passed": 132,
       "skipped": 0,
       "seconds": 43.295
+    },
+    "successful_jobs": 8,
+    "engine": {
+      "run": 43057585539,
+      "source_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+      "result": "SUCCESS",
+      "passed": 217,
+      "skipped": 24,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1584.844,
+      "skip_cases_and_reasons_unchanged": true
     }
   },
-  "current_ci": "NOT_RUN; not committed or pushed yet",
+  "current_ci": "NOT_RUN separately; combined jobs/scheduler checkpoint awaits its CI run",
   "live_embeddings": "OWNER_WAIVED; no provider calls in this checkpoint",
   "limits": [
     "Participant adapters and runtime caller ports pending",

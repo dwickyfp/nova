@@ -58,6 +58,7 @@ jobs:
               "tests/integration/test_metadata_preferences.py",
               "tests/integration/test_metadata_ai_registry.py",
               "tests/integration/test_metadata_jobs.py",
+              "tests/integration/test_metadata_scheduler.py",
               "tests/integration/test_metadata_migrator.py", "-v",
               "-p", "no:cacheprovider", "--junit-xml=/reports/metadata-pg.xml",
           ]))

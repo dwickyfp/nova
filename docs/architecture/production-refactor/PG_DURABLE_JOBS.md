@@ -4,7 +4,7 @@ Revision `0005_durable_jobs.sql` and `app/common/durable_jobs.py` implement the
 PostgreSQL queue storage contract. The current Task, agent, ingestion, notebook,
 ML and automation callers still use their existing runtime paths. This revision
 does not switch a domain or publish a metadata epoch. Participant adapters,
-immutable domain definitions, scheduler leadership, cancellation requests and
+immutable domain definitions, scheduler runtime integration, cancellation requests and
 runtime dispatch remain migration work.
 
 ## Transaction ownership and identity
@@ -101,3 +101,6 @@ Results and retained failures are recorded in
 The next delivery must connect an actual domain definition, participant verifier
 and dispatcher, then test external commit ambiguity and stale in-flight workers.
 Passing storage tests alone does not establish exactly-once external effects.
+
+Revision 0006 adds [scheduler leadership and occurrence storage](PG_SCHEDULER.md).
+It reuses this queue and outbox; the Task runtime port remains pending.

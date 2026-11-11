@@ -29,8 +29,9 @@ The fixture removed its test schema and roles after the run. Development
 StarRocks, Ranger, Superset, object storage and user data were not reset.
 
 Registry parent commit `130c479b` has passed its CI PG job with 132 cases and zero
-skips. Its full CI run is still in progress. These results do not validate the
-new uncommitted job code; its own CI run remains pending.
+skips. Its full CI run completed with eight successful jobs, including 217 engine
+passes and 24 unchanged skips (no failures/errors). These results do not validate the
+new job/scheduler code; its own CI run remains pending.
 
 A separate controlled contract probe found that `embed` is listed as a valid AI
 function type, but both managed registration paths return `Unknown function type:
@@ -40,3 +41,24 @@ marked passed under the owner's live embedding-test waiver.
 Exact source hashes, commands, test totals, attempts and limits are in
 [jobs-commands.json](jobs-commands.json). No release or all-feature completion is
 claimed by this checkpoint.
+
+## Scheduler storage follow-up
+
+Revision 0006 adds monotonic scheduler leases and unique due occurrences, bound
+to the original graph-owner context. Immediate and deferred checks reject a
+stale holder/token and an occurrence whose lease expires before commit. The
+occurrence, orchestration job and outbox roll back with the service transaction.
+
+The first focused run failed one of two cases: a scheduler transaction carrying
+a USER actor could not take the shared row lock required to fence its occurrence.
+The UPDATE policy now permits row visibility for that lock while its WITH CHECK
+still rejects every non-SERVICE lease mutation. The full focused run passes all
+15 cases; the combined PG suite passes 179 with no skips in 211.46 seconds.
+Mypy, Ruff on 67 Python files and all 54 agent scenarios / 189 checks pass. The
+full unit/coverage suite passed 10,705 tests with four warnings in 637.04 seconds
+and 65% combined coverage.
+
+This storage layer does not execute a Task body or evaluate WHEN. Task/graph
+domain records, their final foreign keys, scheduler/runtime caller ports and
+external fault acceptance remain open. See [scheduler-commands.json](scheduler-commands.json)
+and the retained focused/final reports for exact source and result evidence.
