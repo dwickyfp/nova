@@ -31,11 +31,19 @@ supply them. An empty registry means no connected tools are available there.
 
 MCP is a protocol for connecting an agent to another service's tools. Before
 adding a server, obtain its supported connection details from your
-administrator. **Add MCP server** asks for **Name**, **Transport**,
+administrator and switch your active role to **ACCOUNTADMIN**. Having that role
+assigned while another role is active does not allow connector changes.
+**Add MCP server** asks for **Name**, **Transport**,
 **Endpoint URL**, and **Description**. A registered connection still needs a
 reachable, compatible server; entering a name alone cannot make tools usable.
 
-Review an agent's **Configuration → MCP** before expecting it to use connected
-tools. Tool output is evidence to inspect, not permission to perform another
-action. Approve consequential actions only after reviewing their target and
-expected effect.
+Click **Discover** on the server to register its tools. Discovered tools appear
+in **Tools** and in an agent's **Configuration → Tools → MCP tools**. Select the
+tools the agent needs and save its configuration. **Configuration → MCP** lists
+the connected servers. Changing a shared tool's enabled state also requires the
+active **ACCOUNTADMIN** role.
+
+Selected HTTP tools ask for approval on each call. Review the target and
+expected effect before approving. Tool output is evidence to inspect, not
+permission to perform another action. If the registry fails to load, use
+**Retry**; a loading failure does not mean the registry is empty.

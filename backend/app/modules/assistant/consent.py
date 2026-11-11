@@ -104,7 +104,16 @@ class ConsentBroker:
                 secure_fields=secure_fields,
                 upload_required=upload_required,
             )
+        future.add_done_callback(lambda completed: self._forget_completed(tool_call_id, completed))
         return future
+
+    def _forget_completed(
+        self, tool_call_id: str, future: asyncio.Future[bool | None | ConsentApproval]
+    ) -> None:
+        with self._lock:
+            pending = self._pending.get(tool_call_id)
+            if pending is not None and pending.future is future:
+                self._pending.pop(tool_call_id)
 
     def owner_of(self, tool_call_id: str) -> tuple[str, str] | None:
         """``(thread_id, user_name)`` of a still-pending call, or ``None``."""

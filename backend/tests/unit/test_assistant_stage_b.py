@@ -16,6 +16,7 @@ Coverage mirrors the spec's acceptance criteria for T-B1/T-B2/T-B3:
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -140,6 +141,79 @@ def _tool_call_statuses(frames: list[str]) -> list[str]:
     means a prompt is open.
     """
     return [_frame_data(f).get("status") for f in frames if _frame_event(f) == "tool_call"]
+
+
+@pytest.mark.parametrize("decision", [True, False, None])
+async def test_pending_card_accepts_an_immediate_decision(decision):
+    broker = ConsentBroker()
+    tool = StubTool()
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = FakeProvider([
+        {"role": "assistant", "content": "", "tool_calls": [_tool_call("immediate")]},
+        {"role": "assistant", "content": "done"},
+    ])
+
+    def prepare(invocation, classification):
+        future = broker.open(
+            invocation.tool_call_id, thread_id="t1", user_name="alice",
+            classification=classification,
+        )
+        return future
+
+    loop = AssistantLoop(provider=provider, registry=registry)
+    frames = []
+    async for frame in loop.run(
+        thread=_thread(), user_content="SELECT 1", context=LoopContext(user_name="alice"),
+        resolve_consent=prepare,
+    ):
+        frames.append(frame)
+        if _frame_event(frame) == "tool_call" and _frame_data(frame)["status"] == "pending":
+            # Do not advance the generator before acting on the visible card.
+            assert broker.owner_of("immediate") == ("t1", "alice")
+            assert tool.invocations == []
+            assert broker.resolve("immediate", decision, user_name="alice")
+    assert len(tool.invocations) == (1 if decision is True else 0)
+    assert broker.owner_of("immediate") is None
+    assert any(_frame_event(frame) == "done" for frame in frames)
+
+
+async def test_closing_at_pending_card_cancels_prepared_consent():
+    future = asyncio.get_running_loop().create_future()
+    tool = StubTool()
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = FakeProvider([
+        {"role": "assistant", "content": "", "tool_calls": [_tool_call("cancel")]},
+    ])
+    loop = AssistantLoop(provider=provider, registry=registry)
+    stream = loop.run(
+        thread=_thread(), user_content="SELECT 1", context=LoopContext(user_name="alice"),
+        resolve_consent=lambda *_: future,
+    )
+    async for frame in stream:
+        if _frame_event(frame) == "tool_call":
+            await stream.aclose()
+            break
+    assert future.cancelled()
+    assert tool.invocations == []
+
+
+async def test_cancelled_consent_is_removed_without_touching_reused_call_id():
+    broker = ConsentBroker()
+    cancelled = broker.open("reused", thread_id="t1", user_name="alice")
+    cancelled.cancel()
+    await asyncio.sleep(0)
+    assert broker.owner_of("reused") is None
+
+    completed = broker.open("reused", thread_id="t1", user_name="alice")
+    assert broker.resolve("reused", True, user_name="alice")
+    replacement = broker.open("reused", thread_id="t2", user_name="bob")
+    await completed
+    await asyncio.sleep(0)
+    assert broker.owner_of("reused") == ("t2", "bob")
+    assert not replacement.done()
+    broker.cancel_all()
 
 
 # ── Event contract ───────────────────────────────────────────────────────────

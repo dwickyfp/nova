@@ -208,3 +208,80 @@ This verifies pre-cutover happy paths only, not cache isolation, provider
 failures, authorization, AI quality on arbitrary inputs or post-PG behavior.
 
 Final changed-file Ruff passed for all 34 Python files in the branch.
+
+## Checkpoint 5c81c9fe: completed CI
+
+[Run 43004216101](https://github.com/dwickyfp/nova/actions/runs/43004216101)
+passed all eight jobs for `5c81c9fefc3e898c8206a2ee4d7290fd511dd474`.
+The downloaded integration report contains 217 passes, no failures and 24 skips.
+`test_lost_completion_after_commit_never_repeats_the_insert` passed against the
+real engine: the committed effect was not replayed on redelivery. The 24 skips
+remain acceptance gaps, including governed Ranger/Superset scenarios. This run
+does not validate the subsequent MCP changes below.
+
+## MCP and Studio follow-up (local validation complete; CI pending)
+
+`LIVE_SQL_TOOL_CHECKPOINT.json` records six successful Console tool trajectories:
+three each on `cx/gpt-6-luna` and `cx/gpt-6.1-sol`. Each approved exactly one
+`SELECT 6 * 7 AS total`, returned 42 and preserved the answer in history.
+All temporary conversations were removed.
+
+Studio web search retained its failed setup experiments in
+`LIVE_STUDIO_SEARCH_CHECKPOINT.json` and
+`LIVE_STUDIO_SEARCH_DIAGNOSTIC.json`: the fixture lacked a verified active-role
+access grant. After using the ordinary grant/verification flow,
+`LIVE_STUDIO_SEARCH_VERIFIED_CHECKPOINT.json` recorded three Luna passes, two Sol
+passes and one Sol timeout before any search call. These checks validate one
+completed search tool, a public documentation URL and matching saved history;
+they do not establish that the final URL exactly matched the returned citations.
+Revoking each fixture's access returned 404 when starting another conversation.
+The agents and conversations were removed. The failed run remains a failure.
+
+A disposable HTTP MCP server exposes only bounded integer multiplication. It
+has no Nova credentials or access to business data. The first temporary tunnel
+failed to connect; a second HTTP/2 tunnel worked. Discovery then reproduced a
+product defect: one tool was discovered but zero tools appeared in the normal
+selection API. `LIVE_MCP_DISCOVERY_CHECKPOINT.json` retains that failure.
+
+The registry now includes platform MCP tools alongside the caller's personal
+tools. Shared connector mutations, tool enable/disable and endpoint visibility
+use the active ACCOUNTADMIN role. Shared tool changes are audited. The browser
+displayed `fixture_total` and the connector's Connected state; the matching
+docs page was rendered and inspected. The UI also distinguishes a failed load
+from an empty registry and provides Retry.
+
+`LIVE_MCP_CHECKPOINT.json` retains a second defect: an immediate approval
+returned 404 because the pending card preceded broker registration. The
+synthetic server received no call. The experiment was cancelled and its
+fixtures removed. Console and Studio now register the pending decision before
+publishing it. Closing the generator cancels the waiter, and broker cleanup
+checks the future identity so a completed call cannot clear a newer call
+that reused its ID. This remains process-local consent, not WP10 durable consent.
+
+`LIVE_MCP_FIXED_CHECKPOINT.json` records five successful external calls and one
+stalled Sol run. Each success required zero calls before approval, exactly one
+external invocation with arguments 6 and 7, output 42 and matching saved history.
+The sixth run emitted an error before calling a tool, but did not finish until
+explicit cancellation. `LIVE_MCP_CANCELLATION_DIAGNOSTIC.json` records the
+successful cancellation request. Its 257-second duration is not a boundedness
+pass. All fixture agents, threads and connector rows were deleted. A final
+application-tree run is recorded separately in `LIVE_MCP_FINAL_CHECKPOINT.json`:
+all six attempts passed on tree
+`42f1c0928163bd4e49a77b792b204bfcc1b92f749246782f2945e5a0e345dd62`.
+Each used one external call, no calls before approval, correct arguments and
+output, and matching saved history. All agents, threads and connector rows were
+removed; the fixture server and public tunnel were stopped. This verifies the
+final happy path, but does not explain or erase the earlier stalled run (R30).
+
+Local frontend validation passed 1,598 tests in 193 files, lint with zero errors
+and 32 warnings, and the production build. The focused registry/configuration/
+docs browser run passed 29 cases. The first focused browser attempt failed
+because teardown restored network access while a test view remained mounted;
+explicit unmounting now precedes mock restoration. Full backend coverage passed
+10,482 tests with four warnings in 597.49 seconds and 66% combined coverage;
+new CI delivery is still pending for this follow-up. Full-application mypy
+and changed-file Ruff (42 Python files) passed. The eval/benchmark command passed
+360 cases and skipped one real-engine benchmark: its guard requires a disposable
+test stack owned by the backend directory, while the running project is the
+shared development stack. No benchmark provisioning or reseeding was attempted.
+The scorecard passed 54/54 scenarios and 189/189 checks.

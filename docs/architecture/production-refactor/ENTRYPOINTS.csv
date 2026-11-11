@@ -9,7 +9,7 @@ Migration ingestion,python -m app.worker,backend/app/modules/migration/job_worke
 Model training,python -m app.worker,backend/app/modules/ml_engine/job_worker.py,ml,NOVA_SYSTEM,managed model artifacts and training resources
 Notebook lifecycle,python -m app.worker,backend/app/modules/notebooks/runtime/worker.py,notebook,NOVA_SYSTEM,OpenSandbox controller
 Agent automations,python -m app.worker,backend/app/modules/agents/automations.py,automation,NOVA_SYSTEM,agent tools and model providers
-Autopilot work,python -m app.worker,backend/app/modules/query_autopilot/jobs.py,maintenance,NOVA_SYSTEM,governed query analysis and approved actions
+Autopilot work,python -m app.worker,backend/app/modules/query_autopilot/jobs.py,automation,NOVA_SYSTEM,governed query analysis and approved actions
 Catalog refresh,app.main:app,backend/app/modules/catalog/refresher.py,maintenance,NOVA_SYSTEM,external catalog inspection
 News refresh,app.main:app,backend/app/modules/intelligence/newsroom_refresher.py,maintenance,NOVA_SYSTEM,governed semantic queries and providers
 Search builds and reconciliation,app.main:app,backend/app/modules/intelligence/search.py,maintenance,NOVA_SYSTEM,source reads and StarRocks search projections

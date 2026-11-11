@@ -695,11 +695,10 @@ async def send_message(
     context.semantic_view_ids = await _readable_views(context)
     memory = await neva_memory.memory_note(user, body.content)
 
-    async def resolve_consent(
+    def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> bool | None | ConsentApproval:
-        # The loop has already emitted the tool_call frame; the client answers
-        # out of band. If the stream is disconnected, treat it as cancelled.
+    ) -> asyncio.Future[bool | None | ConsentApproval]:
+        # Registration precedes publication so an immediate decision can resolve.
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
@@ -725,11 +724,11 @@ async def send_message(
                 await asyncio.sleep(0.25)
 
         watcher = asyncio.ensure_future(_watch_disconnect())
-        try:
-            return await future
-        finally:
+        def clear_pending(_future: asyncio.Future) -> None:
             watcher.cancel()
-            consent_broker.resolve(invocation.tool_call_id, None, user_name=user_name)
+
+        future.add_done_callback(clear_pending)
+        return future
 
     async def generate() -> AsyncIterator[str]:
         reply_parts: list[str] = []

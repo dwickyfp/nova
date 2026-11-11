@@ -20,8 +20,8 @@ Studio's Settings/Capabilities.
   DELETE /mcp-servers/{server_id}         → delete (and its tools)
   POST   /mcp-servers/{server_id}/discover→ connect and register tools
 
-Every route requires ``get_current_user`` and is owner-scoped. The builtin tool
-catalog is seeded on first read so the Tools page is never empty.
+Every route requires ``get_current_user``. Personal tools are owner-scoped;
+platform MCP connectors are managed by the active ACCOUNTADMIN role.
 """
 
 # ruff: noqa: B008 — `Depends(...)` is FastAPI's DI idiom in this codebase.
@@ -133,7 +133,7 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     agents = [a for a in agents if await has_verified_access(a, role_name=role, user=user)]
     skills = await agent_repository.list_skills(owner_name=owner)
     await _seed_builtin_tools(owner)
-    tools = await agent_repository.list_tools(owner_name=owner)
+    tools = await _visible_registry_tools(owner)
     return StudioCapabilities(
         runtime=studio_service.runtime_capabilities(),
         agents=[
@@ -674,9 +674,30 @@ async def _seed_builtin_tools(owner: str) -> None:
 @router.get("/tools", response_model=ToolListResponse)
 async def list_tools(user: dict = Depends(get_current_user)):
     await _seed_builtin_tools(user["username"])
-    tools = await agent_repository.list_tools(owner_name=user["username"])
+    tools = await _visible_registry_tools(user["username"])
     views = [ToolView(**t) for t in tools]
     return ToolListResponse(tools=views, count=len(views))
+
+
+async def _visible_registry_tools(owner: str) -> list[dict]:
+    personal = await agent_repository.list_tools(owner_name=owner)
+    if owner == INTERNAL_CONNECTOR_OWNER:
+        return [tool for tool in personal if tool["source"].startswith("mcp:")]
+    shared = await agent_repository.list_tools(owner_name=INTERNAL_CONNECTOR_OWNER)
+    return personal + [tool for tool in shared if tool["source"].startswith("mcp:")]
+
+
+async def _tool_for_mutation(tool_id: str, user: dict) -> dict:
+    tool = await agent_repository.get_tool(tool_id, owner_name=user["username"])
+    if tool is None:
+        tool = await agent_repository.get_tool(tool_id, owner_name=INTERNAL_CONNECTOR_OWNER)
+    if tool is None:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    if tool["owner_name"] == INTERNAL_CONNECTOR_OWNER:
+        if not tool["source"].startswith("mcp:"):
+            raise HTTPException(status_code=404, detail="Tool not found")
+        _require_connector_admin(user)
+    return tool
 
 
 @router.post("/tools", response_model=ToolView, status_code=201)
@@ -696,27 +717,39 @@ async def toggle_tool(
     body: ToolToggleRequest,
     user: dict = Depends(get_current_user),
 ):
+    tool = await _tool_for_mutation(tool_id, user)
     updated = await agent_repository.set_tool_enabled(
-        tool_id, owner_name=user["username"], enabled=body.is_enabled
+        tool_id, owner_name=tool["owner_name"], enabled=body.is_enabled
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Tool not found")
+    if tool["owner_name"] == INTERNAL_CONNECTOR_OWNER:
+        await _audit_tool_change(user, tool_id, body.is_enabled)
     return ToolView(**updated)
 
 
 @router.delete("/tools/{tool_id}", status_code=204)
 async def delete_tool(tool_id: str, user: dict = Depends(get_current_user)):
-    tool = await agent_repository.get_tool(tool_id, owner_name=user["username"])
-    if tool is None:
-        raise HTTPException(status_code=404, detail="Tool not found")
+    tool = await _tool_for_mutation(tool_id, user)
     if tool["source"] == "builtin":
         raise HTTPException(
             status_code=409,
             detail="Builtin tools cannot be deleted; disable them instead.",
         )
     # A tool with no delete method: disable it. Kept simple and safe.
-    await agent_repository.set_tool_enabled(tool_id, owner_name=user["username"], enabled=False)
+    await agent_repository.set_tool_enabled(tool_id, owner_name=tool["owner_name"], enabled=False)
+    if tool["owner_name"] == INTERNAL_CONNECTOR_OWNER:
+        await _audit_tool_change(user, tool_id, False)
     return None
+
+
+async def _audit_tool_change(user: dict, tool_id: str, enabled: bool) -> None:
+    await write_audit_log(
+        event_type="MCP_TOOL_CONFIG", user_name=user["username"],
+        action="ENABLE" if enabled else "DISABLE", object_type="MCP_TOOL",
+        object_name=tool_id, status="SUCCESS", session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
 
 
 # ── MCP servers ────────────────────────────────────────────────
@@ -725,8 +758,8 @@ INTERNAL_CONNECTOR_OWNER = "__nova__"
 
 
 def _require_connector_admin(user: dict) -> None:
-    if "ACCOUNTADMIN" not in (user.get("roles") or []):
-        raise HTTPException(403, "MCP connectors are managed by your Nova administrator.")
+    if user.get("active_role") != "ACCOUNTADMIN":
+        raise HTTPException(403, "MCP connectors require the active ACCOUNTADMIN role.")
 
 
 async def _audit_connector(
@@ -746,7 +779,7 @@ async def _audit_connector(
 @router.get("/mcp-servers", response_model=McpServerListResponse)
 async def list_mcp_servers(user: dict = Depends(get_current_user)):
     servers = await agent_repository.list_mcp_servers(owner_name=INTERNAL_CONNECTOR_OWNER)
-    if "ACCOUNTADMIN" not in (user.get("roles") or []):
+    if user.get("active_role") != "ACCOUNTADMIN":
         servers = [{**s, "endpoint": None, "command": None, "args": []} for s in servers]
     views = [McpServerView(**s) for s in servers]
     return McpServerListResponse(servers=views, count=len(views))
@@ -805,8 +838,8 @@ async def discover_mcp_server(
 ):
     """Connect to the server and register the tools it exposes.
 
-    Metadata only: the tools are recorded so they can be listed and selected.
-    Nova does not invoke them, and does not run stdio servers.
+    Discovery records tool metadata. Selected HTTP tools can subsequently run
+    with consent; Nova does not start stdio servers.
     """
     _require_connector_admin(user)
     owner = INTERNAL_CONNECTOR_OWNER

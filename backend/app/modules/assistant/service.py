@@ -2307,39 +2307,39 @@ class AssistantLoop:
 
             needs_prompt = needs_tool_consent(tool, classification, thread)
 
-            # The call is announced on the stream either way. It carries the only
-            # redacted SQL preview the panel gets, so a call auto-covered by a
-            # grant would otherwise run invisibly: a result would appear with no
-            # step explaining it. ``pending`` is reserved for a call still waiting
-            # on the user's decision, and it goes out *before* the await so the
-            # approval card has the preview it needs.
+            # Register consent before publishing the card: a stream consumer can
+            # await journal I/O before advancing this generator again.
             view.status = "pending" if needs_prompt else "running"
-            yield events.tool_call(view)
-
-            if not requires_consent(tool):
+            consent_started = _budget_time()
+            pending_consent = (
+                asyncio.ensure_future(resolve_consent(invocation, classification))
+                if needs_prompt else None
+            )
+            try:
+                yield events.tool_call(view)
                 allowed: bool | None | ConsentApproval = True
-            elif not needs_prompt:
-                allowed = True
-            else:
-                consent_started = _budget_time()
-                try:
+                if pending_consent is not None:
                     allowed = await asyncio.wait_for(
                         resolve_tool_consent(
                             tool,
                             invocation,
                             classification,
                             thread,
-                            resolve_consent,
+                            lambda *_, pending=pending_consent: pending,
                             timeout_seconds=CONSENT_TIMEOUT_SECONDS,
                         ),
                         timeout=CONSENT_TIMEOUT_SECONDS,
                     )
-                except TimeoutError:
-                    yield events.tool_status(invocation.tool_call_id, "cancelled")
-                    yield events.error("consent_timeout", "The approval request expired.")
-                    yield events.done(str(uuid4()), finish_reason="consent_timeout")
-                    return
-                finally:
+            except TimeoutError:
+                yield events.tool_status(invocation.tool_call_id, "cancelled")
+                yield events.error("consent_timeout", "The approval request expired.")
+                yield events.done(str(uuid4()), finish_reason="consent_timeout")
+                return
+            finally:
+                if pending_consent is not None:
+                    if not pending_consent.done():
+                        pending_consent.cancel()
+                    await asyncio.gather(pending_consent, return_exceptions=True)
                     deadline += _budget_time() - consent_started
 
             if isinstance(allowed, ConsentApproval):

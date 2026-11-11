@@ -2420,9 +2420,9 @@ async def send_agent_message(
         guards=GuardChain.from_policy(registry.harness_policy),
     )
 
-    async def resolve_consent(
+    def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> bool | None | ConsentApproval:
+    ) -> asyncio.Future[bool | None | ConsentApproval]:
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
@@ -2430,10 +2430,7 @@ async def send_agent_message(
             classification=classification,
         )
 
-        try:
-            return await future
-        finally:
-            consent_broker.resolve(invocation.tool_call_id, None, user_name=user_name)
+        return future
 
     async def generate() -> AsyncGenerator[str, None]:
         reply_parts: list[str] = []

@@ -104,3 +104,13 @@ uv run python scripts/inventory_control_plane.py \
 
 The script never initializes schemas, starts containers, exports row values or
 prints passwords. Preserve accumulated QA results when refreshing inventory.
+
+## Table binding follow-up
+
+`TABLE_ACCESS_REVIEW.csv` binds 755 current metadata/schema/adapter sites to
+reviewed table sets and source hashes. Four earlier Explorer classifications
+were corrected to engine observations. All current metadata/mixed-adapter sites
+have a binding; target grants and transform/constraint decisions remain open.
+`WAVE_J_REVIEW.md` describes the binding modes and seven bootstrap-only live
+tables. `DEPENDENCIES.md` records current process/store dependencies and the
+cross-system transactions that the PG cutover must replace.

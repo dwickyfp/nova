@@ -1,0 +1,27 @@
+{
+  "scope": "Real HTTP MCP discovery and normal tool picker API; synthetic fixture",
+  "application_tree_sha256": "39d8b7c5000eb1ab2e9b6a6e916c0112d75d93fb94a44e2fdfde0c0b25bbcacd",
+  "started_at": "2026-11-11T10:57:14.526841+00:00",
+  "tunnel_attempts": [
+    {
+      "transport": "quic",
+      "status": "FAIL",
+      "reason": "Tunnel not found"
+    },
+    {
+      "transport": "http2",
+      "status": "PASS",
+      "fixture_tools_list_http": 200
+    }
+  ],
+  "server_id": "44a262b2-bf53-4e30-bed4-9bfb490039d5",
+  "discovery": {
+    "ok": true,
+    "status": "connected",
+    "tools_discovered": 1
+  },
+  "selectable_tools": 0,
+  "status": "FAIL",
+  "server_deleted": true,
+  "finished_at": "2026-11-11T10:57:18.189443+00:00"
+}

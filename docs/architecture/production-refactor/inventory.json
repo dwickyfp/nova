@@ -1,6 +1,6 @@
 {
   "python_files": 681,
-  "application_tree_sha256": "39d8b7c5000eb1ab2e9b6a6e916c0112d75d93fb94a44e2fdfde0c0b25bbcacd",
+  "application_tree_sha256": "42f1c0928163bd4e49a77b792b204bfcc1b92f749246782f2945e5a0e345dd62",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -6272,7 +6272,7 @@
         "AUDIT_SEMANTIC_QUERY_USAGE",
         "CONFIG_ASSISTANT_MESSAGES"
       ],
-      "source_file_sha256": "2bc5c290d43345e89dfac994cd0cc26eb8a751f7ccde7bba0a04f4f2af42a4e5",
+      "source_file_sha256": "54ab4c860b5bc2d68e42ef250e2e19c58f053c20f67751d8a19e76ee1fa3d7fa",
       "callsite_sha256": "59440602e40eb13f1a5233362429ef091cc836a37c4c602babc297960280261e",
       "review_status": "CLASSIFIED_METADATA",
       "review_notes": "Reviewed fixed control-table SQL and dynamic helper callers; see WAVE_F_REVIEW.md for scope, transaction and timestamp contracts."
@@ -6292,7 +6292,7 @@
         "AUDIT_SEMANTIC_QUERY_USAGE",
         "CONFIG_ASSISTANT_MESSAGES"
       ],
-      "source_file_sha256": "2bc5c290d43345e89dfac994cd0cc26eb8a751f7ccde7bba0a04f4f2af42a4e5",
+      "source_file_sha256": "54ab4c860b5bc2d68e42ef250e2e19c58f053c20f67751d8a19e76ee1fa3d7fa",
       "callsite_sha256": "cd2be2c9d7c1e8ea94141b14323add7c94da12ad0704c19c5e0d856fd9a5e873",
       "review_status": "CLASSIFIED_METADATA",
       "review_notes": "Reviewed fixed control-table SQL and dynamic helper callers; see WAVE_F_REVIEW.md for scope, transaction and timestamp contracts."
@@ -9620,8 +9620,8 @@
       "function_candidate_tables": [],
       "source_file_sha256": "314909b53fd98f4e70f312c06bac05cd9e367ebd3f980df5dd49d0d8fb227184",
       "callsite_sha256": "5266bb22739096bd7fe8b422d189e826f7ca1708aed41d4942b58e4d4cbf5682",
-      "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_status": "CLASSIFIED_ENGINE_OBSERVATION",
+      "review_notes": "Local SQL variable reads information_schema tables_config/views/materialized_views/pipes; keep engine observer and caller-visible object filtering; corrected by TABLE_ACCESS_REVIEW.csv"
     },
     {
       "path": "backend/app/modules/explorer/repository.py",
@@ -9650,8 +9650,8 @@
       "function_candidate_tables": [],
       "source_file_sha256": "314909b53fd98f4e70f312c06bac05cd9e367ebd3f980df5dd49d0d8fb227184",
       "callsite_sha256": "5266bb22739096bd7fe8b422d189e826f7ca1708aed41d4942b58e4d4cbf5682",
-      "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_status": "CLASSIFIED_ENGINE_OBSERVATION",
+      "review_notes": "Local SQL variable reads information_schema tables_config/views/materialized_views/pipes; keep engine observer and caller-visible object filtering; corrected by TABLE_ACCESS_REVIEW.csv"
     },
     {
       "path": "backend/app/modules/explorer/repository.py",
@@ -9665,8 +9665,8 @@
       "function_candidate_tables": [],
       "source_file_sha256": "314909b53fd98f4e70f312c06bac05cd9e367ebd3f980df5dd49d0d8fb227184",
       "callsite_sha256": "5266bb22739096bd7fe8b422d189e826f7ca1708aed41d4942b58e4d4cbf5682",
-      "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_status": "CLASSIFIED_ENGINE_OBSERVATION",
+      "review_notes": "Local SQL variable reads information_schema tables_config/views/materialized_views/pipes; keep engine observer and caller-visible object filtering; corrected by TABLE_ACCESS_REVIEW.csv"
     },
     {
       "path": "backend/app/modules/explorer/repository.py",
@@ -9695,8 +9695,8 @@
       "function_candidate_tables": [],
       "source_file_sha256": "314909b53fd98f4e70f312c06bac05cd9e367ebd3f980df5dd49d0d8fb227184",
       "callsite_sha256": "5266bb22739096bd7fe8b422d189e826f7ca1708aed41d4942b58e4d4cbf5682",
-      "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Source SQL and fixed batch/helper callers reviewed; see WAVE_G_REVIEW.md for metadata/engine split and authorization caveats."
+      "review_status": "CLASSIFIED_ENGINE_OBSERVATION",
+      "review_notes": "Local SQL variable reads information_schema tables_config/views/materialized_views/pipes; keep engine observer and caller-visible object filtering; corrected by TABLE_ACCESS_REVIEW.csv"
     },
     {
       "path": "backend/app/modules/explorer/repository.py",
@@ -28753,7 +28753,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "ee4ff8f498aad14d09c9eb2c8021089347a55ba4",
+  "source_commit": "5c81c9fefc3e898c8206a2ee4d7290fd511dd474",
   "live": {
     "started_at": "2026-11-11T10:29:57.678477+00:00",
     "finished_at": "2026-11-11T10:30:00.644282+00:00",
@@ -43850,5 +43850,6 @@
       "operation_id": "ready_ready_get",
       "summary": "Ready"
     }
-  ]
+  ],
+  "static_reviewed_at_utc": "2026-11-11T11:15:26.411702+00:00"
 }

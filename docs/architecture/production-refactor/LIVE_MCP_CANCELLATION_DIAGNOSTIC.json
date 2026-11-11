@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-11-11T11:11:38.574910+00:00",
+  "scope": "Inspect and cancel only the stalled disposable MCP fixture run",
+  "state_http": 200,
+  "state": {
+    "run_id": "384c2225-bc82-4f39-8b24-3cbd74073017"
+  },
+  "cancel_http": 200,
+  "cancel_result": {
+    "run_id": "384c2225-bc82-4f39-8b24-3cbd74073017",
+    "cancelling": true
+  },
+  "finished_at": "2026-11-11T11:11:39.336367+00:00"
+}
