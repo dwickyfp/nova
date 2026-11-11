@@ -198,8 +198,20 @@
     "limit": "Observation only; not frozen export or timestamp provenance"
   },
   "ci": {
-    "result": "PENDING",
-    "limit": "This checkpoint is pushed as fe44caa5b4883a32c1637cecdf4be2bfe1b9714c; CI pending. Parent run 43036382504 completed with two dependency-installation failures and 217 engine passes/24 skips."
+    "run": 43043431310,
+    "head": "fe44caa5b4883a32c1637cecdf4be2bfe1b9714c",
+    "result": "FAIL",
+    "successful_jobs": 6,
+    "failed_jobs": 2,
+    "failures": "PG/browser OS dependency installation could not resolve Ubuntu apt mirrors; tests in those jobs did not execute",
+    "engine": {
+      "passed": 217,
+      "skipped": 24,
+      "failed": 0,
+      "errors": 0,
+      "seconds": 1444.413
+    },
+    "limit": "Skipped engine cases are unproven; this run does not cover revision 0003 or the replacement CI images"
   },
   "limitations": [
     "No caller uses the PG preference repository yet",

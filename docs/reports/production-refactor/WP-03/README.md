@@ -113,3 +113,38 @@ Image contents were checked against the official
 [Python base-image build dependencies](https://github.com/docker-library/buildpack-deps/blob/master/debian/bookworm/Dockerfile).
 Registry manifests supplied the exact digests in the Dockerfile/workflow.
 This is CI infrastructure, not the pending production Compose deployment.
+
+The pinned test image subsequently built successfully. Its corrected local
+Linux run passes 99 cases without skips; the first loopback-route failure is
+retained in the command record. CI 43049859127 passes the 99-case PG job and
+frontend job for `1d79c40a`. The run completed with all eight jobs successful;
+its engine report has 217 passes, 24 skips and no failures/errors. The skipped
+cases remain unproven and do not certify the newer registry code.
+
+## Provider/model storage and separate credentials
+
+Revision 0004 implements provider/model CAS and tombstones, immutable model
+descriptor fields, database-enforced alias uniqueness, parent/child locking and
+atomic provider/credential revisions. Credentials have their own table and RLS;
+ordinary metadata readers cannot select ciphertext. The new ciphertext capacity
+preserves the complete encrypted value of an accepted 512-character Unicode key.
+The qualified import-type mapping records this reviewed column expansion while
+retaining the original source length checks for imported rows.
+
+The final combined PG run passes 132 cases without skips in 119.63 seconds,
+including 33 registry cases. The focused import/registry unit selection passes
+128 cases. Mypy, Ruff on 61 changed Python files and the 54-scenario/189-check
+scorecard pass. Full backend coverage passes 10,664 tests with four warnings
+in 620.57 seconds (65% coverage). Fixture cleanup
+leaves zero test schemas/new roles; a 90-minute scan of 2,509 fixture log lines
+finds zero registry secret canaries or encrypted-envelope markers. No raw logs
+were exported.
+
+[ai-registry-commands.json](ai-registry-commands.json) records the source/schema
+hashes, earlier failure, corrected expected conflict type, interrupted obsolete
+unit run, source aggregates and remaining gates. The sanitized final report is
+[ai-registry-pg-final.xml](ai-registry-pg-final.xml). The
+[storage contract](../../../architecture/production-refactor/PG_AI_REGISTRY.md)
+describes the required caller, alias/job, audit, import and cutover work. There
+were no live provider requests in these storage tests; embedding-provider QA
+remains owner-waived, and R32 is still open in the legacy runtime.

@@ -26,6 +26,9 @@ _FIXED_TYPES = {
     "int(11)": "integer", "bigint(20)": "bigint", "tinyint(1)": "boolean",
     "double": "double precision", "json": "jsonb", "datetime": "timestamptz",
 }
+_COLUMN_TARGETS = {
+    ("CONFIG_AI_PROVIDERS", "api_key"): ("varchar(512)", "text"),
+}
 
 
 class ImportContractError(ValueError):
@@ -38,10 +41,24 @@ class ImportValueError(ValueError):
         super().__init__("Metadata value cannot be imported without loss or ambiguity")
 
 
-def target_type(source_type: str) -> str:
-    """Only types observed in the reviewed StarRocks schema are supported."""
+def target_type(
+    source_type: str, *, source_table: str | None = None, source_column: str | None = None,
+) -> str:
+    """Map observed source types, including explicitly reviewed column overrides."""
     if not isinstance(source_type, str):
         raise ImportContractError()
+    if source_table is not None or source_column is not None:
+        if (
+            not isinstance(source_table, str) or not _TABLE.fullmatch(source_table)
+            or not isinstance(source_column, str) or not _COLUMN.fullmatch(source_column)
+        ):
+            raise ImportContractError()
+        override = _COLUMN_TARGETS.get((source_table, source_column))
+        if override:
+            expected_source, destination = override
+            if source_type != expected_source:
+                raise ImportContractError()
+            return destination
     if source_type in _FIXED_TYPES:
         return _FIXED_TYPES[source_type]
     match = _VARCHAR.fullmatch(source_type)

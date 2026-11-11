@@ -493,3 +493,41 @@ verified password change. News administration and personal writes stay with web.
 The combined local suite passes 99 PG tests without skips, including a revision-2
 upgrade that preserves existing row contents and revision. See the
 [password-policy evidence](../../reports/production-refactor/WP-03/password-flags-commands.json).
+
+CI 43043431310 completed for `fe44caa5` with 217 engine passes, 24 skips and
+no engine failures/errors. It remains a failed run because both PG and frontend
+dependency installation failed before tests. The replacement CI images in
+`1d79c40a` pass 99 PG cases without skips and the frontend job in run 43049859127;
+the full run is still pending. A local Linux helper also passes those 99 cases
+in 34.12 seconds. Its earlier attempt used the PG container's loopback network,
+where password authentication was not exercised; bootstrap correctly refused
+three cases. That failed attempt is retained separately. The corrected route
+uses the published port, verified TLS and a password, without changing HBA rules
+or weakening the bootstrap checks.
+
+Revision 0004 adds provider/model storage and a separate credential table. The
+initial combined PG run passes 132 cases without skips in 74.69 seconds, including
+33 registry cases. These cover a long encrypted Unicode key, scoped secret access,
+concurrent CAS, atomic credential revisions, import value preservation, model
+alias uniqueness and parent/child deletion races. The existing model descriptor
+revision remains text. See the [registry contract](PG_AI_REGISTRY.md).
+Source aggregate checks found one provider and two models, with no plaintext
+provider keys, orphan models or null active flags; no row values were exported.
+Caller ports, alias jobs, historical timestamp provenance and cutover remain open.
+
+The final registry application tree
+`445f1a4ec315c4a4e666e6a343a56a4efd5d3e961cf4422ee3ccff521d946f98`
+passes 10,664 unit tests with four warnings in 620.57 seconds (65% coverage),
+mypy, Ruff on 61 changed Python files, the 54-scenario/189-check scorecard and
+132 PG cases without skips in 119.63 seconds. The
+[command record](../../reports/production-refactor/WP-03/ai-registry-commands.json)
+retains prior attempts, the interrupted obsolete unit run, sanitized reports and
+the source probe. Fixture cleanup and the credential-canary scan pass.
+The [engine skip inventory](../../reports/production-refactor/engine-skips.json)
+records all 24 cases still unproven in the earlier real-engine lane, including
+governed Studio, Superset, special engine modes and cross-cluster migration.
+
+CI 43049859127 subsequently completed with all eight jobs successful for
+`1d79c40a`: 99 PG passes without skips, 1,601 frontend passes and 217 engine
+passes with 24 skips, no failures/errors. This supersedes its earlier pending
+status; it does not prove revision 0004 or the unexecuted engine cases.

@@ -1,0 +1,151 @@
+{
+  "source_commit": "fe44caa5b4883a32c1637cecdf4be2bfe1b9714c",
+  "run": 43043431310,
+  "skipped": 24,
+  "cases": [
+    {
+      "test": "tests.integration.test_custom_sql_tools_l3.test_custom_sql_tools_insert_select_update_delete_on_scoped_engine_user",
+      "reason": "Set NOVA_CUSTOM_SQL_LIVE=1 for the isolated custom-tool engine test",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_custom_sql_tools_llm_live.test_real_provider_uses_two_temporary_custom_sql_tools",
+      "reason": "Set NOVA_CUSTOM_SQL_LLM_LIVE=1 and NOVA_CUSTOM_SQL_LLM_PORT for the live provider probe",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_governed_studio_ranger.test_release_pins_keep_live_principal_role_masks_and_revocation",
+      "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_governed_studio_ranger.test_missions_resources_replay_and_role_version_boundaries",
+      "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_governed_studio_ranger.test_automatic_investigation_resume_keeps_exact_pins_and_live_authorization",
+      "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_governed_studio_ranger.test_production_scoring_is_bound_scoped_and_cannot_replay_mutations",
+      "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_governed_studio_ranger.test_actions_require_review_consent_verify_schedule_and_live_authorization",
+      "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_intelligence_ranger_engine.test_lifecycle_rechecks_same_role_principals_masks_and_revocation",
+      "reason": "Requires an isolated patched-FE Ranger acceptance installation",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_migration_l3.TestSchemaRoundTrip.test_function_detail_is_reconstructable_and_runs",
+      "reason": "engine has UDFs disabled (enable_udf=false)",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_migration_l3.TestPlanApplyOnRealEngine.test_plan_blocks_objects_without_definition",
+      "reason": "engine does not support CREATE TASK",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_migration_worker_cross_cluster.test_batch_executes_in_standalone_worker_across_two_clusters",
+      "reason": "set NOVA_MIGRATION_SOURCE_PORT to opt in to cross-cluster migration",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_neva_sql_planning_ranger.test_planning_verifies_only_what_ranger_lets_the_role_read",
+      "reason": "Creates a user, a role and a Ranger policy on a patched FE; opt in explicitly",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_ontology_evidence_ranger.test_profiles_and_sketches_see_only_the_callers_rows",
+      "reason": "Creates users, a role and Ranger policies on a patched FE; opt in explicitly",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_sql_frontend_ranger_live.test_frontend_ranger_managed_role_and_strict_rejection",
+      "reason": "Requires isolated patched StarRocks/Ranger fixture: NOVA_FRONTEND_RANGER_URL and NOVA_FRONTEND_RANGER_TOKEN (security-admin session)",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_sql_frontend_shared_data_live.test_shared_data_update_delete_and_repeated_insert_commit",
+      "reason": "Start docker-compose.shared-data.test.yml and set NOVA_SHARED_DATA_PORT",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_sql_frontend_shared_data_live.test_shared_data_update_delete_rollback",
+      "reason": "Start docker-compose.shared-data.test.yml and set NOVA_SHARED_DATA_PORT",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_stream_durability_gate.test_committed_transaction_is_distinct_from_visible_data",
+      "reason": "Requires an isolated FE with delayed publication",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_stream_durability_gate.test_expired_label_cannot_overwrite_durable_claim",
+      "reason": "Requires disposable FE with label_clean_interval_second=1",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_superset_governed.test_superset_phase_1_acceptance",
+      "reason": "Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_superset_governed.test_superset_phases_3_and_4_acceptance",
+      "reason": "Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_superset_governed.test_superset_phase_2_acceptance",
+      "reason": "Set NOVA_SUPERSET_WORKER_CONTAINER",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_superset_governed.test_superset_phase_6_acceptance",
+      "reason": "Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_superset_governed.test_superset_phase_5_semantics_and_backup_acceptance",
+      "reason": "Set NOVA_BACKEND_CONTAINER and NOVA_SUPERSET_DB_CONTAINER",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    },
+    {
+      "test": "tests.integration.test_superset_governed.test_superset_phase_5_metrics_acceptance",
+      "reason": "Set NOVA_PROMETHEUS_URL and NOVA_GRAFANA_URL",
+      "release_evidence": "UNPROVEN",
+      "disposition": "Review required; provision applicable disposable fixtures or prove documented refusal. A skip is not a pass."
+    }
+  ]
+}

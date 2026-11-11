@@ -25,6 +25,26 @@ def test_explicit_supported_source_types(source, target):
     assert target_type(source) == target
 
 
+def test_provider_ciphertext_storage_has_an_explicit_wider_target():
+    assert target_type(
+        "varchar(512)", source_table="CONFIG_AI_PROVIDERS", source_column="api_key",
+    ) == "text"
+    assert target_type(
+        "varchar(512)", source_table="CONFIG_AI_PROVIDERS", source_column="endpoint",
+    ) == "varchar(512)"
+    with pytest.raises(ImportContractError):
+        target_type("varchar(1024)", source_table="CONFIG_AI_PROVIDERS", source_column="api_key")
+
+
+@pytest.mark.parametrize("context", [
+    {"source_table": "CONFIG_AI_PROVIDERS"}, {"source_column": "api_key"},
+    {"source_table": "invalid;sql", "source_column": "api_key"},
+])
+def test_incomplete_or_invalid_column_contract_is_refused(context):
+    with pytest.raises(ImportContractError):
+        target_type("varchar(512)", **context)
+
+
 @pytest.mark.parametrize("source", [
     "varchar(0)", "varchar(-1)", "varchar(999999999999)", "unknown", "date",
     "varchar(64);drop table audit_log", "INT(11)", None, {},
@@ -165,7 +185,10 @@ def test_column_mapping_covers_the_entire_observed_schema_without_assuming_timez
         assert contract["source_nullable"] == column["nullable"]
         assert int(contract["source_ordinal"]) == column["ordinal"]
         assert contract["source_ddl_sha256"] == digest
-        assert contract["target_pg_type"] == target_type(column["type"])
+        assert contract["target_pg_type"] == target_type(
+            column["type"], source_table=contract["source_table"],
+            source_column=contract["source_column"],
+        )
         if column["type"] == "datetime":
             assert contract["timestamp_zone"] == "REVIEW_REQUIRED"
             assert contract["status"] == "TIMESTAMP_PROVENANCE_REQUIRED"
