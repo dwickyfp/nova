@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 import psycopg
@@ -39,7 +39,9 @@ def _roles(session: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(sorted(set(roles)))
 
 
-class WorkspaceSharingRepository:
+class WorkspaceMetadataScope:
+    """Actor-bound scope shared by the Workspace metadata repositories."""
+
     def __init__(
         self, connection: psycopg.AsyncConnection[dict[str, Any]], actor: SecurityContext,
         roles: tuple[str, ...],
@@ -75,7 +77,7 @@ class WorkspaceSharingRepository:
     @asynccontextmanager
     async def bind(
         cls, connection: psycopg.AsyncConnection[dict[str, Any]], session: Mapping[str, Any],
-    ) -> AsyncIterator[WorkspaceSharingRepository]:
+    ) -> AsyncIterator[Self]:
         """Bind server-validated session state, never a request's role selection."""
         if connection.info.transaction_status != TransactionStatus.INTRANS:
             raise ValueError("Workspace storage requires an active metadata transaction")
@@ -94,6 +96,8 @@ class WorkspaceSharingRepository:
             finally:
                 repository._active = False
 
+
+class WorkspaceSharingRepository(WorkspaceMetadataScope):
     async def visible(self) -> list[dict[str, Any]]:
         await self._transaction()
         cursor = await self.connection.execute(

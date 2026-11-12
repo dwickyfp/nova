@@ -80,9 +80,14 @@ remain untouched. See the [bounded evidence](../../reports/production-refactor/w
 
 Revision 0013 and [the Workspace store](PG_WORKSPACES.md) now prepare ownership
 and shares with forced RLS, aggregate revision CAS, atomic replacement and
-transactional success audit. File/version storage, object receipts, runtime
-caller ports and session revocation remain open. This does not close R19 or
-activate PostgreSQL authority.
+transactional success audit. Revision 0014 adds entry/version storage with
+namespace-scoped RLS, one live path per namespace, revision CAS, atomic subtree
+moves and tombstones, serialized version reservation above retained rows and
+single-use object receipts. Imported duplicate version rows are retained and
+reads of an ambiguous number conflict. Runtime caller ports, object-key
+publication, the reservation recovery worker, the import conflict manifest and
+session revocation remain open. This does not close R19 or activate PostgreSQL
+authority.
 
 ## Stages and audit
 
