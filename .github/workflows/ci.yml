@@ -75,6 +75,7 @@ jobs:
               "tests/integration/test_metadata_agents.py",
               "tests/integration/test_metadata_intelligence.py",
               "tests/integration/test_metadata_query_autopilot.py",
+              "tests/integration/test_metadata_assistant_policy_bi.py",
               "tests/integration/test_metadata_jobs.py",
               "tests/integration/test_metadata_scheduler.py",
               "tests/integration/test_metadata_migrator.py", "-v",
